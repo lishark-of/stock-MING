@@ -198,6 +198,115 @@ def _production_launch_plan(api_base: str) -> list[dict[str, Any]]:
     ]
 
 
+def _production_runtime_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    *,
+    evidence: str,
+    production_blocker: bool = False,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "production_blocker": bool(production_blocker),
+        "evidence": evidence,
+        "external_calls_triggered": False,
+        "loads_token_or_key": False,
+        "reads_config_values": False,
+        "writes_log_files": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _production_runtime_contract(api_base_info: dict[str, Any], tauri_config: dict[str, Any]) -> dict[str, Any]:
+    config_dir = "~/.stock_ming_3"
+    log_dir = "~/.stock_ming_3/logs"
+    rows = [
+        _production_runtime_row(
+            "backend_startup_strategy_declared",
+            "passed",
+            True,
+            evidence="current package uses manual FastAPI launch; sidecar remains a future explicit packaging decision",
+        ),
+        _production_runtime_row(
+            "api_base_localhost_contract",
+            "passed" if api_base_info.get("is_localhost") else "blocked",
+            bool(api_base_info.get("is_localhost")),
+            evidence=f"api_base={api_base_info.get('api_base') or 'missing'}",
+            production_blocker=not bool(api_base_info.get("is_localhost")),
+        ),
+        _production_runtime_row(
+            "config_path_policy_declared",
+            "passed",
+            True,
+            evidence=f"config_dir={config_dir}; frontend receives no token/key config values",
+        ),
+        _production_runtime_row(
+            "log_path_policy_declared",
+            "passed",
+            True,
+            evidence=f"log_dir={log_dir}; preflight declares path only and writes no files",
+        ),
+        _production_runtime_row(
+            "frontend_secret_boundary",
+            "passed",
+            True,
+            evidence="Tauri frontend connects to local FastAPI only; secrets remain backend/env scoped",
+        ),
+        _production_runtime_row(
+            "sidecar_autostart_validation_pending",
+            "pending",
+            False,
+            evidence=f"backend_sidecar_configured={bool(tauri_config.get('backend_sidecar_configured'))}; manual launch is current policy",
+            production_blocker=True,
+        ),
+        _production_runtime_row(
+            "packaged_backend_offline_ux_pending",
+            "pending",
+            False,
+            evidence="React error states exist, but offline UX has not been validated in packaged Tauri runtime",
+            production_blocker=True,
+        ),
+    ]
+    blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
+    return {
+        "schema_version": "tauri_production_runtime_contract.v1",
+        "status": "runtime_contract_ready_packaged_validation_pending" if not any(row.get("status") == "blocked" for row in rows) else "runtime_contract_blocked",
+        "scope": "path_policy_and_startup_contract_not_packaged_runtime_validation",
+        "backend_startup_strategy": "manual_fastapi_process_current_sidecar_pending",
+        "manual_backend_launch_required": True,
+        "backend_sidecar_autostart_enabled": False,
+        "backend_sidecar_configured": bool(tauri_config.get("backend_sidecar_configured")),
+        "api_base": api_base_info.get("api_base"),
+        "api_base_is_localhost": bool(api_base_info.get("is_localhost")),
+        "config_dir_policy": config_dir,
+        "config_file_policy": f"{config_dir}/desktop.local.json",
+        "log_dir_policy": log_dir,
+        "log_file_policy": f"{log_dir}/command_center_3.log",
+        "config_paths_declared": True,
+        "log_paths_declared": True,
+        "reads_config_values": False,
+        "writes_log_files": False,
+        "frontend_stores_tokens": False,
+        "token_key_frontend_exposure": False,
+        "packaged_runtime_validated": False,
+        "backend_offline_ui_packaged_runtime_verified": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "production_blocker_count": len(blockers),
+        "blockers": blockers,
+        "rows": rows,
+        "note": "This contract declares production runtime paths and startup boundaries only; it does not run Tauri build, start FastAPI, read config values, write logs, or validate packaged runtime UX.",
+    }
+
+
 def _production_package_blocker_audit(
     *,
     package_summary: dict[str, Any],
@@ -207,8 +316,10 @@ def _production_package_blocker_audit(
     rust_ready: bool,
     scaffold_ready: bool,
     api_base_info: dict[str, Any],
+    runtime_contract: dict[str, Any],
 ) -> dict[str, Any]:
     frontend_dist = str(tauri_config.get("frontend_dist") or "")
+    config_log_paths_declared = bool(runtime_contract.get("config_paths_declared") and runtime_contract.get("log_paths_declared"))
     rows = [
         {
             "criterion": "react_vite_scaffold_ready",
@@ -256,7 +367,7 @@ def _production_package_blocker_audit(
             "criterion": "backend_startup_strategy",
             "status": "blocked",
             "passed": False,
-            "evidence": "current package expects manual FastAPI launch; sidecar autostart is not enabled",
+            "evidence": f"runtime_contract={runtime_contract.get('backend_startup_strategy')}; packaged strategy not validated",
             "production_blocker": True,
         },
         {
@@ -268,10 +379,10 @@ def _production_package_blocker_audit(
         },
         {
             "criterion": "config_and_log_paths_declared",
-            "status": "blocked",
-            "passed": False,
-            "evidence": "production config/log locations are not yet declared for ordinary users",
-            "production_blocker": True,
+            "status": "passed" if config_log_paths_declared else "blocked",
+            "passed": config_log_paths_declared,
+            "evidence": f"config={runtime_contract.get('config_file_policy')}; log={runtime_contract.get('log_file_policy')}",
+            "production_blocker": not config_log_paths_declared,
         },
         {
             "criterion": "macos_signing_notarization_ready",
@@ -315,7 +426,8 @@ def _production_package_blocker_audit(
         "backend_sidecar_autostart_enabled": False,
         "manual_backend_launch_required": True,
         "backend_offline_ui_packaged_runtime_verified": False,
-        "config_log_paths_declared": False,
+        "config_log_paths_declared": config_log_paths_declared,
+        "production_runtime_contract_status": runtime_contract.get("status"),
         "macos_signing_notarization_ready": False,
         "frontend_stores_tokens": False,
         "contains_secret": False,
@@ -364,6 +476,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     tauri_dev_ready = vite_dev_ready and rust_ready
     api_base = os.getenv("VITE_API_BASE_URL") or "http://127.0.0.1:8710"
     api_base_info = _api_base_summary(api_base)
+    production_runtime_contract = _production_runtime_contract(api_base_info, tauri_config)
     production_readiness = {
         "status": "tauri_preflight_ready" if tauri_dev_ready else ("vite_ready_tauri_toolchain_pending" if vite_dev_ready else "desktop_scaffold_partial"),
         "scope": "tauri_desktop_production_preflight",
@@ -375,6 +488,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "backend_sidecar_autostart_enabled": False,
         "backend_sidecar_autostart_planned": True,
         "frontend_stores_tokens": False,
+        "production_runtime_contract_status": production_runtime_contract["status"],
+        "config_log_paths_declared": production_runtime_contract["config_paths_declared"] and production_runtime_contract["log_paths_declared"],
         "api_base_is_localhost": api_base_info["is_localhost"],
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -393,6 +508,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         rust_ready=rust_ready,
         scaffold_ready=scaffold_ready,
         api_base_info=api_base_info,
+        runtime_contract=production_runtime_contract,
     )
 
     packet = {
@@ -410,6 +526,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "package_json": package_summary,
         "tauri_config": tauri_config,
         "production_readiness": production_readiness,
+        "production_runtime_contract": production_runtime_contract,
+        "production_runtime_contract_rows": production_runtime_contract["rows"],
         "production_blocker_audit": production_blocker_audit,
         "production_blocker_rows": production_blocker_audit["rows"],
         "file_rows": file_rows,
@@ -441,6 +559,12 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "tauri_build_verified": production_blocker_audit["tauri_build_verified"],
             "backend_offline_ui_packaged_runtime_verified": production_blocker_audit["backend_offline_ui_packaged_runtime_verified"],
             "config_log_paths_declared": production_blocker_audit["config_log_paths_declared"],
+            "production_runtime_contract_status": production_runtime_contract["status"],
+            "production_runtime_contract_declared": True,
+            "production_runtime_config_paths_declared": production_runtime_contract["config_paths_declared"],
+            "production_runtime_log_paths_declared": production_runtime_contract["log_paths_declared"],
+            "production_runtime_reads_config_values": production_runtime_contract["reads_config_values"],
+            "production_runtime_writes_log_files": production_runtime_contract["writes_log_files"],
             "macos_signing_notarization_ready": production_blocker_audit["macos_signing_notarization_ready"],
         },
         "policy": {
@@ -453,6 +577,9 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "frontend_must_use_fastapi_api_client": True,
             "backend_autostart_enabled": False,
             "api_base_must_be_localhost": True,
+            "production_runtime_contract_is_path_only": True,
+            "does_not_read_config_values": True,
+            "does_not_write_log_files": True,
             "does_not_call_tushare": True,
             "does_not_call_deepseek": True,
             "does_not_call_github": True,

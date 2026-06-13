@@ -28,9 +28,11 @@ export default function DesktopShellPreflight() {
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const apiBaseInfo = (cache.api_base_info as Record<string, unknown> | undefined) ?? {};
   const productionReadiness = (cache.production_readiness as Record<string, unknown> | undefined) ?? {};
+  const productionRuntimeContract = (cache.production_runtime_contract as Record<string, unknown> | undefined) ?? {};
   const productionBlockerAudit = (cache.production_blocker_audit as Record<string, unknown> | undefined) ?? {};
   const devLaunchPlan = rows(cache.dev_launch_plan);
   const productionLaunchPlan = rows(cache.production_launch_plan);
+  const productionRuntimeRows = rows(cache.production_runtime_contract_rows);
   const productionBlockerRows = rows(cache.production_blocker_rows);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
@@ -56,8 +58,11 @@ export default function DesktopShellPreflight() {
           { label: "dist", value: runtime.dist_present === true ? "present" : "missing" },
           { label: "backend autostart", value: runtime.backend_autostart_configured === true ? "enabled" : "manual", tone: runtime.backend_autostart_configured === true ? "warn" : "good" },
           { label: "package audit", value: productionBlockerAudit.status as string | undefined, tone: productionBlockerAudit.package_ready === true ? "good" : "warn" },
+          { label: "runtime contract", value: productionRuntimeContract.status as string | undefined, tone: productionRuntimeContract.config_paths_declared === true ? "good" : "warn" },
           { label: "package ready", value: productionBlockerAudit.package_ready === true ? "ready" : "blocked", tone: productionBlockerAudit.package_ready === true ? "good" : "warn" },
           { label: "tauri build", value: productionBlockerAudit.tauri_build_verified === true ? "verified" : "not verified", tone: productionBlockerAudit.tauri_build_verified === true ? "good" : "warn" },
+          { label: "config/log paths", value: productionBlockerAudit.config_log_paths_declared === true ? "declared" : "pending", tone: productionBlockerAudit.config_log_paths_declared === true ? "good" : "warn" },
+          { label: "packaged offline UX", value: productionRuntimeContract.backend_offline_ui_packaged_runtime_verified === true ? "verified" : "pending", tone: productionRuntimeContract.backend_offline_ui_packaged_runtime_verified === true ? "good" : "warn" },
           { label: "package blockers", value: productionBlockerAudit.blocker_count as number | undefined, tone: Number(productionBlockerAudit.blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "cache envelope ledger", value: cacheEnvelopeLedger.length },
@@ -81,6 +86,9 @@ export default function DesktopShellPreflight() {
           <p>frontend_must_use_fastapi_api_client: {String(policy.frontend_must_use_fastapi_api_client ?? true)}</p>
           <p>backend_autostart_enabled: {String(policy.backend_autostart_enabled ?? false)}</p>
           <p>api_base_must_be_localhost: {String(policy.api_base_must_be_localhost ?? true)}</p>
+          <p>production_runtime_contract_is_path_only: {String(policy.production_runtime_contract_is_path_only ?? true)}</p>
+          <p>does_not_read_config_values: {String(policy.does_not_read_config_values ?? true)}</p>
+          <p>does_not_write_log_files: {String(policy.does_not_write_log_files ?? true)}</p>
         </PacketCard>
       </div>
 
@@ -92,6 +100,15 @@ export default function DesktopShellPreflight() {
         <DataLineageTable rows={productionLaunchPlan} />
       </PacketCard>
 
+      <PacketCard title="Tauri production runtime contract" subtitle="路径和启动策略只读声明；不读取配置、不写日志、不启动后端" status={String(productionRuntimeContract.status ?? "runtime_contract_ready_packaged_validation_pending")}>
+        <p>backend_startup_strategy: {String(productionRuntimeContract.backend_startup_strategy ?? "manual_fastapi_process_current_sidecar_pending")}</p>
+        <p>config_file_policy: {String(productionRuntimeContract.config_file_policy ?? "~/.stock_ming_3/desktop.local.json")}</p>
+        <p>log_file_policy: {String(productionRuntimeContract.log_file_policy ?? "~/.stock_ming_3/logs/command_center_3.log")}</p>
+        <p>packaged_runtime_validated: {String(productionRuntimeContract.packaged_runtime_validated ?? false)}</p>
+        <p>token_key_frontend_exposure: {String(productionRuntimeContract.token_key_frontend_exposure ?? false)}</p>
+        <DataLineageTable rows={productionRuntimeRows} />
+      </PacketCard>
+
       <PacketCard title="Tauri 生产包阻断审计" subtitle="preflight 不是 production package complete" status={String(productionBlockerAudit.status ?? "production_package_blocked")}>
         <p>scope: {String(productionBlockerAudit.scope ?? "local_preflight_not_tauri_build")}</p>
         <p>package_ready: {String(productionBlockerAudit.package_ready ?? false)}</p>
@@ -99,6 +116,7 @@ export default function DesktopShellPreflight() {
         <p>manual_backend_launch_required: {String(productionBlockerAudit.manual_backend_launch_required ?? true)}</p>
         <p>backend_offline_ui_packaged_runtime_verified: {String(productionBlockerAudit.backend_offline_ui_packaged_runtime_verified ?? false)}</p>
         <p>config_log_paths_declared: {String(productionBlockerAudit.config_log_paths_declared ?? false)}</p>
+        <p>production_runtime_contract_status: {String(productionBlockerAudit.production_runtime_contract_status ?? "runtime_contract_ready_packaged_validation_pending")}</p>
         <p>macos_signing_notarization_ready: {String(productionBlockerAudit.macos_signing_notarization_ready ?? false)}</p>
         <p>production_readiness_status: {String(productionReadiness.status ?? "desktop_scaffold_partial")}</p>
       </PacketCard>

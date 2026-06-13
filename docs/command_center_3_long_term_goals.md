@@ -42,7 +42,7 @@ This document is the long-term development baseline for unfinished Command Cente
 - Factor Test Lab: light research metrics exist; full research validation is incomplete.
 - Tushare extended validation matrix: domains are declared and button-gated; not all interfaces have real samples.
 - DeepSeek pro automatic explanation governance: sanitizer and prompt preview exist; automatic production calls remain disabled.
-- Tauri desktop preflight: dev readiness exists; production package is incomplete.
+- Tauri desktop preflight: dev readiness and a production runtime path/startup contract exist; production package validation is incomplete.
 - ECharts next-session map maturity: chart contract exists; interaction parity with legacy Streamlit is incomplete.
 - Streamlit legacy closeout: legacy status exists; ordinary workflow is not fully migrated.
 
@@ -64,7 +64,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 | LTG-06 | Worker / Celery / Redis 生产化 | local task fallback and preflight | Production-capable worker orchestration with local fallback | P4 | POST returns task_id, worker runs heavy jobs, Redis absence falls back gracefully, scheduler stays off by default. |
 | LTG-07 | DeepSeek pro 稳定解释生产化 | manual governance, sanitizer, and local JSON stability audit; mini-benchmark below production target | Stable manual explanation, optional background auto-after-task | P5 | JSON success rate > 90%, no action leakage, no numeric overwrite, cost predictable. |
 | LTG-08 | ECharts 次日操作图谱成熟版 | maturing chart contract with interaction readiness audit; legacy parity pending | React/ECharts replaces Streamlit main next-session visual | P5 | Complete cache display, evidence interactions, no frontend action/price/position mutation. |
-| LTG-09 | Tauri desktop production package | dev/preflight | Production desktop shell for ordinary users | P6 | tauri dev/build pass; backend-offline state is friendly; token/key never enters frontend. |
+| LTG-09 | Tauri desktop production package | dev/preflight with runtime contract; packaged validation pending | Production desktop shell for ordinary users | P6 | tauri dev/build pass; backend-offline state is friendly; config/log policy is validated; token/key never enters frontend. |
 | LTG-10 | Streamlit 完全退出普通主流程 | `legacy/admin/debug` marked, still used for fallback | Streamlit only for debug/admin/fallback | P7 | Ordinary research workflow runs through Command Center 3 desktop. |
 | LTG-11 | 测试 / CI / smoke / 安全扫描标准化 | local tests and smoke exist | Repeatable gate for every release candidate | P0/P4 | unittest, frontend build, smoke, diff check, secret scan, and artifact scan are documented and enforced. |
 | LTG-12 | 真实交易链路继续保持隔离 | auto trading not connected | Trading remains explicitly out of automatic chains | Always | No automatic order path; strategy action cannot be mutated by research/cache/model/frontend paths. |
@@ -515,25 +515,27 @@ Mature ECharts next-session operation map interactions
 
 - Tauri preflight/dev checks exist.
 - Desktop preflight now exposes `production_blocker_audit` and `production_blocker_rows`, separating dev/preflight readiness from production package readiness.
+- Desktop preflight now exposes `production_runtime_contract` and `production_runtime_contract_rows`, declaring the current manual FastAPI backend startup strategy, path-only config/log policy, local API base contract, no frontend token/key exposure, no config value reads, and no log writes.
 - Production package is incomplete.
 
 ### Gaps
 
 - Rust/Cargo production environment.
 - `npm run tauri build`.
-- FastAPI sidecar or manual backend launch strategy.
-- Local config path.
-- Log path.
+- Packaged FastAPI sidecar or manual backend launch strategy validation.
+- Local config path is declared as policy, but not validated in packaged runtime.
+- Log path is declared as policy, but not validated in packaged runtime.
 - macOS package flow.
 - Friendly failure prompts.
-- `production_blocker_audit.status=production_package_blocked` is expected until `tauri build`, backend startup strategy, packaged offline UX, config/log paths, and macOS signing/notarization are validated.
+- `production_runtime_contract.status=runtime_contract_ready_packaged_validation_pending` means the path/startup contract is declared only; it is not packaged runtime proof.
+- `production_blocker_audit.status=production_package_blocked` is expected until `tauri build`, backend startup strategy, packaged offline UX, config/log runtime behavior, and macOS signing/notarization are validated.
 
 ### Implementation Phases
 
 1. Stabilize `tauri dev` on supported local machines.
-2. Define FastAPI startup strategy: sidecar or explicit manual process.
+2. Define and validate FastAPI startup strategy: sidecar or explicit manual process.
 3. Add production package build and artifact checks.
-4. Add config/log location documentation.
+4. Validate config/log location behavior in packaged runtime without exposing secrets.
 5. Validate packaged-runtime backend-offline UI and macOS signing/notarization flow.
 
 ### Acceptance Criteria
@@ -542,12 +544,14 @@ Mature ECharts next-session operation map interactions
 - `tauri build` passes.
 - Backend-offline UI is friendly.
 - Local config and token/key are not exposed to frontend.
-- `production_blocker_audit.package_ready=true` only after `tauri build` is verified, backend startup strategy is settled, config/log paths are declared, and packaged-runtime offline UX is validated.
+- `production_runtime_contract` declares config/log paths, startup strategy, and frontend secret boundary without reading config values, writing log files, starting FastAPI, or calling providers/models.
+- `production_blocker_audit.package_ready=true` only after `tauri build` is verified, backend startup strategy is settled, config/log paths are validated in packaged runtime, and packaged-runtime offline UX is validated.
 
 ### Forbidden
 
 - Do not bundle secrets into frontend or app package.
 - Do not claim production desktop completion from preflight only.
+- Do not claim `production_runtime_contract` as packaged runtime validation; it is a path/startup policy contract.
 - Do not claim `production_blocker_audit` as production package completion while status remains `production_package_blocked`.
 - Do not auto-call providers/models during app startup.
 

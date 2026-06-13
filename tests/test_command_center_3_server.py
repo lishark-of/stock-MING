@@ -199,6 +199,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(desktop["policy"]["frontend_must_use_fastapi_api_client"])
         self.assertFalse(desktop["policy"]["backend_autostart_enabled"])
         self.assertTrue(desktop["policy"]["api_base_must_be_localhost"])
+        self.assertTrue(desktop["policy"]["production_runtime_contract_is_path_only"])
+        self.assertTrue(desktop["policy"]["does_not_read_config_values"])
+        self.assertTrue(desktop["policy"]["does_not_write_log_files"])
         self.assertTrue(desktop["api_base_info"]["is_localhost"])
         self.assertEqual(desktop["api_base_info"]["expected_health_endpoint"], "http://127.0.0.1:8710/health")
         self.assertTrue(desktop["api_base_info"]["frontend_uses_fastapi_only"])
@@ -218,6 +221,38 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(desktop["production_readiness"]["backend_sidecar_autostart_enabled"])
         self.assertTrue(desktop["production_readiness"]["backend_sidecar_autostart_planned"])
         self.assertFalse(desktop["production_readiness"]["frontend_stores_tokens"])
+        self.assertEqual(
+            desktop["production_readiness"]["production_runtime_contract_status"],
+            "runtime_contract_ready_packaged_validation_pending",
+        )
+        self.assertTrue(desktop["production_readiness"]["config_log_paths_declared"])
+        runtime_contract = desktop["production_runtime_contract"]
+        runtime_contract_rows = {row["criterion"]: row for row in desktop["production_runtime_contract_rows"]}
+        self.assertEqual(runtime_contract["schema_version"], "tauri_production_runtime_contract.v1")
+        self.assertEqual(runtime_contract["status"], "runtime_contract_ready_packaged_validation_pending")
+        self.assertEqual(runtime_contract["scope"], "path_policy_and_startup_contract_not_packaged_runtime_validation")
+        self.assertEqual(runtime_contract["backend_startup_strategy"], "manual_fastapi_process_current_sidecar_pending")
+        self.assertTrue(runtime_contract["manual_backend_launch_required"])
+        self.assertFalse(runtime_contract["backend_sidecar_autostart_enabled"])
+        self.assertTrue(runtime_contract["api_base_is_localhost"])
+        self.assertTrue(runtime_contract["config_paths_declared"])
+        self.assertTrue(runtime_contract["log_paths_declared"])
+        self.assertFalse(runtime_contract["reads_config_values"])
+        self.assertFalse(runtime_contract["writes_log_files"])
+        self.assertFalse(runtime_contract["frontend_stores_tokens"])
+        self.assertFalse(runtime_contract["token_key_frontend_exposure"])
+        self.assertFalse(runtime_contract["packaged_runtime_validated"])
+        self.assertFalse(runtime_contract["backend_offline_ui_packaged_runtime_verified"])
+        self.assertFalse(runtime_contract["external_calls_triggered"])
+        self.assertFalse(runtime_contract["tushare_called"])
+        self.assertFalse(runtime_contract["deepseek_called"])
+        self.assertFalse(runtime_contract["github_called"])
+        self.assertTrue(runtime_contract["does_not_execute_trades"])
+        self.assertTrue(runtime_contract["does_not_modify_strategy_action"])
+        self.assertTrue(runtime_contract_rows["config_path_policy_declared"]["passed"])
+        self.assertTrue(runtime_contract_rows["log_path_policy_declared"]["passed"])
+        self.assertFalse(runtime_contract_rows["sidecar_autostart_validation_pending"]["passed"])
+        self.assertFalse(runtime_contract_rows["packaged_backend_offline_ux_pending"]["passed"])
         self.assertIn("production_blocker_audit", desktop)
         blocker_audit = desktop["production_blocker_audit"]
         blocker_rows = {row["criterion"]: row for row in desktop["production_blocker_rows"]}
@@ -230,7 +265,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(blocker_audit["manual_backend_launch_required"])
         self.assertFalse(blocker_audit["backend_sidecar_autostart_enabled"])
         self.assertFalse(blocker_audit["backend_offline_ui_packaged_runtime_verified"])
-        self.assertFalse(blocker_audit["config_log_paths_declared"])
+        self.assertTrue(blocker_audit["config_log_paths_declared"])
+        self.assertEqual(
+            blocker_audit["production_runtime_contract_status"],
+            "runtime_contract_ready_packaged_validation_pending",
+        )
         self.assertFalse(blocker_audit["macos_signing_notarization_ready"])
         self.assertFalse(blocker_audit["frontend_stores_tokens"])
         self.assertFalse(blocker_audit["external_calls_triggered"])
@@ -241,15 +280,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(blocker_audit["does_not_modify_strategy_action"])
         self.assertIn("tauri_package_build_verified", blocker_audit["blockers"])
         self.assertIn("backend_startup_strategy", blocker_audit["blockers"])
-        self.assertIn("config_and_log_paths_declared", blocker_audit["blockers"])
+        self.assertNotIn("config_and_log_paths_declared", blocker_audit["blockers"])
         self.assertIn("macos_signing_notarization_ready", blocker_audit["blockers"])
         self.assertFalse(blocker_rows["tauri_package_build_verified"]["passed"])
         self.assertFalse(blocker_rows["backend_startup_strategy"]["passed"])
+        self.assertTrue(blocker_rows["config_and_log_paths_declared"]["passed"])
         self.assertTrue(blocker_rows["frontend_secret_boundary"]["passed"])
         self.assertTrue(blocker_rows["startup_external_call_boundary"]["passed"])
         self.assertFalse(desktop["runtime"]["production_package_ready"])
         self.assertGreater(desktop["runtime"]["production_blocker_count"], 0)
         self.assertFalse(desktop["runtime"]["tauri_build_verified"])
+        self.assertTrue(desktop["runtime"]["production_runtime_contract_declared"])
+        self.assertTrue(desktop["runtime"]["production_runtime_config_paths_declared"])
+        self.assertTrue(desktop["runtime"]["production_runtime_log_paths_declared"])
+        self.assertFalse(desktop["runtime"]["production_runtime_reads_config_values"])
+        self.assertFalse(desktop["runtime"]["production_runtime_writes_log_files"])
         self.assertEqual([row["command"] for row in desktop["dev_launch_plan"][:3]], [
             "scripts/dev_server.sh",
             "cd desktop && npm run dev",
