@@ -451,6 +451,7 @@ Enable production-ready worker task orchestration
 - mini-benchmark ran 8 calls with 75% JSON success.
 - sanitizer is effective.
 - Factor Quant Hub now exposes a local `deepseek_json_stability_audit` that compares the 75% mini-benchmark baseline with the >90% production target, checks prompt/schema/token-budget/read-only boundaries, and marks automatic production explanation as blocked until larger benchmark and response-format enforcement are proven.
+- Factor Quant Hub now exposes `deepseek_response_format_review_contract`: a local response-format / retry-repair review contract that verifies JSON-object prompt instruction, six whitelisted top-level fields, parse-failure discard behavior, illegal-field sanitization, no numeric/action overwrite, token budget visibility, GET/render no-model-call boundaries, and default-off auto-after-task governance. It keeps provider-level response format enforcement, bounded retry/repair policy, larger benchmark, and production automation blocked.
 - Current state is suitable for manual explanation, not automatic production calling.
 
 ### Gaps
@@ -461,6 +462,7 @@ Enable production-ready worker task orchestration
 - Token budget strategy is incomplete.
 - `auto_after_task` needs conservative production governance.
 - `deepseek_json_stability_audit.status=manual_ready_production_blocked` is a local sanitizer/prompt contract, not a real model benchmark pass.
+- `deepseek_response_format_review_contract.status=response_format_review_ready_provider_enforcement_pending` is a local review contract; it does not prove provider-level response format enforcement, retry/repair execution, or larger benchmark success.
 
 ### Implementation Phases
 
@@ -479,6 +481,7 @@ Enable production-ready worker task orchestration
 - Token cost is predictable and auditable.
 - Failure does not pollute local results.
 - `deepseek_json_stability_audit` must show `production_ready=true` only after JSON success rate exceeds 90%, larger benchmark is complete, and response format is enforced.
+- `deepseek_response_format_review_contract` must keep `production_ready=false` until provider-level response format enforcement, bounded retry/repair policy, and larger benchmark evidence are all proven.
 - GET cache and React render must keep `model_call_status=not_called`.
 
 ### Forbidden
@@ -487,6 +490,7 @@ Enable production-ready worker task orchestration
 - Do not use DeepSeek as a data source.
 - Do not let model output overwrite prices, positions, factor values, operation zones, or action.
 - Do not treat local sanitizer/prompt audit as production automatic explanation readiness.
+- Do not treat response-format review as provider-level response format enforcement or production benchmark completion.
 
 ### Recommended Commit Message
 

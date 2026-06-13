@@ -8400,6 +8400,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         explanation = factor["data"]["deepseek_explanation"]
         json_audit = factor["data"]["deepseek_json_stability_audit"]
         json_audit_rows = {row["criterion"]: row for row in factor["data"]["deepseek_json_stability_rows"]}
+        response_format_review = factor["data"]["deepseek_response_format_review_contract"]
+        response_format_rows = {row["criterion"]: row for row in factor["data"]["deepseek_response_format_review_rows"]}
         self.assertFalse(factor["data"]["deepseek_called"])
         self.assertEqual(explanation["payload"]["summary"], "整理摘要")
         self.assertIn("price", explanation["ignored_keys"])
@@ -8424,9 +8426,52 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(json_audit_rows["json_success_rate_threshold"]["passed"])
         self.assertFalse(json_audit_rows["response_format_enforced"]["passed"])
         self.assertEqual(
+            response_format_review["schema_version"],
+            "factor_deepseek_response_format_review_contract.v1",
+        )
+        self.assertEqual(response_format_review["status"], "response_format_review_ready_provider_enforcement_pending")
+        self.assertEqual(response_format_review["scope"], "local_response_format_review_no_model_call")
+        self.assertEqual(
+            response_format_review["review_policy"],
+            "manual_explanation_only_until_response_format_retry_and_benchmark_pass",
+        )
+        self.assertTrue(response_format_review["local_response_format_review_ready"])
+        self.assertTrue(response_format_review["manual_explanation_ready"])
+        self.assertFalse(response_format_review["production_ready"])
+        self.assertFalse(response_format_review["provider_response_format_enforced"])
+        self.assertFalse(response_format_review["retry_repair_policy_ready"])
+        self.assertFalse(response_format_review["larger_benchmark_done"])
+        self.assertFalse(response_format_review["auto_after_task_production_ready"])
+        self.assertEqual(response_format_review["model_call_status"], "not_called")
+        self.assertTrue(response_format_review["prompt_only_json_instruction"])
+        self.assertFalse(response_format_review["parse_failed"])
+        self.assertFalse(response_format_review["deepseek_called"])
+        self.assertFalse(response_format_review["external_calls_triggered"])
+        self.assertFalse(response_format_review["contains_secret"])
+        self.assertTrue(response_format_review["does_not_override_numeric_values"])
+        self.assertTrue(response_format_review["does_not_output_strategy_action"])
+        self.assertEqual(
+            set(response_format_review["allowed_top_level_keys"]),
+            {"summary", "support_notes", "suppress_notes", "conflict_notes", "missing_data_notes", "discipline_notes"},
+        )
+        self.assertIn("provider_response_format_enforced", response_format_review["production_blockers"])
+        self.assertIn("retry_repair_policy_ready", response_format_review["production_blockers"])
+        self.assertIn("larger_benchmark_required", response_format_review["production_blockers"])
+        self.assertTrue(response_format_rows["json_object_instruction_present"]["passed"])
+        self.assertTrue(response_format_rows["allowed_top_level_keys_exact"]["passed"])
+        self.assertFalse(response_format_rows["provider_response_format_enforced"]["passed"])
+        self.assertFalse(response_format_rows["retry_repair_policy_ready"]["passed"])
+        self.assertTrue(response_format_rows["cache_render_no_model_call"]["passed"])
+        self.assertEqual(
             factor["data"]["deepseek_explain_governance"]["json_stability_audit_status"],
             "manual_ready_production_blocked",
         )
+        self.assertEqual(
+            factor["data"]["deepseek_explain_governance"]["response_format_review_status"],
+            "response_format_review_ready_provider_enforcement_pending",
+        )
+        self.assertFalse(factor["data"]["deepseek_explain_governance"]["response_format_production_ready"])
+        self.assertFalse(factor["data"]["deepseek_explain_governance"]["response_format_retry_repair_ready"])
         self.assertFalse(factor["data"]["governance"]["allow_core_action"])
         self.assertTrue(factor["data"]["next_session_bridge"]["does_not_modify_action"])
 

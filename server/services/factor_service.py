@@ -132,14 +132,25 @@ def _attach_deepseek_json_stability_audit(
         validation_summary=validation_summary,
         governance=governance,
     )
+    response_format_review = factor_research.build_factor_deepseek_response_format_review_contract(
+        prompt_preview=prompt_preview,
+        validation_summary=validation_summary,
+        governance=governance,
+        json_stability_audit=audit,
+    )
     governance["json_stability_audit_status"] = audit["status"]
     governance["json_manual_explanation_ready"] = audit["manual_explanation_ready"]
     governance["json_production_ready"] = audit["production_ready"]
     governance["json_auto_after_task_ready"] = audit["auto_after_task_production_ready"]
+    governance["response_format_review_status"] = response_format_review["status"]
+    governance["response_format_production_ready"] = response_format_review["production_ready"]
+    governance["response_format_retry_repair_ready"] = response_format_review["retry_repair_policy_ready"]
     hub["deepseek_explain_governance"] = governance
     hub["deepseek_validation_summary"] = validation_summary
     hub["deepseek_json_stability_audit"] = audit
     hub["deepseek_json_stability_rows"] = audit["rows"]
+    hub["deepseek_response_format_review_contract"] = response_format_review
+    hub["deepseek_response_format_review_rows"] = response_format_review["rows"]
     return hub
 
 
@@ -1052,6 +1063,7 @@ def _deepseek_explanation_call_ledger(
 def _deepseek_prompt_preview(hub: dict[str, Any]) -> dict[str, Any]:
     prompt = factor_research.build_factor_deepseek_explanation_prompt(hub)
     strategy = _deepseek_model_strategy("factor_explain")
+    user_prompt = str(prompt.get("user_prompt") or "")
     return {
         "status": "ready_not_sent",
         "model_used": strategy.get("model"),
@@ -1059,6 +1071,7 @@ def _deepseek_prompt_preview(hub: dict[str, Any]) -> dict[str, Any]:
         "input_hash": prompt.get("input_hash"),
         "prompt_version": DEEPSEEK_FACTOR_PROMPT_VERSION,
         "token_estimate": prompt.get("token_estimate"),
+        "json_object_instruction_present": "JSON object" in user_prompt,
         "allowed_top_level_keys": prompt.get("allowed_top_level_keys") or [],
         "would_enter_deepseek_prompt_if_user_authorizes": bool(prompt.get("enters_deepseek_prompt")),
         "enters_deepseek_prompt": False,

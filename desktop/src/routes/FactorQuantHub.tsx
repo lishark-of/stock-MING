@@ -82,12 +82,14 @@ export default function FactorQuantHub() {
   const deepseekGovernance = packet.deepseek_explain_governance ?? {};
   const deepseekValidation = packet.deepseek_validation_summary ?? {};
   const deepseekJsonStability = packet.deepseek_json_stability_audit ?? {};
+  const deepseekResponseFormatReview = packet.deepseek_response_format_review_contract ?? {};
   const scoreChart = packet.score_chart_payload ?? {};
   const scoreChartContract = scoreChart.chart_contract ?? {};
   const scoreChartRows = toRows(scoreChart.bucket_rows);
   const scoreChartContractRows = objectRows(scoreChartContract as Record<string, unknown>, "chart_contract");
   const deepseekValidationRows = objectRows(deepseekValidation as Record<string, unknown>, "deepseek_validation");
   const deepseekJsonStabilityRows = toRows(packet.deepseek_json_stability_rows);
+  const deepseekResponseFormatReviewRows = toRows(packet.deepseek_response_format_review_rows);
   const universeResearchRows = objectRows(universeResearch as Record<string, unknown>, "universe_contract");
   const universeModeRows = toRows(packet.universe_research_mode_rows);
   const universeExecutionReadinessRows = objectRows(universeExecutionReadiness as Record<string, unknown>, "universe_execution_readiness");
@@ -313,6 +315,18 @@ export default function FactorQuantHub() {
       </PacketCard>
       <h3>DeepSeek JSON 稳定性审计明细</h3>
       <DataLineageTable rows={deepseekJsonStabilityRows} />
+      <PacketCard title="DeepSeek response format review" subtitle="本地 response-format / retry-repair 合同；不调用模型、不把 sanitizer 当生产验收">
+        <p>status: {String(deepseekResponseFormatReview.status ?? "missing")}</p>
+        <p>scope: {String(deepseekResponseFormatReview.scope ?? "local_response_format_review_no_model_call")}</p>
+        <p>review_policy: {String(deepseekResponseFormatReview.review_policy ?? "manual_explanation_only_until_response_format_retry_and_benchmark_pass")}</p>
+        <p>provider_response_format_enforced: {String(deepseekResponseFormatReview.provider_response_format_enforced ?? false)}</p>
+        <p>retry_repair_policy_ready: {String(deepseekResponseFormatReview.retry_repair_policy_ready ?? false)}</p>
+        <p>production_ready: {String(deepseekResponseFormatReview.production_ready ?? false)}</p>
+        <p>model_call_status: {String(deepseekResponseFormatReview.model_call_status ?? "not_called")}</p>
+        <p>allowed_top_level_keys: {JSON.stringify(deepseekResponseFormatReview.allowed_top_level_keys ?? ["summary", "support_notes", "suppress_notes", "conflict_notes", "missing_data_notes", "discipline_notes"])}</p>
+      </PacketCard>
+      <h3>DeepSeek response format review rows</h3>
+      <DataLineageTable rows={deepseekResponseFormatReviewRows} />
       <h3>因子库</h3>
       <DataLineageTable rows={toRows(factorLibrary.factors)} />
       <h3>运行值</h3>

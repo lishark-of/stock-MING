@@ -3345,6 +3345,7 @@ def build_factor_deepseek_json_stability_audit(
     required_keys = sorted(DEEPSEEK_EXPLANATION_ALLOWED_KEYS)
     prompt_token_estimate = int(prompt.get("token_estimate") or validation.get("prompt_token_estimate") or 0)
     output_token_estimate = int(validation.get("output_token_estimate") or 0)
+    json_object_instruction_present = bool(prompt.get("json_object_instruction_present")) or "JSON object" in str(prompt.get("user_prompt") or "")
     model_call_status = str(validation.get("model_call_status") or "not_called")
     ignored_key_count = int(validation.get("ignored_key_count") or 0)
     parse_failed = bool(validation.get("parse_failed"))
@@ -3455,7 +3456,7 @@ def build_factor_deepseek_json_stability_audit(
         "json_success_rate_gap": round(success_rate_gap, 4),
         "larger_benchmark_done": bool(larger_benchmark_done),
         "response_format_enforced": bool(response_format_enforced),
-        "prompt_only_json_instruction": "JSON object" in str(prompt.get("user_prompt") or ""),
+        "prompt_only_json_instruction": json_object_instruction_present,
         "prompt_token_estimate": prompt_token_estimate,
         "output_token_estimate": output_token_estimate,
         "token_budget_estimate_present": prompt_token_estimate > 0,
@@ -3468,6 +3469,199 @@ def build_factor_deepseek_json_stability_audit(
         "does_not_modify_strategy_action": True,
         "does_not_override_numeric_values": True,
         "production_blockers": production_blockers,
+        "rows": rows,
+    }
+
+
+def build_factor_deepseek_response_format_review_contract(
+    *,
+    prompt_preview: Any = None,
+    validation_summary: Any = None,
+    governance: Any = None,
+    json_stability_audit: Any = None,
+) -> dict:
+    prompt = _as_mapping(prompt_preview)
+    validation = _as_mapping(validation_summary)
+    governance_map = _as_mapping(governance)
+    json_audit = _as_mapping(json_stability_audit)
+    allowed_keys = sorted(str(key) for key in (prompt.get("allowed_top_level_keys") or DEEPSEEK_EXPLANATION_ALLOWED_KEYS))
+    required_keys = sorted(DEEPSEEK_EXPLANATION_ALLOWED_KEYS)
+    user_prompt = str(prompt.get("user_prompt") or "")
+    json_object_instruction_present = bool(prompt.get("json_object_instruction_present")) or "JSON object" in user_prompt
+    model_call_status = str(validation.get("model_call_status") or json_audit.get("model_call_status") or "not_called")
+    ignored_key_count = int(validation.get("ignored_key_count") or 0)
+    parse_failed = bool(validation.get("parse_failed"))
+    invalid_output_discarded = bool(validation.get("invalid_output_discarded")) or parse_failed
+    prompt_token_estimate = int(prompt.get("token_estimate") or validation.get("prompt_token_estimate") or json_audit.get("prompt_token_estimate") or 0)
+    output_token_estimate = int(validation.get("output_token_estimate") or json_audit.get("output_token_estimate") or 0)
+    configured_auto = bool(governance_map.get("configured_auto_after_task"))
+    auto_after_task = bool(governance_map.get("auto_after_task"))
+    response_format_enforced = bool(json_audit.get("response_format_enforced"))
+    larger_benchmark_done = bool(json_audit.get("larger_benchmark_done"))
+
+    def _row(
+        criterion: str,
+        status: str,
+        passed: bool,
+        evidence: str,
+        next_action: str,
+        *,
+        production_blocker: bool,
+    ) -> dict:
+        return {
+            "criterion": criterion,
+            "status": status,
+            "passed": bool(passed),
+            "evidence": evidence,
+            "next_action": next_action,
+            "production_blocker": bool(production_blocker),
+            "model_call_status": model_call_status,
+            "external_calls_triggered": False,
+            "deepseek_called": False,
+            "tushare_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    rows = [
+        _row(
+            "json_object_instruction_present",
+            "passed" if json_object_instruction_present else "blocked",
+            json_object_instruction_present,
+            "prompt asks for a JSON object and no full packet output",
+            "Keep JSON-only instruction in every factor explanation prompt.",
+            production_blocker=False,
+        ),
+        _row(
+            "allowed_top_level_keys_exact",
+            "passed" if allowed_keys == required_keys else "blocked",
+            allowed_keys == required_keys,
+            ",".join(allowed_keys),
+            "Keep the top-level schema limited to the six explanation-only fields.",
+            production_blocker=False,
+        ),
+        _row(
+            "provider_response_format_enforced",
+            "passed" if response_format_enforced else "blocked",
+            response_format_enforced,
+            "provider-level response_format enforcement has not been proven" if not response_format_enforced else "provider response_format enforcement is proven",
+            "Add and verify provider-level JSON response format constraints before automatic production explanation.",
+            production_blocker=not response_format_enforced,
+        ),
+        _row(
+            "retry_repair_policy_ready",
+            "blocked",
+            False,
+            "No bounded retry/repair execution policy is proven for malformed JSON.",
+            "Define a bounded retry/repair policy that preserves no-overwrite and no-action boundaries before production automation.",
+            production_blocker=True,
+        ),
+        _row(
+            "parse_failed_discard_policy",
+            "passed" if (not parse_failed or invalid_output_discarded) else "blocked",
+            not parse_failed or invalid_output_discarded,
+            f"parse_failed={parse_failed}; invalid_output_discarded={invalid_output_discarded}",
+            "Keep malformed output from polluting local explanation packets.",
+            production_blocker=False,
+        ),
+        _row(
+            "illegal_fields_sanitized",
+            "covered_by_sanitizer",
+            True,
+            f"ignored_key_count={ignored_key_count}",
+            "Keep all non-whitelisted fields out of explanation payloads.",
+            production_blocker=False,
+        ),
+        _row(
+            "numeric_and_action_overwrite_blocked",
+            "passed"
+            if validation.get("does_not_override_numeric_values") is not False
+            and validation.get("does_not_output_strategy_action") is not False
+            else "blocked",
+            validation.get("does_not_override_numeric_values") is not False
+            and validation.get("does_not_output_strategy_action") is not False,
+            "sanitizer keeps explanation-only fields and blocks action/numeric overwrite",
+            "Preserve action, price, position, factor value and operation-zone isolation.",
+            production_blocker=False,
+        ),
+        _row(
+            "token_budget_visible",
+            "passed" if prompt_token_estimate > 0 else "blocked",
+            prompt_token_estimate > 0,
+            f"prompt={prompt_token_estimate}; output={output_token_estimate}",
+            "Keep prompt and output token estimates visible before production automation.",
+            production_blocker=False,
+        ),
+        _row(
+            "cache_render_no_model_call",
+            "passed"
+            if model_call_status == "not_called"
+            and governance_map.get("cache_reads_never_call_deepseek") is not False
+            and governance_map.get("react_render_never_calls_deepseek") is not False
+            else "blocked",
+            model_call_status == "not_called"
+            and governance_map.get("cache_reads_never_call_deepseek") is not False
+            and governance_map.get("react_render_never_calls_deepseek") is not False,
+            f"model_call_status={model_call_status}",
+            "GET cache and React render must remain no-model-call surfaces.",
+            production_blocker=False,
+        ),
+        _row(
+            "auto_after_task_default_off",
+            "passed" if not configured_auto and not auto_after_task else "blocked",
+            not configured_auto and not auto_after_task,
+            f"configured_auto_after_task={configured_auto}; auto_after_task={auto_after_task}",
+            "Keep auto-after-task disabled unless explicitly configured, requested, and production gates pass.",
+            production_blocker=bool(configured_auto or auto_after_task),
+        ),
+        _row(
+            "larger_benchmark_required",
+            "passed" if larger_benchmark_done else "blocked",
+            larger_benchmark_done,
+            "larger benchmark remains pending" if not larger_benchmark_done else "larger benchmark complete",
+            "Run representative provider-backed benchmark before claiming JSON stability.",
+            production_blocker=not larger_benchmark_done,
+        ),
+    ]
+    production_blockers = [str(row["criterion"]) for row in rows if row.get("production_blocker")]
+    safety_rows = [row for row in rows if row["criterion"] not in {"provider_response_format_enforced", "retry_repair_policy_ready", "larger_benchmark_required"}]
+    local_review_ready = all(bool(row.get("passed")) for row in safety_rows)
+    return {
+        "schema_version": "factor_deepseek_response_format_review_contract.v1",
+        "status": "response_format_review_ready_provider_enforcement_pending"
+        if local_review_ready
+        else "response_format_review_blocked",
+        "scope": "local_response_format_review_no_model_call",
+        "review_policy": "manual_explanation_only_until_response_format_retry_and_benchmark_pass",
+        "allowed_top_level_keys": allowed_keys,
+        "required_top_level_keys": required_keys,
+        "allowed_key_count": len(allowed_keys),
+        "local_response_format_review_ready": local_review_ready,
+        "production_ready": False,
+        "provider_response_format_enforced": response_format_enforced,
+        "retry_repair_policy_ready": False,
+        "larger_benchmark_done": larger_benchmark_done,
+        "manual_explanation_ready": local_review_ready,
+        "auto_after_task_production_ready": False,
+        "model_call_status": model_call_status,
+        "prompt_only_json_instruction": json_object_instruction_present,
+        "parse_failed": parse_failed,
+        "invalid_output_discarded": invalid_output_discarded,
+        "ignored_key_count": ignored_key_count,
+        "prompt_token_estimate": prompt_token_estimate,
+        "output_token_estimate": output_token_estimate,
+        "production_blocker_count": len(production_blockers),
+        "production_blockers": production_blockers,
+        "deepseek_called": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_override_numeric_values": True,
+        "does_not_output_strategy_action": True,
+        "contains_secret": False,
         "rows": rows,
     }
 
