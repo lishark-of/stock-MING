@@ -169,6 +169,7 @@ Harden A-share trading-calendar freshness production gate
 - Tushare refresh packets now expose `failure_mode_qa_contract`: a local call-ledger classifier for empty/no-record windows, permission denied, parse/invalid-result failures, missing required parameters, safe provider errors, and matrix-only unrequested APIs.
 - Tushare refresh packets now expose `request_parameter_qa_contract`: a local per-interface parameter contract for safe request params, `ts_code` preflight blocking, date context visibility, alias handling, and matrix-only boundaries.
 - Tushare refresh packets now expose `provider_target_sample_plan_contract`: a local target-domain sample plan for `trade_cal`, margin, dragon-tiger, limit/emotion, chip, financial disclosure, and hard-risk interfaces. It declares required APIs, sample windows, request context, success evidence, and failure evidence for future provider-backed acceptance.
+- Tushare refresh packets now expose `provider_acceptance_promotion_audit`: a local call-ledger promotion audit that requires all declared APIs selected, all non-empty successful samples, all target groups validated, safe semantic audit, no pending target sample groups, explicit provider-backed acceptance marker, and failure-mode evidence before acceptance can be promoted.
 - `scripts/tushare_acceptance_contract.py` is now part of the local push gate. It exercises only local matrix/readiness contract helpers and prevents matrix-only rows, failure-mode QA, request-parameter QA, target-sample plans, or provider-readiness audits from being mistaken for provider-backed production acceptance.
 
 ### Gaps
@@ -185,6 +186,7 @@ Harden A-share trading-calendar freshness production gate
 - `failure_mode_qa_contract.status=failure_mode_qa_ready_provider_acceptance_pending` proves failure modes are distinguishable in local call ledger rows; it does not prove real provider coverage or production acceptance.
 - `request_parameter_qa_contract.status=request_parameter_qa_ready_provider_acceptance_pending` proves local parameter contracts are visible and secret-safe; it does not prove that each interface has correct real provider windows.
 - `provider_target_sample_plan_contract.status=local_plan_ready_provider_execution_pending` proves the target sample acceptance plan is explicit; it does not execute Tushare or prove provider-backed samples.
+- `provider_acceptance_promotion_audit.status=provider_acceptance_promotion_pending` is expected until prior full-interface provider evidence is explicit; fake adapter, matrix-only rows, local QA, target sample plans, and readiness audits cannot promote acceptance by themselves.
 - The local Tushare acceptance push-gate contract is not a provider run; it only blocks regressions in button gating, matrix semantics, call-ledger requirements, pending provider acceptance flags, and no-trade/no-action boundaries.
 
 ### Implementation Phases
@@ -203,6 +205,7 @@ Harden A-share trading-calendar freshness production gate
 - `api_acceptance_audit.status=acceptance_audit_passed` only means call-ledger semantics are safe; `full_interface_acceptance_done` must remain false until all declared APIs are selected and provider-validated.
 - `failure_mode_qa_contract` shows observed vs ready-not-observed failure modes without raw provider errors, stack traces, token, or key material.
 - `request_parameter_qa_contract` shows declared params, provided safe params, missing required preflight params, date context fields, alias handling, and provider acceptance requirements without storing token/key material.
+- `provider_acceptance_promotion_audit` shows whether prior evidence is strong enough to promote provider-backed acceptance, while the audit itself remains local/read-only and never calls Tushare.
 - `provider_target_sample_plan_contract` shows each target domain's required APIs, sample window, request context, success evidence, failure evidence, and ready/pending/blocker state without calling provider APIs.
 - `provider_acceptance_readiness_audit.provider_backed_acceptance_done=false` and `production_tushare_pipeline_complete=false` until real provider-backed full-interface acceptance is explicitly proven.
 - `scripts/tushare_acceptance_contract.py` passes in the push gate while still reporting `provider_backed_acceptance_done=false`, `production_tushare_pipeline_complete=false`, and `full_interface_acceptance_done=false`.

@@ -75,6 +75,7 @@ export default function FactorQuantHub() {
   const tushareFailureModeQa = packet.failure_mode_qa_contract ?? {};
   const tushareRequestParameterQa = packet.request_parameter_qa_contract ?? {};
   const tushareProviderTargetSamplePlan = packet.provider_target_sample_plan_contract ?? {};
+  const tushareProviderPromotionAudit = packet.provider_acceptance_promotion_audit ?? {};
   const dataLedger = packet.data_ledger ?? {};
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
@@ -117,6 +118,8 @@ export default function FactorQuantHub() {
   const tushareRequestParameterCriterionRows = toRows(packet.request_parameter_qa_rows);
   const tushareProviderTargetSamplePlanRows = objectRows(tushareProviderTargetSamplePlan as Record<string, unknown>, "target_sample_plan");
   const tushareProviderTargetSamplePlanCriterionRows = toRows(packet.provider_target_sample_plan_rows);
+  const tushareProviderPromotionAuditRows = objectRows(tushareProviderPromotionAudit as Record<string, unknown>, "provider_promotion_audit");
+  const tushareProviderPromotionCriterionRows = toRows(packet.provider_acceptance_promotion_rows);
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
@@ -257,7 +260,10 @@ export default function FactorQuantHub() {
           { label: "param unsafe rows", value: tushareRequestParameterQa.unsafe_request_param_api_count ?? 0, tone: Number(tushareRequestParameterQa.unsafe_request_param_api_count ?? 0) > 0 ? "bad" : "good" },
           { label: "Tushare sample plan", value: tushareProviderTargetSamplePlan.status ?? "missing", tone: tushareProviderTargetSamplePlan.provider_backed_acceptance_done === true ? "good" : "warn" },
           { label: "sample plan ready", value: tushareProviderTargetSamplePlan.ready_to_execute_target_count ?? 0, tone: Number(tushareProviderTargetSamplePlan.ready_to_execute_target_count ?? 0) > 0 ? "warn" : "neutral" },
-          { label: "sample plan pending", value: tushareProviderTargetSamplePlan.pending_or_blocked_target_count ?? 0, tone: Number(tushareProviderTargetSamplePlan.pending_or_blocked_target_count ?? 0) > 0 ? "warn" : "good" }
+          { label: "sample plan pending", value: tushareProviderTargetSamplePlan.pending_or_blocked_target_count ?? 0, tone: Number(tushareProviderTargetSamplePlan.pending_or_blocked_target_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "Tushare promotion", value: tushareProviderPromotionAudit.status ?? "missing", tone: tushareProviderPromotionAudit.promotion_ready === true ? "good" : "warn" },
+          { label: "promotion blockers", value: tushareProviderPromotionAudit.blocking_criterion_count ?? 0, tone: Number(tushareProviderPromotionAudit.blocking_criterion_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "provider evidence rows", value: tushareProviderPromotionAudit.provider_evidence_row_count ?? 0, tone: Number(tushareProviderPromotionAudit.provider_evidence_row_count ?? 0) > 0 ? "warn" : "neutral" }
         ]}
       />
       <EChartPanel option={option} />
@@ -394,6 +400,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">provider_target_sample_plan_contract 只声明后续真实验收的目标域、必选接口、样本窗口、成功证据和失败证据；ready_to_execute_provider_sample 也只是计划就绪，不等于 provider-backed acceptance。</p>
       <DataLineageTable rows={tushareProviderTargetSamplePlanCriterionRows} />
       <DataLineageTable rows={tushareProviderTargetSamplePlanRows} />
+      <h3>Tushare provider 验收提升审计</h3>
+      <p className="risk-note">provider_acceptance_promotion_audit 只读按钮任务已有 call_ledger；matrix、local QA、fake adapter 样本和 readiness audit 都不能单独提升 provider-backed 全接口验收。</p>
+      <DataLineageTable rows={tushareProviderPromotionCriterionRows} />
+      <DataLineageTable rows={tushareProviderPromotionAuditRows} />
       <h3>次日图谱桥接</h3>
       <DataLineageTable rows={bridgeRows} />
       <h3>研究上下文</h3>

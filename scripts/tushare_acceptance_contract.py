@@ -29,6 +29,7 @@ CONTRACT_KEYS = [
     "request_parameter_qa_contract",
     "provider_target_sample_plan_contract",
     "provider_acceptance_readiness_audit",
+    "provider_acceptance_promotion_audit",
 ]
 
 
@@ -76,6 +77,14 @@ def build_contract() -> dict[str, Any]:
         api_validation_rows=validation_rows,
         validation_target_rows=validation_target_rows,
         api_acceptance_audit=acceptance_audit,
+    )
+    provider_promotion = tushare_task_service._provider_acceptance_promotion_audit(
+        api_validation_rows=validation_rows,
+        validation_target_rows=validation_target_rows,
+        api_acceptance_audit=acceptance_audit,
+        provider_target_sample_plan_contract=target_sample_plan,
+        provider_acceptance_readiness_audit=provider_readiness,
+        call_ledger=call_ledger,
     )
 
     refresh_catalog = _catalog_by_type("refresh_tushare_facts")
@@ -217,6 +226,27 @@ def build_contract() -> dict[str, Any]:
             "Provider readiness must remain pending until explicit real-provider full-interface samples are proven.",
         ),
         _row(
+            "provider_promotion_audit_stays_local_pending",
+            provider_promotion.get("schema_version") == "tushare_provider_acceptance_promotion_audit.v1"
+            and provider_promotion.get("scope") == "local_call_ledger_promotion_audit_no_provider_execution"
+            and provider_promotion.get("status") == "provider_acceptance_promotion_pending"
+            and provider_promotion.get("promotion_ready") is False
+            and provider_promotion.get("provider_backed_acceptance_done") is False
+            and provider_promotion.get("production_tushare_pipeline_complete") is False
+            and int(provider_promotion.get("blocking_criterion_count") or 0) > 0
+            and _flag_false(
+                provider_promotion,
+                "cache_get_external_calls",
+                "audit_external_calls_triggered",
+                "tushare_called_by_audit",
+                "deepseek_called",
+                "github_called",
+            )
+            and provider_promotion.get("does_not_execute_trades") is True
+            and provider_promotion.get("does_not_modify_strategy_action") is True,
+            "Provider promotion audit must stay local/read-only and cannot promote matrix/local QA into provider-backed acceptance.",
+        ),
+        _row(
             "target_groups_matrix_only",
             len(target_matrix_only_rows) == len(tushare_task_service.VALIDATION_TARGET_GROUPS)
             and all(row.get("does_not_claim_unselected_apis_verified") is True for row in target_matrix_only_rows)
@@ -284,6 +314,8 @@ def build_contract() -> dict[str, Any]:
             "parquet_enabled_apis": parquet_apis,
             "provider_readiness_status": provider_readiness.get("status"),
             "provider_readiness_blocker_count": provider_readiness.get("production_blocker_count"),
+            "provider_promotion_status": provider_promotion.get("status"),
+            "provider_promotion_blocker_count": provider_promotion.get("blocking_criterion_count"),
             "target_sample_plan_ready_count": target_sample_plan.get("ready_to_execute_target_count"),
             "target_sample_plan_pending_count": target_sample_plan.get("pending_or_blocked_target_count"),
         },

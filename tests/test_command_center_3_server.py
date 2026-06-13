@@ -4209,10 +4209,26 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(readiness_rows["provider_backed_acceptance_evidence"]["status"], "blocked")
         self.assertEqual(readiness_rows["safe_params_errors_and_parquet_scope"]["status"], "passed")
         self.assertEqual(readiness_rows["trade_and_action_boundary"]["status"], "passed")
+        promotion = persisted["provider_acceptance_promotion_audit"]
+        promotion_rows = {row["criterion"]: row for row in persisted["provider_acceptance_promotion_rows"]}
+        self.assertEqual(promotion["schema_version"], "tushare_provider_acceptance_promotion_audit.v1")
+        self.assertEqual(promotion["status"], "provider_acceptance_promotion_pending")
+        self.assertEqual(promotion["scope"], "local_call_ledger_promotion_audit_no_provider_execution")
+        self.assertFalse(promotion["promotion_ready"])
+        self.assertFalse(promotion["provider_backed_acceptance_done"])
+        self.assertFalse(promotion["production_tushare_pipeline_complete"])
+        self.assertFalse(promotion["audit_external_calls_triggered"])
+        self.assertFalse(promotion["tushare_called_by_audit"])
+        self.assertEqual(promotion_rows["explicit_provider_backed_acceptance_marker"]["status"], "blocked")
+        self.assertEqual(promotion_rows["failure_mode_acceptance_evidence"]["status"], "blocked")
+        self.assertEqual(promotion_rows["readiness_audit_still_local"]["status"], "passed")
         self.assertEqual(
             persisted["api_validation_matrix_policy"]["provider_acceptance_readiness_scope"],
             "provider_acceptance_readiness_audit 只汇总生产验收阻断项；不把 fake/local/matrix 证据当 provider-backed acceptance。",
         )
+        self.assertIn("provider_acceptance_promotion_scope", persisted["api_validation_matrix_policy"])
+        self.assertFalse(persisted["api_validation_matrix_policy"]["provider_acceptance_promotion_ready"])
+        self.assertFalse(persisted["api_validation_matrix_policy"]["provider_acceptance_promotion_calls_provider"])
         self.assertFalse(persisted["api_validation_matrix_policy"]["provider_backed_acceptance_done"])
         self.assertFalse(persisted["api_validation_matrix_policy"]["production_tushare_pipeline_complete"])
         audit = persisted["api_acceptance_audit"]
@@ -4262,6 +4278,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(sample_plan_rows["chip_distribution"]["provider_sample_plan_status"], "blocked_missing_required_params")
         self.assertGreater(sample_plan_rows["hard_risk"]["missing_required_param_api_count"], 0)
         self.assertEqual(sample_plan_rows["hard_risk"]["provider_sample_acceptance_status"], "provider_execution_pending")
+        self.assertEqual(persisted["provider_acceptance_promotion_status"], "provider_acceptance_promotion_pending")
+        self.assertGreater(persisted["provider_acceptance_promotion_blocker_count"], 0)
+        self.assertFalse(persisted["provider_acceptance_promotion_ready"])
 
     def test_tushare_acceptance_audit_requires_non_empty_success_for_full_interface_completion(self):
         call_ledger = []
@@ -4293,6 +4312,81 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(audit["acceptance_issue_count"], 0)
         self.assertFalse(audit["full_interface_acceptance_done"])
         self.assertIn("non-empty successful samples", audit["full_interface_acceptance_scope"])
+
+    def test_tushare_provider_acceptance_promotion_audit_can_read_prior_full_interface_evidence(self):
+        selected_apis = list(tushare_task_service.REFRESH_API_SPECS)
+        call_ledger = []
+        for index, api in enumerate(selected_apis):
+            dataset = tushare_task_service.REFRESH_API_SPECS[api].get("parquet_dataset")
+            call_ledger.append(
+                {
+                    "api": api,
+                    "request_params_safe": {
+                        "ts_code": "002008.SZ",
+                        "trade_date": "20260610",
+                        "start_date": "20260601",
+                        "end_date": "20260610",
+                    },
+                    "row_count": 1,
+                    "data_date": "20260610",
+                    "local_fetched_at": "2026-06-10T16:31:00",
+                    "call_status": "success",
+                    "error_message_safe": "",
+                    "parquet_status": "written" if dataset else "not_enabled",
+                    "parquet_row_count": 1 if dataset else 0,
+                    "external_calls_triggered": True,
+                    "tushare_called": True,
+                    "failure_mode_acceptance_done": index == 0,
+                    "failure_mode_validated_count": 6 if index == 0 else 0,
+                    "provider_acceptance_marker": "provider_backed_full_interface_acceptance" if index == 0 else "",
+                }
+            )
+
+        payload = {
+            "ts_code": "002008.SZ",
+            "trade_date": "20260610",
+            "start_date": "20260601",
+            "end_date": "20260610",
+            "ann_date": "20260610",
+            "period": "20260630",
+            "apis": selected_apis,
+        }
+        validation_rows = tushare_task_service._api_validation_rows(selected_apis, call_ledger)
+        validation_target_rows = tushare_task_service._validation_target_rows(validation_rows)
+        acceptance_audit = tushare_task_service._api_acceptance_audit(validation_rows, call_ledger)
+        target_sample_plan = tushare_task_service._provider_target_sample_plan_contract(
+            selected_apis=selected_apis,
+            payload=payload,
+            api_validation_rows=validation_rows,
+        )
+        readiness = tushare_task_service._provider_acceptance_readiness_audit(
+            api_validation_rows=validation_rows,
+            validation_target_rows=validation_target_rows,
+            api_acceptance_audit=acceptance_audit,
+        )
+        promotion = tushare_task_service._provider_acceptance_promotion_audit(
+            api_validation_rows=validation_rows,
+            validation_target_rows=validation_target_rows,
+            api_acceptance_audit=acceptance_audit,
+            provider_target_sample_plan_contract=target_sample_plan,
+            provider_acceptance_readiness_audit=readiness,
+            call_ledger=call_ledger,
+        )
+        rows = {row["criterion"]: row for row in promotion["rows"]}
+
+        self.assertEqual(promotion["schema_version"], "tushare_provider_acceptance_promotion_audit.v1")
+        self.assertEqual(promotion["status"], "provider_acceptance_promotion_ready")
+        self.assertTrue(promotion["promotion_ready"])
+        self.assertTrue(promotion["provider_backed_acceptance_done"])
+        self.assertFalse(promotion["production_tushare_pipeline_complete"])
+        self.assertEqual(promotion["blocking_criterion_count"], 0)
+        self.assertFalse(promotion["audit_external_calls_triggered"])
+        self.assertFalse(promotion["tushare_called_by_audit"])
+        self.assertTrue(rows["all_declared_apis_selected"]["passed"])
+        self.assertTrue(rows["all_declared_apis_success_non_empty"]["passed"])
+        self.assertTrue(rows["all_target_groups_validated"]["passed"])
+        self.assertTrue(rows["explicit_provider_backed_acceptance_marker"]["passed"])
+        self.assertTrue(rows["failure_mode_acceptance_evidence"]["passed"])
 
     def test_tushare_refresh_task_exposes_failure_mode_qa_contract(self):
         db_path = self._with_meta_store()
@@ -4830,6 +4924,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("matrix_only_rows_not_verified", script)
         self.assertIn("target_sample_plan_is_plan_only", script)
         self.assertIn("provider_readiness_stays_pending", script)
+        self.assertIn("provider_promotion_audit_stays_local_pending", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -4863,11 +4958,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("trade_cal", payload["observed"]["calendar_apis"])
         self.assertIn("trade_cal", payload["observed"]["parquet_enabled_apis"])
         self.assertEqual(payload["observed"]["provider_readiness_status"], "provider_acceptance_pending")
+        self.assertEqual(payload["observed"]["provider_promotion_status"], "provider_acceptance_promotion_pending")
+        self.assertGreater(payload["observed"]["provider_promotion_blocker_count"], 0)
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("post_task_catalog_button_gate", criteria)
         self.assertIn("api_acceptance_audit_is_semantic_only", criteria)
         self.assertIn("target_sample_plan_is_plan_only", criteria)
         self.assertIn("provider_readiness_stays_pending", criteria)
+        self.assertIn("provider_promotion_audit_stays_local_pending", criteria)
 
     def test_factor_test_lab_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/factor_test_lab_contract.py")
