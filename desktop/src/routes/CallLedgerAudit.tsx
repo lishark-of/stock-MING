@@ -51,6 +51,8 @@ export default function CallLedgerAudit() {
   const motionBrowserQaEvidenceRows = rows(cache.motion_browser_qa_evidence_rows);
   const motionBrowserQaReview = (cache.motion_browser_qa_review_contract as Record<string, unknown> | undefined) ?? {};
   const motionBrowserQaReviewRows = rows(cache.motion_browser_qa_review_rows);
+  const motionProductionActivation = (cache.motion_production_activation_receipt as Record<string, unknown> | undefined) ?? {};
+  const motionProductionActivationRows = rows(cache.motion_production_activation_rows);
   const parameterizedRoutes = rows(getRouteCoverage.parameterized_local_routes);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const callLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
@@ -133,6 +135,9 @@ export default function CallLedgerAudit() {
           { label: "review blockers", value: counts.motion_browser_qa_review_blocking_count as number | undefined, tone: Number(counts.motion_browser_qa_review_blocking_count ?? 0) > 0 ? "warn" : "good" },
           { label: "browser reports", value: counts.motion_browser_qa_evidence_report_count as number | undefined },
           { label: "reduced pass", value: counts.motion_browser_qa_reduced_motion_passed === true ? "yes" : "pending", tone: counts.motion_browser_qa_reduced_motion_passed === true ? "good" : "warn" },
+          { label: "motion activation", value: motionProductionActivation.status as string | undefined, tone: motionProductionActivation.local_activation_receipt_ready === true ? "good" : "warn" },
+          { label: "activation blockers", value: counts.motion_activation_production_blocker_count as number | undefined, tone: Number(counts.motion_activation_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "activation evidence", value: counts.motion_activation_missing_evidence_count as number | undefined, tone: Number(counts.motion_activation_missing_evidence_count ?? 0) > 0 ? "warn" : "good" },
           { label: "audit envelope ledger", value: callLedger.length },
           { label: "audit warnings", value: cacheWarnings.length },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
@@ -320,6 +325,19 @@ export default function CallLedgerAudit() {
         <p>Motion browser QA review 不运行浏览器、不写 artifact、不提交截图；即使本地审查 ready，也不能解除 CI evidence、browser visual promotion、performance promotion 或 production motion completion 阻断项。</p>
         <DataLineageTable rows={[motionBrowserQaReview]} />
         <DataLineageTable rows={motionBrowserQaReviewRows} />
+      </PacketCard>
+
+      <PacketCard title="Motion production activation receipt" subtitle="motion_production_activation_receipt：串联 LTG-14 下一步验收路径，不运行浏览器、不创建 CI 证据" status={String(motionProductionActivation.status ?? "missing")}>
+        <p>scope: {String(motionProductionActivation.scope ?? "local_motion_activation_receipt_no_browser_execution_or_external_call")}</p>
+        <p>design_target: {String(motionProductionActivation.design_target ?? "apple_keynote_grade_clarity_restrained_motion")}</p>
+        <p>local_activation_receipt_ready: {String(motionProductionActivation.local_activation_receipt_ready === true)}</p>
+        <p>allowed_next_step: {String(motionProductionActivation.allowed_next_step ?? "explicit_local_motion_browser_qa_runner_then_button_review_then_durable_visual_performance_promotion")}</p>
+        <p>production_motion_complete: {String(motionProductionActivation.production_motion_complete === true)}</p>
+        <p>visual_qa_complete: {String(motionProductionActivation.visual_qa_complete === true)}；browser_performance_verified: {String(motionProductionActivation.browser_performance_verified === true)}；durable_ci_evidence_complete: {String(motionProductionActivation.durable_ci_evidence_complete === true)}</p>
+        <p>production_blocker_count: {String(motionProductionActivation.production_blocker_count ?? 0)}；missing_evidence_count: {String(motionProductionActivation.missing_evidence_count ?? 0)}</p>
+        <p>该收据只把本地 runner、按钮 review、视觉推广、性能推广和 durable CI evidence 排成下一步；不能把静态合同、本地 ignored 报告或审查按钮误称为生产动效完成。</p>
+        <DataLineageTable rows={[motionProductionActivation]} />
+        <DataLineageTable rows={motionProductionActivationRows} />
       </PacketCard>
 
       <div className="grid">
