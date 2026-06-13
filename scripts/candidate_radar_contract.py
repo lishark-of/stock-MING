@@ -116,6 +116,7 @@ def build_contract() -> dict[str, Any]:
         if isinstance(row, dict)
     }
     result_delta = _dict(cache_packet.get("result_delta_clarity_contract"))
+    priority_explanation = _dict(cache_packet.get("candidate_priority_explanation_contract"))
     policy = _dict(cache_packet.get("policy"))
     task_rows = _task_catalog_rows()
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
@@ -217,6 +218,30 @@ def build_contract() -> dict[str, Any]:
             and result_delta.get("does_not_execute_trades") is True
             and result_delta.get("does_not_modify_strategy_action") is True,
             "Result-delta clarity may be locally ready; browser visual delta QA and production replacement must remain pending.",
+        ),
+        _row(
+            "priority_explanation_is_local_not_trade_signal",
+            priority_explanation.get("schema_version") == "candidate_radar_priority_explanation.v1"
+            and priority_explanation.get("scope") == "local_cache_rank_explanation_not_rescore_or_trade_signal"
+            and priority_explanation.get("status")
+            in {"candidate_priority_explanation_ready", "candidate_priority_explanation_empty"}
+            and priority_explanation.get("cached_rank_preserved") is True
+            and priority_explanation.get("cached_score_preserved") is True
+            and priority_explanation.get("uses_existing_rank_only") is True
+            and priority_explanation.get("uses_existing_score_only") is True
+            and priority_explanation.get("does_not_recompute_score") is True
+            and priority_explanation.get("does_not_sort_candidates") is True
+            and priority_explanation.get("does_not_calculate_action") is True
+            and priority_explanation.get("priority_explanation_is_not_trade_signal") is True
+            and priority_explanation.get("production_radar_replacement_complete") is False
+            and policy.get("candidate_priority_explanation_contract_is_local") is True
+            and policy.get("candidate_priority_explanation_uses_existing_rank_only") is True
+            and policy.get("candidate_priority_explanation_uses_existing_score_only") is True
+            and policy.get("candidate_priority_explanation_is_not_trade_signal") is True
+            and _flag_false(priority_explanation, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and priority_explanation.get("does_not_execute_trades") is True
+            and priority_explanation.get("does_not_modify_strategy_action") is True,
+            "Candidate priority explanations must only explain existing cache rank/score; they must not rescore, reorder, call providers, or become trade signals.",
         ),
         _row(
             "full_pool_plan_is_plan_only",
@@ -350,6 +375,8 @@ def build_contract() -> dict[str, Any]:
             "replacement_gap_status": triage.get("status"),
             "replacement_gap_blocking_count": triage.get("blocking_gap_count"),
             "result_delta_status": result_delta.get("status"),
+            "priority_explanation_status": priority_explanation.get("status"),
+            "priority_explanation_gap_count": priority_explanation.get("explanation_gap_count"),
             "full_pool_plan_blocker_count": full_pool_plan.get("blocking_issue_count"),
             "deep_scan_plan_blocker_count": deep_scan_plan.get("blocking_issue_count"),
         },

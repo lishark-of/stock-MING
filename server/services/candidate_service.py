@@ -23,6 +23,7 @@ LOCAL_POOL_SCAN_MODES = {"watchlist_scan", "custom_pool_scan"}
 FAST_SCAN_DISPLAY_CANDIDATE_LIMIT = 120
 FAST_SCAN_LOCAL_POOL_INPUT_LIMIT = 50
 FAST_SCAN_WORKER_REQUIRED_UNIVERSE_THRESHOLD = 500
+PRIORITY_EXPLANATION_LIMIT = 30
 SAFE_LIST_LIMIT = 200
 SENSITIVE_KEY_PARTS = ("secret", "token", "api_key", "apikey", "password", "passwd", "credential", "authorization")
 SENSITIVE_TEXT_MARKERS = ("traceback", "api_key", "apikey", "authorization:", "bearer ", "token=", "secret=", "password=")
@@ -611,6 +612,127 @@ def _candidate_counts(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "ready_count": ready,
         "observe_count": observe,
         "verify_count": verify,
+    }
+
+
+def _candidate_data_gap_count(row: Mapping[str, Any]) -> int:
+    value = row.get("data_gaps")
+    if isinstance(value, list):
+        return len([item for item in value if item not in (None, "", [], {})])
+    if value in (None, "", [], {}):
+        return 0
+    return 1
+
+
+def _candidate_priority_bucket(row: Mapping[str, Any], gap_count: int) -> str:
+    action_text = str(row.get("action_state") or row.get("status_label") or row.get("tone") or "")
+    if gap_count:
+        return "gap_first_review"
+    if "验证" in action_text:
+        return "verification_required"
+    if "观察" in action_text:
+        return "observe_only"
+    if str(row.get("score") or "").strip():
+        return "ranked_cache_candidate"
+    return "manual_review_required"
+
+
+def _candidate_explanation_missing_fields(row: Mapping[str, Any]) -> list[str]:
+    required_fields = [
+        "rank",
+        "ticker",
+        "score",
+        "evidence_chain_summary",
+        "trigger_condition",
+        "invalidation_condition",
+        "data_gaps",
+        "action_state",
+    ]
+    return [field for field in required_fields if row.get(field) in (None, "", [], {})]
+
+
+def _candidate_priority_explanation_contract(
+    candidate_rows: list[dict[str, Any]],
+    *,
+    scan_mode: str,
+    coverage: Mapping[str, Any],
+) -> dict[str, Any]:
+    freshness_state = _as_dict(coverage.get("freshness_state"))
+    rows: list[dict[str, Any]] = []
+    for index, row in enumerate(candidate_rows[:PRIORITY_EXPLANATION_LIMIT], start=1):
+        gap_count = _candidate_data_gap_count(row)
+        missing_fields = _candidate_explanation_missing_fields(row)
+        explanation_status = (
+            "gap_visible"
+            if gap_count
+            else "partial_cache_explanation"
+            if missing_fields
+            else "complete_cache_explanation"
+        )
+        rows.append(
+            {
+                "display_rank": row.get("rank") or index,
+                "ticker": row.get("ticker"),
+                "name": row.get("name"),
+                "cached_score": row.get("score"),
+                "priority_bucket": _candidate_priority_bucket(row, gap_count),
+                "explanation_status": explanation_status,
+                "rank_source": "existing_candidate_rows_order",
+                "score_source": "existing_cache_score_preserved" if row.get("score") not in (None, "") else "score_missing",
+                "action_state": row.get("action_state"),
+                "status_label": row.get("status_label"),
+                "evidence_summary_present": row.get("evidence_chain_summary") not in (None, "", [], {}),
+                "trigger_condition_present": row.get("trigger_condition") not in (None, "", [], {}),
+                "invalidation_condition_present": row.get("invalidation_condition") not in (None, "", [], {}),
+                "data_gap_count": gap_count,
+                "missing_explanation_fields": missing_fields,
+                "manual_review_required": True,
+                "uses_existing_rank_only": True,
+                "uses_existing_score_only": True,
+                "does_not_recompute_score": True,
+                "does_not_sort_candidates": True,
+                "candidate_is_not_buy_instruction": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_execute_trades": True,
+            }
+        )
+    explanation_gap_count = sum(1 for row in rows if row["explanation_status"] != "complete_cache_explanation")
+    data_gap_visible_count = sum(1 for row in rows if int(row.get("data_gap_count") or 0) > 0)
+    missing_score_count = sum(1 for row in rows if row["score_source"] == "score_missing")
+    return {
+        "schema_version": "candidate_radar_priority_explanation.v1",
+        "status": "candidate_priority_explanation_ready" if rows else "candidate_priority_explanation_empty",
+        "scope": "local_cache_rank_explanation_not_rescore_or_trade_signal",
+        "scan_mode": scan_mode,
+        "row_limit": PRIORITY_EXPLANATION_LIMIT,
+        "candidate_row_count": len(candidate_rows),
+        "explained_candidate_count": len(rows),
+        "explanation_gap_count": explanation_gap_count,
+        "data_gap_visible_count": data_gap_visible_count,
+        "missing_score_count": missing_score_count,
+        "freshness_state": freshness_state.get("state") or "unknown",
+        "freshness_source": freshness_state.get("source") or "missing",
+        "sort_order_source": "existing_candidate_rows_order",
+        "cached_rank_preserved": True,
+        "cached_score_preserved": True,
+        "uses_existing_rank_only": True,
+        "uses_existing_score_only": True,
+        "does_not_recompute_score": True,
+        "does_not_sort_candidates": True,
+        "does_not_calculate_action": True,
+        "manual_review_required": True,
+        "priority_explanation_is_not_trade_signal": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "production_radar_replacement_complete": False,
+        "row_count": len(rows),
+        "rows": rows,
+        "note": "This contract explains visible cached candidate rank/score and missing evidence fields. It does not rescore, reorder, refresh providers, call models, or create trading instructions.",
     }
 
 
@@ -3400,6 +3522,11 @@ def _build_candidate_radar_packet(
         deep_scan_plan=deep_plan,
         previous_packet=previous_packet,
     )
+    candidate_priority_explanation_contract = _candidate_priority_explanation_contract(
+        candidate_rows,
+        scan_mode=scan_mode,
+        coverage=coverage,
+    )
     if plan:
         counts["full_pool_plan_blocking_issue_count"] = plan.get("blocking_issue_count")
         counts["full_pool_plan_ready_signal_group_count"] = plan.get("ready_signal_group_count")
@@ -3420,6 +3547,10 @@ def _build_candidate_radar_packet(
     counts["result_delta_removed_count"] = result_delta_clarity_contract["candidate_removed_count"]
     counts["result_delta_rank_changed_count"] = result_delta_clarity_contract["candidate_rank_changed_count"]
     counts["result_delta_score_changed_count"] = result_delta_clarity_contract["candidate_score_changed_count"]
+    counts["priority_explanation_row_count"] = candidate_priority_explanation_contract["row_count"]
+    counts["priority_explanation_gap_count"] = candidate_priority_explanation_contract["explanation_gap_count"]
+    counts["priority_explanation_data_gap_visible_count"] = candidate_priority_explanation_contract["data_gap_visible_count"]
+    counts["priority_explanation_missing_score_count"] = candidate_priority_explanation_contract["missing_score_count"]
 
     if candidate_rows:
         status = "ready"
@@ -3469,6 +3600,8 @@ def _build_candidate_radar_packet(
         "result_delta_clarity_contract": result_delta_clarity_contract,
         "result_delta_clarity_rows": result_delta_clarity_contract["rows"],
         "previous_cache_diff_rows": result_delta_clarity_contract["previous_cache_diff_rows"],
+        "candidate_priority_explanation_contract": candidate_priority_explanation_contract,
+        "candidate_priority_explanation_rows": candidate_priority_explanation_contract["rows"],
         "provider_coverage_rows": coverage["provider_coverage_rows"],
         "degraded_mode_rows": coverage["degraded_mode_rows"],
         "local_candidate_pool_audit": dict(local_pool_audit or _as_dict(snapshot_map.get("local_candidate_pool_audit"))),
@@ -3553,6 +3686,10 @@ def _build_candidate_radar_packet(
             "result_delta_clarity_previous_cache_diff_is_local": bool(result_delta_clarity_contract["previous_cache_diff_done"]),
             "result_delta_clarity_is_not_previous_cache_diff": not bool(result_delta_clarity_contract["previous_cache_diff_done"]),
             "result_delta_clarity_is_not_browser_visual_qa": True,
+            "candidate_priority_explanation_contract_is_local": True,
+            "candidate_priority_explanation_uses_existing_rank_only": True,
+            "candidate_priority_explanation_uses_existing_score_only": True,
+            "candidate_priority_explanation_is_not_trade_signal": True,
         },
         "call_ledger": [
             _candidate_call_ledger_row(

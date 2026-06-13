@@ -76,6 +76,7 @@ export default function CandidateRadar() {
   const noFeatureLossAcceptance = (cache.no_feature_loss_acceptance_contract as Record<string, unknown> | undefined) ?? {};
   const replacementGapTriage = (cache.replacement_gap_triage_contract as Record<string, unknown> | undefined) ?? {};
   const resultDeltaClarity = (cache.result_delta_clarity_contract as Record<string, unknown> | undefined) ?? {};
+  const candidatePriorityExplanation = (cache.candidate_priority_explanation_contract as Record<string, unknown> | undefined) ?? {};
   const browserQaRunbook = (cache.candidate_browser_qa_runbook_contract as Record<string, unknown> | undefined) ?? {};
   const freshnessState = (cache.freshness_state as Record<string, unknown> | undefined) ?? {};
   const fullPoolPlan = (cache.full_pool_scan_plan as Record<string, unknown> | undefined) ?? {};
@@ -99,6 +100,7 @@ export default function CandidateRadar() {
   const replacementGapTriageRows = rows(cache.replacement_gap_triage_rows);
   const resultDeltaClarityRows = rows(cache.result_delta_clarity_rows);
   const previousCacheDiffRows = rows(cache.previous_cache_diff_rows);
+  const candidatePriorityExplanationRows = rows(cache.candidate_priority_explanation_rows);
   const browserQaRunbookRows = rows(cache.candidate_browser_qa_runbook_rows);
   const browserQaMatrixRows = rows(cache.candidate_browser_qa_matrix_rows);
   const providerCoverageRows = rows(cache.provider_coverage_rows);
@@ -154,6 +156,9 @@ export default function CandidateRadar() {
           { label: "added", value: counts.result_delta_added_count as number | undefined },
           { label: "removed", value: counts.result_delta_removed_count as number | undefined },
           { label: "rank delta", value: counts.result_delta_rank_changed_count as number | undefined },
+          { label: "priority explain", value: String(candidatePriorityExplanation.status ?? "missing"), tone: candidatePriorityExplanation.priority_explanation_is_not_trade_signal === true ? "good" : "warn" },
+          { label: "explain gaps", value: counts.priority_explanation_gap_count as number | undefined, tone: Number(counts.priority_explanation_gap_count ?? 0) ? "warn" : "good" },
+          { label: "data-gap visible", value: counts.priority_explanation_data_gap_visible_count as number | undefined, tone: Number(counts.priority_explanation_data_gap_visible_count ?? 0) ? "warn" : "good" },
           { label: "full replacement", value: fastScanReadinessAudit.production_radar_replacement_complete === true ? "完成" : "未完成", tone: fastScanReadinessAudit.production_radar_replacement_complete === true ? "bad" : "good" },
           { label: "universe", value: coverageDetail.universe_size as number | undefined },
           { label: "input rows", value: coverageDetail.candidate_input_count as number | undefined },
@@ -309,6 +314,15 @@ export default function CandidateRadar() {
         <DataLineageTable rows={objectRow(resultDeltaClarity)} />
         <DataLineageTable rows={resultDeltaClarityRows} />
         <DataLineageTable rows={previousCacheDiffRows} />
+      </PacketCard>
+
+      <PacketCard title="候选优先级说明" subtitle="candidate_priority_explanation_contract；只解释现有缓存排名，不重排、不打新分" status={String(candidatePriorityExplanation.status ?? "missing")}>
+        <p>sort_order_source: {String(candidatePriorityExplanation.sort_order_source ?? "existing_candidate_rows_order")}</p>
+        <p>explained_candidate_count: {String(candidatePriorityExplanation.explained_candidate_count ?? 0)}；explanation_gap_count: {String(candidatePriorityExplanation.explanation_gap_count ?? 0)}；data_gap_visible_count: {String(candidatePriorityExplanation.data_gap_visible_count ?? 0)}</p>
+        <p>uses_existing_rank_only: {String(candidatePriorityExplanation.uses_existing_rank_only === true)}；uses_existing_score_only: {String(candidatePriorityExplanation.uses_existing_score_only === true)}；priority_explanation_is_not_trade_signal: {String(candidatePriorityExplanation.priority_explanation_is_not_trade_signal === true)}</p>
+        <p>本面板只说明缓存里的 rank、score、证据摘要、触发/失效条件和 data_gaps；不会重新排序、不会计算 action、不会刷新 provider。</p>
+        <DataLineageTable rows={objectRow(candidatePriorityExplanation)} />
+        <DataLineageTable rows={candidatePriorityExplanationRows} />
       </PacketCard>
 
       <PacketCard title="候选雷达浏览器 QA 手册" subtitle="candidate_browser_qa_runbook_contract；复用本地 runner，不打开浏览器、不写 artifact" status={String(browserQaRunbook.status ?? "missing")}>

@@ -5253,6 +5253,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("candidate_is_not_buy_instruction", script)
         self.assertIn("no_feature_loss_is_local_not_replacement", script)
         self.assertIn("replacement_gap_triage_blocks_legacy_retirement", script)
+        self.assertIn("priority_explanation_is_local_not_trade_signal", script)
         self.assertIn("full_pool_plan_is_plan_only", script)
         self.assertIn("deep_scan_plan_is_plan_only", script)
         self.assertNotIn("requests", script)
@@ -5298,6 +5299,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["replacement_gap_status"],
             "replacement_gap_triage_local_ready_legacy_retirement_blocked",
         )
+        self.assertIn(
+            payload["observed"]["priority_explanation_status"],
+            {"candidate_priority_explanation_ready", "candidate_priority_explanation_empty"},
+        )
+        self.assertIsNotNone(payload["observed"]["priority_explanation_gap_count"])
         self.assertIsNotNone(payload["observed"]["full_pool_plan_blocker_count"])
         self.assertIsNotNone(payload["observed"]["deep_scan_plan_blocker_count"])
         criteria = {row["criterion"] for row in payload["rows"]}
@@ -5305,6 +5311,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("no_feature_loss_is_local_not_replacement", criteria)
         self.assertIn("replacement_gap_triage_blocks_legacy_retirement", criteria)
         self.assertIn("result_delta_clarity_is_local_not_visual_qa", criteria)
+        self.assertIn("priority_explanation_is_local_not_trade_signal", criteria)
         self.assertIn("full_pool_plan_is_plan_only", criteria)
         self.assertIn("deep_scan_plan_is_plan_only", criteria)
         self.assertIn("candidate_browser_qa_runbook_is_local_execution_pending", criteria)
@@ -8384,6 +8391,31 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(quick_fast_rows["button_task_receipt_contract"]["status"], "passed")
         self.assertEqual(quick_fast_rows["last_success_cache_visible"]["status"], "passed")
         self.assertEqual(quick_fast_rows["full_pool_boundary_plan_only"]["status"], "not_executed")
+        priority = packet["candidate_priority_explanation_contract"]
+        self.assertEqual(priority["schema_version"], "candidate_radar_priority_explanation.v1")
+        self.assertEqual(priority["scope"], "local_cache_rank_explanation_not_rescore_or_trade_signal")
+        self.assertEqual(priority["status"], "candidate_priority_explanation_ready")
+        self.assertEqual(priority["sort_order_source"], "existing_candidate_rows_order")
+        self.assertTrue(priority["cached_rank_preserved"])
+        self.assertTrue(priority["cached_score_preserved"])
+        self.assertTrue(priority["uses_existing_rank_only"])
+        self.assertTrue(priority["uses_existing_score_only"])
+        self.assertTrue(priority["does_not_recompute_score"])
+        self.assertTrue(priority["does_not_sort_candidates"])
+        self.assertTrue(priority["does_not_calculate_action"])
+        self.assertTrue(priority["priority_explanation_is_not_trade_signal"])
+        self.assertFalse(priority["production_radar_replacement_complete"])
+        priority_rows = packet["candidate_priority_explanation_rows"]
+        self.assertEqual(priority_rows[0]["ticker"], "002837.SZ")
+        self.assertEqual(priority_rows[0]["rank_source"], "existing_candidate_rows_order")
+        self.assertTrue(priority_rows[0]["uses_existing_rank_only"])
+        self.assertTrue(priority_rows[0]["uses_existing_score_only"])
+        self.assertTrue(priority_rows[0]["candidate_is_not_buy_instruction"])
+        self.assertTrue(packet["policy"]["candidate_priority_explanation_contract_is_local"])
+        self.assertTrue(packet["policy"]["candidate_priority_explanation_uses_existing_rank_only"])
+        self.assertTrue(packet["policy"]["candidate_priority_explanation_uses_existing_score_only"])
+        self.assertTrue(packet["policy"]["candidate_priority_explanation_is_not_trade_signal"])
+        self.assertGreaterEqual(packet["counts"]["priority_explanation_row_count"], 1)
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
