@@ -18,6 +18,7 @@ SCHEMA_VALIDATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_schema_validati
 PARTITION_MIGRATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_partition_migration_dry_run_packet"
 COMPACTION_DRY_RUN_PACKET_KEY = "command_center_3_storage_compaction_dry_run_packet"
 CACHE_TTL_DRY_RUN_PACKET_KEY = "command_center_3_storage_cache_ttl_dry_run_packet"
+STORAGE_PRODUCTION_BLOCKER_SCHEMA_VERSION = "command_center_3_storage_production_blocker_audit.v1"
 SUPPORTED_PARQUET_DATASETS = {
     "factor_values": "factor_values",
     "factor-values": "factor_values",
@@ -1835,6 +1836,149 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
     }
 
 
+def _storage_production_blocker_row(
+    criterion: str,
+    passed: bool,
+    *,
+    current_status: Any,
+    evidence: str,
+    next_action: str,
+    classification: str,
+    production_blocker: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": "passed" if passed else "blocked",
+        "passed": passed,
+        "current_status": current_status,
+        "evidence": evidence,
+        "next_action": next_action,
+        "classification": classification,
+        "production_blocker": production_blocker and not passed,
+    }
+
+
+def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    readiness = dict(production_readiness or storage_production_readiness())
+    dataset_count = int(readiness.get("schema_migration_dataset_count") or len(CANONICAL_PARQUET_DATASETS))
+    schema_validation_done = int(readiness.get("physical_schema_validation_done_count") or 0)
+    schema_migration_executed = int(readiness.get("schema_migration_executed_count") or 0)
+    version_validated = int(readiness.get("physical_dataset_version_validated_count") or 0)
+    version_migrations = int(readiness.get("dataset_version_migration_executed_count") or 0)
+    manifest_present = int(readiness.get("dataset_version_manifest_present_count") or 0)
+    compaction_executed = int(readiness.get("compaction_executed_count") or 0)
+    ttl_refresh_executed = int(readiness.get("cache_ttl_refresh_executed_count") or 0)
+    dependency_ready = str(readiness.get("status")) == "foundation_ready"
+    duckdb_ready = str(readiness.get("duckdb_query_service_status")) == "service_ready"
+    rows = [
+        _storage_production_blocker_row(
+            "schema_physical_validation_complete",
+            schema_validation_done >= dataset_count,
+            current_status=f"{schema_validation_done}/{dataset_count}",
+            evidence="schema validation dry-run is available, but full physical validation has not been completed for every canonical dataset.",
+            next_action="Run and review explicit schema validation tasks for all canonical datasets before production migration.",
+            classification="dry_run_or_preflight_not_production",
+        ),
+        _storage_production_blocker_row(
+            "schema_migration_executed",
+            schema_migration_executed >= dataset_count,
+            current_status=f"{schema_migration_executed}/{dataset_count}",
+            evidence="schema migration preflight exists, but physical schema migration execution count remains below dataset count.",
+            next_action="Add a separately approved physical schema migration task after validation is stable.",
+            classification="preflight_only",
+        ),
+        _storage_production_blocker_row(
+            "dataset_version_manifest_validated",
+            manifest_present >= dataset_count and version_validated >= dataset_count and version_migrations >= dataset_count,
+            current_status=f"manifest={manifest_present}/{dataset_count}; validated={version_validated}/{dataset_count}; migrated={version_migrations}/{dataset_count}",
+            evidence="dataset version policy is contract-only; GET cache does not write or validate _dataset_versions.json.",
+            next_action="Add explicit manifest writer and physical version validator tasks before claiming versioned production datasets.",
+            classification="policy_only_not_physical_proof",
+        ),
+        _storage_production_blocker_row(
+            "partition_migration_executed",
+            False,
+            current_status="dry_run_button_gated_only",
+            evidence="partition migration dry-run creates ready/blocked plans, but no physical partition writer is enabled.",
+            next_action="Review partition dry-run rows, then add a separate manual partition writer task if needed.",
+            classification="dry_run_only",
+        ),
+        _storage_production_blocker_row(
+            "physical_compaction_executed",
+            compaction_executed > 0,
+            current_status=compaction_executed,
+            evidence="compaction dry-run is available, but no physical Parquet rewrite or compaction task has executed.",
+            next_action="Keep compaction physical rewrite separate, explicit, and manually approved after dry-run review.",
+            classification="dry_run_only",
+        ),
+        _storage_production_blocker_row(
+            "cache_ttl_refresh_pipeline_executed",
+            ttl_refresh_executed > 0,
+            current_status=ttl_refresh_executed,
+            evidence="cache TTL dry-run records stale/fresh recommendations, but does not refresh providers or write Parquet.",
+            next_action="Add explicit provider refresh tasks after Tushare interface acceptance is complete.",
+            classification="dry_run_only_no_provider_refresh",
+        ),
+        _storage_production_blocker_row(
+            "duckdb_query_service_dependency_ready",
+            duckdb_ready,
+            current_status=readiness.get("duckdb_query_service_status"),
+            evidence="DuckDB query service must be available for production reads; dependency_missing remains a production blocker.",
+            next_action="Install/verify DuckDB dependency in the standard project environment before production packaging.",
+            classification="runtime_dependency",
+        ),
+        _storage_production_blocker_row(
+            "generated_data_artifacts_guarded",
+            readiness.get("artifact_hygiene_policy") == "path_only_manual_cleanup_no_delete_on_get",
+            current_status=readiness.get("artifact_hygiene_status"),
+            evidence="artifact hygiene is path-only and push gate blocks generated/data files from git; cleanup remains manual.",
+            next_action="Continue using push gate artifact scan and keep any real cleanup/delete operation separately approved.",
+            classification="guardrail_ready",
+            production_blocker=False,
+        ),
+        _storage_production_blocker_row(
+            "cache_get_remains_read_only",
+            readiness.get("external_calls_triggered") is False
+            and readiness.get("schema_validation_dry_run_writes_parquet") is False
+            and readiness.get("compaction_dry_run_writes_parquet") is False
+            and readiness.get("cache_ttl_dry_run_writes_parquet") is False,
+            current_status="cache_only_no_writes",
+            evidence="GET storage cache and dry-run policies do not write Parquet, refresh providers, or execute trades.",
+            next_action="Preserve GET cache read-only semantics while adding future explicit POST tasks.",
+            classification="guardrail_ready",
+            production_blocker=False,
+        ),
+    ]
+    blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
+    return {
+        "schema_version": STORAGE_PRODUCTION_BLOCKER_SCHEMA_VERSION,
+        "status": "storage_production_ready" if not blockers and dependency_ready else "storage_production_blocked",
+        "scope": "ltg_05_storage_duckdb_parquet_productionization",
+        "dataset_count": dataset_count,
+        "blocking_criterion_count": len(blockers),
+        "blockers": blockers,
+        "production_storage_complete": not blockers and dependency_ready,
+        "local_contracts_ready": readiness.get("status") in {"foundation_ready", "partial_dependency_missing"},
+        "dry_runs_are_not_production_completion": True,
+        "preflight_is_not_physical_migration": True,
+        "dataset_version_policy_is_not_manifest_validation": True,
+        "query_service_status": readiness.get("duckdb_query_service_status"),
+        "schema_validation_done_count": schema_validation_done,
+        "schema_migration_executed_count": schema_migration_executed,
+        "physical_dataset_version_validated_count": version_validated,
+        "dataset_version_migration_executed_count": version_migrations,
+        "compaction_executed_count": compaction_executed,
+        "cache_ttl_refresh_executed_count": ttl_refresh_executed,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "rows": rows,
+    }
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -1911,6 +2055,7 @@ def storage_dataset_catalog() -> dict[str, Any]:
     catalog = dataset_catalog()
     implementation_status = dataset_implementation_status()
     production_readiness = storage_production_readiness()
+    production_blocker_audit = storage_production_blocker_audit(production_readiness)
     artifact_hygiene = storage_artifact_hygiene_status()
     dataset_version_policy = storage_dataset_version_policy()
     schema_migration_preflight = storage_schema_migration_preflight()
@@ -1923,6 +2068,8 @@ def storage_dataset_catalog() -> dict[str, Any]:
         "dataset_catalog": catalog,
         "dataset_implementation_status": implementation_status,
         "production_readiness": production_readiness,
+        "storage_production_blocker_audit": production_blocker_audit,
+        "storage_production_blocker_rows": production_blocker_audit["rows"],
         "artifact_hygiene": artifact_hygiene,
         "dataset_version_policy": dataset_version_policy,
         "dataset_version_rows": dataset_version_policy["rows"],
@@ -2183,6 +2330,7 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
     implementation_status = dataset_implementation_status()
     artifact_hygiene = storage_artifact_hygiene_status()
     production_readiness = storage_production_readiness(sqlite_meta)
+    production_blocker_audit = storage_production_blocker_audit(production_readiness)
     dataset_version_policy = storage_dataset_version_policy()
     schema_migration_preflight = storage_schema_migration_preflight()
     duckdb_query_service = duckdb_query_service_policy()
@@ -2225,6 +2373,9 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "duckdb_query_wrapper": duckdb_query_service["query_wrapper"],
         "duckdb_query_max_limit": duckdb_query_service["max_limit"],
         "production_readiness": production_readiness,
+        "storage_production_blocker_audit": production_blocker_audit,
+        "storage_production_blocker_rows": production_blocker_audit["rows"],
+        "storage_production_blocker_count": production_blocker_audit["blocking_criterion_count"],
         "artifact_hygiene": artifact_hygiene,
         "artifact_hygiene_status": artifact_hygiene["status"],
         "artifact_hygiene_present_count": artifact_hygiene["present_artifact_count"],

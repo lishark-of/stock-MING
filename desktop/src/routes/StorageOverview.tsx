@@ -292,6 +292,12 @@ export default function StorageOverview() {
     ...((sqliteMeta.call_ledger as Array<Record<string, unknown>> | undefined) ?? []).map((row) => ({ dataset: "sqlite_meta", ...row }))
   ];
   const productionReadiness = (overview.production_readiness as Record<string, unknown> | undefined) ?? {};
+  const storageProductionBlockerAudit =
+    (overview.storage_production_blocker_audit as Record<string, unknown> | undefined) ??
+    ((storageCatalog.storage_production_blocker_audit as Record<string, unknown> | undefined) ?? {});
+  const storageProductionBlockerRows =
+    (overview.storage_production_blocker_rows as Array<Record<string, unknown>> | undefined) ??
+    ((storageCatalog.storage_production_blocker_rows as Array<Record<string, unknown>> | undefined) ?? []);
 
   return (
     <>
@@ -337,6 +343,8 @@ export default function StorageOverview() {
           { label: "dataset version", value: String(datasetVersionPolicy.status ?? "policy_ready") },
           { label: "DuckDB query service", value: String(duckdbQueryService.status ?? overview.duckdb_query_service_status ?? "service_ready") },
           { label: "DuckDB max limit", value: duckdbQueryService.max_limit ?? overview.duckdb_query_max_limit ?? 0 },
+          { label: "storage production", value: storageProductionBlockerAudit.status as string | undefined, tone: storageProductionBlockerAudit.production_storage_complete === true ? "good" : "warn" },
+          { label: "storage blockers", value: overview.storage_production_blocker_count ?? storageProductionBlockerAudit.blocking_criterion_count ?? 0, tone: Number(overview.storage_production_blocker_count ?? storageProductionBlockerAudit.blocking_criterion_count ?? 0) > 0 ? "warn" : "good" },
           { label: "declared versions", value: datasetVersionPolicy.target_version_declared_count ?? overview.dataset_version_declared_count ?? 0 },
           { label: "version validations", value: datasetVersionPolicy.physical_dataset_version_validated_count ?? overview.physical_dataset_version_validated_count ?? 0 },
           { label: "migration rows", value: schemaMigrationRows.length },
@@ -393,6 +401,19 @@ export default function StorageOverview() {
         <p>typed_projection / cursor_pagination / query_result_contract: {String(duckdbQueryService.typed_projection_enabled ?? true)} / {String(duckdbQueryService.cursor_pagination_enabled ?? true)} / {String(duckdbQueryService.query_result_contract_enabled ?? true)}</p>
         <p>frontend_executes_query / cache_get_writes_files: {String(duckdbQueryService.frontend_executes_query ?? false)} / {String(duckdbQueryService.cache_get_writes_files ?? false)}</p>
         <DataLineageTable rows={duckdbQueryRows} />
+      </PacketCard>
+
+      <PacketCard title="Storage production blocker audit" subtitle="storage_production_blocker_audit：LTG-05 生产化阻断项，不把 dry-run / preflight 误称为完成" status={String(storageProductionBlockerAudit.status ?? "missing")}>
+        <p>schema_version: {String(storageProductionBlockerAudit.schema_version ?? "command_center_3_storage_production_blocker_audit.v1")}</p>
+        <p>scope: {String(storageProductionBlockerAudit.scope ?? "ltg_05_storage_duckdb_parquet_productionization")}</p>
+        <p>production_storage_complete: {String(storageProductionBlockerAudit.production_storage_complete ?? false)}</p>
+        <p>dry_runs_are_not_production_completion: {String(storageProductionBlockerAudit.dry_runs_are_not_production_completion ?? true)}</p>
+        <p>preflight_is_not_physical_migration: {String(storageProductionBlockerAudit.preflight_is_not_physical_migration ?? true)}</p>
+        <p>dataset_version_policy_is_not_manifest_validation: {String(storageProductionBlockerAudit.dataset_version_policy_is_not_manifest_validation ?? true)}</p>
+      </PacketCard>
+
+      <PacketCard title="Storage production blocker rows" subtitle="schema、version、partition、compaction、TTL refresh 与 query service 的生产缺口" status="storage_production_blocker_rows">
+        <DataLineageTable rows={storageProductionBlockerRows} />
       </PacketCard>
 
       <PacketCard title="DuckDB query result contracts" subtitle="每个本地查询返回投影列、分页和安全边界；不触发刷新" status="query_contract">
