@@ -41,6 +41,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PUSH_GATE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "push_gate_3_0.sh"
 SMOKE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "smoke_3_0.sh"
 MOTION_VIEWPORT_QA_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "motion_viewport_qa_contract.py"
+MOTION_BROWSER_QA_RUNBOOK_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runbook.py"
 SECRET_KEYWORD_REVIEW_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "secret_keyword_review_contract.py"
 GITHUB_WORKFLOWS_DIR = PROJECT_ROOT / ".github" / "workflows"
 DESKTOP_SRC_DIR = PROJECT_ROOT / "desktop" / "src"
@@ -424,6 +425,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
     script = _read_local_text(PUSH_GATE_SCRIPT_PATH)
     smoke_script = _read_local_text(SMOKE_SCRIPT_PATH)
     motion_qa_script = _read_local_text(MOTION_VIEWPORT_QA_CONTRACT_PATH)
+    motion_browser_qa_runbook = _read_local_text(MOTION_BROWSER_QA_RUNBOOK_PATH)
     secret_keyword_review_script = _read_local_text(SECRET_KEYWORD_REVIEW_CONTRACT_PATH)
     workflow_rows = _release_gate_workflow_rows()
     provider_invocation_markers = (
@@ -455,9 +457,12 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and bool(PUSH_GATE_SCRIPT_PATH.stat().st_mode & 0o111),
         "smoke_script_exists": SMOKE_SCRIPT_PATH.exists() and bool(smoke_script),
         "motion_viewport_qa_contract_exists": MOTION_VIEWPORT_QA_CONTRACT_PATH.exists() and bool(motion_qa_script),
+        "motion_browser_qa_runbook_exists": MOTION_BROWSER_QA_RUNBOOK_PATH.exists() and bool(motion_browser_qa_runbook),
         "secret_keyword_review_contract_exists": SECRET_KEYWORD_REVIEW_CONTRACT_PATH.exists() and bool(secret_keyword_review_script),
         "motion_viewport_qa_contract_step": "scripts/motion_viewport_qa_contract.py" in script
         and "Motion viewport QA contract" in script,
+        "motion_browser_qa_runbook_step": "scripts/motion_browser_qa_runbook.py" in script
+        and "Motion browser QA runbook" in script,
         "secret_keyword_review_contract_step": "scripts/secret_keyword_review_contract.py" in script
         and "Secret keyword review contract" in script,
         "uses_project_venv_python": 'PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"' in script,
@@ -491,6 +496,10 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "visual_qa_complete" in motion_qa_script
         and "browser_performance_verified" in motion_qa_script
         and "external_calls_triggered" in motion_qa_script,
+        "motion_browser_qa_runbook_is_local_static": "local_browser_qa_runbook_not_browser_execution" in motion_browser_qa_runbook
+        and "opens_no_browser" in motion_browser_qa_runbook
+        and "writes_no_artifacts" in motion_browser_qa_runbook
+        and "external_calls_triggered" in motion_browser_qa_runbook,
     }
     ci_mirror_ready = any(bool(row.get("mirrors_local_push_gate")) for row in workflow_rows)
     false_positive_allowlist_review_ready = False
@@ -503,6 +512,9 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "motion_viewport_qa_contract_exists",
             "motion_viewport_qa_contract_step",
             "motion_viewport_qa_contract_is_local_static",
+            "motion_browser_qa_runbook_exists",
+            "motion_browser_qa_runbook_step",
+            "motion_browser_qa_runbook_is_local_static",
             "secret_keyword_review_contract_exists",
             "secret_keyword_review_contract_step",
             "secret_keyword_review_contract_is_structured",
@@ -549,6 +561,21 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "motion_viewport_qa_contract_is_local_static",
             checks["motion_viewport_qa_contract_is_local_static"],
             evidence="contract declares visual QA and browser performance remain pending",
+        ),
+        _release_gate_row(
+            "motion_browser_qa_runbook_exists",
+            checks["motion_browser_qa_runbook_exists"],
+            evidence=_relative_path(MOTION_BROWSER_QA_RUNBOOK_PATH),
+        ),
+        _release_gate_row(
+            "motion_browser_qa_runbook_step",
+            checks["motion_browser_qa_runbook_step"],
+            evidence="push gate runs scripts/motion_browser_qa_runbook.py before diff/secret checks",
+        ),
+        _release_gate_row(
+            "motion_browser_qa_runbook_is_local_static",
+            checks["motion_browser_qa_runbook_is_local_static"],
+            evidence="runbook declares no browser execution, no artifact writes, no external calls, and pending visual/performance QA",
         ),
         _release_gate_row(
             "secret_keyword_review_contract_exists",
@@ -695,6 +722,7 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
     next_chart = _motion_source("components/NextSessionChart.tsx")
     candidate_radar = _motion_source("routes/CandidateRadar.tsx")
     motion_viewport_qa_contract = _read_local_text(MOTION_VIEWPORT_QA_CONTRACT_PATH)
+    motion_browser_qa_runbook = _read_local_text(MOTION_BROWSER_QA_RUNBOOK_PATH)
     audited_text = "\n".join(
         [
             styles,
@@ -802,6 +830,10 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         and "local_static_contract_not_browser_execution" in motion_viewport_qa_contract
         and "visual_qa_complete" in motion_viewport_qa_contract
         and "browser_performance_verified" in motion_viewport_qa_contract,
+        "motion_browser_qa_runbook_ready": "command_center_3_motion_browser_qa_runbook.v1" in motion_browser_qa_runbook
+        and "local_browser_qa_runbook_not_browser_execution" in motion_browser_qa_runbook
+        and "visual_acceptance_criteria" in motion_browser_qa_runbook
+        and "PERFORMANCE_BUDGETS" in motion_browser_qa_runbook,
     }
     rows = [
         _motion_row("motion_tokens_present", checks["motion_tokens_present"], evidence=", ".join(token_markers)),
@@ -824,6 +856,7 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         _motion_row("no_provider_call_markers", checks["no_provider_call_markers"], evidence="audited motion files contain no provider invocation markers"),
         _motion_row("visual_only_boundary_visible", checks["visual_only_boundary_visible"], evidence="motion state labels remain visual-only and trade guarded"),
         _motion_row("motion_viewport_qa_contract_ready", checks["motion_viewport_qa_contract_ready"], evidence="scripts/motion_viewport_qa_contract.py pins routes, viewports, and pending browser QA state"),
+        _motion_row("motion_browser_qa_runbook_ready", checks["motion_browser_qa_runbook_ready"], evidence="scripts/motion_browser_qa_runbook.py pins local startup, artifact, visual, and performance QA criteria"),
         _motion_row(
             "desktop_mobile_viewport_visual_qa_pending",
             False,
@@ -871,6 +904,7 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
             "desktop/src/components/NextSessionChart.tsx",
             "desktop/src/routes/CandidateRadar.tsx",
             "scripts/motion_viewport_qa_contract.py",
+            "scripts/motion_browser_qa_runbook.py",
         ],
         "cache_only": True,
         "runs_no_commands": True,
@@ -999,6 +1033,14 @@ def _motion_production_qa_contract(
             visual_qa_required=True,
         ),
         _motion_production_qa_row(
+            "browser_qa_runbook_ready",
+            "passed" if _row_passed("motion_browser_qa_runbook_ready") else "blocked",
+            local_contract_passed=_row_passed("motion_browser_qa_runbook_ready"),
+            production_ready=_row_passed("motion_browser_qa_runbook_ready"),
+            evidence="local browser QA runbook pins startup, local URLs, artifact policy, visual criteria, and performance budgets.",
+            next_action="Use the runbook for the future explicit browser pass; do not mark visual QA complete from the runbook alone.",
+        ),
+        _motion_production_qa_row(
             "performance_trace_pending",
             "pending_browser_performance_trace",
             local_contract_passed=True,
@@ -1059,6 +1101,150 @@ def _motion_production_qa_contract(
     return contract, rows
 
 
+def _motion_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    script = _read_local_text(MOTION_BROWSER_QA_RUNBOOK_PATH)
+    route_specs = [
+        ("#home", "Command Center", "page staging and status summary clarity"),
+        ("#next", "Next Session Map", "chart update clarity and reduced-motion chart updates"),
+        ("#candidates", "Candidate Radar", "radar result cluster and runtime-budget visibility"),
+        ("#tasks", "Task Monitor", "task phase confirmation and progress readability"),
+        ("#audit", "Call Ledger Audit", "motion audit rows and warning density"),
+    ]
+    viewport_specs = [
+        ("desktop", 1440, 900),
+        ("laptop", 1280, 800),
+        ("tablet", 834, 1112),
+        ("mobile", 390, 844),
+    ]
+    local_runbook_ready = (
+        MOTION_BROWSER_QA_RUNBOOK_PATH.exists()
+        and "command_center_3_motion_browser_qa_runbook.v1" in script
+        and "local_browser_qa_runbook_not_browser_execution" in script
+        and "127.0.0.1:5173" in script
+        and "127.0.0.1:8710" in script
+        and "writes_no_artifacts" in script
+    )
+    rows = [
+        {
+            "phase": "start_fastapi_backend",
+            "status": "manual_required",
+            "evidence": "scripts/dev_server.sh uses project .venv and serves FastAPI on 127.0.0.1:8710",
+        },
+        {
+            "phase": "start_vite_frontend",
+            "status": "manual_required",
+            "evidence": "cd desktop && npm run dev serves local Vite on 127.0.0.1:5173",
+        },
+        {
+            "phase": "load_pinned_routes",
+            "status": "execution_pending",
+            "evidence": f"{len(route_specs)} local hash routes are pinned for visual QA",
+        },
+        {
+            "phase": "apply_viewports",
+            "status": "execution_pending",
+            "evidence": f"{len(viewport_specs)} desktop/tablet/mobile viewports are pinned",
+        },
+        {
+            "phase": "capture_visual_artifacts",
+            "status": "execution_pending",
+            "evidence": "screenshots or recordings belong under ignored local path .stock_ming_3/motion_qa",
+        },
+        {
+            "phase": "capture_performance_trace",
+            "status": "execution_pending",
+            "evidence": "record route transition, chart update, task panel, and candidate radar render budgets",
+        },
+        {
+            "phase": "provider_trade_isolation",
+            "status": "passed_static_policy",
+            "evidence": "browser QA must only visit local FastAPI/Vite URLs and must not click provider/model/trading task buttons",
+        },
+    ]
+    for row in rows:
+        row.update(
+            {
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    qa_matrix_rows = [
+        {
+            "route": route,
+            "label": label,
+            "viewport": viewport,
+            "width": width,
+            "height": height,
+            "risk_focus": risk_focus,
+            "url": f"http://127.0.0.1:5173/{route}",
+            "visual_qa_complete": False,
+            "performance_trace_complete": False,
+        }
+        for route, label, risk_focus in route_specs
+        for viewport, width, height in viewport_specs
+    ]
+    performance_budget_rows = [
+        {
+            "metric": "route_transition_observed_ms",
+            "budget": 500,
+            "scope": "hash route change after cache is loaded",
+            "verified": False,
+        },
+        {
+            "metric": "largest_motion_layout_shift",
+            "budget": 0.1,
+            "scope": "state confirmation cue and card staging",
+            "verified": False,
+        },
+        {
+            "metric": "long_task_over_50ms_count",
+            "budget": 0,
+            "scope": "route change, chart update, candidate radar render",
+            "verified": False,
+        },
+        {
+            "metric": "candidate_radar_first_stable_ms",
+            "budget": 1200,
+            "scope": "cache already local; no provider refresh",
+            "verified": False,
+        },
+    ]
+    contract = {
+        "schema_version": "command_center_3_motion_browser_qa_runbook.v1",
+        "status": "motion_browser_qa_runbook_ready_execution_pending" if local_runbook_ready else "motion_browser_qa_runbook_blocked",
+        "scope": "local_browser_qa_runbook_not_browser_execution",
+        "ltg": "LTG-14",
+        "local_runbook_ready": local_runbook_ready,
+        "visual_qa_complete": False,
+        "browser_performance_verified": False,
+        "production_motion_complete": False,
+        "local_api_base": "http://127.0.0.1:8710",
+        "local_vite_base": "http://127.0.0.1:5173",
+        "artifact_root": ".stock_ming_3/motion_qa",
+        "route_count": len(route_specs),
+        "viewport_count": len(viewport_specs),
+        "qa_matrix_count": len(qa_matrix_rows),
+        "runbook_row_count": len(rows),
+        "performance_budget_count": len(performance_budget_rows),
+        "cache_only": True,
+        "runs_no_commands": True,
+        "opens_no_browser": True,
+        "writes_no_artifacts": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "This runbook makes the future browser pass executable. It does not itself prove visual QA, performance, or production motion completion.",
+    }
+    return contract, rows, qa_matrix_rows + performance_budget_rows
+
+
 def read_call_ledger_audit_cache() -> dict[str, Any]:
     endpoint_rows, endpoint_ledger_rows = _endpoint_audit_rows()
     task_rows, task_ledger_rows = _task_rows()
@@ -1076,6 +1262,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
     motion_production_qa_contract, motion_production_qa_rows = _motion_production_qa_contract(
         motion_clarity_audit,
         motion_clarity_rows,
+    )
+    motion_browser_qa_runbook_contract, motion_browser_qa_runbook_rows, motion_browser_qa_matrix_rows = (
+        _motion_browser_qa_runbook_contract()
     )
     all_ledger_rows = (endpoint_ledger_rows + task_ledger_rows)[:240]
     external_rows = [row for row in endpoint_rows + task_rows if row.get("external_calls_triggered")]
@@ -1113,6 +1302,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "motion_clarity_rows": motion_clarity_rows,
         "motion_production_qa_contract": motion_production_qa_contract,
         "motion_production_qa_rows": motion_production_qa_rows,
+        "motion_browser_qa_runbook_contract": motion_browser_qa_runbook_contract,
+        "motion_browser_qa_runbook_rows": motion_browser_qa_runbook_rows,
+        "motion_browser_qa_matrix_rows": motion_browser_qa_matrix_rows,
         "external_call_rows": external_rows,
         "action_risk_rows": action_risk_rows,
         "missing_call_ledger_rows": missing_ledger_rows,
@@ -1153,6 +1345,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_production_blocker_count": motion_production_qa_contract.get("production_blocker_count", 0),
             "motion_visual_pending_count": motion_production_qa_contract.get("visual_pending_count", 0),
             "motion_performance_pending_count": motion_production_qa_contract.get("performance_pending_count", 0),
+            "motion_browser_qa_runbook_ready": motion_browser_qa_runbook_contract.get("local_runbook_ready") is True,
+            "motion_browser_qa_matrix_count": motion_browser_qa_runbook_contract.get("qa_matrix_count", 0),
+            "motion_browser_qa_performance_budget_count": motion_browser_qa_runbook_contract.get("performance_budget_count", 0),
             "external_call_count": len(external_rows),
             "action_risk_count": len(action_risk_rows),
             "missing_call_ledger_count": len(missing_ledger_rows),
@@ -1181,6 +1376,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_clarity_static_ready_is_not_visual_qa": True,
             "motion_production_qa_contract_is_local": True,
             "motion_production_qa_is_not_browser_visual_or_perf_proof": True,
+            "motion_browser_qa_runbook_is_local": True,
+            "motion_browser_qa_runbook_is_not_browser_execution": True,
             "contains_secret": False,
         },
         "call_ledger": [
@@ -1200,6 +1397,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "motion_production_qa_status": motion_production_qa_contract.get("status"),
                 "motion_production_qa_local_ready": motion_production_qa_contract.get("local_motion_qa_ready"),
                 "motion_production_complete": motion_production_qa_contract.get("production_motion_complete"),
+                "motion_browser_qa_runbook_status": motion_browser_qa_runbook_contract.get("status"),
+                "motion_browser_qa_runbook_ready": motion_browser_qa_runbook_contract.get("local_runbook_ready"),
                 "memory_task_count": task_persistence.get("memory_task_count", 0),
                 "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
                 "deduplicated_task_count": task_persistence.get("deduplicated_task_count", len(task_rows)),

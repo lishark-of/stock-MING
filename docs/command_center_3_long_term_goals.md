@@ -831,12 +831,14 @@ Productionize non-blocking next-ticket radar scans
 - Cache/page state, task receipts, task status panels, and candidate-radar state now share a CSS-only `StateClarityRail` that makes accepted/running/blocked/done boundaries visible without timers, requestAnimationFrame, recomputation, or external calls.
 - Cache loading/error/empty states, task phase panels, and task creation receipts now expose a shared `state_change_confirmation` motion scope with finite `cc-phase-confirm` cues, so refresh and task transitions are visible without adding timers, provider calls, or recomputation.
 - `scripts/motion_viewport_qa_contract.py` now pins the LTG-14 browser QA route/viewport matrix and is run by `scripts/push_gate_3_0.sh`; it is a local static contract and still reports `visual_qa_complete=false`.
+- `scripts/motion_browser_qa_runbook.py` now pins the local browser QA runbook: manual FastAPI/Vite startup order, local-only URLs, route/viewport matrix, ignored artifact path, visual acceptance criteria, reduced-motion pass, and performance budgets. It is run by `scripts/push_gate_3_0.sh` but does not open a browser, write screenshots, or prove visual/performance acceptance.
 - Next-session ECharts now has a short update clarity layer and respects reduced-motion preferences by disabling chart update animation.
 - Candidate radar now tags its primary result cluster with cache/coverage/blocker/degraded state so result transitions are visually easier to follow without recomputing candidates.
 - Candidate radar now exposes `result_delta_clarity_contract` and `previous_cache_diff_rows` so candidate counts, skipped reasons, provider gaps, freshness, truncation, scan mode, local previous-cache candidate changes, and full/deep boundaries are visibly auditable before any browser visual QA is claimed.
 - Current motion is CSS-only, finite-duration, and visual-only; it does not change packet values, task behavior, strategy action, or external-call boundaries.
 - Call Ledger Audit now exposes `motion_clarity_audit` and `motion_clarity_rows`, a local static source audit for motion tokens, finite keyframes, navigation/status context cues, reduced-motion CSS/runtime behavior, StateClarityRail usage, chart/radar clarity scopes, layout containment, no timer/RAF motion loops, and no provider invocation markers.
 - Call Ledger Audit now exposes `motion_production_qa_contract` and `motion_production_qa_rows`, a local production acceptance checklist for purposeful motion tokens, state-change clarity, chart/radar scopes, reduced-motion accessibility, layout readability, no timer/RAF loops, browser visual QA, performance trace, and provider/trade isolation. It keeps `production_motion_complete=false` until browser visual and performance checks are run.
+- Call Ledger Audit now exposes `motion_browser_qa_runbook_contract`, `motion_browser_qa_runbook_rows`, and `motion_browser_qa_matrix_rows`, so the future browser pass has stable local routes, viewport rows, performance-budget rows, artifact policy, and safety boundaries before any visual QA is claimed.
 - Further polish should improve clarity without distracting from risk, freshness, and decision boundaries.
 
 ### Gaps
@@ -845,6 +847,7 @@ Productionize non-blocking next-ticket radar scans
 - Need broader chart motion verification so updates help users understand state changes instead of adding decoration.
 - Need browser viewport execution against the pinned route/viewport matrix so animation never overlaps, occludes, or resizes critical text.
 - Need runtime performance traces so later animation never reintroduces UI stalls.
+- The browser QA runbook is executable planning evidence only; `visual_qa_complete=false` and `browser_performance_verified=false` remain the correct state until a real browser pass records artifacts and trace results.
 - Need visual hierarchy that makes status, freshness, blockers, and candidate changes obvious.
 - Current navigation/status cue layer improves static context visibility but still needs browser viewport review for dense pages and mobile widths.
 - `motion_clarity_static_ready_visual_qa_pending` is not production motion completion; it only proves static source guardrails.
@@ -868,8 +871,10 @@ Productionize non-blocking next-ticket radar scans
 - Cache/task/radar clarity states are visible without using timers, requestAnimationFrame, provider refreshes, or frontend scoring.
 - Cache/task phase confirmation cues are visible and audited as visual-only state changes.
 - The motion viewport QA contract is repeatable in the push gate, while browser execution remains explicit and pending.
+- The motion browser QA runbook is repeatable in the push gate and fixes local URLs, artifact policy, route/viewport matrix, visual criteria, reduced-motion pass, and performance budgets without opening a browser.
 - Visual polish is additive and does not replace audit labels, warnings, or freshness state.
 - `motion_production_qa_contract.local_motion_qa_ready=true` only means the local production checklist is visible and source guardrails pass; visual QA and performance trace must remain pending until explicitly executed.
+- `motion_browser_qa_runbook_contract.local_runbook_ready=true` only means the execution checklist is ready; it is not screenshot evidence, performance trace evidence, or production motion completion.
 - `motion_clarity_audit.static_ready=true` is allowed only when static source checks pass.
 - `production_motion_complete` remains false until browser viewport and performance QA are complete.
 
@@ -879,6 +884,7 @@ Productionize non-blocking next-ticket radar scans
 - Do not animate by recomputing backend data.
 - Do not use motion to imply certainty, urgency, or trade recommendations.
 - Do not regress text readability or viewport layout.
+- Do not treat the browser QA runbook as an executed browser pass.
 
 ### Recommended Commit Message
 

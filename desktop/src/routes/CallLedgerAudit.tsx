@@ -35,6 +35,9 @@ export default function CallLedgerAudit() {
   const motionClarityRows = rows(cache.motion_clarity_rows);
   const motionProductionQa = (cache.motion_production_qa_contract as Record<string, unknown> | undefined) ?? {};
   const motionProductionQaRows = rows(cache.motion_production_qa_rows);
+  const motionBrowserQaRunbook = (cache.motion_browser_qa_runbook_contract as Record<string, unknown> | undefined) ?? {};
+  const motionBrowserQaRunbookRows = rows(cache.motion_browser_qa_runbook_rows);
+  const motionBrowserQaMatrixRows = rows(cache.motion_browser_qa_matrix_rows);
   const parameterizedRoutes = rows(getRouteCoverage.parameterized_local_routes);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const callLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
@@ -88,6 +91,9 @@ export default function CallLedgerAudit() {
           { label: "motion prod QA", value: motionProductionQa.status as string | undefined, tone: motionProductionQa.local_motion_qa_ready === true ? "good" : "warn" },
           { label: "motion prod blockers", value: counts.motion_production_blocker_count as number | undefined, tone: Number(counts.motion_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "motion perf pending", value: counts.motion_performance_pending_count as number | undefined, tone: Number(counts.motion_performance_pending_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "motion runbook", value: motionBrowserQaRunbook.status as string | undefined, tone: motionBrowserQaRunbook.local_runbook_ready === true ? "good" : "warn" },
+          { label: "motion QA matrix", value: counts.motion_browser_qa_matrix_count as number | undefined },
+          { label: "motion budgets", value: counts.motion_browser_qa_performance_budget_count as number | undefined },
           { label: "audit envelope ledger", value: callLedger.length },
           { label: "audit warnings", value: cacheWarnings.length },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
@@ -194,6 +200,19 @@ export default function CallLedgerAudit() {
         <p>动效用于状态清晰度、图谱/雷达变化和任务反馈；视觉 QA 与性能 trace 未完成前不能标记为 production motion complete。</p>
         <DataLineageTable rows={[motionProductionQa]} />
         <DataLineageTable rows={motionProductionQaRows} />
+      </PacketCard>
+
+      <PacketCard title="Motion browser QA runbook" subtitle="motion_browser_qa_runbook_contract：本地浏览器 QA 执行手册，不打开浏览器、不写截图、不代表完成" status={String(motionBrowserQaRunbook.status ?? "missing")}>
+        <p>scope: {String(motionBrowserQaRunbook.scope ?? "local_browser_qa_runbook_not_browser_execution")}</p>
+        <p>local_runbook_ready: {String(motionBrowserQaRunbook.local_runbook_ready ?? false)}</p>
+        <p>visual_qa_complete: {String(motionBrowserQaRunbook.visual_qa_complete ?? false)}</p>
+        <p>browser_performance_verified: {String(motionBrowserQaRunbook.browser_performance_verified ?? false)}</p>
+        <p>local_vite_base: {String(motionBrowserQaRunbook.local_vite_base ?? "http://127.0.0.1:5173")}</p>
+        <p>artifact_root: {String(motionBrowserQaRunbook.artifact_root ?? ".stock_ming_3/motion_qa")}</p>
+        <p>该 runbook 只固定本地启动顺序、route/viewport 矩阵、视觉验收标准和性能预算；真正浏览器截图/trace 仍需后续显式执行。</p>
+        <DataLineageTable rows={[motionBrowserQaRunbook]} />
+        <DataLineageTable rows={motionBrowserQaRunbookRows} />
+        <DataLineageTable rows={motionBrowserQaMatrixRows} />
       </PacketCard>
 
       <div className="grid">

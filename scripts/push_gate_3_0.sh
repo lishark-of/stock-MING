@@ -108,6 +108,7 @@ write_release_readiness_report() {
 - desktop_build: passed
 - command_center_3_smoke: passed
 - motion_viewport_qa_contract: passed_static_contract_visual_run_pending
+- motion_browser_qa_runbook: passed_runbook_execution_pending
 - diff_whitespace_check: passed
 - high_risk_secret_scan: clean
 - secret_keyword_review_contract: passed_structured_no_raw_lines
@@ -135,6 +136,7 @@ run_step "Python unittest" "$PYTHON_BIN" -m unittest discover -s tests
 run_step "Desktop build" bash -c "cd desktop && npm run build"
 run_step "Command Center 3 smoke" env PYTHON_BIN="$PYTHON_BIN" scripts/smoke_3_0.sh
 run_step "Motion viewport QA contract" "$PYTHON_BIN" scripts/motion_viewport_qa_contract.py
+run_step "Motion browser QA runbook" "$PYTHON_BIN" scripts/motion_browser_qa_runbook.py
 run_step "Diff whitespace check" git diff --check
 run_step "Secret scan" secret_high_risk_scan
 run_step "Secret keyword review contract" "$PYTHON_BIN" scripts/secret_keyword_review_contract.py
