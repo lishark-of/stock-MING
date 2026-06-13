@@ -645,6 +645,113 @@ def _production_package_blocker_audit(
     }
 
 
+def _packaged_runtime_qa_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    *,
+    evidence: str,
+    qa_required: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "qa_required": bool(qa_required),
+        "evidence": evidence,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _packaged_runtime_qa_contract(
+    *,
+    production_runtime_contract: dict[str, Any],
+    tauri_build_artifact: dict[str, Any],
+    backend_offline_ux_contract: dict[str, Any],
+    production_blocker_audit: dict[str, Any],
+) -> dict[str, Any]:
+    qa_rows = [
+        _packaged_runtime_qa_row(
+            "release_artifact_qa",
+            "pending",
+            False,
+            evidence=f"artifact_status={tauri_build_artifact.get('status')}; binary_path={tauri_build_artifact.get('binary_path')}; artifact detection is not launch QA",
+        ),
+        _packaged_runtime_qa_row(
+            "backend_startup_strategy_qa",
+            "pending",
+            False,
+            evidence=f"strategy={production_runtime_contract.get('backend_startup_strategy')}; sidecar/manual strategy not validated in packaged app",
+        ),
+        _packaged_runtime_qa_row(
+            "backend_offline_ux_packaged_qa",
+            "pending",
+            False,
+            evidence=f"frontend_contract_ready={backend_offline_ux_contract.get('frontend_contract_ready')}; packaged runtime offline notice not opened yet",
+        ),
+        _packaged_runtime_qa_row(
+            "config_log_runtime_path_qa",
+            "pending",
+            False,
+            evidence=f"config={production_runtime_contract.get('config_file_policy')}; log={production_runtime_contract.get('log_file_policy')}; path behavior not validated at runtime",
+        ),
+        _packaged_runtime_qa_row(
+            "macos_signing_notarization_qa",
+            "pending",
+            False,
+            evidence="signing, notarization, and distribution artifact checks remain outside current preflight",
+        ),
+        _packaged_runtime_qa_row(
+            "startup_external_call_boundary",
+            "passed",
+            True,
+            evidence="packaged runtime QA must not start Tushare, DeepSeek, GitHub probes, or trade paths during app startup",
+            qa_required=False,
+        ),
+        _packaged_runtime_qa_row(
+            "secret_bundle_boundary",
+            "passed",
+            True,
+            evidence="frontend package must not contain token/key; backend/env remains the only secret boundary",
+            qa_required=False,
+        ),
+    ]
+    pending = [row["criterion"] for row in qa_rows if row.get("status") == "pending"]
+    return {
+        "schema_version": "tauri_packaged_runtime_qa_contract.v1",
+        "status": "packaged_runtime_qa_contract_ready_validation_pending",
+        "scope": "local_static_qa_matrix_not_packaged_runtime_execution",
+        "production_package_ready": False,
+        "packaged_runtime_validated": False,
+        "qa_contract_ready": True,
+        "qa_matrix_count": len(qa_rows),
+        "pending_qa_count": len(pending),
+        "pending_qa": pending,
+        "release_artifact_status": tauri_build_artifact.get("status"),
+        "release_artifact_path": tauri_build_artifact.get("binary_path"),
+        "production_blocker_status": production_blocker_audit.get("status"),
+        "backend_offline_ux_contract_status": backend_offline_ux_contract.get("status"),
+        "production_runtime_contract_status": production_runtime_contract.get("status"),
+        "browser_or_packaged_app_opened": False,
+        "npm_or_cargo_executed": False,
+        "config_values_read": False,
+        "log_files_written": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "rows": qa_rows,
+        "note": "This QA contract pins the packaged-runtime acceptance matrix only; it does not run npm, cargo, Tauri, packaged app, FastAPI, providers, models, GitHub, or trades.",
+    }
+
+
 def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     package_summary = _package_json_summary()
     tauri_config = _tauri_config_summary()
@@ -719,6 +826,12 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         tauri_build_artifact=tauri_build_artifact,
         backend_offline_ux_contract=backend_offline_ux_contract,
     )
+    packaged_runtime_qa_contract = _packaged_runtime_qa_contract(
+        production_runtime_contract=production_runtime_contract,
+        tauri_build_artifact=tauri_build_artifact,
+        backend_offline_ux_contract=backend_offline_ux_contract,
+        production_blocker_audit=production_blocker_audit,
+    )
 
     packet = {
         "packet_key": PACKET_KEY,
@@ -742,6 +855,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "backend_offline_ux_rows": backend_offline_ux_contract["rows"],
         "production_blocker_audit": production_blocker_audit,
         "production_blocker_rows": production_blocker_audit["rows"],
+        "packaged_runtime_qa_contract": packaged_runtime_qa_contract,
+        "packaged_runtime_qa_rows": packaged_runtime_qa_contract["rows"],
         "file_rows": file_rows,
         "command_rows": command_rows,
         "counts": {
@@ -749,6 +864,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "required_file_ready_count": file_ready_count,
             "command_count": len(command_rows),
             "command_ready_count": sum(1 for row in command_rows if row["available"]),
+            "packaged_runtime_qa_matrix_count": packaged_runtime_qa_contract["qa_matrix_count"],
+            "packaged_runtime_pending_qa_count": packaged_runtime_qa_contract["pending_qa_count"],
         },
         "runtime": {
             "node_ready": node_ready,
@@ -783,6 +900,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "production_runtime_reads_config_values": production_runtime_contract["reads_config_values"],
             "production_runtime_writes_log_files": production_runtime_contract["writes_log_files"],
             "macos_signing_notarization_ready": production_blocker_audit["macos_signing_notarization_ready"],
+            "packaged_runtime_qa_contract_ready": packaged_runtime_qa_contract["qa_contract_ready"],
+            "packaged_runtime_pending_qa_count": packaged_runtime_qa_contract["pending_qa_count"],
         },
         "policy": {
             "cache_api_external_calls": False,
@@ -795,6 +914,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "backend_autostart_enabled": False,
             "api_base_must_be_localhost": True,
             "production_runtime_contract_is_path_only": True,
+            "packaged_runtime_qa_contract_is_static": True,
             "does_not_read_config_values": True,
             "does_not_write_log_files": True,
             "does_not_call_tushare": True,

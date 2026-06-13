@@ -519,6 +519,7 @@ Mature ECharts next-session operation map interactions
 - A local `npm run tauri build` has produced a release binary on this workstation, and desktop preflight now exposes `tauri_build_artifact` so GET cache can detect `desktop/src-tauri/target/release/stock_ming_command_center` without executing build commands.
 - React API client now returns a safe `backend_offline_or_unreachable` envelope when local FastAPI is unavailable, and `BackendOfflineNotice` surfaces a clear offline state with display-safe API base text, without calling providers, models, GitHub, or trades.
 - Desktop preflight now exposes `backend_offline_ux_contract` and `backend_offline_ux_rows` as a static frontend source audit; packaged runtime offline UX validation remains pending.
+- Desktop preflight now exposes `packaged_runtime_qa_contract` and `packaged_runtime_qa_rows`, a static package QA matrix for release artifact QA, backend startup strategy, packaged offline UX, config/log runtime paths, signing/notarization, startup external-call boundary, and secret bundle boundary.
 - Production package is incomplete.
 
 ### Gaps
@@ -530,6 +531,7 @@ Mature ECharts next-session operation map interactions
 - Log path is declared as policy, but not validated in packaged runtime.
 - macOS package flow.
 - Friendly failure prompts exist at source-contract level; they still need packaged Tauri runtime validation.
+- `packaged_runtime_qa_contract.status=packaged_runtime_qa_contract_ready_validation_pending` means the QA matrix is repeatable and visible, not that the packaged app has been opened or validated.
 - `production_runtime_contract.status=runtime_contract_ready_packaged_validation_pending` means the path/startup contract is declared only; it is not packaged runtime proof.
 - `tauri_build_artifact.status=artifact_detected` means a local release binary exists; it is not sidecar/offline UX/signing/notarization proof and the artifact remains ignored by git.
 - `backend_offline_ux_contract.status=frontend_offline_notice_ready_packaged_runtime_validation_pending` means the React source path is ready, but the packaged app has not been opened and validated offline.
@@ -549,6 +551,7 @@ Mature ECharts next-session operation map interactions
 - `tauri build` passes.
 - `tauri_build_artifact` detects the local release binary without GET cache executing `npm`, `cargo`, or Tauri.
 - Backend-offline UI is friendly at React source-contract level and packaged runtime validation is separately tracked.
+- Packaged runtime QA matrix is visible, keeps artifact/backend/offline/config-log/signing checks pending, and preserves startup no-external/no-trade boundaries.
 - Local config and token/key are not exposed to frontend.
 - `production_runtime_contract` declares config/log paths, startup strategy, and frontend secret boundary without reading config values, writing log files, starting FastAPI, or calling providers/models.
 - `production_blocker_audit.package_ready=true` only after repeatable build artifact QA is verified, backend startup strategy is settled, config/log paths are validated in packaged runtime, packaged-runtime offline UX is validated, and signing/notarization is addressed.
@@ -560,6 +563,7 @@ Mature ECharts next-session operation map interactions
 - Do not claim `production_runtime_contract` as packaged runtime validation; it is a path/startup policy contract.
 - Do not claim a detected release binary as production package completion.
 - Do not claim `backend_offline_ux_contract` as packaged runtime offline validation.
+- Do not claim `packaged_runtime_qa_contract` as packaged runtime validation; it is a static QA matrix.
 - Do not claim `production_blocker_audit` as production package completion while status remains `production_package_blocked`.
 - Do not auto-call providers/models during app startup.
 
