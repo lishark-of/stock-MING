@@ -29,6 +29,7 @@ CONTRACT_KEYS = [
     "trade_cal_physical_validation",
     "trade_cal_provider_acceptance_runbook",
     "trade_cal_provider_acceptance_promotion_audit",
+    "freshness_production_blocker_audit",
     "current_evidence_freshness_qa_contract",
     "current_evidence_decision_surface_audit",
     "current_evidence_producer_coverage_audit",
@@ -60,6 +61,7 @@ def build_contract() -> dict[str, Any]:
     physical = _get(packet, "trade_cal_physical_validation")
     runbook = _get(packet, "trade_cal_provider_acceptance_runbook")
     promotion = _get(packet, "trade_cal_provider_acceptance_promotion_audit")
+    blockers_audit = _get(packet, "freshness_production_blocker_audit")
     current = _get(packet, "current_evidence_freshness_qa_contract")
     surfaces = _get(packet, "current_evidence_decision_surface_audit")
     producers = _get(packet, "current_evidence_producer_coverage_audit")
@@ -132,6 +134,21 @@ def build_contract() -> dict[str, Any]:
             "Provider acceptance promotion audit must read local prior evidence only and never run trade_cal refresh itself.",
         ),
         _row(
+            "freshness_production_blocker_audit_is_local_pending",
+            blockers_audit.get("schema_version") == "data_health_freshness_production_blocker_audit.v1"
+            and blockers_audit.get("scope") == "local_read_only_freshness_production_blocker_audit_no_provider_execution"
+            and blockers_audit.get("status") == "freshness_production_blockers_visible"
+            and blockers_audit.get("production_ready") is False
+            and blockers_audit.get("provider_backed_trade_cal_acceptance_done") is False
+            and blockers_audit.get("production_freshness_gate_complete") is False
+            and int(blockers_audit.get("production_blocker_count") or 0) > 0
+            and "provider_backed_trade_cal_acceptance" in blockers_audit.get("production_blockers", [])
+            and _flag_false(blockers_audit, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and blockers_audit.get("does_not_execute_trades") is True
+            and blockers_audit.get("does_not_modify_strategy_action") is True,
+            "Freshness production blocker audit must stay local and keep provider-backed production blockers visible.",
+        ),
+        _row(
             "current_evidence_boundary_contract",
             current.get("schema_version") == "data_health_current_evidence_freshness_qa.v1"
             and current.get("current_evidence_requires_expected_trade_date") is True
@@ -174,6 +191,7 @@ def build_contract() -> dict[str, Any]:
             all(key in packet for key in CONTRACT_KEYS)
             and int(counts.get("freshness_acceptance_scenario_count") or 0) >= 8
             and int(counts.get("trade_cal_provider_acceptance_promotion_row_count") or 0) >= 10
+            and int(counts.get("freshness_production_blocker_row_count") or 0) >= 8
             and int(counts.get("current_evidence_freshness_qa_row_count") or 0) >= 8
             and int(counts.get("current_evidence_decision_surface_row_count") or 0) >= 5
             and int(counts.get("current_evidence_producer_coverage_row_count") or 0) >= 6,
@@ -212,6 +230,7 @@ def build_contract() -> dict[str, Any]:
             "trade_cal_provider_acceptance_evidence_row_count": counts.get(
                 "trade_cal_provider_acceptance_evidence_row_count"
             ),
+            "freshness_production_blocker_count": counts.get("freshness_production_blocker_count"),
         },
         "note": "This is a local push-gate contract. Pending/provider-backed blockers are expected until explicit provider acceptance is run later.",
     }

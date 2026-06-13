@@ -36,6 +36,7 @@ export default function DataHealthTimeline() {
   const tradeCalPhysical = (cache.trade_cal_physical_validation as Record<string, unknown> | undefined) ?? {};
   const tradeCalProviderRunbook = (cache.trade_cal_provider_acceptance_runbook as Record<string, unknown> | undefined) ?? {};
   const tradeCalPromotionAudit = (cache.trade_cal_provider_acceptance_promotion_audit as Record<string, unknown> | undefined) ?? {};
+  const freshnessProductionBlockerAudit = (cache.freshness_production_blocker_audit as Record<string, unknown> | undefined) ?? {};
   const currentEvidenceFreshness = (cache.current_evidence_freshness_qa_contract as Record<string, unknown> | undefined) ?? {};
   const decisionSurfaceAudit = (cache.current_evidence_decision_surface_audit as Record<string, unknown> | undefined) ?? {};
   const producerCoverageAudit = (cache.current_evidence_producer_coverage_audit as Record<string, unknown> | undefined) ?? {};
@@ -70,6 +71,7 @@ export default function DataHealthTimeline() {
           { label: "提升审计", value: tradeCalPromotionAudit.status as string | undefined, tone: tradeCalPromotionAudit.promotion_ready === true ? "good" : "warn" },
           { label: "提升 blockers", value: counts.trade_cal_provider_acceptance_promotion_blocker_count as number | undefined, tone: Number(counts.trade_cal_provider_acceptance_promotion_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "provider 证据行", value: counts.trade_cal_provider_acceptance_evidence_row_count as number | undefined },
+          { label: "生产 blockers", value: counts.freshness_production_blocker_count as number | undefined, tone: Number(counts.freshness_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "当前证据 QA", value: currentEvidenceFreshness.status as string | undefined, tone: currentEvidenceFreshness.provider_backed_long_window_acceptance_done === true ? "good" : "warn" },
           { label: "当前证据准入", value: currentEvidenceFreshness.current_evidence_candidate_status as string | undefined, tone: currentEvidenceFreshness.current_evidence_candidate_status === "current_evidence_ready" ? "good" : "warn" },
           { label: "证据 blockers", value: counts.current_evidence_freshness_qa_blocker_count as number | undefined, tone: counts.current_evidence_freshness_qa_blocker_count === 0 ? "good" : "warn" },
@@ -167,6 +169,15 @@ export default function DataHealthTimeline() {
         <p>只有看到显式 provider call ledger、长窗口、schema、本地 artifact 交叉检查、freshness replay、失败模式和当前证据边界全部通过时，才允许把 trade_cal 验收从 pending 提升。</p>
         <DataLineageTable rows={objectRow(tradeCalPromotionAudit)} />
         <DataLineageTable rows={rows(cache.trade_cal_provider_acceptance_promotion_rows)} />
+      </PacketCard>
+
+      <PacketCard title="Freshness 生产 blocker 审计" subtitle="freshness_production_blocker_audit；汇总 LTG-01 剩余阻断项，不调用 provider" status={String(freshnessProductionBlockerAudit.status ?? "freshness_production_blockers")}>
+        <p>production_ready: {String(freshnessProductionBlockerAudit.production_ready === true)}</p>
+        <p>production_blocker_count: {String(freshnessProductionBlockerAudit.production_blocker_count ?? 0)}</p>
+        <p>production_blockers: {String((freshnessProductionBlockerAudit.production_blockers as Array<unknown> | undefined)?.join(", ") ?? "--")}</p>
+        <p>该审计只汇总 freshness matrix、长窗口样本、本地 trade_cal artifact、provider promotion、current evidence、decision surface 和 producer 覆盖的本地阻断项；它不刷新 Tushare、不重算分数、不修改 strategy action。</p>
+        <DataLineageTable rows={objectRow(freshnessProductionBlockerAudit)} />
+        <DataLineageTable rows={rows(cache.freshness_production_blocker_rows)} />
       </PacketCard>
 
       <PacketCard title="Freshness 长窗口样本验收" subtitle="local synthetic trade_cal fixture；使用实际 freshness gate，不调用 Tushare" status={String(freshnessSample.status ?? "sample_validation")}>

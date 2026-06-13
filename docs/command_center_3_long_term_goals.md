@@ -103,6 +103,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - `scripts/data_health_freshness_contract.py` now runs in `scripts/push_gate_3_0.sh` to guard LTG-01 contracts against unsafe regressions: local-only boundaries must remain visible, provider-backed acceptance must remain pending until explicit provider validation, and no Data Health contract may imply external calls, real trades, or strategy action mutation.
 - Data Health now exposes `trade_cal_provider_acceptance_runbook`, a local execution checklist for future provider-backed `trade_cal` long-window acceptance. It fixes the explicit POST task route, safe payload, call-ledger evidence, schema/window/holiday coverage, failure modes, artifact promotion boundary, and current-evidence isolation, while keeping `provider_backed_long_window_acceptance_done=false`.
 - Data Health now exposes `trade_cal_provider_acceptance_promotion_audit`, a local snapshot-only evidence promotion audit. It requires prior provider call ledger evidence, safe ledger fields, a 730-day window, schema/local artifact cross-check, open/closed/current coverage, freshness replay, failure-mode evidence, current-evidence boundary recheck, and an explicit promotion marker before `trade_cal` acceptance can move out of pending; the audit itself never calls Tushare.
+- Data Health now exposes `freshness_production_blocker_audit`: a local read-only blocker summary across the freshness matrix, long-window replay fixture, local `trade_cal` artifact validation, provider-backed promotion evidence, current-evidence boundary, decision-surface isolation, and producer expected-date coverage.
 
 ### Gaps
 
@@ -113,6 +114,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - The acceptance matrix is a contract, the synthetic sample is a fixture, the local Parquet validation is a physical artifact check, the current-evidence QA contract is a boundary contract, and the decision-surface / producer-coverage audits are snapshot-only visibility checks; none of them call Tushare on page render.
 - The provider acceptance runbook is not provider execution; it only makes the real Tushare `trade_cal` acceptance pass reproducible and keeps local artifact validation separate from provider-backed evidence.
 - The provider acceptance promotion audit is not provider execution; it only decides whether prior local evidence is strong enough to promote acceptance, and defaults to pending when evidence is missing or incomplete.
+- The freshness production blocker audit is not production completion; it only makes LTG-01 blockers visible and keeps `production_freshness_gate_complete=false`.
 
 ### Implementation Phases
 
@@ -137,6 +139,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - Push gate runs `scripts/data_health_freshness_contract.py` and fails if Data Health contracts lose local-only/no-provider/no-trade/no-action boundaries or falsely claim provider-backed freshness completion.
 - Data Health shows `trade_cal_provider_acceptance_runbook` and rows: explicit POST task requirement, safe payload, call ledger, long-window sample, schema, local artifact cross-check, freshness replay, failure modes, artifact promotion, current-evidence boundary, and secret/trade boundary.
 - Data Health shows `trade_cal_provider_acceptance_promotion_audit` and rows: explicit prior provider call ledger, safe call-ledger fields, minimum long-window evidence, schema/local artifact cross-check, open/closed/current coverage, freshness replay evidence, failure-mode evidence, current-evidence boundary recheck, explicit promotion marker, and read-only no-provider-call boundary.
+- Data Health shows `freshness_production_blocker_audit` and rows: every production phase is marked passed, pending, or blocked, with provider-backed `trade_cal`, local artifact, current-evidence, decision-surface, and producer expected-date blockers visible.
 - Local `trade_cal` Parquet validation can pass without setting provider-backed acceptance to done.
 
 ### Forbidden
@@ -147,6 +150,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - Do not treat synthetic samples, local matrix rows, or local artifact checks as provider-backed production acceptance.
 - Do not treat `trade_cal_provider_acceptance_runbook.local_runbook_ready=true` as evidence that Tushare was called or provider-backed acceptance passed.
 - Do not treat `trade_cal_provider_acceptance_promotion_audit.promotion_ready=false` as a failure of the cache API; it means prior provider-backed evidence is still missing or incomplete.
+- Do not treat `freshness_production_blocker_audit.production_ready=true` as final production completion; it only means local blocker rows are clear enough for promotion review, while release completion still needs explicit acceptance and gate evidence.
 - Do not treat `current_evidence_decision_surface_audit` as runtime rescore, packet filtering, or provider-backed freshness proof.
 - Do not treat `current_evidence_producer_coverage_audit` as building missing packets, refreshing providers, or proving full producer coverage when rows are `not_observed`.
 - Do not treat `scripts/data_health_freshness_contract.py` passing as real `trade_cal` provider acceptance; it only blocks local contract regressions.
@@ -771,7 +775,7 @@ Retire Streamlit from primary user workflow
 
 - Local test, frontend build, smoke, and diff checks are available.
 - `scripts/push_gate_3_0.sh` now codifies the local push gate: Python tests, desktop build, smoke, diff check, high-risk secret scan, generated artifact scan, and final clean-worktree check.
-- `scripts/data_health_freshness_contract.py` is now part of the local push gate. It validates LTG-01 Data Health contracts remain cache-only, provider-backed acceptance stays pending, and score/support/preview/action boundaries are not silently weakened.
+- `scripts/data_health_freshness_contract.py` is now part of the local push gate. It validates LTG-01 Data Health contracts and the freshness production blocker audit remain cache-only, provider-backed acceptance stays pending, and score/support/preview/action boundaries are not silently weakened.
 - `scripts/tushare_acceptance_contract.py` is now part of the local push gate. It validates LTG-02 Tushare matrix/readiness/contracts and provider evidence gap ledger remain button-gated, local, no-provider, no-trade, and no-action, while provider-backed full-interface acceptance remains pending.
 - `scripts/factor_test_lab_contract.py` is now part of the local push gate. It validates LTG-03 Factor Test Lab research metrics, small-pool readiness, storage query consumption, and production QA stay local/research-only while provider-backed small-pool and full-market validation remain pending.
 - `scripts/factor_universe_contract.py` is now part of the local push gate. It validates LTG-04 universe modes, local read-plan storage-query consumption, button-gated task catalog, React read-only display, partial-pool-not-full-market-proof visibility, no-provider/no-model/no-trade/no-action boundaries, and keeps worker batch execution, rank/zscore, neutralization, full-pool validation, and production universe research pending.
@@ -829,6 +833,7 @@ Retire Streamlit from primary user workflow
 - Ordinary keyword review contract runs after high-risk scan, emits no raw matched source lines, and keeps periodic allowlist review visible as pending.
 - Worktree is clean before push.
 - Optional local release report records passed checks, branch/head, ahead count, and safety boundaries without pushing or calling providers.
+- Data Health freshness contract keeps `freshness_production_blocker_audit` visible, local, no-provider, no-trade, and no-action while `production_freshness_gate_complete=false`.
 - Tushare acceptance contract runs after Data Health and before static UI QA, and keeps `provider_backed_acceptance_done=false` / `production_tushare_pipeline_complete=false` visible.
 - Factor Test Lab contract runs after Tushare acceptance and before static UI QA, and keeps `provider_backed_small_pool_validation_done=false` / `production_factor_test_validation_complete=false` visible.
 - Factor universe contract runs after Factor Test Lab and before DeepSeek governance, and keeps `large_universe_pipeline_done=false`, `full_pool_validation_done=false`, `cross_sectional_rank_zscore_done=false`, `neutralization_done=false`, `factor_combination_research_done=false`, and `production_factor_universe_complete=false` visible.

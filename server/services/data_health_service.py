@@ -1388,6 +1388,182 @@ def _trade_cal_provider_acceptance_promotion_audit(
     return contract, rows
 
 
+def _freshness_production_blocker_row(
+    phase: str,
+    status: str,
+    passed: bool,
+    *,
+    evidence: str,
+    blockers: list[str] | None = None,
+    production_blocker: bool | None = None,
+) -> dict[str, Any]:
+    return {
+        "phase": phase,
+        "status": status,
+        "passed": bool(passed),
+        "production_blocker": bool((not passed) if production_blocker is None else production_blocker),
+        "blockers": blockers or [],
+        "blocker_count": len(blockers or []),
+        "evidence": evidence,
+        "cache_only": True,
+        "read_only_snapshot_audit": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _freshness_production_blocker_audit(
+    *,
+    freshness_acceptance_summary: Mapping[str, Any],
+    freshness_sample: Mapping[str, Any],
+    trade_cal_physical: Mapping[str, Any],
+    provider_runbook: Mapping[str, Any],
+    provider_promotion: Mapping[str, Any],
+    current_evidence: Mapping[str, Any],
+    decision_surface: Mapping[str, Any],
+    producer_coverage: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    sample_passed = bool(
+        freshness_sample.get("status") == "local_sample_validation_passed"
+        and int(freshness_sample.get("failed_count") or 0) == 0
+        and freshness_sample.get("uses_actual_freshness_gate") is True
+    )
+    local_artifact_ready = bool(trade_cal_physical.get("local_trade_cal_physical_validation_done"))
+    provider_promotion_ready = bool(provider_promotion.get("promotion_ready"))
+    current_boundary_ready = bool(
+        current_evidence.get("current_evidence_requires_expected_trade_date") is True
+        and current_evidence.get("blocks_composite_score") is True
+        and current_evidence.get("blocks_support_factors") is True
+        and current_evidence.get("blocks_evidence_preview") is True
+        and current_evidence.get("blocks_next_session_bridge_preview") is True
+        and current_evidence.get("does_not_modify_strategy_action") is True
+    )
+    decision_surface_clear = int(decision_surface.get("blocked_surface_count") or 0) == 0
+    producer_coverage_clear = int(producer_coverage.get("blocked_producer_count") or 0) == 0
+    runbook_ready = bool(
+        provider_runbook.get("schema_version") == "data_health_trade_cal_provider_acceptance_runbook.v1"
+        and provider_runbook.get("local_runbook_ready") is True
+        and provider_runbook.get("provider_refresh_called_by_runbook") is False
+    )
+    rows = [
+        _freshness_production_blocker_row(
+            "freshness_acceptance_matrix",
+            "passed_local_contract" if freshness_acceptance_summary.get("status") == "acceptance_matrix_ready" else "blocked_contract_missing",
+            freshness_acceptance_summary.get("status") == "acceptance_matrix_ready"
+            and freshness_acceptance_summary.get("trade_cal_long_window_validation_done") is False,
+            evidence=(
+                f"status={freshness_acceptance_summary.get('status')}; "
+                "matrix remains local and does not claim real trade_cal acceptance."
+            ),
+            production_blocker=False,
+        ),
+        _freshness_production_blocker_row(
+            "long_window_replay_fixture",
+            "passed_local_fixture" if sample_passed else "blocked_fixture_regression",
+            sample_passed,
+            evidence=f"sample_status={freshness_sample.get('status')}; failed={freshness_sample.get('failed_count')}",
+            blockers=[] if sample_passed else ["freshness_long_window_sample_regression"],
+        ),
+        _freshness_production_blocker_row(
+            "local_trade_cal_artifact",
+            "passed_local_artifact" if local_artifact_ready else "pending_local_artifact_validation",
+            local_artifact_ready,
+            evidence=(
+                f"physical_status={trade_cal_physical.get('status')}; "
+                f"blocker_count={trade_cal_physical.get('blocker_count')}"
+            ),
+            blockers=list(trade_cal_physical.get("blockers") or []),
+        ),
+        _freshness_production_blocker_row(
+            "provider_acceptance_runbook",
+            "passed_local_runbook" if runbook_ready else "blocked_runbook_contract",
+            runbook_ready,
+            evidence=(
+                f"runbook_status={provider_runbook.get('status')}; "
+                f"pending_execution={provider_runbook.get('pending_execution_count')}"
+            ),
+            production_blocker=False,
+        ),
+        _freshness_production_blocker_row(
+            "provider_backed_trade_cal_acceptance",
+            "passed_provider_acceptance" if provider_promotion_ready else "pending_provider_acceptance",
+            provider_promotion_ready,
+            evidence=(
+                f"promotion_status={provider_promotion.get('status')}; "
+                f"blocker_count={provider_promotion.get('blocking_criterion_count')}; "
+                f"evidence_row_count={provider_promotion.get('evidence_row_count')}"
+            ),
+            blockers=list(provider_promotion.get("blockers") or []),
+        ),
+        _freshness_production_blocker_row(
+            "current_evidence_boundary",
+            "passed_boundary_contract" if current_boundary_ready else "blocked_boundary_contract",
+            current_boundary_ready,
+            evidence=(
+                f"candidate_status={current_evidence.get('current_evidence_candidate_status')}; "
+                f"current_blockers={current_evidence.get('current_evidence_blocker_count')}"
+            ),
+            blockers=[] if current_boundary_ready else list(current_evidence.get("current_evidence_blockers") or []),
+            production_blocker=not current_boundary_ready,
+        ),
+        _freshness_production_blocker_row(
+            "decision_surface_isolation",
+            "passed_no_visible_surface_blockers" if decision_surface_clear else "blocked_visible_surface_leak",
+            decision_surface_clear,
+            evidence=(
+                f"decision_surface_status={decision_surface.get('status')}; "
+                f"blocked_surfaces={decision_surface.get('blocked_surface_count')}"
+            ),
+            blockers=list(decision_surface.get("blocked_surface_keys") or []),
+        ),
+        _freshness_production_blocker_row(
+            "producer_expected_date_coverage",
+            "passed_no_observed_producer_blockers" if producer_coverage_clear else "blocked_producer_freshness_fields",
+            producer_coverage_clear,
+            evidence=(
+                f"producer_status={producer_coverage.get('status')}; "
+                f"blocked_producers={producer_coverage.get('blocked_producer_count')}; "
+                f"observed_producers={producer_coverage.get('observed_producer_count')}"
+            ),
+            blockers=list(producer_coverage.get("blocked_producer_keys") or []),
+        ),
+    ]
+    production_blockers = [row for row in rows if row.get("production_blocker")]
+    production_ready = not production_blockers
+    contract = {
+        "schema_version": "data_health_freshness_production_blocker_audit.v1",
+        "status": "freshness_production_ready_for_provider_promotion" if production_ready else "freshness_production_blockers_visible",
+        "scope": "local_read_only_freshness_production_blocker_audit_no_provider_execution",
+        "ltg": "LTG-01/LTG-11",
+        "production_ready": production_ready,
+        "provider_backed_trade_cal_acceptance_done": provider_promotion_ready,
+        "production_freshness_gate_complete": False,
+        "row_count": len(rows),
+        "production_blocker_count": len(production_blockers),
+        "production_blockers": [row["phase"] for row in production_blockers],
+        "local_trade_cal_artifact_ready": local_artifact_ready,
+        "provider_promotion_ready": provider_promotion_ready,
+        "current_evidence_boundary_ready": current_boundary_ready,
+        "decision_surface_clear": decision_surface_clear,
+        "producer_coverage_clear": producer_coverage_clear,
+        "cache_only": True,
+        "read_only_snapshot_audit": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "rows": rows,
+        "note": "This audit centralizes remaining LTG-01 production blockers. It does not call providers, does not rescore packets, and does not prove production completion.",
+    }
+    return contract, rows
+
+
 def read_data_health_timeline_cache() -> dict[str, Any]:
     snapshot = packet_service.load_snapshot_cache()
     safe_snapshot = _safe_value(snapshot)
@@ -1444,6 +1620,18 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             trade_cal_physical_validation,
             trade_cal_provider_acceptance_runbook,
             current_evidence_freshness_qa_contract,
+        )
+    )
+    freshness_production_blocker_audit, freshness_production_blocker_rows = (
+        _freshness_production_blocker_audit(
+            freshness_acceptance_summary=freshness_acceptance_summary,
+            freshness_sample=freshness_long_window_sample_validation,
+            trade_cal_physical=trade_cal_physical_validation,
+            provider_runbook=trade_cal_provider_acceptance_runbook,
+            provider_promotion=trade_cal_provider_acceptance_promotion_audit,
+            current_evidence=current_evidence_freshness_qa_contract,
+            decision_surface=current_evidence_decision_surface_audit,
+            producer_coverage=current_evidence_producer_coverage_audit,
         )
     )
 
@@ -1510,6 +1698,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal_physical_validation",
             "trade_cal_provider_acceptance_runbook",
             "trade_cal_provider_acceptance_promotion_audit",
+            "freshness_production_blocker_audit",
             "current_evidence_freshness_qa_contract",
             "current_evidence_decision_surface_audit",
             "current_evidence_producer_coverage_audit",
@@ -1538,6 +1727,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         "trade_cal_provider_acceptance_runbook_rows": trade_cal_provider_acceptance_runbook_rows,
         "trade_cal_provider_acceptance_promotion_audit": trade_cal_provider_acceptance_promotion_audit,
         "trade_cal_provider_acceptance_promotion_rows": trade_cal_provider_acceptance_promotion_rows,
+        "freshness_production_blocker_audit": freshness_production_blocker_audit,
+        "freshness_production_blocker_rows": freshness_production_blocker_rows,
         "current_evidence_freshness_qa_contract": current_evidence_freshness_qa_contract,
         "current_evidence_freshness_qa_rows": current_evidence_freshness_qa_rows,
         "current_evidence_decision_surface_audit": current_evidence_decision_surface_audit,
@@ -1575,6 +1766,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             ),
             "trade_cal_provider_acceptance_evidence_row_count": int(
                 trade_cal_provider_acceptance_promotion_audit.get("evidence_row_count") or 0
+            ),
+            "freshness_production_blocker_row_count": len(freshness_production_blocker_rows),
+            "freshness_production_blocker_count": int(
+                freshness_production_blocker_audit.get("production_blocker_count") or 0
             ),
             "current_evidence_freshness_qa_row_count": len(current_evidence_freshness_qa_rows),
             "current_evidence_freshness_qa_blocker_count": int(
@@ -1631,6 +1826,9 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal_provider_acceptance_promotion_still_pending": not bool(
                 trade_cal_provider_acceptance_promotion_audit.get("promotion_ready")
             ),
+            "freshness_production_blocker_audit_is_local": True,
+            "freshness_production_blocker_audit_calls_provider": False,
+            "freshness_production_ready": bool(freshness_production_blocker_audit.get("production_ready")),
             "current_evidence_freshness_qa_is_local_contract": True,
             "current_evidence_requires_expected_trade_date": True,
             "historical_samples_are_research_only": True,
@@ -1677,6 +1875,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 "trade_cal_provider_acceptance_promotion_ready": bool(
                     trade_cal_provider_acceptance_promotion_audit.get("promotion_ready")
                 ),
+                "freshness_production_blocker_audit_status": freshness_production_blocker_audit.get("status"),
+                "freshness_production_blocker_count": int(
+                    freshness_production_blocker_audit.get("production_blocker_count") or 0
+                ),
                 "current_evidence_freshness_qa_status": current_evidence_freshness_qa_contract.get("status"),
                 "current_evidence_candidate_status": current_evidence_freshness_qa_contract.get(
                     "current_evidence_candidate_status"
@@ -1720,6 +1922,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "current evidence freshness QA 只固定当前证据/历史样本边界；provider-backed trade_cal 长窗口验收仍需后续按钮任务证明。",
             "decision-surface audit 只检查本地 snapshot 可见字段，不重新评分、不过滤 packet、不修改 action；缺失字段不等于生产验收完成。",
             "producer coverage audit 只检查本地 snapshot 可见 producer 是否带 expected_trade_date、data_date 和 freshness_state；不构建缺失 packet。",
+            "freshness production blocker audit 只汇总本地阻断项；不会调用 provider、不会重算分数、不会宣称生产完成。",
         ],
     }
     if status == "cache_missing":

@@ -5673,6 +5673,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("production_freshness_gate_complete", script)
         self.assertIn("trade_cal_provider_acceptance_runbook", script)
         self.assertIn("trade_cal_provider_acceptance_promotion_audit", script)
+        self.assertIn("freshness_production_blocker_audit", script)
         self.assertIn("current_evidence_producer_coverage_audit", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
@@ -5700,10 +5701,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["does_not_execute_trades"])
         self.assertTrue(payload["does_not_modify_strategy_action"])
         self.assertEqual(payload["blocking_criterion_count"], 0)
+        self.assertGreater(payload["observed_counts"]["freshness_production_blocker_count"], 0)
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("acceptance_matrix_is_not_provider_acceptance", criteria)
         self.assertIn("provider_runbook_execution_pending", criteria)
         self.assertIn("provider_promotion_audit_is_read_only_pending", criteria)
+        self.assertIn("freshness_production_blocker_audit_is_local_pending", criteria)
         self.assertIn("producer_coverage_audit_is_read_only", criteria)
 
     def test_tushare_acceptance_contract_script_is_local_push_gate_guard(self):
@@ -10232,10 +10235,32 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(promotion["provider_refresh_called_by_audit"])
         self.assertFalse(promotion["external_calls_triggered"])
         self.assertFalse(promotion["tushare_called"])
+        blocker_audit = packet["freshness_production_blocker_audit"]
+        blocker_rows = {row["phase"]: row for row in packet["freshness_production_blocker_rows"]}
+        self.assertEqual(blocker_audit["schema_version"], "data_health_freshness_production_blocker_audit.v1")
+        self.assertEqual(blocker_audit["status"], "freshness_production_blockers_visible")
+        self.assertEqual(blocker_audit["scope"], "local_read_only_freshness_production_blocker_audit_no_provider_execution")
+        self.assertFalse(blocker_audit["production_ready"])
+        self.assertFalse(blocker_audit["provider_backed_trade_cal_acceptance_done"])
+        self.assertFalse(blocker_audit["production_freshness_gate_complete"])
+        self.assertIn("provider_backed_trade_cal_acceptance", blocker_audit["production_blockers"])
+        self.assertGreater(blocker_audit["production_blocker_count"], 0)
+        self.assertFalse(blocker_audit["external_calls_triggered"])
+        self.assertFalse(blocker_audit["tushare_called"])
+        self.assertTrue(blocker_audit["does_not_execute_trades"])
+        self.assertEqual(blocker_rows["provider_backed_trade_cal_acceptance"]["status"], "pending_provider_acceptance")
+        self.assertTrue(packet["policy"]["freshness_production_blocker_audit_is_local"])
+        self.assertFalse(packet["policy"]["freshness_production_blocker_audit_calls_provider"])
+        self.assertFalse(packet["policy"]["freshness_production_ready"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertEqual(response["call_ledger"][0]["api"], "local_data_health_timeline_cache")
         self.assertEqual(response["call_ledger"][0]["freshness_acceptance_scenario_count"], 8)
+        self.assertEqual(
+            response["call_ledger"][0]["freshness_production_blocker_audit_status"],
+            "freshness_production_blockers_visible",
+        )
+        self.assertGreater(response["call_ledger"][0]["freshness_production_blocker_count"], 0)
         self.assertFalse(response["call_ledger"][0]["external"])
         self.assertIn("GET /api/data-health/cache", response["warnings"][0])
 
@@ -10265,6 +10290,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         producer_coverage = packet["current_evidence_producer_coverage_audit"]
         provider_runbook = packet["trade_cal_provider_acceptance_runbook"]
         provider_promotion = packet["trade_cal_provider_acceptance_promotion_audit"]
+        freshness_blocker_audit = packet["freshness_production_blocker_audit"]
+        freshness_blocker_rows = {row["phase"]: row for row in packet["freshness_production_blocker_rows"]}
         provider_runbook_rows = {row["criterion"]: row for row in packet["trade_cal_provider_acceptance_runbook_rows"]}
         provider_promotion_rows = {
             row["criterion"]: row for row in packet["trade_cal_provider_acceptance_promotion_rows"]
@@ -10308,6 +10335,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["trade_cal_provider_acceptance_promotion_row_count"], 10)
         self.assertGreater(packet["counts"]["trade_cal_provider_acceptance_promotion_blocker_count"], 0)
         self.assertEqual(packet["counts"]["trade_cal_provider_acceptance_evidence_row_count"], 0)
+        self.assertEqual(packet["counts"]["freshness_production_blocker_row_count"], 8)
+        self.assertGreater(packet["counts"]["freshness_production_blocker_count"], 0)
         self.assertEqual(packet["counts"]["current_evidence_freshness_qa_row_count"], 8)
         self.assertEqual(packet["counts"]["current_evidence_freshness_qa_blocker_count"], 3)
         self.assertEqual(packet["counts"]["current_evidence_decision_surface_row_count"], 5)
@@ -10357,6 +10386,28 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["current_evidence_producer_coverage_audit_is_local"])
         self.assertFalse(packet["policy"]["current_evidence_producer_coverage_audit_builds_missing_packets"])
         self.assertTrue(packet["policy"]["current_evidence_producer_coverage_requires_expected_trade_date"])
+        self.assertTrue(packet["policy"]["freshness_production_blocker_audit_is_local"])
+        self.assertFalse(packet["policy"]["freshness_production_blocker_audit_calls_provider"])
+        self.assertFalse(packet["policy"]["freshness_production_ready"])
+        self.assertEqual(
+            freshness_blocker_audit["schema_version"],
+            "data_health_freshness_production_blocker_audit.v1",
+        )
+        self.assertEqual(freshness_blocker_audit["status"], "freshness_production_blockers_visible")
+        self.assertFalse(freshness_blocker_audit["production_ready"])
+        self.assertFalse(freshness_blocker_audit["provider_backed_trade_cal_acceptance_done"])
+        self.assertFalse(freshness_blocker_audit["production_freshness_gate_complete"])
+        self.assertIn("provider_backed_trade_cal_acceptance", freshness_blocker_audit["production_blockers"])
+        self.assertIn("local_trade_cal_artifact", freshness_blocker_audit["production_blockers"])
+        self.assertFalse(freshness_blocker_audit["external_calls_triggered"])
+        self.assertFalse(freshness_blocker_audit["tushare_called"])
+        self.assertTrue(freshness_blocker_audit["does_not_execute_trades"])
+        self.assertEqual(freshness_blocker_rows["long_window_replay_fixture"]["status"], "passed_local_fixture")
+        self.assertEqual(
+            freshness_blocker_rows["provider_backed_trade_cal_acceptance"]["status"],
+            "pending_provider_acceptance",
+        )
+        self.assertTrue(freshness_blocker_rows["provider_backed_trade_cal_acceptance"]["production_blocker"])
         self.assertEqual(current_evidence["schema_version"], "data_health_current_evidence_freshness_qa.v1")
         self.assertEqual(
             current_evidence["status"],
@@ -10814,6 +10865,21 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(promotion_rows["freshness_gate_replay_evidence"]["status"], "passed")
         self.assertEqual(promotion_rows["failure_mode_evidence"]["status"], "passed")
         self.assertEqual(promotion_rows["explicit_promotion_marker"]["status"], "passed")
+        blocker_audit = packet["freshness_production_blocker_audit"]
+        blocker_rows = {row["phase"]: row for row in packet["freshness_production_blocker_rows"]}
+        self.assertEqual(blocker_audit["schema_version"], "data_health_freshness_production_blocker_audit.v1")
+        self.assertEqual(blocker_audit["status"], "freshness_production_ready_for_provider_promotion")
+        self.assertTrue(blocker_audit["production_ready"])
+        self.assertTrue(blocker_audit["provider_backed_trade_cal_acceptance_done"])
+        self.assertFalse(blocker_audit["production_freshness_gate_complete"])
+        self.assertEqual(blocker_audit["production_blocker_count"], 0)
+        self.assertEqual(blocker_audit["production_blockers"], [])
+        self.assertEqual(blocker_rows["provider_backed_trade_cal_acceptance"]["status"], "passed_provider_acceptance")
+        self.assertFalse(blocker_rows["freshness_acceptance_matrix"]["production_blocker"])
+        self.assertFalse(blocker_audit["external_calls_triggered"])
+        self.assertFalse(blocker_audit["tushare_called"])
+        self.assertTrue(packet["policy"]["freshness_production_ready"])
+        self.assertEqual(packet["counts"]["freshness_production_blocker_count"], 0)
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
 
