@@ -63,6 +63,7 @@ export default function FactorQuantHub() {
   const bridge = packet.next_session_bridge ?? {};
   const freshnessGate = packet.data_freshness_gate ?? {};
   const universeResearch = packet.universe_research_contract ?? {};
+  const universeExecutionReadiness = packet.universe_execution_readiness_audit ?? {};
   const universeResearchTaskPlan = packet.universe_research_task_plan ?? {};
   const factorLibrary = packet.factor_library ?? {};
   const factorTests = packet.factor_tests ?? {};
@@ -85,6 +86,8 @@ export default function FactorQuantHub() {
   const deepseekJsonStabilityRows = toRows(packet.deepseek_json_stability_rows);
   const universeResearchRows = objectRows(universeResearch as Record<string, unknown>, "universe_contract");
   const universeModeRows = toRows(packet.universe_research_mode_rows);
+  const universeExecutionReadinessRows = objectRows(universeExecutionReadiness as Record<string, unknown>, "universe_execution_readiness");
+  const universeExecutionCriterionRows = toRows(packet.universe_execution_readiness_rows);
   const universeResearchTaskPlanRows = objectRows(universeResearchTaskPlan as Record<string, unknown>, "universe_read_plan");
   const universeResearchDatasetRows = toRows(packet.universe_research_task_plan_rows);
   const factorTestRows = toRows(factorTests.items);
@@ -173,9 +176,14 @@ export default function FactorQuantHub() {
           { label: "render scan", value: universeResearch.page_render_starts_full_pool === true ? "会启动" : "不启动", tone: universeResearch.page_render_starts_full_pool === true ? "bad" : "good" },
           { label: "frontend rank/zscore", value: universeResearch.frontend_computes_rank_zscore === true ? "会计算" : "不计算", tone: universeResearch.frontend_computes_rank_zscore === true ? "bad" : "good" },
           { label: "universe read plan", value: universeResearchTaskPlan.status ?? "missing", tone: universeResearchTaskPlan.status === "read_plan_ready" ? "good" : "neutral" },
+          { label: "universe exec audit", value: universeExecutionReadiness.status ?? "missing", tone: universeExecutionReadiness.read_plan_ready === true ? "good" : "warn" },
+          { label: "universe blockers", value: universeExecutionReadiness.production_blocker_count ?? 0, tone: Number(universeExecutionReadiness.production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "worker plan", value: universeResearchTaskPlan.worker_task_consumption_plan_ready === true ? "ready" : "missing", tone: universeResearchTaskPlan.worker_task_consumption_plan_ready === true ? "good" : "neutral" },
           { label: "read plan datasets", value: universeResearchTaskPlan.dataset_count ?? 0 },
           { label: "plan full pool done", value: universeResearchTaskPlan.full_pool_validation_done === true ? "完成" : "未完成", tone: universeResearchTaskPlan.full_pool_validation_done === true ? "bad" : "good" },
+          { label: "rank/zscore", value: universeExecutionReadiness.cross_sectional_rank_zscore_done === true ? "完成" : "未完成", tone: universeExecutionReadiness.cross_sectional_rank_zscore_done === true ? "good" : "warn" },
+          { label: "neutralization", value: universeExecutionReadiness.neutralization_done === true ? "完成" : "未完成", tone: universeExecutionReadiness.neutralization_done === true ? "good" : "warn" },
+          { label: "universe production", value: universeExecutionReadiness.production_factor_universe_complete === true ? "完成" : "未完成", tone: universeExecutionReadiness.production_factor_universe_complete === true ? "good" : "warn" },
           { label: "score band", value: score.score_band ?? "missing" },
           { label: "factor tests", value: factorTests.status ?? "scaffold_missing", tone: factorTests.status === "scaffold_ready" ? "warn" : "neutral" },
           { label: "test rows", value: factorTestRows.length },
@@ -289,6 +297,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">current_target / watchlist / custom_pool / full_pool 是研究 universe 合同；页面渲染不启动 full-pool，不在前端计算 rank/zscore，也不把 partial pool 当全市场证明。</p>
       <DataLineageTable rows={universeResearchRows} />
       <DataLineageTable rows={universeModeRows} />
+      <h3>Factor Universe 执行 readiness 审计</h3>
+      <p className="risk-note">universe_execution_readiness_audit 汇总 read-plan、storage 查询合同、worker 批量执行、rank/zscore、中性化和 full-pool 验收状态；read_plan_ready_execution_pending 不代表全市场研究生产完成。</p>
+      <DataLineageTable rows={universeExecutionCriterionRows} />
+      <DataLineageTable rows={universeExecutionReadinessRows} />
       <h3>Factor Universe 任务化读取计划</h3>
       <p className="risk-note">universe_research_task_plan 由按钮任务生成；只读本地 storage 查询合同和分页元信息，不跑 full-pool 研究、不在页面渲染时读取全市场、不进入 strategy action。</p>
       <DataLineageTable rows={universeResearchDatasetRows} />

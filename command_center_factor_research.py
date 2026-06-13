@@ -1975,6 +1975,156 @@ def _factor_universe_research_contract(universe: Any, runtime: Mapping[str, Any]
     }
 
 
+def _factor_universe_execution_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    *,
+    evidence: str,
+    production_blocker: bool = False,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "production_blocker": bool(production_blocker),
+        "evidence": evidence,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def build_factor_universe_execution_readiness_audit(
+    *,
+    contract: Any = None,
+    mode_rows: Any = None,
+    task_plan: Any = None,
+) -> dict[str, Any]:
+    contract_map = _as_mapping(contract)
+    rows_list = [row for row in _as_list(mode_rows) if isinstance(row, Mapping)]
+    plan_map = _as_mapping(task_plan)
+    declared_modes = {str(row.get("universe_mode") or "") for row in rows_list}
+    required_modes = {"current_target", "watchlist", "custom_pool", "full_pool"}
+    read_plan_ready = plan_map.get("status") == "read_plan_ready"
+    storage_contract_consumed = bool(contract_map.get("storage_query_contract_consumed") or plan_map.get("storage_query_contract_count"))
+    worker_plan_ready = bool(contract_map.get("worker_task_consumption_plan_ready") or plan_map.get("worker_task_consumption_plan_ready"))
+    large_universe_done = bool(contract_map.get("large_universe_pipeline_done") or plan_map.get("large_universe_pipeline_done"))
+    full_pool_done = bool(contract_map.get("full_pool_validation_done") or plan_map.get("full_pool_validation_done"))
+    rank_zscore_done = bool(contract_map.get("cross_sectional_rank_zscore_done") or plan_map.get("cross_sectional_rank_zscore_done"))
+    neutralization_done = bool(contract_map.get("full_sample_neutralization_done") or plan_map.get("neutralization_done"))
+    frontend_safe = contract_map.get("page_render_starts_full_pool") is False and contract_map.get("frontend_computes_rank_zscore") is False
+    partial_pool_safe = contract_map.get("partial_pool_is_full_market_proof") is False
+    trade_safe = contract_map.get("does_not_execute_trades") is True and contract_map.get("does_not_modify_strategy_action") is True
+
+    audit_rows = [
+        _factor_universe_execution_row(
+            "universe_modes_declared",
+            "passed" if required_modes <= declared_modes else "blocked",
+            required_modes <= declared_modes,
+            evidence=f"declared={','.join(sorted(mode for mode in declared_modes if mode))}",
+            production_blocker=not (required_modes <= declared_modes),
+        ),
+        _factor_universe_execution_row(
+            "button_gated_read_plan",
+            "passed" if read_plan_ready else "pending",
+            read_plan_ready,
+            evidence=f"task_plan_status={plan_map.get('status') or 'missing'}; post_task_required={plan_map.get('post_task_required')}",
+            production_blocker=not read_plan_ready,
+        ),
+        _factor_universe_execution_row(
+            "storage_query_contract_consumed",
+            "passed" if storage_contract_consumed else "pending",
+            storage_contract_consumed,
+            evidence=f"storage_query_contract_count={plan_map.get('storage_query_contract_count') or contract_map.get('storage_query_contract_count') or 0}",
+            production_blocker=not storage_contract_consumed,
+        ),
+        _factor_universe_execution_row(
+            "worker_batch_execution_pending",
+            "passed" if large_universe_done else "blocked",
+            large_universe_done,
+            evidence=f"large_universe_pipeline_done={large_universe_done}; worker_plan_ready={worker_plan_ready}",
+            production_blocker=not large_universe_done,
+        ),
+        _factor_universe_execution_row(
+            "cross_sectional_rank_zscore_pending",
+            "passed" if rank_zscore_done else "blocked",
+            rank_zscore_done,
+            evidence=f"cross_sectional_rank_zscore_done={rank_zscore_done}",
+            production_blocker=not rank_zscore_done,
+        ),
+        _factor_universe_execution_row(
+            "neutralization_pending",
+            "passed" if neutralization_done else "blocked",
+            neutralization_done,
+            evidence=f"neutralization_done={neutralization_done}",
+            production_blocker=not neutralization_done,
+        ),
+        _factor_universe_execution_row(
+            "full_pool_validation_pending",
+            "passed" if full_pool_done else "blocked",
+            full_pool_done,
+            evidence=f"full_pool_validation_done={full_pool_done}; requested_universe_mode={plan_map.get('requested_universe_mode') or contract_map.get('requested_universe_mode') or contract_map.get('current_universe_type')}",
+            production_blocker=not full_pool_done,
+        ),
+        _factor_universe_execution_row(
+            "frontend_read_only_boundary",
+            "passed" if frontend_safe else "blocked",
+            frontend_safe,
+            evidence=f"page_render_starts_full_pool={contract_map.get('page_render_starts_full_pool')}; frontend_computes_rank_zscore={contract_map.get('frontend_computes_rank_zscore')}",
+            production_blocker=not frontend_safe,
+        ),
+        _factor_universe_execution_row(
+            "partial_pool_not_full_market_proof",
+            "passed" if partial_pool_safe else "blocked",
+            partial_pool_safe,
+            evidence=f"partial_pool_is_full_market_proof={contract_map.get('partial_pool_is_full_market_proof')}",
+            production_blocker=not partial_pool_safe,
+        ),
+        _factor_universe_execution_row(
+            "research_trade_boundary",
+            "passed" if trade_safe else "blocked",
+            trade_safe,
+            evidence=f"does_not_execute_trades={contract_map.get('does_not_execute_trades')}; does_not_modify_strategy_action={contract_map.get('does_not_modify_strategy_action')}",
+            production_blocker=not trade_safe,
+        ),
+    ]
+    blocker_count = sum(1 for row in audit_rows if row.get("production_blocker"))
+    return {
+        "schema_version": "factor_universe_execution_readiness_audit.v1",
+        "status": "read_plan_ready_execution_pending" if read_plan_ready and storage_contract_consumed else "contract_ready_read_plan_pending",
+        "scope": "local_readiness_not_batch_research_or_full_market_validation",
+        "requested_universe_mode": plan_map.get("requested_universe_mode") or contract_map.get("requested_universe_mode") or contract_map.get("current_universe_type") or "current_target",
+        "declared_universe_modes": sorted(mode for mode in declared_modes if mode),
+        "read_plan_ready": read_plan_ready,
+        "storage_query_contract_consumed": storage_contract_consumed,
+        "worker_task_consumption_plan_ready": worker_plan_ready,
+        "large_universe_pipeline_done": large_universe_done,
+        "full_pool_validation_done": full_pool_done,
+        "watchlist_pipeline_done": bool(contract_map.get("watchlist_pipeline_done") or plan_map.get("watchlist_pipeline_done")),
+        "custom_pool_pipeline_done": bool(contract_map.get("custom_pool_pipeline_done") or plan_map.get("custom_pool_pipeline_done")),
+        "cross_sectional_rank_zscore_done": rank_zscore_done,
+        "neutralization_done": neutralization_done,
+        "factor_combination_research_done": bool(contract_map.get("factor_combination_research_done")),
+        "production_factor_universe_complete": False,
+        "partial_pool_is_full_market_proof": False,
+        "page_render_starts_full_pool": False,
+        "frontend_computes_rank_zscore": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "production_blocker_count": blocker_count,
+        "rows": audit_rows,
+        "note": "Read-plan readiness is not full-pool factor research. Batch execution, rank/zscore, neutralization, and provider-backed validation remain pending.",
+    }
+
+
 def _classify_factor_test_row(row: Mapping[str, Any]) -> str:
     pit_check = str(row.get("pit_check") or "pending")
     lookahead_check = str(row.get("lookahead_check") or "pending")
@@ -3049,6 +3199,10 @@ def build_factor_quant_hub_packet(
     universe_map = _as_mapping(universe)
     universe_research_mode_rows = _factor_universe_research_mode_rows(universe_map, runtime)
     universe_research_contract = _factor_universe_research_contract(universe_map, runtime, universe_research_mode_rows)
+    universe_execution_readiness = build_factor_universe_execution_readiness_audit(
+        contract=universe_research_contract,
+        mode_rows=universe_research_mode_rows,
+    )
     governance_state = "evidence_effect_only" if score.get("status") == "ready" else "research_only"
     bridge_preview = _build_factor_evidence_preview(score)
     warnings = list(score.get("warnings") or [])
@@ -3073,6 +3227,8 @@ def build_factor_quant_hub_packet(
         "runtime": _copy_json(runtime),
         "universe_research_contract": _copy_json(universe_research_contract),
         "universe_research_mode_rows": _copy_json(universe_research_mode_rows),
+        "universe_execution_readiness_audit": _copy_json(universe_execution_readiness),
+        "universe_execution_readiness_rows": _copy_json(universe_execution_readiness["rows"]),
         "factor_tests": _copy_json(tests),
         "score": _copy_json(score),
         "data_freshness_gate": _copy_json(freshness_gate),

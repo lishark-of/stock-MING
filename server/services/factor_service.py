@@ -41,6 +41,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     now = _now_iso()
     packet["deepseek_explain_governance"] = _deepseek_explain_governance()
     packet["score_chart_payload"] = _factor_score_chart_payload(packet)
+    packet = _attach_factor_universe_execution_readiness(packet)
     packet = _attach_deepseek_json_stability_audit(packet, governance=packet["deepseek_explain_governance"])
     packet, storage_query_ledger = _attach_factor_test_storage_query_consumption(packet, now)
     cache_ledger = _factor_quant_cache_call_ledger(packet, now)
@@ -55,6 +56,24 @@ def read_factor_quant_cache() -> dict[str, Any]:
         for item in existing_warnings
         if item not in {cache_warning, storage_query_warning}
     ]
+    return packet
+
+
+def _attach_factor_universe_execution_readiness(packet: dict[str, Any]) -> dict[str, Any]:
+    audit = factor_research.build_factor_universe_execution_readiness_audit(
+        contract=packet.get("universe_research_contract"),
+        mode_rows=packet.get("universe_research_mode_rows"),
+        task_plan=packet.get("universe_research_task_plan"),
+    )
+    packet["universe_execution_readiness_audit"] = audit
+    packet["universe_execution_readiness_rows"] = list(audit.get("rows") or [])
+    contract = packet.get("universe_research_contract") if isinstance(packet.get("universe_research_contract"), dict) else {}
+    if contract:
+        contract = dict(contract)
+        contract["execution_readiness_status"] = audit.get("status")
+        contract["production_factor_universe_complete"] = audit.get("production_factor_universe_complete")
+        contract["production_blocker_count"] = audit.get("production_blocker_count")
+        packet["universe_research_contract"] = contract
     return packet
 
 
@@ -742,6 +761,7 @@ def run_factor_universe_research_plan_task(payload: Any = None) -> dict[str, Any
         hub["universe_research_contract"] = universe_contract
         hub["universe_research_task_plan"] = plan
         hub["universe_research_task_plan_rows"] = list(plan.get("storage_query_rows") or [])
+        hub = _attach_factor_universe_execution_readiness(hub)
         hub["universe_research_task_call_ledger"] = call_ledger
         hub["call_ledger"] = call_ledger + list(existing_ledger)
         hub["warnings"] = [plan_warning] + [item for item in existing_warnings if item != plan_warning]

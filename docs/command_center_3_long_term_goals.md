@@ -59,7 +59,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 | LTG-01 | A 股交易日历级 freshness 生产化 | `done_real` MVP, still needs production validation | All current evidence is gated by expected trade date | P1 | stale / expired / historical / unknown data cannot enter score, support, evidence preview, or action. |
 | LTG-02 | Tushare 全接口生产流水线 | core light path `done_real`; extended APIs `matrix` / `mock` | All selected interfaces run through task pipeline with call ledger | P2 | Each interface has real target samples, safe failure states, and no false verified claims. |
 | LTG-03 | Factor Test Lab 完整生产化 | light research metrics `done_real`; production research incomplete | Research-grade factor validation for single factors | P3 | IC, Rank IC, ICIR, groups, cost, drawdown, sample split, decay, and neutral IC are auditable and research-only. |
-| LTG-04 | Factor 全市场 / 股票池研究 | light mode for small scope | watchlist / custom pool / full pool research pipeline | P3 | Large universe runs in task pipeline without blocking UI or entering strategy action. |
+| LTG-04 | Factor 全市场 / 股票池研究 | light mode plus local read-plan and execution readiness audit; batch execution pending | watchlist / custom pool / full pool research pipeline | P3 | Large universe runs in task pipeline without blocking UI or entering strategy action. |
 | LTG-05 | Storage / DuckDB / Parquet 生产化 | dataset scaffold and factor_values write path | Versioned, queryable local data layer | P4 | schema/version/TTL/compaction/query services are auditable; data artifacts stay out of git. |
 | LTG-06 | Worker / Celery / Redis 生产化 | local task fallback and preflight | Production-capable worker orchestration with local fallback | P4 | POST returns task_id, worker runs heavy jobs, Redis absence falls back gracefully, scheduler stays off by default. |
 | LTG-07 | DeepSeek pro 稳定解释生产化 | manual governance, sanitizer, and local JSON stability audit; mini-benchmark below production target | Stable manual explanation, optional background auto-after-task | P5 | JSON success rate > 90%, no action leakage, no numeric overwrite, cost predictable. |
@@ -231,6 +231,7 @@ Promote Factor Test Lab to research-grade metrics
 - Current implemented compute pipeline remains `current_target` light mode.
 - A button-gated local `run_factor_universe_research_plan` task now consumes storage query contracts for `factor_values`, `daily`, `daily_basic`, `moneyflow`, and `trade_cal`, then writes `universe_research_task_plan` back to Factor Quant Hub cache.
 - The read-plan task is a worker/task consumption plan, not full-pool research validation.
+- Factor Quant Hub now exposes `universe_execution_readiness_audit` and `universe_execution_readiness_rows`, summarizing read-plan readiness, storage query contract consumption, worker batch execution, cross-sectional rank/zscore, neutralization, full-pool validation, frontend read-only boundaries, partial-pool boundaries, and trade isolation.
 
 ### Gaps
 
@@ -239,6 +240,7 @@ Promote Factor Test Lab to research-grade metrics
 - Factor combination research is incomplete.
 - The universe read plan does not perform watchlist/custom/full-pool batch research yet.
 - Cross-sectional rank, zscore, neutralization, result summaries, and worker-backed large-universe execution are still incomplete.
+- `universe_execution_readiness_audit.status=read_plan_ready_execution_pending` only proves the local read-plan contract after the button task; it is not provider-backed full-market research and keeps production blockers visible.
 
 ### Implementation Phases
 
@@ -255,12 +257,14 @@ Promote Factor Test Lab to research-grade metrics
 - Research outputs remain outside `strategy action`.
 - Partial pools are explicitly not full-market proof, and page render does not start full-pool research.
 - Storage query read plans remain local metadata contracts until real research execution and full-pool validation are complete.
+- `universe_execution_readiness_audit.production_factor_universe_complete=false` until worker-backed batch execution, rank/zscore, neutralization, result summaries, and full-pool/provider-backed validation are implemented and verified.
 
 ### Forbidden
 
 - Do not block page render with full-pool computation.
 - Do not write universe data to git.
 - Do not treat partial universe samples as full-market proof.
+- Do not treat `universe_execution_readiness_audit` as production factor-universe completion while it reports execution pending.
 
 ### Recommended Commit Message
 
