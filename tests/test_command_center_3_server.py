@@ -1356,6 +1356,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(storage_blocker["dry_runs_are_not_production_completion"])
         self.assertTrue(storage_blocker["preflight_is_not_physical_migration"])
         self.assertTrue(storage_blocker["dataset_version_policy_is_not_manifest_validation"])
+        self.assertTrue(storage_blocker["dataset_version_manifest_evidence_is_read_only"])
+        self.assertEqual(storage_blocker["dataset_version_manifest_evidence_status"], "manifest_missing_validation_pending")
+        self.assertFalse(storage_blocker["dataset_version_manifest_evidence_validated"])
+        self.assertEqual(storage_blocker["dataset_version_manifest_evidence_validated_count"], 0)
         self.assertGreaterEqual(storage_blocker["blocking_criterion_count"], 6)
         self.assertEqual(len(overview["storage_production_blocker_rows"]), 10)
         self.assertEqual(overview["storage_production_blocker_count"], storage_blocker["blocking_criterion_count"])
@@ -1392,6 +1396,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("schema_version", controls_by_key)
         self.assertIn("dataset_version_policy", controls_by_key)
         self.assertIn("schema_migration_preflight", controls_by_key)
+        self.assertIn("dataset_version_manifest_evidence", controls_by_key)
         self.assertIn("schema_validation_dry_run", controls_by_key)
         self.assertIn("partition_migration_dry_run", controls_by_key)
         self.assertIn("parquet_partitioning", controls_by_key)
@@ -1402,6 +1407,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("artifact_cleanup_manual_review", controls_by_key)
         self.assertEqual(controls_by_key["schema_version"]["status"], "local_ready")
         self.assertEqual(controls_by_key["dataset_version_policy"]["status"], "policy_ready")
+        self.assertEqual(controls_by_key["dataset_version_manifest_evidence"]["status"], "read_only_evidence_ready")
         self.assertEqual(controls_by_key["schema_migration_preflight"]["status"], "preflight_ready")
         self.assertEqual(controls_by_key["schema_validation_dry_run"]["status"], "button_gated_ready")
         self.assertEqual(controls_by_key["partition_migration_dry_run"]["status"], "button_gated_ready")
@@ -1418,6 +1424,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(overview["production_readiness"]["physical_dataset_version_validated_count"], 0)
         self.assertEqual(overview["production_readiness"]["dataset_version_migration_executed_count"], 0)
         self.assertFalse(overview["production_readiness"]["dataset_version_manifest_written_on_get"])
+        self.assertEqual(overview["production_readiness"]["dataset_version_manifest_evidence_status"], "manifest_missing_validation_pending")
+        self.assertEqual(overview["production_readiness"]["dataset_version_manifest_evidence_validated_count"], 0)
+        self.assertEqual(overview["production_readiness"]["dataset_version_manifest_evidence_missing_count"], 0)
+        self.assertEqual(overview["production_readiness"]["dataset_version_manifest_evidence_mismatch_count"], 0)
+        self.assertFalse(overview["production_readiness"]["dataset_version_manifest_evidence_exists"])
+        self.assertFalse(overview["production_readiness"]["dataset_version_manifest_evidence_validated"])
+        self.assertFalse(overview["production_readiness"]["dataset_version_manifest_evidence_written_on_get"])
+        self.assertFalse(overview["production_readiness"]["dataset_version_manifest_evidence_reads_parquet_payloads"])
         self.assertEqual(overview["production_readiness"]["schema_migration_policy"], "preflight_only_no_physical_migration_on_get")
         self.assertEqual(overview["production_readiness"]["schema_migration_preflight_status"], "preflight_ready")
         self.assertEqual(overview["production_readiness"]["schema_migration_dataset_count"], 6)
@@ -1549,6 +1563,31 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(len(overview["dataset_version_rows"]), 6)
         self.assertEqual(set(overview["dataset_version_status"]), {"factor_values", "daily", "daily_basic", "moneyflow", "trade_cal", "backtest_results"})
         self.assertIn("contract_declared_dataset_missing", overview["dataset_version_status_counts"])
+        self.assertIn("dataset_version_manifest_evidence_audit", overview)
+        manifest_evidence = overview["dataset_version_manifest_evidence_audit"]
+        self.assertEqual(manifest_evidence["schema_version"], "command_center_3_storage_dataset_version_manifest_evidence.v1")
+        self.assertEqual(manifest_evidence["status"], "manifest_missing_validation_pending")
+        self.assertEqual(manifest_evidence["scope"], "read_only_local_manifest_evidence_not_manifest_writer")
+        self.assertEqual(manifest_evidence["mode"], "cache_only_read_only_manifest_evidence")
+        self.assertFalse(manifest_evidence["manifest_exists"])
+        self.assertEqual(manifest_evidence["validated_dataset_count"], 0)
+        self.assertFalse(manifest_evidence["dataset_version_manifest_validated"])
+        self.assertFalse(manifest_evidence["dataset_version_manifest_written"])
+        self.assertFalse(manifest_evidence["manifest_writer_task_executed"])
+        self.assertEqual(manifest_evidence["dataset_version_migration_executed_count"], 0)
+        self.assertFalse(manifest_evidence["manifest_written_on_get"])
+        self.assertFalse(manifest_evidence["cache_get_writes_files"])
+        self.assertFalse(manifest_evidence["cache_get_reads_parquet_payloads"])
+        self.assertFalse(manifest_evidence["external_calls_triggered"])
+        self.assertFalse(manifest_evidence["tushare_called"])
+        self.assertFalse(manifest_evidence["deepseek_called"])
+        self.assertFalse(manifest_evidence["github_called"])
+        self.assertTrue(manifest_evidence["does_not_execute_trades"])
+        self.assertEqual(len(overview["dataset_version_manifest_evidence_rows"]), 6)
+        self.assertIn("manifest_missing_validation_pending", overview["dataset_version_manifest_evidence_status_counts"])
+        self.assertEqual(overview["dataset_version_manifest_evidence_status"], "manifest_missing_validation_pending")
+        self.assertEqual(overview["dataset_version_manifest_evidence_validated_count"], 0)
+        self.assertFalse(overview["dataset_version_manifest_evidence_validated"])
         self.assertEqual(set(overview["dataset_partition_plan_status"]), {"factor_values", "daily", "daily_basic", "moneyflow", "trade_cal", "backtest_results"})
         self.assertEqual(set(overview["dataset_compaction_status"]), {"factor_values", "daily", "daily_basic", "moneyflow", "trade_cal", "backtest_results"})
         self.assertTrue(all(status == "contract_ready" for status in overview["dataset_schema_contract_status"].values()))
@@ -1813,6 +1852,63 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(rows_by_dataset["daily"]["cache_get_reads_payloads"])
         self.assertIn("_dataset_versions.json", policy["version_manifest_path"])
 
+    def test_storage_dataset_version_manifest_evidence_is_read_only_local_audit(self):
+        root = self._with_parquet_root()
+
+        missing = storage_service.storage_dataset_version_manifest_evidence_audit()
+
+        self.assertEqual(missing["schema_version"], "command_center_3_storage_dataset_version_manifest_evidence.v1")
+        self.assertEqual(missing["status"], "manifest_missing_validation_pending")
+        self.assertEqual(missing["scope"], "read_only_local_manifest_evidence_not_manifest_writer")
+        self.assertEqual(missing["mode"], "cache_only_read_only_manifest_evidence")
+        self.assertFalse(missing["manifest_exists"])
+        self.assertEqual(missing["dataset_count"], 6)
+        self.assertEqual(missing["validated_dataset_count"], 0)
+        self.assertFalse(missing["dataset_version_manifest_validated"])
+        self.assertFalse(missing["dataset_version_manifest_written"])
+        self.assertFalse(missing["manifest_writer_task_executed"])
+        self.assertEqual(missing["dataset_version_migration_executed_count"], 0)
+        self.assertFalse(missing["manifest_written_on_get"])
+        self.assertFalse(missing["cache_get_writes_files"])
+        self.assertFalse(missing["cache_get_reads_parquet_payloads"])
+        self.assertFalse(missing["external_calls_triggered"])
+        self.assertFalse(missing["tushare_called"])
+        self.assertFalse(missing["deepseek_called"])
+        self.assertFalse(missing["github_called"])
+        self.assertTrue(missing["does_not_execute_trades"])
+        self.assertEqual(missing["call_ledger"][0]["api"], "local_storage_dataset_version_manifest_evidence")
+        self.assertFalse(missing["call_ledger"][0]["external"])
+
+        root.mkdir(parents=True, exist_ok=True)
+        manifest_path = root / "_dataset_versions.json"
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "datasets": {
+                        dataset: {"schema_version": storage_service.DATASET_SCHEMA_CONTRACTS[dataset]["schema_version"]}
+                        for dataset in storage_service.CANONICAL_PARQUET_DATASETS
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        ready = storage_service.storage_dataset_version_manifest_evidence_audit()
+
+        self.assertEqual(ready["status"], "manifest_validation_ready_local_only")
+        self.assertTrue(ready["manifest_exists"])
+        self.assertTrue(ready["dataset_version_manifest_validated"])
+        self.assertEqual(ready["validated_dataset_count"], 6)
+        self.assertEqual(ready["dataset_version_migration_executed_count"], 0)
+        self.assertFalse(ready["dataset_version_manifest_written"])
+        self.assertFalse(ready["manifest_writer_task_executed"])
+        self.assertFalse(ready["manifest_written_on_get"])
+        self.assertFalse(ready["cache_get_writes_files"])
+        self.assertFalse(ready["cache_get_reads_parquet_payloads"])
+        self.assertTrue(all(row["version_match"] for row in ready["rows"]))
+        self.assertTrue(all(row["dataset_version_migration_executed"] is False for row in ready["rows"]))
+
     def test_storage_cache_ttl_marks_fresh_local_dataset(self):
         if importlib.util.find_spec("pyarrow") is None or importlib.util.find_spec("pandas") is None:
             self.skipTest("pyarrow/pandas parquet dependency missing")
@@ -1962,6 +2058,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
 
     def test_storage_dataset_catalog_is_independent_cache_only_endpoint(self):
+        self._with_parquet_root()
+
         catalog = storage_service.storage_dataset_catalog()
 
         self.assertEqual(catalog["schema_version"], "command_center_3_storage_dataset_catalog.v1")
@@ -2016,6 +2114,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["dataset_version_policy"]["cache_get_writes_files"])
         self.assertEqual(len(catalog["dataset_version_rows"]), 6)
         self.assertIn("contract_declared_dataset_missing", catalog["dataset_version_status_counts"])
+        self.assertIn("dataset_version_manifest_evidence_audit", catalog)
+        self.assertEqual(
+            catalog["dataset_version_manifest_evidence_audit"]["schema_version"],
+            "command_center_3_storage_dataset_version_manifest_evidence.v1",
+        )
+        self.assertEqual(catalog["dataset_version_manifest_evidence_audit"]["status"], "manifest_missing_validation_pending")
+        self.assertEqual(catalog["dataset_version_manifest_evidence_audit"]["scope"], "read_only_local_manifest_evidence_not_manifest_writer")
+        self.assertFalse(catalog["dataset_version_manifest_evidence_audit"]["dataset_version_manifest_validated"])
+        self.assertFalse(catalog["dataset_version_manifest_evidence_audit"]["manifest_written_on_get"])
+        self.assertFalse(catalog["dataset_version_manifest_evidence_audit"]["cache_get_writes_files"])
+        self.assertFalse(catalog["dataset_version_manifest_evidence_audit"]["cache_get_reads_parquet_payloads"])
+        self.assertEqual(len(catalog["dataset_version_manifest_evidence_rows"]), 6)
+        self.assertIn("manifest_missing_validation_pending", catalog["dataset_version_manifest_evidence_status_counts"])
         self.assertIn("duckdb_query_service", catalog)
         self.assertEqual(catalog["duckdb_query_service"]["schema_version"], "command_center_3_storage_duckdb_query_service.v1")
         self.assertIn(catalog["duckdb_query_service_status"], {"service_ready", "dependency_missing"})
@@ -2035,6 +2146,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(catalog["storage_production_blocker_audit"]["status"], "storage_production_blocked")
         self.assertFalse(catalog["storage_production_blocker_audit"]["production_storage_complete"])
         self.assertTrue(catalog["storage_production_blocker_audit"]["dry_runs_are_not_production_completion"])
+        self.assertTrue(catalog["storage_production_blocker_audit"]["dataset_version_manifest_evidence_is_read_only"])
         self.assertEqual(len(catalog["storage_production_blocker_rows"]), 10)
         self.assertEqual(catalog["production_readiness"]["artifact_hygiene_policy"], "path_only_manual_cleanup_no_delete_on_get")
         self.assertIn("manual_review_ready", catalog["production_readiness"]["artifact_cleanup_review_status"])
@@ -2044,6 +2156,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(catalog["production_readiness"]["artifact_cleanup_review_is_not_delete_execution"])
         self.assertEqual(catalog["production_readiness"]["dataset_version_policy"], "contract_only_manifest_write_requires_explicit_task")
         self.assertEqual(catalog["production_readiness"]["dataset_version_policy_status"], "policy_ready")
+        self.assertEqual(catalog["production_readiness"]["dataset_version_manifest_evidence_status"], "manifest_missing_validation_pending")
+        self.assertFalse(catalog["production_readiness"]["dataset_version_manifest_evidence_validated"])
+        self.assertFalse(catalog["production_readiness"]["dataset_version_manifest_evidence_written_on_get"])
         self.assertEqual(catalog["production_readiness"]["schema_migration_policy"], "preflight_only_no_physical_migration_on_get")
         self.assertEqual(catalog["production_readiness"]["schema_validation_dry_run_route"], "POST /api/storage/schema-validation/dry-run")
         self.assertTrue(catalog["production_readiness"]["schema_validation_dry_run_button_gated"])

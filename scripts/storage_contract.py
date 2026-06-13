@@ -105,6 +105,7 @@ def build_contract() -> dict[str, Any]:
     }
     schema_preflight = _dict(overview.get("schema_migration_preflight"))
     dataset_version_policy = _dict(overview.get("dataset_version_policy"))
+    dataset_version_manifest_evidence = _dict(overview.get("dataset_version_manifest_evidence_audit"))
     duckdb_policy = _dict(overview.get("duckdb_query_service"))
     duckdb_rows = [row for row in _list(overview.get("duckdb_query_service_rows")) if isinstance(row, dict)]
     cleanup_review = _dict(overview.get("artifact_cleanup_review_contract"))
@@ -181,6 +182,25 @@ def build_contract() -> dict[str, Any]:
             and dataset_version_policy.get("cache_get_reads_payloads") is False
             and _flag_false(dataset_version_policy, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called"),
             "Dataset version policy is a contract only; it must not imply manifest write or physical version validation.",
+        ),
+        _row(
+            "dataset_version_manifest_evidence_is_read_only",
+            dataset_version_manifest_evidence.get("schema_version")
+            == "command_center_3_storage_dataset_version_manifest_evidence.v1"
+            and dataset_version_manifest_evidence.get("scope") == "read_only_local_manifest_evidence_not_manifest_writer"
+            and dataset_version_manifest_evidence.get("mode") == "cache_only_read_only_manifest_evidence"
+            and dataset_version_manifest_evidence.get("dataset_count") == len(canonical_datasets)
+            and len(_list(dataset_version_manifest_evidence.get("rows"))) == len(canonical_datasets)
+            and dataset_version_manifest_evidence.get("dataset_version_manifest_written") is False
+            and dataset_version_manifest_evidence.get("manifest_writer_task_executed") is False
+            and dataset_version_manifest_evidence.get("dataset_version_migration_executed_count") == 0
+            and dataset_version_manifest_evidence.get("manifest_written_on_get") is False
+            and dataset_version_manifest_evidence.get("cache_get_writes_files") is False
+            and dataset_version_manifest_evidence.get("cache_get_reads_parquet_payloads") is False
+            and _flag_false(dataset_version_manifest_evidence, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and dataset_version_manifest_evidence.get("does_not_execute_trades") is True
+            and dataset_version_manifest_evidence.get("does_not_modify_strategy_action") is True,
+            "Dataset version manifest evidence may read local _dataset_versions.json metadata only; it must not write a manifest, read Parquet payloads, call providers, or mark production storage complete.",
         ),
         _row(
             "schema_validation_dry_run_writes_no_parquet",
@@ -327,6 +347,9 @@ def build_contract() -> dict[str, Any]:
         "physical_schema_validation_done": False,
         "schema_migration_executed": False,
         "dataset_version_manifest_validated": False,
+        "dataset_version_manifest_evidence_validated": bool(
+            dataset_version_manifest_evidence.get("dataset_version_manifest_validated")
+        ),
         "partition_migration_executed": False,
         "physical_compaction_executed": False,
         "cache_ttl_refresh_executed": False,
@@ -351,6 +374,8 @@ def build_contract() -> dict[str, Any]:
             "storage_production_blocker_count": blocker_audit.get("blocking_criterion_count"),
             "schema_migration_preflight_status": schema_preflight.get("status"),
             "dataset_version_policy_status": dataset_version_policy.get("status"),
+            "dataset_version_manifest_evidence_status": dataset_version_manifest_evidence.get("status"),
+            "dataset_version_manifest_evidence_validated_count": dataset_version_manifest_evidence.get("validated_dataset_count"),
             "duckdb_query_service_status": duckdb_policy.get("status"),
             "schema_validation_status": schema_packet.get("status"),
             "partition_migration_status": partition_packet.get("status"),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 import math
 from pathlib import Path
 from typing import Any, Mapping
@@ -563,6 +564,141 @@ def storage_schema_migration_preflight() -> dict[str, Any]:
 
 def _dataset_version_manifest_path() -> Path:
     return PARQUET_ROOT / DATASET_VERSION_MANIFEST_NAME
+
+
+def _dataset_version_manifest_payload() -> tuple[dict[str, Any], str, str]:
+    manifest_path = _dataset_version_manifest_path()
+    if not manifest_path.exists():
+        return {}, "manifest_missing", ""
+    try:
+        parsed = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {}, "manifest_read_failed", _safe_error_message(exc)
+    if not isinstance(parsed, dict):
+        return {}, "manifest_invalid_shape", "manifest_root_not_object"
+    return parsed, "manifest_read", ""
+
+
+def _dataset_version_manifest_rows(manifest: Mapping[str, Any], manifest_status: str) -> list[dict[str, Any]]:
+    raw_datasets = manifest.get("datasets") if isinstance(manifest, Mapping) else {}
+    if isinstance(raw_datasets, list):
+        manifest_datasets = {
+            str(item.get("dataset") or item.get("name") or ""): item
+            for item in raw_datasets
+            if isinstance(item, Mapping)
+        }
+    elif isinstance(raw_datasets, Mapping):
+        manifest_datasets = {str(key): value for key, value in raw_datasets.items()}
+    else:
+        manifest_datasets = {}
+    if not manifest_datasets and isinstance(manifest, Mapping):
+        manifest_datasets = {
+            str(key): value
+            for key, value in manifest.items()
+            if key in CANONICAL_PARQUET_DATASETS and isinstance(value, Mapping)
+        }
+
+    rows: list[dict[str, Any]] = []
+    for dataset in CANONICAL_PARQUET_DATASETS:
+        contract = _schema_contract(dataset)
+        expected_version = str(contract.get("schema_version") or "")
+        raw_row = manifest_datasets.get(dataset)
+        manifest_present = isinstance(raw_row, Mapping)
+        manifest_version = ""
+        if isinstance(raw_row, Mapping):
+            manifest_version = str(
+                raw_row.get("schema_version")
+                or raw_row.get("dataset_version")
+                or raw_row.get("version")
+                or ""
+            )
+        if manifest_status != "manifest_read":
+            status = "manifest_missing_validation_pending" if manifest_status == "manifest_missing" else manifest_status
+        elif not manifest_present:
+            status = "dataset_missing_from_manifest"
+        elif manifest_version != expected_version:
+            status = "dataset_version_mismatch"
+        else:
+            status = "dataset_version_manifest_validated"
+        rows.append(
+            {
+                "dataset": dataset,
+                "status": status,
+                "expected_schema_version": expected_version,
+                "manifest_present": manifest_present,
+                "manifest_schema_version": manifest_version,
+                "version_match": status == "dataset_version_manifest_validated",
+                "physical_dataset_version_validated": status == "dataset_version_manifest_validated",
+                "dataset_version_migration_executed": False,
+                "manifest_written_on_get": False,
+                "cache_get_writes_files": False,
+                "cache_get_reads_parquet_payloads": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_modify_strategy_action": True,
+                "does_not_execute_trades": True,
+            }
+        )
+    return rows
+
+
+def storage_dataset_version_manifest_evidence_audit() -> dict[str, Any]:
+    manifest_path = _dataset_version_manifest_path()
+    manifest, manifest_status, error_message_safe = _dataset_version_manifest_payload()
+    rows = _dataset_version_manifest_rows(manifest, manifest_status)
+    status_counts = _count_values(row.get("status") for row in rows)
+    validated_count = sum(1 for row in rows if row.get("physical_dataset_version_validated"))
+    manifest_present = manifest_status == "manifest_read"
+    dataset_count = len(CANONICAL_PARQUET_DATASETS)
+    if not manifest_present:
+        status = "manifest_missing_validation_pending" if manifest_status == "manifest_missing" else "manifest_validation_blocked"
+    elif validated_count == dataset_count:
+        status = "manifest_validation_ready_local_only"
+    else:
+        status = "manifest_validation_incomplete"
+    audit = {
+        "schema_version": "command_center_3_storage_dataset_version_manifest_evidence.v1",
+        "status": status,
+        "scope": "read_only_local_manifest_evidence_not_manifest_writer",
+        "mode": "cache_only_read_only_manifest_evidence",
+        "manifest_path": _path_label(manifest_path),
+        "manifest_exists": manifest_present,
+        "manifest_read_status": manifest_status,
+        "dataset_count": dataset_count,
+        "manifest_dataset_count": sum(1 for row in rows if row.get("manifest_present")),
+        "validated_dataset_count": validated_count,
+        "missing_dataset_count": sum(1 for row in rows if row.get("status") == "dataset_missing_from_manifest"),
+        "schema_version_mismatch_count": sum(1 for row in rows if row.get("status") == "dataset_version_mismatch"),
+        "dataset_version_manifest_validated": manifest_present and validated_count == dataset_count,
+        "dataset_version_manifest_written": False,
+        "manifest_writer_task_executed": False,
+        "dataset_version_migration_executed_count": 0,
+        "status_counts": status_counts,
+        "rows": rows,
+        "manifest_written_on_get": False,
+        "cache_get_writes_files": False,
+        "cache_get_reads_parquet_payloads": False,
+        "cache_get_reads_payloads": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_dataset_version_manifest_evidence",
+            endpoint="GET /api/storage",
+            status=status,
+            row_count=len(rows),
+            path=_path_label(manifest_path),
+        ),
+        "note": "This audit reads only a local ignored _dataset_versions.json when present. It does not create, update, or validate Parquet payloads on GET.",
+    }
+    if error_message_safe:
+        audit["error_message_safe"] = error_message_safe
+    return audit
 
 
 def _dataset_version_policy_row(dataset: str, metadata: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -1419,6 +1555,13 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
             "external_calls_triggered": False,
         },
         {
+            "control": "dataset_version_manifest_evidence",
+            "status": "read_only_evidence_ready",
+            "current_coverage": "storage overview/catalog can read a local ignored _dataset_versions.json if present and report missing/mismatch/validated rows without writing files.",
+            "next_action": "add an explicit manifest writer and physical version validator task before claiming production dataset versioning.",
+            "external_calls_triggered": False,
+        },
+        {
             "control": "schema_migration_preflight",
             "status": "preflight_ready",
             "current_coverage": "canonical datasets expose metadata-only schema migration rows with target schema versions, required columns and manual migration boundaries.",
@@ -1858,6 +2001,7 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
     artifact_cleanup_review = dict(artifact_hygiene.get("artifact_cleanup_review_contract") or {})
     schema_migration_preflight = storage_schema_migration_preflight()
     dataset_version_policy = storage_dataset_version_policy()
+    dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
     duckdb_query_service = duckdb_query_service_policy()
     rows = [
         {
@@ -1883,6 +2027,17 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
             "current_backend": "read_only_contract_matrix_no_manifest_write",
             "blocking_for_cache_read": False,
             "next_action": "add explicit manifest writer/validator task after schema validation dry-run passes.",
+        },
+        {
+            "component": "dataset_version_manifest_evidence",
+            "status": dataset_version_manifest_evidence["status"],
+            "production_role": "read-only local _dataset_versions.json evidence before production dataset version claims",
+            "current_backend": "local_manifest_read_only_no_writer_no_payload_read",
+            "blocking_for_cache_read": False,
+            "manifest_exists": dataset_version_manifest_evidence["manifest_exists"],
+            "validated_dataset_count": dataset_version_manifest_evidence["validated_dataset_count"],
+            "dataset_version_manifest_validated": dataset_version_manifest_evidence["dataset_version_manifest_validated"],
+            "next_action": "add a separately approved manifest writer and validator after physical schema validation is stable.",
         },
         {
             "component": "parquet_store",
@@ -1958,6 +2113,15 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "physical_dataset_version_validated_count": dataset_version_policy["physical_dataset_version_validated_count"],
         "dataset_version_migration_executed_count": dataset_version_policy["dataset_version_migration_executed_count"],
         "dataset_version_manifest_written_on_get": False,
+        "dataset_version_manifest_evidence_status": dataset_version_manifest_evidence["status"],
+        "dataset_version_manifest_evidence_dataset_count": dataset_version_manifest_evidence["dataset_count"],
+        "dataset_version_manifest_evidence_validated_count": dataset_version_manifest_evidence["validated_dataset_count"],
+        "dataset_version_manifest_evidence_missing_count": dataset_version_manifest_evidence["missing_dataset_count"],
+        "dataset_version_manifest_evidence_mismatch_count": dataset_version_manifest_evidence["schema_version_mismatch_count"],
+        "dataset_version_manifest_evidence_exists": dataset_version_manifest_evidence["manifest_exists"],
+        "dataset_version_manifest_evidence_validated": dataset_version_manifest_evidence["dataset_version_manifest_validated"],
+        "dataset_version_manifest_evidence_written_on_get": dataset_version_manifest_evidence["manifest_written_on_get"],
+        "dataset_version_manifest_evidence_reads_parquet_payloads": dataset_version_manifest_evidence["cache_get_reads_parquet_payloads"],
         "schema_contract_policy": "canonical datasets expose local schema contracts; physical validation remains explicit and non-refreshing.",
         "schema_migration_policy": "preflight_only_no_physical_migration_on_get",
         "schema_migration_preflight_status": schema_migration_preflight["status"],
@@ -2051,6 +2215,8 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
     version_validated = int(readiness.get("physical_dataset_version_validated_count") or 0)
     version_migrations = int(readiness.get("dataset_version_migration_executed_count") or 0)
     manifest_present = int(readiness.get("dataset_version_manifest_present_count") or 0)
+    manifest_evidence_validated = bool(readiness.get("dataset_version_manifest_evidence_validated"))
+    manifest_evidence_count = int(readiness.get("dataset_version_manifest_evidence_validated_count") or 0)
     compaction_executed = int(readiness.get("compaction_executed_count") or 0)
     ttl_refresh_executed = int(readiness.get("cache_ttl_refresh_executed_count") or 0)
     cleanup_review_ready = str(readiness.get("artifact_cleanup_review_status") or "").startswith("manual_review_ready")
@@ -2075,9 +2241,17 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
         ),
         _storage_production_blocker_row(
             "dataset_version_manifest_validated",
-            manifest_present >= dataset_count and version_validated >= dataset_count and version_migrations >= dataset_count,
-            current_status=f"manifest={manifest_present}/{dataset_count}; validated={version_validated}/{dataset_count}; migrated={version_migrations}/{dataset_count}",
-            evidence="dataset version policy is contract-only; GET cache does not write or validate _dataset_versions.json.",
+            manifest_present >= dataset_count
+            and version_validated >= dataset_count
+            and version_migrations >= dataset_count
+            and manifest_evidence_validated,
+            current_status=(
+                f"policy_manifest={manifest_present}/{dataset_count}; "
+                f"policy_validated={version_validated}/{dataset_count}; "
+                f"evidence_validated={manifest_evidence_count}/{dataset_count}; "
+                f"migrated={version_migrations}/{dataset_count}"
+            ),
+            evidence="dataset version policy is contract-only; manifest evidence audit is read-only and does not write _dataset_versions.json on GET.",
             next_action="Add explicit manifest writer and physical version validator tasks before claiming versioned production datasets.",
             classification="policy_only_not_physical_proof",
         ),
@@ -2160,6 +2334,10 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
         "dry_runs_are_not_production_completion": True,
         "preflight_is_not_physical_migration": True,
         "dataset_version_policy_is_not_manifest_validation": True,
+        "dataset_version_manifest_evidence_is_read_only": True,
+        "dataset_version_manifest_evidence_status": readiness.get("dataset_version_manifest_evidence_status"),
+        "dataset_version_manifest_evidence_validated": manifest_evidence_validated,
+        "dataset_version_manifest_evidence_validated_count": manifest_evidence_count,
         "query_service_status": readiness.get("duckdb_query_service_status"),
         "schema_validation_done_count": schema_validation_done,
         "schema_migration_executed_count": schema_migration_executed,
@@ -2256,6 +2434,7 @@ def storage_dataset_catalog() -> dict[str, Any]:
     production_blocker_audit = storage_production_blocker_audit(production_readiness)
     artifact_hygiene = storage_artifact_hygiene_status()
     dataset_version_policy = storage_dataset_version_policy()
+    dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
     schema_migration_preflight = storage_schema_migration_preflight()
     duckdb_query_service = duckdb_query_service_policy()
     packet = {
@@ -2274,6 +2453,9 @@ def storage_dataset_catalog() -> dict[str, Any]:
         "dataset_version_policy": dataset_version_policy,
         "dataset_version_rows": dataset_version_policy["rows"],
         "dataset_version_status_counts": dataset_version_policy["status_counts"],
+        "dataset_version_manifest_evidence_audit": dataset_version_manifest_evidence,
+        "dataset_version_manifest_evidence_rows": dataset_version_manifest_evidence["rows"],
+        "dataset_version_manifest_evidence_status_counts": dataset_version_manifest_evidence["status_counts"],
         "schema_migration_preflight": schema_migration_preflight,
         "schema_migration_rows": schema_migration_preflight["rows"],
         "schema_migration_status_counts": schema_migration_preflight["status_counts"],
@@ -2532,6 +2714,7 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
     production_readiness = storage_production_readiness(sqlite_meta)
     production_blocker_audit = storage_production_blocker_audit(production_readiness)
     dataset_version_policy = storage_dataset_version_policy()
+    dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
     schema_migration_preflight = storage_schema_migration_preflight()
     duckdb_query_service = duckdb_query_service_policy()
     packet = {
@@ -2556,6 +2739,12 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "dataset_version_declared_count": dataset_version_policy["target_version_declared_count"],
         "physical_dataset_version_validated_count": dataset_version_policy["physical_dataset_version_validated_count"],
         "dataset_version_migration_executed_count": dataset_version_policy["dataset_version_migration_executed_count"],
+        "dataset_version_manifest_evidence_audit": dataset_version_manifest_evidence,
+        "dataset_version_manifest_evidence_rows": dataset_version_manifest_evidence["rows"],
+        "dataset_version_manifest_evidence_status_counts": dataset_version_manifest_evidence["status_counts"],
+        "dataset_version_manifest_evidence_status": dataset_version_manifest_evidence["status"],
+        "dataset_version_manifest_evidence_validated_count": dataset_version_manifest_evidence["validated_dataset_count"],
+        "dataset_version_manifest_evidence_validated": dataset_version_manifest_evidence["dataset_version_manifest_validated"],
         "dataset_partition_plan_status": {item["dataset"]: item["partition_plan"]["status"] for item in datasets},
         "dataset_compaction_status": {item["dataset"]: item["compaction_plan"]["status"] for item in datasets},
         "manual_compaction_recommended_count": sum(1 for item in datasets if item["compaction_plan"]["manual_compaction_recommended"]),

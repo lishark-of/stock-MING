@@ -203,12 +203,22 @@ export default function StorageOverview() {
     (overview.dataset_version_policy as Record<string, unknown> | undefined) ??
     (storageCatalog.dataset_version_policy as Record<string, unknown> | undefined) ??
     {};
+  const datasetVersionManifestEvidence =
+    (overview.dataset_version_manifest_evidence_audit as Record<string, unknown> | undefined) ??
+    (storageCatalog.dataset_version_manifest_evidence_audit as Record<string, unknown> | undefined) ??
+    {};
   const datasetVersionRows =
     (overview.dataset_version_rows as Array<Record<string, unknown>> | undefined) ??
     ((storageCatalog.dataset_version_rows as Array<Record<string, unknown>> | undefined) ?? []);
+  const datasetVersionManifestEvidenceRows =
+    (overview.dataset_version_manifest_evidence_rows as Array<Record<string, unknown>> | undefined) ??
+    ((storageCatalog.dataset_version_manifest_evidence_rows as Array<Record<string, unknown>> | undefined) ?? []);
   const datasetVersionStatusCounts =
     (overview.dataset_version_status_counts as Record<string, unknown> | undefined) ??
     ((storageCatalog.dataset_version_status_counts as Record<string, unknown> | undefined) ?? {});
+  const datasetVersionManifestEvidenceStatusCounts =
+    (overview.dataset_version_manifest_evidence_status_counts as Record<string, unknown> | undefined) ??
+    ((storageCatalog.dataset_version_manifest_evidence_status_counts as Record<string, unknown> | undefined) ?? {});
   const schemaMigrationRows =
     (overview.schema_migration_rows as Array<Record<string, unknown>> | undefined) ??
     ((schemaMigration.rows as Array<Record<string, unknown>> | undefined) ?? []);
@@ -358,6 +368,8 @@ export default function StorageOverview() {
           { label: "storage blockers", value: overview.storage_production_blocker_count ?? storageProductionBlockerAudit.blocking_criterion_count ?? 0, tone: Number(overview.storage_production_blocker_count ?? storageProductionBlockerAudit.blocking_criterion_count ?? 0) > 0 ? "warn" : "good" },
           { label: "declared versions", value: datasetVersionPolicy.target_version_declared_count ?? overview.dataset_version_declared_count ?? 0 },
           { label: "version validations", value: datasetVersionPolicy.physical_dataset_version_validated_count ?? overview.physical_dataset_version_validated_count ?? 0 },
+          { label: "manifest evidence", value: String(datasetVersionManifestEvidence.status ?? overview.dataset_version_manifest_evidence_status ?? "manifest_missing_validation_pending") },
+          { label: "manifest validated", value: datasetVersionManifestEvidence.validated_dataset_count ?? overview.dataset_version_manifest_evidence_validated_count ?? 0 },
           { label: "migration rows", value: schemaMigrationRows.length },
           { label: "migrations executed", value: schemaMigration.migration_executed_count ?? overview.schema_migration_executed_count ?? 0 },
           { label: "physical schema checks", value: schemaMigration.physical_validation_done_count ?? overview.physical_schema_validation_done_count ?? 0 }
@@ -508,6 +520,17 @@ export default function StorageOverview() {
         <p>manifest_written_on_get / cache_get_writes_files: {String(datasetVersionPolicy.manifest_written_on_get ?? false)} / {String(datasetVersionPolicy.cache_get_writes_files ?? false)}</p>
         <p>status_counts: {JSON.stringify(datasetVersionStatusCounts)}</p>
         <DataLineageTable rows={datasetVersionRows} />
+      </PacketCard>
+
+      <PacketCard title="Dataset version manifest evidence" subtitle="只读检查本地 _dataset_versions.json；缺失或不匹配保持 pending，不写 manifest、不读 Parquet payload" status={String(datasetVersionManifestEvidence.status ?? "manifest_missing_validation_pending")}>
+        <p>schema_version: {String(datasetVersionManifestEvidence.schema_version ?? "command_center_3_storage_dataset_version_manifest_evidence.v1")}</p>
+        <p>scope: {String(datasetVersionManifestEvidence.scope ?? "read_only_local_manifest_evidence_not_manifest_writer")}</p>
+        <p>manifest_path: {String(datasetVersionManifestEvidence.manifest_path ?? "--")}</p>
+        <p>manifest_exists / validated: {String(datasetVersionManifestEvidence.manifest_exists ?? false)} / {String(datasetVersionManifestEvidence.dataset_version_manifest_validated ?? false)}</p>
+        <p>validated / missing / mismatch: {String(datasetVersionManifestEvidence.validated_dataset_count ?? 0)} / {String(datasetVersionManifestEvidence.missing_dataset_count ?? 0)} / {String(datasetVersionManifestEvidence.schema_version_mismatch_count ?? 0)}</p>
+        <p>manifest_written_on_get / cache_get_writes_files / reads_parquet_payloads: {String(datasetVersionManifestEvidence.manifest_written_on_get ?? false)} / {String(datasetVersionManifestEvidence.cache_get_writes_files ?? false)} / {String(datasetVersionManifestEvidence.cache_get_reads_parquet_payloads ?? false)}</p>
+        <p>status_counts: {JSON.stringify(datasetVersionManifestEvidenceStatusCounts)}</p>
+        <DataLineageTable rows={datasetVersionManifestEvidenceRows} />
       </PacketCard>
 
       <PacketCard title="Cache TTL dry-run" subtitle="按钮门控生成缓存刷新建议；不自动刷新、不调用 Tushare、不写 Parquet" status={String(productionReadiness.cache_ttl_policy ? "button_gated_ready" : "audit_ready")}>

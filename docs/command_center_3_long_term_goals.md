@@ -367,6 +367,7 @@ Add factor universe research pipeline
 - Storage overview/catalog and the cleanup dry-run packet now expose `command_center_3_storage_artifact_cleanup_review_contract.v1`: a path-only manual review contract with required review steps, no delete execution, no generated delete command, no payload reads, no secret-value scan, no external calls, no trades, and no `strategy action` mutation.
 - Storage overview and catalog now expose a metadata-only schema migration preflight for all canonical datasets: target schema version, required columns, primary key, partition expectation, current parquet status, and manual migration boundaries are visible without reading payloads or writing Parquet.
 - Storage overview and catalog now expose a cache-only dataset version policy matrix: declared dataset version, manifest path, physical validation boundary, and no-write-on-GET guarantees are visible before any production manifest writer exists.
+- Storage overview and catalog now expose `dataset_version_manifest_evidence_audit`: a read-only local `_dataset_versions.json` evidence check that reports missing / mismatch / validated rows without writing a manifest, reading Parquet payloads, calling providers, or claiming production storage completion.
 - `POST /api/storage/schema-validation/dry-run` now creates a local task and packet that reads Parquet schema metadata only, compares physical columns with canonical schema contracts, and reports `schema_validated` / `schema_mismatch` / `missing_dataset` before any migration.
 - `POST /api/storage/partition-migration/dry-run` now creates a local task and packet that builds per-dataset partition migration plans from schema validation and partition contracts, without reading row payloads or writing partitioned Parquet.
 - `POST /api/storage/compaction/dry-run` now creates a local task and packet that lists Parquet compaction ready/not-needed/missing rows without reading row payloads or rewriting Parquet.
@@ -382,7 +383,8 @@ Add factor universe research pipeline
 ### Gaps
 
 - Production schema migration execution.
-- Physical dataset version manifest writing and validation beyond the read-only version policy matrix.
+- Physical dataset version manifest writing and validation beyond the read-only version policy matrix and read-only manifest evidence audit.
+- A separately approved manifest writer/validator task that can create or update `_dataset_versions.json` after physical schema validation is stable.
 - Physical partition migration execution.
 - Physical compaction execution beyond the button-gated dry-run.
 - Physical refresh scheduling/execution beyond the button-gated cache TTL dry-run.
@@ -407,6 +409,7 @@ Add factor universe research pipeline
 - Data files do not enter git.
 - Schema migration preflight remains visibly `preflight_ready`, with `physical_validation_done_count=0` and `migration_executed_count=0` until explicit future tasks prove otherwise.
 - Dataset version policy remains visibly `policy_ready`, but `physical_dataset_version_validated_count=0` and `dataset_version_migration_executed_count=0` until explicit future manifest/validation tasks prove otherwise.
+- `dataset_version_manifest_evidence_audit` remains cache-only and read-only: when `_dataset_versions.json` is missing it reports `manifest_missing_validation_pending`; when a local manifest exists it can report local version matches, but still keeps `manifest_written_on_get=false`, `cache_get_writes_files=false`, `cache_get_reads_parquet_payloads=false`, and `dataset_version_migration_executed_count=0`.
 - Schema validation dry-run is button-gated, reads no row payload, writes no Parquet, and records missing/mismatch/validated rows before any migration.
 - Partition migration dry-run is button-gated, writes no partitioned Parquet, and records ready/blocked/missing rows before any partition writer task.
 - Compaction dry-run is button-gated, writes no Parquet, reads no row payload, and records ready/not-needed/missing rows before any physical compaction task.
@@ -418,7 +421,7 @@ Add factor universe research pipeline
 - Generated artifact hygiene is auditable; dry-run cleanup is button-gated and any real delete/cleanup must remain separate and manually approved.
 - Artifact cleanup manual review is visible as a contract after dry-run, with `delete_executed=false`, `safe_delete_command_generated=false`, and `production_cleanup_complete=false`.
 - Storage overview/catalog now expose `storage_production_blocker_audit` and `storage_production_blocker_rows`, explicitly separating local contracts/dry-runs/preflights from physical production completion.
-- `scripts/storage_contract.py` passes in the push gate while still reporting `production_storage_complete=false`, `physical_schema_validation_done=false`, `schema_migration_executed=false`, `dataset_version_manifest_validated=false`, `partition_migration_executed=false`, `physical_compaction_executed=false`, `cache_ttl_refresh_executed=false`, and `artifact_cleanup_delete_executed=false`.
+- `scripts/storage_contract.py` passes in the push gate while still reporting `production_storage_complete=false`, `physical_schema_validation_done=false`, `schema_migration_executed=false`, `dataset_version_manifest_validated=false`, `partition_migration_executed=false`, `physical_compaction_executed=false`, `cache_ttl_refresh_executed=false`, and `artifact_cleanup_delete_executed=false`; it also verifies manifest evidence remains read-only and no-writer/no-payload.
 - Write failure does not pollute packet or action.
 
 ### Forbidden
@@ -426,6 +429,7 @@ Add factor universe research pipeline
 - Do not write Parquet from GET cache.
 - Do not treat schema migration preflight as physical validation or production migration completion.
 - Do not treat dataset version policy as physical dataset version validation or manifest migration completion.
+- Do not treat `dataset_version_manifest_evidence_audit` as a manifest writer, physical dataset migration, or production dataset version completion; it is local evidence only.
 - Do not treat schema validation dry-run as production schema migration completion.
 - Do not treat partition migration dry-run as physical partition migration completion.
 - Do not treat compaction dry-run as physical Parquet compaction completion.
