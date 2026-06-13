@@ -12,6 +12,7 @@ PACKET_KEY = "command_center_3_desktop_shell_preflight_cache"
 SCHEMA_VERSION = "desktop_shell_preflight_cache.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DESKTOP_ROOT = PROJECT_ROOT / "desktop"
+TAURI_RELEASE_BINARY = DESKTOP_ROOT / "src-tauri" / "target" / "release" / "stock_ming_command_center"
 
 
 def _now_iso() -> str:
@@ -39,6 +40,35 @@ def _file_row(path: Path, label: str, role: str) -> dict[str, Any]:
         "role": role,
         "exists": path.exists(),
         "kind": "directory" if path.is_dir() else "file",
+    }
+
+
+def _tauri_build_artifact_summary() -> dict[str, Any]:
+    binary_exists = TAURI_RELEASE_BINARY.exists() and TAURI_RELEASE_BINARY.is_file()
+    stat = TAURI_RELEASE_BINARY.stat() if binary_exists else None
+    bundle_root = DESKTOP_ROOT / "src-tauri" / "target" / "release" / "bundle"
+    return {
+        "schema_version": "tauri_build_artifact_detection.v1",
+        "status": "artifact_detected" if binary_exists else "artifact_missing",
+        "binary_path": _path_label(TAURI_RELEASE_BINARY),
+        "binary_exists": binary_exists,
+        "binary_size_bytes": stat.st_size if stat else 0,
+        "bundle_root_path": _path_label(bundle_root),
+        "bundle_root_exists": bundle_root.exists(),
+        "detected_by_get_cache": True,
+        "build_command_executed_by_get_cache": False,
+        "artifact_is_gitignored": True,
+        "packaged_runtime_validated": False,
+        "backend_offline_ui_packaged_runtime_verified": False,
+        "macos_signing_notarization_ready": False,
+        "contains_secret": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "GET desktop preflight only detects a local Tauri release artifact; it does not run npm, cargo, Tauri, backend sidecars, signing, providers, models, GitHub, or trades.",
     }
 
 
@@ -317,9 +347,11 @@ def _production_package_blocker_audit(
     scaffold_ready: bool,
     api_base_info: dict[str, Any],
     runtime_contract: dict[str, Any],
+    tauri_build_artifact: dict[str, Any],
 ) -> dict[str, Any]:
     frontend_dist = str(tauri_config.get("frontend_dist") or "")
     config_log_paths_declared = bool(runtime_contract.get("config_paths_declared") and runtime_contract.get("log_paths_declared"))
+    tauri_build_verified = bool(tauri_build_artifact.get("binary_exists"))
     rows = [
         {
             "criterion": "react_vite_scaffold_ready",
@@ -358,10 +390,10 @@ def _production_package_blocker_audit(
         },
         {
             "criterion": "tauri_package_build_verified",
-            "status": "blocked",
-            "passed": False,
-            "evidence": "npm run tauri build has not been executed in this preflight",
-            "production_blocker": True,
+            "status": "passed" if tauri_build_verified else "blocked",
+            "passed": tauri_build_verified,
+            "evidence": f"release_binary={tauri_build_artifact.get('binary_path')}; binary_exists={tauri_build_verified}; GET preflight did not execute build",
+            "production_blocker": not tauri_build_verified,
         },
         {
             "criterion": "backend_startup_strategy",
@@ -418,10 +450,13 @@ def _production_package_blocker_audit(
     return {
         "schema_version": "tauri_production_package_blocker_audit.v1",
         "status": "production_package_ready" if package_ready else "production_package_blocked",
-        "scope": "local_preflight_not_tauri_build",
+        "scope": "local_preflight_optional_build_artifact_detection_not_packaged_runtime_qa",
         "package_ready": package_ready,
         "tauri_dev_ready": bool(production_readiness.get("tauri_dev_ready")),
-        "tauri_build_verified": False,
+        "tauri_build_verified": tauri_build_verified,
+        "tauri_build_artifact_status": tauri_build_artifact.get("status"),
+        "tauri_build_artifact_path": tauri_build_artifact.get("binary_path"),
+        "tauri_build_artifact_size_bytes": tauri_build_artifact.get("binary_size_bytes"),
         "tauri_package_build_attempted": False,
         "backend_sidecar_autostart_enabled": False,
         "manual_backend_launch_required": True,
@@ -440,7 +475,7 @@ def _production_package_blocker_audit(
         "blockers": blockers,
         "blocker_count": len(blockers),
         "rows": rows,
-        "note": "This audit separates desktop dev/preflight readiness from production packaged readiness; it never runs npm, cargo, Tauri, providers, models, GitHub, or trades.",
+        "note": "This audit separates desktop dev/preflight readiness and optional local build artifact detection from production packaged runtime QA; GET cache never runs npm, cargo, Tauri, providers, models, GitHub, or trades.",
     }
 
 
@@ -477,12 +512,15 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     api_base = os.getenv("VITE_API_BASE_URL") or "http://127.0.0.1:8710"
     api_base_info = _api_base_summary(api_base)
     production_runtime_contract = _production_runtime_contract(api_base_info, tauri_config)
+    tauri_build_artifact = _tauri_build_artifact_summary()
     production_readiness = {
         "status": "tauri_preflight_ready" if tauri_dev_ready else ("vite_ready_tauri_toolchain_pending" if vite_dev_ready else "desktop_scaffold_partial"),
         "scope": "tauri_desktop_production_preflight",
         "vite_build_ready": vite_dev_ready,
         "tauri_dev_ready": tauri_dev_ready,
         "tauri_package_build_attempted": False,
+        "tauri_build_artifact_status": tauri_build_artifact["status"],
+        "tauri_build_artifact_detected": tauri_build_artifact["binary_exists"],
         "tauri_package_build_required_for_production": True,
         "rust_toolchain_required": True,
         "backend_sidecar_autostart_enabled": False,
@@ -509,6 +547,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         scaffold_ready=scaffold_ready,
         api_base_info=api_base_info,
         runtime_contract=production_runtime_contract,
+        tauri_build_artifact=tauri_build_artifact,
     )
 
     packet = {
@@ -525,6 +564,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "production_launch_plan": _production_launch_plan(api_base),
         "package_json": package_summary,
         "tauri_config": tauri_config,
+        "tauri_build_artifact": tauri_build_artifact,
         "production_readiness": production_readiness,
         "production_runtime_contract": production_runtime_contract,
         "production_runtime_contract_rows": production_runtime_contract["rows"],
@@ -545,6 +585,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "tauri_dev_ready": tauri_dev_ready,
             "node_modules_present": (DESKTOP_ROOT / "node_modules").exists(),
             "dist_present": (DESKTOP_ROOT / "dist").exists(),
+            "tauri_release_binary_present": tauri_build_artifact["binary_exists"],
+            "tauri_release_binary_size_bytes": tauri_build_artifact["binary_size_bytes"],
             "tauri_cli_declared": bool(package_summary.get("has_tauri_cli")),
             "tauri_build_attempted": False,
             "vite_build_attempted": False,
@@ -553,6 +595,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "api_health_endpoint": api_base_info["expected_health_endpoint"],
             "backend_autostart_configured": False,
             "production_package_build_attempted": False,
+            "production_package_build_artifact_detected": tauri_build_artifact["binary_exists"],
             "backend_sidecar_autostart_enabled": False,
             "production_package_ready": production_blocker_audit["package_ready"],
             "production_blocker_count": production_blocker_audit["blocker_count"],

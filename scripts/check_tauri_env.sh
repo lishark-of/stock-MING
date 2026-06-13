@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DESKTOP_DIR="${ROOT_DIR}/desktop"
+TAURI_RELEASE_BINARY="${DESKTOP_DIR}/src-tauri/target/release/stock_ming_command_center"
 
 echo "Command Center 3.0 Tauri preflight"
 echo "project_root=${ROOT_DIR}"
@@ -15,6 +16,13 @@ echo "tauri_build_command=cd desktop && npm run tauri build"
 echo "backend_autostart=false"
 echo "fastapi_sidecar_autostart=false"
 echo "production_package_build_attempted=false"
+if [ -f "${TAURI_RELEASE_BINARY}" ]; then
+  echo "tauri_build_artifact_status=artifact_detected"
+  echo "tauri_build_artifact_path=desktop/src-tauri/target/release/stock_ming_command_center"
+else
+  echo "tauri_build_artifact_status=artifact_missing"
+  echo "tauri_build_artifact_path=desktop/src-tauri/target/release/stock_ming_command_center"
+fi
 echo "token_bundle_policy=frontend_never_stores_tokens"
 echo
 

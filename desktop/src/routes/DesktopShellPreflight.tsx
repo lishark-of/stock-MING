@@ -27,6 +27,7 @@ export default function DesktopShellPreflight() {
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const apiBaseInfo = (cache.api_base_info as Record<string, unknown> | undefined) ?? {};
+  const tauriBuildArtifact = (cache.tauri_build_artifact as Record<string, unknown> | undefined) ?? {};
   const productionReadiness = (cache.production_readiness as Record<string, unknown> | undefined) ?? {};
   const productionRuntimeContract = (cache.production_runtime_contract as Record<string, unknown> | undefined) ?? {};
   const productionBlockerAudit = (cache.production_blocker_audit as Record<string, unknown> | undefined) ?? {};
@@ -56,6 +57,7 @@ export default function DesktopShellPreflight() {
           { label: "Tauri dev", value: runtime.tauri_dev_ready === true ? "ready" : "needs Rust", tone: runtime.tauri_dev_ready === true ? "good" : "warn" },
           { label: "node_modules", value: runtime.node_modules_present === true ? "present" : "missing", tone: runtime.node_modules_present === true ? "good" : "warn" },
           { label: "dist", value: runtime.dist_present === true ? "present" : "missing" },
+          { label: "release binary", value: tauriBuildArtifact.binary_exists === true ? "detected" : "missing", tone: tauriBuildArtifact.binary_exists === true ? "good" : "warn" },
           { label: "backend autostart", value: runtime.backend_autostart_configured === true ? "enabled" : "manual", tone: runtime.backend_autostart_configured === true ? "warn" : "good" },
           { label: "package audit", value: productionBlockerAudit.status as string | undefined, tone: productionBlockerAudit.package_ready === true ? "good" : "warn" },
           { label: "runtime contract", value: productionRuntimeContract.status as string | undefined, tone: productionRuntimeContract.config_paths_declared === true ? "good" : "warn" },
@@ -110,9 +112,12 @@ export default function DesktopShellPreflight() {
       </PacketCard>
 
       <PacketCard title="Tauri 生产包阻断审计" subtitle="preflight 不是 production package complete" status={String(productionBlockerAudit.status ?? "production_package_blocked")}>
-        <p>scope: {String(productionBlockerAudit.scope ?? "local_preflight_not_tauri_build")}</p>
+        <p>scope: {String(productionBlockerAudit.scope ?? "local_preflight_optional_build_artifact_detection_not_packaged_runtime_qa")}</p>
         <p>package_ready: {String(productionBlockerAudit.package_ready ?? false)}</p>
         <p>tauri_build_verified: {String(productionBlockerAudit.tauri_build_verified ?? false)}</p>
+        <p>tauri_build_artifact_status: {String(productionBlockerAudit.tauri_build_artifact_status ?? tauriBuildArtifact.status ?? "artifact_missing")}</p>
+        <p>tauri_build_artifact_path: {String(productionBlockerAudit.tauri_build_artifact_path ?? tauriBuildArtifact.binary_path ?? "desktop/src-tauri/target/release/stock_ming_command_center")}</p>
+        <p>tauri_build_artifact_size_bytes: {String(productionBlockerAudit.tauri_build_artifact_size_bytes ?? tauriBuildArtifact.binary_size_bytes ?? 0)}</p>
         <p>manual_backend_launch_required: {String(productionBlockerAudit.manual_backend_launch_required ?? true)}</p>
         <p>backend_offline_ui_packaged_runtime_verified: {String(productionBlockerAudit.backend_offline_ui_packaged_runtime_verified ?? false)}</p>
         <p>config_log_paths_declared: {String(productionBlockerAudit.config_log_paths_declared ?? false)}</p>
