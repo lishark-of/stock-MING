@@ -189,6 +189,7 @@ export default function FactorQuantHub() {
           { label: "full pool", value: universeResearch.full_pool_validation_done === true ? "完成" : "未完成", tone: universeResearch.full_pool_validation_done === true ? "good" : "neutral" },
           { label: "render scan", value: universeResearch.page_render_starts_full_pool === true ? "会启动" : "不启动", tone: universeResearch.page_render_starts_full_pool === true ? "bad" : "good" },
           { label: "frontend rank/zscore", value: universeResearch.frontend_computes_rank_zscore === true ? "会计算" : "不计算", tone: universeResearch.frontend_computes_rank_zscore === true ? "bad" : "good" },
+          { label: "partial pool proof", value: universeExecutionReadiness.partial_pool_is_full_market_proof === true ? "误作全市场" : "不是全市场证明", tone: universeExecutionReadiness.partial_pool_is_full_market_proof === true ? "bad" : "good" },
           { label: "universe read plan", value: universeResearchTaskPlan.status ?? "missing", tone: universeResearchTaskPlan.status === "read_plan_ready" ? "good" : "neutral" },
           { label: "universe exec audit", value: universeExecutionReadiness.status ?? "missing", tone: universeExecutionReadiness.read_plan_ready === true ? "good" : "warn" },
           { label: "universe blockers", value: universeExecutionReadiness.production_blocker_count ?? 0, tone: Number(universeExecutionReadiness.production_blocker_count ?? 0) > 0 ? "warn" : "good" },

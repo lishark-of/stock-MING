@@ -278,6 +278,7 @@ Promote Factor Test Lab to research-grade metrics
 - A button-gated local `run_factor_universe_research_plan` task now consumes storage query contracts for `factor_values`, `daily`, `daily_basic`, `moneyflow`, and `trade_cal`, then writes `universe_research_task_plan` back to Factor Quant Hub cache.
 - The read-plan task is a worker/task consumption plan, not full-pool research validation.
 - Factor Quant Hub now exposes `universe_execution_readiness_audit` and `universe_execution_readiness_rows`, summarizing read-plan readiness, storage query contract consumption, worker batch execution, cross-sectional rank/zscore, neutralization, full-pool validation, frontend read-only boundaries, partial-pool boundaries, and trade isolation.
+- `scripts/factor_universe_contract.py` is now part of the local push gate. It validates LTG-04 universe modes, local storage read-plan consumption, task catalog button gating, React read-only display, partial-pool-not-full-market-proof visibility, no batch execution, no provider/model/GitHub calls, no trades, and no action mutation while `production_factor_universe_complete=false`.
 
 ### Gaps
 
@@ -287,6 +288,7 @@ Promote Factor Test Lab to research-grade metrics
 - The universe read plan does not perform watchlist/custom/full-pool batch research yet.
 - Cross-sectional rank, zscore, neutralization, result summaries, and worker-backed large-universe execution are still incomplete.
 - `universe_execution_readiness_audit.status=read_plan_ready_execution_pending` only proves the local read-plan contract after the button task; it is not provider-backed full-market research and keeps production blockers visible.
+- The Factor universe push-gate contract is local only; it does not run worker-backed batch research, rank/zscore, neutralization, provider-backed validation, factor combination research, or full-pool production research.
 
 ### Implementation Phases
 
@@ -304,6 +306,7 @@ Promote Factor Test Lab to research-grade metrics
 - Partial pools are explicitly not full-market proof, and page render does not start full-pool research.
 - Storage query read plans remain local metadata contracts until real research execution and full-pool validation are complete.
 - `universe_execution_readiness_audit.production_factor_universe_complete=false` until worker-backed batch execution, rank/zscore, neutralization, result summaries, and full-pool/provider-backed validation are implemented and verified.
+- `scripts/factor_universe_contract.py` passes in the local push gate while reporting `large_universe_pipeline_done=false`, `full_pool_validation_done=false`, `cross_sectional_rank_zscore_done=false`, `neutralization_done=false`, `factor_combination_research_done=false`, and `production_factor_universe_complete=false`.
 
 ### Forbidden
 
@@ -311,6 +314,7 @@ Promote Factor Test Lab to research-grade metrics
 - Do not write universe data to git.
 - Do not treat partial universe samples as full-market proof.
 - Do not treat `universe_execution_readiness_audit` as production factor-universe completion while it reports execution pending.
+- Do not treat `scripts/factor_universe_contract.py` passing as worker-backed batch execution, rank/zscore, neutralization, provider-backed validation, factor combination research, full-pool research, or production Factor universe completion.
 
 ### Recommended Commit Message
 
@@ -699,6 +703,7 @@ Retire Streamlit from primary user workflow
 - `scripts/data_health_freshness_contract.py` is now part of the local push gate. It validates LTG-01 Data Health contracts remain cache-only, provider-backed acceptance stays pending, and score/support/preview/action boundaries are not silently weakened.
 - `scripts/tushare_acceptance_contract.py` is now part of the local push gate. It validates LTG-02 Tushare matrix/readiness contracts remain button-gated, local, no-provider, no-trade, and no-action, while provider-backed full-interface acceptance remains pending.
 - `scripts/factor_test_lab_contract.py` is now part of the local push gate. It validates LTG-03 Factor Test Lab research metrics, small-pool readiness, storage query consumption, and production QA stay local/research-only while provider-backed small-pool and full-market validation remain pending.
+- `scripts/factor_universe_contract.py` is now part of the local push gate. It validates LTG-04 universe modes, local read-plan storage-query consumption, button-gated task catalog, React read-only display, partial-pool-not-full-market-proof visibility, no-provider/no-model/no-trade/no-action boundaries, and keeps worker batch execution, rank/zscore, neutralization, full-pool validation, and production universe research pending.
 - `scripts/deepseek_governance_contract.py` is now part of the local push gate. It validates LTG-07 manual/default-off governance, sanitizer whitelist, parse-failed discard, JSON stability blockers, response-format review blockers, button gating, model strategy, no-model-call, no-secret, no-trade, and no-action boundaries while provider-backed benchmark and production automatic explanation remain pending.
 - `scripts/next_session_map_contract.py` is now part of the local push gate. It validates LTG-08 exact ECharts payload, interaction readiness, reference/zone/position/DeepSeek visibility, current GET cache envelope, button-gated local task, React API-client/read-only display, no-browser, no-provider, no-trade, and no-action boundaries while browser visual QA, performance trace, Streamlit parity, and production replacement remain pending.
 - `scripts/candidate_radar_contract.py` is now part of the local push gate. It validates LTG-13 Candidate Radar cache reads, local quick-scan task gating, full-pool/deep-scan plan-only boundaries, no-feature-loss QA, replacement-gap triage, result-delta clarity, and no-trade/no-action boundaries while production radar replacement remains pending.
@@ -717,6 +722,7 @@ Retire Streamlit from primary user workflow
 - Structured keyword review is present, but it is still a local classification contract; periodic human allowlist review and remote CI evidence remain separate.
 - Tushare acceptance contract is present, but it is still a local matrix/readiness guard; real provider-backed interface samples remain a later LTG-02 acceptance phase.
 - Factor Test Lab contract is present, but it is still a local research-boundary guard; real small-pool and full-market research validation remain a later LTG-03 acceptance phase.
+- Factor universe contract is present, but it is still a local read-plan/read-only guard; worker-backed batch execution, rank/zscore, neutralization, provider-backed validation, factor combination research, and full-pool production research remain later LTG-04 acceptance phases.
 - DeepSeek governance contract is present, but it is still a local sanitizer/response-format/no-model-call guard; real provider-backed benchmark, provider response-format enforcement, bounded retry/repair execution, and production auto-after-task readiness remain later LTG-07 acceptance phases.
 - Next-session map contract is present, but it is still a local no-browser/no-provider guard; browser visual QA, performance trace, Streamlit parity, and production ECharts replacement remain later LTG-08 acceptance phases.
 - Candidate Radar contract is present, but it is still a local replacement-boundary guard; real full-pool/deep-scan execution, provider-backed parity acceptance, browser performance trace, and visual QA remain later LTG-13 acceptance phases.
@@ -746,7 +752,8 @@ Retire Streamlit from primary user workflow
 - Optional local release report records passed checks, branch/head, ahead count, and safety boundaries without pushing or calling providers.
 - Tushare acceptance contract runs after Data Health and before static UI QA, and keeps `provider_backed_acceptance_done=false` / `production_tushare_pipeline_complete=false` visible.
 - Factor Test Lab contract runs after Tushare acceptance and before static UI QA, and keeps `provider_backed_small_pool_validation_done=false` / `production_factor_test_validation_complete=false` visible.
-- DeepSeek governance contract runs after Factor Test Lab and before Next-session map, and keeps `provider_benchmark_done=false`, `response_format_enforced=false`, `retry_repair_policy_ready=false`, `auto_after_task_production_ready=false`, and `production_deepseek_explanation_complete=false` visible.
+- Factor universe contract runs after Factor Test Lab and before DeepSeek governance, and keeps `large_universe_pipeline_done=false`, `full_pool_validation_done=false`, `cross_sectional_rank_zscore_done=false`, `neutralization_done=false`, `factor_combination_research_done=false`, and `production_factor_universe_complete=false` visible.
+- DeepSeek governance contract runs after Factor universe and before Next-session map, and keeps `provider_benchmark_done=false`, `response_format_enforced=false`, `retry_repair_policy_ready=false`, `auto_after_task_production_ready=false`, and `production_deepseek_explanation_complete=false` visible.
 - Next-session map contract runs after DeepSeek governance and before Candidate Radar, and keeps `streamlit_parity_complete=false`, `production_replacement_complete=false`, `browser_visual_qa_done=false`, and `browser_performance_trace_done=false` visible.
 - Candidate Radar contract runs after Next-session map and before static motion QA, and keeps `production_radar_replacement_complete=false`, `legacy_retirement_ready=false`, `full_pool_scan_done=false`, and `deep_scan_done=false` visible.
 - Storage contract runs after Candidate Radar and before static motion QA, and keeps `production_storage_complete=false`, `schema_migration_executed=false`, `partition_migration_executed=false`, `physical_compaction_executed=false`, and `cache_ttl_refresh_executed=false` visible.
