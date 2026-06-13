@@ -6789,6 +6789,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("production_blocker_audit_keeps_worker_blocked", script)
         self.assertIn("healthcheck_contract_is_execution_pending", script)
         self.assertIn("activation_review_keeps_manual_activation_pending", script)
+        self.assertIn("worker_production_activation_receipt.v1", script)
+        self.assertIn("production_activation_receipt_keeps_worker_blocked", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -6813,6 +6815,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["healthcheck_executed"])
         self.assertFalse(payload["healthcheck_task_dispatched"])
         self.assertFalse(payload["activation_ready"])
+        self.assertTrue(payload["worker_production_activation_receipt_ready"])
+        self.assertEqual(
+            payload["worker_production_activation_receipt_status"],
+            "worker_activation_receipt_ready_production_blocked",
+        )
         self.assertTrue(payload["manual_activation_required"])
         self.assertTrue(payload["local_fallback_available"])
         self.assertTrue(payload["cache_only"])
@@ -6827,6 +6834,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed"]["production_blocker_status"], "production_worker_blocked")
         self.assertEqual(payload["observed"]["healthcheck_status"], "worker_healthcheck_qa_contract_ready_execution_pending")
         self.assertEqual(payload["observed"]["activation_review_status"], "worker_activation_review_ready_activation_pending")
+        self.assertEqual(
+            payload["observed"]["worker_production_activation_receipt_status"],
+            "worker_activation_receipt_ready_production_blocked",
+        )
+        self.assertEqual(
+            payload["observed"]["worker_production_activation_allowed_next_step"],
+            "explicit_synthetic_healthcheck_then_manual_celery_redis_activation_review",
+        )
         self.assertEqual(payload["observed"]["scheduler_auto_task_count"], 0)
         self.assertEqual(payload["observed"]["cache_get_external_call_count"], 0)
         criteria = {row["criterion"] for row in payload["rows"]}
@@ -6837,6 +6852,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("production_blocker_audit_keeps_worker_blocked", criteria)
         self.assertIn("healthcheck_contract_is_execution_pending", criteria)
         self.assertIn("activation_review_keeps_manual_activation_pending", criteria)
+        self.assertIn("production_activation_receipt_keeps_worker_blocked", criteria)
 
     def test_tauri_desktop_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/tauri_desktop_contract.py")
@@ -12016,9 +12032,67 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(readiness_receipt["call_ledger"][0]["api"], "local_worker_production_readiness_receipt")
         self.assertFalse(readiness_receipt["call_ledger"][0]["external"])
         self.assertIn("local_worker_production_readiness_receipt", {item.get("api") for item in packet["call_ledger"]})
+        activation_receipt = packet["worker_production_activation_receipt"]
+        self.assertEqual(activation_receipt["schema_version"], "worker_production_activation_receipt.v1")
+        self.assertEqual(activation_receipt["status"], "worker_activation_receipt_ready_production_blocked")
+        self.assertEqual(activation_receipt["scope"], "local_worker_production_activation_receipt_no_process_start")
+        self.assertTrue(activation_receipt["local_activation_receipt_ready"])
+        self.assertEqual(
+            activation_receipt["allowed_next_step"],
+            "explicit_synthetic_healthcheck_then_manual_celery_redis_activation_review",
+        )
+        self.assertIn("GET /api/worker/cache worker process start", activation_receipt["not_allowed_next_steps"])
+        self.assertIn("GET /api/worker/cache Redis ping", activation_receipt["not_allowed_next_steps"])
+        self.assertIn("automatic Tushare/DeepSeek/GitHub task scheduling", activation_receipt["not_allowed_next_steps"])
+        self.assertIn("activation receipt as production worker completion", activation_receipt["not_allowed_next_steps"])
+        self.assertIn("celery worker process evidence", activation_receipt["missing_evidence_items"])
+        self.assertIn("redis broker reachability evidence", activation_receipt["missing_evidence_items"])
+        self.assertIn("production worker promotion evidence", activation_receipt["missing_evidence_items"])
+        self.assertFalse(activation_receipt["production_worker_complete"])
+        self.assertFalse(activation_receipt["activation_ready"])
+        self.assertFalse(activation_receipt["healthcheck_executed_by_receipt"])
+        self.assertFalse(activation_receipt["worker_started_by_receipt"])
+        self.assertFalse(activation_receipt["celery_worker_started"])
+        self.assertFalse(activation_receipt["redis_pinged_by_receipt"])
+        self.assertFalse(activation_receipt["redis_pinged"])
+        self.assertFalse(activation_receipt["scheduler_started_by_receipt"])
+        self.assertFalse(activation_receipt["scheduler_started"])
+        self.assertFalse(activation_receipt["task_dispatched_by_receipt"])
+        self.assertFalse(activation_receipt["provider_model_task_dispatched_by_receipt"])
+        self.assertFalse(activation_receipt["receipt_external_calls_triggered"])
+        self.assertFalse(activation_receipt["tushare_called_by_receipt"])
+        self.assertFalse(activation_receipt["external_calls_triggered"])
+        self.assertFalse(activation_receipt["tushare_called"])
+        self.assertFalse(activation_receipt["deepseek_called"])
+        self.assertFalse(activation_receipt["github_called"])
+        self.assertFalse(activation_receipt["contains_secret"])
+        self.assertTrue(activation_receipt["does_not_execute_trades"])
+        self.assertTrue(activation_receipt["does_not_modify_strategy_action"])
+        self.assertEqual(activation_receipt["production_blocker_count"], packet["worker_production_blocker_audit"]["blocking_criterion_count"])
+        activation_receipt_rows = {row["criterion"]: row for row in packet["worker_production_activation_rows"]}
+        self.assertEqual(activation_receipt_rows["local_readiness_receipt_ready"]["status"], "passed")
+        self.assertEqual(
+            activation_receipt_rows["synthetic_healthcheck_execution_required"]["status"],
+            "pending_explicit_post_healthcheck",
+        )
+        self.assertEqual(activation_receipt_rows["celery_worker_manual_start_required"]["status"], "pending_manual_worker_start")
+        self.assertEqual(activation_receipt_rows["redis_broker_reachability_required"]["status"], "pending_manual_broker_check")
+        self.assertEqual(activation_receipt_rows["cross_process_controls_required"]["status"], "pending_worker_semantics")
+        self.assertEqual(activation_receipt_rows["append_only_log_required"]["status"], "pending_worker_log_validation")
+        self.assertEqual(activation_receipt_rows["manual_activation_review_required"]["status"], "pending_manual_activation_review")
+        self.assertEqual(activation_receipt_rows["scheduler_default_off_boundary"]["status"], "passed")
+        self.assertEqual(activation_receipt_rows["provider_model_isolation_boundary"]["status"], "passed")
+        self.assertEqual(activation_receipt_rows["no_trade_or_action_boundary"]["status"], "passed")
+        self.assertEqual(activation_receipt_rows["production_completion_evidence_required"]["status"], "pending_production_evidence")
+        self.assertEqual(activation_receipt["call_ledger"][0]["api"], "local_worker_production_activation_receipt")
+        self.assertFalse(activation_receipt["call_ledger"][0]["external"])
+        self.assertIn("local_worker_production_activation_receipt", {item.get("api") for item in packet["call_ledger"]})
         self.assertTrue(packet["policy"]["worker_production_readiness_receipt_is_local"])
         self.assertTrue(packet["policy"]["worker_production_readiness_receipt_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_production_readiness_receipt_is_not_production_completion"])
+        self.assertTrue(packet["policy"]["worker_production_activation_receipt_is_local"])
+        self.assertTrue(packet["policy"]["worker_production_activation_receipt_is_not_process_start"])
+        self.assertTrue(packet["policy"]["worker_production_activation_receipt_is_not_production_completion"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertEqual(response["call_ledger"][0]["api"], "local_worker_runtime_cache")

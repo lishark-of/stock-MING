@@ -77,7 +77,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 | LTG-03 | Factor Test Lab 完整生产化 | light research metrics `done_real`; production QA contract visible; production research incomplete | Research-grade factor validation for single factors | P3 | IC, Rank IC, ICIR, groups, cost, drawdown, sample split, decay, and neutral IC are auditable and research-only. |
 | LTG-04 | Factor 全市场 / 股票池研究 | light mode plus local read-plan and execution readiness audit; batch execution pending | watchlist / custom pool / full pool research pipeline | P3 | Large universe runs in task pipeline without blocking UI or entering strategy action. |
 | LTG-05 | Storage / DuckDB / Parquet 生产化 | dataset scaffold, dry-runs, query policy, and push-gate contract exist | Versioned, queryable local data layer | P4 | schema/version/TTL/compaction/query services are auditable; data artifacts stay out of git. |
-| LTG-06 | Worker / Celery / Redis 生产化 | local task fallback, preflight, blocker audit, healthcheck QA contract, and push-gate contract exist | Production-capable worker orchestration with local fallback | P4 | POST returns task_id, worker runs heavy jobs, Redis absence falls back gracefully, scheduler stays off by default. |
+| LTG-06 | Worker / Celery / Redis 生产化 | local task fallback, preflight, blocker audit, healthcheck QA contract, readiness/activation receipts, and push-gate contract exist | Production-capable worker orchestration with local fallback | P4 | POST returns task_id, worker runs heavy jobs, Redis absence falls back gracefully, scheduler stays off by default. |
 | LTG-07 | DeepSeek pro 稳定解释生产化 | manual governance, sanitizer, local JSON stability audit, response-format review, activation receipt, and push-gate contract exist; mini-benchmark below production target | Stable manual explanation, optional background auto-after-task | P5 | JSON success rate > 90%, no action leakage, no numeric overwrite, cost predictable. |
 | LTG-08 | ECharts 次日操作图谱成熟版 | maturing chart contract with interaction readiness audit; legacy parity pending | React/ECharts replaces Streamlit main next-session visual | P5 | Complete cache display, evidence interactions, no frontend action/price/position mutation. |
 | LTG-09 | Tauri desktop production package | dev/preflight with runtime contract and local release artifact detection; packaged runtime QA pending | Production desktop shell for ordinary users | P6 | tauri dev/build pass; backend-offline state is friendly; config/log policy is validated; token/key never enters frontend. |
@@ -511,6 +511,7 @@ Productionize Command Center 3 storage datasets
 - Worker runtime now supports explicit `POST /api/worker/synthetic-healthcheck`: a button-gated local synthetic task that creates a local task, marks it success, reads it back through task status, verifies safe `task_log` visibility, writes `command_center_3_worker_synthetic_healthcheck_packet`, and then lets GET cache display the last result. It does not start Celery, ping Redis, start scheduler, validate cross-process controls, call Tushare/DeepSeek/GitHub, execute trades, or mark `production_worker_complete=true`.
 - Worker runtime now exposes `worker_activation_review_contract`: a manual activation review contract for production worker enablement. It lists production blocker review, Redis broker configuration, Celery manual start, synthetic healthcheck, cross-process controls, task log persistence, scheduler default-off, provider/model isolation, local fallback rollback, and secret redaction. It keeps `activation_ready=false` and `production_worker_complete=false`; it does not start Celery, ping Redis, start scheduler, dispatch tasks, call providers/models/probes, or execute trades.
 - Worker runtime now exposes `worker_production_readiness_receipt`: a local next-step receipt that ties blocker audit, healthcheck QA, task-log audit, synthetic healthcheck state, activation review, and route coverage into one explicit LTG-06 checkpoint. It can mark `ready_for_explicit_synthetic_healthcheck=true`, but keeps `ready_for_manual_activation_review=false` while production blockers remain and keeps `production_worker_complete=false`, `worker_started_by_receipt=false`, `redis_pinged_by_receipt=false`, `scheduler_started_by_receipt=false`, and `task_dispatched_by_receipt=false`.
+- Worker runtime now exposes `worker_production_activation_receipt`: a local production-start checklist that ties readiness receipt, synthetic healthcheck state, Celery manual start, Redis broker reachability, cross-process controls, append-only logs, scheduler default-off, provider/model isolation, manual activation approval, and production promotion evidence into one activation layer. It keeps `worker_activation_receipt_ready_production_blocked`, `activation_ready=false`, `production_worker_complete=false`, `worker_started_by_receipt=false`, `redis_pinged_by_receipt=false`, `scheduler_started_by_receipt=false`, and `task_dispatched_by_receipt=false`.
 - `scripts/worker_contract.py` is now part of the local push gate. It validates worker cache, dispatch plan, production blocker audit, healthcheck QA, task-log persistence audit, synthetic healthcheck explicit-POST boundary, activation review, readiness receipt, scheduler default-off, no-external-call, no-provider-call, no-trade, and no-action boundaries while `production_worker_complete=false`.
 - Celery/Redis are not production enabled.
 
@@ -526,6 +527,7 @@ Productionize Command Center 3 storage datasets
 - The Worker push-gate contract is still a local guard only; real Celery/Redis process startup, broker reachability, cross-process controls, append-only worker log proof, and scheduler production enablement remain pending.
 - The explicit synthetic healthcheck proves only local fallback task/status/log round trip. It is useful evidence for the local control plane, but it is not Celery/Redis process proof and not production worker activation.
 - The worker production readiness receipt is still a local next-step receipt. It does not start Celery, ping Redis, run healthcheck, start scheduler, dispatch tasks, or prove production worker completion.
+- The worker production activation receipt is still a local checklist. It does not start Celery, ping Redis, run healthcheck, start scheduler, dispatch tasks, prove manual activation approval, or prove production worker completion.
 
 ### Implementation Phases
 
@@ -535,10 +537,11 @@ Productionize Command Center 3 storage datasets
 4. Keep `worker_task_log_persistence_audit` current so local safe task-log visibility is traceable while append-only/cross-process worker log proof remains pending.
 5. Keep `POST /api/worker/synthetic-healthcheck` button-gated and local-only so task/status/log round-trip evidence remains visible before Celery/Redis activation.
 6. Keep `worker_production_readiness_receipt` current so the next safe step is visible without converting local contracts into production completion evidence.
-7. Add Celery worker execution behind explicit configuration.
-8. Add Redis broker configuration and health reporting without cache API pinging Redis.
-9. Add retry/cancel/lock behavior for real worker tasks.
-10. Keep scheduler default off.
+7. Keep `worker_production_activation_receipt` current so production-start blockers remain visible without starting processes.
+8. Add Celery worker execution behind explicit configuration.
+9. Add Redis broker configuration and health reporting without cache API pinging Redis.
+10. Add retry/cancel/lock behavior for real worker tasks.
+11. Keep scheduler default off.
 
 ### Acceptance Criteria
 
@@ -553,7 +556,8 @@ Productionize Command Center 3 storage datasets
 - Worker task-log persistence rows are visible in UI, and `task_log_persistence_verified=false`, `append_only_worker_log_verified=false`, `cross_process_log_round_trip_verified=false`, and `production_worker_complete=false` until a future explicit live worker healthcheck proves append-only/cross-process log persistence.
 - Worker activation review rows are visible in UI, and `activation_ready=false` until production blockers are resolved and an explicit synthetic/local worker healthcheck proves readiness.
 - Worker readiness receipt rows are visible in UI, `allowed_next_step=explicit_post_worker_synthetic_healthcheck_then_manual_activation_review`, and `not_allowed_next_steps` explicitly blocks GET cache process start, Redis ping, scheduler start, task dispatch, automatic Tushare/DeepSeek/GitHub scheduling, and treating the receipt or synthetic healthcheck as production completion.
-- `scripts/worker_contract.py` passes in the local push gate while reporting `production_worker_complete=false`, `healthcheck_executed=false`, `task_log_persistence_verified=false`, `append_only_worker_log_verified=false`, `activation_ready=false`, `worker_started=false`, `redis_pinged=false`, `scheduler_started=false`, and `worker_production_readiness_receipt_ready=true`.
+- Worker production activation receipt rows are visible in UI, `allowed_next_step=explicit_synthetic_healthcheck_then_manual_celery_redis_activation_review`, and `not_allowed_next_steps` explicitly blocks GET cache process start, Redis ping, scheduler start, task dispatch, automatic Tushare/DeepSeek/GitHub scheduling, and treating the activation receipt as production worker completion.
+- `scripts/worker_contract.py` passes in the local push gate while reporting `production_worker_complete=false`, `healthcheck_executed=false`, `task_log_persistence_verified=false`, `append_only_worker_log_verified=false`, `activation_ready=false`, `worker_started=false`, `redis_pinged=false`, `scheduler_started=false`, `worker_production_readiness_receipt_ready=true`, and `worker_production_activation_receipt_ready=true`.
 - Real Tushare/DeepSeek scheduling is never automatic.
 - Failures include `error_message_safe`.
 
@@ -567,6 +571,7 @@ Productionize Command Center 3 storage datasets
 - Do not report explicit synthetic healthcheck as Celery/Redis process proof, broker reachability, cross-process control proof, append-only worker log proof, scheduler production config, or production worker completion.
 - Do not report activation review as worker startup, healthcheck execution, or production worker completion.
 - Do not report `worker_production_readiness_receipt` as worker startup, Redis reachability, scheduler startup, task dispatch, healthcheck execution, activation approval, or production worker completion.
+- Do not report `worker_production_activation_receipt` as synthetic healthcheck execution, Celery worker startup, Redis reachability, scheduler startup, task dispatch, manual activation approval, provider/model scheduling evidence, or production worker completion.
 - Do not report `scripts/worker_contract.py` passing as Celery/Redis worker startup, broker health, synthetic healthcheck execution, cross-process task controls, scheduler production config, or production worker completion.
 
 ### Recommended Commit Message

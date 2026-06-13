@@ -62,6 +62,9 @@ export default function WorkerRuntime() {
   const workerProductionReadinessReceipt =
     (productionReadiness.worker_production_readiness_receipt as Record<string, unknown> | undefined) ??
     ((cache.worker_production_readiness_receipt as Record<string, unknown> | undefined) ?? {});
+  const workerProductionActivationReceipt =
+    (productionReadiness.worker_production_activation_receipt as Record<string, unknown> | undefined) ??
+    ((cache.worker_production_activation_receipt as Record<string, unknown> | undefined) ?? {});
   const visibleHealthcheck = Object.keys(healthcheckResult).length ? healthcheckResult : workerSyntheticHealthcheck;
   const dispatchPlanSummary = (cache.dispatch_plan_summary as Record<string, unknown> | undefined) ?? {};
   const dispatchPlanStatusCounts = dispatchPlanSummary.status_counts as Record<string, unknown> | undefined;
@@ -111,6 +114,8 @@ export default function WorkerRuntime() {
           { label: "activation blockers", value: workerActivationReview.activation_blocker_count ?? counts.worker_activation_blocker_count, tone: Number(workerActivationReview.activation_blocker_count ?? counts.worker_activation_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "receipt ready", value: workerProductionReadinessReceipt.local_receipt_ready === true ? "是" : "否", tone: workerProductionReadinessReceipt.local_receipt_ready === true ? "good" : "warn" },
           { label: "receipt blockers", value: workerProductionReadinessReceipt.blocking_criterion_count ?? counts.worker_production_readiness_receipt_blocker_count, tone: Number(workerProductionReadinessReceipt.blocking_criterion_count ?? counts.worker_production_readiness_receipt_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "prod activation", value: workerProductionActivationReceipt.local_activation_receipt_ready === true ? "是" : "否", tone: workerProductionActivationReceipt.local_activation_receipt_ready === true ? "good" : "warn" },
+          { label: "activation evidence", value: workerProductionActivationReceipt.blocking_criterion_count ?? counts.worker_production_activation_blocker_count, tone: Number(workerProductionActivationReceipt.blocking_criterion_count ?? counts.worker_production_activation_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "activation ready", value: workerActivationReview.activation_ready === true ? "是" : "否", tone: workerActivationReview.activation_ready === true ? "bad" : "good" },
           { label: "worker complete", value: productionBlockerAudit.production_worker_complete === true ? "是" : "否", tone: productionBlockerAudit.production_worker_complete === true ? "bad" : "good" },
           { label: "local fallback", value: runtime.local_fallback_enabled, tone: runtime.local_fallback_enabled === false ? "bad" : "good" },
@@ -261,6 +266,22 @@ export default function WorkerRuntime() {
         <DataLineageTable rows={rows(workerProductionReadinessReceipt.call_ledger)} />
       </PacketCard>
 
+      <PacketCard title="Worker production activation receipt" subtitle="LTG-06 生产启用收据；只列出人工启用前置证据，不启动 Celery、不 ping Redis、不调度任务" status={String(workerProductionActivationReceipt.status ?? "worker_activation_receipt_ready_production_blocked")}>
+        <p>schema_version: {String(workerProductionActivationReceipt.schema_version ?? "worker_production_activation_receipt.v1")}</p>
+        <p>scope: {String(workerProductionActivationReceipt.scope ?? "local_worker_production_activation_receipt_no_process_start")}</p>
+        <p>local_activation_receipt_ready: {String(workerProductionActivationReceipt.local_activation_receipt_ready ?? false)}</p>
+        <p>allowed_next_step: {String(workerProductionActivationReceipt.allowed_next_step ?? "explicit_synthetic_healthcheck_then_manual_celery_redis_activation_review")}</p>
+        <p>production_worker_complete / activation_ready: {String(workerProductionActivationReceipt.production_worker_complete ?? false)} / {String(workerProductionActivationReceipt.activation_ready ?? false)}</p>
+        <p>synthetic_healthcheck_executed / healthcheck_executed_by_receipt: {String(workerProductionActivationReceipt.synthetic_healthcheck_executed ?? false)} / {String(workerProductionActivationReceipt.healthcheck_executed_by_receipt ?? false)}</p>
+        <p>worker_started_by_receipt / redis_pinged_by_receipt / scheduler_started_by_receipt: {String(workerProductionActivationReceipt.worker_started_by_receipt ?? false)} / {String(workerProductionActivationReceipt.redis_pinged_by_receipt ?? false)} / {String(workerProductionActivationReceipt.scheduler_started_by_receipt ?? false)}</p>
+        <p>task_dispatched_by_receipt / provider_model_task_dispatched_by_receipt: {String(workerProductionActivationReceipt.task_dispatched_by_receipt ?? false)} / {String(workerProductionActivationReceipt.provider_model_task_dispatched_by_receipt ?? false)}</p>
+        <p>receipt_external_calls_triggered / tushare_called_by_receipt / deepseek_called / github_called: {String(workerProductionActivationReceipt.receipt_external_calls_triggered ?? false)} / {String(workerProductionActivationReceipt.tushare_called_by_receipt ?? false)} / {String(workerProductionActivationReceipt.deepseek_called ?? false)} / {String(workerProductionActivationReceipt.github_called ?? false)}</p>
+        <p>missing_evidence_items: {Array.isArray(workerProductionActivationReceipt.missing_evidence_items) ? workerProductionActivationReceipt.missing_evidence_items.join(" / ") : "explicit synthetic healthcheck execution / celery worker process evidence / redis broker reachability evidence / production worker promotion evidence"}</p>
+        <p>not_allowed_next_steps: {Array.isArray(workerProductionActivationReceipt.not_allowed_next_steps) ? workerProductionActivationReceipt.not_allowed_next_steps.join(" / ") : "GET /api/worker/cache worker process start / GET /api/worker/cache Redis ping / activation receipt as production worker completion"}</p>
+        <DataLineageTable rows={rows(productionReadiness.worker_production_activation_rows ?? cache.worker_production_activation_rows)} />
+        <DataLineageTable rows={rows(workerProductionActivationReceipt.call_ledger)} />
+      </PacketCard>
+
       <PacketCard title="Worker 模块" subtitle="worker.tasks_* 和 scheduler scaffold；只读文件/模块可见性" status="modules">
         <DataLineageTable rows={rows(cache.worker_module_rows)} />
       </PacketCard>
@@ -290,6 +311,7 @@ export default function WorkerRuntime() {
         <JsonDetails title="worker synthetic healthcheck raw" data={visibleHealthcheck} />
         <JsonDetails title="worker activation review raw" data={workerActivationReview} />
         <JsonDetails title="worker production readiness receipt raw" data={workerProductionReadinessReceipt} />
+        <JsonDetails title="worker production activation receipt raw" data={workerProductionActivationReceipt} />
       </PacketCard>
     </>
   );

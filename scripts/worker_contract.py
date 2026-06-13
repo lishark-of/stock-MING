@@ -130,6 +130,9 @@ def build_contract() -> dict[str, Any]:
     readiness_receipt = _dict(packet.get("worker_production_readiness_receipt"))
     readiness_receipt_rows = [row for row in _list(packet.get("worker_production_readiness_receipt_rows")) if isinstance(row, dict)]
     readiness_receipt_criteria = {str(row.get("criterion") or "") for row in readiness_receipt_rows}
+    activation_receipt = _dict(packet.get("worker_production_activation_receipt"))
+    activation_receipt_rows = [row for row in _list(packet.get("worker_production_activation_rows")) if isinstance(row, dict)]
+    activation_receipt_criteria = {str(row.get("criterion") or "") for row in activation_receipt_rows}
     task_persistence = _dict(packet.get("task_persistence"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/worker_contract.py")
@@ -344,6 +347,59 @@ def build_contract() -> dict[str, Any]:
             "Worker production readiness receipt may choose the next safe explicit step, but it must not start processes, ping Redis, dispatch tasks, call providers/models, or claim production completion.",
         ),
         _row(
+            "production_activation_receipt_keeps_worker_blocked",
+            activation_receipt.get("schema_version") == "worker_production_activation_receipt.v1"
+            and activation_receipt.get("status") == "worker_activation_receipt_ready_production_blocked"
+            and activation_receipt.get("scope") == "local_worker_production_activation_receipt_no_process_start"
+            and activation_receipt.get("local_activation_receipt_ready") is True
+            and activation_receipt.get("allowed_next_step")
+            == "explicit_synthetic_healthcheck_then_manual_celery_redis_activation_review"
+            and "GET /api/worker/cache worker process start" in _list(activation_receipt.get("not_allowed_next_steps"))
+            and "GET /api/worker/cache Redis ping" in _list(activation_receipt.get("not_allowed_next_steps"))
+            and "automatic Tushare/DeepSeek/GitHub task scheduling" in _list(activation_receipt.get("not_allowed_next_steps"))
+            and "activation receipt as production worker completion" in _list(activation_receipt.get("not_allowed_next_steps"))
+            and "celery worker process evidence" in _list(activation_receipt.get("missing_evidence_items"))
+            and "redis broker reachability evidence" in _list(activation_receipt.get("missing_evidence_items"))
+            and "production worker promotion evidence" in _list(activation_receipt.get("missing_evidence_items"))
+            and activation_receipt.get("production_worker_complete") is False
+            and activation_receipt.get("activation_ready") is False
+            and activation_receipt.get("healthcheck_executed_by_receipt") is False
+            and activation_receipt.get("worker_started_by_receipt") is False
+            and activation_receipt.get("celery_worker_started") is False
+            and activation_receipt.get("redis_pinged_by_receipt") is False
+            and activation_receipt.get("redis_pinged") is False
+            and activation_receipt.get("scheduler_started_by_receipt") is False
+            and activation_receipt.get("scheduler_started") is False
+            and activation_receipt.get("task_dispatched_by_receipt") is False
+            and activation_receipt.get("provider_model_task_dispatched_by_receipt") is False
+            and activation_receipt.get("cache_get_external_calls") is False
+            and activation_receipt.get("receipt_external_calls_triggered") is False
+            and _flag_false(activation_receipt, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and activation_receipt.get("tushare_called_by_receipt") is False
+            and activation_receipt.get("does_not_execute_trades") is True
+            and activation_receipt.get("does_not_modify_strategy_action") is True
+            and activation_receipt.get("contains_secret") is False
+            and activation_receipt.get("production_blocker_count") == blocker_audit.get("blocking_criterion_count")
+            and {
+                "local_readiness_receipt_ready",
+                "synthetic_healthcheck_execution_required",
+                "celery_worker_manual_start_required",
+                "redis_broker_reachability_required",
+                "cross_process_controls_required",
+                "append_only_log_required",
+                "manual_activation_review_required",
+                "scheduler_default_off_boundary",
+                "provider_model_isolation_boundary",
+                "no_trade_or_action_boundary",
+                "production_completion_evidence_required",
+            }.issubset(activation_receipt_criteria)
+            and _list(activation_receipt.get("call_ledger"))
+            and _dict(_list(activation_receipt.get("call_ledger"))[0]).get("api")
+            == "local_worker_production_activation_receipt"
+            and "local_worker_production_activation_receipt" in {item.get("api") for item in _list(packet.get("call_ledger"))},
+            "Worker production activation receipt must keep Celery/Redis/manual activation evidence pending while forbidding cache GET process starts, Redis pings, task dispatch, provider/model scheduling, trades, and production completion claims.",
+        ),
+        _row(
             "push_gate_runs_worker_contract_after_storage",
             "scripts/worker_contract.py" in push_gate_script
             and "Worker contract" in push_gate_script
@@ -356,6 +412,8 @@ def build_contract() -> dict[str, Any]:
             "script_is_local_no_process_or_provider_execution",
             "command_center_3_worker_contract.v1" in this_script
             and "local_worker_contract_no_process_start" in this_script
+            and "worker_production_activation_receipt.v1" in this_script
+            and "production_activation_receipt_keeps_worker_blocked" in this_script
             and "production_worker_complete" in this_script
             and "healthcheck_executed" in this_script
             and "activation_ready" in this_script
@@ -386,6 +444,8 @@ def build_contract() -> dict[str, Any]:
         "append_only_worker_log_verified": False,
         "worker_production_readiness_receipt_ready": readiness_receipt.get("local_receipt_ready") is True,
         "worker_production_readiness_receipt_status": readiness_receipt.get("status"),
+        "worker_production_activation_receipt_ready": activation_receipt.get("local_activation_receipt_ready") is True,
+        "worker_production_activation_receipt_status": activation_receipt.get("status"),
         "local_fallback_available": True,
         "cache_only": True,
         "external_calls_triggered": False,
@@ -416,6 +476,9 @@ def build_contract() -> dict[str, Any]:
             "worker_production_readiness_receipt_status": readiness_receipt.get("status"),
             "worker_production_readiness_receipt_blocker_count": readiness_receipt.get("blocking_criterion_count"),
             "worker_production_readiness_allowed_next_step": readiness_receipt.get("allowed_next_step"),
+            "worker_production_activation_receipt_status": activation_receipt.get("status"),
+            "worker_production_activation_blocker_count": activation_receipt.get("blocking_criterion_count"),
+            "worker_production_activation_allowed_next_step": activation_receipt.get("allowed_next_step"),
             "scheduler_auto_task_count": dispatch_summary.get("scheduler_auto_task_count"),
             "cache_get_external_call_count": dispatch_summary.get("cache_get_external_call_count"),
         },
