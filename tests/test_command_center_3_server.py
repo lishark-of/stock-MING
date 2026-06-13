@@ -8003,6 +8003,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(factor["data"]["cache_only"])
         self.assertTrue(factor["data"]["read_only"])
         self.assertFalse(factor["data"]["external_calls_triggered"])
+        self.assertFalse(factor["data"]["github_called"])
 
         market = self.client.get("/api/market/cache").json()
         self.assertTrue(market["ok"])

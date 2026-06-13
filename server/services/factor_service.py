@@ -45,6 +45,12 @@ def read_factor_quant_cache() -> dict[str, Any]:
         packet["mode"] = "light"
     packet["cache_only"] = True
     packet["read_only"] = True
+    packet["external_calls_triggered"] = False
+    packet["tushare_called"] = False
+    packet["deepseek_called"] = False
+    packet["github_called"] = False
+    packet["does_not_execute_trades"] = True
+    packet["does_not_modify_strategy_action"] = True
     packet["deepseek_explain_governance"] = _deepseek_explain_governance()
     packet["score_chart_payload"] = _factor_score_chart_payload(packet)
     packet, universe_rank_ledger = _attach_factor_universe_local_rank_zscore_dry_run(packet, now)
