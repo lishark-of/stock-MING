@@ -40,6 +40,7 @@ MOTION_CLARITY_SCHEMA_VERSION = "command_center_3_motion_clarity_audit.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PUSH_GATE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "push_gate_3_0.sh"
 SMOKE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "smoke_3_0.sh"
+MOTION_VIEWPORT_QA_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "motion_viewport_qa_contract.py"
 GITHUB_WORKFLOWS_DIR = PROJECT_ROOT / ".github" / "workflows"
 DESKTOP_SRC_DIR = PROJECT_ROOT / "desktop" / "src"
 SENSITIVE_KEY_PARTS = ("secret", "token", "api_key", "apikey", "password", "passwd", "credential", "authorization")
@@ -421,6 +422,7 @@ def _release_gate_workflow_rows() -> list[dict[str, Any]]:
 def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     script = _read_local_text(PUSH_GATE_SCRIPT_PATH)
     smoke_script = _read_local_text(SMOKE_SCRIPT_PATH)
+    motion_qa_script = _read_local_text(MOTION_VIEWPORT_QA_CONTRACT_PATH)
     workflow_rows = _release_gate_workflow_rows()
     provider_invocation_markers = (
         "tushare_adapter",
@@ -450,6 +452,9 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         "push_gate_script_executable": PUSH_GATE_SCRIPT_PATH.exists()
         and bool(PUSH_GATE_SCRIPT_PATH.stat().st_mode & 0o111),
         "smoke_script_exists": SMOKE_SCRIPT_PATH.exists() and bool(smoke_script),
+        "motion_viewport_qa_contract_exists": MOTION_VIEWPORT_QA_CONTRACT_PATH.exists() and bool(motion_qa_script),
+        "motion_viewport_qa_contract_step": "scripts/motion_viewport_qa_contract.py" in script
+        and "Motion viewport QA contract" in script,
         "uses_project_venv_python": 'PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"' in script,
         "refuses_missing_project_python": "Do not use system Python" in script and 'if [ ! -x "$PYTHON_BIN" ]' in script,
         "python_unittest_step": "-m unittest discover -s tests" in script,
@@ -472,6 +477,10 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         ),
         "does_not_execute_trades": not _script_contains_any(script, trade_invocation_markers),
         "does_not_invoke_external_providers": not _script_contains_any(script, provider_invocation_markers),
+        "motion_viewport_qa_contract_is_local_static": "local_static_contract_not_browser_execution" in motion_qa_script
+        and "visual_qa_complete" in motion_qa_script
+        and "browser_performance_verified" in motion_qa_script
+        and "external_calls_triggered" in motion_qa_script,
     }
     ci_mirror_ready = any(bool(row.get("mirrors_local_push_gate")) for row in workflow_rows)
     false_positive_allowlist_review_ready = False
@@ -481,6 +490,9 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "push_gate_script_exists",
             "push_gate_script_executable",
             "smoke_script_exists",
+            "motion_viewport_qa_contract_exists",
+            "motion_viewport_qa_contract_step",
+            "motion_viewport_qa_contract_is_local_static",
             "uses_project_venv_python",
             "refuses_missing_project_python",
             "python_unittest_step",
@@ -509,6 +521,21 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             evidence="script has executable bit",
         ),
         _release_gate_row("smoke_script_exists", checks["smoke_script_exists"], evidence=_relative_path(SMOKE_SCRIPT_PATH)),
+        _release_gate_row(
+            "motion_viewport_qa_contract_exists",
+            checks["motion_viewport_qa_contract_exists"],
+            evidence=_relative_path(MOTION_VIEWPORT_QA_CONTRACT_PATH),
+        ),
+        _release_gate_row(
+            "motion_viewport_qa_contract_step",
+            checks["motion_viewport_qa_contract_step"],
+            evidence="push gate runs scripts/motion_viewport_qa_contract.py before diff/secret checks",
+        ),
+        _release_gate_row(
+            "motion_viewport_qa_contract_is_local_static",
+            checks["motion_viewport_qa_contract_is_local_static"],
+            evidence="contract declares visual QA and browser performance remain pending",
+        ),
         _release_gate_row(
             "uses_project_venv_python",
             checks["uses_project_venv_python"],
@@ -633,6 +660,7 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
     task_receipt = _motion_source("components/TaskLaunchReceipt.tsx")
     next_chart = _motion_source("components/NextSessionChart.tsx")
     candidate_radar = _motion_source("routes/CandidateRadar.tsx")
+    motion_viewport_qa_contract = _read_local_text(MOTION_VIEWPORT_QA_CONTRACT_PATH)
     audited_text = "\n".join(
         [
             styles,
@@ -736,6 +764,10 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         "visual_only_boundary_visible": "candidate radar visual state" in candidate_radar
         and "trade guard" in candidate_radar
         and "图谱交互说明" in next_chart,
+        "motion_viewport_qa_contract_ready": "command_center_3_motion_viewport_qa_contract.v1" in motion_viewport_qa_contract
+        and "local_static_contract_not_browser_execution" in motion_viewport_qa_contract
+        and "visual_qa_complete" in motion_viewport_qa_contract
+        and "browser_performance_verified" in motion_viewport_qa_contract,
     }
     rows = [
         _motion_row("motion_tokens_present", checks["motion_tokens_present"], evidence=", ".join(token_markers)),
@@ -757,6 +789,7 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         _motion_row("no_timer_or_raf_motion_loop", checks["no_timer_or_raf_motion_loop"], evidence="no setTimeout/requestAnimationFrame motion loop; bounded setInterval is task polling only"),
         _motion_row("no_provider_call_markers", checks["no_provider_call_markers"], evidence="audited motion files contain no provider invocation markers"),
         _motion_row("visual_only_boundary_visible", checks["visual_only_boundary_visible"], evidence="motion state labels remain visual-only and trade guarded"),
+        _motion_row("motion_viewport_qa_contract_ready", checks["motion_viewport_qa_contract_ready"], evidence="scripts/motion_viewport_qa_contract.py pins routes, viewports, and pending browser QA state"),
         _motion_row(
             "desktop_mobile_viewport_visual_qa_pending",
             False,
@@ -803,6 +836,7 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
             "desktop/src/components/TaskLaunchReceipt.tsx",
             "desktop/src/components/NextSessionChart.tsx",
             "desktop/src/routes/CandidateRadar.tsx",
+            "scripts/motion_viewport_qa_contract.py",
         ],
         "cache_only": True,
         "runs_no_commands": True,
