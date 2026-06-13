@@ -30,6 +30,7 @@ export default function WorkerRuntime() {
   const taskPersistence = (cache.task_persistence as Record<string, unknown> | undefined) ?? ((taskStatus.persistence as Record<string, unknown> | undefined) ?? {});
   const productionReadiness = (cache.production_readiness as Record<string, unknown> | undefined) ?? {};
   const productionBlockerAudit = (productionReadiness.production_blocker_audit as Record<string, unknown> | undefined) ?? ((cache.worker_production_blocker_audit as Record<string, unknown> | undefined) ?? {});
+  const workerHealthcheckQa = (productionReadiness.worker_healthcheck_qa_contract as Record<string, unknown> | undefined) ?? ((cache.worker_healthcheck_qa_contract as Record<string, unknown> | undefined) ?? {});
   const dispatchPlanSummary = (cache.dispatch_plan_summary as Record<string, unknown> | undefined) ?? {};
   const dispatchPlanStatusCounts = dispatchPlanSummary.status_counts as Record<string, unknown> | undefined;
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
@@ -71,6 +72,7 @@ export default function WorkerRuntime() {
           { label: "dispatch tasks", value: counts.dispatch_plan_task_count as number | undefined },
           { label: "dispatch queues", value: counts.dispatch_plan_queue_count as number | undefined },
           { label: "worker blockers", value: productionBlockerAudit.blocking_criterion_count ?? counts.production_blocker_audit_count, tone: Number(productionBlockerAudit.blocking_criterion_count ?? counts.production_blocker_audit_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "healthcheck pending", value: workerHealthcheckQa.pending_criterion_count ?? counts.worker_healthcheck_qa_pending_count, tone: Number(workerHealthcheckQa.pending_criterion_count ?? counts.worker_healthcheck_qa_pending_count ?? 0) > 0 ? "warn" : "good" },
           { label: "worker complete", value: productionBlockerAudit.production_worker_complete === true ? "是" : "否", tone: productionBlockerAudit.production_worker_complete === true ? "bad" : "good" },
           { label: "local fallback", value: runtime.local_fallback_enabled, tone: runtime.local_fallback_enabled === false ? "bad" : "good" },
           { label: "Celery", value: runtime.celery_available, tone: runtime.celery_available === true ? "good" : "warn" },
@@ -156,6 +158,15 @@ export default function WorkerRuntime() {
         <p>production_worker_complete 必须保持 false，直到未来显式 worker health check 证明 Celery/Redis 已人工启动并可安全调度。</p>
         <p>这张表不启动 worker、不 ping Redis、不调度 Tushare/DeepSeek/GitHub，也不执行真实交易。</p>
         <DataLineageTable rows={rows(productionReadiness.production_blocker_rows ?? cache.worker_production_blocker_rows)} />
+      </PacketCard>
+
+      <PacketCard title="Worker healthcheck QA 契约" subtitle="未来生产 worker healthcheck 的验收清单；当前只读、不执行" status={String(workerHealthcheckQa.status ?? "worker_healthcheck_qa_contract_ready_execution_pending")}>
+        <p>healthcheck_executed: {String(workerHealthcheckQa.healthcheck_executed ?? false)}</p>
+        <p>production_worker_complete: {String(workerHealthcheckQa.production_worker_complete ?? false)}</p>
+        <p>synthetic_task_only: {String(workerHealthcheckQa.synthetic_task_only ?? true)}</p>
+        <p>provider_model_task_validation_in_scope: {String(workerHealthcheckQa.provider_model_task_validation_in_scope ?? false)}</p>
+        <p>这张表只定义后续人工 healthcheck 要验什么；不会启动 Celery、不会 ping Redis、不会启动 scheduler、不会派发任务。</p>
+        <DataLineageTable rows={rows(productionReadiness.worker_healthcheck_qa_rows ?? cache.worker_healthcheck_qa_rows)} />
       </PacketCard>
 
       <PacketCard title="Worker 模块" subtitle="worker.tasks_* 和 scheduler scaffold；只读文件/模块可见性" status="modules">

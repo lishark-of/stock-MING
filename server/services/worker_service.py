@@ -551,6 +551,156 @@ def _worker_production_blocker_audit(
     }
 
 
+def _worker_healthcheck_qa_contract(
+    *,
+    redis_configured: bool,
+    scheduled_refresh_enabled: bool,
+    dispatch_plan_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    scheduler_auto_task_count = sum(1 for row in dispatch_plan_rows if row.get("automatic_scheduler_allowed"))
+    unsafe_cache_get_count = sum(1 for row in dispatch_plan_rows if row.get("cache_get_external_calls"))
+
+    def _row(
+        criterion: str,
+        component: str,
+        status: str,
+        current_evidence: str,
+        success_criteria: str,
+        next_action: str,
+        *,
+        required: bool = True,
+    ) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "component": component,
+            "status": status,
+            "current_evidence": current_evidence,
+            "success_criteria": success_criteria,
+            "next_action": next_action,
+            "required_for_production_worker": required,
+            "blocks_production_worker": bool(required and status != "passed"),
+            "healthcheck_executed": False,
+            "cache_api_can_execute": False,
+            "operator_action_required": bool(required and status != "passed"),
+            "external_calls_triggered": False,
+            "redis_pinged": False,
+            "celery_started": False,
+            "scheduler_started": False,
+            "task_dispatched": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    rows = [
+        _row(
+            "celery_worker_process_visible",
+            "celery_worker",
+            "pending_manual_healthcheck",
+            "GET /api/worker/cache intentionally does not inspect or start a live Celery worker process.",
+            "A future explicit healthcheck confirms a manually started worker process without dispatching provider/model jobs.",
+            "Add a button-gated local healthcheck after Celery/Redis production config is approved.",
+        ),
+        _row(
+            "redis_broker_reachable",
+            "redis_broker",
+            "pending_manual_healthcheck",
+            "Redis URL configured but not pinged." if redis_configured else "Redis broker URL is not configured and cache API does not ping Redis.",
+            "A future explicit healthcheck can prove broker reachability while redacting the URL and never exposing secrets.",
+            "Verify Redis only through a manual healthcheck path, not through cache GET.",
+        ),
+        _row(
+            "task_round_trip_healthcheck",
+            "task_runtime",
+            "pending_manual_healthcheck",
+            "Current task lifecycle is local fallback plus SQLite metadata; no cross-process round trip is executed here.",
+            "A future synthetic local-only task can be enqueued, completed, and read back through POST/task status without provider calls.",
+            "Introduce a synthetic healthcheck task that cannot call Tushare, DeepSeek, GitHub, or trading code.",
+        ),
+        _row(
+            "cancel_retry_cross_process",
+            "task_controls",
+            "pending_manual_healthcheck",
+            "Retry/cancel/lock/dedupe are local-ready; Celery process semantics are not proven.",
+            "Retry and cancel work across worker process boundaries with safe task logs and error_message_safe.",
+            "Extend local controls to Celery only after worker round trip is proven.",
+        ),
+        _row(
+            "scheduler_default_off_verified",
+            "scheduler",
+            "passed" if not scheduled_refresh_enabled and scheduler_auto_task_count == 0 else "blocked",
+            "Scheduler config is disabled by default and dispatch plan has no automatic scheduler rows."
+            if not scheduled_refresh_enabled and scheduler_auto_task_count == 0
+            else "Scheduler is enabled or dispatch plan declares automatic tasks.",
+            "Scheduler stays off unless explicitly configured by the operator.",
+            "Keep scheduler disabled for the production worker healthcheck baseline.",
+        ),
+        _row(
+            "provider_model_tasks_not_autoscheduled",
+            "external_boundaries",
+            "passed" if scheduler_auto_task_count == 0 and unsafe_cache_get_count == 0 else "blocked",
+            f"Dispatch plan has {scheduler_auto_task_count} scheduler auto task(s) and {unsafe_cache_get_count} cache GET external-call row(s).",
+            "Tushare, DeepSeek, and GitHub-capable work remains button/POST gated and never runs from page render or cache GET.",
+            "Preserve button gating when Celery routing is added.",
+        ),
+        _row(
+            "task_log_persistence_verified",
+            "task_logs",
+            "pending_manual_healthcheck",
+            "Local task packets persist safe task logs; append-only worker log persistence is not proven.",
+            "Future worker logs persist safe, redacted task events without payload secrets, stack traces, or raw provider responses.",
+            "Add append-only worker log verification after Celery worker is running.",
+        ),
+        _row(
+            "external_call_boundary",
+            "safety",
+            "passed",
+            "This QA contract is local static metadata; it does not call providers, models, probes, or trading paths.",
+            "Healthcheck tasks remain synthetic/local unless the operator explicitly launches separate provider/model validation.",
+            "Keep production worker healthcheck separate from Tushare, DeepSeek, GitHub, and trading acceptance.",
+        ),
+        _row(
+            "secret_redaction_boundary",
+            "safety",
+            "passed",
+            "The contract records boolean configuration state only and never returns Redis URL, token, key, or password values.",
+            "No token/key appears in frontend, logs, packet, cache, or healthcheck result payloads.",
+            "Keep all runtime configuration values redacted.",
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["blocks_production_worker"]]
+    pending_rows = [row for row in rows if str(row.get("status", "")).startswith("pending")]
+    return {
+        "schema_version": "worker_healthcheck_qa_contract.v1",
+        "status": "worker_healthcheck_qa_contract_ready_execution_pending",
+        "scope": "local_static_healthcheck_contract_no_process_start",
+        "criterion_count": len(rows),
+        "pending_criterion_count": len(pending_rows),
+        "blocking_criterion_count": len(blocking_rows),
+        "passed_criterion_count": len(rows) - len(blocking_rows),
+        "blocking_criteria": [str(row["criterion"]) for row in blocking_rows],
+        "production_worker_complete": False,
+        "healthcheck_executed": False,
+        "healthcheck_task_dispatched": False,
+        "synthetic_task_only": True,
+        "provider_model_task_validation_in_scope": False,
+        "future_healthcheck_required": True,
+        "release_gate_blocking_until_executed": True,
+        "cache_api_started_workers": False,
+        "cache_api_pinged_redis": False,
+        "cache_api_started_scheduler": False,
+        "cache_get_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": rows,
+        "note": "This is a QA contract for a future explicit worker healthcheck. It does not start Celery, ping Redis, start APScheduler, dispatch tasks, call providers/models/probes, or execute trades.",
+    }
+
+
 def read_worker_runtime_cache() -> dict[str, Any]:
     celery_available = _module_available("celery")
     redis_available = _module_available("redis")
@@ -600,6 +750,13 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     production_readiness["production_blocker_audit"] = production_blocker_audit
     production_readiness["production_blocker_rows"] = production_blocker_audit["rows"]
     production_readiness["production_worker_complete"] = False
+    healthcheck_qa_contract = _worker_healthcheck_qa_contract(
+        redis_configured=redis_configured,
+        scheduled_refresh_enabled=scheduled_refresh_enabled,
+        dispatch_plan_rows=dispatch_plan_rows,
+    )
+    production_readiness["worker_healthcheck_qa_contract"] = healthcheck_qa_contract
+    production_readiness["worker_healthcheck_qa_rows"] = healthcheck_qa_contract["rows"]
     module_ready_count = sum(1 for row in worker_module_rows if row["module_available"] and row["file_exists"])
     manual_preflight_steps = production_readiness.get("manual_preflight_steps") or []
     status = "ready" if module_ready_count == len(worker_module_rows) else "partial"
@@ -669,6 +826,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         "production_readiness": production_readiness,
         "worker_production_blocker_audit": production_blocker_audit,
         "worker_production_blocker_rows": production_blocker_audit["rows"],
+        "worker_healthcheck_qa_contract": healthcheck_qa_contract,
+        "worker_healthcheck_qa_rows": healthcheck_qa_contract["rows"],
         "dispatch_plan_status": "contract_ready_local_fallback",
         "dispatch_plan_rows": dispatch_plan_rows,
         "dispatch_plan_summary": {
@@ -705,6 +864,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "deduplicated_task_count": task_persistence.get("deduplicated_task_count", task_index.get("task_count", 0)),
             "production_blocker_count": len(production_readiness.get("production_blockers") or []),
             "production_blocker_audit_count": production_blocker_audit["blocking_criterion_count"],
+            "worker_healthcheck_qa_pending_count": healthcheck_qa_contract["pending_criterion_count"],
+            "worker_healthcheck_qa_blocking_count": healthcheck_qa_contract["blocking_criterion_count"],
             "manual_preflight_step_count": len(manual_preflight_steps),
             "manual_preflight_operator_action_count": sum(1 for row in manual_preflight_steps if row.get("operator_action_required")),
             "dispatch_plan_task_count": len(dispatch_plan_rows),

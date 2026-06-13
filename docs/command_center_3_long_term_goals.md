@@ -61,7 +61,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 | LTG-03 | Factor Test Lab 完整生产化 | light research metrics `done_real`; production research incomplete | Research-grade factor validation for single factors | P3 | IC, Rank IC, ICIR, groups, cost, drawdown, sample split, decay, and neutral IC are auditable and research-only. |
 | LTG-04 | Factor 全市场 / 股票池研究 | light mode plus local read-plan and execution readiness audit; batch execution pending | watchlist / custom pool / full pool research pipeline | P3 | Large universe runs in task pipeline without blocking UI or entering strategy action. |
 | LTG-05 | Storage / DuckDB / Parquet 生产化 | dataset scaffold and factor_values write path | Versioned, queryable local data layer | P4 | schema/version/TTL/compaction/query services are auditable; data artifacts stay out of git. |
-| LTG-06 | Worker / Celery / Redis 生产化 | local task fallback and preflight | Production-capable worker orchestration with local fallback | P4 | POST returns task_id, worker runs heavy jobs, Redis absence falls back gracefully, scheduler stays off by default. |
+| LTG-06 | Worker / Celery / Redis 生产化 | local task fallback, preflight, blocker audit, and healthcheck QA contract | Production-capable worker orchestration with local fallback | P4 | POST returns task_id, worker runs heavy jobs, Redis absence falls back gracefully, scheduler stays off by default. |
 | LTG-07 | DeepSeek pro 稳定解释生产化 | manual governance, sanitizer, and local JSON stability audit; mini-benchmark below production target | Stable manual explanation, optional background auto-after-task | P5 | JSON success rate > 90%, no action leakage, no numeric overwrite, cost predictable. |
 | LTG-08 | ECharts 次日操作图谱成熟版 | maturing chart contract with interaction readiness audit; legacy parity pending | React/ECharts replaces Streamlit main next-session visual | P5 | Complete cache display, evidence interactions, no frontend action/price/position mutation. |
 | LTG-09 | Tauri desktop production package | dev/preflight with runtime contract and local release artifact detection; packaged runtime QA pending | Production desktop shell for ordinary users | P6 | tauri dev/build pass; backend-offline state is friendly; config/log policy is validated; token/key never enters frontend. |
@@ -368,6 +368,7 @@ Productionize Command Center 3 storage datasets
 - worker preflight exists.
 - Worker runtime now exposes a read-only dispatch plan matrix: every task has a future queue, local fallback state, Redis/Celery preconditions, retry/cancel/lock/dedupe/log requirements, and scheduler/external-call boundaries.
 - Worker runtime now exposes `worker_production_blocker_audit`: a read-only blocker audit for Redis package/config, Celery package/worker start, stub task migration, queue contracts, button gating, call ledger requirements, scheduler default-off, cache GET no-dispatch, and local-only retry/cancel/lock/dedupe/log controls. It does not start Celery, ping Redis, start APScheduler, or dispatch tasks.
+- Worker runtime now exposes `worker_healthcheck_qa_contract`: a static QA matrix for the future explicit production worker healthcheck. It lists Celery process visibility, Redis broker reachability, synthetic task round trip, cross-process retry/cancel, scheduler default-off, provider/model no-autoschedule, task log persistence, external-call boundary, and secret redaction. It does not execute the healthcheck, start Celery, ping Redis, start scheduler, dispatch tasks, call providers/models/probes, or execute trades.
 - Celery/Redis are not production enabled.
 
 ### Gaps
@@ -384,10 +385,11 @@ Productionize Command Center 3 storage datasets
 
 1. Keep local fallback stable.
 2. Keep the dispatch plan matrix current as tasks are added, so future Celery/Redis routing has an auditable contract before execution is enabled.
-3. Add Celery worker execution behind explicit configuration.
-4. Add Redis broker configuration and health reporting without cache API pinging Redis.
-5. Add retry/cancel/lock behavior for real worker tasks.
-6. Keep scheduler default off.
+3. Keep `worker_healthcheck_qa_contract` current so the future worker healthcheck has an explicit acceptance checklist before execution is enabled.
+4. Add Celery worker execution behind explicit configuration.
+5. Add Redis broker configuration and health reporting without cache API pinging Redis.
+6. Add retry/cancel/lock behavior for real worker tasks.
+7. Keep scheduler default off.
 
 ### Acceptance Criteria
 
@@ -397,6 +399,7 @@ Productionize Command Center 3 storage datasets
 - Redis absence gracefully falls back or reports clear blocker.
 - Worker not started state is visible in UI.
 - Production blocker rows are visible in UI, and `production_worker_complete` remains false until a future explicit worker health check proves Celery/Redis startup outside GET cache.
+- Worker healthcheck QA rows are visible in UI, and `healthcheck_executed` remains false until a future synthetic/local worker healthcheck is explicitly run.
 - Real Tushare/DeepSeek scheduling is never automatic.
 - Failures include `error_message_safe`.
 
