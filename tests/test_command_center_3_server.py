@@ -5,6 +5,8 @@ import datetime as _dt
 import importlib.util
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -4224,6 +4226,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("scripts/motion_viewport_qa_contract.py", script)
         self.assertIn("Motion viewport QA contract", script)
         self.assertIn("motion_viewport_qa_contract: passed_static_contract_visual_run_pending", script)
+        self.assertIn("scripts/secret_keyword_review_contract.py", script)
+        self.assertIn("Secret keyword review contract", script)
+        self.assertIn("secret_keyword_review_contract: passed_structured_no_raw_lines", script)
         self.assertIn("git diff --check", script)
         self.assertIn("secret_high_risk_scan", script)
         self.assertIn("artifact_scan", script)
@@ -4238,12 +4243,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("desktop/src-tauri/icons/icon.png", script)
         self.assertIn("high-risk secret value scan", script)
         self.assertIn("keyword scan for review", script)
-        self.assertIn("showing first 120", script)
+        self.assertIn("raw lines suppressed", script)
+        self.assertNotIn("showing first 120", script)
         self.assertIn("did_not_push: true", script)
         self.assertIn("did_not_call_external_providers: true", script)
         self.assertIn("did_not_execute_trades: true", script)
         self.assertIn("Scaffold, preflight, matrix, mock, and sanitizer checks are not production completion evidence.", script)
         self.assertLess(script.index('run_step "Motion viewport QA contract"'), script.index('run_step "Diff whitespace check"'))
+        self.assertLess(script.index('run_step "Secret scan"'), script.index('run_step "Secret keyword review contract"'))
+        self.assertLess(script.index('run_step "Secret keyword review contract"'), script.index('run_step "Generated artifact scan"'))
         self.assertIn("This script did not push", script)
         self.assertIn("did not call external providers", script)
         self.assertIn("did not execute trades", script)
@@ -4252,6 +4260,46 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("git push", script)
         self.assertNotIn("git add .", script)
         self.assertNotIn("tushare_adapter", script)
+
+    def test_secret_keyword_review_contract_is_structured_and_local(self):
+        path = Path("scripts/secret_keyword_review_contract.py")
+        script = path.read_text(encoding="utf-8")
+
+        self.assertTrue(path.exists())
+        self.assertTrue(path.stat().st_mode & 0o111)
+        self.assertIn("command_center_3_secret_keyword_review_contract.v1", script)
+        self.assertIn("raw_keyword_lines_emitted", script)
+        self.assertIn("outputs_source_line_text", script)
+        self.assertIn("category_rows", script)
+        self.assertIn("git\", \"grep\"", script)
+        self.assertNotIn("requests", script)
+        self.assertNotIn("httpx", script)
+        self.assertNotIn("api.github.com", script)
+
+        result = subprocess.run(
+            [sys.executable, str(path)],
+            cwd=Path.cwd(),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["schema_version"], "command_center_3_secret_keyword_review_contract.v1")
+        self.assertEqual(payload["scope"], "local_tracked_source_keyword_review_no_raw_line_output")
+        self.assertFalse(payload["raw_keyword_lines_emitted"])
+        self.assertFalse(payload["outputs_source_line_text"])
+        self.assertEqual(payload["high_risk_tracked_value_count"], 0)
+        self.assertFalse(payload["external_calls_triggered"])
+        self.assertFalse(payload["tushare_called"])
+        self.assertFalse(payload["deepseek_called"])
+        self.assertFalse(payload["github_called"])
+        self.assertTrue(payload["does_not_execute_trades"])
+        self.assertTrue(payload["does_not_modify_strategy_action"])
+        self.assertGreaterEqual(payload["keyword_hit_count"], 1)
+        categories = {row["category"] for row in payload["category_rows"]}
+        self.assertIn("docs_policy_or_plan", categories)
+        self.assertIn("tests_fixture_or_assertion", categories)
 
     def test_motion_viewport_qa_contract_script_is_local_static(self):
         path = Path("scripts/motion_viewport_qa_contract.py")
@@ -7472,9 +7520,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(release_gate["motion_viewport_qa_contract_exists"])
         self.assertTrue(release_gate["motion_viewport_qa_contract_step"])
         self.assertTrue(release_gate["motion_viewport_qa_contract_is_local_static"])
+        self.assertTrue(release_gate["secret_keyword_review_contract_exists"])
+        self.assertTrue(release_gate["secret_keyword_review_contract_step"])
+        self.assertTrue(release_gate["secret_keyword_review_contract_is_structured"])
         self.assertTrue(release_gate["diff_check_step"])
         self.assertTrue(release_gate["high_risk_secret_scan_step"])
         self.assertTrue(release_gate["keyword_review_scan_step"])
+        self.assertTrue(release_gate["keyword_review_raw_lines_suppressed"])
         self.assertTrue(release_gate["generated_artifact_scan_step"])
         self.assertTrue(release_gate["release_report_step"])
         self.assertTrue(release_gate["clean_worktree_after_report"])
@@ -7489,8 +7541,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("motion_viewport_qa_contract_exists", release_gate_criteria)
         self.assertIn("motion_viewport_qa_contract_step", release_gate_criteria)
         self.assertIn("motion_viewport_qa_contract_is_local_static", release_gate_criteria)
+        self.assertIn("secret_keyword_review_contract_exists", release_gate_criteria)
+        self.assertIn("secret_keyword_review_contract_step", release_gate_criteria)
+        self.assertIn("secret_keyword_review_contract_is_structured", release_gate_criteria)
         self.assertIn("diff_whitespace_check", release_gate_criteria)
         self.assertIn("high_risk_secret_scan", release_gate_criteria)
+        self.assertIn("keyword_review_raw_lines_suppressed", release_gate_criteria)
         self.assertIn("generated_artifact_scan", release_gate_criteria)
         self.assertIn("release_readiness_report", release_gate_criteria)
         self.assertIn("clean_worktree_after_report", release_gate_criteria)

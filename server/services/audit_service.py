@@ -41,6 +41,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PUSH_GATE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "push_gate_3_0.sh"
 SMOKE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "smoke_3_0.sh"
 MOTION_VIEWPORT_QA_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "motion_viewport_qa_contract.py"
+SECRET_KEYWORD_REVIEW_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "secret_keyword_review_contract.py"
 GITHUB_WORKFLOWS_DIR = PROJECT_ROOT / ".github" / "workflows"
 DESKTOP_SRC_DIR = PROJECT_ROOT / "desktop" / "src"
 SENSITIVE_KEY_PARTS = ("secret", "token", "api_key", "apikey", "password", "passwd", "credential", "authorization")
@@ -423,6 +424,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
     script = _read_local_text(PUSH_GATE_SCRIPT_PATH)
     smoke_script = _read_local_text(SMOKE_SCRIPT_PATH)
     motion_qa_script = _read_local_text(MOTION_VIEWPORT_QA_CONTRACT_PATH)
+    secret_keyword_review_script = _read_local_text(SECRET_KEYWORD_REVIEW_CONTRACT_PATH)
     workflow_rows = _release_gate_workflow_rows()
     provider_invocation_markers = (
         "tushare_adapter",
@@ -453,8 +455,11 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and bool(PUSH_GATE_SCRIPT_PATH.stat().st_mode & 0o111),
         "smoke_script_exists": SMOKE_SCRIPT_PATH.exists() and bool(smoke_script),
         "motion_viewport_qa_contract_exists": MOTION_VIEWPORT_QA_CONTRACT_PATH.exists() and bool(motion_qa_script),
+        "secret_keyword_review_contract_exists": SECRET_KEYWORD_REVIEW_CONTRACT_PATH.exists() and bool(secret_keyword_review_script),
         "motion_viewport_qa_contract_step": "scripts/motion_viewport_qa_contract.py" in script
         and "Motion viewport QA contract" in script,
+        "secret_keyword_review_contract_step": "scripts/secret_keyword_review_contract.py" in script
+        and "Secret keyword review contract" in script,
         "uses_project_venv_python": 'PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"' in script,
         "refuses_missing_project_python": "Do not use system Python" in script and 'if [ ! -x "$PYTHON_BIN" ]' in script,
         "python_unittest_step": "-m unittest discover -s tests" in script,
@@ -463,6 +468,11 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         "diff_check_step": "git diff --check" in script,
         "high_risk_secret_scan_step": "secret_high_risk_scan" in script and "high-risk secret value scan" in script,
         "keyword_review_scan_step": "keyword scan for review" in script,
+        "keyword_review_raw_lines_suppressed": "raw lines suppressed" in script and "showing first 120" not in script,
+        "secret_keyword_review_contract_is_structured": "command_center_3_secret_keyword_review_contract.v1" in secret_keyword_review_script
+        and "raw_keyword_lines_emitted" in secret_keyword_review_script
+        and "outputs_source_line_text" in secret_keyword_review_script
+        and "category_rows" in secret_keyword_review_script,
         "generated_artifact_scan_step": "artifact_scan" in script and "git ls-files" in script,
         "release_report_step": "PUSH_GATE_REPORT_PATH" in script and "write_release_readiness_report" in script,
         "clean_worktree_after_report": script.find('run_step "Release readiness report"') >= 0
@@ -493,6 +503,9 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "motion_viewport_qa_contract_exists",
             "motion_viewport_qa_contract_step",
             "motion_viewport_qa_contract_is_local_static",
+            "secret_keyword_review_contract_exists",
+            "secret_keyword_review_contract_step",
+            "secret_keyword_review_contract_is_structured",
             "uses_project_venv_python",
             "refuses_missing_project_python",
             "python_unittest_step",
@@ -501,6 +514,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "diff_check_step",
             "high_risk_secret_scan_step",
             "keyword_review_scan_step",
+            "keyword_review_raw_lines_suppressed",
             "generated_artifact_scan_step",
             "release_report_step",
             "clean_worktree_after_report",
@@ -537,6 +551,21 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             evidence="contract declares visual QA and browser performance remain pending",
         ),
         _release_gate_row(
+            "secret_keyword_review_contract_exists",
+            checks["secret_keyword_review_contract_exists"],
+            evidence=_relative_path(SECRET_KEYWORD_REVIEW_CONTRACT_PATH),
+        ),
+        _release_gate_row(
+            "secret_keyword_review_contract_step",
+            checks["secret_keyword_review_contract_step"],
+            evidence="push gate runs scripts/secret_keyword_review_contract.py after high-risk secret scan",
+        ),
+        _release_gate_row(
+            "secret_keyword_review_contract_is_structured",
+            checks["secret_keyword_review_contract_is_structured"],
+            evidence="contract emits category counts and suppresses raw matched source lines",
+        ),
+        _release_gate_row(
             "uses_project_venv_python",
             checks["uses_project_venv_python"],
             evidence='PYTHON_BIN defaults to .venv/bin/python',
@@ -552,6 +581,11 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         _release_gate_row("diff_whitespace_check", checks["diff_check_step"], evidence="git diff --check"),
         _release_gate_row("high_risk_secret_scan", checks["high_risk_secret_scan_step"], evidence="secret_high_risk_scan"),
         _release_gate_row("keyword_review_scan", checks["keyword_review_scan_step"], evidence="keyword scan for review"),
+        _release_gate_row(
+            "keyword_review_raw_lines_suppressed",
+            checks["keyword_review_raw_lines_suppressed"],
+            evidence="push gate reports keyword count and delegates details to structured contract",
+        ),
         _release_gate_row("generated_artifact_scan", checks["generated_artifact_scan_step"], evidence="artifact_scan + git ls-files"),
         _release_gate_row("release_readiness_report", checks["release_report_step"], evidence="PUSH_GATE_REPORT_PATH"),
         _release_gate_row(

@@ -42,11 +42,7 @@ secret_high_risk_scan() {
   if [ "$review_count" -eq 0 ]; then
     echo "keyword scan for review: clean"
   else
-    echo "keyword scan for review: $review_count lines found; showing first 120 for explanation"
-    sed -n '1,120p' "$review_file"
-    if [ "$review_count" -gt 120 ]; then
-      echo "... keyword scan truncated; review full output by running the rg command in scripts/push_gate_3_0.sh"
-    fi
+    echo "keyword scan for review: $review_count lines found; raw lines suppressed, structured contract runs next"
   fi
   rm -f "$review_file"
 }
@@ -114,6 +110,7 @@ write_release_readiness_report() {
 - motion_viewport_qa_contract: passed_static_contract_visual_run_pending
 - diff_whitespace_check: passed
 - high_risk_secret_scan: clean
+- secret_keyword_review_contract: passed_structured_no_raw_lines
 - generated_artifact_scan: clean_or_allowed_assets_only
 
 ## Safety Boundaries
@@ -140,6 +137,7 @@ run_step "Command Center 3 smoke" env PYTHON_BIN="$PYTHON_BIN" scripts/smoke_3_0
 run_step "Motion viewport QA contract" "$PYTHON_BIN" scripts/motion_viewport_qa_contract.py
 run_step "Diff whitespace check" git diff --check
 run_step "Secret scan" secret_high_risk_scan
+run_step "Secret keyword review contract" "$PYTHON_BIN" scripts/secret_keyword_review_contract.py
 run_step "Generated artifact scan" artifact_scan
 run_step "Release readiness report" write_release_readiness_report
 run_step "Clean worktree check" worktree_clean_scan

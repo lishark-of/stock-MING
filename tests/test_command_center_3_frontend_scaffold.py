@@ -1095,6 +1095,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("local_static_push_gate_contract_not_ci_status", page)
         self.assertIn("ci_mirror_not_proven", page)
         self.assertIn("false_positive_allowlist_review_pending", page)
+        self.assertIn("secret_keyword_review_contract_ready", page)
+        self.assertIn("keyword_review_raw_lines_suppressed", page)
         self.assertIn("PUSH_GATE_REPORT_PATH", page)
         self.assertIn("local report is optional evidence", page)
         self.assertIn("不调用 GitHub API", page)

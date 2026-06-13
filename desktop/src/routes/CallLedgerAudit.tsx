@@ -153,6 +153,8 @@ export default function CallLedgerAudit() {
         <p>local_gate_ready: {String(releaseGateAudit.local_gate_ready ?? false)}</p>
         <p>release_gate_complete: {String(releaseGateAudit.release_gate_complete ?? false)}</p>
         <p>ci_mirror_ready: {String(releaseGateAudit.ci_mirror_ready ?? false)}</p>
+        <p>secret_keyword_review_contract_ready: {String(releaseGateAudit.secret_keyword_review_contract_exists === true && releaseGateAudit.secret_keyword_review_contract_step === true)}</p>
+        <p>keyword_review_raw_lines_suppressed: {String(releaseGateAudit.keyword_review_raw_lines_suppressed ?? false)}</p>
         <p>ci_mirror_not_proven: {String(Array.isArray(releaseGateAudit.blockers) && (releaseGateAudit.blockers as unknown[]).includes("ci_mirror_not_proven"))}</p>
         <p>false_positive_allowlist_review_pending: {String(Array.isArray(releaseGateAudit.soft_blockers) && (releaseGateAudit.soft_blockers as unknown[]).includes("false_positive_allowlist_review_pending"))}</p>
         <p>PUSH_GATE_REPORT_PATH local report is optional evidence, not production completion proof.</p>
