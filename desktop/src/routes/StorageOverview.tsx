@@ -10,6 +10,7 @@ import {
   postStorageCompactionDryRun,
   postStorageDatasetVersionManifestDryRun,
   postStorageDatasetVersionManifestReview,
+  postStorageDatasetVersionManifestValidate,
   postStorageDatasetVersionManifestWrite,
   postStoragePartitionMigrationDryRun,
   postStorageSchemaValidationAcceptance,
@@ -91,6 +92,8 @@ export default function StorageOverview() {
   const [manifestReviewReceipt, setManifestReviewReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [manifestWriteTaskId, setManifestWriteTaskId] = useState("");
   const [manifestWriteReceipt, setManifestWriteReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [manifestValidateTaskId, setManifestValidateTaskId] = useState("");
+  const [manifestValidateReceipt, setManifestValidateReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [partitionDryRunTaskId, setPartitionDryRunTaskId] = useState("");
   const [partitionDryRunReceipt, setPartitionDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [compactionDryRunTaskId, setCompactionDryRunTaskId] = useState("");
@@ -170,6 +173,11 @@ export default function StorageOverview() {
     void postStorageDatasetVersionManifestWrite({ source: "storage_overview_button", confirm_manifest_write: true }).then((res) => {
       setManifestWriteReceipt(res);
       if (res.ok) setManifestWriteTaskId(res.data.task_id);
+    });
+  const launchManifestValidate = () =>
+    void postStorageDatasetVersionManifestValidate({ source: "storage_overview_button" }).then((res) => {
+      setManifestValidateReceipt(res);
+      if (res.ok) setManifestValidateTaskId(res.data.task_id);
     });
   const launchPartitionMigrationDryRun = () =>
     void postStoragePartitionMigrationDryRun({ source: "storage_overview_button" }).then((res) => {
@@ -567,11 +575,14 @@ export default function StorageOverview() {
         <p>review writes_manifest / production_complete: {String(productionReadiness.dataset_version_manifest_review_writes_manifest ?? false)} / {String(productionReadiness.dataset_version_manifest_review_production_storage_complete ?? false)}</p>
         <p>dataset_version_manifest_write_route: {String(productionReadiness.dataset_version_manifest_write_route ?? "POST /api/storage/dataset-version-manifest/write")}</p>
         <p>write requires_confirm / writes_parquet: {String(productionReadiness.dataset_version_manifest_write_requires_confirm ?? true)} / {String(productionReadiness.dataset_version_manifest_write_writes_parquet ?? false)}</p>
+        <p>dataset_version_manifest_validate_route: {String(productionReadiness.dataset_version_manifest_validate_route ?? "POST /api/storage/dataset-version-manifest/validate")}</p>
+        <p>validate writes_manifest / production_complete: {String(productionReadiness.dataset_version_manifest_validate_writes_manifest ?? false)} / {String(productionReadiness.dataset_version_manifest_validate_production_storage_complete ?? false)}</p>
         <p>status_counts: {JSON.stringify(datasetVersionManifestEvidenceStatusCounts)}</p>
         <div className="actions">
           <button onClick={launchManifestDryRun}>生成 dataset version manifest dry-run</button>
           <button onClick={launchManifestReview}>审查 dataset version manifest</button>
           <button onClick={launchManifestWrite}>写入 dataset version manifest</button>
+          <button onClick={launchManifestValidate}>验证 dataset version manifest</button>
         </div>
         <TaskLaunchReceipt receipt={manifestDryRunReceipt} />
         <TaskStatusPanel taskId={manifestDryRunTaskId} onSuccess={refreshStorage} />
@@ -579,6 +590,8 @@ export default function StorageOverview() {
         <TaskStatusPanel taskId={manifestReviewTaskId} onSuccess={refreshStorage} />
         <TaskLaunchReceipt receipt={manifestWriteReceipt} />
         <TaskStatusPanel taskId={manifestWriteTaskId} onSuccess={refreshStorage} />
+        <TaskLaunchReceipt receipt={manifestValidateReceipt} />
+        <TaskStatusPanel taskId={manifestValidateTaskId} onSuccess={refreshStorage} />
         <DataLineageTable rows={datasetVersionManifestEvidenceRows} />
       </PacketCard>
 

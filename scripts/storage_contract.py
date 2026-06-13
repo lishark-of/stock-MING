@@ -40,6 +40,7 @@ REQUIRED_STORAGE_TASK_TYPES = {
     "run_storage_dataset_version_manifest_dry_run",
     "run_storage_dataset_version_manifest_review",
     "run_storage_dataset_version_manifest_write",
+    "run_storage_dataset_version_manifest_validate",
     "run_storage_partition_migration_dry_run",
     "run_storage_compaction_dry_run",
     "run_storage_cache_ttl_dry_run",
@@ -95,6 +96,9 @@ def build_contract() -> dict[str, Any]:
         payload_safe={"source": "storage_contract", "external_sources_allowed": False}
     )
     manifest_review_packet = storage_service.storage_dataset_version_manifest_review_packet(
+        payload_safe={"source": "storage_contract", "external_sources_allowed": False}
+    )
+    manifest_validate_packet = storage_service.storage_dataset_version_manifest_validate_packet(
         payload_safe={"source": "storage_contract", "external_sources_allowed": False}
     )
     partition_packet = storage_service.storage_partition_migration_dry_run_packet(
@@ -290,6 +294,30 @@ def build_contract() -> dict[str, Any]:
             "Schema validation acceptance may record physical schema metadata acceptance rows, but it must not read payloads, write Parquet, execute migration, call providers, trade, or complete production storage.",
         ),
         _row(
+            "dataset_version_manifest_validate_writes_no_manifest",
+            manifest_validate_packet.get("schema_version") == "command_center_3_storage_dataset_version_manifest_validate.v1"
+            and manifest_validate_packet.get("status")
+            in {"manifest_validate_passed_local_only", "manifest_validate_blocked"}
+            and manifest_validate_packet.get("dataset_count") == len(canonical_datasets)
+            and len(_list(manifest_validate_packet.get("rows"))) == len(canonical_datasets)
+            and manifest_validate_packet.get("manifest_write_executed") is False
+            and manifest_validate_packet.get("manifest_written_on_post") is False
+            and manifest_validate_packet.get("post_validate_writes_manifest") is False
+            and manifest_validate_packet.get("post_validate_writes_parquet") is False
+            and manifest_validate_packet.get("post_validate_reads_parquet_payloads") is False
+            and manifest_validate_packet.get("post_validate_reads_env_files") is False
+            and manifest_validate_packet.get("schema_migration_executed") is False
+            and manifest_validate_packet.get("partition_migration_executed") is False
+            and manifest_validate_packet.get("physical_compaction_executed") is False
+            and manifest_validate_packet.get("cache_ttl_refresh_executed") is False
+            and manifest_validate_packet.get("production_storage_complete") is False
+            and manifest_validate_packet.get("separate_production_promotion_required") is True
+            and _flag_false(manifest_validate_packet, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and manifest_validate_packet.get("does_not_execute_trades") is True
+            and manifest_validate_packet.get("does_not_modify_strategy_action") is True,
+            "Dataset version manifest validate may read local manifest evidence, but it must not write manifest, write Parquet, read payloads, call providers, or complete production storage.",
+        ),
+        _row(
             "partition_migration_dry_run_writes_no_parquet",
             partition_packet.get("schema_version") == "command_center_3_storage_partition_migration_dry_run.v1"
             and partition_packet.get("status") == "dry_run_completed"
@@ -395,6 +423,12 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_storage_dataset_version_manifest_write"].get("writes_parquet_on_post") is False
             and task_rows["run_storage_dataset_version_manifest_write"].get("reads_row_payloads") is False
             and task_rows["run_storage_dataset_version_manifest_write"].get("cache_get_external_calls") is False
+            and task_rows["run_storage_dataset_version_manifest_validate"].get("writes_manifest_on_post") is False
+            and task_rows["run_storage_dataset_version_manifest_validate"].get("manifest_write_executed") is False
+            and task_rows["run_storage_dataset_version_manifest_validate"].get("requires_prior_manifest_write") is True
+            and task_rows["run_storage_dataset_version_manifest_validate"].get("requires_separate_production_promotion") is True
+            and task_rows["run_storage_dataset_version_manifest_validate"].get("schema_migration_executed") is False
+            and task_rows["run_storage_dataset_version_manifest_validate"].get("production_storage_complete") is False
             and task_rows["run_storage_partition_migration_dry_run"].get("partition_migration_executed") is False
             and task_rows["run_storage_compaction_dry_run"].get("physical_compaction_executed") is False
             and task_rows["run_storage_cache_ttl_dry_run"].get("refresh_executed") is False
@@ -441,6 +475,7 @@ def build_contract() -> dict[str, Any]:
         "dataset_version_manifest_dry_run_writes_manifest": False,
         "dataset_version_manifest_review_writes_manifest": False,
         "dataset_version_manifest_write_task_available": True,
+        "dataset_version_manifest_validate_writes_manifest": False,
         "partition_migration_executed": False,
         "physical_compaction_executed": False,
         "cache_ttl_refresh_executed": False,
@@ -470,6 +505,7 @@ def build_contract() -> dict[str, Any]:
             "dataset_version_manifest_dry_run_status": manifest_packet.get("status"),
             "dataset_version_manifest_dry_run_would_change_count": manifest_packet.get("would_change_count"),
             "dataset_version_manifest_review_status": manifest_review_packet.get("status"),
+            "dataset_version_manifest_validate_status": manifest_validate_packet.get("status"),
             "duckdb_query_service_status": duckdb_policy.get("status"),
             "schema_validation_status": schema_packet.get("status"),
             "schema_validation_acceptance_status": schema_acceptance_packet.get("status"),

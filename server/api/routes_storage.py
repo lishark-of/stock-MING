@@ -86,6 +86,12 @@ def run_storage_dataset_version_manifest_write(payload: dict[str, Any] | None = 
     return task_envelope(task)
 
 
+@router.post("/dataset-version-manifest/validate")
+def run_storage_dataset_version_manifest_validate(payload: dict[str, Any] | None = None) -> dict:
+    task = storage_service.run_storage_dataset_version_manifest_validate_task(payload)
+    return task_envelope(task)
+
+
 @router.post("/partition-migration/dry-run")
 def run_storage_partition_migration_dry_run(payload: dict[str, Any] | None = None) -> dict:
     task = storage_service.run_storage_partition_migration_dry_run_task(payload)

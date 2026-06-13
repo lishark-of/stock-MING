@@ -371,6 +371,7 @@ Add factor universe research pipeline
 - `POST /api/storage/dataset-version-manifest/dry-run` now creates a button-gated local task and packet that proposes `_dataset_versions.json` entries from canonical schema contracts without writing the manifest, reading Parquet row payloads, writing Parquet, calling providers, or claiming production storage completion.
 - `POST /api/storage/dataset-version-manifest/review` now creates a button-gated local review task and packet that compares manifest dry-run rows with schema acceptance rows before any write. It records schema blockers, approved-for-write rows, and production promotion blockers without writing `_dataset_versions.json`, writing Parquet, reading row payloads, calling providers, or claiming production storage completion.
 - `POST /api/storage/dataset-version-manifest/write` now creates or updates the local ignored `_dataset_versions.json` only after explicit confirmation, then reuses the read-only evidence audit to verify manifest rows. It does not write Parquet, read Parquet row payloads, call providers, execute trades, or mark production storage complete.
+- `POST /api/storage/dataset-version-manifest/validate` now creates a button-gated local validation task and packet that reads only the local ignored `_dataset_versions.json` evidence after a manual write. It reports validated/blocked manifest rows, but does not write the manifest, write Parquet, read Parquet row payloads, execute schema/partition/compaction/TTL tasks, call providers, execute trades, or mark production storage complete.
 - `POST /api/storage/schema-validation/dry-run` now creates a local task and packet that reads Parquet schema metadata only, compares physical columns with canonical schema contracts, and reports `schema_validated` / `schema_mismatch` / `missing_dataset` before any migration.
 - `POST /api/storage/schema-validation/acceptance` now records button-gated physical schema metadata acceptance rows for local Parquet datasets. It can mark individual datasets as accepted for later manifest promotion / partition migration, but still does not write Parquet, read row payloads, execute migration, call providers, or mark production storage complete.
 - `POST /api/storage/partition-migration/dry-run` now creates a local task and packet that builds per-dataset partition migration plans from schema validation and partition contracts, without reading row payloads or writing partitioned Parquet.
@@ -387,9 +388,9 @@ Add factor universe research pipeline
 ### Gaps
 
 - Production schema migration execution.
-- Physical dataset version manifest writing and validation beyond the read-only version policy matrix and read-only manifest evidence audit.
-- Manifest writer is button-gated and local-only, but reviewer approval workflow, schema acceptance promotion rules, and production promotion rules remain pending.
-- Manifest validation currently proves local schema contract version rows, not physical Parquet schema compatibility or production dataset migration completion.
+- Physical dataset version manifest promotion beyond the local-only manifest writer and local-only manifest validation packet.
+- Manifest writer and validator are button-gated and local-only, but reviewer approval workflow, schema acceptance promotion rules, physical migration rules, and production promotion rules remain pending.
+- Manifest validation currently proves local schema contract version rows in `_dataset_versions.json`, not physical Parquet schema compatibility, schema migration, partition migration, compaction, TTL refresh, or production dataset migration completion.
 - Physical partition migration execution.
 - Physical compaction execution beyond the button-gated dry-run.
 - Physical refresh scheduling/execution beyond the button-gated cache TTL dry-run.
@@ -418,6 +419,7 @@ Add factor universe research pipeline
 - Dataset version manifest dry-run is button-gated, creates only a local task/packet, proposes manifest rows, keeps `manifest_write_executed=false`, `post_dry_run_writes_manifest=false`, `post_dry_run_writes_parquet=false`, `post_dry_run_reads_parquet_payloads=false`, and requires a separate approved writer before any `_dataset_versions.json` change.
 - Dataset version manifest review is button-gated, creates only a local task/packet, compares dry-run and schema acceptance rows, keeps `manifest_write_executed=false`, `post_review_writes_manifest=false`, `post_review_writes_parquet=false`, `post_review_reads_parquet_payloads=false`, `dataset_version_manifest_validated=false`, and requires a separate approved writer plus separate production promotion before any completion claim.
 - Dataset version manifest write is button-gated, requires `confirm_manifest_write=true`, writes only `_dataset_versions.json`, keeps `writes_parquet=false`, `reads_parquet_payloads=false`, `external_calls_triggered=false`, and still keeps `production_storage_complete=false`.
+- Dataset version manifest validate is button-gated, reads only local manifest evidence, keeps `manifest_write_executed=false`, `post_validate_writes_manifest=false`, `post_validate_writes_parquet=false`, `post_validate_reads_parquet_payloads=false`, `schema_migration_executed=false`, `partition_migration_executed=false`, `physical_compaction_executed=false`, `cache_ttl_refresh_executed=false`, and still keeps `production_storage_complete=false`.
 - Schema validation dry-run is button-gated, reads no row payload, writes no Parquet, and records missing/mismatch/validated rows before any migration.
 - Schema validation acceptance is button-gated, reads only Parquet schema metadata, writes only a local SQLite packet, keeps `post_acceptance_writes_parquet=false`, `post_acceptance_reads_row_payloads=false`, `schema_migration_executed=false`, and still keeps `production_storage_complete=false`.
 - Partition migration dry-run is button-gated, writes no partitioned Parquet, and records ready/blocked/missing rows before any partition writer task.
@@ -440,6 +442,7 @@ Add factor universe research pipeline
 - Do not treat dataset version manifest dry-run as a manifest writer, manifest validation, physical migration, or production storage completion.
 - Do not treat dataset version manifest review as a manifest writer, manifest validation, physical migration, production promotion, or production storage completion.
 - Do not treat dataset version manifest write as physical Parquet validation, schema migration, partition migration, or production storage completion.
+- Do not treat dataset version manifest validate as a manifest writer, physical Parquet validation, schema migration, partition migration, compaction, TTL refresh, production promotion, or production storage completion.
 - Do not treat dataset version policy as physical dataset version validation or manifest migration completion.
 - Do not treat `dataset_version_manifest_evidence_audit` as a manifest writer, physical dataset migration, or production dataset version completion; it is local evidence only.
 - Do not treat schema validation dry-run as production schema migration completion.

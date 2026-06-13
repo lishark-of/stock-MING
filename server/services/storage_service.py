@@ -23,6 +23,7 @@ CACHE_TTL_DRY_RUN_PACKET_KEY = "command_center_3_storage_cache_ttl_dry_run_packe
 DATASET_VERSION_MANIFEST_DRY_RUN_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_dry_run_packet"
 DATASET_VERSION_MANIFEST_REVIEW_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_review_packet"
 DATASET_VERSION_MANIFEST_WRITE_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_write_packet"
+DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_validate_packet"
 STORAGE_PRODUCTION_BLOCKER_SCHEMA_VERSION = "command_center_3_storage_production_blocker_audit.v1"
 ARTIFACT_CLEANUP_REVIEW_SCHEMA_VERSION = "command_center_3_storage_artifact_cleanup_review_contract.v1"
 SUPPORTED_PARQUET_DATASETS = {
@@ -1209,6 +1210,169 @@ def run_storage_dataset_version_manifest_write_task(payload: Any = None) -> dict
     ) or task
 
 
+def storage_dataset_version_manifest_validate_packet(
+    *,
+    task_id: str | None = None,
+    payload_safe: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    evidence = storage_dataset_version_manifest_evidence_audit()
+    rows = []
+    blockers: list[str] = []
+    for row in evidence.get("rows") or []:
+        if not isinstance(row, Mapping):
+            continue
+        status = str(row.get("status") or "")
+        validation_passed = status == "dataset_version_manifest_validated"
+        if not validation_passed:
+            blockers.append(f"{row.get('dataset') or 'unknown'}:{status or 'unknown'}")
+        rows.append(
+            {
+                **dict(row),
+                "validation_status": "validated_local_manifest_entry" if validation_passed else "validation_blocked",
+                "manifest_validation_passed": validation_passed,
+                "approved_for_dataset_version_claim": validation_passed,
+                "approved_for_production_promotion": False,
+                "manifest_write_executed": False,
+                "manifest_written_on_post": False,
+                "writes_manifest": False,
+                "writes_parquet": False,
+                "reads_parquet_payloads": False,
+                "schema_migration_executed": False,
+                "partition_migration_executed": False,
+                "physical_compaction_executed": False,
+                "cache_ttl_refresh_executed": False,
+                "production_storage_complete": False,
+            }
+        )
+    validated_count = sum(1 for row in rows if row.get("manifest_validation_passed"))
+    dataset_count = len(rows)
+    status = (
+        "manifest_validate_passed_local_only"
+        if dataset_count and validated_count == dataset_count
+        else "manifest_validate_blocked"
+    )
+    return {
+        "schema_version": "command_center_3_storage_dataset_version_manifest_validate.v1",
+        "packet_key": DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY,
+        "task_id": str(task_id or ""),
+        "status": status,
+        "mode": "button_gated_local_manifest_validation",
+        "scope": "dataset_version_manifest_validation_after_write_before_production_promotion",
+        "manifest_path": evidence.get("manifest_path"),
+        "manifest_exists": bool(evidence.get("manifest_exists")),
+        "manifest_read_status": evidence.get("manifest_read_status"),
+        "dataset_count": dataset_count,
+        "validated_dataset_count": validated_count,
+        "blocked_dataset_count": dataset_count - validated_count,
+        "missing_dataset_count": evidence.get("missing_dataset_count"),
+        "schema_version_mismatch_count": evidence.get("schema_version_mismatch_count"),
+        "status_counts": _count_values(row.get("validation_status") for row in rows),
+        "rows": rows,
+        "blockers": blockers,
+        "source_manifest_evidence_schema_version": evidence.get("schema_version"),
+        "source_manifest_evidence_status": evidence.get("status"),
+        "dataset_version_manifest_validated": validated_count == dataset_count and dataset_count > 0,
+        "physical_dataset_version_validated_count": validated_count,
+        "dataset_version_migration_executed_count": 0,
+        "manual_validation_required_after_write": True,
+        "separate_manifest_write_required_before_validate": not bool(evidence.get("manifest_exists")),
+        "separate_schema_migration_required": True,
+        "separate_partition_migration_required": True,
+        "separate_production_promotion_required": True,
+        "manifest_write_executed": False,
+        "manifest_written_on_post": False,
+        "manifest_written_on_get": False,
+        "cache_get_writes_files": False,
+        "post_validate_writes_manifest": False,
+        "post_validate_writes_parquet": False,
+        "post_validate_reads_parquet_payloads": False,
+        "post_validate_reads_env_files": False,
+        "schema_migration_executed": False,
+        "partition_migration_executed": False,
+        "physical_compaction_executed": False,
+        "cache_ttl_refresh_executed": False,
+        "production_storage_complete": False,
+        "request_params_safe": {
+            "source": (payload_safe or {}).get("source") or "storage_page_button",
+            "validate": True,
+            "external_sources_allowed": False,
+            "write_manifest_allowed": False,
+            "write_parquet_allowed": False,
+        },
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_dataset_version_manifest_validate",
+            endpoint="POST /api/storage/dataset-version-manifest/validate",
+            status=status,
+            row_count=dataset_count,
+            path=str(evidence.get("manifest_path") or ""),
+        ),
+        "warnings": [
+            "POST /api/storage/dataset-version-manifest/validate 只验证本地 ignored 的 _dataset_versions.json；不会写 manifest。",
+            "manifest validate 不读取 Parquet 行 payload、不写 Parquet、不执行 schema/partition/compaction/TTL 任务、不调用 Tushare、DeepSeek、GitHub 或真实交易接口。",
+        ],
+    }
+
+
+def run_storage_dataset_version_manifest_validate_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_page_button",
+        "validate": True,
+        "external_sources_allowed": False,
+        "write_manifest_allowed": False,
+        "write_parquet_allowed": False,
+    }
+    task = task_service.create_task_record(
+        "run_storage_dataset_version_manifest_validate",
+        output_packet_key=DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_dataset_version_manifest_validate_queued",
+        warnings=[
+            "storage dataset version manifest validate 只验证本地 ignored 的 _dataset_versions.json；不会写 manifest、不会读取 Parquet 行 payload、不会调用外部源。",
+            "本任务只验证 manifest 证据，不代表 schema migration、partition migration、compaction、TTL refresh 或 production storage 完成。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.45,
+        current_step="validating_storage_dataset_version_manifest",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_dataset_version_manifest_validate_packet(task_id=task["task_id"], payload_safe=payload_safe)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY, packet)
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="storage_dataset_version_manifest_validate_packet_persist_failed",
+            error_message_safe="storage_dataset_version_manifest_validate_sqlite_write_failed",
+            call_ledger=packet["call_ledger"],
+            warning="storage_dataset_version_manifest_validate_packet_failed_no_external_call",
+        ) or task
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="storage_dataset_version_manifest_validate_completed"
+        if packet["status"] == "manifest_validate_passed_local_only"
+        else "storage_dataset_version_manifest_validate_completed_with_blockers",
+        call_ledger=packet["call_ledger"],
+        warning="storage_dataset_version_manifest_validate_completed_no_manifest_write_no_external_call",
+    ) or task
+
+
 def _dataset_version_policy_row(dataset: str, metadata: Mapping[str, Any] | None = None) -> dict[str, Any]:
     contract = _schema_contract(dataset)
     path = parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset)
@@ -2218,6 +2382,13 @@ def _storage_production_control_rows() -> list[dict[str, Any]]:
             "external_calls_triggered": False,
         },
         {
+            "control": "dataset_version_manifest_validate",
+            "status": "button_gated_ready",
+            "current_coverage": "POST manifest validate reads local manifest evidence after a manual write and records validated/blocked rows without writing files.",
+            "next_action": "use validate as local manifest evidence only; keep schema migration, partition migration, compaction, TTL refresh and production promotion separate.",
+            "external_calls_triggered": False,
+        },
+        {
             "control": "schema_migration_preflight",
             "status": "preflight_ready",
             "current_coverage": "canonical datasets expose metadata-only schema migration rows with target schema versions, required columns and manual migration boundaries.",
@@ -2805,6 +2976,14 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "dataset_version_manifest_write_reads_parquet_payloads": False,
         "dataset_version_manifest_write_external_calls": False,
         "dataset_version_manifest_write_executed_count": 0,
+        "dataset_version_manifest_validate_route": "POST /api/storage/dataset-version-manifest/validate",
+        "dataset_version_manifest_validate_button_gated": True,
+        "dataset_version_manifest_validate_writes_manifest": False,
+        "dataset_version_manifest_validate_writes_parquet": False,
+        "dataset_version_manifest_validate_reads_parquet_payloads": False,
+        "dataset_version_manifest_validate_external_calls": False,
+        "dataset_version_manifest_validate_production_storage_complete": False,
+        "dataset_version_manifest_validate_requires_prior_write": True,
         "schema_contract_policy": "canonical datasets expose local schema contracts; physical validation remains explicit and non-refreshing.",
         "schema_migration_policy": "preflight_only_no_physical_migration_on_get",
         "schema_migration_preflight_status": schema_migration_preflight["status"],
