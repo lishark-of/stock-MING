@@ -44,6 +44,7 @@ DATA_HEALTH_FRESHNESS_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "data_health_fr
 TUSHARE_ACCEPTANCE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "tushare_acceptance_contract.py"
 FACTOR_TEST_LAB_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "factor_test_lab_contract.py"
 CANDIDATE_RADAR_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "candidate_radar_contract.py"
+STORAGE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "storage_contract.py"
 MOTION_VIEWPORT_QA_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "motion_viewport_qa_contract.py"
 MOTION_BROWSER_QA_RUNBOOK_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runbook.py"
 SECRET_KEYWORD_REVIEW_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "secret_keyword_review_contract.py"
@@ -432,6 +433,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
     tushare_acceptance_script = _read_local_text(TUSHARE_ACCEPTANCE_CONTRACT_PATH)
     factor_test_lab_script = _read_local_text(FACTOR_TEST_LAB_CONTRACT_PATH)
     candidate_radar_script = _read_local_text(CANDIDATE_RADAR_CONTRACT_PATH)
+    storage_script = _read_local_text(STORAGE_CONTRACT_PATH)
     motion_qa_script = _read_local_text(MOTION_VIEWPORT_QA_CONTRACT_PATH)
     motion_browser_qa_runbook = _read_local_text(MOTION_BROWSER_QA_RUNBOOK_PATH)
     secret_keyword_review_script = _read_local_text(SECRET_KEYWORD_REVIEW_CONTRACT_PATH)
@@ -472,6 +474,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and bool(factor_test_lab_script),
         "candidate_radar_contract_exists": CANDIDATE_RADAR_CONTRACT_PATH.exists()
         and bool(candidate_radar_script),
+        "storage_contract_exists": STORAGE_CONTRACT_PATH.exists() and bool(storage_script),
         "motion_viewport_qa_contract_exists": MOTION_VIEWPORT_QA_CONTRACT_PATH.exists() and bool(motion_qa_script),
         "motion_browser_qa_runbook_exists": MOTION_BROWSER_QA_RUNBOOK_PATH.exists() and bool(motion_browser_qa_runbook),
         "secret_keyword_review_contract_exists": SECRET_KEYWORD_REVIEW_CONTRACT_PATH.exists() and bool(secret_keyword_review_script),
@@ -487,6 +490,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "Factor Test Lab contract" in script,
         "candidate_radar_contract_step": "scripts/candidate_radar_contract.py" in script
         and "Candidate Radar contract" in script,
+        "storage_contract_step": "scripts/storage_contract.py" in script and "Storage contract" in script,
         "secret_keyword_review_contract_step": "scripts/secret_keyword_review_contract.py" in script
         and "Secret keyword review contract" in script,
         "uses_project_venv_python": 'PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"' in script,
@@ -528,6 +532,14 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "does_not_execute_trades" in candidate_radar_script
         and "tushare_adapter" not in candidate_radar_script
         and "api.github.com" not in candidate_radar_script,
+        "storage_contract_is_local": "command_center_3_storage_contract.v1" in storage_script
+        and "local_storage_contract_no_physical_migration" in storage_script
+        and "production_storage_complete" in storage_script
+        and "dry_runs_are_not_production_completion" in storage_script
+        and "schema_migration_executed" in storage_script
+        and "does_not_execute_trades" in storage_script
+        and "tushare_adapter" not in storage_script
+        and "api.github.com" not in storage_script,
         "generated_artifact_scan_step": "artifact_scan" in script and "git ls-files" in script,
         "release_report_step": "PUSH_GATE_REPORT_PATH" in script and "write_release_readiness_report" in script,
         "clean_worktree_after_report": script.find('run_step "Release readiness report"') >= 0
@@ -571,6 +583,9 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "candidate_radar_contract_exists",
             "candidate_radar_contract_step",
             "candidate_radar_contract_is_local",
+            "storage_contract_exists",
+            "storage_contract_step",
+            "storage_contract_is_local",
             "motion_viewport_qa_contract_exists",
             "motion_viewport_qa_contract_step",
             "motion_viewport_qa_contract_is_local_static",
@@ -668,6 +683,21 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "candidate_radar_contract_is_local",
             checks["candidate_radar_contract_is_local"],
             evidence="contract keeps LTG-13 quick scan, full/deep plans, no-feature-loss QA, and legacy-retirement blockers separate from production radar replacement",
+        ),
+        _release_gate_row(
+            "storage_contract_exists",
+            checks["storage_contract_exists"],
+            evidence=_relative_path(STORAGE_CONTRACT_PATH),
+        ),
+        _release_gate_row(
+            "storage_contract_step",
+            checks["storage_contract_step"],
+            evidence="push gate runs scripts/storage_contract.py after Candidate Radar and before motion QA",
+        ),
+        _release_gate_row(
+            "storage_contract_is_local",
+            checks["storage_contract_is_local"],
+            evidence="contract keeps LTG-05 preflights/dry-runs/query policies separate from physical storage migration and production completion",
         ),
         _release_gate_row(
             "motion_viewport_qa_contract_exists",

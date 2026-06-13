@@ -60,7 +60,7 @@ Current local LTG work must not be treated as shared baseline until tests, build
 | LTG-02 | Tushare 全接口生产流水线 | core light path `done_real`; extended APIs `matrix` / `mock` | All selected interfaces run through task pipeline with call ledger | P2 | Each interface has real target samples, safe failure states, and no false verified claims. |
 | LTG-03 | Factor Test Lab 完整生产化 | light research metrics `done_real`; production QA contract visible; production research incomplete | Research-grade factor validation for single factors | P3 | IC, Rank IC, ICIR, groups, cost, drawdown, sample split, decay, and neutral IC are auditable and research-only. |
 | LTG-04 | Factor 全市场 / 股票池研究 | light mode plus local read-plan and execution readiness audit; batch execution pending | watchlist / custom pool / full pool research pipeline | P3 | Large universe runs in task pipeline without blocking UI or entering strategy action. |
-| LTG-05 | Storage / DuckDB / Parquet 生产化 | dataset scaffold and factor_values write path | Versioned, queryable local data layer | P4 | schema/version/TTL/compaction/query services are auditable; data artifacts stay out of git. |
+| LTG-05 | Storage / DuckDB / Parquet 生产化 | dataset scaffold, dry-runs, query policy, and push-gate contract exist | Versioned, queryable local data layer | P4 | schema/version/TTL/compaction/query services are auditable; data artifacts stay out of git. |
 | LTG-06 | Worker / Celery / Redis 生产化 | local task fallback, preflight, blocker audit, and healthcheck QA contract | Production-capable worker orchestration with local fallback | P4 | POST returns task_id, worker runs heavy jobs, Redis absence falls back gracefully, scheduler stays off by default. |
 | LTG-07 | DeepSeek pro 稳定解释生产化 | manual governance, sanitizer, and local JSON stability audit; mini-benchmark below production target | Stable manual explanation, optional background auto-after-task | P5 | JSON success rate > 90%, no action leakage, no numeric overwrite, cost predictable. |
 | LTG-08 | ECharts 次日操作图谱成熟版 | maturing chart contract with interaction readiness audit; legacy parity pending | React/ECharts replaces Streamlit main next-session visual | P5 | Complete cache display, evidence interactions, no frontend action/price/position mutation. |
@@ -342,6 +342,7 @@ Add factor universe research pipeline
 - React Storage now exposes read-only dataset filters for `limit`, `ts_code`, `trade_date`, `start_date`, and `end_date`; applying filters resets to the first page and still routes only through GET storage APIs.
 - Factor Universe now has a button-gated local read-plan task that consumes storage query contracts and records dataset-level projection/page metadata for future worker consumption.
 - Storage overview/catalog now expose `storage_production_blocker_audit`: production remains `storage_production_blocked` until physical schema validation, schema migration, dataset version manifest validation, partition migration, physical compaction, and TTL refresh execution are separately implemented.
+- `scripts/storage_contract.py` is now part of the local push gate. It reads only local storage cache and dry-run packet builders, then verifies schema migration preflight, dataset version policy, schema validation dry-run, partition migration dry-run, compaction dry-run, cache TTL dry-run, artifact cleanup review, DuckDB query service, and storage dry-run task gating remain local/no-write/no-provider/no-trade while `production_storage_complete=false`.
 
 ### Gaps
 
@@ -353,6 +354,7 @@ Add factor universe research pipeline
 - Real large-universe research execution beyond the local Factor Universe read plan.
 - Full-pool research consumption, richer query result contract hardening beyond the current local DuckDB read path, and production-grade query ergonomics beyond the current basic UI filters.
 - Physical cleanup/delete execution after manual review remains unimplemented and must stay separately approved.
+- The local Storage push-gate contract is not a physical migration or production data-layer proof; it only blocks regressions where preflights, dry-runs, query policy, or cleanup review could be mistaken for production completion.
 
 ### Implementation Phases
 
@@ -381,6 +383,7 @@ Add factor universe research pipeline
 - Generated artifact hygiene is auditable; dry-run cleanup is button-gated and any real delete/cleanup must remain separate and manually approved.
 - Artifact cleanup manual review is visible as a contract after dry-run, with `delete_executed=false`, `safe_delete_command_generated=false`, and `production_cleanup_complete=false`.
 - Storage overview/catalog now expose `storage_production_blocker_audit` and `storage_production_blocker_rows`, explicitly separating local contracts/dry-runs/preflights from physical production completion.
+- `scripts/storage_contract.py` passes in the push gate while still reporting `production_storage_complete=false`, `physical_schema_validation_done=false`, `schema_migration_executed=false`, `dataset_version_manifest_validated=false`, `partition_migration_executed=false`, `physical_compaction_executed=false`, `cache_ttl_refresh_executed=false`, and `artifact_cleanup_delete_executed=false`.
 - Write failure does not pollute packet or action.
 
 ### Forbidden
@@ -393,6 +396,7 @@ Add factor universe research pipeline
 - Do not treat compaction dry-run as physical Parquet compaction completion.
 - Do not treat cache TTL dry-run as data refresh completion or provider acceptance.
 - Do not treat artifact cleanup review as delete execution or production cleanup completion.
+- Do not treat `scripts/storage_contract.py` passing as physical schema validation, schema migration, dataset version manifest validation, partition migration, physical compaction, TTL refresh execution, cleanup delete execution, or production storage completion.
 - Do not let frontend bypass the FastAPI + DuckDB query service or run direct Parquet/DataFrame reads.
 - Do not treat cursor pagination or typed projection as full-market research execution.
 - Do not treat `storage_production_blocked` as a failure of cache safety; it is the expected state until physical schema validation, schema migration, version manifest validation, partition migration, compaction, and TTL refresh execution are separately implemented and verified.
@@ -684,6 +688,7 @@ Retire Streamlit from primary user workflow
 - `scripts/tushare_acceptance_contract.py` is now part of the local push gate. It validates LTG-02 Tushare matrix/readiness contracts remain button-gated, local, no-provider, no-trade, and no-action, while provider-backed full-interface acceptance remains pending.
 - `scripts/factor_test_lab_contract.py` is now part of the local push gate. It validates LTG-03 Factor Test Lab research metrics, small-pool readiness, storage query consumption, and production QA stay local/research-only while provider-backed small-pool and full-market validation remain pending.
 - `scripts/candidate_radar_contract.py` is now part of the local push gate. It validates LTG-13 Candidate Radar cache reads, local quick-scan task gating, full-pool/deep-scan plan-only boundaries, no-feature-loss QA, replacement-gap triage, result-delta clarity, and no-trade/no-action boundaries while production radar replacement remains pending.
+- `scripts/storage_contract.py` is now part of the local push gate. It validates LTG-05 Storage cache, schema/version preflights, dry-run packets, DuckDB query policy, artifact cleanup review, and storage task catalog gating remain local/no-write/no-provider/no-trade while physical storage production remains pending.
 - `scripts/push_gate_3_0.sh` can optionally write a local Markdown release-readiness report when `PUSH_GATE_REPORT_PATH` is set; report generation runs before the final clean-worktree check so unignored in-repo reports still block push.
 - Secret/artifact keyword hits are separated into high-risk failures versus review output so sanitizer/test/docs mentions can be explained instead of silently ignored.
 - `scripts/secret_keyword_review_contract.py` now gives the ordinary keyword scan a structured local contract: it classifies tracked keyword hits by category and top files, emits counts only, suppresses raw source lines, and fails if high-risk tracked secret-looking values appear outside tests/docs. It does not call external services or prove periodic human allowlist review is complete.
@@ -698,6 +703,7 @@ Retire Streamlit from primary user workflow
 - Tushare acceptance contract is present, but it is still a local matrix/readiness guard; real provider-backed interface samples remain a later LTG-02 acceptance phase.
 - Factor Test Lab contract is present, but it is still a local research-boundary guard; real small-pool and full-market research validation remain a later LTG-03 acceptance phase.
 - Candidate Radar contract is present, but it is still a local replacement-boundary guard; real full-pool/deep-scan execution, provider-backed parity acceptance, browser performance trace, and visual QA remain later LTG-13 acceptance phases.
+- Storage contract is present, but it is still a local preflight/dry-run guard; real physical schema validation, migration, manifest validation, partition migration, compaction, TTL refresh execution, and cleanup delete execution remain later LTG-05 acceptance phases.
 - Optional local reports are evidence for one gate run, not durable CI status and not production completion proof.
 
 ### Implementation Phases
@@ -723,6 +729,7 @@ Retire Streamlit from primary user workflow
 - Tushare acceptance contract runs after Data Health and before static UI QA, and keeps `provider_backed_acceptance_done=false` / `production_tushare_pipeline_complete=false` visible.
 - Factor Test Lab contract runs after Tushare acceptance and before static UI QA, and keeps `provider_backed_small_pool_validation_done=false` / `production_factor_test_validation_complete=false` visible.
 - Candidate Radar contract runs after Factor Test Lab and before static motion QA, and keeps `production_radar_replacement_complete=false`, `legacy_retirement_ready=false`, `full_pool_scan_done=false`, and `deep_scan_done=false` visible.
+- Storage contract runs after Candidate Radar and before static motion QA, and keeps `production_storage_complete=false`, `schema_migration_executed=false`, `partition_migration_executed=false`, `physical_compaction_executed=false`, and `cache_ttl_refresh_executed=false` visible.
 - `release_gate_readiness_audit.local_gate_ready=true` and `ci_mirror_ready=true` are visible in the audit cache, while `release_gate_complete` remains false until allowlist review and actual remote check evidence are proven.
 
 ### Forbidden
