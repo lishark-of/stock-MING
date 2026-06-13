@@ -121,6 +121,12 @@ def build_contract() -> dict[str, Any]:
         for row in _list(overview.get("storage_production_readiness_receipt_rows"))
         if isinstance(row, dict)
     }
+    activation_receipt = _dict(overview.get("storage_physical_migration_activation_receipt"))
+    activation_criteria = {
+        str(row.get("criterion") or "")
+        for row in _list(overview.get("storage_physical_migration_activation_rows"))
+        if isinstance(row, dict)
+    }
     blocker_criteria = {
         str(row.get("criterion") or "")
         for row in _list(overview.get("storage_production_blocker_rows"))
@@ -217,6 +223,59 @@ def build_contract() -> dict[str, Any]:
                 "production_completion_evidence_ticket",
             }.issubset(receipt_criteria),
             "Storage readiness receipt must permit only explicit POST review tasks and must keep GET migration, provider refresh, cleanup deletion, and production completion blocked.",
+        ),
+        _row(
+            "physical_migration_activation_receipt_keeps_execution_pending",
+            activation_receipt.get("schema_version")
+            == "command_center_3_storage_physical_migration_activation_receipt.v1"
+            and activation_receipt.get("scope")
+            == "local_storage_physical_migration_activation_receipt_no_physical_execution"
+            and activation_receipt.get("status")
+            == "storage_physical_migration_activation_receipt_ready_execution_pending"
+            and activation_receipt.get("local_activation_receipt_ready") is True
+            and activation_receipt.get("ready_for_explicit_physical_migration_review") is True
+            and activation_receipt.get("allowed_next_step")
+            == "explicit_schema_acceptance_manifest_validate_then_partition_compaction_ttl_cleanup_reviews"
+            and "GET /api/storage physical migration" in _list(activation_receipt.get("not_allowed_next_steps"))
+            and "GET /api/storage Parquet write" in _list(activation_receipt.get("not_allowed_next_steps"))
+            and "GET /api/storage provider refresh" in _list(activation_receipt.get("not_allowed_next_steps"))
+            and "activation receipt as production storage completion"
+            in _list(activation_receipt.get("not_allowed_next_steps"))
+            and "physical schema validation acceptance for all canonical datasets"
+            in _list(activation_receipt.get("missing_evidence"))
+            and "manifest validation backed by schema acceptance" in _list(activation_receipt.get("missing_evidence"))
+            and "production promotion review" in _list(activation_receipt.get("missing_evidence"))
+            and activation_receipt.get("production_storage_complete") is False
+            and activation_receipt.get("physical_schema_validation_done") is False
+            and activation_receipt.get("schema_migration_executed") is False
+            and activation_receipt.get("dataset_version_manifest_validated") is False
+            and activation_receipt.get("partition_migration_executed") is False
+            and activation_receipt.get("physical_compaction_executed") is False
+            and activation_receipt.get("cache_ttl_refresh_executed") is False
+            and activation_receipt.get("artifact_cleanup_delete_executed") is False
+            and activation_receipt.get("provider_refresh_called_by_receipt") is False
+            and activation_receipt.get("parquet_written_by_receipt") is False
+            and activation_receipt.get("manifest_written_by_receipt") is False
+            and activation_receipt.get("cleanup_delete_generated_by_receipt") is False
+            and activation_receipt.get("cache_get_external_calls") is False
+            and activation_receipt.get("receipt_external_calls_triggered") is False
+            and _flag_false(activation_receipt, "tushare_called", "deepseek_called", "github_called")
+            and activation_receipt.get("does_not_execute_trades") is True
+            and activation_receipt.get("does_not_modify_strategy_action") is True
+            and activation_receipt.get("production_blocker_count") == blocker_audit.get("blocking_criterion_count")
+            and {
+                "readiness_receipt_ready",
+                "schema_acceptance_required",
+                "manifest_validation_required",
+                "partition_migration_required",
+                "compaction_execution_required",
+                "cache_ttl_refresh_required",
+                "cleanup_manual_approval_required",
+                "duckdb_query_boundary_ready",
+                "no_get_migration_or_provider_refresh",
+                "no_trade_or_action_boundary",
+            }.issubset(activation_criteria),
+            "Storage physical migration activation receipt must expose the next explicit execution prerequisites while keeping all physical writes, provider refreshes, deletes, trades, and production completion pending.",
         ),
         _row(
             "schema_migration_preflight_is_not_physical_migration",
@@ -493,6 +552,8 @@ def build_contract() -> dict[str, Any]:
             "script_is_local_no_provider_execution",
             "command_center_3_storage_contract.v1" in this_script
             and "local_storage_contract_no_physical_migration" in this_script
+            and "command_center_3_storage_physical_migration_activation_receipt.v1" in this_script
+            and "physical_migration_activation_receipt_keeps_execution_pending" in this_script
             and "production_storage_complete" in this_script
             and "dry_runs_are_not_production_completion" in this_script
             and "does_not_execute_trades" in this_script
@@ -523,6 +584,10 @@ def build_contract() -> dict[str, Any]:
         "dataset_version_manifest_validate_writes_manifest": False,
         "storage_production_readiness_receipt_ready": bool(readiness_receipt.get("local_receipt_ready")),
         "storage_production_readiness_receipt_status": readiness_receipt.get("status"),
+        "storage_physical_migration_activation_receipt_ready": bool(
+            activation_receipt.get("local_activation_receipt_ready")
+        ),
+        "storage_physical_migration_activation_status": activation_receipt.get("status"),
         "partition_migration_executed": False,
         "physical_compaction_executed": False,
         "cache_ttl_refresh_executed": False,
@@ -547,6 +612,8 @@ def build_contract() -> dict[str, Any]:
             "storage_production_blocker_count": blocker_audit.get("blocking_criterion_count"),
             "storage_production_readiness_receipt_status": readiness_receipt.get("status"),
             "storage_production_readiness_receipt_ready": readiness_receipt.get("local_receipt_ready"),
+            "storage_physical_migration_activation_status": activation_receipt.get("status"),
+            "storage_physical_migration_activation_ready": activation_receipt.get("local_activation_receipt_ready"),
             "schema_migration_preflight_status": schema_preflight.get("status"),
             "dataset_version_policy_status": dataset_version_policy.get("status"),
             "dataset_version_manifest_evidence_status": dataset_version_manifest_evidence.get("status"),

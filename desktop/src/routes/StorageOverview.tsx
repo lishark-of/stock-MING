@@ -362,6 +362,12 @@ export default function StorageOverview() {
   const storageProductionReadinessReceiptRows =
     (overview.storage_production_readiness_receipt_rows as Array<Record<string, unknown>> | undefined) ??
     ((storageCatalog.storage_production_readiness_receipt_rows as Array<Record<string, unknown>> | undefined) ?? []);
+  const storagePhysicalMigrationActivationReceipt =
+    (overview.storage_physical_migration_activation_receipt as Record<string, unknown> | undefined) ??
+    ((storageCatalog.storage_physical_migration_activation_receipt as Record<string, unknown> | undefined) ?? {});
+  const storagePhysicalMigrationActivationRows =
+    (overview.storage_physical_migration_activation_rows as Array<Record<string, unknown>> | undefined) ??
+    ((storageCatalog.storage_physical_migration_activation_rows as Array<Record<string, unknown>> | undefined) ?? []);
 
   return (
     <>
@@ -414,6 +420,9 @@ export default function StorageOverview() {
           { label: "storage blockers", value: overview.storage_production_blocker_count ?? storageProductionBlockerAudit.blocking_criterion_count ?? 0, tone: Number(overview.storage_production_blocker_count ?? storageProductionBlockerAudit.blocking_criterion_count ?? 0) > 0 ? "warn" : "good" },
           { label: "storage receipt", value: String(storageProductionReadinessReceipt.status ?? overview.storage_production_readiness_receipt_status ?? "missing"), tone: storageProductionReadinessReceipt.local_receipt_ready === true ? "good" : "warn" },
           { label: "receipt blocked", value: storageProductionReadinessReceipt.blocked_readiness_count ?? 0, tone: Number(storageProductionReadinessReceipt.blocked_readiness_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "storage activation", value: String(storagePhysicalMigrationActivationReceipt.status ?? overview.storage_physical_migration_activation_status ?? "missing"), tone: storagePhysicalMigrationActivationReceipt.local_activation_receipt_ready === true ? "good" : "warn" },
+          { label: "activation blockers", value: storagePhysicalMigrationActivationReceipt.blocked_activation_count ?? 0, tone: Number(storagePhysicalMigrationActivationReceipt.blocked_activation_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "physical schema done", value: String(storagePhysicalMigrationActivationReceipt.physical_schema_validation_done ?? false), tone: storagePhysicalMigrationActivationReceipt.physical_schema_validation_done === true ? "good" : "warn" },
           { label: "declared versions", value: datasetVersionPolicy.target_version_declared_count ?? overview.dataset_version_declared_count ?? 0 },
           { label: "version validations", value: datasetVersionPolicy.physical_dataset_version_validated_count ?? overview.physical_dataset_version_validated_count ?? 0 },
           { label: "manifest evidence", value: String(datasetVersionManifestEvidence.status ?? overview.dataset_version_manifest_evidence_status ?? "manifest_missing_validation_pending") },
@@ -497,6 +506,20 @@ export default function StorageOverview() {
         <p>tushare / deepseek / github: {String(storageProductionReadinessReceipt.tushare_called_by_receipt ?? false)} / {String(storageProductionReadinessReceipt.deepseek_called ?? false)} / {String(storageProductionReadinessReceipt.github_called ?? false)}</p>
         <p>not_allowed_next_steps: {JSON.stringify(storageProductionReadinessReceipt.not_allowed_next_steps ?? ["GET /api/storage physical migration", "GET /api/storage provider refresh", "dry-run/preflight/receipt as production storage completion"])}</p>
         <DataLineageTable rows={storageProductionReadinessReceiptRows} />
+      </PacketCard>
+
+      <PacketCard title="Storage physical migration activation receipt" subtitle="LTG-05 物理迁移激活收据；只列出显式执行前置条件，不写 Parquet、不刷新 provider、不删除文件" status={String(storagePhysicalMigrationActivationReceipt.status ?? "missing")}>
+        <p>schema_version: {String(storagePhysicalMigrationActivationReceipt.schema_version ?? "command_center_3_storage_physical_migration_activation_receipt.v1")}</p>
+        <p>scope: {String(storagePhysicalMigrationActivationReceipt.scope ?? "local_storage_physical_migration_activation_receipt_no_physical_execution")}</p>
+        <p>local_activation_receipt_ready: {String(storagePhysicalMigrationActivationReceipt.local_activation_receipt_ready ?? false)}</p>
+        <p>allowed_next_step: {String(storagePhysicalMigrationActivationReceipt.allowed_next_step ?? "explicit_schema_acceptance_manifest_validate_then_partition_compaction_ttl_cleanup_reviews")}</p>
+        <p>production_storage_complete / physical_schema_validation_done: {String(storagePhysicalMigrationActivationReceipt.production_storage_complete ?? false)} / {String(storagePhysicalMigrationActivationReceipt.physical_schema_validation_done ?? false)}</p>
+        <p>parquet_written / manifest_written / cleanup_delete_generated: {String(storagePhysicalMigrationActivationReceipt.parquet_written_by_receipt ?? false)} / {String(storagePhysicalMigrationActivationReceipt.manifest_written_by_receipt ?? false)} / {String(storagePhysicalMigrationActivationReceipt.cleanup_delete_generated_by_receipt ?? false)}</p>
+        <p>provider_refresh / cache_get_external_calls: {String(storagePhysicalMigrationActivationReceipt.provider_refresh_called_by_receipt ?? false)} / {String(storagePhysicalMigrationActivationReceipt.cache_get_external_calls ?? false)}</p>
+        <p>tushare / deepseek / github: {String(storagePhysicalMigrationActivationReceipt.tushare_called ?? false)} / {String(storagePhysicalMigrationActivationReceipt.deepseek_called ?? false)} / {String(storagePhysicalMigrationActivationReceipt.github_called ?? false)}</p>
+        <p>missing_evidence: {JSON.stringify(storagePhysicalMigrationActivationReceipt.missing_evidence ?? ["physical schema validation acceptance for all canonical datasets", "manifest validation backed by schema acceptance", "production promotion review"])}</p>
+        <p>not_allowed_next_steps: {JSON.stringify(storagePhysicalMigrationActivationReceipt.not_allowed_next_steps ?? ["GET /api/storage physical migration", "GET /api/storage Parquet write", "activation receipt as production storage completion"])}</p>
+        <DataLineageTable rows={storagePhysicalMigrationActivationRows} />
       </PacketCard>
 
       <PacketCard title="DuckDB query result contracts" subtitle="每个本地查询返回投影列、分页和安全边界；不触发刷新" status="query_contract">

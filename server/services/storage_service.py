@@ -3397,6 +3397,186 @@ def storage_production_readiness_receipt(
     }
 
 
+def _storage_activation_row(
+    criterion: str,
+    passed: bool,
+    evidence: str,
+    next_step: str,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": "passed" if passed else "blocked",
+        "passed": passed,
+        "evidence": evidence,
+        "next_step": next_step,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def storage_physical_migration_activation_receipt(
+    production_readiness: Mapping[str, Any] | None = None,
+    production_blocker_audit: Mapping[str, Any] | None = None,
+    production_readiness_receipt: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    readiness = dict(production_readiness or storage_production_readiness())
+    blocker_audit = dict(production_blocker_audit or storage_production_blocker_audit(readiness))
+    readiness_receipt = dict(
+        production_readiness_receipt
+        or storage_production_readiness_receipt(readiness, blocker_audit)
+    )
+    readiness_ready = bool(readiness_receipt.get("local_receipt_ready"))
+    cache_get_boundary = (
+        readiness.get("external_calls_triggered") is False
+        and readiness_receipt.get("cache_get_external_calls") is False
+        and readiness_receipt.get("provider_refresh_called_by_receipt") is False
+        and readiness_receipt.get("receipt_external_calls_triggered") is False
+    )
+    explicit_task_boundary = (
+        readiness_receipt.get("allowed_next_step")
+        == "explicit_post_task_storage_schema_acceptance_manifest_review"
+        and readiness.get("schema_validation_acceptance_button_gated") is True
+        and readiness.get("dataset_version_manifest_validate_button_gated") is True
+        and readiness.get("partition_migration_dry_run_button_gated") is True
+        and readiness.get("compaction_dry_run_button_gated") is True
+        and readiness.get("cache_ttl_dry_run_button_gated") is True
+        and readiness.get("artifact_cleanup_dry_run_button_gated") is True
+    )
+    duckdb_boundary = readiness.get("duckdb_query_service_status") in {"service_ready", "dependency_missing"}
+    local_activation_ready = readiness_ready and cache_get_boundary and explicit_task_boundary
+    rows = [
+        _storage_activation_row(
+            "readiness_receipt_ready",
+            readiness_ready,
+            "storage_production_readiness_receipt is present and ready for explicit review tasks.",
+            "keep readiness receipt visible while physical execution remains separate",
+        ),
+        _storage_activation_row(
+            "schema_acceptance_required",
+            False,
+            "Physical schema acceptance has not been promoted to production evidence.",
+            "run explicit schema acceptance review before any migration writer",
+        ),
+        _storage_activation_row(
+            "manifest_validation_required",
+            False,
+            "Dataset version manifest validation remains pending and cannot be inferred from policy or dry-run output.",
+            "validate an ignored local manifest only after schema acceptance evidence is reviewed",
+        ),
+        _storage_activation_row(
+            "partition_migration_required",
+            False,
+            "Partition migration remains dry-run only and has not written partitioned Parquet.",
+            "prepare a separate confirm-gated migration task after manifest validation",
+        ),
+        _storage_activation_row(
+            "compaction_execution_required",
+            False,
+            "Compaction remains dry-run/recommendation only and has not rewritten Parquet.",
+            "execute compaction only through a separately approved maintenance task",
+        ),
+        _storage_activation_row(
+            "cache_ttl_refresh_required",
+            False,
+            "TTL refresh remains recommendation-only and has not called providers or written Parquet.",
+            "keep provider refresh as explicit POST task evidence, never GET cache rendering",
+        ),
+        _storage_activation_row(
+            "cleanup_manual_approval_required",
+            False,
+            "Artifact cleanup dry-run has not deleted files and has not generated delete commands.",
+            "require manual cleanup approval and separate delete execution evidence",
+        ),
+        _storage_activation_row(
+            "duckdb_query_boundary_ready",
+            duckdb_boundary,
+            "DuckDB query service is local/service-ready or dependency-missing without frontend DataFrame access.",
+            "keep UI behind FastAPI query wrappers and cursor contracts",
+        ),
+        _storage_activation_row(
+            "no_get_migration_or_provider_refresh",
+            cache_get_boundary,
+            "GET storage cache remains read-only with no provider refresh, Parquet writes, manifest writes, or cleanup deletes.",
+            "preserve GET /api/storage as evidence-only",
+        ),
+        _storage_activation_row(
+            "no_trade_or_action_boundary",
+            readiness_receipt.get("does_not_execute_trades") is True
+            and readiness_receipt.get("does_not_modify_strategy_action") is True,
+            "Storage activation receipt does not execute trades or mutate strategy action.",
+            "keep storage productionization isolated from strategy action",
+        ),
+    ]
+    blockers = [row["criterion"] for row in rows if not row.get("passed")]
+    return {
+        "schema_version": "command_center_3_storage_physical_migration_activation_receipt.v1",
+        "scope": "local_storage_physical_migration_activation_receipt_no_physical_execution",
+        "status": (
+            "storage_physical_migration_activation_receipt_ready_execution_pending"
+            if local_activation_ready
+            else "storage_physical_migration_activation_receipt_blocked_local_contract"
+        ),
+        "local_activation_receipt_ready": local_activation_ready,
+        "ready_for_explicit_physical_migration_review": local_activation_ready,
+        "allowed_next_step": "explicit_schema_acceptance_manifest_validate_then_partition_compaction_ttl_cleanup_reviews",
+        "not_allowed_next_steps": [
+            "GET /api/storage physical migration",
+            "GET /api/storage Parquet write",
+            "GET /api/storage provider refresh",
+            "automatic partition migration",
+            "automatic compaction",
+            "automatic TTL refresh",
+            "artifact cleanup delete execution from dry-run",
+            "activation receipt as production storage completion",
+        ],
+        "missing_evidence": [
+            "physical schema validation acceptance for all canonical datasets",
+            "manifest validation backed by schema acceptance",
+            "partition migration execution evidence",
+            "physical compaction execution evidence",
+            "cache TTL refresh execution evidence",
+            "cleanup manual approval/delete evidence",
+            "production promotion review",
+        ],
+        "production_storage_complete": False,
+        "physical_schema_validation_done": False,
+        "schema_migration_executed": False,
+        "dataset_version_manifest_validated": False,
+        "partition_migration_executed": False,
+        "physical_compaction_executed": False,
+        "cache_ttl_refresh_executed": False,
+        "artifact_cleanup_delete_executed": False,
+        "provider_refresh_called_by_receipt": False,
+        "parquet_written_by_receipt": False,
+        "manifest_written_by_receipt": False,
+        "cleanup_delete_generated_by_receipt": False,
+        "cache_get_external_calls": False,
+        "receipt_external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "production_blocker_count": int(blocker_audit.get("blocking_criterion_count") or 0),
+        "blocked_activation_count": len(blockers),
+        "blocked_activation": blockers,
+        "rows": rows,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_physical_migration_activation_receipt",
+            endpoint="GET /api/storage",
+            status="activation_receipt_ready_physical_execution_pending"
+            if local_activation_ready
+            else "activation_receipt_blocked_local_contract",
+            row_count=len(rows),
+        ),
+        "note": "This activation receipt identifies LTG-05 physical migration execution prerequisites. It does not write Parquet, validate production promotion, refresh providers, delete files, or trade.",
+    }
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -3478,6 +3658,11 @@ def storage_dataset_catalog() -> dict[str, Any]:
         production_readiness,
         production_blocker_audit,
     )
+    physical_migration_activation_receipt = storage_physical_migration_activation_receipt(
+        production_readiness,
+        production_blocker_audit,
+        production_readiness_receipt,
+    )
     artifact_hygiene = storage_artifact_hygiene_status()
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
@@ -3495,6 +3680,8 @@ def storage_dataset_catalog() -> dict[str, Any]:
         "storage_production_blocker_rows": production_blocker_audit["rows"],
         "storage_production_readiness_receipt": production_readiness_receipt,
         "storage_production_readiness_receipt_rows": production_readiness_receipt["rows"],
+        "storage_physical_migration_activation_receipt": physical_migration_activation_receipt,
+        "storage_physical_migration_activation_rows": physical_migration_activation_receipt["rows"],
         "artifact_hygiene": artifact_hygiene,
         "artifact_cleanup_review_contract": artifact_hygiene["artifact_cleanup_review_contract"],
         "artifact_cleanup_review_rows": artifact_hygiene["artifact_cleanup_review_rows"],
@@ -3765,6 +3952,11 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         production_readiness,
         production_blocker_audit,
     )
+    physical_migration_activation_receipt = storage_physical_migration_activation_receipt(
+        production_readiness,
+        production_blocker_audit,
+        production_readiness_receipt,
+    )
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
     schema_migration_preflight = storage_schema_migration_preflight()
@@ -3821,6 +4013,12 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "storage_production_readiness_receipt_rows": production_readiness_receipt["rows"],
         "storage_production_readiness_receipt_status": production_readiness_receipt["status"],
         "storage_production_readiness_receipt_ready": production_readiness_receipt["local_receipt_ready"],
+        "storage_physical_migration_activation_receipt": physical_migration_activation_receipt,
+        "storage_physical_migration_activation_rows": physical_migration_activation_receipt["rows"],
+        "storage_physical_migration_activation_status": physical_migration_activation_receipt["status"],
+        "storage_physical_migration_activation_ready": physical_migration_activation_receipt[
+            "local_activation_receipt_ready"
+        ],
         "artifact_hygiene": artifact_hygiene,
         "artifact_cleanup_review_contract": artifact_hygiene["artifact_cleanup_review_contract"],
         "artifact_cleanup_review_rows": artifact_hygiene["artifact_cleanup_review_rows"],

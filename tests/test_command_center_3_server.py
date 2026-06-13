@@ -1635,6 +1635,73 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(receipt_rows["production_completion_evidence_ticket"]["status"], "blocked")
         self.assertEqual(storage_receipt["call_ledger"][0]["api"], "local_storage_production_readiness_receipt")
         self.assert_local_ledger_boundary(storage_receipt["call_ledger"][0])
+        self.assertIn("storage_physical_migration_activation_receipt", overview)
+        activation_receipt = overview["storage_physical_migration_activation_receipt"]
+        self.assertEqual(
+            activation_receipt["schema_version"],
+            "command_center_3_storage_physical_migration_activation_receipt.v1",
+        )
+        self.assertEqual(
+            activation_receipt["scope"],
+            "local_storage_physical_migration_activation_receipt_no_physical_execution",
+        )
+        self.assertEqual(
+            activation_receipt["status"],
+            "storage_physical_migration_activation_receipt_ready_execution_pending",
+        )
+        self.assertTrue(activation_receipt["local_activation_receipt_ready"])
+        self.assertTrue(activation_receipt["ready_for_explicit_physical_migration_review"])
+        self.assertEqual(
+            activation_receipt["allowed_next_step"],
+            "explicit_schema_acceptance_manifest_validate_then_partition_compaction_ttl_cleanup_reviews",
+        )
+        self.assertIn("GET /api/storage physical migration", activation_receipt["not_allowed_next_steps"])
+        self.assertIn("GET /api/storage Parquet write", activation_receipt["not_allowed_next_steps"])
+        self.assertIn("GET /api/storage provider refresh", activation_receipt["not_allowed_next_steps"])
+        self.assertIn("activation receipt as production storage completion", activation_receipt["not_allowed_next_steps"])
+        self.assertIn(
+            "physical schema validation acceptance for all canonical datasets",
+            activation_receipt["missing_evidence"],
+        )
+        self.assertIn("manifest validation backed by schema acceptance", activation_receipt["missing_evidence"])
+        self.assertIn("production promotion review", activation_receipt["missing_evidence"])
+        self.assertFalse(activation_receipt["production_storage_complete"])
+        self.assertFalse(activation_receipt["physical_schema_validation_done"])
+        self.assertFalse(activation_receipt["schema_migration_executed"])
+        self.assertFalse(activation_receipt["dataset_version_manifest_validated"])
+        self.assertFalse(activation_receipt["partition_migration_executed"])
+        self.assertFalse(activation_receipt["physical_compaction_executed"])
+        self.assertFalse(activation_receipt["cache_ttl_refresh_executed"])
+        self.assertFalse(activation_receipt["artifact_cleanup_delete_executed"])
+        self.assertFalse(activation_receipt["provider_refresh_called_by_receipt"])
+        self.assertFalse(activation_receipt["parquet_written_by_receipt"])
+        self.assertFalse(activation_receipt["manifest_written_by_receipt"])
+        self.assertFalse(activation_receipt["cleanup_delete_generated_by_receipt"])
+        self.assertFalse(activation_receipt["cache_get_external_calls"])
+        self.assertFalse(activation_receipt["receipt_external_calls_triggered"])
+        self.assertFalse(activation_receipt["tushare_called"])
+        self.assertFalse(activation_receipt["deepseek_called"])
+        self.assertFalse(activation_receipt["github_called"])
+        self.assertTrue(activation_receipt["does_not_execute_trades"])
+        self.assertTrue(activation_receipt["does_not_modify_strategy_action"])
+        self.assertGreater(activation_receipt["blocked_activation_count"], 0)
+        self.assertEqual(activation_receipt["production_blocker_count"], storage_blocker["blocking_criterion_count"])
+        activation_rows = {row["criterion"]: row for row in overview["storage_physical_migration_activation_rows"]}
+        self.assertEqual(activation_rows["readiness_receipt_ready"]["status"], "passed")
+        self.assertEqual(activation_rows["schema_acceptance_required"]["status"], "blocked")
+        self.assertEqual(activation_rows["manifest_validation_required"]["status"], "blocked")
+        self.assertEqual(activation_rows["partition_migration_required"]["status"], "blocked")
+        self.assertEqual(activation_rows["compaction_execution_required"]["status"], "blocked")
+        self.assertEqual(activation_rows["cache_ttl_refresh_required"]["status"], "blocked")
+        self.assertEqual(activation_rows["cleanup_manual_approval_required"]["status"], "blocked")
+        self.assertEqual(activation_rows["duckdb_query_boundary_ready"]["status"], "passed")
+        self.assertEqual(activation_rows["no_get_migration_or_provider_refresh"]["status"], "passed")
+        self.assertEqual(activation_rows["no_trade_or_action_boundary"]["status"], "passed")
+        self.assertEqual(
+            activation_receipt["call_ledger"][0]["api"],
+            "local_storage_physical_migration_activation_receipt",
+        )
+        self.assert_local_ledger_boundary(activation_receipt["call_ledger"][0])
         readiness_by_component = {row["component"]: row for row in overview["production_readiness"]["rows"]}
         self.assertIn("sqlite_meta", readiness_by_component)
         self.assertIn("schema_migration_preflight", readiness_by_component)
@@ -6630,6 +6697,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("local_storage_contract_no_physical_migration", script)
         self.assertIn("production_storage_complete", script)
         self.assertIn("dry_runs_are_not_production_completion", script)
+        self.assertIn("command_center_3_storage_physical_migration_activation_receipt.v1", script)
+        self.assertIn("physical_migration_activation_receipt_keeps_execution_pending", script)
         self.assertIn("schema_validation_dry_run_writes_no_parquet", script)
         self.assertIn("dataset_version_manifest_review_writes_no_manifest", script)
         self.assertIn("partition_migration_dry_run_writes_no_parquet", script)
@@ -6658,6 +6727,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["schema_migration_executed"])
         self.assertFalse(payload["dataset_version_manifest_validated"])
         self.assertFalse(payload["dataset_version_manifest_review_writes_manifest"])
+        self.assertTrue(payload["storage_physical_migration_activation_receipt_ready"])
+        self.assertEqual(
+            payload["storage_physical_migration_activation_status"],
+            "storage_physical_migration_activation_receipt_ready_execution_pending",
+        )
         self.assertFalse(payload["partition_migration_executed"])
         self.assertFalse(payload["physical_compaction_executed"])
         self.assertFalse(payload["cache_ttl_refresh_executed"])
@@ -6675,6 +6749,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["blocking_criterion_count"], 0)
         self.assertEqual(payload["observed"]["dataset_count"], 6)
         self.assertEqual(payload["observed"]["storage_production_blocker_status"], "storage_production_blocked")
+        self.assertEqual(
+            payload["observed"]["storage_physical_migration_activation_status"],
+            "storage_physical_migration_activation_receipt_ready_execution_pending",
+        )
+        self.assertTrue(payload["observed"]["storage_physical_migration_activation_ready"])
         self.assertEqual(payload["observed"]["schema_migration_preflight_status"], "preflight_ready")
         self.assertEqual(payload["observed"]["dataset_version_policy_status"], "policy_ready")
         self.assertEqual(payload["observed"]["schema_validation_status"], "dry_run_completed")
@@ -6684,6 +6763,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("storage_overview_cache_is_read_only", criteria)
         self.assertIn("production_blocker_audit_keeps_storage_blocked", criteria)
+        self.assertIn("physical_migration_activation_receipt_keeps_execution_pending", criteria)
         self.assertIn("dataset_version_policy_is_not_manifest_validation", criteria)
         self.assertIn("dataset_version_manifest_review_writes_no_manifest", criteria)
         self.assertIn("schema_validation_dry_run_writes_no_parquet", criteria)
