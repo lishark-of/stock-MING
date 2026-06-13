@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT_ROOT = ".stock_ming_3/motion_qa"
 LOCAL_API_BASE = "http://127.0.0.1:8710"
 LOCAL_VITE_BASE = "http://127.0.0.1:5173"
+RUNNER_SCRIPT = ROOT / "scripts" / "motion_browser_qa_runner.mjs"
 
 QA_ROUTES = [
     {"route": "#home", "label": "Command Center", "risk_focus": "page staging and status summary clarity"},
@@ -66,7 +67,34 @@ def _row(phase: str, status: str, evidence: str, *, required_before_completion: 
     }
 
 
+def _read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
 def build_runbook() -> dict[str, Any]:
+    runner_source = _read_text(RUNNER_SCRIPT)
+    runner_available = (
+        RUNNER_SCRIPT.exists()
+        and "command_center_3_motion_browser_qa_result.v1" in runner_source
+        and "explicit_local_browser_visual_performance_run" in runner_source
+        and "chromium.launch" in runner_source
+        and "page.goto" in runner_source
+        and ".stock_ming_3/motion_qa" in runner_source
+        and "starts_no_servers" in runner_source
+        and "local_urls_only" in runner_source
+        and "external_calls_triggered: false" in runner_source
+        and "does_not_execute_trades: true" in runner_source
+        and "child_process" not in runner_source
+        and "uvicorn" not in runner_source
+        and "npm run dev" not in runner_source
+        and "tushare_adapter" not in runner_source
+        and "deepseek_adapter" not in runner_source
+        and "api.github.com" not in runner_source
+        and "place_order" not in runner_source
+    )
     route_rows = [
         {
             "route": route["route"],
@@ -149,18 +177,29 @@ def build_runbook() -> dict[str, Any]:
             "passed_static_policy",
             "browser QA must only visit local FastAPI/Vite URLs and must not click provider/model/trading task buttons",
         ),
+        _row(
+            "explicit_runner_available",
+            "passed_static_policy" if runner_available else "blocked",
+            "scripts/motion_browser_qa_runner.mjs can execute the pinned local route/viewport matrix and write ignored local artifacts without starting services",
+        ),
     ]
+    local_runbook_ready = runner_available
     return {
         "schema_version": "command_center_3_motion_browser_qa_runbook.v1",
-        "status": "motion_browser_qa_runbook_ready_execution_pending",
+        "status": "motion_browser_qa_runbook_ready_execution_pending" if local_runbook_ready else "motion_browser_qa_runbook_blocked",
         "scope": "local_browser_qa_runbook_not_browser_execution",
         "ltg": "LTG-14",
-        "local_runbook_ready": True,
+        "local_runbook_ready": local_runbook_ready,
         "visual_qa_complete": False,
         "browser_performance_verified": False,
         "production_motion_complete": False,
         "local_api_base": LOCAL_API_BASE,
         "local_vite_base": LOCAL_VITE_BASE,
+        "runner_script": "scripts/motion_browser_qa_runner.mjs",
+        "browser_runner_available": runner_available,
+        "runner_executes_only_when_called": True,
+        "runner_starts_no_servers": True,
+        "runner_writes_ignored_local_artifacts": True,
         "artifact_root": ARTIFACT_ROOT,
         "route_count": len(QA_ROUTES),
         "viewport_count": len(QA_VIEWPORTS),

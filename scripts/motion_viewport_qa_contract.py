@@ -58,6 +58,7 @@ def build_contract() -> dict[str, Any]:
     next_chart = read_text(DESKTOP_SRC / "components" / "NextSessionChart.tsx")
     candidate_radar = read_text(DESKTOP_SRC / "routes" / "CandidateRadar.tsx")
     package_json = read_text(ROOT / "desktop" / "package.json")
+    runner_source = read_text(ROOT / "scripts" / "motion_browser_qa_runner.mjs")
     audited_text = "\n".join([styles, app, page_state, task_panel, task_receipt, next_chart, candidate_radar])
 
     static_rows = [
@@ -95,6 +96,18 @@ def build_contract() -> dict[str, Any]:
             "motion surfaces include layout/paint containment markers",
         ),
         row(
+            "mobile_responsive_motion_layout",
+            "@media (max-width: 760px)" in styles
+            and ".app-shell" in styles
+            and "display: block;" in styles
+            and ".sidebar nav" in styles
+            and "overflow-x: auto;" in styles
+            and ".content" in styles
+            and "grid-template-columns: minmax(0, 1fr);" in styles
+            and "repeat(auto-fit, minmax(118px, 1fr))" in styles,
+            "mobile layout moves navigation out of the content column and keeps state clarity rails readable",
+        ),
+        row(
             "chart_motion_contract",
             "useReducedMotionPreference" in next_chart and "data-chart-state={chartMotionState}" in next_chart,
             "NextSessionChart exposes chart state and runtime reduced-motion handling",
@@ -119,6 +132,14 @@ def build_contract() -> dict[str, Any]:
             "playwright" not in package_json.lower() and "puppeteer" not in package_json.lower(),
             "browser runner is not bundled; viewport QA remains a separate explicit run",
             status="pending",
+        ),
+        row(
+            "explicit_browser_runner_script_available",
+            "command_center_3_motion_browser_qa_result.v1" in runner_source
+            and "explicit_local_browser_visual_performance_run" in runner_source
+            and "page.goto" in runner_source
+            and ".stock_ming_3/motion_qa" in runner_source,
+            "explicit runner can execute the pinned route/viewport matrix after local services are started",
         ),
     ]
     blockers = [item["criterion"] for item in static_rows if item["status"] == "blocked"]
@@ -151,6 +172,7 @@ def build_contract() -> dict[str, Any]:
         "visual_qa_complete": False,
         "browser_performance_verified": False,
         "browser_runner_bundled": False,
+        "explicit_browser_runner_script_available": "command_center_3_motion_browser_qa_result.v1" in runner_source,
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,

@@ -54,6 +54,7 @@ STREAMLIT_LEGACY_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "streamlit_legacy_co
 TRADE_ISOLATION_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "trade_isolation_contract.py"
 MOTION_VIEWPORT_QA_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "motion_viewport_qa_contract.py"
 MOTION_BROWSER_QA_RUNBOOK_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runbook.py"
+MOTION_BROWSER_QA_RUNNER_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runner.mjs"
 SECRET_KEYWORD_REVIEW_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "secret_keyword_review_contract.py"
 GITHUB_WORKFLOWS_DIR = PROJECT_ROOT / ".github" / "workflows"
 DESKTOP_SRC_DIR = PROJECT_ROOT / "desktop" / "src"
@@ -450,6 +451,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
     trade_isolation_script = _read_local_text(TRADE_ISOLATION_CONTRACT_PATH)
     motion_qa_script = _read_local_text(MOTION_VIEWPORT_QA_CONTRACT_PATH)
     motion_browser_qa_runbook = _read_local_text(MOTION_BROWSER_QA_RUNBOOK_PATH)
+    motion_browser_qa_runner = _read_local_text(MOTION_BROWSER_QA_RUNNER_PATH)
     secret_keyword_review_script = _read_local_text(SECRET_KEYWORD_REVIEW_CONTRACT_PATH)
     workflow_rows = _release_gate_workflow_rows()
     provider_invocation_markers = (
@@ -665,7 +667,18 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         "motion_browser_qa_runbook_is_local_static": "local_browser_qa_runbook_not_browser_execution" in motion_browser_qa_runbook
         and "opens_no_browser" in motion_browser_qa_runbook
         and "writes_no_artifacts" in motion_browser_qa_runbook
-        and "external_calls_triggered" in motion_browser_qa_runbook,
+        and "external_calls_triggered" in motion_browser_qa_runbook
+        and "motion_browser_qa_runner.mjs" in motion_browser_qa_runbook
+        and "command_center_3_motion_browser_qa_result.v1" in motion_browser_qa_runner
+        and "explicit_local_browser_visual_performance_run" in motion_browser_qa_runner
+        and "chromium.launch" in motion_browser_qa_runner
+        and "page.goto" in motion_browser_qa_runner
+        and ".stock_ming_3/motion_qa" in motion_browser_qa_runner
+        and "starts_no_servers" in motion_browser_qa_runner
+        and "local_urls_only" in motion_browser_qa_runner
+        and "tushare_adapter" not in motion_browser_qa_runner
+        and "deepseek_adapter" not in motion_browser_qa_runner
+        and "api.github.com" not in motion_browser_qa_runner,
     }
     ci_mirror_ready = any(bool(row.get("mirrors_local_push_gate")) for row in workflow_rows)
     false_positive_allowlist_review_ready = False
@@ -1198,6 +1211,14 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         "layout_containment_guard": "contain: layout paint" in styles
         and ".chart-refresh-frame" in styles
         and ".state-clarity-rail" in styles,
+        "mobile_responsive_motion_layout": "@media (max-width: 760px)" in styles
+        and ".app-shell" in styles
+        and "display: block;" in styles
+        and ".sidebar nav" in styles
+        and "overflow-x: auto;" in styles
+        and ".content" in styles
+        and "grid-template-columns: minmax(0, 1fr);" in styles
+        and "repeat(auto-fit, minmax(118px, 1fr))" in styles,
         "no_timer_or_raf_motion_loop": "setTimeout" not in audited_text
         and "requestAnimationFrame" not in audited_text
         and ("setInterval" not in audited_text or task_polling_interval_is_bounded),
@@ -1234,6 +1255,11 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         _motion_row("chart_clarity_scope", checks["chart_clarity_scope"], evidence="chart-refresh-frame and chartMotionState"),
         _motion_row("radar_clarity_scope", checks["radar_clarity_scope"], evidence="radar-result-cluster and radarMotionState"),
         _motion_row("layout_containment_guard", checks["layout_containment_guard"], evidence="contain: layout paint"),
+        _motion_row(
+            "mobile_responsive_motion_layout",
+            checks["mobile_responsive_motion_layout"],
+            evidence="mobile breakpoint keeps navigation scrollable and content/state rails readable",
+        ),
         _motion_row("no_timer_or_raf_motion_loop", checks["no_timer_or_raf_motion_loop"], evidence="no setTimeout/requestAnimationFrame motion loop; bounded setInterval is task polling only"),
         _motion_row("no_provider_call_markers", checks["no_provider_call_markers"], evidence="audited motion files contain no provider invocation markers"),
         _motion_row("visual_only_boundary_visible", checks["visual_only_boundary_visible"], evidence="motion state labels remain visual-only and trade guarded"),
@@ -1485,6 +1511,7 @@ def _motion_production_qa_contract(
 
 def _motion_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     script = _read_local_text(MOTION_BROWSER_QA_RUNBOOK_PATH)
+    runner_script = _read_local_text(MOTION_BROWSER_QA_RUNNER_PATH)
     route_specs = [
         ("#home", "Command Center", "page staging and status summary clarity"),
         ("#next", "Next Session Map", "chart update clarity and reduced-motion chart updates"),
@@ -1505,6 +1532,19 @@ def _motion_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[str
         and "127.0.0.1:5173" in script
         and "127.0.0.1:8710" in script
         and "writes_no_artifacts" in script
+    )
+    runner_available = (
+        MOTION_BROWSER_QA_RUNNER_PATH.exists()
+        and "command_center_3_motion_browser_qa_result.v1" in runner_script
+        and "explicit_local_browser_visual_performance_run" in runner_script
+        and "chromium.launch" in runner_script
+        and "page.goto" in runner_script
+        and ".stock_ming_3/motion_qa" in runner_script
+        and "starts_no_servers" in runner_script
+        and "local_urls_only" in runner_script
+        and "tushare_adapter" not in runner_script
+        and "deepseek_adapter" not in runner_script
+        and "api.github.com" not in runner_script
     )
     rows = [
         {
@@ -1541,6 +1581,11 @@ def _motion_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[str
             "phase": "provider_trade_isolation",
             "status": "passed_static_policy",
             "evidence": "browser QA must only visit local FastAPI/Vite URLs and must not click provider/model/trading task buttons",
+        },
+        {
+            "phase": "explicit_runner_available",
+            "status": "passed_static_policy" if runner_available else "blocked",
+            "evidence": "scripts/motion_browser_qa_runner.mjs can execute the pinned local route/viewport matrix and write ignored local artifacts without starting services",
         },
     ]
     for row in rows:
@@ -1595,17 +1640,23 @@ def _motion_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[str
             "verified": False,
         },
     ]
+    local_runbook_with_runner_ready = local_runbook_ready and runner_available
     contract = {
         "schema_version": "command_center_3_motion_browser_qa_runbook.v1",
-        "status": "motion_browser_qa_runbook_ready_execution_pending" if local_runbook_ready else "motion_browser_qa_runbook_blocked",
+        "status": "motion_browser_qa_runbook_ready_execution_pending" if local_runbook_with_runner_ready else "motion_browser_qa_runbook_blocked",
         "scope": "local_browser_qa_runbook_not_browser_execution",
         "ltg": "LTG-14",
-        "local_runbook_ready": local_runbook_ready,
+        "local_runbook_ready": local_runbook_with_runner_ready,
         "visual_qa_complete": False,
         "browser_performance_verified": False,
         "production_motion_complete": False,
         "local_api_base": "http://127.0.0.1:8710",
         "local_vite_base": "http://127.0.0.1:5173",
+        "runner_script": "scripts/motion_browser_qa_runner.mjs",
+        "browser_runner_available": runner_available,
+        "runner_executes_only_when_called": True,
+        "runner_starts_no_servers": True,
+        "runner_writes_ignored_local_artifacts": True,
         "artifact_root": ".stock_ming_3/motion_qa",
         "route_count": len(route_specs),
         "viewport_count": len(viewport_specs),

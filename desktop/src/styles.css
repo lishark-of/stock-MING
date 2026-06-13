@@ -946,6 +946,68 @@ pre {
   padding-left: 10px;
 }
 
+@media (max-width: 760px) {
+  .app-shell {
+    display: block;
+  }
+
+  .sidebar {
+    max-height: 42vh;
+    overflow: auto;
+    padding: 14px;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+
+  .brand {
+    font-size: 18px;
+    margin-bottom: 12px;
+  }
+
+  .sidebar nav {
+    align-items: start;
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .nav-group {
+    min-width: 156px;
+  }
+
+  .sidebar button {
+    min-height: 36px;
+    padding: 8px 10px;
+    width: 100%;
+  }
+
+  .sidebar-note {
+    display: none;
+  }
+
+  .content {
+    padding: 16px;
+  }
+
+  .page-head,
+  .packet-card-title,
+  .task-panel__head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .grid,
+  .compact-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .state-clarity-rail {
+    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
