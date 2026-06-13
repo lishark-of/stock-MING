@@ -3777,6 +3777,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(ledger_by_api["fina_indicator"]["data_date"], "20260430")
         self.assertEqual(ledger_by_api["stk_surv"]["call_status"], "success")
         self.assertEqual(ledger_by_api["limit_cpt_list"]["call_status"], "failed")
+        self.assertEqual(ledger_by_api["limit_cpt_list"]["failure_mode"], "provider_error_safe")
+        self.assertEqual(ledger_by_api["limit_cpt_list"]["failure_mode_status"], "validated_failed_safe")
+        self.assertTrue(ledger_by_api["limit_cpt_list"]["safe_failure_mode_visible"])
         self.assertEqual(ledger_by_api["limit_cpt_list"]["error_message_safe"], "tushare_error_redacted_safe")
 
         from storage.sqlite_meta import SQLiteMetaStore
@@ -3848,9 +3851,30 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(audit["full_interface_acceptance_done"])
         acceptance_by_api = {row["api"]: row for row in persisted["api_acceptance_audit_rows"]}
         self.assertEqual(acceptance_by_api["limit_cpt_list"]["acceptance_status"], "passed")
+        self.assertEqual(acceptance_by_api["limit_cpt_list"]["failure_mode"], "provider_error_safe")
+        self.assertEqual(acceptance_by_api["limit_cpt_list"]["failure_mode_status"], "validated_failed_safe")
         self.assertTrue(acceptance_by_api["limit_cpt_list"]["safe_failure_state_visible"])
         self.assertFalse(acceptance_by_api["limit_cpt_list"]["error_message_safe_has_unsafe_text"])
         self.assertFalse(acceptance_by_api["margin_detail"]["false_parquet_write_claim"])
+        failure_mode_qa = persisted["failure_mode_qa_contract"]
+        failure_rows = {row["mode"]: row for row in persisted["failure_mode_qa_rows"]}
+        self.assertEqual(failure_mode_qa["schema_version"], "tushare_failure_mode_qa_contract.v1")
+        self.assertEqual(failure_mode_qa["status"], "failure_mode_qa_ready_provider_acceptance_pending")
+        self.assertEqual(failure_mode_qa["scope"], "local_call_ledger_failure_mode_classification_not_provider_acceptance")
+        self.assertIn("empty_result_or_no_record", failure_mode_qa["observed_modes"])
+        self.assertIn("provider_error_safe", failure_mode_qa["observed_modes"])
+        self.assertTrue(failure_mode_qa["empty_result_or_no_record_distinguishable"])
+        self.assertTrue(failure_mode_qa["permission_denied_distinguishable"])
+        self.assertTrue(failure_mode_qa["parse_failed_or_invalid_result_distinguishable"])
+        self.assertTrue(failure_mode_qa["missing_required_parameter_distinguishable"])
+        self.assertFalse(failure_mode_qa["provider_backed_acceptance_done"])
+        self.assertFalse(failure_mode_qa["production_tushare_pipeline_complete"])
+        self.assertFalse(failure_mode_qa["qa_external_calls_triggered"])
+        self.assertEqual(failure_mode_qa["unsafe_row_count"], 0)
+        self.assertEqual(failure_rows["empty_result_or_no_record"]["status"], "observed")
+        self.assertEqual(failure_rows["provider_error_safe"]["status"], "observed")
+        self.assertEqual(failure_rows["permission_denied"]["status"], "ready_not_observed")
+        self.assertEqual(failure_rows["parse_failed_or_invalid_result"]["status"], "ready_not_observed")
 
     def test_tushare_refresh_task_include_extended_adds_calendar_and_blocks_missing_ts_code_safely(self):
         db_path = self._with_meta_store()
@@ -3936,6 +3960,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(acceptance_by_api["daily"]["safe_blocked_state_visible"])
         self.assertEqual(acceptance_by_api["daily"]["acceptance_status"], "passed")
         self.assertEqual(acceptance_by_api["trade_cal"]["acceptance_status"], "passed")
+        self.assertEqual(acceptance_by_api["daily"]["failure_mode"], "missing_required_parameter")
+        self.assertEqual(acceptance_by_api["daily"]["failure_mode_status"], "preflight_blocked_no_external_call")
+        failure_mode_qa = persisted["failure_mode_qa_contract"]
+        failure_rows = {row["mode"]: row for row in persisted["failure_mode_qa_rows"]}
+        self.assertIn("missing_required_parameter", failure_mode_qa["observed_modes"])
+        self.assertEqual(failure_rows["missing_required_parameter"]["status"], "observed")
+        self.assertFalse(failure_rows["missing_required_parameter"]["qa_external_calls_triggered"])
+        self.assertEqual(failure_rows["matrix_only_not_requested"]["status"], "ready_not_observed")
 
     def test_tushare_acceptance_audit_requires_non_empty_success_for_full_interface_completion(self):
         call_ledger = []
@@ -3967,6 +3999,80 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(audit["acceptance_issue_count"], 0)
         self.assertFalse(audit["full_interface_acceptance_done"])
         self.assertIn("non-empty successful samples", audit["full_interface_acceptance_scope"])
+
+    def test_tushare_refresh_task_exposes_failure_mode_qa_contract(self):
+        db_path = self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        class FailureModeFakeAdapter:
+            def get_margin_detail(self, **params):
+                return {"ok": True, "data": [], "error": ""}
+
+            def get_top_list(self, **params):
+                return {"ok": False, "data": None, "error": "permission denied api_key=SHOULD_DROP"}
+
+            def get_limit_cpt_list(self, **params):
+                return ["invalid result list"]
+
+        task = tushare_task_service.run_tushare_refresh_task(
+            {
+                "ts_code": "002008.SZ",
+                "trade_date": "20260610",
+                "start_date": "20260601",
+                "end_date": "20260610",
+                "apis": ["margin_detail", "top_list", "limit_cpt_list"],
+                "token": "SHOULD_DROP",
+            },
+            adapter=FailureModeFakeAdapter(),
+        )
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "tushare_refresh_partial_safe")
+        self.assertTrue(task["external_calls_triggered"])
+        self.assertTrue(task["tushare_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+
+        ledger_by_api = {row["api"]: row for row in task["call_ledger"]}
+        self.assertEqual(ledger_by_api["margin_detail"]["call_status"], "empty")
+        self.assertEqual(ledger_by_api["margin_detail"]["failure_mode"], "empty_result_or_no_record")
+        self.assertEqual(ledger_by_api["margin_detail"]["failure_mode_status"], "validated_empty_not_verified_data")
+        self.assertEqual(ledger_by_api["top_list"]["call_status"], "failed")
+        self.assertEqual(ledger_by_api["top_list"]["failure_mode"], "permission_denied")
+        self.assertEqual(ledger_by_api["top_list"]["error_message_safe"], "tushare_error_redacted_safe")
+        self.assertEqual(ledger_by_api["limit_cpt_list"]["call_status"], "failed")
+        self.assertEqual(ledger_by_api["limit_cpt_list"]["failure_mode"], "parse_failed_or_invalid_result")
+        self.assertTrue(ledger_by_api["limit_cpt_list"]["safe_failure_mode_visible"])
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        persisted = SQLiteMetaStore(db_path).read_packet("command_center_tushare_refresh_packet")
+        self.assertIsNotNone(persisted)
+        failure_mode_qa = persisted["failure_mode_qa_contract"]
+        failure_rows = {row["mode"]: row for row in persisted["failure_mode_qa_rows"]}
+        self.assertEqual(failure_mode_qa["schema_version"], "tushare_failure_mode_qa_contract.v1")
+        self.assertEqual(failure_mode_qa["status"], "failure_mode_qa_ready_provider_acceptance_pending")
+        self.assertEqual(failure_mode_qa["selected_api_count"], 3)
+        self.assertEqual(failure_mode_qa["called_api_count"], 3)
+        self.assertIn("empty_result_or_no_record", failure_mode_qa["observed_modes"])
+        self.assertIn("permission_denied", failure_mode_qa["observed_modes"])
+        self.assertIn("parse_failed_or_invalid_result", failure_mode_qa["observed_modes"])
+        self.assertTrue(failure_mode_qa["safe_error_text"])
+        self.assertEqual(failure_mode_qa["unsafe_row_count"], 0)
+        self.assertFalse(failure_mode_qa["provider_backed_acceptance_done"])
+        self.assertFalse(failure_mode_qa["production_tushare_pipeline_complete"])
+        self.assertFalse(failure_mode_qa["qa_external_calls_triggered"])
+        self.assertFalse(failure_mode_qa["tushare_called_by_qa"])
+        self.assertEqual(failure_rows["empty_result_or_no_record"]["status"], "observed")
+        self.assertEqual(failure_rows["permission_denied"]["status"], "observed")
+        self.assertEqual(failure_rows["parse_failed_or_invalid_result"]["status"], "observed")
+        self.assertEqual(failure_rows["missing_required_parameter"]["status"], "ready_not_observed")
+        self.assertEqual(failure_rows["provider_error_safe"]["status"], "ready_not_observed")
+        self.assertTrue(all(row["distinguishable"] for row in persisted["failure_mode_qa_rows"]))
+        self.assertNotIn("api_key", json.dumps(persisted, ensure_ascii=False))
+        self.assertNotIn("SHOULD_DROP", json.dumps(persisted, ensure_ascii=False))
 
     def test_tushare_refresh_task_validates_chip_and_hard_risk_domains(self):
         db_path = self._with_meta_store()
@@ -4561,6 +4667,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(by_type["refresh_tushare_facts"]["parquet_enabled_apis"], ["daily", "daily_basic", "moneyflow", "trade_cal"])
         self.assertIn("unselected APIs are capability matrix only", by_type["refresh_tushare_facts"]["api_validation_matrix_policy"])
         self.assertIn("call_ledger_required_fields", by_type["refresh_tushare_facts"]["api_acceptance_audit_contract"])
+        self.assertIn("permission_denied", by_type["refresh_tushare_facts"]["failure_mode_qa_contract"])
+        self.assertIn("missing_required_parameter", by_type["refresh_tushare_facts"]["failure_mode_qa_contract"])
+        self.assertFalse(by_type["refresh_tushare_facts"]["failure_mode_qa_is_provider_acceptance"])
         self.assertFalse(by_type["refresh_tushare_facts"]["full_interface_acceptance_done"])
         self.assertFalse(by_type["refresh_tushare_facts"]["cache_get_external_calls"])
         self.assertEqual(by_type["refresh_factor_data"]["route"], "POST /api/factor-quant/refresh-data")
@@ -4570,6 +4679,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("fina_indicator", by_type["refresh_factor_data"]["optional_extended_apis"])
         self.assertEqual(by_type["refresh_factor_data"]["parquet_enabled_apis"], ["daily", "daily_basic", "moneyflow", "trade_cal"])
         self.assertIn("call_ledger semantic audit", by_type["refresh_factor_data"]["api_acceptance_audit_contract"])
+        self.assertIn("failure_mode_qa_contract", by_type["refresh_factor_data"]["failure_mode_qa_contract"])
+        self.assertFalse(by_type["refresh_factor_data"]["failure_mode_qa_is_provider_acceptance"])
         self.assertFalse(by_type["refresh_factor_data"]["full_interface_acceptance_done"])
         self.assertFalse(by_type["refresh_factor_data"]["cache_get_external_calls"])
         self.assertIn("deepseek", by_type["run_deepseek_factor_explanation"]["possible_external_sources"])

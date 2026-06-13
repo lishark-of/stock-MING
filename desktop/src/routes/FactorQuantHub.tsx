@@ -72,6 +72,7 @@ export default function FactorQuantHub() {
   const factorTestStorageQuery = factorTests.storage_query_consumption ?? {};
   const factorTestSmallPool = factorTests.small_pool_acceptance ?? {};
   const factorTestProductionValidation = factorTests.production_validation_qa_contract ?? {};
+  const tushareFailureModeQa = packet.failure_mode_qa_contract ?? {};
   const dataLedger = packet.data_ledger ?? {};
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
@@ -106,6 +107,8 @@ export default function FactorQuantHub() {
   const factorTestSmallPoolCriterionRows = toRows(factorTests.small_pool_acceptance_rows);
   const factorTestProductionValidationRows = objectRows(factorTestProductionValidation as Record<string, unknown>, "production_validation");
   const factorTestProductionValidationCriterionRows = toRows(factorTests.production_validation_qa_rows);
+  const tushareFailureModeQaRows = objectRows(tushareFailureModeQa as Record<string, unknown>, "failure_mode_contract");
+  const tushareFailureModeCriterionRows = toRows(packet.failure_mode_qa_rows);
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
@@ -236,7 +239,10 @@ export default function FactorQuantHub() {
           { label: "DS benchmark", value: deepseekJsonStability.larger_benchmark_done === true ? "完成" : "未完成", tone: deepseekJsonStability.larger_benchmark_done === true ? "good" : "warn" },
           { label: "DS response_format", value: deepseekJsonStability.response_format_enforced === true ? "强约束" : "未强约束", tone: deepseekJsonStability.response_format_enforced === true ? "good" : "warn" },
           { label: "DS auto ready", value: deepseekJsonStability.auto_after_task_production_ready === true ? "ready" : "blocked", tone: deepseekJsonStability.auto_after_task_production_ready === true ? "good" : "warn" },
-          { label: "snapshot", value: packet.source_snapshot_available === true, tone: packet.source_snapshot_available === true ? "good" : "warn" }
+          { label: "snapshot", value: packet.source_snapshot_available === true, tone: packet.source_snapshot_available === true ? "good" : "warn" },
+          { label: "Tushare failure QA", value: tushareFailureModeQa.status ?? "missing", tone: tushareFailureModeQa.status === "failure_mode_qa_blocked" ? "bad" : "warn" },
+          { label: "failure modes", value: tushareFailureModeQa.observed_mode_count ?? 0 },
+          { label: "failure unsafe rows", value: tushareFailureModeQa.unsafe_row_count ?? 0, tone: Number(tushareFailureModeQa.unsafe_row_count ?? 0) > 0 ? "bad" : "good" }
         ]}
       />
       <EChartPanel option={option} />
@@ -349,6 +355,10 @@ export default function FactorQuantHub() {
       <h3>数据时效门控</h3>
       <p className="risk-note">stale / expired 数据只允许审计展示，不进入 composite score、强 support 或交易解释。</p>
       <DataLineageTable rows={freshnessRows} />
+      <h3>Tushare 失败模式 QA</h3>
+      <p className="risk-note">failure_mode_qa_contract 只分类按钮任务已有 call_ledger：empty / no record / empty window、permission denied、parse failure / invalid result、missing required parameter、provider error 和 matrix-only；它不调用 Tushare，不证明 provider-backed 全接口生产验收。</p>
+      <DataLineageTable rows={tushareFailureModeCriterionRows} />
+      <DataLineageTable rows={tushareFailureModeQaRows} />
       <h3>次日图谱桥接</h3>
       <DataLineageTable rows={bridgeRows} />
       <h3>研究上下文</h3>

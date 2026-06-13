@@ -96,6 +96,38 @@ CALL_LEDGER_REQUIRED_FIELDS = (
     "error_message_safe",
 )
 ACCEPTANCE_SAFE_TERMINAL_STATUSES = {"success", "empty", "failed"}
+EXPECTED_FAILURE_MODE_QA = (
+    (
+        "empty_result_or_no_record",
+        "empty / no record / empty window",
+        "selected API returned ok with zero rows; this is validated_empty and not a data sample.",
+    ),
+    (
+        "permission_denied",
+        "permission denied",
+        "provider error text indicates permission or access denial; safe error text must still be redacted.",
+    ),
+    (
+        "parse_failed_or_invalid_result",
+        "parse failure / invalid result",
+        "adapter returned an invalid result shape or parse/decode failure.",
+    ),
+    (
+        "missing_required_parameter",
+        "missing required parameter",
+        "preflight blocked a selected API before an external call.",
+    ),
+    (
+        "provider_error_safe",
+        "provider error",
+        "provider failed for another safe, redacted reason.",
+    ),
+    (
+        "matrix_only_not_requested",
+        "matrix only / not requested",
+        "unselected APIs remain capability rows and must not be marked verified.",
+    ),
+)
 
 
 def _now_iso() -> str:
@@ -108,6 +140,31 @@ def _safe_text(value: Any, *, limit: int = 300) -> str:
     if any(marker in lowered for marker in SECRET_MARKERS) or any(marker in lowered for marker in STACK_MARKERS):
         return "tushare_error_redacted_safe"
     return text[:limit]
+
+
+def _failure_mode_from_error(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if any(marker in text for marker in ("permission", "denied", "forbidden", "unauthorized", "权限", "无权限", "无此权限")):
+        return "permission_denied"
+    if any(marker in text for marker in ("invalid result", "parse", "json", "decode", "malformed", "schema", "no attribute")):
+        return "parse_failed_or_invalid_result"
+    if any(marker in text for marker in ("empty", "no data", "no record", "not found", "无数据", "暂无", "没有数据")):
+        return "empty_result_or_no_record"
+    return "provider_error_safe"
+
+
+def _failure_mode_status(failure_mode: str) -> str:
+    if failure_mode == "none":
+        return "success_non_empty"
+    if failure_mode == "empty_result_or_no_record":
+        return "validated_empty_not_verified_data"
+    if failure_mode == "missing_required_parameter":
+        return "preflight_blocked_no_external_call"
+    if failure_mode in {"permission_denied", "parse_failed_or_invalid_result", "provider_error_safe"}:
+        return "validated_failed_safe"
+    if failure_mode == "matrix_only_not_requested":
+        return "capability_matrix_only"
+    return "unknown"
 
 
 def _safe_payload(payload: Any = None) -> dict[str, Any]:
@@ -249,6 +306,9 @@ def _api_validation_rows(selected_apis: Iterable[str], call_ledger: list[dict[st
                 "call_status": call_status,
                 "validation_status": _validation_status(call_status),
                 "validation_scope": validation_scope,
+                "failure_mode": ledger.get("failure_mode") or ("matrix_only_not_requested" if not selected else "unknown"),
+                "failure_mode_status": ledger.get("failure_mode_status") or ("capability_matrix_only" if not selected else "unknown"),
+                "safe_failure_mode_visible": bool(ledger.get("safe_failure_mode_visible") or not selected),
                 "result_semantics": "unselected API 只代表能力矩阵，不代表真实调用或数据可用。" if not selected else "selected API 必须以 call_ledger 为准；失败、空数据和缺参不得伪装成 verified。",
                 "row_count": int(ledger.get("row_count") or 0),
                 "data_date": ledger.get("data_date"),
@@ -438,6 +498,8 @@ def _api_acceptance_audit_rows(api_validation_rows: list[dict[str, Any]], call_l
         call_status = str(validation.get("call_status") or "")
         validation_status = str(validation.get("validation_status") or "")
         validation_scope = str(validation.get("validation_scope") or "")
+        failure_mode = str(validation.get("failure_mode") or ledger.get("failure_mode") or "unknown")
+        failure_mode_status = str(validation.get("failure_mode_status") or ledger.get("failure_mode_status") or "unknown")
         missing_required_fields = [
             field
             for field in CALL_LEDGER_REQUIRED_FIELDS
@@ -482,6 +544,9 @@ def _api_acceptance_audit_rows(api_validation_rows: list[dict[str, Any]], call_l
                 "validation_status": validation_status,
                 "validation_scope": validation_scope,
                 "call_status": call_status,
+                "failure_mode": failure_mode,
+                "failure_mode_status": failure_mode_status,
+                "safe_failure_mode_visible": bool(validation.get("safe_failure_mode_visible")),
                 "row_count": int(validation.get("row_count") or 0),
                 "data_date": validation.get("data_date"),
                 "local_fetched_at": validation.get("local_fetched_at"),
@@ -582,6 +647,75 @@ def _api_acceptance_audit(api_validation_rows: list[dict[str, Any]], call_ledger
         "does_not_modify_strategy_action": True,
         "rows": rows,
         "note": "This audit validates call_ledger semantics only. It does not call Tushare and does not convert matrix/preflight/mock states into production acceptance.",
+    }
+
+
+def _failure_mode_qa_contract(
+    api_validation_rows: list[dict[str, Any]],
+    call_ledger: list[dict[str, Any]],
+) -> dict[str, Any]:
+    observed_by_mode: dict[str, list[dict[str, Any]]] = {}
+    for row in api_validation_rows:
+        mode = str(row.get("failure_mode") or "unknown")
+        observed_by_mode.setdefault(mode, []).append(row)
+    rows: list[dict[str, Any]] = []
+    for mode, label, acceptance_meaning in EXPECTED_FAILURE_MODE_QA:
+        matching = observed_by_mode.get(mode, [])
+        rows.append(
+            {
+                "mode": mode,
+                "label": label,
+                "status": "observed" if matching else "ready_not_observed",
+                "matching_api_count": len(matching),
+                "matching_apis": [str(row.get("api") or "") for row in matching],
+                "acceptance_meaning": acceptance_meaning,
+                "distinguishable": True,
+                "does_not_mark_verified": mode != "success_non_empty",
+                "cache_get_external_calls": False,
+                "qa_external_calls_triggered": False,
+                "tushare_called_by_qa": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    unsafe_rows = [
+        row
+        for row in call_ledger
+        if _has_unsafe_error_text(row.get("error_message_safe")) or _has_sensitive_key(row.get("request_params_safe"))
+    ]
+    selected_rows = [row for row in api_validation_rows if row.get("selected")]
+    called_rows = [row for row in api_validation_rows if row.get("called")]
+    observed_modes = sorted(mode for mode, mode_rows in observed_by_mode.items() if mode_rows and mode != "none")
+    return {
+        "schema_version": "tushare_failure_mode_qa_contract.v1",
+        "status": "failure_mode_qa_ready_provider_acceptance_pending" if not unsafe_rows else "failure_mode_qa_blocked",
+        "scope": "local_call_ledger_failure_mode_classification_not_provider_acceptance",
+        "selected_api_count": len(selected_rows),
+        "called_api_count": len(called_rows),
+        "observed_mode_count": len(observed_modes),
+        "observed_modes": observed_modes,
+        "permission_denied_distinguishable": True,
+        "empty_result_or_no_record_distinguishable": True,
+        "parse_failed_or_invalid_result_distinguishable": True,
+        "missing_required_parameter_distinguishable": True,
+        "provider_error_safe_distinguishable": True,
+        "matrix_only_not_requested_distinguishable": True,
+        "safe_error_text": not unsafe_rows,
+        "unsafe_row_count": len(unsafe_rows),
+        "provider_backed_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "cache_get_external_calls": False,
+        "qa_external_calls_triggered": False,
+        "tushare_called_by_qa": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "row_count": len(rows),
+        "rows": rows,
+        "note": "Failure mode QA classifies existing call_ledger rows only. It does not call Tushare and does not prove provider-backed production acceptance.",
     }
 
 
@@ -825,13 +959,17 @@ def _call_ledger_row(api: str, *, params: dict[str, Any], result: dict[str, Any]
     rows = _rows_from_data(data)
     ok = bool(result.get("ok")) if isinstance(result, Mapping) else False
     row_count = _row_count(data)
-    error = "" if ok else _safe_text(result.get("error") if isinstance(result, Mapping) else "invalid_tushare_result")
+    raw_error = result.get("error") if isinstance(result, Mapping) else "invalid_tushare_result"
+    error = "" if ok else _safe_text(raw_error)
     if ok and row_count > 0:
         call_status = "success"
+        failure_mode = "none"
     elif ok:
         call_status = "empty"
+        failure_mode = "empty_result_or_no_record"
     else:
         call_status = "failed"
+        failure_mode = _failure_mode_from_error(raw_error)
     return {
         "api": api,
         "request_params_safe": params,
@@ -839,6 +977,9 @@ def _call_ledger_row(api: str, *, params: dict[str, Any], result: dict[str, Any]
         "data_date": _data_date(rows),
         "local_fetched_at": now,
         "call_status": call_status,
+        "failure_mode": failure_mode,
+        "failure_mode_status": _failure_mode_status(failure_mode),
+        "safe_failure_mode_visible": True,
         "error_message_safe": error,
         "parquet_dataset": (parquet_result or {}).get("dataset"),
         "parquet_status": (parquet_result or {}).get("status", "not_enabled"),
@@ -854,6 +995,7 @@ def _call_ledger_row(api: str, *, params: dict[str, Any], result: dict[str, Any]
 
 
 def _blocked_missing_param_ledger_row(api: str, *, params: dict[str, Any], missing_param: str, now: str) -> dict[str, Any]:
+    failure_mode = "missing_required_parameter"
     return {
         "api": api,
         "request_params_safe": params,
@@ -861,6 +1003,9 @@ def _blocked_missing_param_ledger_row(api: str, *, params: dict[str, Any], missi
         "data_date": None,
         "local_fetched_at": now,
         "call_status": f"blocked_missing_{missing_param}",
+        "failure_mode": failure_mode,
+        "failure_mode_status": _failure_mode_status(failure_mode),
+        "safe_failure_mode_visible": True,
         "error_message_safe": f"missing_required_{missing_param}",
         "parquet_dataset": PARQUET_DATASETS.get(api),
         "parquet_status": "not_written_missing_required_param",
@@ -956,6 +1101,7 @@ def run_tushare_refresh_task(
     validation_target_rows = _validation_target_rows(api_validation_rows)
     validation_target_summary = _validation_target_summary(validation_target_rows)
     api_acceptance_audit = _api_acceptance_audit(api_validation_rows, call_ledger)
+    failure_mode_qa_contract = _failure_mode_qa_contract(api_validation_rows, call_ledger)
     provider_acceptance_readiness_audit = _provider_acceptance_readiness_audit(
         api_validation_rows=api_validation_rows,
         validation_target_rows=validation_target_rows,
@@ -988,6 +1134,9 @@ def run_tushare_refresh_task(
         "api_acceptance_audit": api_acceptance_audit,
         "api_acceptance_audit_rows": api_acceptance_audit["rows"],
         "api_acceptance_audit_status": api_acceptance_audit["status"],
+        "failure_mode_qa_contract": failure_mode_qa_contract,
+        "failure_mode_qa_rows": failure_mode_qa_contract["rows"],
+        "failure_mode_qa_status": failure_mode_qa_contract["status"],
         "provider_acceptance_readiness_audit": provider_acceptance_readiness_audit,
         "provider_acceptance_readiness_rows": provider_acceptance_readiness_audit["rows"],
         "provider_acceptance_readiness_status": provider_acceptance_readiness_audit["status"],
@@ -998,6 +1147,7 @@ def run_tushare_refresh_task(
             "target_readiness_scope": "目标领域 readiness 只汇总本次按钮任务的 call_ledger；matrix_only 不代表真实验证。",
             "acceptance_audit_scope": "api_acceptance_audit 只审计 call_ledger 语义和安全边界，不发起 provider 调用。",
             "provider_acceptance_readiness_scope": "provider_acceptance_readiness_audit 只汇总生产验收阻断项；不把 fake/local/matrix 证据当 provider-backed acceptance。",
+            "failure_mode_qa_scope": "failure_mode_qa_contract 只分类现有 call_ledger 的 empty/permission/parse/missing-param/provider-error 状态；不发起 provider 调用。",
             "call_ledger_required_fields": list(CALL_LEDGER_REQUIRED_FIELDS),
             "cache_get_external_calls": False,
             "button_gated_external_calls_only": True,
@@ -1018,6 +1168,8 @@ def run_tushare_refresh_task(
         "calendar_api_count": api_validation_summary["calendar_api_count"],
         "api_acceptance_issue_count": api_acceptance_audit["acceptance_issue_count"],
         "api_acceptance_audit_passed": api_acceptance_audit["status"] == "acceptance_audit_passed",
+        "failure_mode_qa_observed_mode_count": failure_mode_qa_contract["observed_mode_count"],
+        "failure_mode_qa_unsafe_row_count": failure_mode_qa_contract["unsafe_row_count"],
         "full_interface_acceptance_done": api_acceptance_audit["full_interface_acceptance_done"],
         "provider_acceptance_production_blocker_count": provider_acceptance_readiness_audit["production_blocker_count"],
         "provider_backed_acceptance_done": provider_acceptance_readiness_audit["provider_backed_acceptance_done"],
