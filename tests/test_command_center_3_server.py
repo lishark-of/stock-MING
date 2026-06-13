@@ -4674,6 +4674,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("scripts/tushare_acceptance_contract.py", script)
         self.assertIn("Tushare acceptance contract", script)
         self.assertIn("tushare_acceptance_contract: passed_local_contract_provider_execution_pending", script)
+        self.assertIn("scripts/factor_test_lab_contract.py", script)
+        self.assertIn("Factor Test Lab contract", script)
+        self.assertIn("factor_test_lab_contract: passed_local_contract_provider_execution_pending", script)
         self.assertIn("scripts/motion_viewport_qa_contract.py", script)
         self.assertIn("Motion viewport QA contract", script)
         self.assertIn("motion_viewport_qa_contract: passed_static_contract_visual_run_pending", script)
@@ -4706,6 +4709,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertLess(script.index('run_step "Data Health freshness contract"'), script.index('run_step "Motion viewport QA contract"'))
         self.assertLess(script.index('run_step "Data Health freshness contract"'), script.index('run_step "Tushare acceptance contract"'))
         self.assertLess(script.index('run_step "Tushare acceptance contract"'), script.index('run_step "Motion viewport QA contract"'))
+        self.assertLess(script.index('run_step "Tushare acceptance contract"'), script.index('run_step "Factor Test Lab contract"'))
+        self.assertLess(script.index('run_step "Factor Test Lab contract"'), script.index('run_step "Motion viewport QA contract"'))
         self.assertLess(script.index('run_step "Motion viewport QA contract"'), script.index('run_step "Diff whitespace check"'))
         self.assertLess(script.index('run_step "Motion browser QA runbook"'), script.index('run_step "Diff whitespace check"'))
         self.assertLess(script.index('run_step "Secret scan"'), script.index('run_step "Secret keyword review contract"'))
@@ -4813,6 +4818,59 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("api_acceptance_audit_is_semantic_only", criteria)
         self.assertIn("target_sample_plan_is_plan_only", criteria)
         self.assertIn("provider_readiness_stays_pending", criteria)
+
+    def test_factor_test_lab_contract_script_is_local_push_gate_guard(self):
+        path = Path("scripts/factor_test_lab_contract.py")
+        script = path.read_text(encoding="utf-8")
+
+        self.assertTrue(path.exists())
+        self.assertTrue(path.stat().st_mode & 0o111)
+        self.assertIn("command_center_3_factor_test_lab_contract.v1", script)
+        self.assertIn("local_factor_test_lab_contract_no_provider_execution", script)
+        self.assertIn("provider_backed_small_pool_validation_done", script)
+        self.assertIn("production_factor_test_validation_complete", script)
+        self.assertIn("small_pool_acceptance_is_local_only", script)
+        self.assertIn("storage_query_consumption_is_not_metric_source", script)
+        self.assertIn("production_validation_qa_stays_pending", script)
+        self.assertNotIn("requests", script)
+        self.assertNotIn("httpx", script)
+        self.assertNotIn("api.github.com", script)
+        self.assertNotIn("tushare_adapter", script)
+
+        result = subprocess.run(
+            [sys.executable, str(path), "--json"],
+            cwd=Path.cwd(),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["schema_version"], "command_center_3_factor_test_lab_contract.v1")
+        self.assertEqual(payload["scope"], "local_factor_test_lab_contract_no_provider_execution")
+        self.assertEqual(payload["status"], "factor_test_lab_contract_passed")
+        self.assertFalse(payload["provider_backed_small_pool_validation_done"])
+        self.assertFalse(payload["full_market_validation_done"])
+        self.assertFalse(payload["production_factor_test_validation_complete"])
+        self.assertFalse(payload["external_calls_triggered"])
+        self.assertFalse(payload["tushare_called"])
+        self.assertFalse(payload["deepseek_called"])
+        self.assertFalse(payload["github_called"])
+        self.assertTrue(payload["does_not_execute_trades"])
+        self.assertTrue(payload["does_not_modify_strategy_action"])
+        self.assertEqual(payload["blocking_criterion_count"], 0)
+        self.assertEqual(payload["observed"]["primary_factor_status"], "research_pass")
+        self.assertEqual(payload["observed"]["small_pool_status"], "local_small_pool_acceptance_ready")
+        self.assertEqual(
+            payload["observed"]["production_qa_status"],
+            "production_validation_qa_contract_ready_provider_execution_pending",
+        )
+        criteria = {row["criterion"] for row in payload["rows"]}
+        self.assertIn("small_pool_acceptance_is_local_only", criteria)
+        self.assertIn("research_states_stay_isolated", criteria)
+        self.assertIn("storage_query_consumption_is_not_metric_source", criteria)
+        self.assertIn("production_validation_qa_stays_pending", criteria)
+        self.assertIn("cache_get_factor_boundary", criteria)
 
     def test_secret_keyword_review_contract_is_structured_and_local(self):
         path = Path("scripts/secret_keyword_review_contract.py")
@@ -8575,6 +8633,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(release_gate["tushare_acceptance_contract_exists"])
         self.assertTrue(release_gate["tushare_acceptance_contract_step"])
         self.assertTrue(release_gate["tushare_acceptance_contract_is_local"])
+        self.assertTrue(release_gate["factor_test_lab_contract_exists"])
+        self.assertTrue(release_gate["factor_test_lab_contract_step"])
+        self.assertTrue(release_gate["factor_test_lab_contract_is_local"])
         self.assertTrue(release_gate["motion_viewport_qa_contract_exists"])
         self.assertTrue(release_gate["motion_viewport_qa_contract_step"])
         self.assertTrue(release_gate["motion_viewport_qa_contract_is_local_static"])
@@ -8605,6 +8666,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("tushare_acceptance_contract_exists", release_gate_criteria)
         self.assertIn("tushare_acceptance_contract_step", release_gate_criteria)
         self.assertIn("tushare_acceptance_contract_is_local", release_gate_criteria)
+        self.assertIn("factor_test_lab_contract_exists", release_gate_criteria)
+        self.assertIn("factor_test_lab_contract_step", release_gate_criteria)
+        self.assertIn("factor_test_lab_contract_is_local", release_gate_criteria)
         self.assertIn("motion_viewport_qa_contract_exists", release_gate_criteria)
         self.assertIn("motion_viewport_qa_contract_step", release_gate_criteria)
         self.assertIn("motion_viewport_qa_contract_is_local_static", release_gate_criteria)

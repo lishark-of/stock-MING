@@ -217,6 +217,7 @@ Validate extended Tushare refresh task pipeline
 - GET factor cache now attaches a read-only `factor_values` DuckDB query consumption contract for Factor Test Lab: typed projection, query result contract, cursor page info, and local query lineage are visible without computing production IC metrics from the query rows.
 - Factor Test Lab packets now expose `small_pool_acceptance`: a local light-observation readiness audit for IC / Rank IC / ICIR, group return, cost, drawdown, neutral IC, sample split/decay, and PIT/lookahead/survivorship checks. This audit does not treat storage query rows as metric samples and does not prove real small-pool or full-market production validation.
 - Factor Test Lab packets now expose `production_validation_qa_contract`: a local QA contract for future provider-backed small-pool validation, multi-horizon forward returns, rolling IC/ICIR, out-of-sample decay, production cost assumptions, neutralization stability, PIT/lookahead/survivorship controls, storage-query boundaries, research-only state transitions, and trade/action isolation. It does not run provider-backed samples, full-market research, external calls, or trade actions.
+- `scripts/factor_test_lab_contract.py` is now part of the local push gate. It uses synthetic local light observations and cache-only service contracts to keep Factor Test Lab metrics, small-pool readiness, storage-query consumption, and production QA clearly separated from provider-backed / full-market validation.
 
 ### Gaps
 
@@ -227,6 +228,7 @@ Validate extended Tushare refresh task pipeline
 - The research-state contract and DuckDB query consumption contract are local/light-mode governance and do not prove full-market validation.
 - The small-pool acceptance audit is a local readiness contract; provider-backed small-pool samples are still pending.
 - The production validation QA contract is visible, but all provider-backed / full-market production validation remains pending.
+- The local Factor Test Lab push-gate contract is not a provider run; it only blocks regressions where local light metrics, storage query rows, or QA checklist rows are mistaken for production validation.
 
 ### Implementation Phases
 
@@ -247,6 +249,7 @@ Validate extended Tushare refresh task pipeline
 - DuckDB query consumption remains local/read-only, does not write Parquet on GET, does not call providers, and does not convert query rows into trade signals or production IC acceptance.
 - `small_pool_acceptance.status=local_small_pool_acceptance_ready` only means local light observations satisfy the readiness checklist; `real_small_pool_validation_done` and `full_market_validation_done` must remain false until provider-backed samples are validated.
 - `production_validation_qa_contract.production_factor_test_validation_complete=false` until provider-backed small-pool samples, multi-horizon/rolling-window validation, cost assumptions, neutralization stability, bias controls, and trade/action isolation are all verified.
+- `scripts/factor_test_lab_contract.py` passes in the push gate while still reporting `provider_backed_small_pool_validation_done=false`, `full_market_validation_done=false`, and `production_factor_test_validation_complete=false`.
 
 ### Forbidden
 
@@ -256,6 +259,7 @@ Validate extended Tushare refresh task pipeline
 - Do not treat storage query consumption as real small-pool, full-market, or production factor validation.
 - Do not treat local small-pool readiness as real provider-backed production validation.
 - Do not treat `production_validation_qa_contract` as execution evidence; it is a QA checklist until future button/task validation proves the rows.
+- Do not treat `scripts/factor_test_lab_contract.py` passing as real Factor Test Lab production validation; it is only a local research-boundary regression guard.
 
 ### Recommended Commit Message
 
@@ -678,6 +682,7 @@ Retire Streamlit from primary user workflow
 - `scripts/push_gate_3_0.sh` now codifies the local push gate: Python tests, desktop build, smoke, diff check, high-risk secret scan, generated artifact scan, and final clean-worktree check.
 - `scripts/data_health_freshness_contract.py` is now part of the local push gate. It validates LTG-01 Data Health contracts remain cache-only, provider-backed acceptance stays pending, and score/support/preview/action boundaries are not silently weakened.
 - `scripts/tushare_acceptance_contract.py` is now part of the local push gate. It validates LTG-02 Tushare matrix/readiness contracts remain button-gated, local, no-provider, no-trade, and no-action, while provider-backed full-interface acceptance remains pending.
+- `scripts/factor_test_lab_contract.py` is now part of the local push gate. It validates LTG-03 Factor Test Lab research metrics, small-pool readiness, storage query consumption, and production QA stay local/research-only while provider-backed small-pool and full-market validation remain pending.
 - `scripts/push_gate_3_0.sh` can optionally write a local Markdown release-readiness report when `PUSH_GATE_REPORT_PATH` is set; report generation runs before the final clean-worktree check so unignored in-repo reports still block push.
 - Secret/artifact keyword hits are separated into high-risk failures versus review output so sanitizer/test/docs mentions can be explained instead of silently ignored.
 - `scripts/secret_keyword_review_contract.py` now gives the ordinary keyword scan a structured local contract: it classifies tracked keyword hits by category and top files, emits counts only, suppresses raw source lines, and fails if high-risk tracked secret-looking values appear outside tests/docs. It does not call external services or prove periodic human allowlist review is complete.
@@ -690,6 +695,7 @@ Retire Streamlit from primary user workflow
 - Push gate still needs periodic review of false-positive allowlists; current audit keeps `false_positive_allowlist_review_pending` visible.
 - Structured keyword review is present, but it is still a local classification contract; periodic human allowlist review and remote CI evidence remain separate.
 - Tushare acceptance contract is present, but it is still a local matrix/readiness guard; real provider-backed interface samples remain a later LTG-02 acceptance phase.
+- Factor Test Lab contract is present, but it is still a local research-boundary guard; real small-pool and full-market research validation remain a later LTG-03 acceptance phase.
 - Optional local reports are evidence for one gate run, not durable CI status and not production completion proof.
 
 ### Implementation Phases
@@ -712,6 +718,7 @@ Retire Streamlit from primary user workflow
 - Worktree is clean before push.
 - Optional local release report records passed checks, branch/head, ahead count, and safety boundaries without pushing or calling providers.
 - Tushare acceptance contract runs after Data Health and before static UI QA, and keeps `provider_backed_acceptance_done=false` / `production_tushare_pipeline_complete=false` visible.
+- Factor Test Lab contract runs after Tushare acceptance and before static UI QA, and keeps `provider_backed_small_pool_validation_done=false` / `production_factor_test_validation_complete=false` visible.
 - `release_gate_readiness_audit.local_gate_ready=true` and `ci_mirror_ready=true` are visible in the audit cache, while `release_gate_complete` remains false until allowlist review and actual remote check evidence are proven.
 
 ### Forbidden
