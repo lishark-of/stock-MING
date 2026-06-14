@@ -92,6 +92,7 @@ export default function CandidateRadar() {
   const fullPoolPlan = (cache.full_pool_scan_plan as Record<string, unknown> | undefined) ?? {};
   const deepScanPlan = (cache.deep_scan_plan as Record<string, unknown> | undefined) ?? {};
   const legacyParityInventory = (cache.legacy_parity_inventory as Record<string, unknown> | undefined) ?? {};
+  const legacyParityAcceptanceReceipt = (cache.legacy_parity_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
   const localPoolAudit = (cache.local_candidate_pool_audit as Record<string, unknown> | undefined) ?? {};
   const overview = (cache.candidate_execution_evidence_overview as Record<string, unknown> | undefined) ?? {};
   const radarPacket = (cache.radar_packet as Record<string, unknown> | undefined) ?? {};
@@ -102,6 +103,7 @@ export default function CandidateRadar() {
   const legacySignalRows = rows(cache.legacy_signal_group_rows);
   const legacyParityRows = rows(cache.legacy_parity_rows);
   const legacyOutputRows = rows(cache.legacy_output_contract_rows);
+  const legacyParityAcceptanceRows = rows(cache.legacy_parity_acceptance_rows);
   const scanModeRows = rows(cache.scan_mode_status_rows);
   const scanAcceptanceRows = rows(cache.scan_acceptance_rows);
   const quickScanReceiptRows = rows(cache.quick_scan_execution_receipt_rows);
@@ -204,6 +206,9 @@ export default function CandidateRadar() {
           { label: "degraded modes", value: counts.degraded_mode_active_count as number | undefined, tone: counts.degraded_mode_active_count ? "warn" : "good" },
           { label: "parity gap", value: counts.legacy_parity_gap_count as number | undefined, tone: counts.legacy_parity_gap_count ? "warn" : "good" },
           { label: "parity mapped", value: counts.legacy_parity_mapped_count as number | undefined },
+          { label: "parity receipt", value: String(legacyParityAcceptanceReceipt.status ?? "missing"), tone: legacyParityAcceptanceReceipt.local_acceptance_receipt_ready === true ? "good" : "warn" },
+          { label: "parity blockers", value: counts.legacy_parity_acceptance_production_blocker_count as number | undefined, tone: Number(counts.legacy_parity_acceptance_production_blocker_count ?? 0) ? "warn" : "good" },
+          { label: "parity ready", value: counts.legacy_parity_acceptance_ready_count as number | undefined },
           { label: "跳过原因", value: scanCoverage.skipped_reason_count as number | undefined, tone: scanCoverage.skipped_reason_count ? "warn" : "good" },
           { label: "验收行", value: scanAcceptanceRows.length },
           { label: "freshness", value: String(freshnessState.state ?? "unknown"), tone: freshnessState.source === "missing" ? "warn" : "good" },
@@ -447,6 +452,17 @@ export default function CandidateRadar() {
           <DataLineageTable rows={legacyOutputRows} />
         </PacketCard>
       </div>
+
+      <PacketCard title="旧雷达 parity 验收收据" subtitle="legacy_parity_acceptance_receipt；把旧雷达能力逐项转成 production replacement 前置条件" status={String(legacyParityAcceptanceReceipt.status ?? "missing")}>
+        <p>local_acceptance_receipt_ready: {String(legacyParityAcceptanceReceipt.local_acceptance_receipt_ready === true)}</p>
+        <p>production_radar_replacement_complete: {String(legacyParityAcceptanceReceipt.production_radar_replacement_complete === true)}；legacy_retirement_ready: {String(legacyParityAcceptanceReceipt.legacy_retirement_ready === true)}；legacy_fallback_required: {String(legacyParityAcceptanceReceipt.legacy_fallback_required !== false)}</p>
+        <p>parity_item_count: {String(legacyParityAcceptanceReceipt.parity_item_count ?? 0)}；output_contract_field_count: {String(legacyParityAcceptanceReceipt.output_contract_field_count ?? 0)}；production_ready_count: {String(legacyParityAcceptanceReceipt.production_ready_count ?? 0)}；production_blocker_count: {String(legacyParityAcceptanceReceipt.production_blocker_count ?? 0)}</p>
+        <p>full_pool_scan_done: {String(legacyParityAcceptanceReceipt.full_pool_scan_done === true)}；deep_scan_done: {String(legacyParityAcceptanceReceipt.deep_scan_done === true)}；provider_backed_acceptance_done: {String(legacyParityAcceptanceReceipt.provider_backed_acceptance_done === true)}</p>
+        <p>这个收据把 Top/Watch/Excluded、证据链、评分维度、触发/失效、持仓对比、候选池来源、扫描过滤、超时回退和手动深研逐项转成验收门槛；gap_reported 不能当不降能完成，不能提前退掉 Streamlit fallback。</p>
+        <DataLineageTable rows={objectRow(legacyParityAcceptanceReceipt)} />
+        <DataLineageTable rows={legacyParityAcceptanceRows} />
+        <DataLineageTable rows={rows(legacyParityAcceptanceReceipt.call_ledger)} />
+      </PacketCard>
 
       <PacketCard title="扫描模式状态" subtitle="scan_mode_status_rows；当前本地实现 quick/watchlist/custom，full pool 仍是未来任务" status="mode">
         <DataLineageTable rows={scanModeRows} />

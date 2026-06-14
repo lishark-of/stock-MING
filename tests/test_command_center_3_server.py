@@ -6689,7 +6689,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("candidate_is_not_buy_instruction", script)
         self.assertIn("no_feature_loss_is_local_not_replacement", script)
         self.assertIn("replacement_gap_triage_blocks_legacy_retirement", script)
+        self.assertIn("legacy_parity_acceptance_receipt_blocks_feature_loss", script)
         self.assertIn("activation_receipt_guides_next_safe_step", script)
+        self.assertIn("candidate_radar_legacy_parity_acceptance_receipt.v1", script)
         self.assertIn("candidate_radar_production_activation_receipt.v1", script)
         self.assertIn("priority_explanation_is_local_not_trade_signal", script)
         self.assertIn("full_pool_plan_is_plan_only", script)
@@ -6725,6 +6727,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("candidate_browser_qa_evidence_found", payload)
         self.assertIn("candidate_browser_qa_review_ready", payload)
         self.assertTrue(payload["candidate_radar_activation_receipt_ready"])
+        self.assertTrue(payload["legacy_parity_acceptance_receipt_ready"])
         self.assertFalse(payload["external_calls_triggered"])
         self.assertFalse(payload["tushare_called"])
         self.assertFalse(payload["deepseek_called"])
@@ -6761,6 +6764,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             {"candidate_browser_qa_review_pending", "candidate_browser_qa_review_ready_local_artifact"},
         )
         self.assertIsNotNone(payload["observed"]["candidate_browser_qa_review_blocking_count"])
+        self.assertEqual(
+            payload["observed"]["legacy_parity_acceptance_status"],
+            "legacy_parity_acceptance_local_ready_production_pending",
+        )
+        self.assertGreater(payload["observed"]["legacy_parity_acceptance_production_blocker_count"], 0)
         self.assertIsNotNone(payload["observed"]["full_pool_plan_blocker_count"])
         self.assertIsNotNone(payload["observed"]["deep_scan_plan_blocker_count"])
         self.assertEqual(
@@ -6773,6 +6781,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("cache_get_is_read_only_no_scan", criteria)
         self.assertIn("no_feature_loss_is_local_not_replacement", criteria)
         self.assertIn("replacement_gap_triage_blocks_legacy_retirement", criteria)
+        self.assertIn("legacy_parity_acceptance_receipt_blocks_feature_loss", criteria)
         self.assertIn("activation_receipt_guides_next_safe_step", criteria)
         self.assertIn("result_delta_clarity_is_local_not_visual_qa", criteria)
         self.assertIn("priority_explanation_is_local_not_trade_signal", criteria)
@@ -10342,6 +10351,62 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["candidate_browser_qa_review_is_button_gated"])
         self.assertTrue(packet["policy"]["candidate_browser_qa_review_does_not_open_browser"])
         self.assertTrue(packet["policy"]["candidate_browser_qa_review_is_not_production_replacement"])
+        parity_receipt = packet["legacy_parity_acceptance_receipt"]
+        parity_receipt_rows = {row["item_key"]: row for row in packet["legacy_parity_acceptance_rows"]}
+        self.assertEqual(parity_receipt["schema_version"], "candidate_radar_legacy_parity_acceptance_receipt.v1")
+        self.assertEqual(
+            parity_receipt["status"],
+            "legacy_parity_acceptance_local_ready_production_pending",
+        )
+        self.assertEqual(
+            parity_receipt["scope"],
+            "local_legacy_radar_parity_acceptance_not_production_replacement",
+        )
+        self.assertTrue(parity_receipt["local_acceptance_receipt_ready"])
+        self.assertFalse(parity_receipt["production_radar_replacement_complete"])
+        self.assertFalse(parity_receipt["legacy_retirement_ready"])
+        self.assertTrue(parity_receipt["legacy_fallback_required"])
+        self.assertFalse(parity_receipt["full_pool_scan_done"])
+        self.assertFalse(parity_receipt["deep_scan_done"])
+        self.assertFalse(parity_receipt["provider_backed_acceptance_done"])
+        self.assertFalse(parity_receipt["browser_visual_qa_done"])
+        self.assertFalse(parity_receipt["browser_performance_trace_done"])
+        self.assertGreaterEqual(parity_receipt["parity_item_count"], 9)
+        self.assertGreaterEqual(parity_receipt["output_contract_field_count"], 12)
+        self.assertGreater(parity_receipt["production_blocker_count"], 0)
+        self.assertIn("top_watch_excluded_split", parity_receipt_rows)
+        self.assertIn("manual_deep_research", parity_receipt_rows)
+        self.assertTrue(parity_receipt_rows["top_watch_excluded_split"]["local_contract_passed"])
+        self.assertFalse(parity_receipt_rows["manual_deep_research"]["production_ready"])
+        self.assertTrue(parity_receipt_rows["manual_deep_research"]["blocks_production_replacement"])
+        self.assertIn("treat_gap_reported_as_feature_parity_complete", parity_receipt["not_allowed_next_steps"])
+        self.assertIn(
+            "retire_streamlit_radar_before_provider_worker_browser_acceptance",
+            parity_receipt["not_allowed_next_steps"],
+        )
+        self.assertEqual(
+            parity_receipt["call_ledger"][0]["api"],
+            "local_candidate_radar_legacy_parity_acceptance_receipt",
+        )
+        self.assertFalse(parity_receipt["call_ledger"][0]["external"])
+        self.assertFalse(parity_receipt["external_calls_triggered"])
+        self.assertFalse(parity_receipt["tushare_called"])
+        self.assertFalse(parity_receipt["deepseek_called"])
+        self.assertFalse(parity_receipt["github_called"])
+        self.assertTrue(parity_receipt["does_not_execute_trades"])
+        self.assertTrue(parity_receipt["does_not_modify_strategy_action"])
+        self.assertTrue(parity_receipt["candidate_is_not_buy_instruction"])
+        self.assertTrue(packet["policy"]["legacy_parity_acceptance_receipt_is_local"])
+        self.assertTrue(packet["policy"]["legacy_parity_acceptance_is_not_production_replacement"])
+        self.assertTrue(packet["policy"]["legacy_parity_acceptance_requires_provider_worker_browser_evidence"])
+        self.assertEqual(
+            packet["counts"]["legacy_parity_acceptance_row_count"],
+            parity_receipt["receipt_row_count"],
+        )
+        self.assertEqual(
+            packet["counts"]["legacy_parity_acceptance_production_blocker_count"],
+            parity_receipt["production_blocker_count"],
+        )
         no_loss = packet["no_feature_loss_acceptance_contract"]
         self.assertEqual(no_loss["schema_version"], "candidate_radar_no_feature_loss_acceptance.v1")
         self.assertEqual(no_loss["status"], "no_feature_loss_acceptance_local_ready_production_pending")

@@ -902,6 +902,162 @@ def _legacy_parity_inventory(
     }
 
 
+def _legacy_parity_acceptance_row(
+    item_key: str,
+    category: str,
+    label: str,
+    status: str,
+    *,
+    local_contract_passed: bool,
+    production_ready: bool,
+    evidence: str,
+    next_action: str,
+) -> dict[str, Any]:
+    return {
+        "item_key": item_key,
+        "category": category,
+        "label": label,
+        "status": status,
+        "local_contract_passed": bool(local_contract_passed),
+        "production_ready": bool(production_ready),
+        "blocks_production_replacement": not bool(production_ready),
+        "gap_visible": not bool(production_ready),
+        "evidence": evidence,
+        "next_action": next_action,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _legacy_parity_acceptance_receipt(
+    *,
+    parity_inventory: Mapping[str, Any],
+    parity_rows: list[dict[str, Any]],
+    output_contract_rows: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    production_ready_statuses = {"mapped", "mapped_from_cache"}
+    rows: list[dict[str, Any]] = []
+    for row in parity_rows:
+        migration_status = str(row.get("migration_status") or "missing_reported")
+        production_ready = migration_status in production_ready_statuses
+        rows.append(
+            _legacy_parity_acceptance_row(
+                str(row.get("key") or ""),
+                "legacy_parity_item",
+                str(row.get("label") or row.get("key") or ""),
+                "production_ready" if production_ready else "gap_visible",
+                local_contract_passed=True,
+                production_ready=production_ready,
+                evidence=(
+                    f"migration_status={migration_status}; present_in_current_cache="
+                    f"{bool(row.get('present_in_current_cache'))}; target={row.get('target_state')}"
+                ),
+                next_action=(
+                    "Keep mapped behavior covered in React/cache acceptance."
+                    if production_ready
+                    else "Map this legacy radar behavior with provider/worker/browser evidence or keep Streamlit fallback visible."
+                ),
+            )
+        )
+    for row in output_contract_rows:
+        present = row.get("present") is True
+        rows.append(
+            _legacy_parity_acceptance_row(
+                str(row.get("field") or ""),
+                "legacy_output_field",
+                str(row.get("field") or ""),
+                "production_ready" if present else "missing_reported",
+                local_contract_passed=True,
+                production_ready=present,
+                evidence=f"source={row.get('source')}; required_for={row.get('required_for')}; present={present}",
+                next_action=(
+                    "Preserve this output field in Candidate Radar replacement."
+                    if present
+                    else "Expose this missing output field as a gap; do not invent values before retiring legacy radar."
+                ),
+            )
+        )
+    local_blockers = [row["item_key"] for row in rows if not row.get("local_contract_passed")]
+    production_blockers = [row["item_key"] for row in rows if row.get("blocks_production_replacement")]
+    ready_count = sum(1 for row in rows if row.get("production_ready"))
+    receipt = {
+        "schema_version": "candidate_radar_legacy_parity_acceptance_receipt.v1",
+        "status": "legacy_parity_acceptance_local_ready_production_pending" if not local_blockers else "legacy_parity_acceptance_blocked",
+        "scope": "local_legacy_radar_parity_acceptance_not_production_replacement",
+        "ltg": "LTG-13",
+        "local_acceptance_receipt_ready": not local_blockers,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "legacy_fallback_required": True,
+        "parity_inventory_status": parity_inventory.get("status"),
+        "parity_item_count": int(parity_inventory.get("parity_row_count") or len(parity_rows)),
+        "mapped_or_partial_count": int(parity_inventory.get("mapped_or_partial_count") or 0),
+        "gap_or_future_count": int(parity_inventory.get("gap_or_future_count") or 0),
+        "output_contract_field_count": int(parity_inventory.get("output_contract_field_count") or len(output_contract_rows)),
+        "output_contract_mapped_count": int(parity_inventory.get("output_contract_mapped_count") or 0),
+        "receipt_row_count": len(rows),
+        "production_ready_count": ready_count,
+        "production_blocker_count": len(production_blockers),
+        "local_blocker_count": len(local_blockers),
+        "production_blockers": production_blockers,
+        "local_blockers": local_blockers,
+        "required_before_legacy_retirement": [
+            "top_watch_excluded_split",
+            "evidence_links",
+            "scoring_dimensions",
+            "trigger_invalidation",
+            "holding_comparison",
+            "candidate_pool_sources",
+            "scan_filters",
+            "timeout_and_fallback",
+            "manual_deep_research",
+            "legacy_output_contract_fields",
+        ],
+        "not_allowed_next_steps": [
+            "treat_gap_reported_as_feature_parity_complete",
+            "retire_streamlit_radar_before_provider_worker_browser_acceptance",
+            "claim_quick_scan_as_full_replacement",
+            "invent_missing_legacy_output_fields",
+            "convert_candidate_score_to_strategy_action",
+        ],
+        "full_pool_scan_done": False,
+        "deep_scan_done": False,
+        "provider_backed_acceptance_done": False,
+        "browser_visual_qa_done": False,
+        "browser_performance_trace_done": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+        "call_ledger": [
+            {
+                "api": "local_candidate_radar_legacy_parity_acceptance_receipt",
+                "source_snapshot": "legacy_parity_rows_and_output_contract_rows",
+                "row_count": len(rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_parity_acceptance_receipt",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This receipt turns legacy next-ticket radar parity into explicit acceptance rows. It is local evidence only; production replacement still requires provider-backed parity, worker full/deep scans, browser visual/performance QA, and legacy retirement review.",
+    }
+    return receipt, rows
+
+
 def _candidate_call_ledger_row(
     *,
     api: str,
@@ -4472,6 +4628,23 @@ def _build_candidate_radar_packet(
         excluded_candidates=excluded_candidates,
         evidence_recovery_actions=evidence_recovery_actions,
     )
+    legacy_parity_rows = _legacy_parity_rows(
+        snapshot_map=snapshot_map,
+        radar_packet=radar_packet,
+        candidate_rows=candidate_rows,
+        excluded_candidates=excluded_candidates,
+        evidence_recovery_actions=evidence_recovery_actions,
+    )
+    legacy_output_contract_rows = _legacy_output_contract_rows(
+        radar_packet=radar_packet,
+        candidate_rows=candidate_rows,
+        excluded_candidates=excluded_candidates,
+    )
+    legacy_parity_acceptance_receipt, legacy_parity_acceptance_rows = _legacy_parity_acceptance_receipt(
+        parity_inventory=parity_inventory,
+        parity_rows=legacy_parity_rows,
+        output_contract_rows=legacy_output_contract_rows,
+    )
     coverage = _scan_coverage(
         snapshot_available=bool(snapshot),
         snapshot_map=snapshot_map,
@@ -4486,6 +4659,11 @@ def _build_candidate_radar_packet(
     counts["legacy_parity_gap_count"] = parity_inventory["gap_or_future_count"]
     counts["legacy_parity_mapped_count"] = parity_inventory["mapped_or_partial_count"]
     counts["legacy_output_mapped_count"] = parity_inventory["output_contract_mapped_count"]
+    counts["legacy_parity_acceptance_row_count"] = legacy_parity_acceptance_receipt["receipt_row_count"]
+    counts["legacy_parity_acceptance_production_blocker_count"] = legacy_parity_acceptance_receipt[
+        "production_blocker_count"
+    ]
+    counts["legacy_parity_acceptance_ready_count"] = legacy_parity_acceptance_receipt["production_ready_count"]
     if local_pool_audit:
         counts["local_pool_input_candidate_count"] = local_pool_audit.get("input_candidate_count")
         counts["local_pool_normalized_candidate_count"] = local_pool_audit.get("normalized_candidate_count")
@@ -4672,18 +4850,10 @@ def _build_candidate_radar_packet(
         "local_candidate_pool_skipped_rows": list(local_pool_skipped_rows or _as_list(snapshot_map.get("local_candidate_pool_skipped_rows"))),
         "legacy_signal_group_rows": coverage["legacy_signal_group_rows"],
         "legacy_parity_inventory": parity_inventory,
-        "legacy_parity_rows": _legacy_parity_rows(
-            snapshot_map=snapshot_map,
-            radar_packet=radar_packet,
-            candidate_rows=candidate_rows,
-            excluded_candidates=excluded_candidates,
-            evidence_recovery_actions=evidence_recovery_actions,
-        ),
-        "legacy_output_contract_rows": _legacy_output_contract_rows(
-            radar_packet=radar_packet,
-            candidate_rows=candidate_rows,
-            excluded_candidates=excluded_candidates,
-        ),
+        "legacy_parity_rows": legacy_parity_rows,
+        "legacy_output_contract_rows": legacy_output_contract_rows,
+        "legacy_parity_acceptance_receipt": legacy_parity_acceptance_receipt,
+        "legacy_parity_acceptance_rows": legacy_parity_acceptance_rows,
         "scan_mode_status_rows": [dict(row) for row in SCAN_MODE_STATUS_ROWS],
         "full_pool_scan_plan": plan,
         "full_pool_plan_stage_rows": _as_list(plan.get("stage_rows")),
@@ -4762,6 +4932,9 @@ def _build_candidate_radar_packet(
             "candidate_priority_explanation_uses_existing_rank_only": True,
             "candidate_priority_explanation_uses_existing_score_only": True,
             "candidate_priority_explanation_is_not_trade_signal": True,
+            "legacy_parity_acceptance_receipt_is_local": True,
+            "legacy_parity_acceptance_is_not_production_replacement": True,
+            "legacy_parity_acceptance_requires_provider_worker_browser_evidence": True,
         },
         "call_ledger": [
             _candidate_call_ledger_row(
@@ -4771,7 +4944,8 @@ def _build_candidate_radar_packet(
                 call_status="cache_read" if snapshot else "cache_missing",
                 request_params_safe=request_params_safe or {},
             )
-        ],
+        ]
+        + legacy_parity_acceptance_receipt["call_ledger"],
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,
@@ -4831,6 +5005,17 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     view["read_only"] = True
     view["cache_source"] = "sqlite_meta"
     view["call_ledger"] = [cache_row] + [row for row in existing_ledger if isinstance(row, dict)]
+    if not isinstance(view.get("legacy_parity_acceptance_receipt"), dict):
+        parity_receipt, parity_acceptance_rows = _legacy_parity_acceptance_receipt(
+            parity_inventory=_as_dict(view.get("legacy_parity_inventory")),
+            parity_rows=[row for row in _as_list(view.get("legacy_parity_rows")) if isinstance(row, dict)],
+            output_contract_rows=[
+                row for row in _as_list(view.get("legacy_output_contract_rows")) if isinstance(row, dict)
+            ],
+        )
+        view["legacy_parity_acceptance_receipt"] = parity_receipt
+        view["legacy_parity_acceptance_rows"] = parity_acceptance_rows
+        view["call_ledger"] = view["call_ledger"] + parity_receipt["call_ledger"]
     view["candidate_browser_qa_evidence_summary"] = candidate_browser_qa_evidence_summary
     view["candidate_browser_qa_evidence_rows"] = candidate_browser_qa_evidence_rows
     view["candidate_browser_qa_review_contract"] = candidate_browser_qa_review_contract
@@ -4849,6 +5034,10 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     ]
     counts["candidate_browser_qa_review_blocking_count"] = candidate_browser_qa_review_contract["blocking_review_count"]
     counts["candidate_browser_qa_review_ready"] = candidate_browser_qa_review_contract["local_browser_qa_review_ready"]
+    parity_receipt = _as_dict(view.get("legacy_parity_acceptance_receipt"))
+    counts["legacy_parity_acceptance_row_count"] = parity_receipt.get("receipt_row_count")
+    counts["legacy_parity_acceptance_production_blocker_count"] = parity_receipt.get("production_blocker_count")
+    counts["legacy_parity_acceptance_ready_count"] = parity_receipt.get("production_ready_count")
     view["counts"] = counts
     policy = _as_dict(view.get("policy"))
     policy["candidate_browser_qa_evidence_reads_local_artifact_only"] = True
@@ -4859,6 +5048,9 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     policy["candidate_browser_qa_review_is_button_gated"] = True
     policy["candidate_browser_qa_review_does_not_open_browser"] = True
     policy["candidate_browser_qa_review_is_not_production_replacement"] = True
+    policy["legacy_parity_acceptance_receipt_is_local"] = True
+    policy["legacy_parity_acceptance_is_not_production_replacement"] = True
+    policy["legacy_parity_acceptance_requires_provider_worker_browser_evidence"] = True
     view["policy"] = policy
     warnings = _as_list(view.get("warnings"))
     first_warning = "GET /api/candidate-radar/cache 只读展示已持久化的 local scan 结果；不会自动全市场扫描。"

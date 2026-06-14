@@ -58,6 +58,17 @@ REQUIRED_ACTIVATION_BLOCKERS = {
     "browser_visual_performance_review_required",
     "legacy_retirement_stays_blocked",
 }
+REQUIRED_PARITY_ACCEPTANCE_ITEMS = {
+    "top_watch_excluded_split",
+    "evidence_links",
+    "scoring_dimensions",
+    "trigger_invalidation",
+    "holding_comparison",
+    "candidate_pool_sources",
+    "scan_filters",
+    "timeout_and_fallback",
+    "manual_deep_research",
+}
 CANDIDATE_BROWSER_QA_RUNBOOK_PATH = "scripts/candidate_radar_browser_qa_runbook.py"
 
 
@@ -152,6 +163,12 @@ def build_contract() -> dict[str, Any]:
     }
     result_delta = _dict(cache_packet.get("result_delta_clarity_contract"))
     priority_explanation = _dict(cache_packet.get("candidate_priority_explanation_contract"))
+    legacy_parity_acceptance = _dict(cache_packet.get("legacy_parity_acceptance_receipt"))
+    legacy_parity_acceptance_rows = {
+        str(row.get("item_key") or ""): row
+        for row in _list(cache_packet.get("legacy_parity_acceptance_rows"))
+        if isinstance(row, dict)
+    }
     browser_qa_evidence = _dict(cache_packet.get("candidate_browser_qa_evidence_summary"))
     browser_qa_review = _dict(cache_packet.get("candidate_browser_qa_review_contract"))
     policy = _dict(cache_packet.get("policy"))
@@ -318,6 +335,46 @@ def build_contract() -> dict[str, Any]:
             and "quick_scan_execution_receipt_rows" in candidate_frontend
             and "快扫执行回执" in candidate_frontend,
             "Quick-scan receipt must make local scan coverage, limits, gaps, and production blockers visible without becoming production replacement evidence.",
+        ),
+        _row(
+            "legacy_parity_acceptance_receipt_blocks_feature_loss",
+            legacy_parity_acceptance.get("schema_version") == "candidate_radar_legacy_parity_acceptance_receipt.v1"
+            and legacy_parity_acceptance.get("status") == "legacy_parity_acceptance_local_ready_production_pending"
+            and legacy_parity_acceptance.get("scope")
+            == "local_legacy_radar_parity_acceptance_not_production_replacement"
+            and legacy_parity_acceptance.get("local_acceptance_receipt_ready") is True
+            and legacy_parity_acceptance.get("production_radar_replacement_complete") is False
+            and legacy_parity_acceptance.get("legacy_retirement_ready") is False
+            and legacy_parity_acceptance.get("legacy_fallback_required") is True
+            and legacy_parity_acceptance.get("full_pool_scan_done") is False
+            and legacy_parity_acceptance.get("deep_scan_done") is False
+            and legacy_parity_acceptance.get("provider_backed_acceptance_done") is False
+            and legacy_parity_acceptance.get("browser_visual_qa_done") is False
+            and legacy_parity_acceptance.get("browser_performance_trace_done") is False
+            and int(legacy_parity_acceptance.get("receipt_row_count") or 0) >= len(REQUIRED_PARITY_ACCEPTANCE_ITEMS)
+            and int(legacy_parity_acceptance.get("production_blocker_count") or 0) > 0
+            and REQUIRED_PARITY_ACCEPTANCE_ITEMS.issubset(set(legacy_parity_acceptance.get("required_before_legacy_retirement") or []))
+            and "treat_gap_reported_as_feature_parity_complete"
+            in _list(legacy_parity_acceptance.get("not_allowed_next_steps"))
+            and "retire_streamlit_radar_before_provider_worker_browser_acceptance"
+            in _list(legacy_parity_acceptance.get("not_allowed_next_steps"))
+            and all(_dict(legacy_parity_acceptance_rows.get(key)).get("local_contract_passed") is True for key in REQUIRED_PARITY_ACCEPTANCE_ITEMS)
+            and any(
+                _dict(legacy_parity_acceptance_rows.get(key)).get("blocks_production_replacement") is True
+                for key in REQUIRED_PARITY_ACCEPTANCE_ITEMS
+            )
+            and _flag_false(legacy_parity_acceptance, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and legacy_parity_acceptance.get("does_not_execute_trades") is True
+            and legacy_parity_acceptance.get("does_not_modify_strategy_action") is True
+            and legacy_parity_acceptance.get("candidate_is_not_buy_instruction") is True
+            and legacy_parity_acceptance.get("contains_secret") is False
+            and policy.get("legacy_parity_acceptance_receipt_is_local") is True
+            and policy.get("legacy_parity_acceptance_is_not_production_replacement") is True
+            and policy.get("legacy_parity_acceptance_requires_provider_worker_browser_evidence") is True
+            and "legacy_parity_acceptance_receipt" in candidate_frontend
+            and "legacy_parity_acceptance_rows" in candidate_frontend
+            and "旧雷达 parity 验收收据" in candidate_frontend,
+            "Legacy parity acceptance receipt must turn old radar features into explicit acceptance rows and keep Streamlit fallback/production replacement blocked while gaps remain.",
         ),
         _row(
             "activation_receipt_guides_next_safe_step",
@@ -549,6 +606,7 @@ def build_contract() -> dict[str, Any]:
         "candidate_browser_qa_evidence_found": browser_qa_evidence.get("local_browser_qa_evidence_found") is True,
         "candidate_browser_qa_review_ready": browser_qa_review.get("local_browser_qa_review_ready") is True,
         "candidate_radar_activation_receipt_ready": activation_receipt.get("local_activation_receipt_ready") is True,
+        "legacy_parity_acceptance_receipt_ready": legacy_parity_acceptance.get("local_acceptance_receipt_ready") is True,
         "cache_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -573,6 +631,8 @@ def build_contract() -> dict[str, Any]:
             "promotion_blocking_count": promotion_audit.get("blocking_promotion_count"),
             "quick_scan_receipt_status": quick_receipt.get("status"),
             "quick_scan_receipt_production_blocker_count": quick_receipt.get("production_blocker_count"),
+            "legacy_parity_acceptance_status": legacy_parity_acceptance.get("status"),
+            "legacy_parity_acceptance_production_blocker_count": legacy_parity_acceptance.get("production_blocker_count"),
             "activation_receipt_status": activation_receipt.get("status"),
             "activation_receipt_production_blocker_count": activation_receipt.get("production_blocker_count"),
             "activation_receipt_pending_evidence_count": activation_receipt.get("pending_evidence_count"),
