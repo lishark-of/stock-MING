@@ -79,6 +79,7 @@ export default function FactorQuantHub() {
   const factorTestProviderValidationBlocker = factorTests.provider_validation_blocker_audit ?? {};
   const factorTestProviderSampleReadinessReceipt = factorTests.provider_sample_readiness_receipt ?? {};
   const factorTestProviderSampleActivationReceipt = factorTests.provider_sample_activation_receipt ?? {};
+  const factorTestProviderSmallPoolDryRun = factorTests.provider_small_pool_acceptance_dry_run_receipt ?? {};
   const tushareFailureModeQa = packet.failure_mode_qa_contract ?? {};
   const tushareRequestParameterQa = packet.request_parameter_qa_contract ?? {};
   const tushareProviderTargetSamplePlan = packet.provider_target_sample_plan_contract ?? {};
@@ -141,6 +142,8 @@ export default function FactorQuantHub() {
   const factorTestProviderSampleReadinessCriterionRows = toRows(factorTests.provider_sample_readiness_rows);
   const factorTestProviderSampleActivationRows = objectRows(factorTestProviderSampleActivationReceipt as Record<string, unknown>, "provider_sample_activation");
   const factorTestProviderSampleActivationCriterionRows = toRows(factorTests.provider_sample_activation_rows);
+  const factorTestProviderSmallPoolDryRunRows = objectRows(factorTestProviderSmallPoolDryRun as Record<string, unknown>, "provider_small_pool_dry_run");
+  const factorTestProviderSmallPoolDryRunCriterionRows = toRows(factorTests.provider_small_pool_acceptance_dry_run_rows);
   const tushareFailureModeQaRows = objectRows(tushareFailureModeQa as Record<string, unknown>, "failure_mode_contract");
   const tushareFailureModeCriterionRows = toRows(packet.failure_mode_qa_rows);
   const tushareRequestParameterQaRows = objectRows(tushareRequestParameterQa as Record<string, unknown>, "request_parameter_contract");
@@ -201,6 +204,7 @@ export default function FactorQuantHub() {
         </label>
         <button onClick={() => launchTask("/api/factor-quant/run-light", { auto_after_task: autoAfterTask })}>运行计算</button>
         <button onClick={() => launchTask("/api/factor-quant/universe-research-plan", { universe_mode: "full_pool" })}>生成读取计划</button>
+        <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-dry-run", { approved_by_user: true, symbols: ["002008.SZ", "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"], forward_return_horizons: ["1d", "5d"] })}>小池验收预检</button>
         <button onClick={() => launchTask("/api/factor-quant/deepseek-explain")}>DeepSeek 整理</button>
       </div>
       <p className="risk-note">DeepSeek 解释模式：{String(deepseekGovernance.mode ?? "manual_only")}；auto_after_task 默认关闭。自动解释已关闭时，可手动点击生成解释。</p>
@@ -263,6 +267,8 @@ export default function FactorQuantHub() {
           { label: "provider validation", value: factorTestProviderValidationBlocker.provider_validation_ready === true ? "ready" : "blocked", tone: factorTestProviderValidationBlocker.provider_validation_ready === true ? "good" : "warn" },
           { label: "provider receipt", value: factorTestProviderSampleReadinessReceipt.status ?? "missing", tone: factorTestProviderSampleReadinessReceipt.ready_for_explicit_provider_small_pool_task === true ? "good" : "warn" },
           { label: "receipt blockers", value: factorTestProviderSampleReadinessReceipt.blocked_readiness_count ?? 0, tone: Number(factorTestProviderSampleReadinessReceipt.blocked_readiness_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "small-pool dry-run", value: factorTestProviderSmallPoolDryRun.status ?? "not_run", tone: factorTestProviderSmallPoolDryRun.preflight_ready_for_user_approved_real_task === true ? "good" : "warn" },
+          { label: "dry-run blockers", value: factorTestProviderSmallPoolDryRun.blocking_criterion_count ?? 0, tone: Number(factorTestProviderSmallPoolDryRun.blocking_criterion_count ?? 0) > 0 ? "warn" : "good" },
           { label: "research pass", value: factorTestQuality.research_pass_count ?? 0 },
           { label: "watchlist", value: factorTestQuality.watchlist_count ?? 0 },
           { label: "state contract", value: factorTestAcceptance.status ?? "missing", tone: factorTestAcceptance.all_result_states_are_research_only === false ? "bad" : "good" },
@@ -478,6 +484,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">provider_sample_activation_receipt 是真实小股票池 provider 验收前的本地清单：不调用 provider、不创建任务、不把本地样本/QA/blocker rows 当 production validation，也不进入 strategy action。</p>
       <DataLineageTable rows={factorTestProviderSampleActivationCriterionRows} />
       <DataLineageTable rows={factorTestProviderSampleActivationRows} />
+      <h3>Factor Test provider 小股票池 dry-run ticket</h3>
+      <p className="risk-note">provider_small_pool_acceptance_dry_run 只绑定未来真实小池验收范围、凭据存在布尔和 scope hash；不调用 Tushare，不计算生产 IC，不泄露 token/key，不代表 provider-backed validation。</p>
+      <DataLineageTable rows={factorTestProviderSmallPoolDryRunCriterionRows} />
+      <DataLineageTable rows={factorTestProviderSmallPoolDryRunRows} />
       <h3>Factor Test 指标 schema</h3>
       <DataLineageTable rows={factorTestMetricRows} />
       <h3>Factor Test 阶段计划</h3>

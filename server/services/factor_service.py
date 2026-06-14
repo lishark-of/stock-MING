@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
+import json
 import math
+import os
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +22,21 @@ DEEPSEEK_FACTOR_PROMPT_VERSION = "factor_deepseek_explanation_prompt.v1"
 FACTOR_UNIVERSE_RESEARCH_PLAN_MODES = {"watchlist", "custom_pool", "full_pool"}
 FACTOR_UNIVERSE_RESEARCH_PLAN_DATASETS = ("factor_values", "daily", "daily_basic", "moneyflow", "trade_cal")
 FACTOR_UNIVERSE_ITEM_SECRET_MARKERS = ("token", "api_key", "secret", "password", "authorization", "bearer")
+FACTOR_TEST_PROVIDER_SMALL_POOL_SYMBOL_LIMIT = 20
+FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_SYMBOLS = 5
+FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS = 60
+FACTOR_TEST_PROVIDER_SMALL_POOL_ALLOWED_DATASETS = ("factor_values", "daily", "daily_basic", "moneyflow", "trade_cal")
+FACTOR_TEST_PROVIDER_SMALL_POOL_REQUIRED_METRICS = (
+    "ic",
+    "rank_ic",
+    "icir",
+    "group_return",
+    "top_bottom",
+    "max_drawdown",
+    "neutral_ic",
+    "out_of_sample_decay",
+    "cost_model",
+)
 
 
 def _now_iso() -> str:
@@ -35,6 +53,10 @@ def _local_ledger_boundary() -> dict[str, Any]:
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
     }
+
+
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def read_factor_quant_cache() -> dict[str, Any]:
@@ -2497,6 +2519,441 @@ def _attach_factor_test_provider_sample_activation_receipt(packet: dict[str, Any
     return packet, list(receipt.get("call_ledger") or [])
 
 
+def _factor_test_clean_symbol(value: Any) -> str:
+    text = str(value or "").strip().upper()
+    cleaned = "".join(char for char in text if char.isalnum() or char == ".")
+    if len(cleaned) == 6 and cleaned[0] in {"0", "1", "2", "3"}:
+        cleaned = f"{cleaned}.SZ"
+    elif len(cleaned) == 6 and cleaned[0] in {"5", "6", "9"}:
+        cleaned = f"{cleaned}.SH"
+    if "." not in cleaned and len(cleaned) > 6:
+        cleaned = cleaned[:6]
+    return cleaned[:16]
+
+
+def _factor_test_symbols_from_payload(payload: Any) -> tuple[list[str], list[str]]:
+    if not isinstance(payload, dict):
+        return [], []
+    values: list[Any] = []
+    for key in ("symbols", "ts_codes", "watchlist", "custom_pool", "universe"):
+        candidate = payload.get(key)
+        if isinstance(candidate, list):
+            values.extend(candidate)
+        elif isinstance(candidate, str):
+            values.extend(part.strip() for part in candidate.replace(";", ",").split(","))
+    for key in ("symbol", "ts_code", "ticker"):
+        if payload.get(key):
+            values.append(payload.get(key))
+    symbols: list[str] = []
+    ignored: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        symbol = _factor_test_clean_symbol(value)
+        if not symbol:
+            continue
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        if len(symbols) >= FACTOR_TEST_PROVIDER_SMALL_POOL_SYMBOL_LIMIT:
+            ignored.append(symbol)
+            continue
+        symbols.append(symbol)
+    return symbols, ignored
+
+
+def _factor_test_date(value: Any) -> _dt.date | None:
+    text = str(value or "").strip().replace("-", "")
+    if len(text) != 8 or not text.isdigit():
+        return None
+    try:
+        return _dt.datetime.strptime(text, "%Y%m%d").date()
+    except ValueError:
+        return None
+
+
+def _factor_test_window(payload: Any, now: str) -> tuple[str, str, int]:
+    now_date = _dt.datetime.fromisoformat(now).date()
+    default_end = now_date
+    default_start = default_end - _dt.timedelta(days=90)
+    if isinstance(payload, dict):
+        start = _factor_test_date(payload.get("start_date")) or default_start
+        end = _factor_test_date(payload.get("end_date")) or default_end
+    else:
+        start = default_start
+        end = default_end
+    if start > end:
+        start, end = end, start
+    return start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), (end - start).days + 1
+
+
+def _factor_test_metrics_from_payload(payload: Any) -> tuple[list[str], list[str]]:
+    if not isinstance(payload, dict):
+        return list(FACTOR_TEST_PROVIDER_SMALL_POOL_REQUIRED_METRICS), []
+    raw_metrics = payload.get("metrics") or payload.get("requested_metrics") or []
+    if isinstance(raw_metrics, str):
+        raw_values = [part.strip() for part in raw_metrics.replace(";", ",").split(",")]
+    elif isinstance(raw_metrics, list):
+        raw_values = [str(item or "").strip() for item in raw_metrics]
+    else:
+        raw_values = []
+    if not raw_values:
+        return list(FACTOR_TEST_PROVIDER_SMALL_POOL_REQUIRED_METRICS), []
+    allowed = set(FACTOR_TEST_PROVIDER_SMALL_POOL_REQUIRED_METRICS)
+    selected: list[str] = []
+    ignored: list[str] = []
+    for item in raw_values:
+        metric = item.lower().replace(" ", "_").replace("-", "_")
+        if not metric:
+            continue
+        if metric in allowed and metric not in selected:
+            selected.append(metric)
+        elif metric not in allowed:
+            ignored.append(metric[:40])
+    return selected, ignored
+
+
+def _factor_test_credential_presence() -> dict[str, Any]:
+    token_present = any(key in os.environ for key in ("TUSHARE_TOKEN", "TUSHARE_API_TOKEN"))
+    return {
+        "schema_version": "factor_test_provider_small_pool_credential_presence.v1",
+        "status": "credential_present" if token_present else "credential_missing",
+        "server_side_tushare_credential_present": token_present,
+        "safe_credential_label": "tushare_server_token",
+        "credential_value_exposed": False,
+        "env_key_name_exposed": False,
+        "checked_by_membership_only": True,
+    }
+
+
+def _factor_test_scope_ticket(payload_safe: dict[str, Any]) -> dict[str, Any]:
+    scope = {
+        "symbols": payload_safe.get("symbols") or [],
+        "start_date": payload_safe.get("start_date"),
+        "end_date": payload_safe.get("end_date"),
+        "window_days": payload_safe.get("window_days"),
+        "metrics": payload_safe.get("metrics") or [],
+        "horizons": payload_safe.get("forward_return_horizons") or [],
+        "approved_by_user": payload_safe.get("approved_by_user") is True,
+        "credential_present": _dict(payload_safe.get("credential_presence")).get("server_side_tushare_credential_present") is True,
+        "symbol_limit": FACTOR_TEST_PROVIDER_SMALL_POOL_SYMBOL_LIMIT,
+    }
+    serialized = json.dumps(scope, ensure_ascii=False, sort_keys=True, default=str)
+    digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    return {
+        "schema_version": "factor_test_provider_small_pool_scope_ticket.v1",
+        "scope_hash_algorithm": "sha256",
+        "scope_hash": digest,
+        "scope_hash_short": digest[:16],
+        "scope_fields": scope,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+    }
+
+
+def _factor_test_provider_small_pool_dry_run_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    evidence: str,
+    next_action: str,
+    *,
+    required: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "required_before_real_execution": bool(required),
+        "blocks_real_execution": bool(required and not passed),
+        "evidence": evidence,
+        "next_action": next_action,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def _factor_test_provider_small_pool_dry_run_payload(payload: Any, now: str) -> dict[str, Any]:
+    symbols, ignored_symbols = _factor_test_symbols_from_payload(payload)
+    start_date, end_date, window_days = _factor_test_window(payload, now)
+    metrics, ignored_metrics = _factor_test_metrics_from_payload(payload)
+    horizons_raw = []
+    if isinstance(payload, dict):
+        candidate = payload.get("forward_return_horizons") or payload.get("horizons") or ["1d", "5d"]
+        if isinstance(candidate, str):
+            horizons_raw = [part.strip() for part in candidate.replace(";", ",").split(",")]
+        elif isinstance(candidate, list):
+            horizons_raw = [str(item or "").strip() for item in candidate]
+    if not horizons_raw:
+        horizons_raw = ["1d", "5d"]
+    horizons = []
+    for horizon in horizons_raw:
+        safe_horizon = "".join(char for char in horizon.lower() if char.isalnum())[:8]
+        if safe_horizon and safe_horizon not in horizons:
+            horizons.append(safe_horizon)
+    approved_by_user = bool(isinstance(payload, dict) and payload.get("approved_by_user") is True)
+    credential_presence = _factor_test_credential_presence()
+    payload_safe: dict[str, Any] = {
+        "approved_by_user": approved_by_user,
+        "symbols": symbols,
+        "ignored_symbols": ignored_symbols,
+        "symbol_count": len(symbols),
+        "symbol_limit": FACTOR_TEST_PROVIDER_SMALL_POOL_SYMBOL_LIMIT,
+        "start_date": start_date,
+        "end_date": end_date,
+        "window_days": window_days,
+        "minimum_symbol_count": FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_SYMBOLS,
+        "minimum_window_days": FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS,
+        "metrics": metrics,
+        "ignored_metrics": ignored_metrics,
+        "required_metrics": list(FACTOR_TEST_PROVIDER_SMALL_POOL_REQUIRED_METRICS),
+        "forward_return_horizons": horizons,
+        "required_datasets": list(FACTOR_TEST_PROVIDER_SMALL_POOL_ALLOWED_DATASETS),
+        "credential_presence": credential_presence,
+        "provider_execution_implemented": False,
+        "provider_backed_small_pool_validation_done": False,
+        "production_factor_test_validation_complete": False,
+    }
+    payload_safe["acceptance_scope_ticket"] = _factor_test_scope_ticket(payload_safe)
+    return payload_safe
+
+
+def _factor_test_provider_small_pool_dry_run_receipt(payload_safe: dict[str, Any], now: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    symbols = [str(item) for item in payload_safe.get("symbols", []) if item]
+    metrics = [str(item) for item in payload_safe.get("metrics", []) if item]
+    required_metrics = set(FACTOR_TEST_PROVIDER_SMALL_POOL_REQUIRED_METRICS)
+    selected_metric_set = set(metrics)
+    missing_metrics = sorted(required_metrics - selected_metric_set)
+    credential_presence = _dict(payload_safe.get("credential_presence"))
+    credential_present = credential_presence.get("server_side_tushare_credential_present") is True
+    approved_by_user = payload_safe.get("approved_by_user") is True
+    window_days = int(payload_safe.get("window_days") or 0)
+    rows = [
+        _factor_test_provider_small_pool_dry_run_row(
+            "explicit_user_approval",
+            "passed_approved" if approved_by_user else "blocked_missing_approval",
+            approved_by_user,
+            f"approved_by_user={approved_by_user}",
+            "User must explicitly approve the real provider-backed small-pool validation scope.",
+        ),
+        _factor_test_provider_small_pool_dry_run_row(
+            "symbol_scope_bounded",
+            "passed_symbol_scope" if len(symbols) >= FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_SYMBOLS else "blocked_not_enough_symbols",
+            len(symbols) >= FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_SYMBOLS,
+            f"symbol_count={len(symbols)}; minimum={FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_SYMBOLS}; limit={FACTOR_TEST_PROVIDER_SMALL_POOL_SYMBOL_LIMIT}",
+            "Provide at least five bounded A-share symbols before real small-pool validation.",
+        ),
+        _factor_test_provider_small_pool_dry_run_row(
+            "window_scope_bounded",
+            "passed_window_scope" if window_days >= FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS else "blocked_window_too_short",
+            window_days >= FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS,
+            f"window_days={window_days}; minimum={FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS}",
+            "Use a long enough sample window before validating rolling IC, decay, and out-of-sample behavior.",
+        ),
+        _factor_test_provider_small_pool_dry_run_row(
+            "metric_scope_complete",
+            "passed_metric_scope" if not missing_metrics else "blocked_missing_required_metrics",
+            not missing_metrics,
+            f"selected_metrics={metrics}; missing={missing_metrics}; ignored={payload_safe.get('ignored_metrics')}",
+            "Keep IC, Rank IC, ICIR, group return, top-bottom, drawdown, neutral IC, decay, and cost model in the real acceptance scope.",
+        ),
+        _factor_test_provider_small_pool_dry_run_row(
+            "server_credential_presence_boolean_only",
+            "passed_credential_present" if credential_present else "blocked_missing_server_credential",
+            credential_present,
+            f"credential_status={credential_presence.get('status')}; credential_value_exposed={credential_presence.get('credential_value_exposed')}",
+            "Configure the server-side Tushare credential before a real provider-backed validation task.",
+        ),
+        _factor_test_provider_small_pool_dry_run_row(
+            "dataset_scope_visible",
+            "passed_dataset_scope",
+            True,
+            f"required_datasets={payload_safe.get('required_datasets')}",
+            "Real validation must refresh or read factor_values, daily, daily_basic, moneyflow, and trade_cal through audited task/storage paths.",
+            required=False,
+        ),
+        _factor_test_provider_small_pool_dry_run_row(
+            "real_task_implementation_boundary",
+            "pending_real_task_not_implemented",
+            False,
+            "This dry-run records a scope ticket only; it does not implement or execute the real provider-backed small-pool task.",
+            "Implement a separate user-approved provider-backed validation task bound to this scope ticket.",
+        ),
+        _factor_test_provider_small_pool_dry_run_row(
+            "secret_redaction_boundary",
+            "passed_no_secret_exposure",
+            True,
+            "Credential presence is reported as boolean/safe label only; raw values and env key names are not returned.",
+            "Keep token/key values out of frontend, logs, packet, cache, and call_ledger.",
+            required=False,
+        ),
+        _factor_test_provider_small_pool_dry_run_row(
+            "trade_action_boundary",
+            "passed_no_trade_or_action",
+            True,
+            "Dry-run cannot execute trades, mutate strategy action, enter evidence effects, or change next-session projection.",
+            "Keep Factor Test Lab research-only.",
+            required=False,
+        ),
+    ]
+    blockers = [row["criterion"] for row in rows if row["blocks_real_execution"]]
+    preflight_ready = approved_by_user and len(symbols) >= FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_SYMBOLS and window_days >= FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS and not missing_metrics and credential_present
+    return {
+        "schema_version": "factor_test_provider_small_pool_acceptance_dry_run.v1",
+        "status": "provider_small_pool_dry_run_ready_real_execution_blocked" if preflight_ready else "provider_small_pool_dry_run_blocked_preflight",
+        "scope": "local_factor_test_provider_small_pool_acceptance_dry_run_no_provider_execution",
+        "created_at": now,
+        "ltg": "LTG-03/LTG-11",
+        "local_dry_run_ready": True,
+        "preflight_ready_for_user_approved_real_task": preflight_ready,
+        "ready_to_execute_real_task": False,
+        "allowed_next_step": "implement_explicit_provider_small_pool_validation_task_bound_to_scope_ticket" if preflight_ready else "complete_provider_small_pool_preflight_scope",
+        "not_allowed_next_steps": [
+            "GET /api/factor-quant/cache provider refresh",
+            "React render provider refresh",
+            "dry-run as provider-backed small-pool validation",
+            "local metrics as production Factor Test completion",
+            "credential values or env key names in frontend/log/cache",
+            "strategy action mutation",
+            "real trade execution",
+        ],
+        "missing_evidence_items": [
+            "real provider task implementation",
+            "real Tushare/factor data call ledger",
+            "multi-horizon forward-return rows",
+            "rolling IC/Rank IC/ICIR evidence",
+            "cost and turnover validation",
+            "neutralization stability evidence",
+            "PIT/lookahead/survivorship evidence",
+            "production promotion review",
+        ],
+        "symbols": symbols,
+        "symbol_count": len(symbols),
+        "ignored_symbols": payload_safe.get("ignored_symbols") or [],
+        "start_date": payload_safe.get("start_date"),
+        "end_date": payload_safe.get("end_date"),
+        "window_days": window_days,
+        "metrics": metrics,
+        "missing_metrics": missing_metrics,
+        "ignored_metrics": payload_safe.get("ignored_metrics") or [],
+        "forward_return_horizons": payload_safe.get("forward_return_horizons") or [],
+        "credential_presence_summary": credential_presence,
+        "acceptance_scope_ticket": payload_safe.get("acceptance_scope_ticket"),
+        "acceptance_scope_hash": _dict(payload_safe.get("acceptance_scope_ticket")).get("scope_hash"),
+        "acceptance_scope_hash_short": _dict(payload_safe.get("acceptance_scope_ticket")).get("scope_hash_short"),
+        "provider_execution_implemented": False,
+        "provider_backed_small_pool_validation_done": False,
+        "full_market_validation_done": False,
+        "production_factor_test_validation_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_core_action": True,
+        "does_not_enter_evidence_effects": True,
+        "does_not_enter_next_session_projection": True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+        "row_count": len(rows),
+        "blocking_criterion_count": len(blockers),
+        "blocking_criteria": blockers,
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_factor_test_provider_small_pool_acceptance_dry_run",
+                "request_params_safe": {
+                    "scope": "local_factor_test_provider_small_pool_acceptance_dry_run_no_provider_execution",
+                    "symbol_count": len(symbols),
+                    "window_days": window_days,
+                    "metric_count": len(metrics),
+                    "preflight_ready_for_user_approved_real_task": preflight_ready,
+                    "acceptance_scope_hash_short": _dict(payload_safe.get("acceptance_scope_ticket")).get("scope_hash_short"),
+                    "provider_execution_implemented": False,
+                    "production_factor_test_validation_complete": False,
+                },
+                "row_count": len(rows),
+                "data_date": payload_safe.get("end_date"),
+                "local_fetched_at": now,
+                "call_status": "local_dry_run_ready" if preflight_ready else "local_dry_run_blocked",
+                "error_message_safe": "",
+                **_local_ledger_boundary(),
+            }
+        ],
+        "note": "This is a local dry-run ticket for future LTG-03 provider-backed small-pool validation. It never calls providers/models, reads credential values, computes production metrics, executes trades, or mutates strategy action.",
+    }, rows
+
+
+def run_factor_test_provider_small_pool_acceptance_dry_run_task(payload: Any = None) -> dict[str, Any]:
+    now = _now_iso()
+    payload_safe = _factor_test_provider_small_pool_dry_run_payload(payload, now)
+    receipt, rows = _factor_test_provider_small_pool_dry_run_receipt(payload_safe, now)
+    payload_safe["provider_small_pool_acceptance_dry_run_receipt"] = receipt
+    payload_safe["provider_small_pool_acceptance_dry_run_rows"] = rows
+    task = create_task_record(
+        "run_factor_test_provider_small_pool_acceptance_dry_run",
+        output_packet_key="command_center_factor_quant_hub_packet",
+        payload=payload_safe,
+        current_step="factor_test_provider_small_pool_dry_run_queued",
+        warnings=[
+            "Factor Test provider 小股票池 dry-run 只生成本地 scope ticket，不调用 Tushare、DeepSeek 或 GitHub。",
+            "dry-run 不计算生产 IC / Rank IC / ICIR，不修改 strategy action，不执行真实交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    update_task_status(task["task_id"], status="running", progress=0.25, current_step="building_factor_test_provider_small_pool_scope_ticket")
+    try:
+        hub = dict(read_factor_quant_cache())
+        factor_tests = hub.get("factor_tests") if isinstance(hub.get("factor_tests"), dict) else {}
+        factor_tests = dict(factor_tests)
+        factor_tests["provider_small_pool_acceptance_dry_run_receipt"] = receipt
+        factor_tests["provider_small_pool_acceptance_dry_run_rows"] = rows
+        acceptance = factor_tests.get("acceptance_contract") if isinstance(factor_tests.get("acceptance_contract"), dict) else {}
+        if acceptance:
+            acceptance = dict(acceptance)
+            acceptance["provider_small_pool_acceptance_dry_run_ready"] = bool(receipt.get("local_dry_run_ready"))
+            acceptance["provider_small_pool_acceptance_scope_ticket_ready"] = bool(receipt.get("acceptance_scope_hash_short"))
+            acceptance["provider_small_pool_dry_run_is_not_provider_execution"] = True
+            acceptance["provider_backed_small_pool_validation_done"] = False
+            acceptance["production_factor_test_validation_complete"] = False
+            factor_tests["acceptance_contract"] = acceptance
+        existing_test_ledger = factor_tests.get("call_ledger") if isinstance(factor_tests.get("call_ledger"), list) else []
+        factor_tests["call_ledger"] = list(receipt.get("call_ledger") or []) + list(existing_test_ledger)
+        hub["factor_tests"] = factor_tests
+        hub["call_ledger"] = list(receipt.get("call_ledger") or []) + list(hub.get("call_ledger") if isinstance(hub.get("call_ledger"), list) else [])
+        warning = "Factor Test provider 小股票池 dry-run ticket 已生成：本地 preflight，不调用 provider，不代表生产验收完成。"
+        existing_warnings = hub.get("warnings") if isinstance(hub.get("warnings"), list) else []
+        hub["warnings"] = [warning] + [item for item in existing_warnings if item != warning]
+        hub["external_calls_triggered"] = False
+        hub["tushare_called"] = False
+        hub["deepseek_called"] = False
+        hub["github_called"] = False
+        hub["does_not_execute_trades"] = True
+        hub["does_not_modify_strategy_action"] = True
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet("command_center_factor_quant_hub_packet", hub)
+    except Exception as exc:
+        payload_safe["cache_write_error_safe"] = str(exc).splitlines()[0][:240]
+    updated = update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step=str(receipt.get("status") or "factor_test_provider_small_pool_dry_run_ready"),
+        call_ledger=list(receipt.get("call_ledger") or []),
+    ) or task
+    updated["payload_safe"] = payload_safe
+    return updated
+
+
 def _factor_universe_mode_from_payload(payload: Any) -> str:
     if not isinstance(payload, dict):
         return "watchlist"
@@ -3209,6 +3666,8 @@ def create_factor_task(task_type: str, payload: Any = None) -> dict[str, Any]:
         return run_factor_light_task(payload)
     if task_type == "run_factor_universe_research_plan":
         return run_factor_universe_research_plan_task(payload)
+    if task_type == "run_factor_test_provider_small_pool_acceptance_dry_run":
+        return run_factor_test_provider_small_pool_acceptance_dry_run_task(payload)
     if task_type == "run_deepseek_factor_explanation":
         return run_factor_deepseek_explanation_task(payload)
     return create_task_stub(

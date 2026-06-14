@@ -40,6 +40,12 @@ def plan_factor_universe_research(payload: dict[str, Any] | None = None) -> dict
     return task_envelope(task)
 
 
+@router.post("/provider-small-pool-dry-run")
+def dry_run_factor_test_provider_small_pool(payload: dict[str, Any] | None = None) -> dict:
+    task = factor_service.create_factor_task("run_factor_test_provider_small_pool_acceptance_dry_run", payload)
+    return task_envelope(task)
+
+
 @router.post("/deepseek-explain")
 def explain_factor_with_deepseek(payload: dict[str, Any] | None = None) -> dict:
     task = factor_service.create_factor_task("run_deepseek_factor_explanation", payload)

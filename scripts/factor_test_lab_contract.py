@@ -21,7 +21,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import command_center_factor_research as factor_research  # noqa: E402
-from server.services import factor_service  # noqa: E402
+from server.services import factor_service, task_service  # noqa: E402
 
 
 REQUIRED_RESEARCH_STATES = {
@@ -139,6 +139,29 @@ def build_contract() -> dict[str, Any]:
     provider_sample_receipt = factor_service._factor_test_provider_sample_readiness_receipt(factor_tests, now)
     factor_tests["provider_sample_readiness_receipt"] = provider_sample_receipt
     provider_sample_activation = factor_service._factor_test_provider_sample_activation_receipt(factor_tests, now)
+    dry_run_payload = factor_service._factor_test_provider_small_pool_dry_run_payload(
+        {
+            "approved_by_user": True,
+            "symbols": ["002008.SZ", "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"],
+            "start_date": "20260401",
+            "end_date": "20260614",
+            "metrics": list(factor_service.FACTOR_TEST_PROVIDER_SMALL_POOL_REQUIRED_METRICS),
+            "forward_return_horizons": ["1d", "5d"],
+        },
+        now,
+    )
+    dry_run_receipt, dry_run_rows = factor_service._factor_test_provider_small_pool_dry_run_receipt(dry_run_payload, now)
+    dry_run_rows_by_criterion = {
+        str(row.get("criterion") or ""): row
+        for row in dry_run_rows
+        if isinstance(row, dict)
+    }
+    task_catalog_by_type = {
+        str(item.get("task_type") or ""): item
+        for item in task_service.build_task_catalog().get("tasks", [])
+        if isinstance(item, dict)
+    }
+    dry_run_catalog = _dict(task_catalog_by_type.get("run_factor_test_provider_small_pool_acceptance_dry_run"))
     production_rows = {
         str(row.get("criterion") or ""): row
         for row in _list(production_qa.get("rows"))
@@ -335,6 +358,36 @@ def build_contract() -> dict[str, Any]:
             "Provider sample activation receipt must stay a local checklist before future provider-backed small-pool validation.",
         ),
         _row(
+            "provider_small_pool_dry_run_scope_ticket_is_local",
+            dry_run_catalog.get("route") == "POST /api/factor-quant/provider-small-pool-dry-run"
+            and dry_run_catalog.get("current_backend") == "local_factor_test_provider_small_pool_acceptance_dry_run_pipeline"
+            and dry_run_catalog.get("local_dry_run_only") is True
+            and dry_run_catalog.get("provider_execution_implemented") is False
+            and dry_run_catalog.get("provider_backed_small_pool_validation_done") is False
+            and dry_run_catalog.get("production_factor_test_validation_complete") is False
+            and dry_run_receipt.get("schema_version") == "factor_test_provider_small_pool_acceptance_dry_run.v1"
+            and dry_run_receipt.get("local_dry_run_ready") is True
+            and dry_run_receipt.get("ready_to_execute_real_task") is False
+            and dry_run_receipt.get("provider_execution_implemented") is False
+            and dry_run_receipt.get("provider_backed_small_pool_validation_done") is False
+            and dry_run_receipt.get("production_factor_test_validation_complete") is False
+            and dry_run_receipt.get("cache_get_external_calls") is False
+            and dry_run_receipt.get("react_render_external_calls") is False
+            and _flag_false(dry_run_receipt, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and dry_run_receipt.get("does_not_execute_trades") is True
+            and dry_run_receipt.get("does_not_modify_strategy_action") is True
+            and dry_run_receipt.get("contains_secret") is False
+            and _dict(dry_run_receipt.get("credential_presence_summary")).get("env_key_name_exposed") is False
+            and _dict(dry_run_receipt.get("credential_presence_summary")).get("credential_value_exposed") is False
+            and _dict(dry_run_receipt.get("acceptance_scope_ticket")).get("contains_secret") is False
+            and len(str(dry_run_receipt.get("acceptance_scope_hash") or "")) == 64
+            and _dict(dry_run_rows_by_criterion.get("real_task_implementation_boundary")).get("status")
+            == "pending_real_task_not_implemented"
+            and _dict(dry_run_rows_by_criterion.get("secret_redaction_boundary")).get("passed") is True
+            and _dict(dry_run_rows_by_criterion.get("trade_action_boundary")).get("passed") is True,
+            "Provider small-pool dry-run may issue a local scope ticket only; it must not call providers, expose credentials, or prove production validation.",
+        ),
+        _row(
             "cache_get_factor_boundary",
             cache_packet.get("mode") == "light"
             and cache_production_qa.get("schema_version") == "factor_test_production_validation_qa_contract.v1"
@@ -409,6 +462,7 @@ def build_contract() -> dict[str, Any]:
             and "provider_validation_blocker_audit_stays_pending" in this_script
             and "provider_sample_readiness_receipt_is_local" in this_script
             and "provider_sample_activation_receipt_is_local_pending" in this_script
+            and "provider_small_pool_dry_run_scope_ticket_is_local" in this_script
             and "local_dataset_sample_evidence_is_not_validation" in this_script
             and "production_factor_test_validation_complete" in this_script
             and "does_not_execute_trades" in this_script
@@ -452,6 +506,8 @@ def build_contract() -> dict[str, Any]:
             "provider_sample_receipt_allowed_next_step": provider_sample_receipt.get("allowed_next_step"),
             "provider_sample_activation_status": provider_sample_activation.get("status"),
             "provider_sample_activation_allowed_next_step": provider_sample_activation.get("allowed_next_step"),
+            "provider_small_pool_dry_run_status": dry_run_receipt.get("status"),
+            "provider_small_pool_dry_run_scope_hash_short": dry_run_receipt.get("acceptance_scope_hash_short"),
             "cache_production_qa_status": cache_production_qa.get("status"),
             "cache_provider_blocker_status": cache_provider_blocker_audit.get("status"),
             "cache_provider_sample_receipt_status": cache_provider_sample_receipt.get("status"),
