@@ -32,6 +32,7 @@ BOOTSTRAP_MODEL_LEDGER_SCHEMA_VERSION = "command_center_live_bootstrap_model_led
 BOOTSTRAP_PROVIDER_LINKAGE_SCHEMA_VERSION = "command_center_bootstrap_provider_linkage.v1"
 BOOTSTRAP_ACTIVATION_RECEIPT_SCHEMA_VERSION = "command_center_live_bootstrap_activation_receipt.v1"
 BOOTSTRAP_ACCEPTANCE_RUNBOOK_SCHEMA_VERSION = "command_center_live_bootstrap_provider_model_acceptance_runbook.v1"
+BOOTSTRAP_REAL_ACCEPTANCE_PREFLIGHT_SCHEMA_VERSION = "command_center_live_bootstrap_real_acceptance_preflight_receipt.v1"
 DEEPSEEK_EXPLANATION_FIELDS = (
     "summary",
     "support_notes",
@@ -1185,6 +1186,185 @@ def _build_acceptance_dry_run(
     return summary, rows
 
 
+def _real_acceptance_preflight_row(
+    criterion: str,
+    status: str,
+    evidence: str,
+    *,
+    passed: bool,
+    blocks_real_execution: bool,
+) -> dict[str, Any]:
+    return {
+        "schema_version": BOOTSTRAP_REAL_ACCEPTANCE_PREFLIGHT_SCHEMA_VERSION,
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "blocks_real_execution": bool(blocks_real_execution),
+        "evidence": evidence,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _real_acceptance_preflight_receipt(
+    *,
+    payload_safe: dict[str, Any],
+    summary: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    scope_ticket = _dict(payload_safe.get("acceptance_scope_ticket"))
+    selected_apis = list(payload_safe.get("selected_apis") or [])
+    ignored_apis = list(payload_safe.get("ignored_apis") or [])
+    user_approved = payload_safe.get("user_approved") is True
+    credentials_ready = int(summary.get("credential_missing_provider_count") or 0) == 0
+    dry_run_ready = summary.get("ready_for_user_approved_real_acceptance") is True
+    rows = [
+        _real_acceptance_preflight_row(
+            "scope_ticket_binds_user_confirmation",
+            "passed" if scope_ticket.get("scope_hash") and scope_ticket.get("env_key_names_included") is False else "blocked_missing_scope_ticket",
+            f"scope_hash_short={scope_ticket.get('scope_hash_short')}; field_count={scope_ticket.get('scope_hash_input_field_count')}",
+            passed=bool(scope_ticket.get("scope_hash")) and scope_ticket.get("env_key_names_included") is False,
+            blocks_real_execution=not bool(scope_ticket.get("scope_hash")),
+        ),
+        _real_acceptance_preflight_row(
+            "explicit_user_approval_recorded",
+            "passed" if user_approved else "blocked_user_approval_required",
+            f"user_approved={user_approved}",
+            passed=user_approved,
+            blocks_real_execution=not user_approved,
+        ),
+        _real_acceptance_preflight_row(
+            "credential_presence_ready_without_value_exposure",
+            "passed" if credentials_ready else "blocked_missing_server_credentials",
+            f"credential_presence_status={summary.get('credential_presence_status')}; missing={summary.get('credential_missing_provider_count')}",
+            passed=credentials_ready,
+            blocks_real_execution=not credentials_ready,
+        ),
+        _real_acceptance_preflight_row(
+            "allowed_light_scope_only",
+            "passed" if all(api in ACCEPTANCE_DRY_RUN_ALLOWED_APIS for api in selected_apis) else "blocked_unexpected_api",
+            f"selected_apis={selected_apis}; ignored_apis={ignored_apis}; symbol_count={summary.get('symbol_count')}",
+            passed=all(api in ACCEPTANCE_DRY_RUN_ALLOWED_APIS for api in selected_apis),
+            blocks_real_execution=not all(api in ACCEPTANCE_DRY_RUN_ALLOWED_APIS for api in selected_apis),
+        ),
+        _real_acceptance_preflight_row(
+            "provider_execution_task_not_implemented",
+            "blocked_real_tushare_execution_pending",
+            "Real Tushare provider execution still needs a separate explicit task with provider call ledger evidence.",
+            passed=False,
+            blocks_real_execution=True,
+        ),
+        _real_acceptance_preflight_row(
+            "model_execution_task_not_implemented",
+            "blocked_real_deepseek_execution_pending",
+            "Real DeepSeek pro execution still needs model ledger, input/output hash, parse status, and sanitizer evidence.",
+            passed=False,
+            blocks_real_execution=True,
+        ),
+        _real_acceptance_preflight_row(
+            "browser_nonblocking_evidence_missing",
+            "blocked_browser_runtime_evidence_pending",
+            "Need browser/runtime proof that cache renders first, task polling is visible, failures are safe, and UI is not blocked.",
+            passed=False,
+            blocks_real_execution=True,
+        ),
+        _real_acceptance_preflight_row(
+            "ledger_redaction_review_pending",
+            "blocked_ledger_redaction_review_pending",
+            "Need final review that call/model ledger, packet, cache, frontend, and logs contain no token/key material.",
+            passed=False,
+            blocks_real_execution=True,
+        ),
+        _real_acceptance_preflight_row(
+            "production_promotion_not_allowed",
+            "blocked_until_provider_model_browser_promotion_review",
+            "Dry-run readiness is not provider-backed acceptance and not production live_light completion.",
+            passed=False,
+            blocks_real_execution=True,
+        ),
+        _real_acceptance_preflight_row(
+            "trade_action_boundary_enforced",
+            "passed",
+            "Real acceptance preflight cannot execute trades or mutate strategy action.",
+            passed=True,
+            blocks_real_execution=False,
+        ),
+    ]
+    blocking_rows = [row for row in rows if row.get("blocks_real_execution") is True]
+    receipt = {
+        "schema_version": BOOTSTRAP_REAL_ACCEPTANCE_PREFLIGHT_SCHEMA_VERSION,
+        "status": "real_acceptance_preflight_blocked_execution_not_implemented"
+        if dry_run_ready
+        else "real_acceptance_preflight_blocked_dry_run_not_ready",
+        "scope": "local_real_acceptance_preflight_receipt_no_provider_or_model_execution",
+        "dry_run_status": summary.get("status"),
+        "dry_run_ready_for_user_approved_real_acceptance": dry_run_ready,
+        "acceptance_scope_hash": summary.get("acceptance_scope_hash"),
+        "acceptance_scope_hash_short": summary.get("acceptance_scope_hash_short"),
+        "selected_apis": selected_apis,
+        "ignored_apis": ignored_apis,
+        "include_tushare": payload_safe.get("include_tushare") is True,
+        "include_deepseek": payload_safe.get("include_deepseek") is True,
+        "allowed_next_step": "implement_real_provider_model_acceptance_task_then_run_user_confirmed_scope"
+        if dry_run_ready
+        else summary.get("allowed_next_step"),
+        "not_allowed_next_steps": [
+            "treat dry-run receipt as provider-backed acceptance",
+            "execute provider/model without a separate explicit real task",
+            "skip browser nonblocking evidence",
+            "skip ledger redaction review",
+            "promote live_light production before provider/model/browser evidence",
+            "execute real trades or mutate strategy action",
+        ],
+        "missing_evidence_items": [
+            "real Tushare provider call ledger",
+            "real DeepSeek model ledger",
+            "browser/runtime nonblocking evidence",
+            "ledger redaction safety review",
+            "production promotion review",
+        ],
+        "local_receipt_ready": True,
+        "ready_to_design_real_task": dry_run_ready,
+        "ready_to_execute_real_task": False,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "browser_runtime_evidence_complete": False,
+        "ledger_redaction_review_complete": False,
+        "production_live_light_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "row_count": len(rows),
+        "blocking_row_count": len(blocking_rows),
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_live_light_real_acceptance_preflight_receipt",
+                "endpoint": PLANNED_BOOTSTRAP_ACCEPTANCE_DRY_RUN_ROUTE,
+                "row_count": len(rows),
+                "blocking_row_count": len(blocking_rows),
+                "acceptance_scope_hash_short": summary.get("acceptance_scope_hash_short"),
+                "call_status": "local_real_acceptance_preflight_blocked_no_external_call",
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+    }
+    return receipt, rows
+
+
 def _acceptance_dry_run_call_ledger(
     *,
     payload_safe: dict[str, Any],
@@ -1866,8 +2046,17 @@ def run_provider_model_acceptance_dry_run(payload: Any = None) -> dict[str, Any]
         status_packet=status_packet,
     )
     summary, rows = _build_acceptance_dry_run(status_packet=status_packet, payload_safe=payload_safe)
+    real_preflight_receipt, real_preflight_rows = _real_acceptance_preflight_receipt(
+        payload_safe=payload_safe,
+        summary=summary,
+    )
+    summary["real_acceptance_preflight_receipt_status"] = real_preflight_receipt["status"]
+    summary["real_acceptance_preflight_ready_to_execute"] = real_preflight_receipt["ready_to_execute_real_task"]
+    summary["real_acceptance_preflight_blocking_row_count"] = real_preflight_receipt["blocking_row_count"]
     payload_safe["acceptance_dry_run_summary"] = summary
     payload_safe["acceptance_dry_run_rows"] = rows
+    payload_safe["real_acceptance_preflight_receipt"] = real_preflight_receipt
+    payload_safe["real_acceptance_preflight_rows"] = real_preflight_rows
     current_step = (
         "provider_model_acceptance_dry_run_recorded_user_approval_required_no_external_call"
         if payload_safe.get("user_approved") is not True

@@ -381,6 +381,12 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
     dry_payload = _dict(dry_run.get("payload_safe"))
     dry_summary = _dict(dry_payload.get("acceptance_dry_run_summary"))
     dry_scope_ticket = _dict(dry_payload.get("acceptance_scope_ticket"))
+    dry_real_preflight = _dict(dry_payload.get("real_acceptance_preflight_receipt"))
+    dry_real_preflight_rows = {
+        str(row.get("criterion") or ""): row
+        for row in _list(dry_payload.get("real_acceptance_preflight_rows"))
+        if isinstance(row, dict)
+    }
     credential_rows = {
         str(row.get("provider") or ""): row
         for row in _list(dry_payload.get("credential_presence_rows"))
@@ -397,6 +403,12 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
     missing_payload = _dict(dry_run_missing_credentials.get("payload_safe"))
     missing_summary = _dict(missing_payload.get("acceptance_dry_run_summary"))
     missing_scope_ticket = _dict(missing_payload.get("acceptance_scope_ticket"))
+    missing_real_preflight = _dict(missing_payload.get("real_acceptance_preflight_receipt"))
+    missing_real_preflight_rows = {
+        str(row.get("criterion") or ""): row
+        for row in _list(missing_payload.get("real_acceptance_preflight_rows"))
+        if isinstance(row, dict)
+    }
     missing_credential_rows = {
         str(row.get("provider") or ""): row
         for row in _list(missing_payload.get("credential_presence_rows"))
@@ -602,6 +614,10 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             and dry_summary.get("real_acceptance_task_implemented") is False
             and dry_summary.get("acceptance_scope_hash") == dry_scope_ticket.get("scope_hash")
             and dry_summary.get("acceptance_scope_hash_short") == dry_scope_ticket.get("scope_hash_short")
+            and dry_summary.get("real_acceptance_preflight_receipt_status")
+            == "real_acceptance_preflight_blocked_execution_not_implemented"
+            and dry_summary.get("real_acceptance_preflight_ready_to_execute") is False
+            and int(dry_summary.get("real_acceptance_preflight_blocking_row_count") or 0) > 0
             and dry_scope_ticket.get("scope_hash_algorithm") == "sha256"
             and len(str(dry_scope_ticket.get("scope_hash") or "")) == 64
             and len(str(dry_scope_ticket.get("scope_hash_short") or "")) == 16
@@ -624,6 +640,26 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             == "dry_run_ready_model_execution_not_called"
             and dry_rows.get("server_secret_preflight", {}).get("status")
             == "dry_run_secret_presence_checked_no_values_exposed"
+            and dry_real_preflight.get("status")
+            == "real_acceptance_preflight_blocked_execution_not_implemented"
+            and dry_real_preflight.get("dry_run_ready_for_user_approved_real_acceptance") is True
+            and dry_real_preflight.get("acceptance_scope_hash") == dry_scope_ticket.get("scope_hash")
+            and dry_real_preflight.get("ready_to_design_real_task") is True
+            and dry_real_preflight.get("ready_to_execute_real_task") is False
+            and dry_real_preflight.get("provider_execution_implemented") is False
+            and dry_real_preflight.get("model_execution_implemented") is False
+            and dry_real_preflight.get("browser_runtime_evidence_complete") is False
+            and dry_real_preflight.get("ledger_redaction_review_complete") is False
+            and dry_real_preflight.get("production_live_light_complete") is False
+            and dry_real_preflight.get("external_calls_triggered") is False
+            and dry_real_preflight.get("tushare_called") is False
+            and dry_real_preflight.get("deepseek_called") is False
+            and dry_real_preflight_rows.get("scope_ticket_binds_user_confirmation", {}).get("status") == "passed"
+            and dry_real_preflight_rows.get("credential_presence_ready_without_value_exposure", {}).get("status") == "passed"
+            and dry_real_preflight_rows.get("provider_execution_task_not_implemented", {}).get("status")
+            == "blocked_real_tushare_execution_pending"
+            and dry_real_preflight_rows.get("model_execution_task_not_implemented", {}).get("status")
+            == "blocked_real_deepseek_execution_pending"
             and first_dry_ledger.get("call_status") == "local_acceptance_dry_run_recorded_no_external_call"
             and first_dry_ledger.get("external_calls_triggered") is False
             and first_dry_ledger.get("tushare_called") is False
@@ -648,6 +684,9 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             and missing_summary.get("allowed_next_step") == "configure_server_credentials_then_rerun_dry_run"
             and missing_summary.get("real_acceptance_task_implemented") is False
             and missing_summary.get("acceptance_scope_hash") == missing_scope_ticket.get("scope_hash")
+            and missing_summary.get("real_acceptance_preflight_receipt_status")
+            == "real_acceptance_preflight_blocked_dry_run_not_ready"
+            and missing_summary.get("real_acceptance_preflight_ready_to_execute") is False
             and missing_scope_ticket.get("scope_hash_algorithm") == "sha256"
             and len(str(missing_scope_ticket.get("scope_hash") or "")) == 64
             and missing_scope_ticket.get("credential_values_included") is False
@@ -664,6 +703,13 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             and missing_credential_rows.get("deepseek", {}).get("status") == "missing_no_value_read"
             and missing_rows.get("server_secret_preflight", {}).get("status")
             == "dry_run_secret_presence_missing_no_values_exposed"
+            and missing_real_preflight.get("status") == "real_acceptance_preflight_blocked_dry_run_not_ready"
+            and missing_real_preflight.get("dry_run_ready_for_user_approved_real_acceptance") is False
+            and missing_real_preflight.get("ready_to_execute_real_task") is False
+            and missing_real_preflight.get("provider_execution_implemented") is False
+            and missing_real_preflight.get("model_execution_implemented") is False
+            and missing_real_preflight_rows.get("credential_presence_ready_without_value_exposure", {}).get("status")
+            == "blocked_missing_server_credentials"
             and first_missing_ledger.get("call_status")
             == "local_acceptance_dry_run_blocked_missing_credentials_no_external_call"
             and first_missing_ledger.get("external_calls_triggered") is False

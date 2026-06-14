@@ -187,6 +187,8 @@ export default function SettingsConfigHealth() {
   const acceptanceDryRunPayload = (acceptanceDryRunTask.payload_safe as Record<string, unknown> | undefined) ?? {};
   const acceptanceDryRunSummary = (acceptanceDryRunPayload.acceptance_dry_run_summary as Record<string, unknown> | undefined) ?? {};
   const acceptanceScopeTicket = (acceptanceDryRunPayload.acceptance_scope_ticket as Record<string, unknown> | undefined) ?? {};
+  const realAcceptancePreflightReceipt = (acceptanceDryRunPayload.real_acceptance_preflight_receipt as Record<string, unknown> | undefined) ?? {};
+  const realAcceptancePreflightRows = rows(acceptanceDryRunPayload.real_acceptance_preflight_rows);
   const acceptanceDryRunRows = rows(acceptanceDryRunPayload.acceptance_dry_run_rows);
   const credentialPresenceRows = rows(acceptanceDryRunPayload.credential_presence_rows);
   const hasBootstrapTask = Object.keys(bootstrapTask).length > 0;
@@ -253,6 +255,7 @@ export default function SettingsConfigHealth() {
           { label: "activation rows", value: activationRows.length },
           { label: "acceptance phases", value: acceptanceRows.length },
           { label: "acceptance dry-run", value: acceptanceDryRunRows.length || "--", tone: acceptanceDryRunBlocked ? "bad" : acceptanceDryRunRows.length ? "good" : "warn" },
+          { label: "real preflight", value: realAcceptancePreflightRows.length || "--", tone: realAcceptancePreflightReceipt.ready_to_execute_real_task === true ? "good" : realAcceptancePreflightRows.length ? "bad" : "warn" },
           { label: "credential gate", value: acceptanceDryRunReady ? "ready" : acceptanceDryRunBlocked ? "blocked" : "--", tone: acceptanceDryRunReady ? "good" : acceptanceDryRunBlocked ? "bad" : "warn" },
           { label: "startup external", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" },
           { label: "model purposes", value: modelRows.length },
@@ -313,6 +316,9 @@ export default function SettingsConfigHealth() {
           <p>scope includes env key names / credential values: {String(acceptanceScopeTicket.env_key_names_included ?? false)} / {String(acceptanceScopeTicket.credential_values_included ?? false)}</p>
           <p>allowed next step: {String(acceptanceDryRunSummary.allowed_next_step ?? "--")}</p>
           <p>real acceptance task implemented: {String(acceptanceDryRunSummary.real_acceptance_task_implemented ?? false)}</p>
+          <p>real acceptance preflight: {String(realAcceptancePreflightReceipt.status ?? "--")}</p>
+          <p>real acceptance ready to execute: {String(realAcceptancePreflightReceipt.ready_to_execute_real_task ?? false)}</p>
+          <p>real acceptance blockers: {String(realAcceptancePreflightReceipt.blocking_row_count ?? "--")}</p>
           <p>missing evidence: {JSON.stringify(acceptanceDryRunSummary.missing_evidence_items ?? [])}</p>
           <p>not allowed next steps: {JSON.stringify(acceptanceDryRunSummary.not_allowed_next_steps ?? [])}</p>
           <p>selected APIs: {JSON.stringify(acceptanceDryRunPayload.selected_apis ?? [])}</p>
@@ -322,7 +328,9 @@ export default function SettingsConfigHealth() {
           <p>external / Tushare / DeepSeek / GitHub: {String(acceptanceDryRunTask.external_calls_triggered ?? false)} / {String(acceptanceDryRunTask.tushare_called ?? false)} / {String(acceptanceDryRunTask.deepseek_called ?? false)} / {String(acceptanceDryRunTask.github_called ?? false)}</p>
           {credentialPresenceRows.length ? <DataLineageTable rows={credentialPresenceRows} /> : null}
           {acceptanceDryRunRows.length ? <DataLineageTable rows={acceptanceDryRunRows} /> : null}
+          {realAcceptancePreflightRows.length ? <DataLineageTable rows={realAcceptancePreflightRows} /> : null}
           <JsonDetails title="provider/model acceptance scope ticket" data={acceptanceScopeTicket} />
+          <JsonDetails title="real provider/model acceptance preflight receipt" data={realAcceptancePreflightReceipt} />
           <JsonDetails title="provider/model acceptance dry-run task" data={acceptanceDryRunTask} />
         </PacketCard>
 

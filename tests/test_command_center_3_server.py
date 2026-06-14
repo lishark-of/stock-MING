@@ -10668,6 +10668,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(summary["acceptance_scope_hash"], scope_ticket["scope_hash"])
         self.assertEqual(summary["acceptance_scope_hash_short"], scope_ticket["scope_hash_short"])
         self.assertEqual(summary["acceptance_scope_hash_algorithm"], "sha256")
+        self.assertEqual(
+            summary["real_acceptance_preflight_receipt_status"],
+            "real_acceptance_preflight_blocked_execution_not_implemented",
+        )
+        self.assertFalse(summary["real_acceptance_preflight_ready_to_execute"])
+        self.assertGreater(summary["real_acceptance_preflight_blocking_row_count"], 0)
         self.assertEqual(summary["phase_count"], 10)
         self.assertEqual(summary["selected_provider_phase_count"], 2)
         self.assertEqual(summary["selected_model_phase_count"], 1)
@@ -10704,6 +10710,36 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(rows["production_promotion_review"]["status"], "dry_run_blocked_until_real_provider_model_browser_evidence")
         self.assertFalse(rows["tushare_trade_cal_acceptance_sample"]["external_calls_triggered_by_dry_run"])
         self.assertFalse(rows["deepseek_pro_model_acceptance_sample"]["deepseek_called_by_dry_run"])
+        real_preflight = payload["real_acceptance_preflight_receipt"]
+        self.assertEqual(
+            real_preflight["schema_version"],
+            "command_center_live_bootstrap_real_acceptance_preflight_receipt.v1",
+        )
+        self.assertEqual(real_preflight["status"], "real_acceptance_preflight_blocked_execution_not_implemented")
+        self.assertTrue(real_preflight["dry_run_ready_for_user_approved_real_acceptance"])
+        self.assertEqual(real_preflight["acceptance_scope_hash"], scope_ticket["scope_hash"])
+        self.assertEqual(real_preflight["acceptance_scope_hash_short"], scope_ticket["scope_hash_short"])
+        self.assertTrue(real_preflight["ready_to_design_real_task"])
+        self.assertFalse(real_preflight["ready_to_execute_real_task"])
+        self.assertFalse(real_preflight["provider_execution_implemented"])
+        self.assertFalse(real_preflight["model_execution_implemented"])
+        self.assertFalse(real_preflight["browser_runtime_evidence_complete"])
+        self.assertFalse(real_preflight["ledger_redaction_review_complete"])
+        self.assertFalse(real_preflight["production_live_light_complete"])
+        self.assertFalse(real_preflight["external_calls_triggered"])
+        self.assertFalse(real_preflight["tushare_called"])
+        self.assertFalse(real_preflight["deepseek_called"])
+        self.assertFalse(real_preflight["github_called"])
+        self.assertIn("real Tushare provider call ledger", real_preflight["missing_evidence_items"])
+        self.assertIn("skip browser nonblocking evidence", real_preflight["not_allowed_next_steps"])
+        real_preflight_rows = {row["criterion"]: row for row in payload["real_acceptance_preflight_rows"]}
+        self.assertEqual(real_preflight_rows["scope_ticket_binds_user_confirmation"]["status"], "passed")
+        self.assertEqual(real_preflight_rows["credential_presence_ready_without_value_exposure"]["status"], "passed")
+        self.assertEqual(real_preflight_rows["provider_execution_task_not_implemented"]["status"], "blocked_real_tushare_execution_pending")
+        self.assertTrue(real_preflight_rows["provider_execution_task_not_implemented"]["blocks_real_execution"])
+        self.assertEqual(real_preflight_rows["model_execution_task_not_implemented"]["status"], "blocked_real_deepseek_execution_pending")
+        self.assertEqual(real_preflight["call_ledger"][0]["api"], "local_live_light_real_acceptance_preflight_receipt")
+        self.assertFalse(real_preflight["call_ledger"][0]["external_calls_triggered"])
         self.assertEqual(task["call_ledger"][0]["api"], "local_live_light_provider_model_acceptance_dry_run")
         self.assertEqual(task["call_ledger"][0]["call_status"], "local_acceptance_dry_run_recorded_no_external_call")
         self.assertEqual(task["call_ledger"][0]["row_count"], 10)
@@ -10774,6 +10810,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         summary = payload["acceptance_dry_run_summary"]
         self.assertEqual(summary["status"], "acceptance_dry_run_blocked_missing_credentials")
         self.assertEqual(summary["acceptance_scope_hash"], scope_ticket["scope_hash"])
+        self.assertEqual(
+            summary["real_acceptance_preflight_receipt_status"],
+            "real_acceptance_preflight_blocked_dry_run_not_ready",
+        )
+        self.assertFalse(summary["real_acceptance_preflight_ready_to_execute"])
         self.assertEqual(summary["credential_presence_status"], "required_env_key_missing_no_values_read")
         self.assertEqual(summary["credential_required_provider_count"], 2)
         self.assertEqual(summary["credential_present_provider_count"], 0)
@@ -10789,6 +10830,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(rows["server_secret_preflight"]["status"], "dry_run_secret_presence_missing_no_values_exposed")
         self.assertFalse(rows["server_secret_preflight"]["passed"])
         self.assertEqual(rows["server_secret_preflight"]["credential_presence_summary"]["missing_provider_count"], 2)
+        real_preflight = payload["real_acceptance_preflight_receipt"]
+        self.assertEqual(real_preflight["status"], "real_acceptance_preflight_blocked_dry_run_not_ready")
+        self.assertFalse(real_preflight["dry_run_ready_for_user_approved_real_acceptance"])
+        self.assertFalse(real_preflight["ready_to_execute_real_task"])
+        real_preflight_rows = {row["criterion"]: row for row in payload["real_acceptance_preflight_rows"]}
+        self.assertEqual(
+            real_preflight_rows["credential_presence_ready_without_value_exposure"]["status"],
+            "blocked_missing_server_credentials",
+        )
+        self.assertTrue(real_preflight_rows["credential_presence_ready_without_value_exposure"]["blocks_real_execution"])
         self.assertEqual(
             task["call_ledger"][0]["call_status"],
             "local_acceptance_dry_run_blocked_missing_credentials_no_external_call",
