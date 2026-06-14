@@ -7644,6 +7644,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("production_radar_replacement_complete", script)
         self.assertIn("legacy_retirement_ready", script)
         self.assertIn("candidate_is_not_buy_instruction", script)
+        self.assertIn("candidate_radar_production_stage_scope_manifest", script)
         self.assertIn("no_feature_loss_is_local_not_replacement", script)
         self.assertIn("replacement_gap_triage_blocks_legacy_retirement", script)
         self.assertIn("legacy_parity_acceptance_receipt_blocks_feature_loss", script)
@@ -7659,6 +7660,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("candidate_radar_deep_scan_local_review_receipt.v1", script)
         self.assertIn("candidate_browser_qa_evidence_reader_is_local_artifact_only", script)
         self.assertIn("candidate_browser_qa_review_is_button_gated_not_production", script)
+        self.assertIn("candidate_radar_production_stage_scope_manifest_is_complete_and_pending", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -7699,6 +7701,51 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["does_not_modify_strategy_action"])
         self.assertTrue(payload["candidate_is_not_buy_instruction"])
         self.assertEqual(payload["blocking_criterion_count"], 0)
+        required_production_stages = {
+            "cache_render_boundary",
+            "quick_scan_task_pipeline",
+            "local_full_pool_execution_receipt",
+            "local_deep_scan_review_receipt",
+            "worker_full_pool_execution",
+            "worker_deep_scan_execution",
+            "provider_parity_acceptance",
+            "search_quant_provider_model_acceptance",
+            "browser_visual_performance_promotion",
+            "legacy_retirement_review",
+        }
+        self.assertEqual(
+            payload["candidate_radar_production_stage_scope_count"],
+            len(required_production_stages),
+        )
+        stage_rows = payload["candidate_radar_production_stage_scope_rows"]
+        self.assertEqual({row["stage_key"] for row in stage_rows}, required_production_stages)
+        for row in stage_rows:
+            self.assertEqual(row["scope"], "candidate_radar_production_stage_scope_manifest")
+            self.assertEqual(row["target_status"], "production_replacement_direct_evidence_required")
+            self.assertTrue(row["required_before_production_replacement"])
+            self.assertFalse(row["production_radar_replacement_complete"])
+            self.assertFalse(row["legacy_retirement_ready"])
+            self.assertTrue(row["legacy_fallback_required"])
+            self.assertFalse(row["full_pool_scan_done"])
+            self.assertFalse(row["deep_scan_done"])
+            self.assertFalse(row["provider_backed_acceptance_done"])
+            self.assertFalse(row["worker_backed_execution_done"])
+            self.assertFalse(row["browser_performance_trace_done"])
+            self.assertFalse(row["browser_visual_delta_qa_done"])
+            self.assertFalse(row["durable_ci_evidence_complete"])
+            self.assertFalse(row["provider_execution_implemented"])
+            self.assertFalse(row["model_execution_implemented"])
+            self.assertFalse(row["page_render_starts_full_pool"])
+            self.assertFalse(row["page_render_starts_deep_scan"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["candidate_is_not_buy_instruction"])
+            self.assertFalse(row["contains_secret"])
+            self.assertGreaterEqual(len(row["missing_evidence"]), 7)
         self.assertEqual(payload["observed"]["fast_scan_readiness_status"], "fast_scan_local_ready_full_pool_pending")
         self.assertEqual(
             payload["observed"]["fast_scan_task_pipeline_status"],
@@ -7752,6 +7799,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertGreater(payload["observed"]["activation_receipt_production_blocker_count"], 0)
         self.assertGreater(payload["observed"]["activation_receipt_pending_evidence_count"], 0)
+        self.assertEqual(
+            payload["observed"]["candidate_radar_production_stage_scope_count"],
+            len(required_production_stages),
+        )
+        self.assertEqual(
+            payload["observed"]["candidate_radar_production_stage_scope_keys"],
+            sorted(required_production_stages),
+        )
+        self.assertEqual(
+            payload["observed"]["candidate_radar_production_stage_scope_pending_count"],
+            len(required_production_stages),
+        )
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("cache_get_is_read_only_no_scan", criteria)
         self.assertIn("no_feature_loss_is_local_not_replacement", criteria)
@@ -7767,6 +7826,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("candidate_browser_qa_runbook_is_local_execution_pending", criteria)
         self.assertIn("candidate_browser_qa_evidence_reader_is_local_artifact_only", criteria)
         self.assertIn("candidate_browser_qa_review_is_button_gated_not_production", criteria)
+        self.assertIn("candidate_radar_production_stage_scope_manifest_is_complete_and_pending", criteria)
 
     def test_candidate_radar_browser_qa_runbook_script_is_local_static(self):
         path = Path("scripts/candidate_radar_browser_qa_runbook.py")

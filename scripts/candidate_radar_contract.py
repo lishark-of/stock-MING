@@ -78,6 +78,36 @@ REQUIRED_PARITY_ACCEPTANCE_ITEMS = {
     "manual_deep_research",
 }
 CANDIDATE_BROWSER_QA_RUNBOOK_PATH = "scripts/candidate_radar_browser_qa_runbook.py"
+REQUIRED_CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS = {
+    "cache_render_boundary",
+    "quick_scan_task_pipeline",
+    "local_full_pool_execution_receipt",
+    "local_deep_scan_review_receipt",
+    "worker_full_pool_execution",
+    "worker_deep_scan_execution",
+    "provider_parity_acceptance",
+    "search_quant_provider_model_acceptance",
+    "browser_visual_performance_promotion",
+    "legacy_retirement_review",
+}
+CANDIDATE_RADAR_PRODUCTION_STAGE_LABELS = {
+    "cache_render_boundary": "cache render stays read-only and scan-silent",
+    "quick_scan_task_pipeline": "quick radar scan runs through explicit task pipeline",
+    "local_full_pool_execution_receipt": "local full-pool-like receipt stays local evidence",
+    "local_deep_scan_review_receipt": "local deep-scan review stays local evidence",
+    "worker_full_pool_execution": "worker-backed full-pool execution evidence is required",
+    "worker_deep_scan_execution": "worker-backed deep-scan execution evidence is required",
+    "provider_parity_acceptance": "provider-backed legacy signal parity is required",
+    "search_quant_provider_model_acceptance": "searched-symbol provider/model projection evidence is required",
+    "browser_visual_performance_promotion": "browser visual and performance promotion is required",
+    "legacy_retirement_review": "legacy radar retirement review is required",
+}
+LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS = {
+    "cache_render_boundary",
+    "quick_scan_task_pipeline",
+    "local_full_pool_execution_receipt",
+    "local_deep_scan_review_receipt",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -120,6 +150,59 @@ def _snapshot_map() -> dict[str, Any]:
     snapshot = packet_service.load_snapshot_cache()
     safe_snapshot = candidate_service._safe_value(snapshot)
     return safe_snapshot if isinstance(safe_snapshot, dict) else {}
+
+
+def _candidate_radar_production_stage_scope_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    missing_evidence = [
+        "worker full-pool execution evidence",
+        "worker deep-scan execution evidence",
+        "provider-backed parity call ledger",
+        "optional model ledger when enabled",
+        "browser visual and performance promotion",
+        "durable release evidence",
+        "legacy retirement review",
+    ]
+    for stage_key in sorted(REQUIRED_CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS):
+        rows.append(
+            {
+                "stage_key": stage_key,
+                "stage_label": CANDIDATE_RADAR_PRODUCTION_STAGE_LABELS[stage_key],
+                "scope": "candidate_radar_production_stage_scope_manifest",
+                "current_status": (
+                    "local_evidence_ready_production_pending"
+                    if stage_key in LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS
+                    else "direct_evidence_pending"
+                ),
+                "target_status": "production_replacement_direct_evidence_required",
+                "local_stage_evidence_present": stage_key in LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS,
+                "required_before_production_replacement": True,
+                "production_radar_replacement_complete": False,
+                "legacy_retirement_ready": False,
+                "legacy_fallback_required": True,
+                "full_pool_scan_done": False,
+                "deep_scan_done": False,
+                "provider_backed_acceptance_done": False,
+                "worker_backed_execution_done": False,
+                "browser_performance_trace_done": False,
+                "browser_visual_delta_qa_done": False,
+                "durable_ci_evidence_complete": False,
+                "provider_execution_implemented": False,
+                "model_execution_implemented": False,
+                "page_render_starts_full_pool": False,
+                "page_render_starts_deep_scan": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "candidate_is_not_buy_instruction": True,
+                "contains_secret": False,
+                "missing_evidence": missing_evidence,
+            }
+        )
+    return rows
 
 
 def _contract_snapshot_with_candidates(snapshot_map: dict[str, Any]) -> dict[str, Any]:
@@ -333,6 +416,40 @@ def build_contract() -> dict[str, Any]:
     browser_qa_runbook = _read_script(CANDIDATE_BROWSER_QA_RUNBOOK_PATH)
     motion_runner = _read_script("scripts/motion_browser_qa_runner.mjs")
     candidate_frontend = _read_script("desktop/src/routes/CandidateRadar.tsx")
+    production_stage_scope_rows = _candidate_radar_production_stage_scope_rows()
+    production_stage_scope_keys = {str(row.get("stage_key") or "") for row in production_stage_scope_rows}
+    production_stage_scope_ready = (
+        production_stage_scope_keys == REQUIRED_CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS
+        and all(
+            row.get("scope") == "candidate_radar_production_stage_scope_manifest"
+            and row.get("target_status") == "production_replacement_direct_evidence_required"
+            and row.get("required_before_production_replacement") is True
+            and row.get("production_radar_replacement_complete") is False
+            and row.get("legacy_retirement_ready") is False
+            and row.get("legacy_fallback_required") is True
+            and row.get("full_pool_scan_done") is False
+            and row.get("deep_scan_done") is False
+            and row.get("provider_backed_acceptance_done") is False
+            and row.get("worker_backed_execution_done") is False
+            and row.get("browser_performance_trace_done") is False
+            and row.get("browser_visual_delta_qa_done") is False
+            and row.get("durable_ci_evidence_complete") is False
+            and row.get("provider_execution_implemented") is False
+            and row.get("model_execution_implemented") is False
+            and row.get("page_render_starts_full_pool") is False
+            and row.get("page_render_starts_deep_scan") is False
+            and row.get("external_calls_triggered") is False
+            and row.get("tushare_called") is False
+            and row.get("deepseek_called") is False
+            and row.get("github_called") is False
+            and row.get("does_not_execute_trades") is True
+            and row.get("does_not_modify_strategy_action") is True
+            and row.get("candidate_is_not_buy_instruction") is True
+            and row.get("contains_secret") is False
+            and len(_list(row.get("missing_evidence"))) >= 7
+            for row in production_stage_scope_rows
+        )
+    )
 
     rows = [
         _row(
@@ -1115,9 +1232,15 @@ def build_contract() -> dict[str, Any]:
             "Push gate must run the LTG-13 local contract and browser QA runbook before motion/static QA.",
         ),
         _row(
+            "candidate_radar_production_stage_scope_manifest_is_complete_and_pending",
+            production_stage_scope_ready,
+            "Candidate Radar production replacement stages are listed as pending direct evidence while full-pool, deep-scan, provider/model execution, browser promotion, legacy retirement, trade execution, and buy-signal mutation stay disabled.",
+        ),
+        _row(
             "script_is_local_no_provider_execution",
             "command_center_3_candidate_radar_contract.v1" in this_script
             and "local_candidate_radar_contract_no_provider_execution" in this_script
+            and "candidate_radar_production_stage_scope_manifest" in this_script
             and "production_radar_replacement_complete" in this_script
             and "legacy_retirement_ready" in this_script
             and "candidate_radar_quick_scan_receipt.v1" in this_script
@@ -1176,6 +1299,7 @@ def build_contract() -> dict[str, Any]:
         "does_not_modify_strategy_action": True,
         "candidate_is_not_buy_instruction": True,
         "row_count": len(rows),
+        "candidate_radar_production_stage_scope_count": len(production_stage_scope_rows),
         "blocking_criterion_count": len(blockers),
         "blockers": blockers,
         "observed": {
@@ -1215,8 +1339,17 @@ def build_contract() -> dict[str, Any]:
             "candidate_browser_qa_review_blocking_count": browser_qa_review.get("blocking_review_count"),
             "full_pool_plan_blocker_count": full_pool_plan.get("blocking_issue_count"),
             "deep_scan_plan_blocker_count": deep_scan_plan.get("blocking_issue_count"),
+            "candidate_radar_production_stage_scope_count": len(production_stage_scope_rows),
+            "candidate_radar_production_stage_scope_keys": sorted(production_stage_scope_keys),
+            "candidate_radar_production_stage_scope_pending_count": sum(
+                1
+                for row in production_stage_scope_rows
+                if row.get("target_status") == "production_replacement_direct_evidence_required"
+                and row.get("production_radar_replacement_complete") is False
+            ),
         },
         "rows": rows,
+        "candidate_radar_production_stage_scope_rows": production_stage_scope_rows,
         "note": "This is a local push-gate contract. Full-pool execution, deep-scan execution, provider-backed parity acceptance, browser performance/visual QA, and legacy radar retirement remain pending.",
     }
 
