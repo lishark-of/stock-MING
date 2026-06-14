@@ -35,6 +35,7 @@ CONTRACT_KEYS = [
     "freshness_production_blocker_audit",
     "freshness_provider_acceptance_readiness_receipt",
     "freshness_provider_acceptance_activation_receipt",
+    "latest_trade_cal_provider_acceptance_dry_run",
     "current_evidence_freshness_qa_contract",
     "current_evidence_decision_surface_audit",
     "current_evidence_producer_coverage_audit",
@@ -91,6 +92,7 @@ def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
                     "token": "SHOULD_DROP",
                 }
             )
+            latest_after_ready_cache = data_health_service.read_data_health_timeline_cache()
 
             missing_approval = data_health_service.run_trade_cal_provider_acceptance_dry_run(
                 {
@@ -127,6 +129,7 @@ def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
                 "missing_approval": missing_approval,
                 "short_window": short_window,
                 "missing_credentials": missing_credentials,
+                "latest_after_ready_cache": latest_after_ready_cache,
                 "_fake_token": {"value": fake_token},
             }
     finally:
@@ -153,6 +156,15 @@ def build_contract() -> dict[str, Any]:
         if isinstance(row, dict)
     }
     dry_ready_ledger = [_as_dict(row) for row in _as_list(dry_ready.get("call_ledger"))]
+    latest_after_ready_cache = _as_dict(dry_run_cases.get("latest_after_ready_cache"))
+    latest_after_ready = _get(latest_after_ready_cache, "latest_trade_cal_provider_acceptance_dry_run")
+    latest_after_ready_counts = _get(latest_after_ready_cache, "counts")
+    latest_after_ready_policy = _get(latest_after_ready_cache, "policy")
+    latest_after_ready_rows = _as_list(latest_after_ready_cache.get("latest_trade_cal_provider_acceptance_dry_run_rows"))
+    latest_after_ready_credential_rows = [
+        _as_dict(row)
+        for row in _as_list(latest_after_ready_cache.get("latest_trade_cal_provider_acceptance_dry_run_credential_rows"))
+    ]
     dry_missing_approval_receipt = _as_dict(
         _as_dict(dry_missing_approval.get("payload_safe")).get("trade_cal_provider_acceptance_dry_run_receipt")
     )
@@ -168,6 +180,7 @@ def build_contract() -> dict[str, Any]:
             "missing_approval": dry_missing_approval,
             "short_window": dry_short_window,
             "missing_credentials": dry_missing_credentials,
+            "latest_after_ready_cache": latest_after_ready_cache,
         }
     )
     fake_token = str(_as_dict(dry_run_cases.get("_fake_token")).get("value") or "")
@@ -366,6 +379,53 @@ def build_contract() -> dict[str, Any]:
             "The dry-run ticket may bind a future trade_cal acceptance scope, but it must stay local and keep real execution/promotion blocked.",
         ),
         _row(
+            "latest_trade_cal_dry_run_cache_lookup_is_local_read_only",
+            latest_after_ready_cache.get("mode") == "cache_only"
+            and latest_after_ready_cache.get("read_only") is True
+            and latest_after_ready.get("schema_version")
+            == "data_health_latest_trade_cal_provider_acceptance_dry_run.v1"
+            and latest_after_ready.get("status") == "latest_trade_cal_provider_acceptance_dry_run_visible"
+            and latest_after_ready.get("scope") == "local_task_status_lookup_no_provider_execution"
+            and latest_after_ready.get("latest_task_found") is True
+            and latest_after_ready.get("receipt_visible") is True
+            and latest_after_ready.get("latest_task_id") == dry_ready.get("task_id")
+            and latest_after_ready.get("dry_run_status") == dry_ready_receipt.get("status")
+            and latest_after_ready.get("selected_apis") == ["trade_cal"]
+            and latest_after_ready.get("ignored_apis") == ["daily_basic"]
+            and latest_after_ready.get("row_count") == len(dry_ready_rows)
+            and latest_after_ready.get("credential_row_count") == len(latest_after_ready_credential_rows)
+            and latest_after_ready.get("provider_execution_implemented") is False
+            and latest_after_ready.get("provider_backed_long_window_acceptance_done") is False
+            and latest_after_ready.get("production_freshness_gate_complete") is False
+            and latest_after_ready.get("cache_get_creates_task") is False
+            and latest_after_ready.get("cache_get_external_calls") is False
+            and _flag_false(
+                latest_after_ready,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and latest_after_ready.get("does_not_execute_trades") is True
+            and latest_after_ready.get("does_not_modify_strategy_action") is True
+            and int(latest_after_ready_counts.get("latest_trade_cal_provider_acceptance_dry_run_found") or 0) == 1
+            and int(latest_after_ready_counts.get("latest_trade_cal_provider_acceptance_dry_run_row_count") or 0)
+            == len(latest_after_ready_rows)
+            and latest_after_ready_policy.get("latest_trade_cal_provider_acceptance_dry_run_lookup_is_local") is True
+            and latest_after_ready_policy.get("latest_trade_cal_provider_acceptance_dry_run_lookup_creates_task")
+            is False
+            and latest_after_ready_policy.get("latest_trade_cal_provider_acceptance_dry_run_lookup_calls_provider")
+            is False
+            and latest_after_ready_policy.get("latest_trade_cal_provider_acceptance_dry_run_is_not_acceptance") is True
+            and latest_after_ready_credential_rows
+            and "credential_refs" not in latest_after_ready_credential_rows[0]
+            and fake_token not in dry_run_serialized
+            and "SHOULD_DROP" not in dry_run_serialized
+            and "TUSHARE_TOKEN" not in dry_run_serialized,
+            "GET Data Health cache may replay the latest local trade_cal dry-run task metadata, but it must not create a task, call providers, leak credentials, or claim provider-backed acceptance.",
+        ),
+        _row(
             "trade_cal_dry_run_blocks_missing_approval",
             dry_missing_approval.get("current_step")
             == "trade_cal_acceptance_dry_run_blocked_user_approval_required_no_provider_call"
@@ -467,6 +527,7 @@ def build_contract() -> dict[str, Any]:
             and int(counts.get("freshness_production_blocker_row_count") or 0) >= 8
             and int(counts.get("freshness_provider_acceptance_readiness_row_count") or 0) >= 7
             and int(counts.get("freshness_provider_acceptance_activation_row_count") or 0) >= 11
+            and int(counts.get("latest_trade_cal_provider_acceptance_dry_run_found") or 0) >= 0
             and int(counts.get("current_evidence_freshness_qa_row_count") or 0) >= 8
             and int(counts.get("current_evidence_decision_surface_row_count") or 0) >= 5
             and int(counts.get("current_evidence_producer_coverage_row_count") or 0) >= 6,
@@ -516,6 +577,12 @@ def build_contract() -> dict[str, Any]:
                 "freshness_provider_acceptance_activation_blocker_count"
             ),
             "trade_cal_dry_run_contract_case_count": 4,
+            "latest_trade_cal_dry_run_cache_found_count": latest_after_ready_counts.get(
+                "latest_trade_cal_provider_acceptance_dry_run_found"
+            ),
+            "latest_trade_cal_dry_run_cache_row_count": latest_after_ready_counts.get(
+                "latest_trade_cal_provider_acceptance_dry_run_row_count"
+            ),
         },
         "note": "This is a local push-gate contract. Pending/provider-backed blockers are expected until explicit provider acceptance is run later.",
     }

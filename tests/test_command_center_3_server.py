@@ -6978,6 +6978,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("production_freshness_gate_complete", script)
         self.assertIn("trade_cal_provider_acceptance_runbook", script)
         self.assertIn("trade_cal_provider_acceptance_promotion_audit", script)
+        self.assertIn("latest_trade_cal_provider_acceptance_dry_run", script)
+        self.assertIn("latest_trade_cal_dry_run_cache_lookup_is_local_read_only", script)
         self.assertIn("freshness_production_blocker_audit", script)
         self.assertIn("current_evidence_producer_coverage_audit", script)
         self.assertNotIn("requests", script)
@@ -7011,6 +7013,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("acceptance_matrix_is_not_provider_acceptance", criteria)
         self.assertIn("provider_runbook_execution_pending", criteria)
         self.assertIn("provider_promotion_audit_is_read_only_pending", criteria)
+        self.assertIn("latest_trade_cal_dry_run_cache_lookup_is_local_read_only", criteria)
         self.assertIn("freshness_production_blocker_audit_is_local_pending", criteria)
         self.assertIn("producer_coverage_audit_is_read_only", criteria)
 
