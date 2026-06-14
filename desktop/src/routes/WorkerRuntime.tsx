@@ -53,6 +53,9 @@ export default function WorkerRuntime() {
   const workerTaskLogPersistence =
     (productionReadiness.worker_task_log_persistence_audit as Record<string, unknown> | undefined) ??
     ((cache.worker_task_log_persistence_audit as Record<string, unknown> | undefined) ?? {});
+  const workerQueueRouting =
+    (productionReadiness.worker_queue_routing_contract as Record<string, unknown> | undefined) ??
+    ((cache.worker_queue_routing_contract as Record<string, unknown> | undefined) ?? {});
   const workerActivationReview =
     (productionReadiness.worker_activation_review_contract as Record<string, unknown> | undefined) ??
     ((cache.worker_activation_review_contract as Record<string, unknown> | undefined) ?? {});
@@ -111,6 +114,8 @@ export default function WorkerRuntime() {
           { label: "healthcheck pending", value: workerHealthcheckQa.pending_criterion_count ?? counts.worker_healthcheck_qa_pending_count, tone: Number(workerHealthcheckQa.pending_criterion_count ?? counts.worker_healthcheck_qa_pending_count ?? 0) > 0 ? "warn" : "good" },
           { label: "synthetic check", value: visibleHealthcheck.synthetic_healthcheck_executed === true ? "已显式运行" : "未运行", tone: visibleHealthcheck.synthetic_healthcheck_executed === true ? "good" : "warn" },
           { label: "log blockers", value: workerTaskLogPersistence.production_blocker_count ?? counts.worker_task_log_persistence_blocker_count, tone: Number(workerTaskLogPersistence.production_blocker_count ?? counts.worker_task_log_persistence_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "queue routing", value: workerQueueRouting.queue_routing_contract_ready === true ? "ready" : "blocked", tone: workerQueueRouting.queue_routing_contract_ready === true ? "good" : "warn" },
+          { label: "queue blockers", value: workerQueueRouting.blocking_criterion_count ?? counts.worker_queue_routing_blocker_count, tone: Number(workerQueueRouting.blocking_criterion_count ?? counts.worker_queue_routing_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "activation blockers", value: workerActivationReview.activation_blocker_count ?? counts.worker_activation_blocker_count, tone: Number(workerActivationReview.activation_blocker_count ?? counts.worker_activation_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "receipt ready", value: workerProductionReadinessReceipt.local_receipt_ready === true ? "是" : "否", tone: workerProductionReadinessReceipt.local_receipt_ready === true ? "good" : "warn" },
           { label: "receipt blockers", value: workerProductionReadinessReceipt.blocking_criterion_count ?? counts.worker_production_readiness_receipt_blocker_count, tone: Number(workerProductionReadinessReceipt.blocking_criterion_count ?? counts.worker_production_readiness_receipt_blocker_count ?? 0) > 0 ? "warn" : "good" },
@@ -200,6 +205,21 @@ export default function WorkerRuntime() {
         <p>cache GET external calls / scheduler auto tasks: {String(dispatchPlanSummary.cache_get_external_call_count ?? 0)} / {String(dispatchPlanSummary.scheduler_auto_task_count ?? 0)}</p>
         <p>status_counts: {JSON.stringify(dispatchPlanStatusCounts ?? {})}</p>
         <DataLineageTable rows={rows(cache.dispatch_plan_rows)} />
+      </PacketCard>
+
+      <PacketCard title="Worker queue routing contract" subtitle="未来 Celery 队列路由合同；只读、不启动 Celery、不 ping Redis、不派发任务" status={String(workerQueueRouting.status ?? "worker_queue_routing_contract_ready_activation_pending")}>
+        <p>schema_version: {String(workerQueueRouting.schema_version ?? "worker_queue_routing_contract.v1")}</p>
+        <p>queue_routing_contract_ready: {String(workerQueueRouting.queue_routing_contract_ready ?? true)}</p>
+        <p>task_count / queue_count: {String(workerQueueRouting.task_count ?? counts.worker_queue_routing_task_count ?? 0)} / {String(workerQueueRouting.queue_count ?? counts.worker_queue_routing_queue_count ?? 0)}</p>
+        <p>external_capable_task_count: {String(workerQueueRouting.external_capable_task_count ?? counts.worker_queue_routing_external_capable_task_count ?? 0)}</p>
+        <p>worker_started_by_contract / redis_pinged_by_contract / scheduler_started_by_contract: {String(workerQueueRouting.worker_started_by_contract ?? false)} / {String(workerQueueRouting.redis_pinged_by_contract ?? false)} / {String(workerQueueRouting.scheduler_started_by_contract ?? false)}</p>
+        <p>task_dispatched_by_contract / provider_model_task_dispatched_by_contract: {String(workerQueueRouting.task_dispatched_by_contract ?? false)} / {String(workerQueueRouting.provider_model_task_dispatched_by_contract ?? false)}</p>
+        <p>contract_external_calls_triggered / tushare_called / deepseek_called / github_called: {String(workerQueueRouting.contract_external_calls_triggered ?? false)} / {String(workerQueueRouting.tushare_called ?? false)} / {String(workerQueueRouting.deepseek_called ?? false)} / {String(workerQueueRouting.github_called ?? false)}</p>
+        <p>production_worker_complete / activation_ready: {String(workerQueueRouting.production_worker_complete ?? false)} / {String(workerQueueRouting.activation_ready ?? false)}</p>
+        <p>queue_names: {Array.isArray(workerQueueRouting.queue_names) ? workerQueueRouting.queue_names.join(" / ") : "provider_refresh / model_explain / external_probe / local_maintenance / local_compute"}</p>
+        <DataLineageTable rows={rows(productionReadiness.worker_queue_routing_rows ?? cache.worker_queue_routing_rows)} />
+        <DataLineageTable rows={rows(productionReadiness.worker_queue_routing_queue_rows ?? cache.worker_queue_routing_queue_rows)} />
+        <DataLineageTable rows={rows(workerQueueRouting.call_ledger)} />
       </PacketCard>
 
       <PacketCard title="生产 worker 人工预检" subtitle="只读 checklist；不启动 Celery、不 ping Redis、不调度任务" status={String(productionReadiness.status ?? "preflight")}>
@@ -308,6 +328,7 @@ export default function WorkerRuntime() {
       <PacketCard title="原始 worker runtime cache payload" subtitle="调试用 JSON；不含 token/key/Redis URL" status="safe">
         <JsonDetails title="worker runtime cache raw" data={cache} />
         <JsonDetails title="worker task log persistence raw" data={workerTaskLogPersistence} />
+        <JsonDetails title="worker queue routing raw" data={workerQueueRouting} />
         <JsonDetails title="worker synthetic healthcheck raw" data={visibleHealthcheck} />
         <JsonDetails title="worker activation review raw" data={workerActivationReview} />
         <JsonDetails title="worker production readiness receipt raw" data={workerProductionReadinessReceipt} />

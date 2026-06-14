@@ -173,6 +173,237 @@ def _worker_dispatch_plan_rows(
     return rows
 
 
+def _worker_queue_routing_contract(
+    dispatch_plan_rows: list[dict[str, Any]],
+    *,
+    scheduled_refresh_enabled: bool,
+    celery_available: bool,
+    redis_configured: bool,
+) -> dict[str, Any]:
+    queue_policy = {
+        "provider_refresh": {
+            "queue_role": "provider-capable refresh tasks",
+            "allowed_external_sources": ["Tushare"],
+            "allows_provider_or_model": True,
+        },
+        "model_explain": {
+            "queue_role": "model explanation tasks",
+            "allowed_external_sources": ["DeepSeek"],
+            "allows_provider_or_model": True,
+        },
+        "external_probe": {
+            "queue_role": "explicit external probe tasks",
+            "allowed_external_sources": ["GitHub"],
+            "allows_provider_or_model": True,
+        },
+        "local_maintenance": {
+            "queue_role": "local storage and maintenance tasks",
+            "allowed_external_sources": [],
+            "allows_provider_or_model": False,
+        },
+        "local_compute": {
+            "queue_role": "local compute and cache tasks",
+            "allowed_external_sources": [],
+            "allows_provider_or_model": False,
+        },
+    }
+    queue_rows: list[dict[str, Any]] = []
+    for queue_name in sorted({str(row.get("future_queue") or "missing") for row in dispatch_plan_rows}):
+        queue_tasks = [row for row in dispatch_plan_rows if str(row.get("future_queue") or "missing") == queue_name]
+        possible_sources = sorted(
+            {
+                str(source)
+                for row in queue_tasks
+                for source in row.get("possible_external_sources") or []
+                if str(source)
+            }
+        )
+        policy = queue_policy.get(
+            queue_name,
+            {
+                "queue_role": "unclassified queue",
+                "allowed_external_sources": [],
+                "allows_provider_or_model": False,
+            },
+        )
+        queue_rows.append(
+            {
+                "queue": queue_name,
+                "queue_role": policy["queue_role"],
+                "task_count": len(queue_tasks),
+                "task_types": [str(row.get("task_type") or "") for row in queue_tasks],
+                "possible_external_sources": possible_sources,
+                "allowed_external_sources": policy["allowed_external_sources"],
+                "allows_provider_or_model": bool(policy["allows_provider_or_model"]),
+                "all_tasks_button_gated": all(row.get("button_gated") is True for row in queue_tasks),
+                "all_tasks_have_call_ledger_requirement": all(row.get("safe_task_log_required") is True for row in queue_tasks),
+                "automatic_scheduler_allowed_count": sum(1 for row in queue_tasks if row.get("automatic_scheduler_allowed") is True),
+                "cache_get_external_call_count": sum(1 for row in queue_tasks if row.get("cache_get_external_calls") is True),
+                "redis_pinged": False,
+                "celery_started": False,
+                "scheduler_started": False,
+                "external_calls_triggered": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+
+    external_capable_rows = [row for row in dispatch_plan_rows if int(row.get("possible_external_source_count") or 0) > 0]
+    local_queue_external_rows = [
+        row
+        for row in external_capable_rows
+        if str(row.get("future_queue") or "") in {"local_compute", "local_maintenance"}
+    ]
+    local_only_rows = [
+        row
+        for row in dispatch_plan_rows
+        if str(row.get("future_queue") or "") in {"local_compute", "local_maintenance"}
+    ]
+
+    def _row(criterion: str, passed: bool, status: str, evidence: str, next_step: str) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": status,
+            "passed": bool(passed),
+            "evidence": evidence,
+            "next_step": next_step,
+            "cache_get_external_calls": False,
+            "redis_pinged": False,
+            "celery_started": False,
+            "scheduler_started": False,
+            "task_dispatched": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    rows = [
+        _row(
+            "future_queues_declared",
+            bool(dispatch_plan_rows) and all(str(row.get("future_queue") or "") for row in dispatch_plan_rows),
+            "passed" if dispatch_plan_rows and all(str(row.get("future_queue") or "") for row in dispatch_plan_rows) else "blocked",
+            f"task_count={len(dispatch_plan_rows)}; queue_names={[row['queue'] for row in queue_rows]}",
+            "Every task must keep an explicit future_queue before Celery routing can be enabled.",
+        ),
+        _row(
+            "queue_policy_rows_visible",
+            {row["queue"] for row in queue_rows}.issubset(set(queue_policy)),
+            "passed" if {row["queue"] for row in queue_rows}.issubset(set(queue_policy)) else "blocked",
+            f"queue_policy_names={sorted(queue_policy)}",
+            "Classify every future queue before worker activation.",
+        ),
+        _row(
+            "all_tasks_button_gated",
+            all(row.get("button_gated") is True for row in dispatch_plan_rows),
+            "passed" if all(row.get("button_gated") is True for row in dispatch_plan_rows) else "blocked",
+            "All queue-routed tasks must still require explicit POST/button gates.",
+            "Keep worker routing behind task creation APIs.",
+        ),
+        _row(
+            "external_capable_tasks_isolated_from_local_queues",
+            not local_queue_external_rows,
+            "passed" if not local_queue_external_rows else "blocked_external_task_in_local_queue",
+            f"external_capable_task_count={len(external_capable_rows)}; local_queue_external_task_count={len(local_queue_external_rows)}",
+            "Move provider/model/probe-capable tasks into provider_refresh, model_explain, or external_probe queues.",
+        ),
+        _row(
+            "local_queues_are_local_only",
+            all(int(row.get("possible_external_source_count") or 0) == 0 for row in local_only_rows),
+            "passed" if all(int(row.get("possible_external_source_count") or 0) == 0 for row in local_only_rows) else "blocked_local_queue_external_source",
+            f"local_queue_task_count={len(local_only_rows)}",
+            "Keep local_compute/local_maintenance free of provider/model/probe-capable tasks.",
+        ),
+        _row(
+            "provider_model_probe_queues_are_button_gated",
+            all(row.get("button_gated") is True for row in external_capable_rows),
+            "passed" if all(row.get("button_gated") is True for row in external_capable_rows) else "blocked_external_queue_not_gated",
+            f"external_capable_task_count={len(external_capable_rows)}",
+            "Provider/model/probe-capable queues must stay explicit and auditable.",
+        ),
+        _row(
+            "scheduler_default_off_for_all_queues",
+            not scheduled_refresh_enabled and all(row.get("automatic_scheduler_allowed") is False for row in dispatch_plan_rows),
+            "passed" if not scheduled_refresh_enabled and all(row.get("automatic_scheduler_allowed") is False for row in dispatch_plan_rows) else "blocked_scheduler_enabled",
+            f"scheduled_refresh_enabled={scheduled_refresh_enabled}",
+            "Do not enable scheduler production routing until a separate scheduler activation review passes.",
+        ),
+        _row(
+            "cache_get_never_dispatches_queue_work",
+            all(row.get("cache_get_external_calls") is False for row in dispatch_plan_rows),
+            "passed" if all(row.get("cache_get_external_calls") is False for row in dispatch_plan_rows) else "blocked_cache_get_dispatch",
+            "GET /api/worker/cache reads routing metadata only.",
+            "Preserve POST-only task dispatch.",
+        ),
+        _row(
+            "celery_redis_not_started_by_routing_contract",
+            celery_available in {True, False} and redis_configured in {True, False},
+            "passed_no_process_start",
+            f"celery_available={celery_available}; redis_configured={redis_configured}; celery_started=false; redis_pinged=false",
+            "Only a future manual healthcheck may start Celery or prove Redis reachability.",
+        ),
+        _row(
+            "no_trade_or_action_boundary",
+            all(row.get("does_not_execute_trades") is True and row.get("does_not_modify_strategy_action") is True for row in dispatch_plan_rows),
+            "passed",
+            "Queue routing never executes trades or mutates strategy action.",
+            "Keep real trading outside worker productionization.",
+        ),
+    ]
+    blockers = [row["criterion"] for row in rows if not row["passed"]]
+    return {
+        "schema_version": "worker_queue_routing_contract.v1",
+        "status": "worker_queue_routing_contract_ready_activation_pending" if not blockers else "worker_queue_routing_contract_blocked",
+        "scope": "local_worker_queue_routing_contract_no_process_start",
+        "ltg": "LTG-06/LTG-11",
+        "queue_routing_contract_ready": not blockers,
+        "task_count": len(dispatch_plan_rows),
+        "queue_count": len(queue_rows),
+        "external_capable_task_count": len(external_capable_rows),
+        "local_queue_external_task_count": len(local_queue_external_rows),
+        "queue_names": [row["queue"] for row in queue_rows],
+        "queue_rows": queue_rows,
+        "production_worker_complete": False,
+        "activation_ready": False,
+        "worker_started_by_contract": False,
+        "redis_pinged_by_contract": False,
+        "scheduler_started_by_contract": False,
+        "task_dispatched_by_contract": False,
+        "provider_model_task_dispatched_by_contract": False,
+        "cache_get_external_calls": False,
+        "contract_external_calls_triggered": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "blocking_criterion_count": len(blockers),
+        "blockers": blockers,
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_worker_queue_routing_contract",
+                "source": "worker dispatch plan and task catalog",
+                "row_count": len(rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "queue_routing_contract_ready_activation_pending" if not blockers else "queue_routing_contract_blocked",
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This contract fixes future Celery queue routing boundaries. It does not start Celery, ping Redis, start scheduler, dispatch tasks, call providers/models/probes, execute trades, or prove production worker completion.",
+    }
+
+
 def _backend_rows(*, celery_available: bool, redis_available: bool, apscheduler_available: bool, scheduled_refresh_enabled: bool) -> list[dict[str, Any]]:
     return [
         {
@@ -1693,6 +1924,12 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         redis_configured=redis_configured,
         scheduled_refresh_enabled=scheduled_refresh_enabled,
     )
+    queue_routing_contract = _worker_queue_routing_contract(
+        dispatch_plan_rows,
+        scheduled_refresh_enabled=scheduled_refresh_enabled,
+        celery_available=celery_available,
+        redis_configured=redis_configured,
+    )
     dispatch_plan_status_counts: dict[str, int] = {}
     for row in dispatch_plan_rows:
         status_key = str(row.get("dispatch_status") or "unknown")
@@ -1726,6 +1963,9 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     production_readiness["worker_healthcheck_qa_rows"] = healthcheck_qa_contract["rows"]
     production_readiness["worker_task_log_persistence_audit"] = task_log_persistence_audit
     production_readiness["worker_task_log_persistence_rows"] = task_log_persistence_audit["rows"]
+    production_readiness["worker_queue_routing_contract"] = queue_routing_contract
+    production_readiness["worker_queue_routing_rows"] = queue_routing_contract["rows"]
+    production_readiness["worker_queue_routing_queue_rows"] = queue_routing_contract["queue_rows"]
     production_readiness["worker_synthetic_healthcheck"] = synthetic_healthcheck
     production_readiness["worker_synthetic_healthcheck_rows"] = synthetic_healthcheck.get("rows") or []
     activation_review_contract = _worker_activation_review_contract(
@@ -1830,6 +2070,9 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         "worker_healthcheck_qa_rows": healthcheck_qa_contract["rows"],
         "worker_task_log_persistence_audit": task_log_persistence_audit,
         "worker_task_log_persistence_rows": task_log_persistence_audit["rows"],
+        "worker_queue_routing_contract": queue_routing_contract,
+        "worker_queue_routing_rows": queue_routing_contract["rows"],
+        "worker_queue_routing_queue_rows": queue_routing_contract["queue_rows"],
         "worker_synthetic_healthcheck": synthetic_healthcheck,
         "worker_synthetic_healthcheck_rows": synthetic_healthcheck.get("rows") or [],
         "worker_activation_review_contract": activation_review_contract,
@@ -1879,6 +2122,10 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_task_log_persistence_criterion_count": task_log_persistence_audit["criterion_count"],
             "worker_task_log_persistence_blocker_count": task_log_persistence_audit["production_blocker_count"],
             "worker_task_log_count": task_log_persistence_audit["task_log_count"],
+            "worker_queue_routing_queue_count": queue_routing_contract["queue_count"],
+            "worker_queue_routing_task_count": queue_routing_contract["task_count"],
+            "worker_queue_routing_external_capable_task_count": queue_routing_contract["external_capable_task_count"],
+            "worker_queue_routing_blocker_count": queue_routing_contract["blocking_criterion_count"],
             "worker_synthetic_healthcheck_executed": 1 if synthetic_healthcheck.get("synthetic_healthcheck_executed") is True else 0,
             "worker_synthetic_healthcheck_blocker_count": synthetic_healthcheck.get("production_blocker_count", 0),
             "worker_activation_review_step_count": activation_review_contract["review_step_count"],
@@ -1911,6 +2158,9 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_task_log_persistence_audit_is_read_only": True,
             "worker_task_log_persistence_is_not_worker_healthcheck": True,
             "worker_task_log_persistence_is_not_production_complete": True,
+            "worker_queue_routing_contract_is_local": True,
+            "worker_queue_routing_contract_is_not_process_start": True,
+            "worker_queue_routing_contract_is_not_production_completion": True,
             "worker_synthetic_healthcheck_requires_explicit_post": True,
             "cache_get_executes_synthetic_healthcheck": False,
             "worker_synthetic_healthcheck_is_not_production_complete": True,
@@ -1934,8 +2184,10 @@ def read_worker_runtime_cache() -> dict[str, Any]:
                 "external": False,
             }
         ]
+        + queue_routing_contract["call_ledger"]
         + production_readiness_receipt["call_ledger"]
         + production_activation_receipt["call_ledger"],
+        "queue_call_ledger": queue_routing_contract["call_ledger"],
         "external_calls_triggered": False,
         "redis_pinged": False,
         "tushare_called": False,

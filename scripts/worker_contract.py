@@ -65,6 +65,18 @@ REQUIRED_TASK_LOG_CRITERIA = {
     "append_only_worker_log_storage_verified",
     "cross_process_task_log_round_trip_verified",
 }
+REQUIRED_QUEUE_ROUTING_CRITERIA = {
+    "future_queues_declared",
+    "queue_policy_rows_visible",
+    "all_tasks_button_gated",
+    "external_capable_tasks_isolated_from_local_queues",
+    "local_queues_are_local_only",
+    "provider_model_probe_queues_are_button_gated",
+    "scheduler_default_off_for_all_queues",
+    "cache_get_never_dispatches_queue_work",
+    "celery_redis_not_started_by_routing_contract",
+    "no_trade_or_action_boundary",
+}
 REQUIRED_READINESS_RECEIPT_CRITERIA = {
     "local_worker_contracts_visible",
     "explicit_post_synthetic_healthcheck_boundary",
@@ -126,6 +138,10 @@ def build_contract() -> dict[str, Any]:
     task_log_audit = _dict(packet.get("worker_task_log_persistence_audit"))
     task_log_rows = [row for row in _list(packet.get("worker_task_log_persistence_rows")) if isinstance(row, dict)]
     task_log_criteria = {str(row.get("criterion") or "") for row in task_log_rows}
+    queue_routing = _dict(packet.get("worker_queue_routing_contract"))
+    queue_routing_rows = [row for row in _list(packet.get("worker_queue_routing_rows")) if isinstance(row, dict)]
+    queue_routing_criteria = {str(row.get("criterion") or "") for row in queue_routing_rows}
+    queue_rows = [row for row in _list(packet.get("worker_queue_routing_queue_rows")) if isinstance(row, dict)]
     synthetic_healthcheck = _dict(packet.get("worker_synthetic_healthcheck"))
     readiness_receipt = _dict(packet.get("worker_production_readiness_receipt"))
     readiness_receipt_rows = [row for row in _list(packet.get("worker_production_readiness_receipt_rows")) if isinstance(row, dict)]
@@ -286,6 +302,43 @@ def build_contract() -> dict[str, Any]:
             "Worker task-log persistence audit must prove only local safe log visibility and keep append-only/cross-process worker log proof pending.",
         ),
         _row(
+            "queue_routing_contract_is_local_and_button_gated",
+            queue_routing.get("schema_version") == "worker_queue_routing_contract.v1"
+            and queue_routing.get("status") == "worker_queue_routing_contract_ready_activation_pending"
+            and queue_routing.get("scope") == "local_worker_queue_routing_contract_no_process_start"
+            and queue_routing.get("queue_routing_contract_ready") is True
+            and int(queue_routing.get("task_count") or 0) == int(catalog.get("task_count") or 0)
+            and int(queue_routing.get("queue_count") or 0) >= 5
+            and int(queue_routing.get("local_queue_external_task_count") or 0) == 0
+            and REQUIRED_QUEUE_ROUTING_CRITERIA.issubset(queue_routing_criteria)
+            and {"provider_refresh", "model_explain", "external_probe", "local_maintenance", "local_compute"}.issubset(
+                set(queue_routing.get("queue_names") or [])
+            )
+            and all(row.get("all_tasks_button_gated") is True for row in queue_rows)
+            and all(row.get("cache_get_external_call_count") == 0 for row in queue_rows)
+            and all(row.get("automatic_scheduler_allowed_count") == 0 for row in queue_rows)
+            and queue_routing.get("production_worker_complete") is False
+            and queue_routing.get("activation_ready") is False
+            and queue_routing.get("worker_started_by_contract") is False
+            and queue_routing.get("redis_pinged_by_contract") is False
+            and queue_routing.get("scheduler_started_by_contract") is False
+            and queue_routing.get("task_dispatched_by_contract") is False
+            and queue_routing.get("provider_model_task_dispatched_by_contract") is False
+            and queue_routing.get("cache_get_external_calls") is False
+            and queue_routing.get("contract_external_calls_triggered") is False
+            and _flag_false(queue_routing, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and queue_routing.get("does_not_execute_trades") is True
+            and queue_routing.get("does_not_modify_strategy_action") is True
+            and queue_routing.get("contains_secret") is False
+            and _list(queue_routing.get("call_ledger"))
+            and _dict(_list(queue_routing.get("call_ledger"))[0]).get("api") == "local_worker_queue_routing_contract"
+            and "local_worker_queue_routing_contract" in {item.get("api") for item in _list(packet.get("call_ledger"))}
+            and _dict(packet.get("policy")).get("worker_queue_routing_contract_is_local") is True
+            and _dict(packet.get("policy")).get("worker_queue_routing_contract_is_not_process_start") is True
+            and _dict(packet.get("policy")).get("worker_queue_routing_contract_is_not_production_completion") is True,
+            "Worker queue routing contract must keep future Celery queues explicit, button-gated, scheduler-off, local/no-process-start, no-provider-call, no-trade, and not production complete.",
+        ),
+        _row(
             "synthetic_healthcheck_is_explicit_post_only",
             "POST /api/worker/synthetic-healthcheck" in _dict(catalog.get("route_coverage")).get("known_post_routes", [])
             and _dict(catalog.get("policy")).get("all_known_post_routes_button_gated") is True
@@ -413,6 +466,8 @@ def build_contract() -> dict[str, Any]:
             "command_center_3_worker_contract.v1" in this_script
             and "local_worker_contract_no_process_start" in this_script
             and "worker_production_activation_receipt.v1" in this_script
+            and "worker_queue_routing_contract.v1" in this_script
+            and "queue_routing_contract_is_local_and_button_gated" in this_script
             and "production_activation_receipt_keeps_worker_blocked" in this_script
             and "production_worker_complete" in this_script
             and "healthcheck_executed" in this_script
@@ -446,6 +501,8 @@ def build_contract() -> dict[str, Any]:
         "worker_production_readiness_receipt_status": readiness_receipt.get("status"),
         "worker_production_activation_receipt_ready": activation_receipt.get("local_activation_receipt_ready") is True,
         "worker_production_activation_receipt_status": activation_receipt.get("status"),
+        "worker_queue_routing_contract_ready": queue_routing.get("queue_routing_contract_ready") is True,
+        "worker_queue_routing_contract_status": queue_routing.get("status"),
         "local_fallback_available": True,
         "cache_only": True,
         "external_calls_triggered": False,
@@ -469,6 +526,9 @@ def build_contract() -> dict[str, Any]:
             "healthcheck_pending_count": healthcheck.get("pending_criterion_count"),
             "task_log_persistence_status": task_log_audit.get("status"),
             "task_log_persistence_blocker_count": task_log_audit.get("production_blocker_count"),
+            "queue_routing_status": queue_routing.get("status"),
+            "queue_routing_queue_count": queue_routing.get("queue_count"),
+            "queue_routing_external_capable_task_count": queue_routing.get("external_capable_task_count"),
             "synthetic_healthcheck_status": synthetic_healthcheck.get("status"),
             "synthetic_healthcheck_executed": synthetic_healthcheck.get("synthetic_healthcheck_executed"),
             "activation_review_status": activation.get("status"),
