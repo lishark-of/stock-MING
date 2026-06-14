@@ -204,6 +204,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(all(row["production_complete"] is False for row in migration["long_term_goal_rows"]))
         self.assertIn("LTG-13", {row["id"] for row in migration["long_term_goal_rows"]})
         self.assertIn("LTG-14", {row["id"] for row in migration["long_term_goal_rows"]})
+        migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
+        self.assertEqual(migration_goals["LTG-03"]["completion_estimate"], "45%-55%")
+        self.assertIn("provider small-pool dry-run scope ticket", migration_goals["LTG-03"]["current_state"])
+        self.assertIn("safe scope ticket", migration_goals["LTG-03"]["next_step"])
+        self.assertFalse(migration_goals["LTG-03"]["production_complete"])
         self.assertEqual(
             migration["tushare_deepseek_linkage_review"]["status"],
             "linkage_contract_visible_provider_model_execution_pending",
@@ -11567,6 +11572,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration["data"]["long_term_goal_summary"]["strict_closeout"], "0/14")
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertTrue(all(row["production_complete"] is False for row in migration["data"]["long_term_goal_rows"]))
+        migration_goals = {row["id"]: row for row in migration["data"]["long_term_goal_rows"]}
+        self.assertEqual(migration_goals["LTG-03"]["completion_estimate"], "45%-55%")
+        self.assertIn("provider small-pool dry-run scope ticket", migration_goals["LTG-03"]["current_state"])
+        self.assertIn("provider-backed small-stock-pool validation", migration_goals["LTG-03"]["next_step"])
+        self.assertFalse(migration_goals["LTG-03"]["production_complete"])
         self.assertEqual(
             migration["data"]["tushare_deepseek_linkage_review"]["status"],
             "linkage_contract_visible_provider_model_execution_pending",
