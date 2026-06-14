@@ -1438,6 +1438,8 @@ Add Command Center 3 motion clarity system
 - `manual` 模式只允许用户点击按钮或提交显式任务后外联。
 - `live_light` 模式可以在初始 cache render 后创建一次限频后台 bootstrap task，用于轻量 Tushare 刷新和可选 DeepSeek pro 解释；这不是 render 直接外联。
 - `live_light` 默认关闭，必须可配置、可见、可审计、可跳过、可失败降级。
+- `live_light` 的 Tushare 自动刷新只允许在 POST task 内执行轻量范围：`trade_cal` when needed、`daily`、`daily_basic`、`moneyflow`，默认只覆盖当前标的/持仓/watchlist/搜索标的并受 symbol limit 与 rate limit 约束。
+- `live_light` 的 DeepSeek pro 自动解释只允许在 Tushare / factor / next-session cache 准备好之后由 task 触发，必须使用 input hash 去重、model ledger、六字段 sanitizer、parse-failed 安全回退，并且不得覆盖数值、持仓、价格、`operation_zones` 或 `strategy action`。
 - `live_full` 预留；全池/深扫不默认启用。
 - GitHub probe 不进入 `live_light` 默认启动链路；仍需独立按钮或显式 task mode。
 - DeepSeek 不作为数据源。
@@ -1458,4 +1460,7 @@ Add Command Center 3 motion clarity system
 - Distinguish `done_real`, `scaffold`, `preflight`, `mock`, `matrix`, and `sanitizer`.
 - Do not call scaffold or preflight work production complete.
 - Do not treat mock, matrix, or sanitizer as external acceptance.
+- When discussing startup external calls, always name the layer: cache GET / initial React render, POST task creation, provider/model execution inside the task, or production promotion evidence.
+- Do not revive the old flat wording "page startup never automates anything" once `live_light` is in scope; the correct baseline is `cache_only` default-deny plus explicit `manual` / `live_light` upgrades.
+- Do not blur `live_light` into hidden automation: it must remain visible in UI, rate-limited, deduped, task-ledgered, safe to fail, non-blocking, and unable to mutate trading actions.
 - Keep commit messages narrow and tied to one goal whenever possible.
