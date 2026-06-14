@@ -39,6 +39,26 @@ REQUIRED_INTERACTION_KEYS = {
     "legacy_streamlit_parity",
 }
 REQUIRED_HOVER_FIELDS = {"price", "source", "trigger_condition", "risk_note"}
+REQUIRED_NEXT_SESSION_PRODUCTION_STAGES = {
+    "exact_cache_payload_contract",
+    "interaction_hover_click_contract",
+    "streamlit_parity_review",
+    "browser_visual_qa",
+    "browser_performance_trace",
+    "reduced_motion_accessibility_qa",
+    "durable_ci_release_evidence",
+    "production_replacement_promotion",
+}
+NEXT_SESSION_PRODUCTION_STAGE_LABELS = {
+    "exact_cache_payload_contract": "exact cache payload and chart contract",
+    "interaction_hover_click_contract": "hover and click interaction contract",
+    "streamlit_parity_review": "legacy Streamlit parity review",
+    "browser_visual_qa": "browser visual QA across viewports",
+    "browser_performance_trace": "browser performance trace",
+    "reduced_motion_accessibility_qa": "reduced-motion and accessibility QA",
+    "durable_ci_release_evidence": "durable CI or release evidence",
+    "production_replacement_promotion": "production replacement promotion review",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -177,6 +197,52 @@ def _build_exact_service_packet() -> dict[str, Any]:
             packet_service.SQLITE_META_PATH = original_meta
 
 
+def _next_session_production_stage_scope_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for stage_key in sorted(REQUIRED_NEXT_SESSION_PRODUCTION_STAGES):
+        rows.append(
+            {
+                "stage_key": stage_key,
+                "stage_label": NEXT_SESSION_PRODUCTION_STAGE_LABELS[stage_key],
+                "scope": "next_session_production_replacement_stage_scope_manifest",
+                "current_status": "local_contract_or_runbook_only",
+                "target_status": "browser_parity_or_release_evidence_required",
+                "required_before_production_replacement": True,
+                "exact_payload_contract_ready": stage_key in {
+                    "exact_cache_payload_contract",
+                    "interaction_hover_click_contract",
+                },
+                "interaction_contract_ready": stage_key == "interaction_hover_click_contract",
+                "streamlit_parity_complete": False,
+                "browser_visual_qa_done": False,
+                "browser_performance_trace_done": False,
+                "reduced_motion_accessibility_qa_done": False,
+                "durable_ci_evidence_complete": False,
+                "production_replacement_complete": False,
+                "browser_opened_by_contract": False,
+                "artifacts_written_by_contract": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_modify_operation_zones": True,
+                "frontend_computes_trade_action": False,
+                "contains_secret": False,
+                "missing_evidence": [
+                    "explicit Streamlit parity review",
+                    "browser visual QA report",
+                    "browser performance trace",
+                    "reduced-motion/accessibility QA report",
+                    "durable CI or release evidence",
+                    "explicit production replacement approval",
+                ],
+            }
+        )
+    return rows
+
+
 def build_contract() -> dict[str, Any]:
     exact_packet = _build_exact_sample_packet()
     exact_service_packet = _build_exact_service_packet()
@@ -213,6 +279,7 @@ def build_contract() -> dict[str, Any]:
     chart_component = _read_script("desktop/src/components/NextSessionChart.tsx")
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/next_session_map_contract.py")
+    production_stage_scope_rows = _next_session_production_stage_scope_rows()
 
     rows = [
         _row(
@@ -400,6 +467,40 @@ def build_contract() -> dict[str, Any]:
             "Next-session browser QA review must be explicit POST, local artifact only, no browser execution, and not a production replacement promotion.",
         ),
         _row(
+            "production_replacement_stage_scope_manifest_is_complete_and_pending",
+            {row.get("stage_key") for row in production_stage_scope_rows}
+            == REQUIRED_NEXT_SESSION_PRODUCTION_STAGES
+            and len(production_stage_scope_rows) == len(REQUIRED_NEXT_SESSION_PRODUCTION_STAGES)
+            and all(
+                row.get("scope") == "next_session_production_replacement_stage_scope_manifest"
+                for row in production_stage_scope_rows
+            )
+            and all(row.get("required_before_production_replacement") is True for row in production_stage_scope_rows)
+            and all(row.get("current_status") == "local_contract_or_runbook_only" for row in production_stage_scope_rows)
+            and all(
+                row.get("target_status") == "browser_parity_or_release_evidence_required"
+                for row in production_stage_scope_rows
+            )
+            and all(row.get("streamlit_parity_complete") is False for row in production_stage_scope_rows)
+            and all(row.get("browser_visual_qa_done") is False for row in production_stage_scope_rows)
+            and all(row.get("browser_performance_trace_done") is False for row in production_stage_scope_rows)
+            and all(row.get("reduced_motion_accessibility_qa_done") is False for row in production_stage_scope_rows)
+            and all(row.get("durable_ci_evidence_complete") is False for row in production_stage_scope_rows)
+            and all(row.get("production_replacement_complete") is False for row in production_stage_scope_rows)
+            and all(row.get("browser_opened_by_contract") is False for row in production_stage_scope_rows)
+            and all(row.get("artifacts_written_by_contract") is False for row in production_stage_scope_rows)
+            and all(row.get("external_calls_triggered") is False for row in production_stage_scope_rows)
+            and all(row.get("tushare_called") is False for row in production_stage_scope_rows)
+            and all(row.get("deepseek_called") is False for row in production_stage_scope_rows)
+            and all(row.get("github_called") is False for row in production_stage_scope_rows)
+            and all(row.get("does_not_execute_trades") is True for row in production_stage_scope_rows)
+            and all(row.get("does_not_modify_strategy_action") is True for row in production_stage_scope_rows)
+            and all(row.get("does_not_modify_operation_zones") is True for row in production_stage_scope_rows)
+            and all(row.get("frontend_computes_trade_action") is False for row in production_stage_scope_rows)
+            and all(row.get("contains_secret") is False for row in production_stage_scope_rows),
+            "Next-session production replacement stage rows must enumerate every remaining parity/browser/release evidence stage without opening a browser, writing artifacts, calling providers, executing trades, or claiming replacement completion.",
+        ),
+        _row(
             "react_echarts_frontend_uses_api_client_and_read_only_display",
             "getNextSessionCache" in next_page
             and 'postTask("/api/next-session/generate")' in next_page
@@ -436,6 +537,7 @@ def build_contract() -> dict[str, Any]:
             "command_center_3_next_session_map_contract.v1" in this_script
             and "local_next_session_map_contract_no_browser_no_provider" in this_script
             and "next_session_replacement_activation_receipt.v1" in this_script
+            and "next_session_production_replacement_stage_scope_manifest" in this_script
             and "production_replacement_complete" in this_script
             and "streamlit_parity_complete" in this_script
             and "browser_visual_qa_done" in this_script
@@ -490,7 +592,13 @@ def build_contract() -> dict[str, Any]:
             "current_cache_status": current_cache.get("status"),
             "current_cache_call_status": current_ledger[0].get("call_status") if current_ledger else None,
             "task_backend": task.get("current_backend"),
+            "production_stage_scope_count": len(production_stage_scope_rows),
+            "production_stage_scope_keys": sorted(row.get("stage_key") for row in production_stage_scope_rows),
+            "production_stage_scope_pending_count": sum(
+                1 for row in production_stage_scope_rows if row.get("production_replacement_complete") is False
+            ),
         },
+        "production_replacement_stage_scope_rows": production_stage_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Browser visual QA, performance trace, legacy Streamlit parity, and production ECharts replacement remain pending.",
     }

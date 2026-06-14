@@ -7529,6 +7529,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("exact_echarts_payload_has_complete_chart_contract", script)
         self.assertIn("interaction_readiness_is_ready_but_parity_pending", script)
         self.assertIn("replacement_activation_receipt_guides_next_safe_step", script)
+        self.assertIn("next_session_production_replacement_stage_scope_manifest", script)
+        self.assertIn("production_replacement_stage_scope_manifest_is_complete_and_pending", script)
         self.assertIn("chart_contract_is_read_only_no_external_no_action", script)
         self.assertIn("current_get_cache_envelope_is_read_only", script)
         self.assertIn("react_echarts_frontend_uses_api_client_and_read_only_display", script)
@@ -7583,6 +7585,43 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertGreaterEqual(payload["observed"]["reference_line_count"], 4)
         self.assertGreaterEqual(payload["observed"]["operation_zone_count"], 1)
         self.assertEqual(payload["observed"]["task_backend"], "local_cache_pipeline")
+        required_production_stages = {
+            "exact_cache_payload_contract",
+            "interaction_hover_click_contract",
+            "streamlit_parity_review",
+            "browser_visual_qa",
+            "browser_performance_trace",
+            "reduced_motion_accessibility_qa",
+            "durable_ci_release_evidence",
+            "production_replacement_promotion",
+        }
+        self.assertEqual(payload["observed"]["production_stage_scope_count"], 8)
+        self.assertEqual(set(payload["observed"]["production_stage_scope_keys"]), required_production_stages)
+        self.assertEqual(payload["observed"]["production_stage_scope_pending_count"], 8)
+        stage_rows = payload["production_replacement_stage_scope_rows"]
+        self.assertEqual({row["stage_key"] for row in stage_rows}, required_production_stages)
+        for row in stage_rows:
+            self.assertEqual(row["scope"], "next_session_production_replacement_stage_scope_manifest")
+            self.assertEqual(row["current_status"], "local_contract_or_runbook_only")
+            self.assertEqual(row["target_status"], "browser_parity_or_release_evidence_required")
+            self.assertTrue(row["required_before_production_replacement"])
+            self.assertFalse(row["streamlit_parity_complete"])
+            self.assertFalse(row["browser_visual_qa_done"])
+            self.assertFalse(row["browser_performance_trace_done"])
+            self.assertFalse(row["reduced_motion_accessibility_qa_done"])
+            self.assertFalse(row["durable_ci_evidence_complete"])
+            self.assertFalse(row["production_replacement_complete"])
+            self.assertFalse(row["browser_opened_by_contract"])
+            self.assertFalse(row["artifacts_written_by_contract"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_modify_operation_zones"])
+            self.assertFalse(row["frontend_computes_trade_action"])
+            self.assertFalse(row["contains_secret"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("exact_echarts_payload_has_complete_chart_contract", criteria)
         self.assertIn("interaction_readiness_is_ready_but_parity_pending", criteria)
@@ -7590,6 +7629,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("reference_zone_position_deepseek_status_are_visible", criteria)
         self.assertIn("current_get_cache_envelope_is_read_only", criteria)
         self.assertIn("replacement_activation_receipt_guides_next_safe_step", criteria)
+        self.assertIn("production_replacement_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("next_session_task_is_button_gated_local_cache_pipeline", criteria)
         self.assertIn("react_echarts_frontend_uses_api_client_and_read_only_display", criteria)
 

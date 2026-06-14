@@ -188,7 +188,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 | LTG-05 | Storage / DuckDB / Parquet 生产化 | dataset scaffold, dry-runs, query policy, physical migration stage-scope manifest, and push-gate contract exist | Versioned, queryable local data layer | P4 | schema/version/TTL/compaction/query services are auditable; data artifacts stay out of git. |
 | LTG-06 | Worker / Celery / Redis 生产化 | local task fallback, preflight, blocker audit, healthcheck QA contract, readiness/activation receipts, runtime evidence stage-scope manifest, and push-gate contract exist | Production-capable worker orchestration with local fallback | P4 | POST returns task_id, worker runs heavy jobs, Redis absence falls back gracefully, scheduler stays off by default. |
 | LTG-07 | DeepSeek pro 稳定解释生产化 | manual governance, sanitizer, local JSON stability audit, response-format review, activation receipt, production stage-scope manifest, and push-gate contract exist; mini-benchmark below production target; `live_light` auto explanation remains future work | Stable manual explanation, optional mode-gated background explanation after data tasks | P5 | JSON success rate > 90%, no action leakage, no numeric overwrite, cost predictable, and failed parse never contaminates packets. |
-| LTG-08 | ECharts 次日操作图谱成熟版 | maturing chart contract with interaction readiness audit; legacy parity pending | React/ECharts replaces Streamlit main next-session visual | P5 | Complete cache display, evidence interactions, no frontend action/price/position mutation. |
+| LTG-08 | ECharts 次日操作图谱成熟版 | maturing chart contract with interaction readiness audit and production replacement stage-scope manifest; legacy parity pending | React/ECharts replaces Streamlit main next-session visual | P5 | Complete cache display, evidence interactions, no frontend action/price/position mutation. |
 | LTG-09 | Tauri desktop production package | dev/preflight with runtime contract and local executable release binary QA; `.app`/DMG packaged runtime QA pending | Production desktop shell for ordinary users | P6 | tauri dev/build pass; backend-offline state is friendly; config/log policy is validated; token/key never enters frontend. |
 | LTG-10 | Streamlit 完全退出普通主流程 | `legacy/admin/debug` marked, fallback dependency contract visible, still used for fallback | Streamlit only for debug/admin/fallback | P7 | Ordinary research workflow runs through Command Center 3 desktop. |
 | LTG-11 | 测试 / CI / smoke / 安全扫描标准化 | local tests, smoke, and local contract guards exist | Repeatable gate for every release candidate | P0/P4 | unittest, frontend build, smoke, diff check, secret scan, artifact scan, and local LTG contracts are documented and enforced. |
@@ -886,6 +886,7 @@ Stabilize DeepSeek pro explanation benchmark
 - The cache payload now exposes `next_session_browser_qa_runbook_contract`, `next_session_browser_qa_evidence_summary`, `next_session_browser_qa_review_contract`, and their rows. These fields pin the `#next` route, desktop/laptop/tablet/mobile viewport matrix, ignored `.stock_ming_3/motion_qa` artifact policy, default-motion and reduced-motion coverage, local evidence gaps, and explicit review state without opening a browser or submitting screenshots.
 - `POST /api/next-session/browser-qa-review` is a button-gated local artifact review. It only reads ignored local runner reports for `#next`, records `next_session_browser_qa_review_contract`, and keeps `streamlit_parity_complete=false` and `production_replacement_complete=false`.
 - `scripts/next_session_map_contract.py` is now part of the local push gate. It validates the exact ECharts payload, interaction readiness, reference/zone/position/DeepSeek visibility, GET cache envelope, button-gated local task, `#next` browser QA runbook/evidence/review boundaries, and React API-client/read-only boundaries while keeping `streamlit_parity_complete=false`, `production_replacement_complete=false`, `browser_visual_qa_done=false`, and `browser_performance_trace_done=false`.
+- `scripts/next_session_map_contract.py` now emits `production_replacement_stage_scope_rows` for the eight production replacement evidence stages: exact cache payload contract, hover/click interaction contract, Streamlit parity review, browser visual QA, browser performance trace, reduced-motion/accessibility QA, durable CI/release evidence, and production replacement promotion. Every row remains local/pending and keeps browser execution, artifact writes, provider/model calls, trades, frontend action computation, operation-zone mutation, and production replacement completion disabled.
 
 ### Gaps
 
@@ -896,6 +897,7 @@ Stabilize DeepSeek pro explanation benchmark
 - Full parity with legacy Streamlit chart is incomplete.
 - The replacement activation receipt and `#next` browser QA contracts are next-step checklists/local artifact summaries only; they do not run browser QA, complete Streamlit parity, create durable CI/release evidence, or promote production replacement.
 - The Next-session map push-gate contract is local only; browser visual QA, performance trace, Streamlit parity, and production replacement remain pending.
+- `production_replacement_stage_scope_rows` is a local stage-scope manifest only; it does not prove Streamlit parity, browser visual QA, browser performance trace, reduced-motion/accessibility QA, durable CI/release evidence, or production ECharts replacement.
 
 ### Implementation Phases
 
@@ -914,6 +916,7 @@ Stabilize DeepSeek pro explanation benchmark
 - `next_session_browser_qa_runbook_contract.local_runbook_ready=true` only means the `#next` route, viewport matrix, and artifact policy are fixed.
 - `next_session_browser_qa_evidence_summary.local_browser_qa_evidence_found=true` only means ignored local runner reports were summarized; even passing local evidence is not CI/release evidence.
 - `next_session_browser_qa_review_contract.local_browser_qa_review_ready=true` is allowed only after explicit POST review and complete local default/reduced-motion evidence, and still keeps `streamlit_parity_complete=false` and `production_replacement_complete=false`.
+- `production_replacement_stage_scope_rows` must list all eight production replacement evidence stages and keep `streamlit_parity_complete=false`, `browser_visual_qa_done=false`, `browser_performance_trace_done=false`, `reduced_motion_accessibility_qa_done=false`, `durable_ci_evidence_complete=false`, `production_replacement_complete=false`, `browser_opened_by_contract=false`, `artifacts_written_by_contract=false`, external calls false, trades false, frontend action computation false, operation-zone mutation false, and `contains_secret=false`.
 - Frontend does not compute action.
 - Frontend does not mutate price, position, or `operation_zones`.
 - `production_replacement_complete` remains false until legacy parity is actually complete.
@@ -926,6 +929,7 @@ Stabilize DeepSeek pro explanation benchmark
 - Do not treat `scripts/next_session_map_contract.py` passing as browser visual QA, performance trace, Streamlit parity, or production ECharts replacement completion.
 - Do not treat `next_session_replacement_activation_receipt` as browser visual QA, performance trace, Streamlit parity, durable evidence, or production ECharts replacement completion.
 - Do not treat `next_session_browser_qa_evidence_summary` or `next_session_browser_qa_review_contract` as CI evidence, Streamlit parity, durable release evidence, or production ECharts replacement.
+- Do not treat `production_replacement_stage_scope_rows` as Streamlit parity evidence, browser visual QA, performance trace, reduced-motion/accessibility QA, durable CI/release evidence, or production ECharts replacement promotion.
 
 ### Recommended Commit Message
 
