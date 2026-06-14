@@ -66,6 +66,21 @@ REQUIRED_STORAGE_PHYSICAL_EXECUTION_PHASES = (
     "duckdb_post_migration_validation",
     "production_promotion_review",
 )
+REQUIRED_STORAGE_PHYSICAL_DURABLE_EVIDENCE_KEYS = (
+    "production_blocker_audit_visible",
+    "readiness_receipt_visible",
+    "activation_receipt_visible",
+    "physical_execution_recipe_ready",
+    "physical_schema_validation_evidence_required",
+    "dataset_version_manifest_validation_required",
+    "partition_migration_evidence_required",
+    "physical_compaction_evidence_required",
+    "cache_ttl_refresh_evidence_required",
+    "artifact_cleanup_delete_review_required",
+    "duckdb_post_migration_validation_required",
+    "production_promotion_review_required",
+    "no_provider_trade_action_secret_boundary",
+)
 PHYSICAL_MIGRATION_STAGE_LABELS = {
     "physical_schema_validation": "Physical schema validation",
     "schema_migration": "Schema migration",
@@ -213,6 +228,12 @@ def build_contract() -> dict[str, Any]:
     physical_execution_rows = {
         str(row.get("phase") or ""): row
         for row in _list(overview.get("storage_physical_execution_recipe_rows"))
+        if isinstance(row, dict)
+    }
+    durable_evidence_recipe = _dict(overview.get("storage_physical_durable_evidence_recipe"))
+    durable_evidence_rows = {
+        str(row.get("evidence_key") or ""): row
+        for row in _list(overview.get("storage_physical_durable_evidence_rows"))
         if isinstance(row, dict)
     }
     blocker_criteria = {
@@ -425,6 +446,78 @@ def build_contract() -> dict[str, Any]:
             and all(row.get("does_not_modify_strategy_action") is True for row in physical_execution_rows.values())
             and all(row.get("contains_secret") is False for row in physical_execution_rows.values()),
             "Physical execution recipe must sequence LTG-05 production work while staying local-only, no-write, no-provider, no-delete, no-trade, and pending.",
+        ),
+        _row(
+            "physical_durable_evidence_recipe_is_local_pending",
+            durable_evidence_recipe.get("schema_version")
+            == "command_center_3_storage_physical_durable_evidence_recipe.v1"
+            and durable_evidence_recipe.get("scope")
+            == "local_storage_physical_durable_evidence_recipe_no_write_no_delete_no_provider"
+            and durable_evidence_recipe.get("status")
+            == "storage_physical_durable_evidence_recipe_ready_production_pending"
+            and durable_evidence_recipe.get("local_recipe_ready") is True
+            and durable_evidence_recipe.get("durable_evidence_complete") is False
+            and durable_evidence_recipe.get("durable_promotion_ready") is False
+            and durable_evidence_recipe.get("production_storage_complete") is False
+            and durable_evidence_recipe.get("physical_schema_validation_done") is False
+            and durable_evidence_recipe.get("schema_migration_executed") is False
+            and durable_evidence_recipe.get("dataset_version_manifest_validated") is False
+            and durable_evidence_recipe.get("partition_migration_executed") is False
+            and durable_evidence_recipe.get("physical_compaction_executed") is False
+            and durable_evidence_recipe.get("cache_ttl_refresh_executed") is False
+            and durable_evidence_recipe.get("artifact_cleanup_delete_executed") is False
+            and durable_evidence_recipe.get("dataset_version_manifest_written_by_recipe") is False
+            and durable_evidence_recipe.get("provider_refresh_called_by_recipe") is False
+            and durable_evidence_recipe.get("cache_get_writes_files") is False
+            and durable_evidence_recipe.get("writes_parquet") is False
+            and durable_evidence_recipe.get("writes_manifest") is False
+            and durable_evidence_recipe.get("deletes_artifacts") is False
+            and _flag_false(durable_evidence_recipe, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and durable_evidence_recipe.get("does_not_execute_trades") is True
+            and durable_evidence_recipe.get("does_not_modify_strategy_action") is True
+            and durable_evidence_recipe.get("contains_secret") is False
+            and tuple(durable_evidence_recipe.get("evidence_keys") or ())
+            == REQUIRED_STORAGE_PHYSICAL_DURABLE_EVIDENCE_KEYS
+            and set(durable_evidence_recipe.get("missing_durable_evidence") or [])
+            == {
+                "physical_schema_validation_evidence_required",
+                "dataset_version_manifest_validation_required",
+                "partition_migration_evidence_required",
+                "physical_compaction_evidence_required",
+                "cache_ttl_refresh_evidence_required",
+                "artifact_cleanup_delete_review_required",
+                "duckdb_post_migration_validation_required",
+                "production_promotion_review_required",
+            }
+            and set(durable_evidence_rows) == set(REQUIRED_STORAGE_PHYSICAL_DURABLE_EVIDENCE_KEYS)
+            and {
+                "physical schema validation acceptance packet",
+                "dataset version manifest write and validation receipts",
+                "DuckDB post-migration read-only query contract",
+                "production promotion review",
+            }.issubset(set(durable_evidence_recipe.get("required_evidence") or []))
+            and {
+                "treat_durable_recipe_as_physical_execution",
+                "create_storage_write_from_get_cache",
+                "write_parquet_from_recipe",
+                "delete_artifacts_from_recipe",
+                "call_Tushare_from_recipe",
+                "mark_production_storage_complete_from_recipe",
+            }.issubset(set(durable_evidence_recipe.get("not_allowed_next_steps") or []))
+            and all(row.get("required_before_production") is True for row in durable_evidence_rows.values())
+            and all(row.get("production_ready") is False for row in durable_evidence_rows.values())
+            and all(row.get("writes_parquet") is False for row in durable_evidence_rows.values())
+            and all(row.get("writes_manifest") is False for row in durable_evidence_rows.values())
+            and all(row.get("deletes_artifacts") is False for row in durable_evidence_rows.values())
+            and all(row.get("refreshes_providers") is False for row in durable_evidence_rows.values())
+            and all(row.get("external_calls_triggered") is False for row in durable_evidence_rows.values())
+            and all(row.get("tushare_called") is False for row in durable_evidence_rows.values())
+            and all(row.get("deepseek_called") is False for row in durable_evidence_rows.values())
+            and all(row.get("github_called") is False for row in durable_evidence_rows.values())
+            and all(row.get("does_not_execute_trades") is True for row in durable_evidence_rows.values())
+            and all(row.get("does_not_modify_strategy_action") is True for row in durable_evidence_rows.values())
+            and all(row.get("contains_secret") is False for row in durable_evidence_rows.values()),
+            "Physical durable evidence recipe must expose the production evidence gap while remaining local-only, no-write, no-provider, no-delete, no-trade, and pending.",
         ),
         _row(
             "physical_migration_stage_scope_manifest_is_complete_and_pending",
@@ -736,8 +829,10 @@ def build_contract() -> dict[str, Any]:
             and "local_storage_contract_no_physical_migration" in this_script
             and "command_center_3_storage_physical_migration_activation_receipt.v1" in this_script
             and "command_center_3_storage_physical_execution_recipe.v1" in this_script
+            and "command_center_3_storage_physical_durable_evidence_recipe.v1" in this_script
             and "physical_migration_activation_receipt_keeps_execution_pending" in this_script
             and "physical_execution_recipe_is_local_pending" in this_script
+            and "physical_durable_evidence_recipe_is_local_pending" in this_script
             and "physical_migration_stage_scope_manifest_is_complete_and_pending" in this_script
             and "production_storage_complete" in this_script
             and "dry_runs_are_not_production_completion" in this_script
@@ -775,6 +870,13 @@ def build_contract() -> dict[str, Any]:
         "storage_physical_migration_activation_status": activation_receipt.get("status"),
         "storage_physical_execution_recipe_ready": bool(physical_execution_recipe.get("local_recipe_ready")),
         "storage_physical_execution_recipe_status": physical_execution_recipe.get("status"),
+        "storage_physical_durable_evidence_recipe_ready": bool(
+            durable_evidence_recipe.get("local_recipe_ready")
+        ),
+        "storage_physical_durable_evidence_recipe_status": durable_evidence_recipe.get("status"),
+        "storage_physical_durable_evidence_production_blocker_count": durable_evidence_recipe.get(
+            "production_blocker_count"
+        ),
         "partition_migration_executed": False,
         "physical_compaction_executed": False,
         "cache_ttl_refresh_executed": False,
@@ -809,6 +911,15 @@ def build_contract() -> dict[str, Any]:
             ],
             "storage_physical_execution_pending_phase_count": sum(
                 1 for row in physical_execution_rows.values() if row.get("execution_done") is False
+            ),
+            "storage_physical_durable_evidence_recipe_status": durable_evidence_recipe.get("status"),
+            "storage_physical_durable_evidence_recipe_ready": durable_evidence_recipe.get("local_recipe_ready"),
+            "storage_physical_durable_evidence_key_count": len(durable_evidence_rows),
+            "storage_physical_durable_evidence_keys": [
+                row.get("evidence_key") for row in durable_evidence_rows.values()
+            ],
+            "storage_physical_durable_evidence_production_blocker_count": durable_evidence_recipe.get(
+                "production_blocker_count"
             ),
             "schema_migration_preflight_status": schema_preflight.get("status"),
             "dataset_version_policy_status": dataset_version_policy.get("status"),
@@ -846,6 +957,7 @@ def build_contract() -> dict[str, Any]:
             ),
         },
         "storage_physical_execution_recipe_rows": list(physical_execution_rows.values()),
+        "storage_physical_durable_evidence_rows": list(durable_evidence_rows.values()),
         "physical_migration_stage_scope_rows": physical_migration_stage_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Physical schema validation, schema migration, dataset version manifest validation, partition migration, physical compaction, TTL refresh execution, and delete cleanup remain pending.",

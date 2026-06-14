@@ -368,6 +368,18 @@ export default function StorageOverview() {
   const storagePhysicalMigrationActivationRows =
     (overview.storage_physical_migration_activation_rows as Array<Record<string, unknown>> | undefined) ??
     ((storageCatalog.storage_physical_migration_activation_rows as Array<Record<string, unknown>> | undefined) ?? []);
+  const storagePhysicalExecutionRecipe =
+    (overview.storage_physical_execution_recipe as Record<string, unknown> | undefined) ??
+    ((storageCatalog.storage_physical_execution_recipe as Record<string, unknown> | undefined) ?? {});
+  const storagePhysicalExecutionRows =
+    (overview.storage_physical_execution_recipe_rows as Array<Record<string, unknown>> | undefined) ??
+    ((storageCatalog.storage_physical_execution_recipe_rows as Array<Record<string, unknown>> | undefined) ?? []);
+  const storagePhysicalDurableEvidenceRecipe =
+    (overview.storage_physical_durable_evidence_recipe as Record<string, unknown> | undefined) ??
+    ((storageCatalog.storage_physical_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {});
+  const storagePhysicalDurableEvidenceRows =
+    (overview.storage_physical_durable_evidence_rows as Array<Record<string, unknown>> | undefined) ??
+    ((storageCatalog.storage_physical_durable_evidence_rows as Array<Record<string, unknown>> | undefined) ?? []);
 
   return (
     <>
@@ -422,6 +434,10 @@ export default function StorageOverview() {
           { label: "receipt blocked", value: storageProductionReadinessReceipt.blocked_readiness_count ?? 0, tone: Number(storageProductionReadinessReceipt.blocked_readiness_count ?? 0) > 0 ? "warn" : "good" },
           { label: "storage activation", value: String(storagePhysicalMigrationActivationReceipt.status ?? overview.storage_physical_migration_activation_status ?? "missing"), tone: storagePhysicalMigrationActivationReceipt.local_activation_receipt_ready === true ? "good" : "warn" },
           { label: "activation blockers", value: storagePhysicalMigrationActivationReceipt.blocked_activation_count ?? 0, tone: Number(storagePhysicalMigrationActivationReceipt.blocked_activation_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "storage execution", value: String(storagePhysicalExecutionRecipe.status ?? overview.storage_physical_execution_recipe_status ?? "missing"), tone: storagePhysicalExecutionRecipe.local_recipe_ready === true ? "good" : "warn" },
+          { label: "execution phases", value: overview.storage_physical_execution_pending_phase_count ?? storagePhysicalExecutionRecipe.pending_phase_count ?? storagePhysicalExecutionRows.length, tone: Number(overview.storage_physical_execution_pending_phase_count ?? storagePhysicalExecutionRecipe.pending_phase_count ?? storagePhysicalExecutionRows.length) > 0 ? "warn" : "good" },
+          { label: "storage durable", value: String(storagePhysicalDurableEvidenceRecipe.status ?? overview.storage_physical_durable_evidence_recipe_status ?? "missing"), tone: storagePhysicalDurableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
+          { label: "durable blockers", value: overview.storage_physical_durable_evidence_production_blocker_count ?? storagePhysicalDurableEvidenceRecipe.production_blocker_count ?? storagePhysicalDurableEvidenceRows.length, tone: Number(overview.storage_physical_durable_evidence_production_blocker_count ?? storagePhysicalDurableEvidenceRecipe.production_blocker_count ?? storagePhysicalDurableEvidenceRows.length) > 0 ? "warn" : "good" },
           { label: "physical schema done", value: String(storagePhysicalMigrationActivationReceipt.physical_schema_validation_done ?? false), tone: storagePhysicalMigrationActivationReceipt.physical_schema_validation_done === true ? "good" : "warn" },
           { label: "declared versions", value: datasetVersionPolicy.target_version_declared_count ?? overview.dataset_version_declared_count ?? 0 },
           { label: "version validations", value: datasetVersionPolicy.physical_dataset_version_validated_count ?? overview.physical_dataset_version_validated_count ?? 0 },
@@ -520,6 +536,30 @@ export default function StorageOverview() {
         <p>missing_evidence: {JSON.stringify(storagePhysicalMigrationActivationReceipt.missing_evidence ?? ["physical schema validation acceptance for all canonical datasets", "manifest validation backed by schema acceptance", "production promotion review"])}</p>
         <p>not_allowed_next_steps: {JSON.stringify(storagePhysicalMigrationActivationReceipt.not_allowed_next_steps ?? ["GET /api/storage physical migration", "GET /api/storage Parquet write", "activation receipt as production storage completion"])}</p>
         <DataLineageTable rows={storagePhysicalMigrationActivationRows} />
+      </PacketCard>
+
+      <PacketCard title="Storage physical execution recipe" subtitle="LTG-05 物理执行顺序 recipe；仍然不写 Parquet、不写 manifest、不刷新 provider、不删除文件" status={String(storagePhysicalExecutionRecipe.status ?? "missing")}>
+        <p>schema_version: {String(storagePhysicalExecutionRecipe.schema_version ?? "command_center_3_storage_physical_execution_recipe.v1")}</p>
+        <p>scope: {String(storagePhysicalExecutionRecipe.scope ?? "local_storage_physical_execution_recipe_no_write_no_provider")}</p>
+        <p>local_recipe_ready / production_storage_complete: {String(storagePhysicalExecutionRecipe.local_recipe_ready ?? false)} / {String(storagePhysicalExecutionRecipe.production_storage_complete ?? false)}</p>
+        <p>execution_done / physical_execution_done: {String(storagePhysicalExecutionRecipe.execution_done ?? false)} / {String(storagePhysicalExecutionRecipe.physical_execution_done ?? false)}</p>
+        <p>writes_parquet / writes_manifest / deletes_artifacts: {String(storagePhysicalExecutionRecipe.writes_parquet ?? false)} / {String(storagePhysicalExecutionRecipe.writes_manifest ?? false)} / {String(storagePhysicalExecutionRecipe.deletes_artifacts ?? false)}</p>
+        <p>tushare / deepseek / github: {String(storagePhysicalExecutionRecipe.tushare_called ?? false)} / {String(storagePhysicalExecutionRecipe.deepseek_called ?? false)} / {String(storagePhysicalExecutionRecipe.github_called ?? false)}</p>
+        <p>not_allowed_next_steps: {JSON.stringify(storagePhysicalExecutionRecipe.not_allowed_next_steps ?? ["treat_recipe_as_physical_execution_evidence", "write_parquet_from_get_storage_cache", "mark_production_storage_complete_from_preflight_or_dry_run"])}</p>
+        <DataLineageTable rows={storagePhysicalExecutionRows} />
+      </PacketCard>
+
+      <PacketCard title="Storage physical durable evidence recipe" subtitle="LTG-05 durable evidence 缺口清单；本地只读，不写 Parquet、不删文件、不调用 provider" status={String(storagePhysicalDurableEvidenceRecipe.status ?? "missing")}>
+        <p>schema_version: {String(storagePhysicalDurableEvidenceRecipe.schema_version ?? "command_center_3_storage_physical_durable_evidence_recipe.v1")}</p>
+        <p>scope: {String(storagePhysicalDurableEvidenceRecipe.scope ?? "local_storage_physical_durable_evidence_recipe_no_write_no_delete_no_provider")}</p>
+        <p>local_recipe_ready / durable_evidence_complete: {String(storagePhysicalDurableEvidenceRecipe.local_recipe_ready ?? false)} / {String(storagePhysicalDurableEvidenceRecipe.durable_evidence_complete ?? false)}</p>
+        <p>production_storage_complete / durable_promotion_ready: {String(storagePhysicalDurableEvidenceRecipe.production_storage_complete ?? false)} / {String(storagePhysicalDurableEvidenceRecipe.durable_promotion_ready ?? false)}</p>
+        <p>missing_durable_evidence: {JSON.stringify(storagePhysicalDurableEvidenceRecipe.missing_durable_evidence ?? [])}</p>
+        <p>writes_parquet / writes_manifest / deletes_artifacts: {String(storagePhysicalDurableEvidenceRecipe.writes_parquet ?? false)} / {String(storagePhysicalDurableEvidenceRecipe.writes_manifest ?? false)} / {String(storagePhysicalDurableEvidenceRecipe.deletes_artifacts ?? false)}</p>
+        <p>provider_refresh / cache_get_writes_files: {String(storagePhysicalDurableEvidenceRecipe.provider_refresh_called_by_recipe ?? false)} / {String(storagePhysicalDurableEvidenceRecipe.cache_get_writes_files ?? false)}</p>
+        <p>tushare / deepseek / github: {String(storagePhysicalDurableEvidenceRecipe.tushare_called ?? false)} / {String(storagePhysicalDurableEvidenceRecipe.deepseek_called ?? false)} / {String(storagePhysicalDurableEvidenceRecipe.github_called ?? false)}</p>
+        <p>not_allowed_next_steps: {JSON.stringify(storagePhysicalDurableEvidenceRecipe.not_allowed_next_steps ?? ["treat_durable_recipe_as_physical_execution", "write_parquet_from_recipe", "mark_production_storage_complete_from_recipe"])}</p>
+        <DataLineageTable rows={storagePhysicalDurableEvidenceRows} />
       </PacketCard>
 
       <PacketCard title="DuckDB query result contracts" subtitle="每个本地查询返回投影列、分页和安全边界；不触发刷新" status="query_contract">

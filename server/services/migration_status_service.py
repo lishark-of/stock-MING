@@ -64,9 +64,9 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "Storage / DuckDB / Parquet 生产化",
         "completion_bucket": "productionization_required",
         "completion_estimate": "50%-60%",
-        "current_state": "schema/version preflight, manifest writer/validator, DuckDB read API, filters, cursor pagination, dry-runs, physical activation receipt, and physical execution recipe exist.",
-        "not_complete_because": "physical schema validation evidence, schema migration, partition migration, compaction, TTL refresh execution, cleanup execution, and production promotion remain pending.",
-        "next_step": "Run the physical execution recipe one phase at a time with explicit review, no GET writes, no provider refresh from cache, and no data artifacts in git.",
+        "current_state": "schema/version preflight, manifest writer/validator, DuckDB read API, filters, cursor pagination, dry-runs, physical activation receipt, physical execution recipe, and physical durable evidence recipe exist.",
+        "not_complete_because": "physical schema validation evidence, schema migration, partition migration, compaction, TTL refresh execution, cleanup execution, durable evidence promotion, and production promotion remain pending.",
+        "next_step": "Run the physical execution recipe one phase at a time, then promote only with durable evidence rows reviewed; keep no GET writes, no provider refresh from cache, and no data artifacts in git.",
         "production_complete": False,
     },
     {
@@ -214,6 +214,7 @@ LTG_NEXT_EVIDENCE_REQUIRED = {
         "schema/partition migration",
         "compaction",
         "TTL cleanup evidence",
+        "durable evidence promotion",
     ],
     "LTG-06": [
         "runtime QA execution",

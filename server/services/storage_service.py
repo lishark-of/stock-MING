@@ -26,6 +26,9 @@ DATASET_VERSION_MANIFEST_REVIEW_PACKET_KEY = "command_center_3_storage_dataset_v
 DATASET_VERSION_MANIFEST_WRITE_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_write_packet"
 DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_validate_packet"
 STORAGE_PRODUCTION_BLOCKER_SCHEMA_VERSION = "command_center_3_storage_production_blocker_audit.v1"
+STORAGE_PHYSICAL_DURABLE_EVIDENCE_SCHEMA_VERSION = (
+    "command_center_3_storage_physical_durable_evidence_recipe.v1"
+)
 ARTIFACT_CLEANUP_REVIEW_SCHEMA_VERSION = "command_center_3_storage_artifact_cleanup_review_contract.v1"
 SUPPORTED_PARQUET_DATASETS = {
     "factor_values": "factor_values",
@@ -74,6 +77,36 @@ STORAGE_PHYSICAL_EXECUTION_PHASE_LABELS = {
     "artifact_cleanup_delete_review": "Artifact cleanup delete review",
     "duckdb_post_migration_validation": "DuckDB post-migration validation",
     "production_promotion_review": "Production promotion review",
+}
+STORAGE_PHYSICAL_DURABLE_EVIDENCE_KEYS = [
+    "production_blocker_audit_visible",
+    "readiness_receipt_visible",
+    "activation_receipt_visible",
+    "physical_execution_recipe_ready",
+    "physical_schema_validation_evidence_required",
+    "dataset_version_manifest_validation_required",
+    "partition_migration_evidence_required",
+    "physical_compaction_evidence_required",
+    "cache_ttl_refresh_evidence_required",
+    "artifact_cleanup_delete_review_required",
+    "duckdb_post_migration_validation_required",
+    "production_promotion_review_required",
+    "no_provider_trade_action_secret_boundary",
+]
+STORAGE_PHYSICAL_DURABLE_EVIDENCE_LABELS = {
+    "production_blocker_audit_visible": "Production blocker audit visible",
+    "readiness_receipt_visible": "Readiness receipt visible",
+    "activation_receipt_visible": "Activation receipt visible",
+    "physical_execution_recipe_ready": "Physical execution recipe ready",
+    "physical_schema_validation_evidence_required": "Physical schema validation evidence required",
+    "dataset_version_manifest_validation_required": "Dataset version manifest validation required",
+    "partition_migration_evidence_required": "Partition migration evidence required",
+    "physical_compaction_evidence_required": "Physical compaction evidence required",
+    "cache_ttl_refresh_evidence_required": "Cache TTL refresh evidence required",
+    "artifact_cleanup_delete_review_required": "Artifact cleanup delete review required",
+    "duckdb_post_migration_validation_required": "DuckDB post-migration validation required",
+    "production_promotion_review_required": "Production promotion review required",
+    "no_provider_trade_action_secret_boundary": "No provider, trade, action, or secret boundary",
 }
 LOCAL_ARTIFACT_HYGIENE_TARGETS = [
     {
@@ -3861,6 +3894,263 @@ def storage_physical_execution_recipe(
     }
 
 
+def _storage_physical_durable_evidence_recipe_row(
+    evidence_key: str,
+    *,
+    passed: bool,
+    evidence: str,
+    required_evidence: str,
+    next_step: str,
+    source_contract: str,
+) -> dict[str, Any]:
+    return {
+        "evidence_key": evidence_key,
+        "evidence_label": STORAGE_PHYSICAL_DURABLE_EVIDENCE_LABELS.get(evidence_key, evidence_key),
+        "status": "passed" if passed else "blocked",
+        "passed": bool(passed),
+        "local_ready": bool(passed),
+        "durable_evidence_present": False if not passed else True,
+        "production_ready": False,
+        "production_blocker": not passed,
+        "required_before_production": True,
+        "required_evidence": required_evidence,
+        "evidence": evidence,
+        "next_step": next_step,
+        "source_contract": source_contract,
+        "cache_only": True,
+        "runs_no_commands": True,
+        "writes_parquet": False,
+        "writes_manifest": False,
+        "deletes_artifacts": False,
+        "refreshes_providers": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def storage_physical_durable_evidence_recipe(
+    production_readiness: Mapping[str, Any] | None = None,
+    production_blocker_audit: Mapping[str, Any] | None = None,
+    physical_migration_activation_receipt: Mapping[str, Any] | None = None,
+    physical_execution_recipe: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    readiness = dict(production_readiness or storage_production_readiness())
+    blocker_audit = dict(production_blocker_audit or storage_production_blocker_audit(readiness))
+    activation_receipt = dict(
+        physical_migration_activation_receipt
+        or storage_physical_migration_activation_receipt(readiness, blocker_audit)
+    )
+    execution_recipe = dict(
+        physical_execution_recipe
+        or storage_physical_execution_recipe(readiness, blocker_audit, activation_receipt)
+    )
+    blocker_audit_visible = blocker_audit.get("schema_version") == STORAGE_PRODUCTION_BLOCKER_SCHEMA_VERSION
+    readiness_visible = readiness.get("status") in {"foundation_ready", "partial_dependency_missing"}
+    activation_visible = activation_receipt.get("local_activation_receipt_ready") is True
+    execution_ready = execution_recipe.get("local_recipe_ready") is True
+    no_external_boundary = (
+        execution_recipe.get("external_calls_triggered") is False
+        and execution_recipe.get("tushare_called") is False
+        and execution_recipe.get("deepseek_called") is False
+        and execution_recipe.get("github_called") is False
+        and execution_recipe.get("does_not_execute_trades") is True
+        and execution_recipe.get("does_not_modify_strategy_action") is True
+        and execution_recipe.get("contains_secret") is False
+    )
+    local_recipe_ready = bool(blocker_audit_visible and readiness_visible and activation_visible and execution_ready and no_external_boundary)
+    rows = [
+        _storage_physical_durable_evidence_recipe_row(
+            "production_blocker_audit_visible",
+            passed=blocker_audit_visible,
+            source_contract="storage_production_blocker_audit",
+            evidence=f"status={blocker_audit.get('status')}; blocker_count={blocker_audit.get('blocking_criterion_count')}",
+            required_evidence="visible storage_production_blocker_audit with production_storage_complete=false until all physical evidence passes",
+            next_step="keep production blockers visible in storage overview and push gate",
+        ),
+        _storage_physical_durable_evidence_recipe_row(
+            "readiness_receipt_visible",
+            passed=readiness_visible,
+            source_contract="production_readiness",
+            evidence=f"production_readiness_status={readiness.get('status')}",
+            required_evidence="local production readiness contract with explicit POST-only review boundaries",
+            next_step="preserve readiness receipt while physical evidence is collected",
+        ),
+        _storage_physical_durable_evidence_recipe_row(
+            "activation_receipt_visible",
+            passed=activation_visible,
+            source_contract="storage_physical_migration_activation_receipt",
+            evidence=f"activation_status={activation_receipt.get('status')}",
+            required_evidence="activation receipt naming schema, manifest, partition, compaction, TTL, cleanup, and promotion prerequisites",
+            next_step="use activation receipt as the entry point for future explicit storage tasks",
+        ),
+        _storage_physical_durable_evidence_recipe_row(
+            "physical_execution_recipe_ready",
+            passed=execution_ready,
+            source_contract="storage_physical_execution_recipe",
+            evidence=f"recipe_status={execution_recipe.get('status')}; phase_count={execution_recipe.get('phase_count')}",
+            required_evidence="ordered physical execution recipe with every production phase still pending",
+            next_step="follow the recipe order without treating it as execution evidence",
+        ),
+        _storage_physical_durable_evidence_recipe_row(
+            "physical_schema_validation_evidence_required",
+            passed=False,
+            source_contract="schema_validation_acceptance",
+            evidence=f"physical_schema_validation_done_count={readiness.get('physical_schema_validation_done_count')}",
+            required_evidence="accepted physical schema validation packet for every canonical dataset",
+            next_step="run explicit schema validation acceptance before any writer or migration task",
+        ),
+        _storage_physical_durable_evidence_recipe_row(
+            "dataset_version_manifest_validation_required",
+            passed=False,
+            source_contract="dataset_version_manifest_validate",
+            evidence=(
+                f"manifest_evidence_status={readiness.get('dataset_version_manifest_evidence_status')}; "
+                f"validated_count={readiness.get('dataset_version_manifest_evidence_validated_count')}"
+            ),
+            required_evidence="confirm-gated manifest write receipt plus read-only manifest validation receipt",
+            next_step="validate an ignored local manifest only after schema acceptance evidence is reviewed",
+        ),
+        _storage_physical_durable_evidence_recipe_row(
+            "partition_migration_evidence_required",
+            passed=False,
+            source_contract="partition_migration_execution",
+            evidence="partition migration remains dry-run only.",
+            required_evidence="partition writer receipt plus partition metadata validation",
+            next_step="design a separate confirm-gated partition writer after manifest evidence is stable",
+        ),
+        _storage_physical_durable_evidence_recipe_row(
+            "physical_compaction_evidence_required",
+            passed=False,
+            source_contract="physical_compaction_execution",
+            evidence=f"compaction_executed_count={readiness.get('compaction_executed_count')}",
+            required_evidence="physical compaction task ledger and rewritten artifact metadata",
+            next_step="execute compaction only through a separately approved maintenance task",
+        ),
+        _storage_physical_durable_evidence_recipe_row(
+            "cache_ttl_refresh_evidence_required",
+            passed=False,
+            source_contract="cache_ttl_refresh_execution",
+            evidence=f"cache_ttl_refresh_executed_count={readiness.get('cache_ttl_refresh_executed_count')}",
+            required_evidence="explicit provider refresh task ledger and local fetched-at/date evidence",
+            next_step="bind refresh evidence to provider acceptance tasks; never refresh from GET cache",
+        ),
+        _storage_physical_durable_evidence_recipe_row(
+            "artifact_cleanup_delete_review_required",
+            passed=False,
+            source_contract="artifact_cleanup_review",
+            evidence=(
+                f"cleanup_review_status={readiness.get('artifact_cleanup_review_status')}; "
+                f"delete_executed_count={readiness.get('artifact_cleanup_delete_executed_count')}"
+            ),
+            required_evidence="manual cleanup approval and separate delete execution receipt if cleanup is needed",
+            next_step="review cleanup candidates manually before any separately approved delete executor",
+        ),
+        _storage_physical_durable_evidence_recipe_row(
+            "duckdb_post_migration_validation_required",
+            passed=False,
+            source_contract="duckdb_query_service",
+            evidence=f"duckdb_query_service_status={readiness.get('duckdb_query_service_status')}",
+            required_evidence="post-migration DuckDB read-only query contract for every canonical dataset",
+            next_step="validate migrated datasets through FastAPI/DuckDB wrappers after physical storage tasks complete",
+        ),
+        _storage_physical_durable_evidence_recipe_row(
+            "production_promotion_review_required",
+            passed=False,
+            source_contract="storage_production_promotion_review",
+            evidence=f"production_blocker_count={blocker_audit.get('blocking_criterion_count')}",
+            required_evidence="release review proving production_storage_complete may flip only after all physical evidence passes",
+            next_step="hold production_storage_complete=false until every durable evidence row is direct and reviewed",
+        ),
+        _storage_physical_durable_evidence_recipe_row(
+            "no_provider_trade_action_secret_boundary",
+            passed=no_external_boundary,
+            source_contract="storage_physical_execution_recipe",
+            evidence="durable evidence recipe is local/cache-only and does not call providers, models, GitHub, trades, or action mutation.",
+            required_evidence="provider/model/GitHub/trade/action/key boundaries remain false in overview, rows, and push gate",
+            next_step="preserve no-provider/no-trade/no-secret boundary while adding future explicit execution evidence",
+        ),
+    ]
+    blocked_rows = [row["evidence_key"] for row in rows if row.get("production_blocker")]
+    return {
+        "schema_version": STORAGE_PHYSICAL_DURABLE_EVIDENCE_SCHEMA_VERSION,
+        "scope": "local_storage_physical_durable_evidence_recipe_no_write_no_delete_no_provider",
+        "status": (
+            "storage_physical_durable_evidence_recipe_ready_production_pending"
+            if local_recipe_ready
+            else "storage_physical_durable_evidence_recipe_blocked_local_contract"
+        ),
+        "ltg": "LTG-05/LTG-11",
+        "local_recipe_ready": local_recipe_ready,
+        "durable_evidence_complete": False,
+        "durable_promotion_ready": False,
+        "production_storage_complete": False,
+        "physical_schema_validation_done": False,
+        "schema_migration_executed": False,
+        "dataset_version_manifest_validated": False,
+        "partition_migration_executed": False,
+        "physical_compaction_executed": False,
+        "cache_ttl_refresh_executed": False,
+        "artifact_cleanup_delete_executed": False,
+        "dataset_version_manifest_written_by_recipe": False,
+        "provider_refresh_called_by_recipe": False,
+        "cache_get_writes_files": False,
+        "writes_parquet": False,
+        "writes_manifest": False,
+        "deletes_artifacts": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "evidence_key_count": len(rows),
+        "durable_evidence_blocker_count": len(blocked_rows),
+        "production_blocker_count": len(blocked_rows),
+        "evidence_keys": [row["evidence_key"] for row in rows],
+        "missing_durable_evidence": blocked_rows,
+        "required_evidence": [
+            "physical schema validation acceptance packet",
+            "dataset version manifest write and validation receipts",
+            "schema migration before/after metadata",
+            "partition migration artifact metadata",
+            "physical compaction ledger",
+            "TTL refresh/provider task ledger",
+            "cleanup approval/delete receipt if needed",
+            "DuckDB post-migration read-only query contract",
+            "production promotion review",
+        ],
+        "not_allowed_next_steps": [
+            "treat_durable_recipe_as_physical_execution",
+            "create_storage_write_from_get_cache",
+            "write_parquet_from_recipe",
+            "write_manifest_from_recipe",
+            "delete_artifacts_from_recipe",
+            "call_Tushare_from_recipe",
+            "call_DeepSeek_from_recipe",
+            "call_GitHub_from_recipe",
+            "mark_production_storage_complete_from_recipe",
+        ],
+        "rows": rows,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_physical_durable_evidence_recipe",
+            endpoint="GET /api/storage",
+            status=(
+                "storage_physical_durable_evidence_recipe_ready_production_pending"
+                if local_recipe_ready
+                else "storage_physical_durable_evidence_recipe_blocked_local_contract"
+            ),
+            row_count=len(rows),
+        ),
+        "note": "This durable evidence recipe is a local LTG-05 checklist. It does not write Parquet, write manifests, delete artifacts, refresh providers, call models, call GitHub, trade, mutate strategy action, or complete production storage.",
+    }
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -3952,6 +4242,12 @@ def storage_dataset_catalog() -> dict[str, Any]:
         production_blocker_audit,
         physical_migration_activation_receipt,
     )
+    physical_durable_evidence_recipe = storage_physical_durable_evidence_recipe(
+        production_readiness,
+        production_blocker_audit,
+        physical_migration_activation_receipt,
+        physical_execution_recipe,
+    )
     artifact_hygiene = storage_artifact_hygiene_status()
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
@@ -3975,6 +4271,13 @@ def storage_dataset_catalog() -> dict[str, Any]:
         "storage_physical_execution_recipe_rows": physical_execution_recipe["rows"],
         "storage_physical_execution_recipe_status": physical_execution_recipe["status"],
         "storage_physical_execution_recipe_ready": physical_execution_recipe["local_recipe_ready"],
+        "storage_physical_durable_evidence_recipe": physical_durable_evidence_recipe,
+        "storage_physical_durable_evidence_rows": physical_durable_evidence_recipe["rows"],
+        "storage_physical_durable_evidence_recipe_status": physical_durable_evidence_recipe["status"],
+        "storage_physical_durable_evidence_recipe_ready": physical_durable_evidence_recipe["local_recipe_ready"],
+        "storage_physical_durable_evidence_production_blocker_count": physical_durable_evidence_recipe[
+            "production_blocker_count"
+        ],
         "artifact_hygiene": artifact_hygiene,
         "artifact_cleanup_review_contract": artifact_hygiene["artifact_cleanup_review_contract"],
         "artifact_cleanup_review_rows": artifact_hygiene["artifact_cleanup_review_rows"],
@@ -4255,6 +4558,12 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         production_blocker_audit,
         physical_migration_activation_receipt,
     )
+    physical_durable_evidence_recipe = storage_physical_durable_evidence_recipe(
+        production_readiness,
+        production_blocker_audit,
+        physical_migration_activation_receipt,
+        physical_execution_recipe,
+    )
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
     schema_migration_preflight = storage_schema_migration_preflight()
@@ -4322,6 +4631,13 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "storage_physical_execution_recipe_status": physical_execution_recipe["status"],
         "storage_physical_execution_recipe_ready": physical_execution_recipe["local_recipe_ready"],
         "storage_physical_execution_pending_phase_count": physical_execution_recipe["pending_phase_count"],
+        "storage_physical_durable_evidence_recipe": physical_durable_evidence_recipe,
+        "storage_physical_durable_evidence_rows": physical_durable_evidence_recipe["rows"],
+        "storage_physical_durable_evidence_recipe_status": physical_durable_evidence_recipe["status"],
+        "storage_physical_durable_evidence_recipe_ready": physical_durable_evidence_recipe["local_recipe_ready"],
+        "storage_physical_durable_evidence_production_blocker_count": physical_durable_evidence_recipe[
+            "production_blocker_count"
+        ],
         "artifact_hygiene": artifact_hygiene,
         "artifact_cleanup_review_contract": artifact_hygiene["artifact_cleanup_review_contract"],
         "artifact_cleanup_review_rows": artifact_hygiene["artifact_cleanup_review_rows"],
