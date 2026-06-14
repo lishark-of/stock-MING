@@ -226,6 +226,13 @@ export function postBootstrapLiveStartup(payload: Record<string, unknown> = {}) 
   });
 }
 
+export function postBootstrapProviderModelAcceptanceDryRun(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/bootstrap/provider-model-acceptance-dry-run", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getNextSessionCache() {
   return request<Record<string, unknown>>("/api/next-session/cache");
 }

@@ -13,11 +13,16 @@ SCHEMA_VERSION = "command_center_bootstrap_runtime_mode.v1"
 BOOTSTRAP_TASK_PACKET_KEY = "command_center_live_bootstrap_packet"
 BOOTSTRAP_TASK_SCHEMA_VERSION = "command_center_live_bootstrap_task.v1"
 BOOTSTRAP_TASK_TYPE = "command_center_live_bootstrap"
+BOOTSTRAP_ACCEPTANCE_DRY_RUN_PACKET_KEY = "command_center_live_bootstrap_provider_model_acceptance_dry_run_packet"
+BOOTSTRAP_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION = "command_center_live_bootstrap_provider_model_acceptance_dry_run.v1"
+BOOTSTRAP_ACCEPTANCE_DRY_RUN_TASK_TYPE = "command_center_live_bootstrap_provider_model_acceptance_dry_run"
 BOOTSTRAP_MODES = ("cache_only", "manual", "live_light", "live_full")
 DEFAULT_MODE = "cache_only"
 BOOTSTRAP_STATUS_ROUTE = "GET /api/bootstrap/status"
 PLANNED_BOOTSTRAP_TASK_ROUTE = "POST /api/bootstrap/live-startup"
+PLANNED_BOOTSTRAP_ACCEPTANCE_DRY_RUN_ROUTE = "POST /api/bootstrap/provider-model-acceptance-dry-run"
 DEFAULT_LIGHT_TUSHARE_APIS = ("trade_cal_if_needed", "daily", "daily_basic", "moneyflow")
+ACCEPTANCE_DRY_RUN_ALLOWED_APIS = ("trade_cal", "daily", "daily_basic", "moneyflow")
 BOOTSTRAP_STAGE_SCHEMA_VERSION = "command_center_live_bootstrap_stage_plan.v1"
 BOOTSTRAP_MODEL_LEDGER_SCHEMA_VERSION = "command_center_live_bootstrap_model_ledger_preview.v1"
 BOOTSTRAP_PROVIDER_LINKAGE_SCHEMA_VERSION = "command_center_bootstrap_provider_linkage.v1"
@@ -42,6 +47,14 @@ def _json_safe(value: Any) -> Any:
         return json.loads(json.dumps(value, ensure_ascii=False, default=str))
     except Exception:
         return {"serialization_error_safe": "bootstrap_runtime_mode_packet_not_json_serializable"}
+
+
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
 
 
 def _config_value(name: str, default: Any = None) -> Any:
@@ -123,6 +136,32 @@ def _safe_symbol_list(value: Any, *, limit: int) -> list[str]:
     return symbols
 
 
+def _safe_api_name(value: Any) -> str:
+    text = _safe_text(value, limit=48).lower()
+    return "".join(ch for ch in text if ch.isalnum() or ch == "_")
+
+
+def _safe_api_list(value: Any, *, limit: int) -> list[str]:
+    if isinstance(value, str):
+        raw_items = value.replace(";", ",").split(",")
+    elif isinstance(value, (list, tuple, set)):
+        raw_items = list(value)
+    else:
+        raw_items = []
+
+    seen: set[str] = set()
+    apis: list[str] = []
+    for item in raw_items:
+        api = _safe_api_name(item)
+        if not api or api in seen:
+            continue
+        seen.add(api)
+        apis.append(api)
+        if len(apis) >= limit:
+            break
+    return apis
+
+
 def _sanitize_live_startup_payload(payload: Any, *, symbol_limit: int) -> dict[str, Any]:
     raw = payload if isinstance(payload, dict) else {}
     symbols: list[str] = []
@@ -156,6 +195,42 @@ def _sanitize_live_startup_payload(payload: Any, *, symbol_limit: int) -> dict[s
         "requested_apis": requested_apis,
         "payload_tushare_requested": _safe_bool(raw.get("tushare"), False),
         "payload_deepseek_requested": _safe_bool(raw.get("deepseek"), False),
+        "contains_secret": False,
+    }
+
+
+def _sanitize_acceptance_dry_run_payload(payload: Any, *, symbol_limit: int) -> dict[str, Any]:
+    raw = payload if isinstance(payload, dict) else {}
+    requested_apis = _safe_api_list(raw.get("apis"), limit=16)
+    ignored_apis = [api for api in requested_apis if api not in ACCEPTANCE_DRY_RUN_ALLOWED_APIS]
+    selected_apis = [api for api in requested_apis if api in ACCEPTANCE_DRY_RUN_ALLOWED_APIS]
+    include_tushare = _safe_bool(raw.get("include_tushare", raw.get("tushare")), bool(selected_apis))
+    if include_tushare and not selected_apis:
+        selected_apis = list(ACCEPTANCE_DRY_RUN_ALLOWED_APIS)
+    include_deepseek = _safe_bool(raw.get("include_deepseek", raw.get("deepseek")), False)
+    user_approved = _safe_bool(
+        raw.get("approved_by_user", raw.get("user_approval", raw.get("approved"))),
+        False,
+    )
+    symbols = _safe_symbol_list(
+        raw.get("symbols") or raw.get("watchlist") or raw.get("holdings") or raw.get("ts_code") or raw.get("symbol"),
+        limit=symbol_limit + 1,
+    )
+    return {
+        "schema_version": BOOTSTRAP_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
+        "source": _safe_text(raw.get("source") or "command_center_3", limit=80),
+        "requested_by": _safe_text(raw.get("requested_by") or "local_user", limit=80),
+        "user_approved": user_approved,
+        "approval_mode": "explicit_payload_true" if user_approved else "missing_or_false",
+        "symbols": symbols[:symbol_limit],
+        "symbol_count": min(len(symbols), symbol_limit),
+        "symbol_limit": symbol_limit,
+        "truncated_by_symbol_limit": len(symbols) > symbol_limit,
+        "include_tushare": include_tushare,
+        "include_deepseek": include_deepseek,
+        "selected_apis": selected_apis,
+        "ignored_apis": ignored_apis,
+        "allowed_apis": list(ACCEPTANCE_DRY_RUN_ALLOWED_APIS),
         "contains_secret": False,
     }
 
@@ -810,6 +885,175 @@ def _live_light_provider_model_acceptance_runbook(
     return runbook, rows
 
 
+def _acceptance_dry_run_status(
+    *,
+    phase_key: str,
+    stage_kind: str,
+    payload_safe: dict[str, Any],
+) -> tuple[str, bool]:
+    selected_apis = set(payload_safe.get("selected_apis") or [])
+    include_deepseek = payload_safe.get("include_deepseek") is True
+    if phase_key == "mode_and_scope_preflight":
+        return "dry_run_passed_local_scope_visible", True
+    if phase_key == "explicit_user_approval_required":
+        if payload_safe.get("user_approved") is True:
+            return "dry_run_user_approval_recorded_no_execution", True
+        return "dry_run_blocked_user_approval_required", False
+    if phase_key == "server_secret_preflight":
+        return "dry_run_pending_server_secret_presence_check_no_values_read", False
+    if phase_key == "tushare_trade_cal_acceptance_sample":
+        if "trade_cal" in selected_apis:
+            return "dry_run_ready_provider_execution_not_called", False
+        return "dry_run_skipped_api_not_selected", True
+    if phase_key == "tushare_light_fact_acceptance_sample":
+        if selected_apis.intersection({"daily", "daily_basic", "moneyflow"}):
+            return "dry_run_ready_provider_execution_not_called", False
+        return "dry_run_skipped_api_not_selected", True
+    if phase_key == "local_factor_next_session_refresh":
+        return "dry_run_ready_local_pipeline_after_provider", False
+    if phase_key == "deepseek_pro_model_acceptance_sample":
+        if include_deepseek:
+            return "dry_run_ready_model_execution_not_called", False
+        return "dry_run_skipped_model_not_selected", True
+    if phase_key == "ui_nonblocking_runtime_acceptance":
+        return "dry_run_ready_browser_runtime_evidence_required", False
+    if phase_key == "ledger_redaction_safety_review":
+        return "dry_run_ready_safety_review_required", False
+    if phase_key == "production_promotion_review":
+        return "dry_run_blocked_until_real_provider_model_browser_evidence", False
+    if stage_kind in {"provider", "model"}:
+        return "dry_run_pending_execution_not_called", False
+    return "dry_run_ready", True
+
+
+def _build_acceptance_dry_run(
+    *,
+    status_packet: dict[str, Any],
+    payload_safe: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    runbook = _dict(status_packet.get("live_light_provider_model_acceptance_runbook"))
+    runbook_rows = [row for row in _list(status_packet.get("live_light_provider_model_acceptance_rows")) if isinstance(row, dict)]
+    rows: list[dict[str, Any]] = []
+    for row in runbook_rows:
+        phase_key = str(row.get("phase_key") or "")
+        stage_kind = str(row.get("stage_kind") or "")
+        status, passed = _acceptance_dry_run_status(
+            phase_key=phase_key,
+            stage_kind=stage_kind,
+            payload_safe=payload_safe,
+        )
+        rows.append(
+            {
+                "schema_version": BOOTSTRAP_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
+                "order": row.get("order"),
+                "phase_key": phase_key,
+                "label": row.get("label"),
+                "stage_kind": stage_kind,
+                "provider": row.get("provider"),
+                "apis": row.get("apis") or [],
+                "selected_for_dry_run": (
+                    phase_key not in {"tushare_trade_cal_acceptance_sample", "tushare_light_fact_acceptance_sample", "deepseek_pro_model_acceptance_sample"}
+                    or (phase_key == "tushare_trade_cal_acceptance_sample" and "trade_cal" in set(payload_safe.get("selected_apis") or []))
+                    or (phase_key == "tushare_light_fact_acceptance_sample" and bool(set(payload_safe.get("selected_apis") or []).intersection({"daily", "daily_basic", "moneyflow"})))
+                    or (phase_key == "deepseek_pro_model_acceptance_sample" and payload_safe.get("include_deepseek") is True)
+                ),
+                "status": status,
+                "passed": passed,
+                "acceptance_gate": row.get("acceptance_gate"),
+                "required_evidence": row.get("required_evidence") or [],
+                "external_call_expected_when_executed": bool(row.get("external_call_expected_when_executed")),
+                "external_calls_triggered_by_dry_run": False,
+                "tushare_called_by_dry_run": False,
+                "deepseek_called_by_dry_run": False,
+                "github_called_by_dry_run": False,
+                "provider_execution_implemented": False,
+                "model_execution_implemented": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+
+    blocking_rows = [row for row in rows if row.get("passed") is False]
+    selected_provider_rows = [
+        row
+        for row in rows
+        if row.get("stage_kind") == "provider" and row.get("selected_for_dry_run") is True
+    ]
+    selected_model_rows = [
+        row
+        for row in rows
+        if row.get("stage_kind") == "model" and row.get("selected_for_dry_run") is True
+    ]
+    summary = {
+        "schema_version": BOOTSTRAP_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
+        "status": "acceptance_dry_run_ready_execution_pending",
+        "scope": "local_provider_model_acceptance_dry_run_no_external_call",
+        "mode": status_packet.get("mode"),
+        "runbook_status": runbook.get("status"),
+        "user_approved": payload_safe.get("user_approved") is True,
+        "selected_apis": payload_safe.get("selected_apis") or [],
+        "ignored_apis": payload_safe.get("ignored_apis") or [],
+        "include_tushare": payload_safe.get("include_tushare") is True,
+        "include_deepseek": payload_safe.get("include_deepseek") is True,
+        "symbol_count": payload_safe.get("symbol_count"),
+        "phase_count": len(rows),
+        "selected_provider_phase_count": len(selected_provider_rows),
+        "selected_model_phase_count": len(selected_model_rows),
+        "blocking_phase_count": len(blocking_rows),
+        "ready_for_user_approved_real_acceptance": payload_safe.get("user_approved") is True,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "production_live_light_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    return summary, rows
+
+
+def _acceptance_dry_run_call_ledger(
+    *,
+    payload_safe: dict[str, Any],
+    summary: dict[str, Any],
+    now: str,
+) -> dict[str, Any]:
+    return {
+        "api": "local_live_light_provider_model_acceptance_dry_run",
+        "endpoint": PLANNED_BOOTSTRAP_ACCEPTANCE_DRY_RUN_ROUTE,
+        "request_params_safe": {
+            "source": payload_safe.get("source"),
+            "requested_by": payload_safe.get("requested_by"),
+            "user_approved": payload_safe.get("user_approved"),
+            "symbol_count": payload_safe.get("symbol_count"),
+            "symbol_limit": payload_safe.get("symbol_limit"),
+            "selected_apis": payload_safe.get("selected_apis"),
+            "ignored_apis": payload_safe.get("ignored_apis"),
+            "include_tushare": payload_safe.get("include_tushare"),
+            "include_deepseek": payload_safe.get("include_deepseek"),
+        },
+        "row_count": int(summary.get("phase_count") or 0),
+        "selected_provider_phase_count": int(summary.get("selected_provider_phase_count") or 0),
+        "selected_model_phase_count": int(summary.get("selected_model_phase_count") or 0),
+        "blocking_phase_count": int(summary.get("blocking_phase_count") or 0),
+        "local_fetched_at": now,
+        "call_status": "local_acceptance_dry_run_recorded_no_external_call",
+        "external": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
 def _planned_stage_status(mode: str, enabled: bool, stage_kind: str) -> str:
     if mode != "live_light":
         return "skipped_mode_not_live_light"
@@ -1234,6 +1478,7 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             "provider_model_acceptance_runbook_visible": True,
             "ready_for_provider_execution_design": activation_receipt["ready_for_provider_execution_design"],
             "ready_for_acceptance_design": acceptance_runbook["ready_for_acceptance_design"],
+            "ready_for_user_approved_acceptance_dry_run_task": True,
             "ready_for_user_approved_acceptance_task": False,
             "ready_for_provider_execution": False,
             "ready_for_model_execution": False,
@@ -1263,6 +1508,7 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             "live_light_provider_model_acceptance_runbook_visible": True,
             "live_light_ready_for_provider_execution_design": True,
             "live_light_ready_for_acceptance_design": True,
+            "live_light_ready_for_user_approved_acceptance_dry_run_task": True,
             "live_light_ready_for_user_approved_acceptance_task": False,
             "live_light_ready_for_provider_execution": False,
             "live_light_ready_for_model_execution": False,
@@ -1299,6 +1545,7 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
                 "activation_receipt_ready": activation_receipt["local_activation_receipt_ready"],
                 "acceptance_runbook_status": acceptance_runbook["status"],
                 "acceptance_runbook_ready": acceptance_runbook["local_runbook_ready"],
+                "acceptance_dry_run_route": PLANNED_BOOTSTRAP_ACCEPTANCE_DRY_RUN_ROUTE,
                 "local_fetched_at": loaded_at,
                 "call_status": "cache_read",
                 "external": False,
@@ -1315,6 +1562,7 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
         "warnings": [
             "GET /api/bootstrap/status 只读展示运行模式；不创建 bootstrap task。",
             "POST /api/bootstrap/live-startup 已作为本地 task skeleton 接入；provider 执行、worker 编排和自动前端触发仍待后续验收。",
+            "POST /api/bootstrap/provider-model-acceptance-dry-run 只记录用户批准前的本地验收 dry-run；不调用 provider/model。",
             "本接口不调用 Tushare、DeepSeek、GitHub，不读取 token/key，不执行真实交易。",
         ],
     }
@@ -1406,5 +1654,58 @@ def run_live_startup_task(payload: Any = None) -> dict[str, Any]:
         progress=1.0,
         current_step=current_step,
         output_packet_key=BOOTSTRAP_TASK_PACKET_KEY,
+        call_ledger=ledger,
+    ) or task
+
+
+def run_provider_model_acceptance_dry_run(payload: Any = None) -> dict[str, Any]:
+    status_packet = read_bootstrap_status_cache()
+    live_light = _dict(status_packet.get("live_light"))
+    symbol_limit = int(live_light.get("symbol_limit") or 20)
+    payload_safe = _sanitize_acceptance_dry_run_payload(payload, symbol_limit=symbol_limit)
+    payload_safe.update(
+        {
+            "task_type": BOOTSTRAP_ACCEPTANCE_DRY_RUN_TASK_TYPE,
+            "bootstrap_mode": status_packet.get("mode"),
+            "route": PLANNED_BOOTSTRAP_ACCEPTANCE_DRY_RUN_ROUTE,
+            "runbook_schema_version": BOOTSTRAP_ACCEPTANCE_RUNBOOK_SCHEMA_VERSION,
+            "dry_run_only": True,
+            "provider_execution_implemented": False,
+            "model_execution_implemented": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    )
+    summary, rows = _build_acceptance_dry_run(status_packet=status_packet, payload_safe=payload_safe)
+    payload_safe["acceptance_dry_run_summary"] = summary
+    payload_safe["acceptance_dry_run_rows"] = rows
+    current_step = (
+        "provider_model_acceptance_dry_run_recorded_user_approval_no_external_call"
+        if payload_safe.get("user_approved") is True
+        else "provider_model_acceptance_dry_run_recorded_user_approval_required_no_external_call"
+    )
+    task = task_service.create_task_record(
+        BOOTSTRAP_ACCEPTANCE_DRY_RUN_TASK_TYPE,
+        output_packet_key=BOOTSTRAP_ACCEPTANCE_DRY_RUN_PACKET_KEY,
+        payload=payload_safe,
+        current_step="provider_model_acceptance_dry_run_requested_local_only",
+        warnings=[
+            "provider/model acceptance dry-run 只记录本地预检，不调用 Tushare、DeepSeek、GitHub。",
+            "dry-run 不读取 token/key 值，不执行真实交易，不修改 strategy action。",
+            "真实 provider/model 验收仍需后续显式任务和用户确认。",
+        ],
+    )
+    now = _now_iso()
+    ledger = [_acceptance_dry_run_call_ledger(payload_safe=payload_safe, summary=summary, now=now)]
+    return task_service.update_task_status(
+        str(task.get("task_id") or ""),
+        status="success",
+        progress=1.0,
+        current_step=current_step,
+        output_packet_key=BOOTSTRAP_ACCEPTANCE_DRY_RUN_PACKET_KEY,
         call_ledger=ledger,
     ) or task

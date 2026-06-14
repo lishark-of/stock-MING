@@ -331,6 +331,18 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             "deepseek": True,
         }
     )
+    dry_run = bootstrap_service.run_provider_model_acceptance_dry_run(
+        {
+            "source": "bootstrap_runtime_contract",
+            "approved_by_user": True,
+            "symbols": ["000001.SZ", "000002.SZ", "000003.SZ"],
+            "include_tushare": True,
+            "include_deepseek": True,
+            "apis": ["trade_cal", "daily", "moneyflow", "fina_indicator"],
+            "api_key": "SHOULD_DROP",
+            "token": "SHOULD_DROP",
+        }
+    )
     stages = _stage_rows(task)
     stages_by_key = _stages_by_key(task)
     models = _model_rows(task)
@@ -341,6 +353,16 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
     first_ledger = call_ledger[0] if call_ledger else {}
     repeated_ledger = _ledger(repeated)
     last_repeated = repeated_ledger[-1] if repeated_ledger else {}
+    dry_payload = _dict(dry_run.get("payload_safe"))
+    dry_summary = _dict(dry_payload.get("acceptance_dry_run_summary"))
+    dry_rows = {
+        str(row.get("phase_key") or ""): row
+        for row in _list(dry_payload.get("acceptance_dry_run_rows"))
+        if isinstance(row, dict)
+    }
+    dry_ledger = _ledger(dry_run)
+    first_dry_ledger = dry_ledger[0] if dry_ledger else {}
+    dry_text = _serialized(dry_run)
     required_fields = set(_list(model.get("required_model_ledger_fields")))
     allowed_fields = set(_list(model.get("allowed_output_fields")))
     linkage = {
@@ -511,6 +533,29 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             and last_repeated.get("planned_model_stage_count") == 1
             and last_repeated.get("external_calls_triggered") is False,
             f"task_id={task.get('task_id')} repeated_step={repeated.get('current_step')}",
+        ),
+        _row(
+            "live_light_provider_model_acceptance_dry_run_records_preflight_without_external_call",
+            dry_run.get("task_type") == "command_center_live_bootstrap_provider_model_acceptance_dry_run"
+            and dry_run.get("current_step")
+            == "provider_model_acceptance_dry_run_recorded_user_approval_no_external_call"
+            and dry_payload.get("selected_apis") == ["trade_cal", "daily", "moneyflow"]
+            and dry_payload.get("ignored_apis") == ["fina_indicator"]
+            and dry_summary.get("phase_count") == 10
+            and dry_summary.get("selected_provider_phase_count") == 2
+            and dry_summary.get("selected_model_phase_count") == 1
+            and dry_rows.get("tushare_trade_cal_acceptance_sample", {}).get("status")
+            == "dry_run_ready_provider_execution_not_called"
+            and dry_rows.get("deepseek_pro_model_acceptance_sample", {}).get("status")
+            == "dry_run_ready_model_execution_not_called"
+            and first_dry_ledger.get("call_status") == "local_acceptance_dry_run_recorded_no_external_call"
+            and first_dry_ledger.get("external_calls_triggered") is False
+            and first_dry_ledger.get("tushare_called") is False
+            and first_dry_ledger.get("deepseek_called") is False
+            and "SHOULD_DROP" not in dry_text
+            and '"api_key"' not in dry_text
+            and '"token"' not in dry_text,
+            f"dry_step={dry_run.get('current_step')} summary={dry_summary}",
         ),
     ]
 

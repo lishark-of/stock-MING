@@ -9,6 +9,7 @@ import {
   getStorageOverview,
   getTaskCatalog,
   postBootstrapLiveStartup,
+  postBootstrapProviderModelAcceptanceDryRun,
 } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
@@ -41,7 +42,9 @@ export default function SettingsConfigHealth() {
   const [taskCatalog, setTaskCatalog] = useState<Record<string, unknown>>({});
   const [migration, setMigration] = useState<Record<string, unknown>>({});
   const [bootstrapTask, setBootstrapTask] = useState<Record<string, unknown>>({});
+  const [acceptanceDryRunTask, setAcceptanceDryRunTask] = useState<Record<string, unknown>>({});
   const [bootstrapActionLoading, setBootstrapActionLoading] = useState(false);
+  const [acceptanceDryRunLoading, setAcceptanceDryRunLoading] = useState(false);
   const [ledgerRows, setLedgerRows] = useState<Array<Record<string, unknown>>>([]);
   const [warnings, setWarnings] = useState<Array<unknown>>([]);
 
@@ -129,6 +132,37 @@ export default function SettingsConfigHealth() {
     });
   };
 
+  const createAcceptanceDryRun = () => {
+    setAcceptanceDryRunLoading(true);
+    setError("");
+    void postBootstrapProviderModelAcceptanceDryRun({
+      source: "settings_config_health",
+      requested_by: "local_user",
+      approved_by_user: true,
+      include_tushare: true,
+      include_deepseek: true,
+      apis: ["trade_cal", "daily", "daily_basic", "moneyflow"],
+    }).then((res) => {
+      const task = (res.data.task as Record<string, unknown> | undefined) ?? {};
+      setAcceptanceDryRunTask(task);
+      setLedgerRows((current) => [
+        ...res.call_ledger.map((row) => ({ scope: "provider_model_acceptance_dry_run", ...row })),
+        ...current,
+      ]);
+      setWarnings((current) => [
+        ...res.warnings.map((warning) => `provider_model_acceptance_dry_run: ${String(warning)}`),
+        ...current,
+      ]);
+      if (!res.ok) {
+        setError(String(res.error ?? "provider_model_acceptance_dry_run_failed"));
+      }
+    }).catch((nextError) => {
+      setError(safeError(nextError));
+    }).finally(() => {
+      setAcceptanceDryRunLoading(false);
+    });
+  };
+
   useEffect(() => {
     refreshCache();
   }, []);
@@ -150,7 +184,11 @@ export default function SettingsConfigHealth() {
   const bootstrapTaskPayload = (bootstrapTask.payload_safe as Record<string, unknown> | undefined) ?? {};
   const bootstrapStageRows = rows(bootstrapTaskPayload.bootstrap_stage_rows);
   const bootstrapModelLedgerRows = rows(bootstrapTaskPayload.bootstrap_model_ledger_preview_rows);
+  const acceptanceDryRunPayload = (acceptanceDryRunTask.payload_safe as Record<string, unknown> | undefined) ?? {};
+  const acceptanceDryRunSummary = (acceptanceDryRunPayload.acceptance_dry_run_summary as Record<string, unknown> | undefined) ?? {};
+  const acceptanceDryRunRows = rows(acceptanceDryRunPayload.acceptance_dry_run_rows);
   const hasBootstrapTask = Object.keys(bootstrapTask).length > 0;
+  const hasAcceptanceDryRunTask = Object.keys(acceptanceDryRunTask).length > 0;
   const empty = !loading && !error && !Object.keys(health).length && !Object.keys(modelStrategy).length;
 
   const configRows = [
@@ -190,6 +228,9 @@ export default function SettingsConfigHealth() {
         <button onClick={createBootstrapTask} disabled={bootstrapActionLoading}>
           {bootstrapActionLoading ? "创建中" : "启动 live_light 本地任务"}
         </button>
+        <button onClick={createAcceptanceDryRun} disabled={acceptanceDryRunLoading}>
+          {acceptanceDryRunLoading ? "生成中" : "生成 provider/model 验收 dry-run"}
+        </button>
       </div>
 
       <MetricGrid
@@ -201,6 +242,7 @@ export default function SettingsConfigHealth() {
           { label: "provider linkage", value: providerLinkageRows.length },
           { label: "activation rows", value: activationRows.length },
           { label: "acceptance phases", value: acceptanceRows.length },
+          { label: "acceptance dry-run", value: acceptanceDryRunRows.length || "--", tone: acceptanceDryRunRows.length ? "good" : "warn" },
           { label: "startup external", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" },
           { label: "model purposes", value: modelRows.length },
           { label: "data health rows", value: dataHealthCounts.timeline_count as number | undefined },
@@ -245,6 +287,17 @@ export default function SettingsConfigHealth() {
           {bootstrapStageRows.length ? <DataLineageTable rows={bootstrapStageRows} /> : null}
           {bootstrapModelLedgerRows.length ? <DataLineageTable rows={bootstrapModelLedgerRows} /> : null}
           <JsonDetails title="bootstrap task" data={bootstrapTask} />
+        </PacketCard>
+
+        <PacketCard title="Provider/model 验收 dry-run" subtitle="用户批准前的本地预检；不调用 Tushare、DeepSeek、GitHub" status={String(acceptanceDryRunTask.status ?? (hasAcceptanceDryRunTask ? "created" : "idle"))}>
+          <p>task_id: {String(acceptanceDryRunTask.task_id ?? "--")}</p>
+          <p>current_step: {String(acceptanceDryRunTask.current_step ?? "--")}</p>
+          <p>selected APIs: {JSON.stringify(acceptanceDryRunPayload.selected_apis ?? [])}</p>
+          <p>ignored APIs: {JSON.stringify(acceptanceDryRunPayload.ignored_apis ?? [])}</p>
+          <p>provider/model phases: {String(acceptanceDryRunSummary.selected_provider_phase_count ?? 0)} / {String(acceptanceDryRunSummary.selected_model_phase_count ?? 0)}</p>
+          <p>external / Tushare / DeepSeek / GitHub: {String(acceptanceDryRunTask.external_calls_triggered ?? false)} / {String(acceptanceDryRunTask.tushare_called ?? false)} / {String(acceptanceDryRunTask.deepseek_called ?? false)} / {String(acceptanceDryRunTask.github_called ?? false)}</p>
+          {acceptanceDryRunRows.length ? <DataLineageTable rows={acceptanceDryRunRows} /> : null}
+          <JsonDetails title="provider/model acceptance dry-run task" data={acceptanceDryRunTask} />
         </PacketCard>
 
         <PacketCard title="关键配置项" subtitle="只展示配置键名和用途，不展示值" status="safe">
