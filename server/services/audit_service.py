@@ -1501,6 +1501,13 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         and "@keyframes cc-hierarchy-focus" in styles
         and "pointer-events: none" in styles
         and "isolation: isolate" in styles,
+        "packet_status_clarity_cue": 'data-motion-scope="packet_status_clarity"' in packet_card
+        and "function statusTone" in packet_card
+        and "data-status-tone={tone}" in packet_card
+        and 'StatusBadge label={status} tone={tone}' in packet_card
+        and '.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="good"]' in styles
+        and '.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="warn"]' in styles
+        and '.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="bad"]' in styles,
         "navigation_context_cue": 'aria-current={active === route.key ? "page" : undefined}' in layout
         and 'data-route-active={active === route.key ? "true" : "false"}' in layout
         and 'className="nav-label"' in layout
@@ -1574,6 +1581,7 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
         _motion_row("state_clarity_rail_present", checks["state_clarity_rail_present"], evidence="PageStateBanner / TaskStatusPanel / TaskLaunchReceipt use StateClarityRail"),
         _motion_row("route_and_surface_staging", checks["route_and_surface_staging"], evidence="route-stage + motion-surface"),
         _motion_row("visual_hierarchy_clarity_cue", checks["visual_hierarchy_clarity_cue"], evidence="metric cards and packet cards expose visual_hierarchy_clarity with finite non-interactive cue"),
+        _motion_row("packet_status_clarity_cue", checks["packet_status_clarity_cue"], evidence="packet cards derive good/warn/bad visual hierarchy from status strings and pass the same tone to StatusBadge"),
         _motion_row("navigation_context_cue", checks["navigation_context_cue"], evidence="aria-current + data-route-active + finite active-nav sweep"),
         _motion_row("status_badge_context_cue", checks["status_badge_context_cue"], evidence="status badges expose data-status-tone and visual dot cue"),
         _motion_row("task_progress_motion_present", checks["task_progress_motion_present"], evidence="task status classes + progress transition"),
@@ -1737,10 +1745,12 @@ def _motion_production_qa_contract(
         ),
         _motion_production_qa_row(
             "visual_hierarchy_clarity",
-            "static_passed_visual_pending" if _row_passed("visual_hierarchy_clarity_cue") else "blocked",
-            local_contract_passed=_row_passed("visual_hierarchy_clarity_cue"),
+            "static_passed_visual_pending"
+            if _row_passed("visual_hierarchy_clarity_cue") and _row_passed("packet_status_clarity_cue")
+            else "blocked",
+            local_contract_passed=_row_passed("visual_hierarchy_clarity_cue") and _row_passed("packet_status_clarity_cue"),
             production_ready=False,
-            evidence="Metric cards and packet cards expose a finite, non-interactive hierarchy cue for scanability.",
+            evidence="Metric cards and packet cards expose finite hierarchy cues, and PacketCard status maps to matching good/warn/bad visual tone.",
             next_action="Verify dense pages in browser QA so hierarchy cues never obscure warnings, freshness, or row text.",
             visual_qa_required=True,
         ),

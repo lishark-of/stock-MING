@@ -108,6 +108,17 @@ def build_contract() -> dict[str, Any]:
             "metric and packet surfaces expose a finite non-interactive hierarchy cue for dense-page scanability",
         ),
         row(
+            "packet_status_clarity_cue",
+            'data-motion-scope="packet_status_clarity"' in packet_card
+            and "function statusTone" in packet_card
+            and "data-status-tone={tone}" in packet_card
+            and 'StatusBadge label={status} tone={tone}' in packet_card
+            and '.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="good"]' in styles
+            and '.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="warn"]' in styles
+            and '.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="bad"]' in styles,
+            "packet cards map ready/pending/blocked status strings to matching good/warn/bad visual hierarchy cues",
+        ),
+        row(
             "mobile_responsive_motion_layout",
             "@media (max-width: 760px)" in styles
             and ".app-shell" in styles

@@ -526,6 +526,25 @@ textarea:focus {
     transform var(--motion-duration-panel) var(--motion-ease-standard);
 }
 
+.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="good"] {
+  --motion-hierarchy-cue: var(--motion-hierarchy-good);
+  border-color: #bbf7d0;
+}
+
+.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="warn"] {
+  --motion-hierarchy-cue: var(--motion-hierarchy-warn);
+  border-color: #fde68a;
+}
+
+.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="bad"] {
+  --motion-hierarchy-cue: var(--motion-hierarchy-bad);
+  border-color: #fecaca;
+}
+
+.packet-card[data-motion-scope="packet_status_clarity"][data-status-tone="neutral"] {
+  --motion-hierarchy-cue: var(--motion-hierarchy-blue);
+}
+
 .packet-card:hover {
   border-color: #cbd5e1;
   box-shadow: var(--motion-shadow-focus);
