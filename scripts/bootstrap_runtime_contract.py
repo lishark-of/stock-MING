@@ -349,6 +349,25 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             "token": "SHOULD_DROP",
         }
     )
+    _set_env(
+        COMMAND_CENTER_BOOTSTRAP_MODE="live_light",
+        COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="true",
+        COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="true",
+        COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT="2",
+        COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS="600",
+        COMMAND_CENTER_LIVE_DEEPSEEK_MODEL="contract-live-pro",
+        COMMAND_CENTER_LIVE_ALLOW_FULL_POOL="false",
+    )
+    dry_run_missing_credentials = bootstrap_service.run_provider_model_acceptance_dry_run(
+        {
+            "source": "bootstrap_runtime_contract_missing_credentials",
+            "approved_by_user": True,
+            "symbols": ["000001.SZ"],
+            "include_tushare": True,
+            "include_deepseek": True,
+            "apis": ["trade_cal", "daily"],
+        }
+    )
     stages = _stage_rows(task)
     stages_by_key = _stages_by_key(task)
     models = _model_rows(task)
@@ -374,6 +393,20 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
     dry_ledger = _ledger(dry_run)
     first_dry_ledger = dry_ledger[0] if dry_ledger else {}
     dry_text = _serialized(dry_run)
+    missing_payload = _dict(dry_run_missing_credentials.get("payload_safe"))
+    missing_summary = _dict(missing_payload.get("acceptance_dry_run_summary"))
+    missing_credential_rows = {
+        str(row.get("provider") or ""): row
+        for row in _list(missing_payload.get("credential_presence_rows"))
+        if isinstance(row, dict)
+    }
+    missing_rows = {
+        str(row.get("phase_key") or ""): row
+        for row in _list(missing_payload.get("acceptance_dry_run_rows"))
+        if isinstance(row, dict)
+    }
+    missing_ledger = _ledger(dry_run_missing_credentials)
+    first_missing_ledger = missing_ledger[0] if missing_ledger else {}
     required_fields = set(_list(model.get("required_model_ledger_fields")))
     allowed_fields = set(_list(model.get("allowed_output_fields")))
     linkage = {
@@ -555,9 +588,13 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             and dry_summary.get("phase_count") == 10
             and dry_summary.get("selected_provider_phase_count") == 2
             and dry_summary.get("selected_model_phase_count") == 1
+            and dry_summary.get("status") == "acceptance_dry_run_ready_execution_pending"
+            and dry_summary.get("credential_presence_status") == "all_required_env_keys_present_no_values_read"
             and dry_summary.get("credential_required_provider_count") == 2
             and dry_summary.get("credential_present_provider_count") == 2
             and dry_summary.get("credential_missing_provider_count") == 0
+            and dry_summary.get("blocked_by_missing_credentials") is False
+            and dry_summary.get("ready_for_user_approved_real_acceptance") is True
             and dry_summary.get("credential_values_read") is False
             and dry_summary.get("credential_values_exposed") is False
             and credential_rows.get("tushare", {}).get("status") == "present_no_value_read"
@@ -579,6 +616,28 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             and '"api_key"' not in dry_text
             and '"token"' not in dry_text,
             f"dry_step={dry_run.get('current_step')} summary={dry_summary}",
+        ),
+        _row(
+            "live_light_provider_model_acceptance_dry_run_blocks_missing_credentials",
+            dry_run_missing_credentials.get("current_step")
+            == "provider_model_acceptance_dry_run_blocked_missing_credentials_no_external_call"
+            and missing_summary.get("status") == "acceptance_dry_run_blocked_missing_credentials"
+            and missing_summary.get("credential_presence_status") == "required_env_key_missing_no_values_read"
+            and missing_summary.get("credential_required_provider_count") == 2
+            and missing_summary.get("credential_present_provider_count") == 0
+            and missing_summary.get("credential_missing_provider_count") == 2
+            and missing_summary.get("blocked_by_missing_credentials") is True
+            and missing_summary.get("ready_for_user_approved_real_acceptance") is False
+            and missing_credential_rows.get("tushare", {}).get("status") == "missing_no_value_read"
+            and missing_credential_rows.get("deepseek", {}).get("status") == "missing_no_value_read"
+            and missing_rows.get("server_secret_preflight", {}).get("status")
+            == "dry_run_secret_presence_missing_no_values_exposed"
+            and first_missing_ledger.get("call_status")
+            == "local_acceptance_dry_run_blocked_missing_credentials_no_external_call"
+            and first_missing_ledger.get("external_calls_triggered") is False
+            and first_missing_ledger.get("tushare_called") is False
+            and first_missing_ledger.get("deepseek_called") is False,
+            f"missing_step={dry_run_missing_credentials.get('current_step')} summary={missing_summary}",
         ),
     ]
 

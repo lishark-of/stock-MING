@@ -10654,9 +10654,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(summary["phase_count"], 10)
         self.assertEqual(summary["selected_provider_phase_count"], 2)
         self.assertEqual(summary["selected_model_phase_count"], 1)
+        self.assertEqual(summary["credential_presence_status"], "all_required_env_keys_present_no_values_read")
         self.assertEqual(summary["credential_required_provider_count"], 2)
         self.assertEqual(summary["credential_present_provider_count"], 2)
         self.assertEqual(summary["credential_missing_provider_count"], 0)
+        self.assertFalse(summary["blocked_by_missing_credentials"])
         self.assertTrue(summary["credential_presence_checked_without_value_exposure"])
         self.assertFalse(summary["credential_values_read"])
         self.assertFalse(summary["credential_values_exposed"])
@@ -10700,6 +10702,68 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("token", payload)
         self.assertNotIn("DROP_TS", json.dumps(task, ensure_ascii=False))
         self.assertNotIn("DROP_DS", json.dumps(task, ensure_ascii=False))
+
+    def test_bootstrap_provider_model_acceptance_dry_run_blocks_missing_credentials(self):
+        self._with_meta_store()
+        self._with_bootstrap_env(
+            COMMAND_CENTER_BOOTSTRAP_MODE="live_light",
+            COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT="2",
+        )
+
+        response = self.client.post(
+            "/api/bootstrap/provider-model-acceptance-dry-run",
+            json={
+                "source": "unit_test_missing_credentials",
+                "approved_by_user": True,
+                "symbols": ["000001.SZ"],
+                "include_tushare": True,
+                "include_deepseek": True,
+                "apis": ["trade_cal", "daily"],
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(
+            task["current_step"],
+            "provider_model_acceptance_dry_run_blocked_missing_credentials_no_external_call",
+        )
+        payload = task["payload_safe"]
+        credential_rows = {row["provider"]: row for row in payload["credential_presence_rows"]}
+        self.assertEqual(credential_rows["tushare"]["status"], "missing_no_value_read")
+        self.assertEqual(credential_rows["deepseek"]["status"], "missing_no_value_read")
+        self.assertFalse(credential_rows["tushare"]["present"])
+        self.assertFalse(credential_rows["deepseek"]["present"])
+        self.assertFalse(credential_rows["tushare"]["values_read"])
+        self.assertFalse(credential_rows["deepseek"]["values_exposed"])
+        summary = payload["acceptance_dry_run_summary"]
+        self.assertEqual(summary["status"], "acceptance_dry_run_blocked_missing_credentials")
+        self.assertEqual(summary["credential_presence_status"], "required_env_key_missing_no_values_read")
+        self.assertEqual(summary["credential_required_provider_count"], 2)
+        self.assertEqual(summary["credential_present_provider_count"], 0)
+        self.assertEqual(summary["credential_missing_provider_count"], 2)
+        self.assertTrue(summary["blocked_by_missing_credentials"])
+        self.assertFalse(summary["ready_for_user_approved_real_acceptance"])
+        rows = {row["phase_key"]: row for row in payload["acceptance_dry_run_rows"]}
+        self.assertEqual(rows["server_secret_preflight"]["status"], "dry_run_secret_presence_missing_no_values_exposed")
+        self.assertFalse(rows["server_secret_preflight"]["passed"])
+        self.assertEqual(rows["server_secret_preflight"]["credential_presence_summary"]["missing_provider_count"], 2)
+        self.assertEqual(
+            task["call_ledger"][0]["call_status"],
+            "local_acceptance_dry_run_blocked_missing_credentials_no_external_call",
+        )
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["credential_missing_provider_count"], 2)
+        self.assertFalse(task["call_ledger"][0]["external_calls_triggered"])
+        self.assertFalse(task["call_ledger"][0]["tushare_called"])
+        self.assertFalse(task["call_ledger"][0]["deepseek_called"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
 
     def test_health_and_cache_endpoints(self):
         self._with_meta_store()

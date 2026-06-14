@@ -1071,21 +1071,32 @@ def _build_acceptance_dry_run(
         for row in rows
         if row.get("stage_kind") == "model" and row.get("selected_for_dry_run") is True
     ]
+    credential_presence = _dict(payload_safe.get("credential_presence_summary"))
+    credential_missing_count = int(credential_presence.get("missing_provider_count") or 0)
+    user_approved = payload_safe.get("user_approved") is True
+    if not user_approved:
+        status = "acceptance_dry_run_blocked_user_approval_required"
+    elif credential_missing_count:
+        status = "acceptance_dry_run_blocked_missing_credentials"
+    else:
+        status = "acceptance_dry_run_ready_execution_pending"
     summary = {
         "schema_version": BOOTSTRAP_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
-        "status": "acceptance_dry_run_ready_execution_pending",
+        "status": status,
         "scope": "local_provider_model_acceptance_dry_run_no_external_call",
         "mode": status_packet.get("mode"),
         "runbook_status": runbook.get("status"),
-        "user_approved": payload_safe.get("user_approved") is True,
+        "user_approved": user_approved,
         "selected_apis": payload_safe.get("selected_apis") or [],
         "ignored_apis": payload_safe.get("ignored_apis") or [],
         "include_tushare": payload_safe.get("include_tushare") is True,
         "include_deepseek": payload_safe.get("include_deepseek") is True,
         "symbol_count": payload_safe.get("symbol_count"),
-        "credential_required_provider_count": _dict(payload_safe.get("credential_presence_summary")).get("required_provider_count", 0),
-        "credential_present_provider_count": _dict(payload_safe.get("credential_presence_summary")).get("present_provider_count", 0),
-        "credential_missing_provider_count": _dict(payload_safe.get("credential_presence_summary")).get("missing_provider_count", 0),
+        "credential_presence_status": credential_presence.get("status"),
+        "credential_required_provider_count": credential_presence.get("required_provider_count", 0),
+        "credential_present_provider_count": credential_presence.get("present_provider_count", 0),
+        "credential_missing_provider_count": credential_missing_count,
+        "blocked_by_missing_credentials": bool(credential_missing_count),
         "credential_presence_checked_without_value_exposure": True,
         "credential_values_read": False,
         "credential_values_exposed": False,
@@ -1093,7 +1104,7 @@ def _build_acceptance_dry_run(
         "selected_provider_phase_count": len(selected_provider_rows),
         "selected_model_phase_count": len(selected_model_rows),
         "blocking_phase_count": len(blocking_rows),
-        "ready_for_user_approved_real_acceptance": payload_safe.get("user_approved") is True,
+        "ready_for_user_approved_real_acceptance": user_approved and not credential_missing_count,
         "provider_execution_implemented": False,
         "model_execution_implemented": False,
         "production_live_light_complete": False,
@@ -1114,6 +1125,7 @@ def _acceptance_dry_run_call_ledger(
     summary: dict[str, Any],
     now: str,
 ) -> dict[str, Any]:
+    missing_credentials = int(summary.get("credential_missing_provider_count") or 0)
     return {
         "api": "local_live_light_provider_model_acceptance_dry_run",
         "endpoint": PLANNED_BOOTSTRAP_ACCEPTANCE_DRY_RUN_ROUTE,
@@ -1136,7 +1148,9 @@ def _acceptance_dry_run_call_ledger(
         "selected_model_phase_count": int(summary.get("selected_model_phase_count") or 0),
         "blocking_phase_count": int(summary.get("blocking_phase_count") or 0),
         "local_fetched_at": now,
-        "call_status": "local_acceptance_dry_run_recorded_no_external_call",
+        "call_status": "local_acceptance_dry_run_blocked_missing_credentials_no_external_call"
+        if missing_credentials
+        else "local_acceptance_dry_run_recorded_no_external_call",
         "external": False,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -1784,9 +1798,11 @@ def run_provider_model_acceptance_dry_run(payload: Any = None) -> dict[str, Any]
     payload_safe["acceptance_dry_run_summary"] = summary
     payload_safe["acceptance_dry_run_rows"] = rows
     current_step = (
-        "provider_model_acceptance_dry_run_recorded_user_approval_no_external_call"
-        if payload_safe.get("user_approved") is True
-        else "provider_model_acceptance_dry_run_recorded_user_approval_required_no_external_call"
+        "provider_model_acceptance_dry_run_recorded_user_approval_required_no_external_call"
+        if payload_safe.get("user_approved") is not True
+        else "provider_model_acceptance_dry_run_blocked_missing_credentials_no_external_call"
+        if summary.get("blocked_by_missing_credentials") is True
+        else "provider_model_acceptance_dry_run_recorded_user_approval_no_external_call"
     )
     task = task_service.create_task_record(
         BOOTSTRAP_ACCEPTANCE_DRY_RUN_TASK_TYPE,
