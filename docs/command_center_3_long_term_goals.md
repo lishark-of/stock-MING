@@ -75,6 +75,16 @@ COMMAND_CENTER_LIVE_DEEPSEEK_MODEL=deepseek-v4-pro
 COMMAND_CENTER_LIVE_ALLOW_FULL_POOL=false
 ```
 
+The safe default remains fully offline at startup. A local user may intentionally opt into daily research automation by setting:
+
+```text
+COMMAND_CENTER_BOOTSTRAP_MODE=live_light
+COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN=true
+COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN=true
+```
+
+When this is enabled, the UI must show the active mode and automation switches in plain sight: current runtime mode, Tushare auto refresh on/off, DeepSeek pro auto explanation on/off, latest bootstrap task id/status, skipped-by-rate-limit state, and safe error text when a task fails.
+
 `live_light` target behavior is intentionally narrow: the page must render from cache first, create at most one background bootstrap task inside the rate limit, show the current mode and task status, and degrade safely when the task fails. The task may refresh current target / holdings / watchlist light data, refresh factor and next-session caches, and optionally enqueue a governed DeepSeek pro explanation after data is ready. It must not block UI, mutate `strategy action`, change prices or holdings, write `operation_zones`, execute trades, or expose token/key material.
 
 `live_light` therefore changes the old "startup never automates anything" rule into a mode-layered rule: startup automation is forbidden in `cache_only`, manual in `manual`, and allowed only as an auditable background POST task in `live_light`. React may request the task after the first cache render, but React still never calls Tushare, DeepSeek, GitHub, Python modules, or adapters directly.
@@ -90,6 +100,8 @@ Target `live_light` bootstrap scope:
 | Intraday or realtime evidence | allowed only through configured provider adapters when Tushare is insufficient | provider identity, freshness, call ledger, mode gate, and safe error are mandatory |
 
 This mode layering also applies to search-driven research. A future stock search or "生成 3.0 量化推演" action should create a POST task that validates the symbol, refreshes allowed light data, writes call ledger/model ledger, updates Factor Quant Hub and Next Session cache, and displays provenance, freshness, DeepSeek status, and chart results. It remains research-only and cannot turn DeepSeek text, factor scores, or radar candidates into buy/sell instructions.
+
+Unified search-to-quant projection target: after the user enters or searches a symbol, Command Center 3 should expose a single clear action such as "一键生成量化投研图谱" or "生成 3.0 量化推演". That action must validate the symbol, run only the allowed light refresh scope, build `call_ledger` and `model_ledger` rows, update Factor Quant Hub / Next Session / ECharts cache, and show task progress, data provenance, factor support/suppress/neutral/missing rows, freshness state, DeepSeek status, and chart results. It must not run full-pool/deep-scan on render, hide provider gaps, or turn the projection into a trade instruction.
 
 Current implementation checkpoint: `GET /api/bootstrap/status` now exposes the runtime mode cache, safe configuration rows, mode rows, and `live_light` policy. `POST /api/bootstrap/live-startup` is registered as a local task skeleton; Settings / Config Health can create it manually, and Command Center Home can create it once after first cache render when `COMMAND_CENTER_BOOTSTRAP_MODE=live_light` and sources are enabled. This is still local-only: it records mode, rate limit, session dedupe, payload-safe request context, task status, and call ledger, but it does not call Tushare/DeepSeek/GitHub, does not read token/key values, and keeps `provider_execution_implemented=false`.
 
@@ -737,6 +749,7 @@ Enable production-ready worker task orchestration
 - Future `live_light` DeepSeek may only run through POST task / worker after data readiness, must record model used, status, token usage, parse status, cache hit/miss, input hash, and output hash, and must keep failed parse out of the packet.
 - Future `live_light` DeepSeek output must be sanitized to the six-field explanation schema: `summary`, `support_notes`, `suppress_notes`, `conflict_notes`, `missing_data_notes`, and `discipline_notes`.
 - Same `input_hash` should not trigger duplicate model calls inside the configured dedupe window.
+- UI model-ledger display must include `model_used`, `status`, `token_usage`, `parse_status`, `cache_hit/miss`, `input_hash`, and `output_hash` without exposing prompt secrets, raw token values, or unredacted provider errors.
 
 ### Forbidden
 

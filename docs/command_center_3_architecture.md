@@ -228,6 +228,8 @@ Command Center 3.0 的外联边界采用默认安全、显式升级的运行模�
 
 `live_light` 的目标不是让 React 直接外联，而是把本地日常投研的轻量刷新变成可配置、可审计、可跳过、可失败降级的后台任务。当前 bootstrap skeleton 已能在初始 cache 渲染之后触发，必须限频、session 去重、显示当前模式和最近任务状态，并记录 call ledger；model ledger 和真实 provider/model 执行仍待后续验收。未来它可覆盖当前标的、当前持仓或 watchlist 的轻量 Tushare 数据，数据准备后可选触发 DeepSeek pro 解释；不得阻塞 UI、不得修改 `strategy action`、不得改价格/持仓/`operation_zones`、不得执行真实交易、不得暴露 token/key。
 
+本地用户可以通过配置把默认 `cache_only` 升级到 `live_light`，但 UI 必须把状态展示清楚：当前运行模式、Tushare 自动刷新开关、DeepSeek pro 自动解释开关、最近 bootstrap task、rate-limit skipped 状态和 safe error。`live_light` 允许的启动自动化只是一条 POST bootstrap task：先完成 cache render，再按 current target / holdings / watchlist 的有界范围刷新轻量数据，必要时写 `call_ledger`，数据准备后才可进入 DeepSeek pro 的 `model_ledger`。搜票后的 "一键生成量化投研图谱" / "生成 3.0 量化推演" 也应复用同样的 task 化链路，展示进度、来源、freshness、factor support/suppress/neutral/missing、DeepSeek 状态和 ECharts 结果；它不在 render 时做全池扫描、不隐藏 provider 缺口、不生成交易指令。
+
 ## 边界
 
 - 不执行真实交易。
