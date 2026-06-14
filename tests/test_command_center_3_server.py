@@ -10283,12 +10283,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             packet["activation_receipt_schema_version"],
             "command_center_live_bootstrap_activation_receipt.v1",
         )
+        self.assertEqual(
+            packet["acceptance_runbook_schema_version"],
+            "command_center_live_bootstrap_provider_model_acceptance_runbook.v1",
+        )
         self.assertTrue(packet["live_light"]["activation_receipt_visible"])
+        self.assertTrue(packet["live_light"]["provider_model_acceptance_runbook_visible"])
         self.assertTrue(packet["live_light"]["ready_for_provider_execution_design"])
+        self.assertTrue(packet["live_light"]["ready_for_acceptance_design"])
+        self.assertFalse(packet["live_light"]["ready_for_user_approved_acceptance_task"])
         self.assertFalse(packet["live_light"]["ready_for_provider_execution"])
         self.assertFalse(packet["live_light"]["ready_for_model_execution"])
         self.assertTrue(packet["policy"]["live_light_activation_receipt_visible"])
+        self.assertTrue(packet["policy"]["live_light_provider_model_acceptance_runbook_visible"])
         self.assertTrue(packet["policy"]["live_light_ready_for_provider_execution_design"])
+        self.assertTrue(packet["policy"]["live_light_ready_for_acceptance_design"])
+        self.assertFalse(packet["policy"]["live_light_ready_for_user_approved_acceptance_task"])
         self.assertFalse(packet["policy"]["live_light_ready_for_provider_execution"])
         self.assertFalse(packet["policy"]["live_light_ready_for_model_execution"])
         self.assertFalse(packet["policy"]["production_live_light_complete"])
@@ -10331,6 +10341,50 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             activation_rows["production_activation_pending"]["status"],
             "blocked_until_explicit_provider_and_model_acceptance",
         )
+        runbook = packet["live_light_provider_model_acceptance_runbook"]
+        self.assertEqual(
+            runbook["schema_version"],
+            "command_center_live_bootstrap_provider_model_acceptance_runbook.v1",
+        )
+        self.assertEqual(runbook["status"], "live_light_provider_model_acceptance_runbook_ready_execution_pending")
+        self.assertEqual(runbook["scope"], "local_runbook_no_provider_or_model_execution")
+        self.assertTrue(runbook["local_runbook_ready"])
+        self.assertEqual(runbook["mode"], "live_light")
+        self.assertTrue(runbook["tushare_on_open"])
+        self.assertTrue(runbook["deepseek_on_open"])
+        self.assertTrue(runbook["ready_for_acceptance_design"])
+        self.assertFalse(runbook["ready_for_user_approved_acceptance_task"])
+        self.assertFalse(runbook["provider_execution_implemented"])
+        self.assertFalse(runbook["model_execution_implemented"])
+        self.assertFalse(runbook["production_live_light_complete"])
+        self.assertEqual(runbook["phase_count"], 10)
+        self.assertEqual(runbook["provider_phase_count"], 2)
+        self.assertEqual(runbook["model_phase_count"], 1)
+        self.assertEqual(runbook["external_call_expected_phase_count"], 3)
+        self.assertFalse(runbook["external_calls_triggered"])
+        self.assertFalse(runbook["tushare_called"])
+        self.assertFalse(runbook["deepseek_called"])
+        self.assertFalse(runbook["github_called"])
+        self.assertTrue(runbook["does_not_execute_trades"])
+        self.assertTrue(runbook["does_not_modify_strategy_action"])
+        self.assertEqual(runbook["call_ledger"][0]["api"], "local_live_light_provider_model_acceptance_runbook")
+        acceptance_rows = {row["phase_key"]: row for row in packet["live_light_provider_model_acceptance_rows"]}
+        self.assertEqual(acceptance_rows["mode_and_scope_preflight"]["status"], "passed_local_contract_visible")
+        self.assertEqual(acceptance_rows["explicit_user_approval_required"]["status"], "pending_user_approved_acceptance_run")
+        self.assertEqual(acceptance_rows["server_secret_preflight"]["status"], "pending_secret_presence_check")
+        self.assertEqual(acceptance_rows["tushare_trade_cal_acceptance_sample"]["status"], "pending_provider_execution")
+        self.assertEqual(acceptance_rows["tushare_light_fact_acceptance_sample"]["provider"], "tushare")
+        self.assertTrue(acceptance_rows["tushare_light_fact_acceptance_sample"]["external_call_expected_when_executed"])
+        self.assertEqual(acceptance_rows["deepseek_pro_model_acceptance_sample"]["status"], "pending_model_execution")
+        self.assertTrue(acceptance_rows["deepseek_pro_model_acceptance_sample"]["external_call_expected_when_executed"])
+        self.assertEqual(
+            acceptance_rows["ui_nonblocking_runtime_acceptance"]["status"],
+            "pending_browser_or_runtime_evidence",
+        )
+        self.assertEqual(
+            acceptance_rows["production_promotion_review"]["status"],
+            "blocked_until_all_acceptance_evidence_present",
+        )
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
@@ -10340,6 +10394,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(response["call_ledger"][0]["api"], "local_bootstrap_runtime_mode_cache")
         self.assertEqual(response["call_ledger"][0]["activation_row_count"], len(packet["live_light_activation_rows"]))
         self.assertTrue(response["call_ledger"][0]["activation_receipt_ready"])
+        self.assertEqual(
+            response["call_ledger"][0]["acceptance_runbook_row_count"],
+            len(packet["live_light_provider_model_acceptance_rows"]),
+        )
+        self.assertTrue(response["call_ledger"][0]["acceptance_runbook_ready"])
         self.assertFalse(response["call_ledger"][0]["external"])
 
     def test_bootstrap_live_startup_cache_only_creates_safe_skipped_task(self):
@@ -10537,13 +10596,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(bootstrap["data"]["policy"]["live_light_provider_execution_implemented"])
         self.assertTrue(bootstrap["data"]["policy"]["provider_linkage_rows_visible"])
         self.assertTrue(bootstrap["data"]["policy"]["live_light_activation_receipt_visible"])
+        self.assertTrue(bootstrap["data"]["policy"]["live_light_provider_model_acceptance_runbook_visible"])
         self.assertFalse(bootstrap["data"]["policy"]["production_live_light_complete"])
         self.assertFalse(bootstrap["data"]["policy"]["live_full_enabled"])
         self.assertFalse(bootstrap["data"]["live_light"]["enabled"])
         self.assertTrue(bootstrap["data"]["live_light"]["bootstrap_task_implemented"])
         self.assertFalse(bootstrap["data"]["live_light"]["provider_execution_implemented"])
         self.assertTrue(bootstrap["data"]["live_light"]["activation_receipt_visible"])
+        self.assertTrue(bootstrap["data"]["live_light"]["provider_model_acceptance_runbook_visible"])
         self.assertTrue(bootstrap["data"]["live_light"]["ready_for_provider_execution_design"])
+        self.assertTrue(bootstrap["data"]["live_light"]["ready_for_acceptance_design"])
+        self.assertFalse(bootstrap["data"]["live_light"]["ready_for_user_approved_acceptance_task"])
         self.assertFalse(bootstrap["data"]["live_light"]["ready_for_provider_execution"])
         self.assertFalse(bootstrap["data"]["live_light"]["ready_for_model_execution"])
         self.assertEqual(len(bootstrap["data"]["provider_linkage_rows"]), 6)
@@ -10576,6 +10639,28 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "full_pool_reserved",
                 "token_key_frontend_exposure_blocked",
                 "production_activation_pending",
+            },
+        )
+        runbook = bootstrap["data"]["live_light_provider_model_acceptance_runbook"]
+        self.assertEqual(runbook["status"], "live_light_provider_model_acceptance_runbook_ready_execution_pending")
+        self.assertTrue(runbook["local_runbook_ready"])
+        self.assertTrue(runbook["ready_for_acceptance_design"])
+        self.assertFalse(runbook["ready_for_user_approved_acceptance_task"])
+        self.assertFalse(runbook["external_calls_triggered"])
+        self.assertEqual(runbook["phase_count"], 10)
+        self.assertEqual(
+            {row["phase_key"] for row in bootstrap["data"]["live_light_provider_model_acceptance_rows"]},
+            {
+                "mode_and_scope_preflight",
+                "explicit_user_approval_required",
+                "server_secret_preflight",
+                "tushare_trade_cal_acceptance_sample",
+                "tushare_light_fact_acceptance_sample",
+                "local_factor_next_session_refresh",
+                "deepseek_pro_model_acceptance_sample",
+                "ui_nonblocking_runtime_acceptance",
+                "ledger_redaction_safety_review",
+                "production_promotion_review",
             },
         )
         self.assertEqual(

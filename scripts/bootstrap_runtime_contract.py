@@ -127,6 +127,12 @@ def _cache_only_rows() -> list[dict[str, Any]]:
         for row in _list(status.get("live_light_activation_rows"))
         if isinstance(row, dict)
     }
+    runbook = _dict(status.get("live_light_provider_model_acceptance_runbook"))
+    acceptance_rows = {
+        str(row.get("phase_key") or ""): row
+        for row in _list(status.get("live_light_provider_model_acceptance_rows"))
+        if isinstance(row, dict)
+    }
     return [
         _row(
             "cache_only_status_is_offline_default",
@@ -176,6 +182,28 @@ def _cache_only_rows() -> list[dict[str, Any]]:
             f"activation_status={activation.get('status')} rows={sorted(activation_rows)}",
         ),
         _row(
+            "cache_only_acceptance_runbook_is_local_execution_pending",
+            status.get("acceptance_runbook_schema_version")
+            == "command_center_live_bootstrap_provider_model_acceptance_runbook.v1"
+            and runbook.get("status") == "live_light_provider_model_acceptance_runbook_ready_execution_pending"
+            and runbook.get("scope") == "local_runbook_no_provider_or_model_execution"
+            and runbook.get("local_runbook_ready") is True
+            and runbook.get("ready_for_acceptance_design") is True
+            and runbook.get("ready_for_user_approved_acceptance_task") is False
+            and runbook.get("provider_execution_implemented") is False
+            and runbook.get("model_execution_implemented") is False
+            and runbook.get("production_live_light_complete") is False
+            and runbook.get("external_calls_triggered") is False
+            and runbook.get("phase_count") == 10
+            and runbook.get("provider_phase_count") == 2
+            and runbook.get("model_phase_count") == 1
+            and acceptance_rows.get("tushare_trade_cal_acceptance_sample", {}).get("status")
+            == "pending_provider_execution"
+            and acceptance_rows.get("deepseek_pro_model_acceptance_sample", {}).get("status")
+            == "pending_model_execution",
+            f"runbook_status={runbook.get('status')} rows={sorted(acceptance_rows)}",
+        ),
+        _row(
             "cache_only_stage_and_model_plan_visible",
             len(stages) == 9
             and len(models) == 1
@@ -215,6 +243,12 @@ def _live_light_disabled_rows() -> list[dict[str, Any]]:
         for row in _list(status.get("live_light_activation_rows"))
         if isinstance(row, dict)
     }
+    runbook = _dict(status.get("live_light_provider_model_acceptance_runbook"))
+    acceptance_rows = {
+        str(row.get("phase_key") or ""): row
+        for row in _list(status.get("live_light_provider_model_acceptance_rows"))
+        if isinstance(row, dict)
+    }
     return [
         _row(
             "live_light_sources_disabled_skips_safely",
@@ -243,6 +277,21 @@ def _live_light_disabled_rows() -> list[dict[str, Any]]:
             and activation_rows.get("post_task_boundary_visible", {}).get("status") == "passed"
             and activation_rows.get("real_trading_disconnected", {}).get("status") == "passed",
             f"activation={activation}",
+        ),
+        _row(
+            "live_light_disabled_acceptance_runbook_visible_execution_pending",
+            runbook.get("mode") == "live_light"
+            and runbook.get("live_light_enabled") is True
+            and runbook.get("tushare_on_open") is False
+            and runbook.get("deepseek_on_open") is False
+            and runbook.get("ready_for_acceptance_design") is True
+            and runbook.get("ready_for_user_approved_acceptance_task") is False
+            and runbook.get("external_calls_triggered") is False
+            and acceptance_rows.get("explicit_user_approval_required", {}).get("status")
+            == "pending_user_approved_acceptance_run"
+            and acceptance_rows.get("production_promotion_review", {}).get("status")
+            == "blocked_until_all_acceptance_evidence_present",
+            f"runbook={runbook}",
         ),
         _row(
             "live_light_disabled_provider_model_rows_are_skipped_by_config",
@@ -305,6 +354,12 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
         for row in _list(status.get("live_light_activation_rows"))
         if isinstance(row, dict)
     }
+    runbook = _dict(status.get("live_light_provider_model_acceptance_runbook"))
+    acceptance_rows = {
+        str(row.get("phase_key") or ""): row
+        for row in _list(status.get("live_light_provider_model_acceptance_rows"))
+        if isinstance(row, dict)
+    }
     return [
         _row(
             "live_light_records_plan_without_provider_execution",
@@ -354,6 +409,37 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             and activation_rows.get("production_activation_pending", {}).get("status")
             == "blocked_until_explicit_provider_and_model_acceptance",
             f"activation={activation}",
+        ),
+        _row(
+            "live_light_provider_model_acceptance_runbook_lists_real_evidence_without_running",
+            runbook.get("mode") == "live_light"
+            and runbook.get("tushare_on_open") is True
+            and runbook.get("deepseek_on_open") is True
+            and runbook.get("phase_count") == 10
+            and runbook.get("provider_phase_count") == 2
+            and runbook.get("model_phase_count") == 1
+            and runbook.get("external_call_expected_phase_count") == 3
+            and runbook.get("ready_for_acceptance_design") is True
+            and runbook.get("ready_for_user_approved_acceptance_task") is False
+            and runbook.get("external_calls_triggered") is False
+            and runbook.get("tushare_called") is False
+            and runbook.get("deepseek_called") is False
+            and runbook.get("github_called") is False
+            and acceptance_rows.get("tushare_trade_cal_acceptance_sample", {}).get(
+                "external_call_expected_when_executed"
+            )
+            is True
+            and acceptance_rows.get("tushare_light_fact_acceptance_sample", {}).get(
+                "external_call_expected_when_executed"
+            )
+            is True
+            and acceptance_rows.get("deepseek_pro_model_acceptance_sample", {}).get(
+                "external_call_expected_when_executed"
+            )
+            is True
+            and acceptance_rows.get("ui_nonblocking_runtime_acceptance", {}).get("status")
+            == "pending_browser_or_runtime_evidence",
+            f"runbook={runbook}",
         ),
         _row(
             "live_light_symbol_limit_is_enforced",

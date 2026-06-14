@@ -139,6 +139,8 @@ export default function SettingsConfigHealth() {
   const providerLinkageRows = rows(bootstrapStatus.provider_linkage_rows);
   const activationReceipt = (bootstrapStatus.live_light_activation_receipt as Record<string, unknown> | undefined) ?? {};
   const activationRows = rows(bootstrapStatus.live_light_activation_rows);
+  const acceptanceRunbook = (bootstrapStatus.live_light_provider_model_acceptance_runbook as Record<string, unknown> | undefined) ?? {};
+  const acceptanceRows = rows(bootstrapStatus.live_light_provider_model_acceptance_rows);
   const dataHealthCounts = (dataHealth.counts as Record<string, unknown> | undefined) ?? {};
   const desktopRuntime = (desktopPreflight.runtime as Record<string, unknown> | undefined) ?? {};
   const storageStatus = (storage.dataset_status as Record<string, unknown> | undefined) ?? {};
@@ -198,6 +200,7 @@ export default function SettingsConfigHealth() {
           { label: "bootstrap task", value: liveLight.bootstrap_task_implemented === true ? "ready" : "pending", tone: liveLight.bootstrap_task_implemented === true ? "good" : "warn" },
           { label: "provider linkage", value: providerLinkageRows.length },
           { label: "activation rows", value: activationRows.length },
+          { label: "acceptance phases", value: acceptanceRows.length },
           { label: "startup external", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" },
           { label: "model purposes", value: modelRows.length },
           { label: "data health rows", value: dataHealthCounts.timeline_count as number | undefined },
@@ -223,11 +226,14 @@ export default function SettingsConfigHealth() {
 
         <PacketCard title="live_light 配置合同" subtitle="显示安全配置状态；手动按钮只创建本地 task skeleton" status={String(liveLight.enabled === true ? "review_pending" : "cache_only")}>
           <p>activation receipt: {String(activationReceipt.status ?? "--")}</p>
+          <p>provider/model acceptance runbook: {String(acceptanceRunbook.status ?? "--")}</p>
           <p>provider/model ready: {String(activationReceipt.ready_for_provider_execution ?? false)} / {String(activationReceipt.ready_for_model_execution ?? false)}</p>
           <DataLineageTable rows={configRuntimeRows} />
           {providerLinkageRows.length ? <DataLineageTable rows={providerLinkageRows} /> : null}
           {activationRows.length ? <DataLineageTable rows={activationRows} /> : null}
+          {acceptanceRows.length ? <DataLineageTable rows={acceptanceRows} /> : null}
           <JsonDetails title="live_light activation receipt" data={activationReceipt} />
+          <JsonDetails title="live_light provider/model acceptance runbook" data={acceptanceRunbook} />
           <JsonDetails title="live_light policy" data={liveLight} />
         </PacketCard>
 

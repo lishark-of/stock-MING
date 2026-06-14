@@ -126,6 +126,8 @@ Current implementation checkpoint: `GET /api/bootstrap/status` now exposes the r
 
 `GET /api/bootstrap/status` now also exposes `live_light_activation_receipt` and `live_light_activation_rows`. This receipt is the next-step checklist between linkage visibility and real provider/model execution: mode layering, cache/render silence, POST task boundary, rate limit, symbol cap, call/model ledger requirements, GitHub exclusion, full-pool reserve, token/key boundary, and real-trading isolation are visible; Tushare provider execution, DeepSeek model execution, and production promotion remain explicitly blocked. It is ready for provider/model execution design, not ready for provider/model execution.
 
+`GET /api/bootstrap/status` now also exposes `live_light_provider_model_acceptance_runbook` and rows. This runbook fixes the future user-approved real acceptance sequence: mode/scope preflight, explicit approval, server-side secret presence check without value exposure, `trade_cal`, `daily/daily_basic/moneyflow`, local factor/next-session refresh, optional DeepSeek pro model ledger, UI non-blocking evidence, ledger redaction/safety review, and production promotion review. It is a local runbook only: provider/model execution, browser runtime evidence, and promotion evidence remain pending.
+
 Mode-layered acceptance contract from the latest user baseline:
 
 - The boundary is not "never automate anything"; it is `cache_only` default-deny plus explicit upgrades to `manual` or `live_light`.

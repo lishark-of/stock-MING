@@ -228,6 +228,8 @@ export default function CommandCenterHome() {
   const bootstrapProviderLinkageRows = (bootstrapStatus.provider_linkage_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const liveLightActivationReceipt = (bootstrapStatus.live_light_activation_receipt as Record<string, unknown> | undefined) ?? {};
   const liveLightActivationRows = (bootstrapStatus.live_light_activation_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const liveLightAcceptanceRunbook = (bootstrapStatus.live_light_provider_model_acceptance_runbook as Record<string, unknown> | undefined) ?? {};
+  const liveLightAcceptanceRows = (bootstrapStatus.live_light_provider_model_acceptance_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const liveBootstrapRunKey = [
     bootstrapStatus.mode,
     liveLight.tushare_on_open,
@@ -327,6 +329,7 @@ export default function CommandCenterHome() {
           { label: "live bootstrap", value: liveBootstrapAutoStatus, tone: liveBootstrapAutoStatus.includes("failed") ? "bad" : liveBootstrapAutoStatus.includes("disabled") || liveBootstrapAutoStatus.includes("skipped") ? "good" : "warn" },
           { label: "provider linkage", value: bootstrapProviderLinkageRows.length },
           { label: "activation rows", value: liveLightActivationRows.length },
+          { label: "acceptance phases", value: liveLightAcceptanceRows.length },
           { label: "health envelope ledger", value: healthEnvelopeLedger.length },
           { label: "health warnings", value: healthWarnings.length },
           { label: "本地快照", value: snapshotAvailable, tone: snapshotAvailable ? "good" : "warn" },
@@ -374,6 +377,7 @@ export default function CommandCenterHome() {
           <p>task skeleton / provider execution: {String(liveLight.bootstrap_task_implemented ?? false)} / {String(liveLight.provider_execution_implemented ?? false)}</p>
           <p>provider linkage rows: {String(bootstrapProviderLinkageRows.length)}</p>
           <p>live_light activation receipt: {String(liveLightActivationReceipt.status ?? "--")}</p>
+          <p>provider/model acceptance runbook: {String(liveLightAcceptanceRunbook.status ?? "--")}</p>
           <p>provider/model ready: {String(liveLightActivationReceipt.ready_for_provider_execution ?? false)} / {String(liveLightActivationReceipt.ready_for_model_execution ?? false)}</p>
           <p>task_id: {String(liveBootstrapTaskId || liveBootstrapReceipt?.data?.task_id || "--")}</p>
           <p>stage rows / model ledger preview: {String(liveBootstrapStageRows.length)} / {String(liveBootstrapModelLedgerRows.length)}</p>
@@ -385,9 +389,11 @@ export default function CommandCenterHome() {
           <DataLineageTable rows={[...bootstrapEnvelopeLedger, ...liveBootstrapTaskLedger]} />
           {bootstrapProviderLinkageRows.length ? <DataLineageTable rows={bootstrapProviderLinkageRows} /> : null}
           {liveLightActivationRows.length ? <DataLineageTable rows={liveLightActivationRows} /> : null}
+          {liveLightAcceptanceRows.length ? <DataLineageTable rows={liveLightAcceptanceRows} /> : null}
           {liveBootstrapStageRows.length ? <DataLineageTable rows={liveBootstrapStageRows} /> : null}
           {liveBootstrapModelLedgerRows.length ? <DataLineageTable rows={liveBootstrapModelLedgerRows} /> : null}
           <JsonDetails title="live_light activation receipt" data={liveLightActivationReceipt} />
+          <JsonDetails title="live_light provider/model acceptance runbook" data={liveLightAcceptanceRunbook} />
           <JsonDetails title="bootstrap status" data={bootstrapStatus} />
         </PacketCard>
         <PacketCard title="Packet Registry" subtitle="现有 packet contract 只读映射" status={snapshotAvailable ? "snapshot" : "cache"}>
