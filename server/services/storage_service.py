@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -578,6 +579,14 @@ def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
     tmp_path.replace(path)
 
 
+def _stable_json_text(payload: Mapping[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _json_sha256(payload: Mapping[str, Any]) -> str:
+    return hashlib.sha256(_stable_json_text(payload).encode("utf-8")).hexdigest()
+
+
 def _dataset_version_manifest_payload() -> tuple[dict[str, Any], str, str]:
     manifest_path = _dataset_version_manifest_path()
     if not manifest_path.exists():
@@ -659,6 +668,7 @@ def _dataset_version_manifest_rows(manifest: Mapping[str, Any], manifest_status:
 def storage_dataset_version_manifest_evidence_audit() -> dict[str, Any]:
     manifest_path = _dataset_version_manifest_path()
     manifest, manifest_status, error_message_safe = _dataset_version_manifest_payload()
+    manifest_datasets = manifest.get("datasets") if isinstance(manifest.get("datasets"), Mapping) else {}
     rows = _dataset_version_manifest_rows(manifest, manifest_status)
     status_counts = _count_values(row.get("status") for row in rows)
     validated_count = sum(1 for row in rows if row.get("physical_dataset_version_validated"))
@@ -670,6 +680,7 @@ def storage_dataset_version_manifest_evidence_audit() -> dict[str, Any]:
         status = "manifest_validation_ready_local_only"
     else:
         status = "manifest_validation_incomplete"
+    manifest_content_sha256 = _json_sha256(manifest) if manifest_present else ""
     audit = {
         "schema_version": "command_center_3_storage_dataset_version_manifest_evidence.v1",
         "status": status,
@@ -678,6 +689,9 @@ def storage_dataset_version_manifest_evidence_audit() -> dict[str, Any]:
         "manifest_path": _path_label(manifest_path),
         "manifest_exists": manifest_present,
         "manifest_read_status": manifest_status,
+        "manifest_hash_algorithm": "sha256" if manifest_present else "",
+        "manifest_content_sha256": manifest_content_sha256,
+        "manifest_dataset_keys": sorted(str(key) for key in manifest_datasets) if manifest_present else [],
         "dataset_count": dataset_count,
         "manifest_dataset_count": sum(1 for row in rows if row.get("manifest_present")),
         "validated_dataset_count": validated_count,
@@ -774,6 +788,7 @@ def storage_dataset_version_manifest_dry_run_packet(
             if row.get("status") != "blocked_existing_manifest_unreadable"
         },
     }
+    proposed_manifest_content_sha256 = _json_sha256(proposed_manifest)
     packet = {
         "schema_version": "command_center_3_storage_dataset_version_manifest_dry_run.v1",
         "packet_key": DATASET_VERSION_MANIFEST_DRY_RUN_PACKET_KEY,
@@ -790,6 +805,8 @@ def storage_dataset_version_manifest_dry_run_packet(
         "rows": rows,
         "current_manifest_evidence": evidence,
         "proposed_manifest": proposed_manifest,
+        "proposed_manifest_hash_algorithm": "sha256",
+        "proposed_manifest_content_sha256": proposed_manifest_content_sha256,
         "proposed_manifest_dataset_count": len(proposed_manifest["datasets"]),
         "request_params_safe": {
             "source": (payload_safe or {}).get("source") or "storage_page_button",
@@ -1064,6 +1081,7 @@ def storage_dataset_version_manifest_write_packet(
     dry_run_packet = storage_dataset_version_manifest_dry_run_packet(task_id=task_id, payload_safe=payload_safe)
     manifest_path = _dataset_version_manifest_path()
     write_blocked = not confirm_manifest_write or not dry_run_packet.get("manifest_write_plan_ready")
+    pre_write_evidence = dry_run_packet.get("current_manifest_evidence") if isinstance(dry_run_packet.get("current_manifest_evidence"), Mapping) else {}
     manifest_payload = dict(dry_run_packet.get("proposed_manifest") or {})
     manifest_payload.update(
         {
@@ -1073,6 +1091,7 @@ def storage_dataset_version_manifest_write_packet(
             "write_policy": "button_gated_local_manifest_only",
         }
     )
+    written_manifest_content_sha256 = _json_sha256(manifest_payload) if manifest_payload else ""
     write_error = ""
     manifest_write_executed = False
     if not write_blocked:
@@ -1084,6 +1103,12 @@ def storage_dataset_version_manifest_write_packet(
             write_blocked = True
 
     post_write_evidence = storage_dataset_version_manifest_evidence_audit()
+    post_write_manifest_content_sha256 = str(post_write_evidence.get("manifest_content_sha256") or "")
+    post_write_manifest_hash_matches_written_payload = (
+        manifest_write_executed
+        and bool(written_manifest_content_sha256)
+        and post_write_manifest_content_sha256 == written_manifest_content_sha256
+    )
     status = "manifest_write_blocked_confirmation_required"
     if confirm_manifest_write and not dry_run_packet.get("manifest_write_plan_ready"):
         status = "manifest_write_blocked_plan_not_ready"
@@ -1109,6 +1134,14 @@ def storage_dataset_version_manifest_write_packet(
         "cache_get_writes_files": False,
         "post_write_validation_status": post_write_evidence.get("status"),
         "post_write_manifest_validated": bool(post_write_evidence.get("dataset_version_manifest_validated")),
+        "manifest_hash_algorithm": "sha256",
+        "pre_write_manifest_content_sha256": str(pre_write_evidence.get("manifest_content_sha256") or ""),
+        "dry_run_proposed_manifest_content_sha256": str(dry_run_packet.get("proposed_manifest_content_sha256") or ""),
+        "written_manifest_content_sha256": written_manifest_content_sha256 if manifest_write_executed else "",
+        "post_write_manifest_content_sha256": post_write_manifest_content_sha256,
+        "post_write_manifest_hash_matches_written_payload": post_write_manifest_hash_matches_written_payload,
+        "atomic_manifest_write_used": manifest_write_executed,
+        "temporary_manifest_path_policy": "same_directory_hidden_tmp_replace",
         "post_write_validated_dataset_count": post_write_evidence.get("validated_dataset_count"),
         "dataset_count": dry_run_packet.get("dataset_count"),
         "would_change_count": dry_run_packet.get("would_change_count"),
@@ -1271,6 +1304,9 @@ def storage_dataset_version_manifest_validate_packet(
         "blockers": blockers,
         "source_manifest_evidence_schema_version": evidence.get("schema_version"),
         "source_manifest_evidence_status": evidence.get("status"),
+        "source_manifest_hash_algorithm": evidence.get("manifest_hash_algorithm"),
+        "source_manifest_content_sha256": evidence.get("manifest_content_sha256"),
+        "source_manifest_hash_present": bool(evidence.get("manifest_content_sha256")),
         "dataset_version_manifest_validated": validated_count == dataset_count and dataset_count > 0,
         "physical_dataset_version_validated_count": validated_count,
         "dataset_version_migration_executed_count": 0,

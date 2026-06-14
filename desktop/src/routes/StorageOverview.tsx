@@ -610,6 +610,9 @@ export default function StorageOverview() {
         <p>scope: {String(datasetVersionManifestEvidence.scope ?? "read_only_local_manifest_evidence_not_manifest_writer")}</p>
         <p>manifest_path: {String(datasetVersionManifestEvidence.manifest_path ?? "--")}</p>
         <p>manifest_exists / validated: {String(datasetVersionManifestEvidence.manifest_exists ?? false)} / {String(datasetVersionManifestEvidence.dataset_version_manifest_validated ?? false)}</p>
+        <p>manifest_hash_algorithm: {String(datasetVersionManifestEvidence.manifest_hash_algorithm ?? "")}</p>
+        <p>manifest_content_sha256: {String(datasetVersionManifestEvidence.manifest_content_sha256 ?? "")}</p>
+        <p>manifest_dataset_keys: {JSON.stringify(datasetVersionManifestEvidence.manifest_dataset_keys ?? [])}</p>
         <p>validated / missing / mismatch: {String(datasetVersionManifestEvidence.validated_dataset_count ?? 0)} / {String(datasetVersionManifestEvidence.missing_dataset_count ?? 0)} / {String(datasetVersionManifestEvidence.schema_version_mismatch_count ?? 0)}</p>
         <p>manifest_written_on_get / cache_get_writes_files / reads_parquet_payloads: {String(datasetVersionManifestEvidence.manifest_written_on_get ?? false)} / {String(datasetVersionManifestEvidence.cache_get_writes_files ?? false)} / {String(datasetVersionManifestEvidence.cache_get_reads_parquet_payloads ?? false)}</p>
         <p>dataset_version_manifest_dry_run_route: {String(productionReadiness.dataset_version_manifest_dry_run_route ?? "POST /api/storage/dataset-version-manifest/dry-run")}</p>

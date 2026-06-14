@@ -68,6 +68,19 @@ def _flag_false(contract: dict[str, Any], *keys: str) -> bool:
     return all(contract.get(key) is False for key in keys)
 
 
+def _is_sha256(value: Any) -> bool:
+    text = str(value or "")
+    return len(text) == 64 and all(char in "0123456789abcdef" for char in text.lower())
+
+
+def _manifest_hash_evidence_is_consistent(evidence: dict[str, Any]) -> bool:
+    if evidence.get("manifest_exists") is True:
+        return evidence.get("manifest_hash_algorithm") == "sha256" and _is_sha256(
+            evidence.get("manifest_content_sha256")
+        )
+    return evidence.get("manifest_hash_algorithm") == "" and evidence.get("manifest_content_sha256") == ""
+
+
 def _storage_task_rows() -> dict[str, dict[str, Any]]:
     return {
         str(row.get("task_type") or ""): dict(row)
@@ -318,10 +331,11 @@ def build_contract() -> dict[str, Any]:
             and dataset_version_manifest_evidence.get("manifest_written_on_get") is False
             and dataset_version_manifest_evidence.get("cache_get_writes_files") is False
             and dataset_version_manifest_evidence.get("cache_get_reads_parquet_payloads") is False
+            and _manifest_hash_evidence_is_consistent(dataset_version_manifest_evidence)
             and _flag_false(dataset_version_manifest_evidence, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
             and dataset_version_manifest_evidence.get("does_not_execute_trades") is True
             and dataset_version_manifest_evidence.get("does_not_modify_strategy_action") is True,
-            "Dataset version manifest evidence may read local _dataset_versions.json metadata only; it must not write a manifest, read Parquet payloads, call providers, or mark production storage complete.",
+            "Dataset version manifest evidence may read local _dataset_versions.json metadata and expose a safe sha256 fingerprint only; it must not write a manifest, read Parquet payloads, call providers, or mark production storage complete.",
         ),
         _row(
             "dataset_version_manifest_dry_run_writes_no_manifest",
@@ -335,6 +349,8 @@ def build_contract() -> dict[str, Any]:
             and manifest_packet.get("post_dry_run_writes_manifest") is False
             and manifest_packet.get("post_dry_run_writes_parquet") is False
             and manifest_packet.get("post_dry_run_reads_parquet_payloads") is False
+            and manifest_packet.get("proposed_manifest_hash_algorithm") == "sha256"
+            and _is_sha256(manifest_packet.get("proposed_manifest_content_sha256"))
             and manifest_packet.get("manual_approval_required_before_write") is True
             and manifest_packet.get("separate_write_task_required") is True
             and manifest_packet.get("production_storage_complete") is False
@@ -620,8 +636,18 @@ def build_contract() -> dict[str, Any]:
             "dataset_version_manifest_evidence_validated_count": dataset_version_manifest_evidence.get("validated_dataset_count"),
             "dataset_version_manifest_dry_run_status": manifest_packet.get("status"),
             "dataset_version_manifest_dry_run_would_change_count": manifest_packet.get("would_change_count"),
+            "dataset_version_manifest_dry_run_hash_algorithm": manifest_packet.get("proposed_manifest_hash_algorithm"),
+            "dataset_version_manifest_dry_run_hash_present": _is_sha256(
+                manifest_packet.get("proposed_manifest_content_sha256")
+            ),
             "dataset_version_manifest_review_status": manifest_review_packet.get("status"),
             "dataset_version_manifest_validate_status": manifest_validate_packet.get("status"),
+            "dataset_version_manifest_evidence_hash_algorithm": dataset_version_manifest_evidence.get(
+                "manifest_hash_algorithm"
+            ),
+            "dataset_version_manifest_evidence_hash_present": _is_sha256(
+                dataset_version_manifest_evidence.get("manifest_content_sha256")
+            ),
             "duckdb_query_service_status": duckdb_policy.get("status"),
             "schema_validation_status": schema_packet.get("status"),
             "schema_validation_acceptance_status": schema_acceptance_packet.get("status"),
