@@ -1033,6 +1033,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("acceptance_dry_run_rows", page)
         self.assertIn("selected APIs", page)
         self.assertIn("ignored APIs", page)
+        self.assertIn("credential present/missing", page)
+        self.assertIn("credential_presence_rows", page)
         self.assertIn("bootstrap_stage_rows", page)
         self.assertIn("bootstrap_model_ledger_preview_rows", page)
         self.assertIn("stage rows / model ledger preview", page)

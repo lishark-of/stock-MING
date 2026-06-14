@@ -8425,6 +8425,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             ["trade_cal", "daily", "daily_basic", "moneyflow"],
         )
         self.assertTrue(by_type["command_center_live_bootstrap_provider_model_acceptance_dry_run"]["ignored_apis_reported"])
+        self.assertEqual(
+            by_type["command_center_live_bootstrap_provider_model_acceptance_dry_run"]["server_secret_presence_check"],
+            "environment_key_membership_only_no_value_read",
+        )
         self.assertFalse(by_type["command_center_live_bootstrap_provider_model_acceptance_dry_run"]["server_secret_values_read"])
         self.assertFalse(by_type["command_center_live_bootstrap_provider_model_acceptance_dry_run"]["provider_execution_implemented"])
         self.assertFalse(by_type["command_center_live_bootstrap_provider_model_acceptance_dry_run"]["deepseek_execution_implemented"])
@@ -10183,6 +10187,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS",
             "COMMAND_CENTER_LIVE_DEEPSEEK_MODEL",
             "COMMAND_CENTER_LIVE_ALLOW_FULL_POOL",
+            "TUSHARE_TOKEN",
+            "DEEPSEEK_API_KEY",
+            "DEEPSEEK_TOKEN_1",
+            "DEEPSEEK_TOKEN_2",
         )
         original = {key: os.environ.get(key) for key in keys}
         for key in keys:
@@ -10589,6 +10597,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="true",
             COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="true",
             COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT="2",
+            TUSHARE_TOKEN="DROP_TS",
+            DEEPSEEK_API_KEY="DROP_DS",
         )
 
         response = self.client.post(
@@ -10629,11 +10639,27 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(payload["selected_apis"], ["trade_cal", "daily", "moneyflow"])
         self.assertEqual(payload["ignored_apis"], ["fina_indicator"])
         self.assertEqual(payload["allowed_apis"], ["trade_cal", "daily", "daily_basic", "moneyflow"])
+        credential_rows = {row["provider"]: row for row in payload["credential_presence_rows"]}
+        self.assertEqual(credential_rows["tushare"]["status"], "present_no_value_read")
+        self.assertEqual(credential_rows["deepseek"]["status"], "present_no_value_read")
+        self.assertEqual(credential_rows["tushare"]["credential_refs"], ["tushare_primary_credential"])
+        self.assertIn("deepseek_primary_credential", credential_rows["deepseek"]["credential_refs"])
+        self.assertEqual(credential_rows["deepseek"]["credential_ref_count"], 3)
+        self.assertFalse(credential_rows["tushare"]["values_read"])
+        self.assertFalse(credential_rows["deepseek"]["values_exposed"])
+        self.assertFalse(credential_rows["deepseek"]["value_lengths_exposed"])
+        self.assertFalse(credential_rows["deepseek"]["streamlit_config_values_read"])
         summary = payload["acceptance_dry_run_summary"]
         self.assertEqual(summary["status"], "acceptance_dry_run_ready_execution_pending")
         self.assertEqual(summary["phase_count"], 10)
         self.assertEqual(summary["selected_provider_phase_count"], 2)
         self.assertEqual(summary["selected_model_phase_count"], 1)
+        self.assertEqual(summary["credential_required_provider_count"], 2)
+        self.assertEqual(summary["credential_present_provider_count"], 2)
+        self.assertEqual(summary["credential_missing_provider_count"], 0)
+        self.assertTrue(summary["credential_presence_checked_without_value_exposure"])
+        self.assertFalse(summary["credential_values_read"])
+        self.assertFalse(summary["credential_values_exposed"])
         self.assertTrue(summary["ready_for_user_approved_real_acceptance"])
         self.assertFalse(summary["provider_execution_implemented"])
         self.assertFalse(summary["model_execution_implemented"])
@@ -10643,7 +10669,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(summary["github_called"])
         rows = {row["phase_key"]: row for row in payload["acceptance_dry_run_rows"]}
         self.assertEqual(rows["explicit_user_approval_required"]["status"], "dry_run_user_approval_recorded_no_execution")
-        self.assertEqual(rows["server_secret_preflight"]["status"], "dry_run_pending_server_secret_presence_check_no_values_read")
+        self.assertEqual(rows["server_secret_preflight"]["status"], "dry_run_secret_presence_checked_no_values_exposed")
+        self.assertEqual(rows["server_secret_preflight"]["credential_presence_summary"]["missing_provider_count"], 0)
         self.assertEqual(rows["tushare_trade_cal_acceptance_sample"]["status"], "dry_run_ready_provider_execution_not_called")
         self.assertEqual(rows["tushare_light_fact_acceptance_sample"]["status"], "dry_run_ready_provider_execution_not_called")
         self.assertEqual(rows["deepseek_pro_model_acceptance_sample"]["status"], "dry_run_ready_model_execution_not_called")
@@ -10655,6 +10682,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(task["call_ledger"][0]["row_count"], 10)
         self.assertEqual(task["call_ledger"][0]["selected_provider_phase_count"], 2)
         self.assertEqual(task["call_ledger"][0]["selected_model_phase_count"], 1)
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["credential_required_provider_count"], 2)
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["credential_present_provider_count"], 2)
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["credential_missing_provider_count"], 0)
         self.assertFalse(task["call_ledger"][0]["external"])
         self.assertFalse(task["call_ledger"][0]["external_calls_triggered"])
         self.assertFalse(task["call_ledger"][0]["tushare_called"])
@@ -10668,7 +10698,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(task["does_not_modify_strategy_action"])
         self.assertNotIn("api_key", payload)
         self.assertNotIn("token", payload)
-        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+        self.assertNotIn("DROP_TS", json.dumps(task, ensure_ascii=False))
+        self.assertNotIn("DROP_DS", json.dumps(task, ensure_ascii=False))
 
     def test_health_and_cache_endpoints(self):
         self._with_meta_store()

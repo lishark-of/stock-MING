@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import os
 from typing import Any
 
 from config import get_config_value, get_deepseek_model
@@ -23,6 +24,8 @@ PLANNED_BOOTSTRAP_TASK_ROUTE = "POST /api/bootstrap/live-startup"
 PLANNED_BOOTSTRAP_ACCEPTANCE_DRY_RUN_ROUTE = "POST /api/bootstrap/provider-model-acceptance-dry-run"
 DEFAULT_LIGHT_TUSHARE_APIS = ("trade_cal_if_needed", "daily", "daily_basic", "moneyflow")
 ACCEPTANCE_DRY_RUN_ALLOWED_APIS = ("trade_cal", "daily", "daily_basic", "moneyflow")
+TUSHARE_ACCEPTANCE_ENV_KEYS = ("TUSHARE_TOKEN",)
+DEEPSEEK_ACCEPTANCE_ENV_KEYS = ("DEEPSEEK_API_KEY", "DEEPSEEK_TOKEN_1", "DEEPSEEK_TOKEN_2")
 BOOTSTRAP_STAGE_SCHEMA_VERSION = "command_center_live_bootstrap_stage_plan.v1"
 BOOTSTRAP_MODEL_LEDGER_SCHEMA_VERSION = "command_center_live_bootstrap_model_ledger_preview.v1"
 BOOTSTRAP_PROVIDER_LINKAGE_SCHEMA_VERSION = "command_center_bootstrap_provider_linkage.v1"
@@ -231,6 +234,82 @@ def _sanitize_acceptance_dry_run_payload(payload: Any, *, symbol_limit: int) -> 
         "selected_apis": selected_apis,
         "ignored_apis": ignored_apis,
         "allowed_apis": list(ACCEPTANCE_DRY_RUN_ALLOWED_APIS),
+        "contains_secret": False,
+    }
+
+
+def _env_key_presence_rows(payload_safe: dict[str, Any]) -> list[dict[str, Any]]:
+    specs = [
+        {
+            "provider": "tushare",
+            "required": payload_safe.get("include_tushare") is True,
+            "env_keys": list(TUSHARE_ACCEPTANCE_ENV_KEYS),
+            "credential_refs": ["tushare_primary_credential"],
+        },
+        {
+            "provider": "deepseek",
+            "required": payload_safe.get("include_deepseek") is True,
+            "env_keys": list(DEEPSEEK_ACCEPTANCE_ENV_KEYS),
+            "credential_refs": [
+                "deepseek_primary_credential",
+                "deepseek_secondary_credential_1",
+                "deepseek_secondary_credential_2",
+            ],
+        },
+    ]
+    rows: list[dict[str, Any]] = []
+    for spec in specs:
+        required = bool(spec["required"])
+        env_keys = list(spec["env_keys"])
+        present_keys = [key for key in env_keys if key in os.environ]
+        present = bool(present_keys)
+        if required and present:
+            status = "present_no_value_read"
+        elif required:
+            status = "missing_no_value_read"
+        else:
+            status = "not_required_not_selected"
+        rows.append(
+            {
+                "schema_version": BOOTSTRAP_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
+                "provider": spec["provider"],
+                "required_for_selected_dry_run": required,
+                "credential_refs": list(spec["credential_refs"]),
+                "credential_ref_count": len(spec["credential_refs"]),
+                "present": present,
+                "present_key_count": len(present_keys),
+                "status": status,
+                "presence_check_method": "environment_key_membership_only",
+                "values_read": False,
+                "values_exposed": False,
+                "value_lengths_exposed": False,
+                "streamlit_config_values_read": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    return rows
+
+
+def _env_key_presence_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    required_rows = [row for row in rows if row.get("required_for_selected_dry_run") is True]
+    present_rows = [row for row in required_rows if row.get("present") is True]
+    missing_rows = [row for row in required_rows if row.get("present") is not True]
+    return {
+        "schema_version": BOOTSTRAP_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
+        "status": "all_required_env_keys_present_no_values_read" if not missing_rows else "required_env_key_missing_no_values_read",
+        "required_provider_count": len(required_rows),
+        "present_provider_count": len(present_rows),
+        "missing_provider_count": len(missing_rows),
+        "presence_check_method": "environment_key_membership_only",
+        "values_read": False,
+        "values_exposed": False,
+        "value_lengths_exposed": False,
+        "streamlit_config_values_read": False,
         "contains_secret": False,
     }
 
@@ -900,7 +979,12 @@ def _acceptance_dry_run_status(
             return "dry_run_user_approval_recorded_no_execution", True
         return "dry_run_blocked_user_approval_required", False
     if phase_key == "server_secret_preflight":
-        return "dry_run_pending_server_secret_presence_check_no_values_read", False
+        presence = _dict(payload_safe.get("credential_presence_summary"))
+        if int(presence.get("required_provider_count") or 0) == 0:
+            return "dry_run_secret_presence_not_required_no_values_read", True
+        if int(presence.get("missing_provider_count") or 0) == 0:
+            return "dry_run_secret_presence_checked_no_values_exposed", True
+        return "dry_run_secret_presence_missing_no_values_exposed", False
     if phase_key == "tushare_trade_cal_acceptance_sample":
         if "trade_cal" in selected_apis:
             return "dry_run_ready_provider_execution_not_called", False
@@ -961,6 +1045,9 @@ def _build_acceptance_dry_run(
                 "passed": passed,
                 "acceptance_gate": row.get("acceptance_gate"),
                 "required_evidence": row.get("required_evidence") or [],
+                "credential_presence_summary": payload_safe.get("credential_presence_summary")
+                if phase_key == "server_secret_preflight"
+                else None,
                 "external_call_expected_when_executed": bool(row.get("external_call_expected_when_executed")),
                 "external_calls_triggered_by_dry_run": False,
                 "tushare_called_by_dry_run": False,
@@ -996,6 +1083,12 @@ def _build_acceptance_dry_run(
         "include_tushare": payload_safe.get("include_tushare") is True,
         "include_deepseek": payload_safe.get("include_deepseek") is True,
         "symbol_count": payload_safe.get("symbol_count"),
+        "credential_required_provider_count": _dict(payload_safe.get("credential_presence_summary")).get("required_provider_count", 0),
+        "credential_present_provider_count": _dict(payload_safe.get("credential_presence_summary")).get("present_provider_count", 0),
+        "credential_missing_provider_count": _dict(payload_safe.get("credential_presence_summary")).get("missing_provider_count", 0),
+        "credential_presence_checked_without_value_exposure": True,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
         "phase_count": len(rows),
         "selected_provider_phase_count": len(selected_provider_rows),
         "selected_model_phase_count": len(selected_model_rows),
@@ -1034,6 +1127,9 @@ def _acceptance_dry_run_call_ledger(
             "ignored_apis": payload_safe.get("ignored_apis"),
             "include_tushare": payload_safe.get("include_tushare"),
             "include_deepseek": payload_safe.get("include_deepseek"),
+            "credential_required_provider_count": summary.get("credential_required_provider_count"),
+            "credential_present_provider_count": summary.get("credential_present_provider_count"),
+            "credential_missing_provider_count": summary.get("credential_missing_provider_count"),
         },
         "row_count": int(summary.get("phase_count") or 0),
         "selected_provider_phase_count": int(summary.get("selected_provider_phase_count") or 0),
@@ -1680,6 +1776,10 @@ def run_provider_model_acceptance_dry_run(payload: Any = None) -> dict[str, Any]
             "does_not_modify_strategy_action": True,
         }
     )
+    credential_rows = _env_key_presence_rows(payload_safe)
+    credential_summary = _env_key_presence_summary(credential_rows)
+    payload_safe["credential_presence_rows"] = credential_rows
+    payload_safe["credential_presence_summary"] = credential_summary
     summary, rows = _build_acceptance_dry_run(status_packet=status_packet, payload_safe=payload_safe)
     payload_safe["acceptance_dry_run_summary"] = summary
     payload_safe["acceptance_dry_run_rows"] = rows
@@ -1695,7 +1795,8 @@ def run_provider_model_acceptance_dry_run(payload: Any = None) -> dict[str, Any]
         current_step="provider_model_acceptance_dry_run_requested_local_only",
         warnings=[
             "provider/model acceptance dry-run 只记录本地预检，不调用 Tushare、DeepSeek、GitHub。",
-            "dry-run 不读取 token/key 值，不执行真实交易，不修改 strategy action。",
+            "dry-run 只检查服务端环境变量 key 是否存在，不读取或返回 token/key 值。",
+            "dry-run 不执行真实交易，不修改 strategy action。",
             "真实 provider/model 验收仍需后续显式任务和用户确认。",
         ],
     )

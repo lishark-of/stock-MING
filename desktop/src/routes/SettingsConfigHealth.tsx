@@ -187,6 +187,7 @@ export default function SettingsConfigHealth() {
   const acceptanceDryRunPayload = (acceptanceDryRunTask.payload_safe as Record<string, unknown> | undefined) ?? {};
   const acceptanceDryRunSummary = (acceptanceDryRunPayload.acceptance_dry_run_summary as Record<string, unknown> | undefined) ?? {};
   const acceptanceDryRunRows = rows(acceptanceDryRunPayload.acceptance_dry_run_rows);
+  const credentialPresenceRows = rows(acceptanceDryRunPayload.credential_presence_rows);
   const hasBootstrapTask = Object.keys(bootstrapTask).length > 0;
   const hasAcceptanceDryRunTask = Object.keys(acceptanceDryRunTask).length > 0;
   const empty = !loading && !error && !Object.keys(health).length && !Object.keys(modelStrategy).length;
@@ -294,8 +295,10 @@ export default function SettingsConfigHealth() {
           <p>current_step: {String(acceptanceDryRunTask.current_step ?? "--")}</p>
           <p>selected APIs: {JSON.stringify(acceptanceDryRunPayload.selected_apis ?? [])}</p>
           <p>ignored APIs: {JSON.stringify(acceptanceDryRunPayload.ignored_apis ?? [])}</p>
+          <p>credential present/missing: {String(acceptanceDryRunSummary.credential_present_provider_count ?? 0)} / {String(acceptanceDryRunSummary.credential_missing_provider_count ?? 0)}</p>
           <p>provider/model phases: {String(acceptanceDryRunSummary.selected_provider_phase_count ?? 0)} / {String(acceptanceDryRunSummary.selected_model_phase_count ?? 0)}</p>
           <p>external / Tushare / DeepSeek / GitHub: {String(acceptanceDryRunTask.external_calls_triggered ?? false)} / {String(acceptanceDryRunTask.tushare_called ?? false)} / {String(acceptanceDryRunTask.deepseek_called ?? false)} / {String(acceptanceDryRunTask.github_called ?? false)}</p>
+          {credentialPresenceRows.length ? <DataLineageTable rows={credentialPresenceRows} /> : null}
           {acceptanceDryRunRows.length ? <DataLineageTable rows={acceptanceDryRunRows} /> : null}
           <JsonDetails title="provider/model acceptance dry-run task" data={acceptanceDryRunTask} />
         </PacketCard>

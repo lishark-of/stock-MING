@@ -167,6 +167,7 @@ TASK_CATALOG = [
         "unselected_apis_are_not_verified": True,
         "ignored_apis_reported": True,
         "requires_user_approval_flag": True,
+        "server_secret_presence_check": "environment_key_membership_only_no_value_read",
         "server_secret_values_read": False,
         "token_key_exposure_allowed": False,
         "provider_execution_implemented": False,

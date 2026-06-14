@@ -128,7 +128,7 @@ Current implementation checkpoint: `GET /api/bootstrap/status` now exposes the r
 
 `GET /api/bootstrap/status` now also exposes `live_light_provider_model_acceptance_runbook` and rows. This runbook fixes the future user-approved real acceptance sequence: mode/scope preflight, explicit approval, server-side secret presence check without value exposure, `trade_cal`, `daily/daily_basic/moneyflow`, local factor/next-session refresh, optional DeepSeek pro model ledger, UI non-blocking evidence, ledger redaction/safety review, and production promotion review. It is a local runbook only: provider/model execution, browser runtime evidence, and promotion evidence remain pending.
 
-`POST /api/bootstrap/provider-model-acceptance-dry-run` now creates a user-approved local acceptance dry-run task before any real provider/model run. It consumes the runbook, sanitizes payloads, caps symbols, allows only `trade_cal / daily / daily_basic / moneyflow`, reports ignored APIs, records phase rows and call ledger, and keeps Tushare/DeepSeek/GitHub calls false. This is an auditable preflight gate, not provider-backed or model-backed acceptance.
+`POST /api/bootstrap/provider-model-acceptance-dry-run` now creates a user-approved local acceptance dry-run task before any real provider/model run. It consumes the runbook, sanitizes payloads, caps symbols, allows only `trade_cal / daily / daily_basic / moneyflow`, reports ignored APIs, checks only whether required server-side environment keys exist, records phase rows and call ledger, and keeps Tushare/DeepSeek/GitHub calls false. It reports credential presence as booleans and safe credential labels only; it does not return raw env key names, read values, return values, hash values, log values, or expose token/key material. This is an auditable preflight gate, not provider-backed or model-backed acceptance.
 
 Mode-layered acceptance contract from the latest user baseline:
 
@@ -148,6 +148,8 @@ Required mode-layering tests before any real `live_light` provider/model promoti
 - Tushare: mock or provider-backed acceptance rows record call ledger, distinguish permission denied / no record / empty window / parse error / stale states, and never expose token.
 - DeepSeek: optional after-task execution uses configured model name, input hash dedupe, sanitizer, parse-failed fallback, no trading language, and no numeric/action overwrite.
 - Search-to-quant projection: a searched symbol creates a task, exposes task id/progress/provenance/freshness/DeepSeek status/ECharts result, and never starts full-pool or deep-scan work from render.
+
+Documentation wording rule for this baseline: do not describe the boundary as a flat "page startup never calls providers" once `live_light` is in scope. Future docs, tests, and review notes must name the layer being discussed: `cache_only` startup/render silence, React-created POST task, provider/model execution inside that task, and production acceptance evidence. A `live_light` task creation is allowed only after cache render and only when explicitly configured; a real provider/model call is a separate acceptance step; production completion still requires direct call/model ledger evidence and promotion review.
 
 ## Remaining Goals Snapshot
 
@@ -1416,6 +1418,7 @@ Add Command Center 3 motion clarity system
 - `cache_only` 是默认安全模式；cache API、FastAPI 启动、React 初始 render 不自动外联。
 - GET cache API 不直接调用 Tushare / DeepSeek / GitHub。
 - React render 不直接调用 Tushare / DeepSeek / GitHub。
+- 评审 Tushare / DeepSeek 联动时必须分清四层：初始 render 是否安静、是否创建 POST task、task 内是否真实调用 provider/model、是否具备生产验收 ledger。
 - POST task / worker / local fallback 才可能外部调用，且必须有模式、按钮或显式 payload 门控。
 - `manual` 模式只允许用户点击按钮或提交显式任务后外联。
 - `live_light` 模式可以在初始 cache render 后创建一次限频后台 bootstrap task，用于轻量 Tushare 刷新和可选 DeepSeek pro 解释；这不是 render 直接外联。

@@ -33,6 +33,10 @@ ENV_KEYS = (
     "COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS",
     "COMMAND_CENTER_LIVE_DEEPSEEK_MODEL",
     "COMMAND_CENTER_LIVE_ALLOW_FULL_POOL",
+    "TUSHARE_TOKEN",
+    "DEEPSEEK_API_KEY",
+    "DEEPSEEK_TOKEN_1",
+    "DEEPSEEK_TOKEN_2",
 )
 
 
@@ -312,6 +316,8 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
         COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS="600",
         COMMAND_CENTER_LIVE_DEEPSEEK_MODEL="contract-live-pro",
         COMMAND_CENTER_LIVE_ALLOW_FULL_POOL="false",
+        TUSHARE_TOKEN="DROP_TS",
+        DEEPSEEK_API_KEY="DROP_DS",
     )
     task_service.clear_task_statuses_for_tests(clear_persisted=True)
     status = bootstrap_service.read_bootstrap_status_cache()
@@ -355,6 +361,11 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
     last_repeated = repeated_ledger[-1] if repeated_ledger else {}
     dry_payload = _dict(dry_run.get("payload_safe"))
     dry_summary = _dict(dry_payload.get("acceptance_dry_run_summary"))
+    credential_rows = {
+        str(row.get("provider") or ""): row
+        for row in _list(dry_payload.get("credential_presence_rows"))
+        if isinstance(row, dict)
+    }
     dry_rows = {
         str(row.get("phase_key") or ""): row
         for row in _list(dry_payload.get("acceptance_dry_run_rows"))
@@ -544,15 +555,27 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             and dry_summary.get("phase_count") == 10
             and dry_summary.get("selected_provider_phase_count") == 2
             and dry_summary.get("selected_model_phase_count") == 1
+            and dry_summary.get("credential_required_provider_count") == 2
+            and dry_summary.get("credential_present_provider_count") == 2
+            and dry_summary.get("credential_missing_provider_count") == 0
+            and dry_summary.get("credential_values_read") is False
+            and dry_summary.get("credential_values_exposed") is False
+            and credential_rows.get("tushare", {}).get("status") == "present_no_value_read"
+            and credential_rows.get("deepseek", {}).get("status") == "present_no_value_read"
+            and credential_rows.get("tushare", {}).get("values_read") is False
+            and credential_rows.get("deepseek", {}).get("values_exposed") is False
             and dry_rows.get("tushare_trade_cal_acceptance_sample", {}).get("status")
             == "dry_run_ready_provider_execution_not_called"
             and dry_rows.get("deepseek_pro_model_acceptance_sample", {}).get("status")
             == "dry_run_ready_model_execution_not_called"
+            and dry_rows.get("server_secret_preflight", {}).get("status")
+            == "dry_run_secret_presence_checked_no_values_exposed"
             and first_dry_ledger.get("call_status") == "local_acceptance_dry_run_recorded_no_external_call"
             and first_dry_ledger.get("external_calls_triggered") is False
             and first_dry_ledger.get("tushare_called") is False
             and first_dry_ledger.get("deepseek_called") is False
-            and "SHOULD_DROP" not in dry_text
+            and "DROP_TS" not in dry_text
+            and "DROP_DS" not in dry_text
             and '"api_key"' not in dry_text
             and '"token"' not in dry_text,
             f"dry_step={dry_run.get('current_step')} summary={dry_summary}",
