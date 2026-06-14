@@ -113,6 +113,14 @@ if not created.get("call_ledger"):
 created_task = created.get("data", {}).get("task", {})
 assert_cache_safety("task_creation_api", created_task)
 print("task_creation_api:", created["data"]["task_id"], created["call_ledger"][0]["call_status"])
+bootstrap_created = client.post("/api/bootstrap/live-startup", json={"source": "smoke_3_0"}).json()
+if not bootstrap_created.get("ok"):
+    raise AssertionError(f"bootstrap_live_startup failed: {bootstrap_created.get('error')}")
+if not bootstrap_created.get("call_ledger"):
+    raise AssertionError("bootstrap_live_startup.call_ledger must be exposed at envelope top level")
+bootstrap_task = bootstrap_created.get("data", {}).get("task", {})
+assert_cache_safety("bootstrap_live_startup", bootstrap_task)
+print("bootstrap_live_startup:", bootstrap_created["data"]["task_id"], bootstrap_task.get("current_step"))
 api_cache_paths = [
     "/api/packets",
     "/api/packets/command_center_factor_quant_hub_packet",

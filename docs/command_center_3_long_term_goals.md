@@ -91,7 +91,7 @@ Target `live_light` bootstrap scope:
 
 This mode layering also applies to search-driven research. A future stock search or "生成 3.0 量化推演" action should create a POST task that validates the symbol, refreshes allowed light data, writes call ledger/model ledger, updates Factor Quant Hub and Next Session cache, and displays provenance, freshness, DeepSeek status, and chart results. It remains research-only and cannot turn DeepSeek text, factor scores, or radar candidates into buy/sell instructions.
 
-Current implementation checkpoint: `GET /api/bootstrap/status` now exposes the runtime mode cache, safe configuration rows, mode rows, and `live_light` policy. Settings / Config Health reads and displays that status. This is still cache-only/read-only: it does not create a bootstrap task, does not call Tushare/DeepSeek/GitHub, does not read token/key values, and keeps `bootstrap_task_implemented=false`.
+Current implementation checkpoint: `GET /api/bootstrap/status` now exposes the runtime mode cache, safe configuration rows, mode rows, and `live_light` policy. `POST /api/bootstrap/live-startup` is now registered as a local task skeleton and Settings / Config Health can create it manually. This is still local-only: it records mode, rate limit, payload-safe request context, task status, and call ledger, but it does not call Tushare/DeepSeek/GitHub, does not read token/key values, and keeps `provider_execution_implemented=false`.
 
 ## Remaining Goals Snapshot
 
@@ -262,7 +262,7 @@ Harden A-share trading-calendar freshness production gate
 - `provider_target_sample_runbook_contract.status=target_sample_runbook_ready_provider_review_pending` only means the explicit provider-sample review checklist is complete for the requested target domains. It is not provider execution, provider-backed acceptance, full-interface acceptance, or production Tushare completion.
 - The local Tushare acceptance push-gate contract is not a provider run; it only blocks regressions in button gating, matrix semantics, call-ledger requirements, pending provider acceptance flags, and no-trade/no-action boundaries.
 - The `provider_backed_trade_cal_long_window` task mode is a controlled evidence marker for the `trade_cal` target only. It is not Tushare full-interface acceptance, not production pipeline completion, and not automatic provider execution.
-- `GET /api/bootstrap/status` now exposes safe runtime mode visibility, config rows, and `live_light` policy with `bootstrap_task_implemented=false`; the actual bootstrap task is not implemented yet. It still needs POST route/task catalog coverage, rate limiting, one-task-per-window dedupe, task status polling, safe failure display, and token-safe call ledger before it can be enabled.
+- `GET /api/bootstrap/status` now exposes safe runtime mode visibility, config rows, and `live_light` policy; `POST /api/bootstrap/live-startup` now creates a local-only task skeleton with task catalog coverage, rate limiting, one-task-per-window dedupe/reuse, safe failure display, and token-safe call ledger. Provider execution is still pending: the skeleton does not refresh Tushare, does not call DeepSeek, and does not start worker orchestration.
 
 ### Implementation Phases
 

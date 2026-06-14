@@ -92,7 +92,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 
 - `GET .../cache` 不触发 Tushare、DeepSeek、GitHub。
 - `/health` 返回启动安全摘要；`GET /api/model-strategy/cache` 返回当前 DeepSeek 模型策略、用途映射和配置来源。二者都不包含 token/key，不触发模型调用。
-- `GET /api/bootstrap/status` 返回 `cache_only/manual/live_light/live_full` 运行模式、safe config rows、`live_light` policy 和 call ledger。它只读、不创建 task、不调用 Tushare/DeepSeek/GitHub、不读取 token/key，且当前保持 `bootstrap_task_implemented=false`。
+- `GET /api/bootstrap/status` 返回 `cache_only/manual/live_light/live_full` 运行模式、safe config rows、`live_light` policy 和 call ledger。它只读、不创建 task、不调用 Tushare/DeepSeek/GitHub、不读取 token/key；`POST /api/bootstrap/live-startup` 现在作为本地 task skeleton 接入 task catalog，可记录模式、限频、payload 安全摘要和 call ledger，但仍保持 `provider_execution_implemented=false`，不会调用 Tushare/DeepSeek/GitHub。
 - `/api/migration/status` 返回用户给定的 3.0 长期迁移进度基线、目标技术栈和安全原则；该接口只读、不外联、不重新估算进度。
 - `/api/tasks/catalog` 返回按钮门控任务目录、可能外部源、call ledger 要求和交易边界；DeepSeek-capable 任务会声明 `deepseek_model_strategy_purpose`、配置键和非硬编码模型来源；该接口只读，不创建任务。
 - `GET .../cache` 优先读取 `.stock_ming_3/meta.sqlite` 中已有持久化 packet；没有持久化 packet 时再读取 `.stock_ming_cache/command_center_latest.json` 本地快照或本地 builder；没有精确 packet 时返回 `cache_missing`，不会把旧 packet 冒充新 packet。

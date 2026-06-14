@@ -107,7 +107,7 @@ def _worker_module_rows() -> list[dict[str, Any]]:
 
 
 def _queue_for_task_type(task_type: str) -> str:
-    if task_type in {"refresh_tushare_facts", "refresh_factor_data"}:
+    if task_type in {"refresh_tushare_facts", "refresh_factor_data", "command_center_live_bootstrap"}:
         return "provider_refresh"
     if task_type == "run_deepseek_factor_explanation":
         return "model_explain"

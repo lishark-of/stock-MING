@@ -218,6 +218,13 @@ export function getBootstrapStatus() {
   return request<Record<string, unknown>>("/api/bootstrap/status");
 }
 
+export function postBootstrapLiveStartup(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/bootstrap/live-startup", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getNextSessionCache() {
   return request<Record<string, unknown>>("/api/next-session/cache");
 }

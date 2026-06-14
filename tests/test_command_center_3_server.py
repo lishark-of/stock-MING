@@ -8223,7 +8223,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 27)
+        self.assertEqual(catalog["task_count"], 28)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -8242,7 +8242,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 27)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 28)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -8253,8 +8253,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 29)
-        self.assertEqual(route_coverage["task_creation_route_count"], 27)
+        self.assertEqual(route_coverage["known_post_route_count"], 30)
+        self.assertEqual(route_coverage["task_creation_route_count"], 28)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -8263,12 +8263,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 27)
+        self.assertEqual(implementation_status["task_count"], 28)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 24)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 25)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 25)
-        self.assertEqual(implementation_status["external_capable_task_count"], 5)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 26)
+        self.assertEqual(implementation_status["external_capable_task_count"], 6)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
             {"run_chokepoint_scan", "probe_serenity_github"},
@@ -8278,6 +8278,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             {
                 "refresh_tushare_facts",
                 "refresh_factor_data",
+                "command_center_live_bootstrap",
                 "run_factor_light",
                 "run_factor_universe_research_plan",
                 "build_next_session_projection",
@@ -8308,6 +8309,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             {
                 "refresh_tushare_facts",
                 "refresh_factor_data",
+                "command_center_live_bootstrap",
                 "run_factor_light",
                 "run_factor_universe_research_plan",
                 "build_next_session_projection",
@@ -8347,6 +8349,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(set(retry_policy_summary["task_policies"]), set(by_type))
         self.assertIn("POST /api/tasks/{task_id}/cancel", route_coverage["known_post_routes"])
         self.assertIn("POST /api/tasks/{task_id}/retry", route_coverage["known_post_routes"])
+        self.assertIn("POST /api/bootstrap/live-startup", route_coverage["known_post_routes"])
         self.assertIn("POST /api/worker/synthetic-healthcheck", route_coverage["known_post_routes"])
         self.assertIn("POST /api/candidate-radar/deep-scan-local-review", route_coverage["known_post_routes"])
         self.assertEqual(catalog["task_lifecycle_routes"][0]["route"], "POST /api/tasks/{task_id}/cancel")
@@ -8382,6 +8385,23 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("fina_indicator", by_type["refresh_tushare_facts"]["optional_extended_apis"])
         self.assertIn("stk_surv", by_type["refresh_tushare_facts"]["optional_extended_apis"])
         self.assertEqual(by_type["refresh_tushare_facts"]["parquet_enabled_apis"], ["daily", "daily_basic", "moneyflow", "trade_cal"])
+        self.assertEqual(by_type["command_center_live_bootstrap"]["route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(by_type["command_center_live_bootstrap"]["current_backend"], "local_bootstrap_pipeline_skeleton")
+        self.assertEqual(by_type["command_center_live_bootstrap"]["external_call_policy"], "mode_gated_live_light_bootstrap_current_no_provider_execution")
+        self.assertEqual(by_type["command_center_live_bootstrap"]["possible_external_sources"], ["tushare"])
+        self.assertEqual(by_type["command_center_live_bootstrap"]["optional_downstream_external_sources"], ["deepseek"])
+        self.assertEqual(by_type["command_center_live_bootstrap"]["optional_downstream_task_types"], ["run_deepseek_factor_explanation"])
+        self.assertTrue(by_type["command_center_live_bootstrap"]["local_task_skeleton_implemented"])
+        self.assertFalse(by_type["command_center_live_bootstrap"]["provider_execution_implemented"])
+        self.assertFalse(by_type["command_center_live_bootstrap"]["tushare_execution_implemented"])
+        self.assertFalse(by_type["command_center_live_bootstrap"]["deepseek_execution_implemented"])
+        self.assertTrue(by_type["command_center_live_bootstrap"]["rate_limit_enforced"])
+        self.assertEqual(by_type["command_center_live_bootstrap"]["default_core_apis"], ["trade_cal_if_needed", "daily", "daily_basic", "moneyflow"])
+        self.assertFalse(by_type["command_center_live_bootstrap"]["cache_get_external_calls"])
+        self.assertFalse(by_type["command_center_live_bootstrap"]["react_render_direct_provider_calls"])
+        self.assertFalse(by_type["command_center_live_bootstrap"]["page_render_creates_task_default"])
+        self.assertFalse(by_type["command_center_live_bootstrap"]["full_pool_on_open_allowed"])
+        self.assertFalse(by_type["command_center_live_bootstrap"]["github_probe_on_open_allowed"])
         self.assertIn("unselected APIs are capability matrix only", by_type["refresh_tushare_facts"]["api_validation_matrix_policy"])
         self.assertIn("call_ledger_required_fields", by_type["refresh_tushare_facts"]["api_acceptance_audit_contract"])
         self.assertIn("permission_denied", by_type["refresh_tushare_facts"]["failure_mode_qa_contract"])
@@ -8903,18 +8923,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 24)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 25)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 25)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 26)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 24)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 25)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 25)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 26)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("refresh_factor_data", packet["task_implementation_status"]["local_pipeline_task_types"])
+        self.assertIn("command_center_live_bootstrap", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_light", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_universe_research_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_candidate_radar_full_pool_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -9263,9 +9284,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 24)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 25)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 25)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 26)
         self.assertTrue(packet["policy"]["does_not_ping_redis"])
         self.assertTrue(packet["policy"]["does_not_start_celery_worker"])
         self.assertTrue(packet["policy"]["does_not_start_scheduler"])
@@ -9409,10 +9430,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 24)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 25)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 25)
-        self.assertEqual(packet["counts"]["external_capable_task_count"], 5)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 26)
+        self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
         endpoint_by_source = {row["source"]: row for row in packet["endpoint_rows"]}
@@ -9442,11 +9463,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 24)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 25)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 25)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 26)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("refresh_factor_data", packet["task_implementation_status"]["local_pipeline_task_types"])
+        self.assertIn("command_center_live_bootstrap", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_light", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_universe_research_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_candidate_radar_full_pool_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -10200,7 +10222,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         packet = response["data"]
         self.assertTrue(response["ok"])
         self.assertEqual(packet["mode"], "live_light")
-        self.assertEqual(packet["status"], "live_light_config_visible_task_pending")
+        self.assertEqual(packet["status"], "live_light_config_visible_task_ready_local_only")
         self.assertFalse(packet["cache_only"])
         self.assertTrue(packet["read_only"])
         self.assertTrue(packet["live_light"]["enabled"])
@@ -10210,12 +10232,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["live_light"]["symbol_limit"], 12)
         self.assertEqual(packet["live_light"]["rate_limit_seconds"], 900)
         self.assertEqual(packet["live_light"]["deepseek_model"], "custom-live-explain-model")
-        self.assertFalse(packet["live_light"]["bootstrap_task_implemented"])
+        self.assertTrue(packet["live_light"]["bootstrap_task_implemented"])
+        self.assertTrue(packet["live_light"]["local_task_skeleton_implemented"])
+        self.assertFalse(packet["live_light"]["provider_execution_implemented"])
+        self.assertFalse(packet["live_light"]["tushare_execution_implemented"])
+        self.assertFalse(packet["live_light"]["deepseek_execution_implemented"])
+        self.assertTrue(packet["live_light"]["rate_limit_implemented"])
+        self.assertEqual(packet["live_light"]["task_type"], "command_center_live_bootstrap")
+        self.assertEqual(packet["live_light"]["default_light_tushare_apis"], ["trade_cal_if_needed", "daily", "daily_basic", "moneyflow"])
         self.assertFalse(packet["live_light"]["full_pool_enabled"])
         self.assertTrue(packet["live_light"]["full_pool_reserved"])
         self.assertFalse(packet["policy"]["live_light_default_enabled"])
         self.assertTrue(packet["policy"]["live_light_requires_opt_in"])
-        self.assertFalse(packet["policy"]["live_light_task_implemented"])
+        self.assertTrue(packet["policy"]["live_light_task_implemented"])
+        self.assertFalse(packet["policy"]["live_light_provider_execution_implemented"])
         self.assertFalse(packet["policy"]["full_pool_on_open_allowed"])
         self.assertFalse(packet["policy"]["github_probe_on_open_allowed"])
         self.assertFalse(packet["external_calls_triggered"])
@@ -10226,6 +10256,108 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertEqual(response["call_ledger"][0]["api"], "local_bootstrap_runtime_mode_cache")
         self.assertFalse(response["call_ledger"][0]["external"])
+
+    def test_bootstrap_live_startup_cache_only_creates_safe_skipped_task(self):
+        self._with_meta_store()
+        self._with_bootstrap_env(COMMAND_CENTER_BOOTSTRAP_MODE="cache_only")
+
+        response = self.client.post(
+            "/api/bootstrap/live-startup",
+            json={
+                "source": "unit_test",
+                "ts_code": "000001.SZ",
+                "api_key": "SHOULD_DROP",
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(response["data"]["task_id"], task["task_id"])
+        self.assertEqual(task["task_type"], "command_center_live_bootstrap")
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "live_bootstrap_skipped_mode_not_live_light")
+        self.assertEqual(task["output_packet_key"], "command_center_live_bootstrap_packet")
+        self.assertEqual(task["payload_safe"]["bootstrap_mode"], "cache_only")
+        self.assertEqual(task["payload_safe"]["symbols"], ["000001.SZ"])
+        self.assertNotIn("api_key", task["payload_safe"])
+        self.assertNotIn("token", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+        self.assertEqual(task["call_ledger"][0]["api"], "local_bootstrap_live_startup_task")
+        self.assertEqual(task["call_ledger"][0]["call_status"], "skipped_mode_not_live_light")
+        self.assertFalse(task["call_ledger"][0]["external"])
+        self.assertFalse(task["call_ledger"][0]["external_calls_triggered"])
+        self.assertFalse(task["call_ledger"][0]["tushare_called"])
+        self.assertFalse(task["call_ledger"][0]["deepseek_called"])
+        self.assertFalse(task["call_ledger"][0]["github_called"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+
+    def test_bootstrap_live_startup_live_light_records_plan_and_rate_limits(self):
+        self._with_meta_store()
+        self._with_bootstrap_env(
+            COMMAND_CENTER_BOOTSTRAP_MODE="live_light",
+            COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT="2",
+            COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS="600",
+        )
+
+        response = self.client.post(
+            "/api/bootstrap/live-startup",
+            json={
+                "source": "unit_test",
+                "symbols": ["000001.SZ", "000002.SZ", "000003.SZ"],
+                "tushare": True,
+                "deepseek": True,
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "live_bootstrap_plan_recorded_no_provider_execution")
+        self.assertEqual(task["payload_safe"]["bootstrap_mode"], "live_light")
+        self.assertEqual(task["payload_safe"]["symbols"], ["000001.SZ", "000002.SZ"])
+        self.assertEqual(task["payload_safe"]["symbol_limit"], 2)
+        self.assertTrue(task["payload_safe"]["truncated_by_symbol_limit"])
+        self.assertTrue(task["payload_safe"]["tushare_on_open"])
+        self.assertTrue(task["payload_safe"]["deepseek_on_open"])
+        self.assertTrue(task["payload_safe"]["sources_enabled"])
+        self.assertFalse(task["payload_safe"]["provider_execution_implemented"])
+        self.assertEqual(task["call_ledger"][0]["call_status"], "local_plan_recorded_no_provider_execution")
+        self.assertTrue(task["call_ledger"][0]["bootstrap_task_implemented"])
+        self.assertFalse(task["call_ledger"][0]["provider_execution_implemented"])
+        self.assertFalse(task["call_ledger"][0]["external_calls_triggered"])
+        self.assertFalse(task["call_ledger"][0]["tushare_called"])
+        self.assertFalse(task["call_ledger"][0]["deepseek_called"])
+        self.assertFalse(task["call_ledger"][0]["github_called"])
+
+        repeated = self.client.post(
+            "/api/bootstrap/live-startup",
+            json={
+                "source": "unit_test",
+                "symbols": ["000001.SZ"],
+                "tushare": True,
+                "deepseek": True,
+            },
+        ).json()
+        repeated_task = repeated["data"]["task"]
+        self.assertTrue(repeated["ok"])
+        self.assertEqual(repeated["data"]["task_id"], task["task_id"])
+        self.assertEqual(repeated_task["current_step"], "live_bootstrap_skipped_due_to_rate_limit")
+        self.assertEqual(repeated_task["call_ledger"][-1]["call_status"], "skipped_due_to_rate_limit_reused_existing_task")
+        self.assertEqual(repeated_task["call_ledger"][-1]["reused_task_id"], task["task_id"])
+        self.assertFalse(repeated_task["external_calls_triggered"])
+        self.assertFalse(repeated_task["tushare_called"])
+        self.assertFalse(repeated_task["deepseek_called"])
+        self.assertFalse(repeated_task["github_called"])
+        self.assertTrue(repeated_task["does_not_execute_trades"])
+        self.assertTrue(repeated_task["does_not_modify_strategy_action"])
 
     def test_health_and_cache_endpoints(self):
         self._with_meta_store()
@@ -10267,10 +10399,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(bootstrap["data"]["policy"]["cache_api_external_calls"] is False)
         self.assertTrue(bootstrap["data"]["policy"]["post_task_required_for_external_calls"])
         self.assertTrue(bootstrap["data"]["policy"]["live_light_requires_opt_in"])
-        self.assertFalse(bootstrap["data"]["policy"]["live_light_task_implemented"])
+        self.assertTrue(bootstrap["data"]["policy"]["live_light_task_implemented"])
+        self.assertFalse(bootstrap["data"]["policy"]["live_light_provider_execution_implemented"])
         self.assertFalse(bootstrap["data"]["policy"]["live_full_enabled"])
         self.assertFalse(bootstrap["data"]["live_light"]["enabled"])
-        self.assertFalse(bootstrap["data"]["live_light"]["bootstrap_task_implemented"])
+        self.assertTrue(bootstrap["data"]["live_light"]["bootstrap_task_implemented"])
+        self.assertFalse(bootstrap["data"]["live_light"]["provider_execution_implemented"])
         self.assertEqual(
             {row["mode"] for row in bootstrap["data"]["mode_rows"]},
             {"cache_only", "manual", "live_light", "live_full"},
@@ -10614,7 +10748,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 27)
+        self.assertEqual(task_catalog["data"]["task_count"], 28)
+        self.assertIn("POST /api/bootstrap/live-startup", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-research-plan", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/next-session/browser-qa-review", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/tasks/refresh-tushare-facts", task_catalog["data"]["route_coverage"]["known_post_routes"])

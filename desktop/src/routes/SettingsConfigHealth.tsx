@@ -8,6 +8,7 @@ import {
   getModelStrategyCache,
   getStorageOverview,
   getTaskCatalog,
+  postBootstrapLiveStartup,
 } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
@@ -39,6 +40,8 @@ export default function SettingsConfigHealth() {
   const [storage, setStorage] = useState<Record<string, unknown>>({});
   const [taskCatalog, setTaskCatalog] = useState<Record<string, unknown>>({});
   const [migration, setMigration] = useState<Record<string, unknown>>({});
+  const [bootstrapTask, setBootstrapTask] = useState<Record<string, unknown>>({});
+  const [bootstrapActionLoading, setBootstrapActionLoading] = useState(false);
   const [ledgerRows, setLedgerRows] = useState<Array<Record<string, unknown>>>([]);
   const [warnings, setWarnings] = useState<Array<unknown>>([]);
 
@@ -99,6 +102,33 @@ export default function SettingsConfigHealth() {
     });
   };
 
+  const createBootstrapTask = () => {
+    setBootstrapActionLoading(true);
+    setError("");
+    void postBootstrapLiveStartup({
+      source: "settings_config_health",
+      requested_by: "local_user",
+    }).then((res) => {
+      const task = (res.data.task as Record<string, unknown> | undefined) ?? {};
+      setBootstrapTask(task);
+      setLedgerRows((current) => [
+        ...res.call_ledger.map((row) => ({ scope: "bootstrap_live_startup", ...row })),
+        ...current,
+      ]);
+      setWarnings((current) => [
+        ...res.warnings.map((warning) => `bootstrap_live_startup: ${String(warning)}`),
+        ...current,
+      ]);
+      if (!res.ok) {
+        setError(String(res.error ?? "bootstrap_live_startup_failed"));
+      }
+    }).catch((nextError) => {
+      setError(safeError(nextError));
+    }).finally(() => {
+      setBootstrapActionLoading(false);
+    });
+  };
+
   useEffect(() => {
     refreshCache();
   }, []);
@@ -112,6 +142,7 @@ export default function SettingsConfigHealth() {
   const taskPolicy = (taskCatalog.policy as Record<string, unknown> | undefined) ?? {};
   const migrationPolicy = (migration.api_policy as Record<string, unknown> | undefined) ?? {};
   const liveLight = (bootstrapStatus.live_light as Record<string, unknown> | undefined) ?? {};
+  const hasBootstrapTask = Object.keys(bootstrapTask).length > 0;
   const empty = !loading && !error && !Object.keys(health).length && !Object.keys(modelStrategy).length;
 
   const configRows = [
@@ -125,7 +156,7 @@ export default function SettingsConfigHealth() {
   const boundaryRows = [
     { boundary: "default_load", value: "GET cache only", note: "cache_only 和初始 render 不调用 Tushare、DeepSeek、GitHub。" },
     { boundary: "post_task", value: "mode gated", note: "外部请求只能经模式/按钮/显式 payload 门控的 POST task。" },
-    { boundary: "live_light", value: "future bootstrap task", note: "后续可 opt-in；当前状态页只读，不创建任务。" },
+    { boundary: "live_light", value: "local bootstrap task", note: "用户点击可创建本地 task skeleton；provider 执行仍待后续验收。" },
     { boundary: "frontend_access", value: "FastAPI only", note: "React 前端不直接调用 Python、不保存 token/key。" },
     { boundary: "strategy_action", value: "read_only", note: "配置健康页不修改 strategy action。" },
     { boundary: "real_trade", value: "disabled", note: "不执行真实交易，不自动下单。" },
@@ -148,6 +179,9 @@ export default function SettingsConfigHealth() {
 
       <div className="actions">
         <button onClick={refreshCache}>查看配置健康缓存</button>
+        <button onClick={createBootstrapTask} disabled={bootstrapActionLoading}>
+          {bootstrapActionLoading ? "创建中" : "启动 live_light 本地任务"}
+        </button>
       </div>
 
       <MetricGrid
@@ -179,9 +213,16 @@ export default function SettingsConfigHealth() {
           <DataLineageTable rows={modeRows} />
         </PacketCard>
 
-        <PacketCard title="live_light 配置合同" subtitle="显示安全配置状态；不创建 bootstrap task" status={String(liveLight.enabled === true ? "review_pending" : "cache_only")}>
+        <PacketCard title="live_light 配置合同" subtitle="显示安全配置状态；手动按钮只创建本地 task skeleton" status={String(liveLight.enabled === true ? "review_pending" : "cache_only")}>
           <DataLineageTable rows={configRuntimeRows} />
           <JsonDetails title="live_light policy" data={liveLight} />
+        </PacketCard>
+
+        <PacketCard title="最近 bootstrap task" subtitle="按钮创建的本地任务；不外联、不交易" status={String(bootstrapTask.status ?? (hasBootstrapTask ? "created" : "idle"))}>
+          <p>task_id: {String(bootstrapTask.task_id ?? "--")}</p>
+          <p>current_step: {String(bootstrapTask.current_step ?? "--")}</p>
+          <p>external / Tushare / DeepSeek / GitHub: {String(bootstrapTask.external_calls_triggered ?? false)} / {String(bootstrapTask.tushare_called ?? false)} / {String(bootstrapTask.deepseek_called ?? false)} / {String(bootstrapTask.github_called ?? false)}</p>
+          <JsonDetails title="bootstrap task" data={bootstrapTask} />
         </PacketCard>
 
         <PacketCard title="关键配置项" subtitle="只展示配置键名和用途，不展示值" status="safe">
