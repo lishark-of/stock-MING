@@ -26,3 +26,9 @@ def get_next_session_cache() -> dict:
 def generate_next_session(payload: dict[str, Any] | None = None) -> dict:
     task = next_session_service.create_next_session_task(payload)
     return task_envelope(task)
+
+
+@router.post("/browser-qa-review")
+def review_next_session_browser_qa(payload: dict[str, Any] | None = None) -> dict:
+    task = next_session_service.run_next_session_browser_qa_review_task(payload)
+    return task_envelope(task)

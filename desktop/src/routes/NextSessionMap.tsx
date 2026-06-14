@@ -30,6 +30,7 @@ export default function NextSessionMap() {
   const [cacheMissingMessage, setCacheMissingMessage] = useState("");
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [browserQaReceipt, setBrowserQaReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -58,6 +59,11 @@ export default function NextSessionMap() {
       setTaskReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
     });
+  const reviewBrowserQa = () =>
+    void postTask("/api/next-session/browser-qa-review", { review_scope: "next_session_browser_qa_local_artifact" }).then((res) => {
+      setBrowserQaReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
 
   useEffect(() => {
     refreshCache();
@@ -72,6 +78,13 @@ export default function NextSessionMap() {
   const interactionReadinessAudit = (chartPayload?.interaction_readiness_audit as Record<string, unknown> | undefined) ?? {};
   const replacementActivation = (packet.next_session_replacement_activation_receipt as Record<string, unknown> | undefined) ?? {};
   const replacementActivationRows = rowsFromArray(packet.next_session_replacement_activation_rows);
+  const browserQaRunbook = (packet.next_session_browser_qa_runbook_contract as Record<string, unknown> | undefined) ?? {};
+  const browserQaRunbookRows = rowsFromArray(packet.next_session_browser_qa_runbook_rows);
+  const browserQaMatrixRows = rowsFromArray(packet.next_session_browser_qa_matrix_rows);
+  const browserQaEvidence = (packet.next_session_browser_qa_evidence_summary as Record<string, unknown> | undefined) ?? {};
+  const browserQaEvidenceRows = rowsFromArray(packet.next_session_browser_qa_evidence_rows);
+  const browserQaReview = (packet.next_session_browser_qa_review_contract as Record<string, unknown> | undefined) ?? {};
+  const browserQaReviewRows = rowsFromArray(packet.next_session_browser_qa_review_rows);
   const latestCloseAnchor = (chartPayload?.latest_close_anchor as Record<string, unknown> | undefined) ?? {};
   const dataTrustSummary = (chartPayload?.data_trust_summary as Record<string, unknown> | undefined) ?? {};
   const positionConflict = (chartPayload?.position_conflict as Record<string, unknown> | undefined) ?? {};
@@ -138,8 +151,10 @@ export default function NextSessionMap() {
       <div className="actions">
         <button onClick={refreshCache}>查看缓存</button>
         <button onClick={launchTask}>生成任务</button>
+        <button onClick={reviewBrowserQa}>审查本地 QA</button>
       </div>
       <TaskLaunchReceipt receipt={taskReceipt} />
+      <TaskLaunchReceipt receipt={browserQaReceipt} />
       <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
       <MetricGrid
         items={[
@@ -162,6 +177,10 @@ export default function NextSessionMap() {
           { label: "替代激活收据", value: String(replacementActivation.status ?? "missing"), tone: replacementActivation.local_activation_receipt_ready === true ? "good" : "warn" },
           { label: "替代阻断", value: Number(replacementActivation.production_blocker_count ?? 0), tone: Number(replacementActivation.production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "缺失证据", value: Number(replacementActivation.missing_evidence_count ?? 0), tone: Number(replacementActivation.missing_evidence_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "QA runbook", value: String(browserQaRunbook.status ?? "missing"), tone: browserQaRunbook.local_runbook_ready === true ? "good" : "warn" },
+          { label: "QA evidence", value: String(browserQaEvidence.status ?? "missing"), tone: browserQaEvidence.next_browser_qa_evidence_ready === true ? "good" : "warn" },
+          { label: "QA review", value: String(browserQaReview.status ?? "missing"), tone: browserQaReview.local_browser_qa_review_ready === true ? "good" : "warn" },
+          { label: "QA 阻断", value: Number(browserQaReview.blocking_review_count ?? 0), tone: Number(browserQaReview.blocking_review_count ?? 0) > 0 ? "warn" : "good" },
           { label: "路径锚定", value: `${String(chartMaturity.scenario_anchored_count ?? chartSummary.scenario_anchored_count ?? 0)}/${String(chartMaturity.scenario_anchor_count ?? 0)}` },
           { label: "最新 close", value: String(latestCloseAnchor.price ?? "--") },
           { label: "持仓冲突", value: positionConflict.has_conflict === true ? "有" : "无", tone: positionConflict.has_conflict === true ? "bad" : "good" },
@@ -185,6 +204,19 @@ export default function NextSessionMap() {
       <p>production_replacement_complete: {String(replacementActivation.production_replacement_complete === true)}；browser_visual_qa_done: {String(replacementActivation.browser_visual_qa_done === true)}；browser_performance_trace_done: {String(replacementActivation.browser_performance_trace_done === true)}</p>
       <DataLineageTable rows={[replacementActivation]} />
       <DataLineageTable rows={replacementActivationRows} />
+      <h3>ECharts 本地浏览器 QA</h3>
+      <p className="risk-note">next_session_browser_qa_* 只读取 ignored 本地 runner 报告并支持按钮审查；它不打开浏览器、不提交截图/报告、不替代 Streamlit parity、不证明生产替代完成。</p>
+      <p>route: {String(browserQaRunbook.next_route ?? "#next")}；artifact_root: {String(browserQaRunbook.artifact_root ?? ".stock_ming_3/motion_qa")}</p>
+      <p>local_browser_qa_review_ready: {String(browserQaReview.local_browser_qa_review_ready === true)}；production_replacement_complete: {String(browserQaReview.production_replacement_complete === true)}；streamlit_parity_complete: {String(browserQaReview.streamlit_parity_complete === true)}</p>
+      <DataLineageTable rows={[browserQaRunbook]} />
+      <DataLineageTable rows={browserQaRunbookRows} />
+      <DataLineageTable rows={browserQaMatrixRows} />
+      <h3>ECharts 本地 QA 证据摘要</h3>
+      <DataLineageTable rows={[browserQaEvidence]} />
+      <DataLineageTable rows={browserQaEvidenceRows} />
+      <h3>ECharts 本地 QA 审查</h3>
+      <DataLineageTable rows={[browserQaReview]} />
+      <DataLineageTable rows={browserQaReviewRows} />
       <h3>ECharts 图表数据合同</h3>
       <DataLineageTable rows={chartContractRows} />
       <h3>缓存边界</h3>

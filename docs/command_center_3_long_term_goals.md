@@ -680,7 +680,9 @@ Stabilize DeepSeek pro explanation benchmark
 - Current display includes latest close, reference lines, operation zones, data credibility, and DeepSeek status.
 - The cache payload now exposes `interaction_readiness_audit` and `interaction_readiness_rows` so hover/click evidence, reference-line source display, operation-zone guardrails, position-conflict visibility, DeepSeek status visibility, read-only frontend boundaries, and Streamlit parity gaps are auditable.
 - The cache payload now exposes `next_session_replacement_activation_receipt` and `next_session_replacement_activation_rows`: this local receipt converts exact ECharts payload readiness, interaction readiness, reference/zone/context visibility, frontend read-only boundaries, Streamlit parity review, browser visual QA, performance trace, durable evidence, and production replacement blockers into one next-step checklist. It keeps `production_replacement_complete=false`, `streamlit_parity_complete=false`, `browser_visual_qa_done=false`, `browser_performance_trace_done=false`, and `durable_ci_evidence_complete=false`.
-- `scripts/next_session_map_contract.py` is now part of the local push gate. It validates the exact ECharts payload, interaction readiness, reference/zone/position/DeepSeek visibility, GET cache envelope, button-gated local task, and React API-client/read-only boundaries while keeping `streamlit_parity_complete=false`, `production_replacement_complete=false`, `browser_visual_qa_done=false`, and `browser_performance_trace_done=false`.
+- The cache payload now exposes `next_session_browser_qa_runbook_contract`, `next_session_browser_qa_evidence_summary`, `next_session_browser_qa_review_contract`, and their rows. These fields pin the `#next` route, desktop/laptop/tablet/mobile viewport matrix, ignored `.stock_ming_3/motion_qa` artifact policy, default-motion and reduced-motion coverage, local evidence gaps, and explicit review state without opening a browser or submitting screenshots.
+- `POST /api/next-session/browser-qa-review` is a button-gated local artifact review. It only reads ignored local runner reports for `#next`, records `next_session_browser_qa_review_contract`, and keeps `streamlit_parity_complete=false` and `production_replacement_complete=false`.
+- `scripts/next_session_map_contract.py` is now part of the local push gate. It validates the exact ECharts payload, interaction readiness, reference/zone/position/DeepSeek visibility, GET cache envelope, button-gated local task, `#next` browser QA runbook/evidence/review boundaries, and React API-client/read-only boundaries while keeping `streamlit_parity_complete=false`, `production_replacement_complete=false`, `browser_visual_qa_done=false`, and `browser_performance_trace_done=false`.
 
 ### Gaps
 
@@ -689,7 +691,7 @@ Stabilize DeepSeek pro explanation benchmark
 - Operation zone details are visible through guardrail rows, but full legacy interaction comparison is incomplete.
 - Position conflict visualization is present, but clarity can still be improved.
 - Full parity with legacy Streamlit chart is incomplete.
-- The replacement activation receipt is a next-step checklist only; it does not run browser QA, capture performance trace, complete Streamlit parity, create durable CI/release evidence, or promote production replacement.
+- The replacement activation receipt and `#next` browser QA contracts are next-step checklists/local artifact summaries only; they do not run browser QA, complete Streamlit parity, create durable CI/release evidence, or promote production replacement.
 - The Next-session map push-gate contract is local only; browser visual QA, performance trace, Streamlit parity, and production replacement remain pending.
 
 ### Implementation Phases
@@ -706,6 +708,9 @@ Stabilize DeepSeek pro explanation benchmark
 - `interaction_readiness_audit` distinguishes ready contracts, blockers, and parity-pending items.
 - `scripts/next_session_map_contract.py` passes while reporting `streamlit_parity_complete=false`, `production_replacement_complete=false`, `browser_visual_qa_done=false`, and `browser_performance_trace_done=false`.
 - `next_session_replacement_activation_receipt.local_activation_receipt_ready=true` only means the local payload/interaction/read-only prerequisites are clear enough for explicit Streamlit parity, browser visual QA, performance trace, and durable evidence review. It is not browser QA, performance trace, Streamlit parity, durable evidence, or production replacement completion.
+- `next_session_browser_qa_runbook_contract.local_runbook_ready=true` only means the `#next` route, viewport matrix, and artifact policy are fixed.
+- `next_session_browser_qa_evidence_summary.local_browser_qa_evidence_found=true` only means ignored local runner reports were summarized; even passing local evidence is not CI/release evidence.
+- `next_session_browser_qa_review_contract.local_browser_qa_review_ready=true` is allowed only after explicit POST review and complete local default/reduced-motion evidence, and still keeps `streamlit_parity_complete=false` and `production_replacement_complete=false`.
 - Frontend does not compute action.
 - Frontend does not mutate price, position, or `operation_zones`.
 - `production_replacement_complete` remains false until legacy parity is actually complete.
@@ -717,6 +722,7 @@ Stabilize DeepSeek pro explanation benchmark
 - Do not hide freshness or credibility warnings.
 - Do not treat `scripts/next_session_map_contract.py` passing as browser visual QA, performance trace, Streamlit parity, or production ECharts replacement completion.
 - Do not treat `next_session_replacement_activation_receipt` as browser visual QA, performance trace, Streamlit parity, durable evidence, or production ECharts replacement completion.
+- Do not treat `next_session_browser_qa_evidence_summary` or `next_session_browser_qa_review_contract` as CI evidence, Streamlit parity, durable release evidence, or production ECharts replacement.
 
 ### Recommended Commit Message
 

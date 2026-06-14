@@ -71,7 +71,7 @@ def _read_script(path: str) -> str:
 
 def _rows_by_key(rows: Any) -> dict[str, dict[str, Any]]:
     return {
-        str(row.get("key") or row.get("criterion") or row.get("activation_key") or ""): row
+        str(row.get("key") or row.get("criterion") or row.get("activation_key") or row.get("phase") or ""): row
         for row in _list(rows)
         if isinstance(row, dict)
     }
@@ -80,6 +80,13 @@ def _rows_by_key(rows: Any) -> dict[str, dict[str, Any]]:
 def _next_session_task(catalog: dict[str, Any]) -> dict[str, Any]:
     for task in _list(catalog.get("tasks")):
         if isinstance(task, dict) and task.get("task_type") == "build_next_session_projection":
+            return task
+    return {}
+
+
+def _task_by_type(catalog: dict[str, Any], task_type: str) -> dict[str, Any]:
+    for task in _list(catalog.get("tasks")):
+        if isinstance(task, dict) and task.get("task_type") == task_type:
             return task
     return {}
 
@@ -189,10 +196,19 @@ def build_contract() -> dict[str, Any]:
     data_trust = _dict(exact_chart.get("data_trust_summary"))
     activation_receipt = _dict(exact_service_packet.get("next_session_replacement_activation_receipt"))
     activation_rows = _rows_by_key(exact_service_packet.get("next_session_replacement_activation_rows"))
+    browser_qa_runbook = _dict(exact_service_packet.get("next_session_browser_qa_runbook_contract"))
+    browser_qa_runbook_rows = _rows_by_key(exact_service_packet.get("next_session_browser_qa_runbook_rows"))
+    browser_qa_matrix_rows = [row for row in _list(exact_service_packet.get("next_session_browser_qa_matrix_rows")) if isinstance(row, dict)]
+    browser_qa_evidence = _dict(exact_service_packet.get("next_session_browser_qa_evidence_summary"))
+    browser_qa_evidence_rows = [row for row in _list(exact_service_packet.get("next_session_browser_qa_evidence_rows")) if isinstance(row, dict)]
+    browser_qa_review = _dict(exact_service_packet.get("next_session_browser_qa_review_contract"))
+    browser_qa_review_rows = _rows_by_key(exact_service_packet.get("next_session_browser_qa_review_rows"))
 
     current_cache = next_session_service.read_next_session_cache()
     current_ledger = [row for row in _list(current_cache.get("call_ledger")) if isinstance(row, dict)]
-    task = _next_session_task(task_service.build_task_catalog())
+    task_catalog = task_service.build_task_catalog()
+    task = _next_session_task(task_catalog)
+    browser_qa_task = _task_by_type(task_catalog, "run_next_session_browser_qa_review")
     next_page = _read_script("desktop/src/routes/NextSessionMap.tsx")
     chart_component = _read_script("desktop/src/components/NextSessionChart.tsx")
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
@@ -330,9 +346,66 @@ def build_contract() -> dict[str, Any]:
             "Next-session generation remains a button-gated local cache pipeline; GET cache cannot retry, lock, dedupe, refresh providers, or execute trades.",
         ),
         _row(
+            "next_session_browser_qa_runbook_and_evidence_are_local_only",
+            browser_qa_runbook.get("schema_version") == "next_session_browser_qa_runbook.v1"
+            and browser_qa_runbook.get("scope") == "local_next_session_browser_qa_runbook_not_browser_execution"
+            and browser_qa_runbook.get("status") == "next_session_browser_qa_runbook_ready_execution_pending"
+            and browser_qa_runbook.get("local_runbook_ready") is True
+            and browser_qa_runbook.get("next_route") == "#next"
+            and browser_qa_runbook.get("artifact_root") == ".stock_ming_3/motion_qa"
+            and browser_qa_runbook.get("opens_no_browser") is True
+            and browser_qa_runbook.get("writes_no_artifacts") is True
+            and browser_qa_runbook.get("production_replacement_complete") is False
+            and browser_qa_runbook.get("streamlit_parity_complete") is False
+            and len(browser_qa_matrix_rows) == 4
+            and {row.get("viewport") for row in browser_qa_matrix_rows} == {"desktop", "laptop", "tablet", "mobile"}
+            and _dict(browser_qa_runbook_rows.get("next_session_browser_qa_runbook_ready")).get("status") == "passed_static_policy"
+            and browser_qa_evidence.get("schema_version") == "next_session_browser_qa_evidence.v1"
+            and browser_qa_evidence.get("scope") == "local_next_session_browser_qa_evidence_reader_no_browser_execution"
+            and browser_qa_evidence.get("next_route") == "#next"
+            and browser_qa_evidence.get("reads_ignored_local_reports_only") is True
+            and browser_qa_evidence.get("screenshots_are_not_tracked") is True
+            and browser_qa_evidence.get("report_artifacts_are_not_tracked") is True
+            and browser_qa_evidence.get("production_replacement_complete") is False
+            and browser_qa_evidence.get("streamlit_parity_complete") is False
+            and len(browser_qa_evidence_rows) == int(browser_qa_evidence.get("row_count") or 0)
+            and _flag_false(browser_qa_runbook, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and _flag_false(browser_qa_evidence, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called"),
+            "Next-session browser QA runbook/evidence must stay local-only and separate local artifact summaries from Streamlit parity or production replacement.",
+        ),
+        _row(
+            "next_session_browser_qa_review_is_button_gated_local_only",
+            browser_qa_task.get("route") == "POST /api/next-session/browser-qa-review"
+            and browser_qa_task.get("button_gated") is True
+            and browser_qa_task.get("browser_qa_review_only") is True
+            and browser_qa_task.get("opens_browser") is False
+            and browser_qa_task.get("starts_servers") is False
+            and browser_qa_task.get("writes_artifacts") is False
+            and browser_qa_task.get("reads_ignored_local_reports_only") is True
+            and browser_qa_task.get("production_replacement_complete") is False
+            and browser_qa_task.get("does_not_execute_trades") is True
+            and browser_qa_review.get("schema_version") == "next_session_browser_qa_review.v1"
+            and browser_qa_review.get("scope") == "button_gated_local_next_session_browser_qa_review_no_browser_execution"
+            and browser_qa_review.get("status") == "next_session_browser_qa_review_pending"
+            and browser_qa_review.get("explicit_review_task_done") is False
+            and browser_qa_review.get("local_browser_qa_review_ready") is False
+            and browser_qa_review.get("production_replacement_complete") is False
+            and browser_qa_review.get("streamlit_parity_complete") is False
+            and browser_qa_review.get("opens_no_browser") is True
+            and browser_qa_review.get("writes_no_artifacts") is True
+            and _dict(browser_qa_review_rows.get("explicit_post_review_task")).get("status") == "pending_explicit_post"
+            and _dict(browser_qa_review_rows.get("streamlit_parity_stays_pending")).get("status") == "passed"
+            and _dict(browser_qa_review_rows.get("production_replacement_stays_blocked")).get("status") == "passed"
+            and _flag_false(browser_qa_review, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called"),
+            "Next-session browser QA review must be explicit POST, local artifact only, no browser execution, and not a production replacement promotion.",
+        ),
+        _row(
             "react_echarts_frontend_uses_api_client_and_read_only_display",
             "getNextSessionCache" in next_page
             and 'postTask("/api/next-session/generate")' in next_page
+            and 'postTask("/api/next-session/browser-qa-review"' in next_page
+            and "next_session_browser_qa_evidence_summary" in next_page
+            and "next_session_browser_qa_review_contract" in next_page
             and "NextSessionChart" in next_page
             and "frontend_computes_trade_action" in next_page
             and "does_not_modify_operation_zones" in next_page
