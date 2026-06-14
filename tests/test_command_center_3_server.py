@@ -12680,6 +12680,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["candidate_rows"][0]["ticker"], "002008.SZ")
         receipt = packet["search_quant_projection_receipt"]
         receipt_rows = {row["step_key"]: row for row in packet["search_quant_projection_rows"]}
+        activation = packet["search_quant_projection_activation_receipt"]
+        activation_rows = {row["activation_key"]: row for row in packet["search_quant_projection_activation_rows"]}
         self.assertEqual(receipt["schema_version"], "candidate_radar_search_quant_projection_receipt.v1")
         self.assertEqual(receipt["status"], "quant_projection_local_receipt_ready_provider_model_pending")
         self.assertEqual(receipt["scan_mode"], "search_quant_projection")
@@ -12703,8 +12705,31 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["search_quant_projection_is_not_trade_signal"])
         self.assertTrue(packet["policy"]["search_quant_projection_provider_model_pending"])
         self.assertTrue(packet["policy"]["search_quant_projection_does_not_call_provider_or_model"])
+        self.assertEqual(
+            activation["schema_version"],
+            "candidate_radar_search_quant_projection_activation_receipt.v1",
+        )
+        self.assertEqual(activation["status"], "quant_projection_activation_ready_provider_model_execution_blocked")
+        self.assertTrue(activation["local_activation_receipt_ready"])
+        self.assertFalse(activation["ready_for_real_provider_model_projection"])
+        self.assertFalse(activation["provider_execution_implemented"])
+        self.assertFalse(activation["model_execution_implemented"])
+        self.assertFalse(activation["production_quant_projection_complete"])
+        self.assertIn("real Tushare light call ledger", activation["missing_evidence_items"])
+        self.assertIn("optional DeepSeek pro model ledger", activation["missing_evidence_items"])
+        self.assertIn("call Tushare or DeepSeek from React render", activation["not_allowed_next_steps"])
+        self.assertTrue(activation_rows["local_receipt_visible"]["passed"])
+        self.assertTrue(activation_rows["symbol_validation_ready"]["passed"])
+        self.assertTrue(activation_rows["tushare_light_call_ledger_required"]["production_blocker"])
+        self.assertTrue(activation_rows["deepseek_model_ledger_required"]["production_blocker"])
+        self.assertTrue(activation_rows["trade_action_isolation_preserved"]["passed"])
+        self.assertTrue(packet["policy"]["search_quant_projection_activation_receipt_is_local"])
+        self.assertTrue(packet["policy"]["search_quant_projection_activation_blocks_production"])
+        self.assertTrue(packet["policy"]["search_quant_projection_requires_tushare_deepseek_ledgers"])
         self.assertEqual(packet["counts"]["search_quant_projection_row_count"], receipt["row_count"])
         self.assertGreater(packet["counts"]["search_quant_projection_production_blocker_count"], 0)
+        self.assertEqual(packet["counts"]["search_quant_projection_activation_row_count"], activation["row_count"])
+        self.assertGreater(packet["counts"]["search_quant_projection_activation_blocker_count"], 0)
         self.assertEqual(packet["call_ledger"][1]["api"], "local_candidate_radar_quant_projection")
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])

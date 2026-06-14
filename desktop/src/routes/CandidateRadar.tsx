@@ -100,6 +100,7 @@ export default function CandidateRadar() {
   const scanExecutionSummary = (cache.scan_execution_summary as Record<string, unknown> | undefined) ?? {};
   const quickScanReceipt = (cache.quick_scan_execution_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionReceipt = (cache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
+  const searchQuantProjectionActivation = (cache.search_quant_projection_activation_receipt as Record<string, unknown> | undefined) ?? {};
   const fastScanRuntimeBudget = (cache.fast_scan_runtime_budget_contract as Record<string, unknown> | undefined) ?? {};
   const fastScanReadinessAudit = (cache.fast_scan_readiness_audit as Record<string, unknown> | undefined) ?? {};
   const noFeatureLossAcceptance = (cache.no_feature_loss_acceptance_contract as Record<string, unknown> | undefined) ?? {};
@@ -133,6 +134,7 @@ export default function CandidateRadar() {
   const scanAcceptanceRows = rows(cache.scan_acceptance_rows);
   const quickScanReceiptRows = rows(cache.quick_scan_execution_receipt_rows);
   const searchQuantProjectionRows = rows(cache.search_quant_projection_rows);
+  const searchQuantProjectionActivationRows = rows(cache.search_quant_projection_activation_rows);
   const fastScanRuntimeBudgetRows = rows(cache.fast_scan_runtime_budget_rows);
   const fastScanReadinessRows = rows(cache.fast_scan_readiness_rows);
   const noFeatureLossAcceptanceRows = rows(cache.no_feature_loss_acceptance_rows);
@@ -191,6 +193,8 @@ export default function CandidateRadar() {
           { label: "quant symbol", value: String(searchQuantProjectionReceipt.symbol ?? "--") },
           { label: "quant blockers", value: counts.search_quant_projection_production_blocker_count as number | undefined, tone: Number(counts.search_quant_projection_production_blocker_count ?? 0) ? "warn" : "good" },
           { label: "quant rows", value: counts.search_quant_projection_row_count as number | undefined },
+          { label: "quant activation", value: String(searchQuantProjectionActivation.status ?? "missing"), tone: searchQuantProjectionActivation.local_activation_receipt_ready === true ? "good" : "warn" },
+          { label: "quant activation blockers", value: counts.search_quant_projection_activation_blocker_count as number | undefined, tone: Number(counts.search_quant_projection_activation_blocker_count ?? 0) ? "warn" : "good" },
           { label: "fast readiness", value: String(fastScanReadinessAudit.status ?? "missing"), tone: fastScanReadinessAudit.local_fast_scan_ready === true ? "good" : "warn" },
           { label: "fast blockers", value: counts.fast_scan_readiness_blocker_count as number | undefined, tone: Number(counts.fast_scan_readiness_blocker_count ?? 0) ? "bad" : "good" },
           { label: "no-loss QA", value: String(noFeatureLossAcceptance.status ?? "missing"), tone: noFeatureLossAcceptance.local_no_feature_loss_contract_ready === true ? "good" : "warn" },
@@ -305,6 +309,18 @@ export default function CandidateRadar() {
           <p>tushare_called: {String(searchQuantProjectionReceipt.tushare_called === true)}；deepseek_called: {String(searchQuantProjectionReceipt.deepseek_called === true)}；candidate_is_not_buy_instruction: {String(searchQuantProjectionReceipt.candidate_is_not_buy_instruction !== false)}</p>
           <DataLineageTable rows={objectRow(searchQuantProjectionReceipt)} />
           <DataLineageTable rows={searchQuantProjectionRows} />
+        </PacketCard>
+
+        <PacketCard title="Tushare/DeepSeek 联动审查" subtitle="search_quant_projection_activation_receipt / rows；只组织下一步验收，不代表真实外联完成" status={String(searchQuantProjectionActivation.status ?? "missing")}>
+          <p>local_activation_receipt_ready: {String(searchQuantProjectionActivation.local_activation_receipt_ready === true)}</p>
+          <p>allowed_next_step: {String(searchQuantProjectionActivation.allowed_next_step ?? "--")}</p>
+          <p>ready_for_real_provider_model_projection: {String(searchQuantProjectionActivation.ready_for_real_provider_model_projection === true)}；production_quant_projection_complete: {String(searchQuantProjectionActivation.production_quant_projection_complete === true)}</p>
+          <p>provider_execution_implemented: {String(searchQuantProjectionActivation.provider_execution_implemented === true)}；model_execution_implemented: {String(searchQuantProjectionActivation.model_execution_implemented === true)}</p>
+          <p>factor_refresh_executed: {String(searchQuantProjectionActivation.factor_refresh_executed === true)}；next_session_refresh_executed: {String(searchQuantProjectionActivation.next_session_refresh_executed === true)}；echarts_payload_refreshed: {String(searchQuantProjectionActivation.echarts_payload_refreshed === true)}</p>
+          <p>tushare_called: {String(searchQuantProjectionActivation.tushare_called === true)}；deepseek_called: {String(searchQuantProjectionActivation.deepseek_called === true)}；github_called: {String(searchQuantProjectionActivation.github_called === true)}</p>
+          <p>这个收据把真实 Tushare light call_ledger、可选 DeepSeek pro model_ledger、Factor/Next/ECharts 刷新、浏览器非阻塞证据和 promotion review 分层列出；它不会从 render 调 provider，也不会生成交易指令。</p>
+          <DataLineageTable rows={objectRow(searchQuantProjectionActivation)} />
+          <DataLineageTable rows={searchQuantProjectionActivationRows} />
         </PacketCard>
 
         <PacketCard title="快速雷达扫描" subtitle="POST /api/candidate-radar/scan-quick 只读取本地 snapshot/cache" status={String(scanCoverage.coverage_status ?? "cache")}>

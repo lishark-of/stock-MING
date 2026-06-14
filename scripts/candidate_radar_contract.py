@@ -261,6 +261,12 @@ def build_contract() -> dict[str, Any]:
         for row in _list(quant_packet.get("search_quant_projection_rows"))
         if isinstance(row, dict)
     }
+    search_quant_projection_activation = _dict(quant_packet.get("search_quant_projection_activation_receipt"))
+    search_quant_projection_activation_rows = {
+        str(row.get("activation_key") or ""): row
+        for row in _list(quant_packet.get("search_quant_projection_activation_rows"))
+        if isinstance(row, dict)
+    }
     browser_qa_evidence = _dict(cache_packet.get("candidate_browser_qa_evidence_summary"))
     browser_qa_review = _dict(cache_packet.get("candidate_browser_qa_review_contract"))
     policy = _dict(cache_packet.get("policy"))
@@ -426,6 +432,55 @@ def build_contract() -> dict[str, Any]:
             and "搜票量化推演" in candidate_frontend
             and "生成 3.0 量化推演" in candidate_frontend,
             "Search quant projection must be a button-gated local receipt with provider/model/factor/chart evidence pending, not a trade signal or external acceptance.",
+        ),
+        _row(
+            "search_quant_projection_activation_receipt_blocks_provider_model_promotion",
+            search_quant_projection_activation.get("schema_version")
+            == "candidate_radar_search_quant_projection_activation_receipt.v1"
+            and search_quant_projection_activation.get("status")
+            == "quant_projection_activation_ready_provider_model_execution_blocked"
+            and search_quant_projection_activation.get("local_activation_receipt_ready") is True
+            and search_quant_projection_activation.get("ready_for_real_provider_model_projection") is False
+            and search_quant_projection_activation.get("provider_execution_implemented") is False
+            and search_quant_projection_activation.get("model_execution_implemented") is False
+            and search_quant_projection_activation.get("factor_refresh_executed") is False
+            and search_quant_projection_activation.get("next_session_refresh_executed") is False
+            and search_quant_projection_activation.get("echarts_payload_refreshed") is False
+            and search_quant_projection_activation.get("browser_nonblocking_evidence_complete") is False
+            and search_quant_projection_activation.get("production_quant_projection_complete") is False
+            and "real Tushare light call ledger"
+            in _list(search_quant_projection_activation.get("missing_evidence_items"))
+            and "optional DeepSeek pro model ledger"
+            in _list(search_quant_projection_activation.get("missing_evidence_items"))
+            and "call Tushare or DeepSeek from React render"
+            in _list(search_quant_projection_activation.get("not_allowed_next_steps"))
+            and _dict(search_quant_projection_activation_rows.get("local_receipt_visible")).get("passed") is True
+            and _dict(search_quant_projection_activation_rows.get("symbol_validation_ready")).get("passed") is True
+            and _dict(search_quant_projection_activation_rows.get("tushare_light_call_ledger_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(search_quant_projection_activation_rows.get("deepseek_model_ledger_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(search_quant_projection_activation_rows.get("trade_action_isolation_preserved")).get("passed")
+            is True
+            and _flag_false(
+                search_quant_projection_activation,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and search_quant_projection_activation.get("does_not_execute_trades") is True
+            and search_quant_projection_activation.get("does_not_modify_strategy_action") is True
+            and search_quant_projection_activation.get("candidate_is_not_buy_instruction") is True
+            and "search_quant_projection_activation_receipt" in candidate_frontend
+            and "search_quant_projection_activation_rows" in candidate_frontend
+            and "Tushare/DeepSeek 联动审查" in candidate_frontend
+            and "allowed_next_step" in candidate_frontend,
+            "Search quant projection activation must keep Tushare/DeepSeek linkage as a visible acceptance checklist, not provider/model execution or production promotion.",
         ),
         _row(
             "fast_scan_readiness_is_local_pending",
@@ -803,6 +858,7 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_full_pool_local_execution_receipt.v1" in this_script
             and "candidate_radar_deep_scan_local_review_receipt.v1" in this_script
             and "candidate_radar_search_quant_projection_receipt.v1" in this_script
+            and "candidate_radar_search_quant_projection_activation_receipt.v1" in this_script
             and "candidate_radar_production_activation_receipt.v1" in this_script
             and "candidate_is_not_buy_instruction" in this_script
             and ("request" + "s") not in this_script
@@ -835,6 +891,10 @@ def build_contract() -> dict[str, Any]:
         "full_pool_local_execution_receipt_ready": full_pool_local_receipt.get("local_full_pool_execution_done") is True,
         "deep_scan_local_review_receipt_ready": deep_scan_local_receipt.get("local_deep_scan_review_done") is True,
         "search_quant_projection_receipt_ready": search_quant_projection_receipt.get("local_receipt_ready") is True,
+        "search_quant_projection_activation_receipt_ready": search_quant_projection_activation.get(
+            "local_activation_receipt_ready"
+        )
+        is True,
         "cache_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,

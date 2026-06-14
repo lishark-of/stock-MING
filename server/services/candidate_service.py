@@ -24,6 +24,7 @@ SUPPORTED_LOCAL_SCAN_MODES = {"quick_cache_scan", "watchlist_scan", "custom_pool
 LOCAL_POOL_SCAN_MODES = {"watchlist_scan", "custom_pool_scan", "full_pool_local_scan"}
 QUANT_PROJECTION_SCAN_MODE = "search_quant_projection"
 QUANT_PROJECTION_SCHEMA_VERSION = "candidate_radar_search_quant_projection_receipt.v1"
+QUANT_PROJECTION_ACTIVATION_SCHEMA_VERSION = "candidate_radar_search_quant_projection_activation_receipt.v1"
 PERSISTED_TASK_SCAN_MODES = LOCAL_POOL_SCAN_MODES | {QUANT_PROJECTION_SCAN_MODE}
 FAST_SCAN_DISPLAY_CANDIDATE_LIMIT = 120
 FAST_SCAN_LOCAL_POOL_INPUT_LIMIT = 50
@@ -813,6 +814,183 @@ def _build_quant_projection_receipt(
         ],
     }
     return receipt, rows
+
+
+def _quant_projection_activation_row(
+    activation_key: str,
+    status: str,
+    evidence: str,
+    next_action: str,
+    *,
+    passed: bool,
+    production_blocker: bool,
+) -> dict[str, Any]:
+    return {
+        "schema_version": QUANT_PROJECTION_ACTIVATION_SCHEMA_VERSION,
+        "activation_key": activation_key,
+        "status": status,
+        "passed": bool(passed),
+        "production_blocker": bool(production_blocker),
+        "evidence": evidence,
+        "next_action": next_action,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _quant_projection_activation_receipt(
+    quant_receipt: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    receipt = _as_dict(quant_receipt)
+    if not receipt:
+        return {}, []
+    schema_ok = receipt.get("schema_version") == QUANT_PROJECTION_SCHEMA_VERSION
+    symbol_valid = receipt.get("symbol_valid") is True
+    selected_apis = _as_list(receipt.get("selected_light_apis"))
+    rows = [
+        _quant_projection_activation_row(
+            "local_receipt_visible",
+            "passed" if schema_ok else "missing",
+            f"receipt_schema={receipt.get('schema_version') or 'missing'}; status={receipt.get('status') or 'missing'}",
+            "Keep the local receipt visible before any provider/model task can run.",
+            passed=schema_ok,
+            production_blocker=not schema_ok,
+        ),
+        _quant_projection_activation_row(
+            "symbol_validation_ready",
+            "passed" if symbol_valid else "blocked_invalid_symbol",
+            f"symbol={receipt.get('symbol') or '--'}; symbol_status={receipt.get('symbol_status') or 'unknown'}",
+            "Enter a valid A-share symbol before requesting real provider/model projection.",
+            passed=symbol_valid,
+            production_blocker=not symbol_valid,
+        ),
+        _quant_projection_activation_row(
+            "explicit_real_provider_task_required",
+            "pending_explicit_task",
+            "A separate user-approved provider/model task must execute real projection; the local receipt is not execution.",
+            "Create a future explicit POST task that binds to the receipt scope and writes real call/model ledger evidence.",
+            passed=False,
+            production_blocker=True,
+        ),
+        _quant_projection_activation_row(
+            "tushare_light_call_ledger_required",
+            "pending_provider_call_ledger",
+            f"selected_light_apis={selected_apis}; current_tushare_called={receipt.get('tushare_called') is True}",
+            "Record real Tushare trade_cal-if-needed, daily, daily_basic, and moneyflow rows with safe request params and call_status.",
+            passed=False,
+            production_blocker=True,
+        ),
+        _quant_projection_activation_row(
+            "factor_next_session_refresh_required",
+            "pending_local_pipeline_after_provider",
+            f"factor_refresh_executed={receipt.get('factor_refresh_executed') is True}; next_session_refresh_executed={receipt.get('next_session_refresh_executed') is True}; echarts_payload_refreshed={receipt.get('echarts_payload_refreshed') is True}",
+            "After provider evidence is ready, refresh Factor Quant Hub, Next Session cache, and ECharts payload through backend tasks.",
+            passed=False,
+            production_blocker=True,
+        ),
+        _quant_projection_activation_row(
+            "deepseek_model_ledger_required",
+            "pending_optional_model_ledger",
+            f"model_execution_implemented={receipt.get('model_execution_implemented') is True}; current_deepseek_called={receipt.get('deepseek_called') is True}",
+            "If DeepSeek pro explanation is enabled, record model_used, token usage, parse status, input/output hash, sanitizer result, and safe fallback.",
+            passed=False,
+            production_blocker=True,
+        ),
+        _quant_projection_activation_row(
+            "browser_nonblocking_evidence_required",
+            "pending_browser_nonblocking_evidence",
+            f"browser_nonblocking_evidence_complete={receipt.get('browser_nonblocking_evidence_complete') is True}",
+            "Prove the React page renders cached state first, then tracks the task without blocking or creating duplicate tasks.",
+            passed=False,
+            production_blocker=True,
+        ),
+        _quant_projection_activation_row(
+            "full_pool_deep_scan_boundary_preserved",
+            "passed",
+            "Search projection does not start full-pool or deep-scan execution from render.",
+            "Keep full-pool/deep-scan as separate explicit worker tasks.",
+            passed=True,
+            production_blocker=False,
+        ),
+        _quant_projection_activation_row(
+            "trade_action_isolation_preserved",
+            "passed",
+            "Projection receipt cannot execute trades, mutate holdings, or modify strategy action.",
+            "Keep quant projection output research-only until separate trade review exists.",
+            passed=True,
+            production_blocker=False,
+        ),
+        _quant_projection_activation_row(
+            "production_promotion_review_required",
+            "pending_promotion_review",
+            "Provider/model/factor/chart/browser evidence must be reviewed before production completion flags change.",
+            "Only promote after direct evidence exists and redaction/safety review passes.",
+            passed=False,
+            production_blocker=True,
+        ),
+    ]
+    local_blockers = [row["activation_key"] for row in rows if not row.get("passed") and row["activation_key"] in {"local_receipt_visible", "symbol_validation_ready"}]
+    production_blockers = [row["activation_key"] for row in rows if row.get("production_blocker")]
+    activation_receipt = {
+        "schema_version": QUANT_PROJECTION_ACTIVATION_SCHEMA_VERSION,
+        "status": "quant_projection_activation_ready_provider_model_execution_blocked"
+        if not local_blockers
+        else "quant_projection_activation_blocked_local_receipt_or_symbol",
+        "scope": "local_search_quant_projection_activation_receipt_no_provider_or_model_call",
+        "ltg": "LTG-13/LTG-02/LTG-07",
+        "symbol": receipt.get("symbol"),
+        "local_activation_receipt_ready": not local_blockers,
+        "ready_for_real_provider_model_projection": False,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "factor_refresh_executed": False,
+        "next_session_refresh_executed": False,
+        "echarts_payload_refreshed": False,
+        "browser_nonblocking_evidence_complete": False,
+        "production_quant_projection_complete": False,
+        "allowed_next_step": "create_explicit_user_approved_quant_projection_provider_model_task_with_ledger"
+        if not local_blockers
+        else "fix_symbol_or_local_receipt_then_retry",
+        "missing_evidence_items": [
+            "explicit real provider/model task implementation",
+            "real Tushare light call ledger",
+            "Factor Quant Hub refresh evidence",
+            "Next Session/ECharts refresh evidence",
+            "optional DeepSeek pro model ledger",
+            "browser non-blocking task evidence",
+            "redaction and production promotion review",
+        ],
+        "not_allowed_next_steps": [
+            "treat local receipt as real provider execution",
+            "call Tushare or DeepSeek from React render",
+            "skip call_ledger or model_ledger evidence",
+            "start full-pool or deep-scan from search render",
+            "turn projection into buy/sell instruction",
+            "mutate strategy action, price, holdings, or operation zones",
+        ],
+        "row_count": len(rows),
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+        "rows": rows,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "candidate_is_not_buy_instruction": True,
+        "note": "This activation receipt organizes the next real search-quant projection acceptance path. It does not call providers/models and is not production completion.",
+    }
+    return activation_receipt, rows
 
 
 def _snapshot_with_quant_projection(
@@ -5401,6 +5579,9 @@ def _build_candidate_radar_packet(
     search_quant_projection_rows = [
         row for row in _as_list(snapshot_map.get("search_quant_projection_rows")) if isinstance(row, dict)
     ]
+    search_quant_projection_activation_receipt, search_quant_projection_activation_rows = (
+        _quant_projection_activation_receipt(search_quant_projection_receipt)
+    )
     counts["full_pool_local_execution_row_count"] = full_pool_local_execution_receipt["row_count"]
     counts["full_pool_local_execution_candidate_count"] = full_pool_local_execution_receipt["normalized_candidate_count"]
     counts["full_pool_local_execution_production_blocker_count"] = full_pool_local_execution_receipt[
@@ -5413,6 +5594,10 @@ def _build_candidate_radar_packet(
     ]
     counts["search_quant_projection_row_count"] = search_quant_projection_receipt.get("row_count", 0)
     counts["search_quant_projection_production_blocker_count"] = search_quant_projection_receipt.get(
+        "production_blocker_count", 0
+    )
+    counts["search_quant_projection_activation_row_count"] = search_quant_projection_activation_receipt.get("row_count", 0)
+    counts["search_quant_projection_activation_blocker_count"] = search_quant_projection_activation_receipt.get(
         "production_blocker_count", 0
     )
     full_pool_blocker_rows = _as_list(plan.get("blocker_rows"))
@@ -5604,6 +5789,8 @@ def _build_candidate_radar_packet(
         "deep_scan_local_review_rows": deep_scan_local_review_rows,
         "search_quant_projection_receipt": search_quant_projection_receipt,
         "search_quant_projection_rows": search_quant_projection_rows,
+        "search_quant_projection_activation_receipt": search_quant_projection_activation_receipt,
+        "search_quant_projection_activation_rows": search_quant_projection_activation_rows,
         "deep_scan_stage_rows": _as_list(deep_plan.get("stage_rows")),
         "deep_scan_parity_rows": _as_list(deep_plan.get("parity_rows")),
         "deep_scan_required_signal_rows": _as_list(deep_plan.get("required_signal_rows")),
@@ -5654,6 +5841,9 @@ def _build_candidate_radar_packet(
             "search_quant_projection_is_not_trade_signal": True,
             "search_quant_projection_provider_model_pending": bool(search_quant_projection_receipt),
             "search_quant_projection_does_not_call_provider_or_model": True,
+            "search_quant_projection_activation_receipt_is_local": bool(search_quant_projection_activation_receipt),
+            "search_quant_projection_activation_blocks_production": bool(search_quant_projection_activation_receipt),
+            "search_quant_projection_requires_tushare_deepseek_ledgers": bool(search_quant_projection_activation_receipt),
             "does_not_run_backtest": True,
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
@@ -5829,8 +6019,18 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     counts["deep_scan_local_review_candidate_count"] = deep_scan_local_receipt.get("reviewed_candidate_count")
     counts["deep_scan_local_review_production_blocker_count"] = deep_scan_local_receipt.get("production_blocker_count")
     search_quant_projection_receipt = _as_dict(view.get("search_quant_projection_receipt"))
+    search_quant_projection_activation_receipt, search_quant_projection_activation_rows = _quant_projection_activation_receipt(
+        search_quant_projection_receipt
+    )
+    if search_quant_projection_activation_receipt:
+        view["search_quant_projection_activation_receipt"] = search_quant_projection_activation_receipt
+        view["search_quant_projection_activation_rows"] = search_quant_projection_activation_rows
     counts["search_quant_projection_row_count"] = search_quant_projection_receipt.get("row_count", 0)
     counts["search_quant_projection_production_blocker_count"] = search_quant_projection_receipt.get(
+        "production_blocker_count", 0
+    )
+    counts["search_quant_projection_activation_row_count"] = search_quant_projection_activation_receipt.get("row_count", 0)
+    counts["search_quant_projection_activation_blocker_count"] = search_quant_projection_activation_receipt.get(
         "production_blocker_count", 0
     )
     view["counts"] = counts
@@ -5857,6 +6057,9 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     policy["search_quant_projection_is_not_trade_signal"] = True
     policy["search_quant_projection_provider_model_pending"] = bool(search_quant_projection_receipt)
     policy["search_quant_projection_does_not_call_provider_or_model"] = True
+    policy["search_quant_projection_activation_receipt_is_local"] = bool(search_quant_projection_activation_receipt)
+    policy["search_quant_projection_activation_blocks_production"] = bool(search_quant_projection_activation_receipt)
+    policy["search_quant_projection_requires_tushare_deepseek_ledgers"] = bool(search_quant_projection_activation_receipt)
     view["policy"] = policy
     warnings = _as_list(view.get("warnings"))
     first_warning = "GET /api/candidate-radar/cache 只读展示已持久化的 local scan 结果；不会自动全市场扫描。"
