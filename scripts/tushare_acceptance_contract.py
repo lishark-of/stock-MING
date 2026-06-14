@@ -318,6 +318,7 @@ def build_contract() -> dict[str, Any]:
     target_sample_gap_rows = {row.get("target"): row for row in target_sample_gap.get("rows", [])}
     target_sample_receipt_rows = {row.get("criterion"): row for row in target_sample_receipt.get("rows", [])}
     target_sample_runbook_rows = {row.get("target"): row for row in target_sample_runbook.get("rows", [])}
+    target_sample_rows = {row.get("target"): row for row in target_sample_acceptance_ready.get("rows", [])}
     multi_target_groups = [
         "dragon_tiger",
         "limit_emotion",
@@ -437,6 +438,59 @@ def build_contract() -> dict[str, Any]:
     multi_target_gap_rows = {row.get("target"): row for row in multi_target_gap.get("rows", [])}
     multi_target_receipt_rows = {row.get("criterion"): row for row in multi_target_receipt.get("rows", [])}
     multi_target_runbook_rows = {row.get("target"): row for row in multi_target_runbook.get("rows", [])}
+    validation_target_group_keys = [target for target, _label, _apis in tushare_task_service.VALIDATION_TARGET_GROUPS]
+    extended_target_group_keys = [target for target in validation_target_group_keys if target != "trade_calendar"]
+    interface_group_scope_rows: list[dict[str, Any]] = []
+    for target_key, label, apis in tushare_task_service.VALIDATION_TARGET_GROUPS:
+        if target_key == "trade_calendar":
+            acceptance_layer = "provider_backed_trade_cal_long_window"
+            review_fixture_status = "trade_cal_long_window_fixture_exercised_not_real_provider"
+            review_ready = bool(trade_cal_full_acceptance.get("provider_backed_long_window_acceptance_done"))
+            source_fixture = "trade_cal_long_window_acceptance_fields"
+        elif target_key == "margin_financing":
+            acceptance_layer = tushare_task_service.PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE
+            review_fixture_status = str(
+                target_sample_rows.get(target_key, {}).get("target_sample_acceptance_status")
+                or "target_sample_acceptance_not_requested"
+            )
+            review_ready = review_fixture_status == "target_sample_acceptance_ready_for_review"
+            source_fixture = "single_target_sample_acceptance_fixture"
+        else:
+            acceptance_layer = tushare_task_service.PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE
+            review_fixture_status = str(
+                multi_target_rows.get(target_key, {}).get("target_sample_acceptance_status")
+                or "target_sample_acceptance_not_requested"
+            )
+            review_ready = review_fixture_status == "target_sample_acceptance_ready_for_review"
+            source_fixture = "multi_target_sample_acceptance_fixture"
+        interface_group_scope_rows.append(
+            {
+                "target": target_key,
+                "label": label,
+                "apis": list(apis),
+                "group_category": "calendar" if target_key == "trade_calendar" else "extended",
+                "post_task_route": "POST /api/tasks/refresh-tushare-facts",
+                "acceptance_layer": acceptance_layer,
+                "review_fixture_status": review_fixture_status,
+                "push_gate_review_fixture_ready": review_ready,
+                "push_gate_fixture_source": source_fixture,
+                "push_gate_fixture_is_not_real_provider_acceptance": True,
+                "requires_explicit_post_task": True,
+                "real_provider_sample_still_required": True,
+                "provider_promotion_still_required": True,
+                "provider_backed_acceptance_done": False,
+                "full_interface_acceptance_done": False,
+                "production_tushare_pipeline_complete": False,
+                "cache_get_external_calls": False,
+                "react_render_external_calls": False,
+                "contract_external_calls_triggered": False,
+                "tushare_called_by_contract": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
 
     rows = [
         _row(
@@ -695,6 +749,35 @@ def build_contract() -> dict[str, Any]:
             and multi_target_receipt.get("does_not_execute_trades") is True
             and multi_target_receipt.get("does_not_modify_strategy_action") is True,
             "Multiple target domains can become review-ready from explicit button-task evidence, but gap/receipt rows must keep promotion and production completion pending.",
+        ),
+        _row(
+            "interface_group_scope_complete_but_provider_acceptance_pending",
+            [row.get("target") for row in interface_group_scope_rows] == validation_target_group_keys
+            and len(interface_group_scope_rows) == len(tushare_task_service.VALIDATION_TARGET_GROUPS)
+            and {row.get("target") for row in interface_group_scope_rows if row.get("group_category") == "extended"}
+            == set(extended_target_group_keys)
+            and interface_group_scope_rows[0].get("target") == "trade_calendar"
+            and interface_group_scope_rows[0].get("acceptance_layer") == "provider_backed_trade_cal_long_window"
+            and all(row.get("post_task_route") == "POST /api/tasks/refresh-tushare-facts" for row in interface_group_scope_rows)
+            and all(row.get("requires_explicit_post_task") is True for row in interface_group_scope_rows)
+            and all(row.get("real_provider_sample_still_required") is True for row in interface_group_scope_rows)
+            and all(row.get("provider_promotion_still_required") is True for row in interface_group_scope_rows)
+            and all(row.get("push_gate_fixture_is_not_real_provider_acceptance") is True for row in interface_group_scope_rows)
+            and all(row.get("provider_backed_acceptance_done") is False for row in interface_group_scope_rows)
+            and all(row.get("full_interface_acceptance_done") is False for row in interface_group_scope_rows)
+            and all(row.get("production_tushare_pipeline_complete") is False for row in interface_group_scope_rows)
+            and all(
+                row.get("cache_get_external_calls") is False
+                and row.get("react_render_external_calls") is False
+                and row.get("contract_external_calls_triggered") is False
+                and row.get("tushare_called_by_contract") is False
+                and row.get("deepseek_called") is False
+                and row.get("github_called") is False
+                for row in interface_group_scope_rows
+            )
+            and all(row.get("does_not_execute_trades") is True for row in interface_group_scope_rows)
+            and all(row.get("does_not_modify_strategy_action") is True for row in interface_group_scope_rows),
+            "All LTG-02 interface target groups must be in the explicit acceptance scope, while every group remains pending real provider samples, promotion review, and production acceptance.",
         ),
         _row(
             "provider_readiness_stays_pending",
@@ -973,6 +1056,7 @@ def build_contract() -> dict[str, Any]:
         "blockers": blockers,
         "contract_keys": CONTRACT_KEYS,
         "rows": rows,
+        "interface_group_scope_rows": interface_group_scope_rows,
         "observed": {
             "refresh_task_route": refresh_catalog.get("route"),
             "default_core_apis": core_apis,
@@ -1011,6 +1095,15 @@ def build_contract() -> dict[str, Any]:
             "multi_target_sample_acceptance_ready_count": multi_target_acceptance.get("ready_target_count"),
             "multi_target_sample_acceptance_targets": multi_target_acceptance.get("requested_targets"),
             "multi_target_sample_acceptance_status": multi_target_acceptance.get("status"),
+            "validation_target_groups": validation_target_group_keys,
+            "extended_target_groups": extended_target_group_keys,
+            "interface_group_scope_count": len(interface_group_scope_rows),
+            "interface_group_review_fixture_ready_count": len(
+                [row for row in interface_group_scope_rows if row.get("push_gate_review_fixture_ready") is True]
+            ),
+            "interface_group_real_provider_sample_pending_count": len(
+                [row for row in interface_group_scope_rows if row.get("real_provider_sample_still_required") is True]
+            ),
         },
         "note": "This is a local push-gate contract. Real Tushare samples remain pending until a future explicit POST task/provider acceptance run.",
     }

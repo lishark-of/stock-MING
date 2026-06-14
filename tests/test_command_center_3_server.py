@@ -7039,6 +7039,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_target_sample_runbook_is_local_not_acceptance", script)
         self.assertIn("target_sample_runbook_ready_review_pending_without_promotion", script)
         self.assertIn("multi_target_sample_runbook_ready_review_pending_without_promotion", script)
+        self.assertIn("interface_group_scope_complete_but_provider_acceptance_pending", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -7102,6 +7103,25 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "target_sample_runbook_ready_provider_review_pending",
         )
         self.assertEqual(payload["observed"]["multi_target_sample_runbook_ready_count"], 5)
+        self.assertEqual(payload["observed"]["interface_group_scope_count"], payload["target_group_count"])
+        self.assertEqual(
+            payload["observed"]["interface_group_review_fixture_ready_count"],
+            payload["target_group_count"],
+        )
+        self.assertEqual(
+            payload["observed"]["interface_group_real_provider_sample_pending_count"],
+            payload["target_group_count"],
+        )
+        self.assertEqual(payload["observed"]["validation_target_groups"][0], "trade_calendar")
+        self.assertIn("hard_risk", payload["observed"]["extended_target_groups"])
+        interface_group_rows = {row["target"]: row for row in payload["interface_group_scope_rows"]}
+        self.assertEqual(set(interface_group_rows), set(payload["observed"]["validation_target_groups"]))
+        self.assertEqual(interface_group_rows["trade_calendar"]["acceptance_layer"], "provider_backed_trade_cal_long_window")
+        self.assertEqual(interface_group_rows["margin_financing"]["acceptance_layer"], "provider_target_sample_acceptance")
+        self.assertTrue(interface_group_rows["hard_risk"]["real_provider_sample_still_required"])
+        self.assertFalse(interface_group_rows["hard_risk"]["provider_backed_acceptance_done"])
+        self.assertFalse(interface_group_rows["hard_risk"]["production_tushare_pipeline_complete"])
+        self.assertFalse(interface_group_rows["hard_risk"]["tushare_called_by_contract"])
         self.assertIn("provider_evidence_gap_audit", payload["contract_keys"])
         self.assertIn("provider_target_sample_acceptance_contract", payload["contract_keys"])
         self.assertIn("provider_sample_readiness_receipt", payload["contract_keys"])
@@ -7122,6 +7142,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_target_sample_runbook_is_local_not_acceptance", criteria)
         self.assertIn("target_sample_runbook_ready_review_pending_without_promotion", criteria)
         self.assertIn("multi_target_sample_runbook_ready_review_pending_without_promotion", criteria)
+        self.assertIn("interface_group_scope_complete_but_provider_acceptance_pending", criteria)
 
     def test_factor_test_lab_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/factor_test_lab_contract.py")
