@@ -7662,6 +7662,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("execution_readiness_keeps_production_blockers_visible", script)
         self.assertIn("task_catalog_is_button_gated_read_plan_and_worker_dry_run_only", script)
         self.assertIn("worker_stage_scope_manifest_is_complete_and_pending", script)
+        self.assertIn("worker_batch_execution_recipe_is_local_pending", script)
+        self.assertIn("factor_universe_worker_batch_execution_recipe.v1", script)
+        self.assertIn("local_factor_universe_worker_batch_execution_recipe_no_worker_or_provider_execution", script)
         self.assertIn("worker_stage_scope_rows", script)
         self.assertIn("frontend_displays_plan_and_does_not_compute_universe", script)
         self.assertNotIn("requests", script)
@@ -7692,6 +7695,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["cross_sectional_rank_zscore_done"])
         self.assertTrue(payload["worker_batch_dry_run_ready"])
         self.assertTrue(payload["worker_batch_scope_ticket_ready"])
+        self.assertTrue(payload["worker_batch_execution_recipe_ready"])
         self.assertFalse(payload["worker_execution_implemented"])
         self.assertIn("local_rank_zscore_dry_run_executed", payload)
         self.assertFalse(payload["neutralization_done"])
@@ -7716,6 +7720,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed"]["task_backend"], "local_storage_query_read_plan_pipeline")
         self.assertEqual(payload["observed"]["worker_batch_dry_run_status"], "worker_batch_dry_run_ready_real_execution_blocked")
         self.assertTrue(payload["observed"]["worker_batch_scope_hash_short"])
+        self.assertEqual(
+            payload["observed"]["worker_batch_execution_recipe_status"],
+            "factor_universe_worker_batch_execution_recipe_ready_execution_pending",
+        )
         self.assertEqual(payload["observed"]["worker_batch_task_backend"], "local_factor_universe_worker_batch_dry_run_pipeline")
         self.assertEqual(
             set(payload["observed"]["declared_universe_modes"]),
@@ -7734,6 +7742,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed"]["worker_stage_scope_count"], len(required_stages))
         self.assertEqual(payload["observed"]["worker_stage_scope_keys"], required_stages)
         self.assertEqual(payload["observed"]["worker_stage_scope_pending_count"], len(required_stages))
+        required_execution_phases = [
+            "scope_ticket_review",
+            "explicit_worker_task_creation",
+            "worker_runtime_binding",
+            "storage_read_execution",
+            "cross_sectional_rank_execution",
+            "zscore_execution",
+            "neutralization_execution",
+            "factor_combination_execution",
+            "result_summary_persistence",
+            "production_promotion_review",
+        ]
+        self.assertEqual(payload["observed"]["worker_batch_execution_phase_count"], len(required_execution_phases))
+        self.assertEqual(payload["observed"]["worker_batch_execution_phase_keys"], required_execution_phases)
+        self.assertEqual(payload["observed"]["worker_batch_execution_pending_phase_count"], len(required_execution_phases))
         stage_scope_rows = {row["stage_key"]: row for row in payload["worker_stage_scope_rows"]}
         self.assertEqual(set(stage_scope_rows), set(required_stages))
         for row in stage_scope_rows.values():
@@ -7757,6 +7780,61 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertTrue(row["does_not_execute_trades"])
             self.assertTrue(row["does_not_modify_strategy_action"])
             self.assertFalse(row["contains_secret"])
+        execution_recipe = payload["worker_batch_execution_recipe"]
+        self.assertEqual(execution_recipe["schema_version"], "factor_universe_worker_batch_execution_recipe.v1")
+        self.assertEqual(
+            execution_recipe["scope"],
+            "local_factor_universe_worker_batch_execution_recipe_no_worker_or_provider_execution",
+        )
+        self.assertEqual(execution_recipe["status"], "factor_universe_worker_batch_execution_recipe_ready_execution_pending")
+        self.assertTrue(execution_recipe["local_recipe_ready"])
+        self.assertTrue(execution_recipe["scope_ticket_ready"])
+        self.assertTrue(execution_recipe["activation_ready_for_worker_batch"])
+        self.assertEqual(execution_recipe["phase_keys"], required_execution_phases)
+        self.assertIn("explicit worker task_id bound to scope hash", execution_recipe["required_evidence"])
+        self.assertIn("treat_recipe_as_worker_execution_evidence", execution_recipe["not_allowed_next_steps"])
+        self.assertIn("create worker task from GET cache", execution_recipe["not_allowed_next_steps"])
+        self.assertIn("compute rank/zscore in React", execution_recipe["not_allowed_next_steps"])
+        self.assertFalse(execution_recipe["worker_task_created"])
+        self.assertFalse(execution_recipe["worker_task_executed"])
+        self.assertFalse(execution_recipe["worker_started"])
+        self.assertFalse(execution_recipe["large_universe_pipeline_done"])
+        self.assertFalse(execution_recipe["cross_sectional_rank_zscore_done"])
+        self.assertFalse(execution_recipe["neutralization_done"])
+        self.assertFalse(execution_recipe["factor_combination_research_done"])
+        self.assertFalse(execution_recipe["production_factor_universe_complete"])
+        self.assertFalse(execution_recipe["external_calls_triggered"])
+        self.assertFalse(execution_recipe["tushare_called"])
+        self.assertFalse(execution_recipe["deepseek_called"])
+        self.assertFalse(execution_recipe["github_called"])
+        self.assertTrue(execution_recipe["does_not_execute_trades"])
+        self.assertTrue(execution_recipe["does_not_modify_strategy_action"])
+        execution_rows = {row["phase_key"]: row for row in payload["worker_batch_execution_rows"]}
+        self.assertEqual(set(execution_rows), set(required_execution_phases))
+        for row in execution_rows.values():
+            self.assertEqual(row["scope"], "factor_universe_worker_batch_execution_recipe")
+            self.assertTrue(row["selected_by_worker_dry_run_scope"])
+            self.assertTrue(row["required_before_production"])
+            self.assertFalse(row["worker_task_created"])
+            self.assertFalse(row["worker_task_executed"])
+            self.assertFalse(row["worker_started"])
+            self.assertFalse(row["storage_read_executed"])
+            self.assertFalse(row["large_universe_pipeline_done"])
+            self.assertFalse(row["cross_sectional_rank_zscore_done"])
+            self.assertFalse(row["neutralization_done"])
+            self.assertFalse(row["factor_combination_research_done"])
+            self.assertFalse(row["result_summary_persisted"])
+            self.assertFalse(row["full_pool_validation_done"])
+            self.assertFalse(row["production_factor_universe_complete"])
+            self.assertFalse(row["page_render_starts_full_pool"])
+            self.assertFalse(row["frontend_computes_rank_zscore"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("universe_modes_are_declared_not_executed", criteria)
         self.assertIn("read_plan_consumes_storage_contracts_only", criteria)
@@ -7764,6 +7842,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("execution_readiness_keeps_production_blockers_visible", criteria)
         self.assertIn("worker_batch_dry_run_ticket_is_local", criteria)
         self.assertIn("worker_stage_scope_manifest_is_complete_and_pending", criteria)
+        self.assertIn("worker_batch_execution_recipe_is_local_pending", criteria)
         self.assertIn("local_rank_zscore_dry_run_is_research_only", criteria)
         self.assertIn("task_catalog_is_button_gated_read_plan_and_worker_dry_run_only", criteria)
         self.assertIn("frontend_displays_plan_and_does_not_compute_universe", criteria)
@@ -18944,12 +19023,90 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         cached_receipt = packet["universe_worker_batch_dry_run_receipt"]
         self.assertEqual(cached_receipt["worker_batch_scope_hash_short"], receipt["worker_batch_scope_hash_short"])
         self.assertEqual(packet["universe_worker_batch_dry_run_rows"][0]["criterion"], "explicit_user_approval")
+        execution_recipe = packet["universe_worker_batch_execution_recipe"]
+        self.assertEqual(execution_recipe["schema_version"], "factor_universe_worker_batch_execution_recipe.v1")
+        self.assertEqual(
+            execution_recipe["scope"],
+            "local_factor_universe_worker_batch_execution_recipe_no_worker_or_provider_execution",
+        )
+        self.assertEqual(
+            execution_recipe["status"],
+            "factor_universe_worker_batch_execution_recipe_ready_execution_pending",
+        )
+        self.assertTrue(execution_recipe["local_recipe_ready"])
+        self.assertTrue(execution_recipe["scope_ticket_ready"])
+        self.assertFalse(execution_recipe["activation_ready_for_worker_batch"])
+        self.assertEqual(execution_recipe["worker_batch_scope_hash_short"], receipt["worker_batch_scope_hash_short"])
+        expected_phases = [
+            "scope_ticket_review",
+            "explicit_worker_task_creation",
+            "worker_runtime_binding",
+            "storage_read_execution",
+            "cross_sectional_rank_execution",
+            "zscore_execution",
+            "neutralization_execution",
+            "factor_combination_execution",
+            "result_summary_persistence",
+            "production_promotion_review",
+        ]
+        self.assertEqual(execution_recipe["phase_keys"], expected_phases)
+        self.assertEqual(execution_recipe["pending_phases"], expected_phases)
+        self.assertIn("explicit worker task_id bound to scope hash", execution_recipe["required_evidence"])
+        self.assertIn("treat_recipe_as_worker_execution_evidence", execution_recipe["not_allowed_next_steps"])
+        self.assertIn("create worker task from GET cache", execution_recipe["not_allowed_next_steps"])
+        self.assertIn("call Tushare or DeepSeek from this recipe", execution_recipe["not_allowed_next_steps"])
+        self.assertFalse(execution_recipe["worker_task_created"])
+        self.assertFalse(execution_recipe["worker_task_executed"])
+        self.assertFalse(execution_recipe["worker_started"])
+        self.assertFalse(execution_recipe["storage_read_executed"])
+        self.assertFalse(execution_recipe["large_universe_pipeline_done"])
+        self.assertFalse(execution_recipe["cross_sectional_rank_zscore_done"])
+        self.assertFalse(execution_recipe["neutralization_done"])
+        self.assertFalse(execution_recipe["factor_combination_research_done"])
+        self.assertFalse(execution_recipe["result_summary_persisted"])
+        self.assertFalse(execution_recipe["full_pool_validation_done"])
+        self.assertFalse(execution_recipe["production_factor_universe_complete"])
+        self.assertFalse(execution_recipe["external_calls_triggered"])
+        self.assertFalse(execution_recipe["tushare_called"])
+        self.assertFalse(execution_recipe["deepseek_called"])
+        self.assertFalse(execution_recipe["github_called"])
+        self.assertTrue(execution_recipe["does_not_execute_trades"])
+        self.assertTrue(execution_recipe["does_not_modify_strategy_action"])
+        rows_by_phase = {row["phase_key"]: row for row in packet["universe_worker_batch_execution_rows"]}
+        self.assertEqual(set(rows_by_phase), set(expected_phases))
+        self.assertEqual(rows_by_phase["scope_ticket_review"]["current_status"], "ready_scope_ticket_visible")
+        self.assertEqual(
+            rows_by_phase["explicit_worker_task_creation"]["current_status"],
+            "pending_explicit_post_worker_batch_research",
+        )
+        for row in rows_by_phase.values():
+            self.assertFalse(row["worker_task_created"])
+            self.assertFalse(row["worker_task_executed"])
+            self.assertFalse(row["worker_started"])
+            self.assertFalse(row["storage_read_executed"])
+            self.assertFalse(row["large_universe_pipeline_done"])
+            self.assertFalse(row["cross_sectional_rank_zscore_done"])
+            self.assertFalse(row["neutralization_done"])
+            self.assertFalse(row["factor_combination_research_done"])
+            self.assertFalse(row["result_summary_persisted"])
+            self.assertFalse(row["full_pool_validation_done"])
+            self.assertFalse(row["production_factor_universe_complete"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
         self.assertTrue(packet["universe_research_contract"]["worker_batch_dry_run_ready"])
         self.assertTrue(packet["universe_research_contract"]["worker_batch_scope_ticket_ready"])
         self.assertTrue(packet["universe_research_contract"]["worker_batch_dry_run_is_not_execution"])
+        self.assertTrue(packet["universe_research_contract"]["worker_batch_execution_recipe_ready"])
+        self.assertTrue(packet["universe_research_contract"]["worker_batch_execution_recipe_is_not_execution"])
         self.assertFalse(packet["universe_research_contract"]["worker_execution_implemented"])
         self.assertFalse(packet["universe_research_contract"]["production_factor_universe_complete"])
         self.assertIn("local_factor_universe_worker_batch_dry_run", {item.get("api") for item in packet["call_ledger"]})
+        self.assertIn("local_factor_universe_worker_batch_execution_recipe", {item.get("api") for item in packet["call_ledger"]})
         self.assertNotIn("SHOULD_DROP", json.dumps(factor, ensure_ascii=False))
 
     def test_deepseek_explain_endpoint_is_guarded_and_sanitized(self):

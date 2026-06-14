@@ -34,6 +34,30 @@ FACTOR_UNIVERSE_WORKER_BATCH_REQUIRED_STAGES = (
     "result_summary",
     "promotion_review",
 )
+FACTOR_UNIVERSE_WORKER_BATCH_EXECUTION_PHASES = (
+    "scope_ticket_review",
+    "explicit_worker_task_creation",
+    "worker_runtime_binding",
+    "storage_read_execution",
+    "cross_sectional_rank_execution",
+    "zscore_execution",
+    "neutralization_execution",
+    "factor_combination_execution",
+    "result_summary_persistence",
+    "production_promotion_review",
+)
+FACTOR_UNIVERSE_WORKER_BATCH_EXECUTION_PHASE_LABELS = {
+    "scope_ticket_review": "Scope ticket review",
+    "explicit_worker_task_creation": "Explicit worker task creation",
+    "worker_runtime_binding": "Worker runtime binding",
+    "storage_read_execution": "Storage read execution",
+    "cross_sectional_rank_execution": "Cross-sectional rank execution",
+    "zscore_execution": "Z-score execution",
+    "neutralization_execution": "Neutralization execution",
+    "factor_combination_execution": "Factor combination execution",
+    "result_summary_persistence": "Result summary persistence",
+    "production_promotion_review": "Production promotion review",
+}
 FACTOR_TEST_PROVIDER_SMALL_POOL_SYMBOL_LIMIT = 20
 FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_SYMBOLS = 5
 FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS = 60
@@ -91,6 +115,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet = _attach_factor_universe_execution_readiness(packet)
     packet, universe_execution_receipt_ledger = _attach_factor_universe_execution_readiness_receipt(packet, now)
     packet, universe_activation_receipt_ledger = _attach_factor_universe_execution_activation_receipt(packet, now)
+    packet, universe_batch_recipe_ledger = _attach_factor_universe_worker_batch_execution_recipe(packet, now)
     packet = _attach_deepseek_json_stability_audit(packet, governance=packet["deepseek_explain_governance"])
     packet, deepseek_activation_ledger = _attach_deepseek_production_activation_receipt(packet, now)
     packet, deepseek_benchmark_recipe_ledger = _attach_deepseek_provider_benchmark_execution_recipe(packet, now)
@@ -108,6 +133,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         + universe_rank_ledger
         + universe_execution_receipt_ledger
         + universe_activation_receipt_ledger
+        + universe_batch_recipe_ledger
         + deepseek_activation_ledger
         + deepseek_benchmark_recipe_ledger
         + storage_query_ledger
@@ -122,6 +148,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     universe_rank_warning = "Factor Universe rank/zscore dry-run 只读本地 factor_values 样本；样本不足时保持 blocked，不代表 full-pool 生产研究完成。"
     universe_execution_receipt_warning = "Factor Universe execution readiness receipt 只说明下一步显式 worker batch 是否可进入；不会运行 full-pool、rank/zscore、中性化或 provider 验收。"
     universe_activation_receipt_warning = "Factor Universe execution activation receipt 只把下一步固定为显式 worker batch 生产验收；不会创建任务、启动 worker、计算 full-pool/rank/zscore/neutralization 或 provider 验收。"
+    universe_batch_recipe_warning = "Factor Universe worker-batch execution recipe 只固定未来显式 worker 批量研究验收顺序；不会创建任务、启动 worker、计算 rank/zscore/neutralization 或 provider 验收。"
     deepseek_activation_warning = "DeepSeek production activation receipt 只汇总下一步生产解释验收缺口；不会调用模型，不代表 provider benchmark、response_format 强约束或 auto_after_task 生产完成。"
     deepseek_benchmark_recipe_warning = "DeepSeek provider benchmark execution recipe 只固定未来显式 benchmark 的样本、ledger、retry、成本和 promotion 标准；不会调用 DeepSeek 或完成生产解释。"
     storage_query_warning = "Factor Test Lab 只消费本地 factor_values DuckDB 查询合同；不把查询样本当作生产 IC 验收或交易信号。"
@@ -135,6 +162,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         universe_rank_warning,
         universe_execution_receipt_warning,
         universe_activation_receipt_warning,
+        universe_batch_recipe_warning,
         deepseek_activation_warning,
         deepseek_benchmark_recipe_warning,
         storage_query_warning,
@@ -3680,6 +3708,221 @@ def _factor_universe_worker_batch_dry_run_receipt(payload_safe: dict[str, Any], 
         ],
         "note": "This is a local dry-run ticket for future LTG-04 worker-backed universe research. It does not start workers, call providers/models, compute production metrics, execute trades, or mutate strategy action.",
     }, rows
+
+
+def _factor_universe_worker_batch_execution_recipe_row(
+    phase_key: str,
+    current_status: str,
+    selected_by_scope: bool,
+    evidence_required: str,
+    next_action: str,
+) -> dict[str, Any]:
+    return {
+        "phase_key": phase_key,
+        "phase_label": FACTOR_UNIVERSE_WORKER_BATCH_EXECUTION_PHASE_LABELS.get(phase_key, phase_key),
+        "scope": "factor_universe_worker_batch_execution_recipe",
+        "current_status": current_status,
+        "target_status": "worker_backed_batch_research_evidence_required",
+        "selected_by_worker_dry_run_scope": bool(selected_by_scope),
+        "required_before_production": True,
+        "evidence_required": evidence_required,
+        "next_action": next_action,
+        "worker_task_created": False,
+        "worker_task_executed": False,
+        "worker_started": False,
+        "storage_read_executed": False,
+        "large_universe_pipeline_done": False,
+        "cross_sectional_rank_zscore_done": False,
+        "zscore_done": False,
+        "neutralization_done": False,
+        "factor_combination_research_done": False,
+        "result_summary_persisted": False,
+        "full_pool_validation_done": False,
+        "production_factor_universe_complete": False,
+        "page_render_starts_full_pool": False,
+        "frontend_computes_rank_zscore": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def _factor_universe_worker_batch_execution_recipe(packet: dict[str, Any], now: str) -> dict[str, Any]:
+    dry_run = packet.get("universe_worker_batch_dry_run_receipt") if isinstance(packet.get("universe_worker_batch_dry_run_receipt"), dict) else {}
+    activation = packet.get("universe_execution_activation_receipt") if isinstance(packet.get("universe_execution_activation_receipt"), dict) else {}
+    scope_ticket = _dict(dry_run.get("worker_batch_scope_ticket"))
+    scope_hash_short = str(dry_run.get("worker_batch_scope_hash_short") or scope_ticket.get("scope_hash_short") or "")
+    requested_stages = [
+        str(item)
+        for item in (dry_run.get("requested_stages") if isinstance(dry_run.get("requested_stages"), list) else [])
+        if item
+    ]
+    required_stage_set = set(FACTOR_UNIVERSE_WORKER_BATCH_REQUIRED_STAGES)
+    requested_stage_set = set(requested_stages)
+    scope_ticket_ready = bool(
+        dry_run.get("schema_version") == "factor_universe_worker_batch_dry_run.v1"
+        and dry_run.get("preflight_ready_for_explicit_worker_batch_task") is True
+        and scope_hash_short
+        and required_stage_set <= requested_stage_set
+    )
+    activation_ready = bool(activation.get("ready_for_explicit_worker_batch_task") is True)
+    recipe_ready = scope_ticket_ready
+    status = (
+        "factor_universe_worker_batch_execution_recipe_ready_execution_pending"
+        if recipe_ready
+        else "factor_universe_worker_batch_execution_recipe_blocked_scope_or_activation"
+    )
+    phase_status = {
+        "scope_ticket_review": "ready_scope_ticket_visible" if scope_ticket_ready else "blocked_missing_worker_batch_scope_ticket",
+        "explicit_worker_task_creation": "pending_explicit_post_worker_batch_research",
+        "worker_runtime_binding": "pending_worker_runtime_binding_and_task_log_evidence",
+        "storage_read_execution": "pending_worker_storage_read_execution",
+        "cross_sectional_rank_execution": "pending_worker_rank_execution",
+        "zscore_execution": "pending_worker_zscore_execution",
+        "neutralization_execution": "pending_worker_neutralization_execution",
+        "factor_combination_execution": "pending_worker_factor_combination_execution",
+        "result_summary_persistence": "pending_result_summary_persistence",
+        "production_promotion_review": "blocked_until_worker_results_are_reviewed",
+    }
+    evidence_by_phase = {
+        "scope_ticket_review": "approved worker-batch dry-run scope ticket",
+        "explicit_worker_task_creation": "explicit worker task_id bound to scope hash",
+        "worker_runtime_binding": "worker runtime binding and durable task log evidence",
+        "storage_read_execution": "storage read execution evidence for factor_values/daily/daily_basic/moneyflow/trade_cal",
+        "cross_sectional_rank_execution": "cross-sectional rank output rows",
+        "zscore_execution": "zscore output rows",
+        "neutralization_execution": "industry and market-cap neutralization output",
+        "factor_combination_execution": "factor combination research output",
+        "result_summary_persistence": "persisted result summary with safe row counts and hashes",
+        "production_promotion_review": "manual promotion review confirming research-only boundaries",
+    }
+    rows = [
+        _factor_universe_worker_batch_execution_recipe_row(
+            phase_key,
+            phase_status[phase_key],
+            recipe_ready,
+            evidence_by_phase[phase_key],
+            "Run this phase only through a future explicit worker-backed task; never from GET cache or React render.",
+        )
+        for phase_key in FACTOR_UNIVERSE_WORKER_BATCH_EXECUTION_PHASES
+    ]
+    return {
+        "schema_version": "factor_universe_worker_batch_execution_recipe.v1",
+        "status": status,
+        "scope": "local_factor_universe_worker_batch_execution_recipe_no_worker_or_provider_execution",
+        "created_at": now,
+        "ltg": "LTG-04/LTG-11/LTG-12",
+        "local_recipe_ready": recipe_ready,
+        "execution_recipe_ready": recipe_ready,
+        "scope_ticket_ready": scope_ticket_ready,
+        "activation_ready_for_worker_batch": activation_ready,
+        "worker_batch_scope_hash_short": scope_hash_short,
+        "universe_mode": dry_run.get("universe_mode"),
+        "symbol_count": int(dry_run.get("symbol_count") or 0),
+        "phase_keys": list(FACTOR_UNIVERSE_WORKER_BATCH_EXECUTION_PHASES),
+        "pending_phases": list(FACTOR_UNIVERSE_WORKER_BATCH_EXECUTION_PHASES),
+        "phase_count": len(FACTOR_UNIVERSE_WORKER_BATCH_EXECUTION_PHASES),
+        "pending_phase_count": len(FACTOR_UNIVERSE_WORKER_BATCH_EXECUTION_PHASES),
+        "allowed_execution_sequence": list(FACTOR_UNIVERSE_WORKER_BATCH_EXECUTION_PHASES),
+        "required_evidence": [
+            "approved worker-batch dry-run scope ticket",
+            "explicit worker task_id bound to scope hash",
+            "durable task log rows",
+            "storage read execution evidence",
+            "cross-sectional rank and zscore output",
+            "industry and market-cap neutralization output",
+            "factor combination research output",
+            "persisted result summary with safe hashes",
+            "manual promotion review",
+        ],
+        "not_allowed_next_steps": [
+            "treat_recipe_as_worker_execution_evidence",
+            "create worker task from GET cache",
+            "start worker from GET cache",
+            "call Tushare or DeepSeek from this recipe",
+            "call GitHub from this recipe",
+            "compute rank/zscore in React",
+            "mutate strategy action",
+            "real trade execution",
+            "mark production Factor universe complete from recipe",
+        ],
+        "worker_task_created": False,
+        "worker_task_executed": False,
+        "worker_started": False,
+        "storage_read_executed": False,
+        "large_universe_pipeline_done": False,
+        "cross_sectional_rank_zscore_done": False,
+        "zscore_done": False,
+        "neutralization_done": False,
+        "factor_combination_research_done": False,
+        "result_summary_persisted": False,
+        "full_pool_validation_done": False,
+        "production_factor_universe_complete": False,
+        "partial_pool_is_full_market_proof": False,
+        "page_render_starts_full_pool": False,
+        "frontend_computes_rank_zscore": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "credential_value_exposed": False,
+        "env_key_name_exposed": False,
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_factor_universe_worker_batch_execution_recipe",
+                "request_params_safe": {
+                    "scope": "local_factor_universe_worker_batch_execution_recipe_no_worker_or_provider_execution",
+                    "scope_ticket_ready": scope_ticket_ready,
+                    "activation_ready_for_worker_batch": activation_ready,
+                    "execution_recipe_ready": recipe_ready,
+                    "worker_batch_scope_hash_short": scope_hash_short,
+                    "phase_count": len(FACTOR_UNIVERSE_WORKER_BATCH_EXECUTION_PHASES),
+                    "production_factor_universe_complete": False,
+                },
+                "row_count": len(rows),
+                "data_date": None,
+                "local_fetched_at": now,
+                "call_status": "local_recipe_ready_execution_pending" if recipe_ready else "local_recipe_blocked_scope_or_activation",
+                "error_message_safe": "",
+                **_local_ledger_boundary(),
+            }
+        ],
+        "note": "This local recipe fixes the future worker-backed Factor universe execution order. It does not create worker tasks, start workers, call providers/models, compute production metrics, execute trades, or mutate strategy action.",
+    }
+
+
+def _attach_factor_universe_worker_batch_execution_recipe(packet: dict[str, Any], now: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    recipe = _factor_universe_worker_batch_execution_recipe(packet, now)
+    packet["universe_worker_batch_execution_recipe"] = recipe
+    packet["universe_worker_batch_execution_rows"] = list(recipe.get("rows") or [])
+    contract = packet.get("universe_research_contract")
+    if isinstance(contract, dict):
+        contract["worker_batch_execution_recipe_status"] = recipe["status"]
+        contract["worker_batch_execution_recipe_ready"] = bool(recipe.get("local_recipe_ready"))
+        contract["worker_batch_execution_recipe_is_not_execution"] = True
+        contract["worker_task_created"] = False
+        contract["worker_task_executed"] = False
+        contract["worker_started"] = False
+        contract["large_universe_pipeline_done"] = False
+        contract["cross_sectional_rank_zscore_done"] = False
+        contract["neutralization_done"] = False
+        contract["factor_combination_research_done"] = False
+        contract["production_factor_universe_complete"] = False
+        contract["external_calls_triggered"] = False
+        contract["tushare_called"] = False
+        contract["deepseek_called"] = False
+        contract["github_called"] = False
+    return packet, list(recipe.get("call_ledger") or [])
 
 
 def run_factor_universe_worker_batch_dry_run_task(payload: Any = None) -> dict[str, Any]:

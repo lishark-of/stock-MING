@@ -67,6 +67,7 @@ export default function FactorQuantHub() {
   const universeExecutionReadinessReceipt = packet.universe_execution_readiness_receipt ?? {};
   const universeExecutionActivationReceipt = packet.universe_execution_activation_receipt ?? {};
   const universeWorkerBatchDryRun = packet.universe_worker_batch_dry_run_receipt ?? {};
+  const universeWorkerBatchExecutionRecipe = packet.universe_worker_batch_execution_recipe ?? {};
   const universeResearchTaskPlan = packet.universe_research_task_plan ?? {};
   const universeLocalRankZscore = packet.universe_local_rank_zscore_dry_run ?? {};
   const factorLibrary = packet.factor_library ?? {};
@@ -117,6 +118,8 @@ export default function FactorQuantHub() {
   const universeExecutionActivationCriterionRows = toRows(packet.universe_execution_activation_rows);
   const universeWorkerBatchDryRunRows = objectRows(universeWorkerBatchDryRun as Record<string, unknown>, "universe_worker_batch_dry_run");
   const universeWorkerBatchDryRunCriterionRows = toRows(packet.universe_worker_batch_dry_run_rows);
+  const universeWorkerBatchExecutionRecipeRows = objectRows(universeWorkerBatchExecutionRecipe as Record<string, unknown>, "universe_worker_batch_execution_recipe");
+  const universeWorkerBatchExecutionPhaseRows = toRows(packet.universe_worker_batch_execution_rows);
   const universeResearchTaskPlanRows = objectRows(universeResearchTaskPlan as Record<string, unknown>, "universe_read_plan");
   const universeResearchDatasetRows = toRows(packet.universe_research_task_plan_rows);
   const universeLocalRankZscoreRows = objectRows(universeLocalRankZscore as Record<string, unknown>, "local_rank_zscore");
@@ -240,6 +243,8 @@ export default function FactorQuantHub() {
           { label: "receipt worker ready", value: universeExecutionReadinessReceipt.ready_for_explicit_worker_batch_task === true ? "ready" : "blocked", tone: universeExecutionReadinessReceipt.ready_for_explicit_worker_batch_task === true ? "good" : "warn" },
           { label: "universe activation", value: universeExecutionActivationReceipt.status ?? "missing", tone: universeExecutionActivationReceipt.ready_for_explicit_worker_batch_task === true ? "good" : "warn" },
           { label: "worker-batch dry-run", value: universeWorkerBatchDryRun.status ?? "missing", tone: universeWorkerBatchDryRun.local_dry_run_ready === true ? "good" : "warn" },
+          { label: "worker execution recipe", value: universeWorkerBatchExecutionRecipe.status ?? "missing", tone: universeWorkerBatchExecutionRecipe.local_recipe_ready === true ? "good" : "warn" },
+          { label: "worker recipe phases", value: universeWorkerBatchExecutionRecipe.pending_phase_count ?? 0, tone: Number(universeWorkerBatchExecutionRecipe.pending_phase_count ?? 0) > 0 ? "warn" : "neutral" },
           { label: "worker dry-run blockers", value: universeWorkerBatchDryRun.blocking_criterion_count ?? 0, tone: Number(universeWorkerBatchDryRun.blocking_criterion_count ?? 0) > 0 ? "warn" : "good" },
           { label: "activation blockers", value: universeExecutionActivationReceipt.production_blocker_count ?? 0, tone: Number(universeExecutionActivationReceipt.production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "universe blockers", value: universeExecutionReadiness.production_blocker_count ?? 0, tone: Number(universeExecutionReadiness.production_blocker_count ?? 0) > 0 ? "warn" : "good" },
@@ -454,6 +459,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">universe_worker_batch_dry_run_receipt 只绑定未来显式 worker batch 的 universe 范围、stage scope 和 scope hash；不创建任务、不启动 worker、不调用 Tushare/DeepSeek/GitHub，不代表 worker-backed batch execution 或 production_factor_universe_complete。</p>
       <DataLineageTable rows={universeWorkerBatchDryRunCriterionRows} />
       <DataLineageTable rows={universeWorkerBatchDryRunRows} />
+      <h3>Factor Universe worker-batch execution recipe</h3>
+      <p className="risk-note">universe_worker_batch_execution_recipe 只固定未来显式 worker batch execution 的顺序和验收证据；它不创建 worker task、不启动 worker、不计算 rank/zscore/neutralization、不调用 Tushare/DeepSeek/GitHub，也不代表 production_factor_universe_complete。</p>
+      <DataLineageTable rows={universeWorkerBatchExecutionPhaseRows} />
+      <DataLineageTable rows={universeWorkerBatchExecutionRecipeRows} />
       <h3>Factor Universe 本地 Rank/Zscore Dry-run</h3>
       <p className="risk-note">universe_local_rank_zscore_dry_run 只读本地 factor_values 样本；样本不足时显示 blocked。预览行只用于 research，不代表 full-pool、provider-backed 或生产级 universe 研究完成，前端不计算 rank/zscore。</p>
       <DataLineageTable rows={universeLocalRankZscoreCriterionRows} />

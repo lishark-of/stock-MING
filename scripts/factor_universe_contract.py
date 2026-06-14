@@ -42,6 +42,18 @@ WORKER_STAGE_SCOPE_LABELS = {
     "result_summary": "Result summary",
     "promotion_review": "Promotion review",
 }
+REQUIRED_WORKER_BATCH_EXECUTION_PHASES = (
+    "scope_ticket_review",
+    "explicit_worker_task_creation",
+    "worker_runtime_binding",
+    "storage_read_execution",
+    "cross_sectional_rank_execution",
+    "zscore_execution",
+    "neutralization_execution",
+    "factor_combination_execution",
+    "result_summary_persistence",
+    "production_promotion_review",
+)
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -174,6 +186,14 @@ def build_contract() -> dict[str, Any]:
     activation_packet = dict(receipt_packet)
     activation_packet["universe_execution_readiness_receipt"] = execution_receipt
     execution_activation = factor_service._factor_universe_execution_activation_receipt(activation_packet, now)
+    recipe_packet = dict(activation_packet)
+    recipe_packet["universe_execution_activation_receipt"] = execution_activation
+    recipe_packet["universe_worker_batch_dry_run_receipt"] = worker_batch_dry_run
+    worker_batch_execution_recipe = factor_service._factor_universe_worker_batch_execution_recipe(recipe_packet, now)
+    worker_batch_execution_rows = [
+        row for row in _list(worker_batch_execution_recipe.get("rows")) if isinstance(row, dict)
+    ]
+    worker_batch_execution_phase_keys = [str(row.get("phase_key") or "") for row in worker_batch_execution_rows]
     readiness_rows = {
         str(row.get("criterion") or ""): row
         for row in _list(readiness.get("rows"))
@@ -378,6 +398,74 @@ def build_contract() -> dict[str, Any]:
             "Required Factor universe worker stages must be visible as a pending local scope manifest without worker/provider/model execution.",
         ),
         _row(
+            "worker_batch_execution_recipe_is_local_pending",
+            worker_batch_execution_recipe.get("schema_version") == "factor_universe_worker_batch_execution_recipe.v1"
+            and worker_batch_execution_recipe.get("scope") == "local_factor_universe_worker_batch_execution_recipe_no_worker_or_provider_execution"
+            and worker_batch_execution_recipe.get("status") == "factor_universe_worker_batch_execution_recipe_ready_execution_pending"
+            and worker_batch_execution_recipe.get("local_recipe_ready") is True
+            and worker_batch_execution_recipe.get("execution_recipe_ready") is True
+            and worker_batch_execution_recipe.get("scope_ticket_ready") is True
+            and worker_batch_execution_recipe.get("activation_ready_for_worker_batch") is True
+            and worker_batch_execution_recipe.get("worker_batch_scope_hash_short")
+            and worker_batch_execution_recipe.get("phase_keys") == list(REQUIRED_WORKER_BATCH_EXECUTION_PHASES)
+            and worker_batch_execution_recipe.get("pending_phases") == list(REQUIRED_WORKER_BATCH_EXECUTION_PHASES)
+            and worker_batch_execution_recipe.get("allowed_execution_sequence") == list(REQUIRED_WORKER_BATCH_EXECUTION_PHASES)
+            and "explicit worker task_id bound to scope hash" in worker_batch_execution_recipe.get("required_evidence", [])
+            and "cross-sectional rank and zscore output" in worker_batch_execution_recipe.get("required_evidence", [])
+            and "manual promotion review" in worker_batch_execution_recipe.get("required_evidence", [])
+            and "treat_recipe_as_worker_execution_evidence" in worker_batch_execution_recipe.get("not_allowed_next_steps", [])
+            and "create worker task from GET cache" in worker_batch_execution_recipe.get("not_allowed_next_steps", [])
+            and "call Tushare or DeepSeek from this recipe" in worker_batch_execution_recipe.get("not_allowed_next_steps", [])
+            and "compute rank/zscore in React" in worker_batch_execution_recipe.get("not_allowed_next_steps", [])
+            and "mark production Factor universe complete from recipe" in worker_batch_execution_recipe.get("not_allowed_next_steps", [])
+            and worker_batch_execution_recipe.get("worker_task_created") is False
+            and worker_batch_execution_recipe.get("worker_task_executed") is False
+            and worker_batch_execution_recipe.get("worker_started") is False
+            and worker_batch_execution_recipe.get("storage_read_executed") is False
+            and worker_batch_execution_recipe.get("large_universe_pipeline_done") is False
+            and worker_batch_execution_recipe.get("cross_sectional_rank_zscore_done") is False
+            and worker_batch_execution_recipe.get("neutralization_done") is False
+            and worker_batch_execution_recipe.get("factor_combination_research_done") is False
+            and worker_batch_execution_recipe.get("result_summary_persisted") is False
+            and worker_batch_execution_recipe.get("full_pool_validation_done") is False
+            and worker_batch_execution_recipe.get("production_factor_universe_complete") is False
+            and worker_batch_execution_recipe.get("page_render_starts_full_pool") is False
+            and worker_batch_execution_recipe.get("frontend_computes_rank_zscore") is False
+            and _flag_false(worker_batch_execution_recipe, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and worker_batch_execution_recipe.get("does_not_execute_trades") is True
+            and worker_batch_execution_recipe.get("does_not_modify_strategy_action") is True
+            and worker_batch_execution_recipe.get("contains_secret") is False
+            and worker_batch_execution_phase_keys == list(REQUIRED_WORKER_BATCH_EXECUTION_PHASES)
+            and all(
+                row.get("scope") == "factor_universe_worker_batch_execution_recipe"
+                and row.get("selected_by_worker_dry_run_scope") is True
+                and row.get("required_before_production") is True
+                and row.get("worker_task_created") is False
+                and row.get("worker_task_executed") is False
+                and row.get("worker_started") is False
+                and row.get("storage_read_executed") is False
+                and row.get("large_universe_pipeline_done") is False
+                and row.get("cross_sectional_rank_zscore_done") is False
+                and row.get("neutralization_done") is False
+                and row.get("factor_combination_research_done") is False
+                and row.get("result_summary_persisted") is False
+                and row.get("full_pool_validation_done") is False
+                and row.get("production_factor_universe_complete") is False
+                and row.get("page_render_starts_full_pool") is False
+                and row.get("frontend_computes_rank_zscore") is False
+                and row.get("external_calls_triggered") is False
+                and row.get("tushare_called") is False
+                and row.get("deepseek_called") is False
+                and row.get("github_called") is False
+                and row.get("does_not_execute_trades") is True
+                and row.get("does_not_modify_strategy_action") is True
+                and row.get("contains_secret") is False
+                for row in worker_batch_execution_rows
+            )
+            and _list(worker_batch_execution_recipe.get("call_ledger"))[0].get("api") == "local_factor_universe_worker_batch_execution_recipe",
+            "Worker-batch execution recipe may define the future ordered runtime path only; it must not create worker tasks, start workers, compute rank/zscore, call providers/models, or promote production completion.",
+        ),
+        _row(
             "local_rank_zscore_dry_run_is_research_only",
             rank_zscore_dry_run.get("schema_version") == "factor_universe_local_rank_zscore_dry_run.v1"
             and rank_zscore_dry_run.get("scope") == "local_factor_values_rank_zscore_dry_run_not_full_pool_validation"
@@ -496,6 +584,9 @@ def build_contract() -> dict[str, Any]:
             and "local_rank_zscore_dry_run_is_research_only" in this_script
             and "worker_batch_dry_run_ticket_is_local" in this_script
             and "worker_stage_scope_manifest_is_complete_and_pending" in this_script
+            and "worker_batch_execution_recipe_is_local_pending" in this_script
+            and "factor_universe_worker_batch_execution_recipe.v1" in this_script
+            and "local_factor_universe_worker_batch_execution_recipe_no_worker_or_provider_execution" in this_script
             and "run_factor_universe_worker_batch_dry_run" in this_script
             and "execution_readiness_receipt_is_local" in this_script
             and "execution_activation_receipt_is_local" in this_script
@@ -527,6 +618,7 @@ def build_contract() -> dict[str, Any]:
         "execution_activation_receipt_ready": bool(execution_activation.get("local_activation_receipt_ready")),
         "worker_batch_dry_run_ready": bool(worker_batch_dry_run.get("local_dry_run_ready")),
         "worker_batch_scope_ticket_ready": bool(worker_batch_dry_run.get("worker_batch_scope_hash_short")),
+        "worker_batch_execution_recipe_ready": bool(worker_batch_execution_recipe.get("local_recipe_ready")),
         "worker_execution_implemented": False,
         "local_rank_zscore_dry_run_executed": bool(rank_zscore_dry_run.get("rank_zscore_dry_run_executed")),
         "neutralization_done": False,
@@ -561,6 +653,12 @@ def build_contract() -> dict[str, Any]:
             "execution_activation_production_blocker_count": execution_activation.get("production_blocker_count"),
             "worker_batch_dry_run_status": worker_batch_dry_run.get("status"),
             "worker_batch_scope_hash_short": worker_batch_dry_run.get("worker_batch_scope_hash_short"),
+            "worker_batch_execution_recipe_status": worker_batch_execution_recipe.get("status"),
+            "worker_batch_execution_phase_count": len(worker_batch_execution_rows),
+            "worker_batch_execution_phase_keys": worker_batch_execution_phase_keys,
+            "worker_batch_execution_pending_phase_count": sum(
+                1 for row in worker_batch_execution_rows if row.get("worker_task_executed") is False
+            ),
             "worker_stage_scope_count": len(worker_stage_scope_rows),
             "worker_stage_scope_keys": [row.get("stage_key") for row in worker_stage_scope_rows],
             "worker_stage_scope_pending_count": sum(
@@ -570,6 +668,8 @@ def build_contract() -> dict[str, Any]:
             "worker_batch_task_backend": worker_batch_task.get("current_backend"),
         },
         "worker_stage_scope_rows": worker_stage_scope_rows,
+        "worker_batch_execution_recipe": worker_batch_execution_recipe,
+        "worker_batch_execution_rows": worker_batch_execution_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Worker batch dry-run is only a scope ticket; worker execution, rank/zscore, neutralization, provider-backed validation, and full-pool production research remain pending.",
     }
