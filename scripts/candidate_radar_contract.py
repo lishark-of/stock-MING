@@ -346,6 +346,12 @@ def build_contract() -> dict[str, Any]:
         for row in _list(cache_packet.get("candidate_radar_next_execution_rows"))
         if isinstance(row, dict)
     }
+    worker_execution_recipe = _dict(cache_packet.get("candidate_radar_worker_execution_recipe"))
+    worker_execution_rows = {
+        str(row.get("recipe_key") or ""): row
+        for row in _list(cache_packet.get("candidate_radar_worker_execution_rows"))
+        if isinstance(row, dict)
+    }
     quick_receipt = _dict(cache_packet.get("quick_scan_execution_receipt"))
     quick_receipt_rows = {
         str(row.get("receipt_key") or ""): row
@@ -563,6 +569,10 @@ def build_contract() -> dict[str, Any]:
             == "POST /api/candidate-radar/full-pool-local-scan"
             and next_execution_recipe.get("recommended_deep_scan_local_review_route")
             == "POST /api/candidate-radar/deep-scan-local-review"
+            and next_execution_recipe.get("recommended_worker_full_pool_route")
+            == "future POST /api/candidate-radar/full-pool-worker-scan"
+            and next_execution_recipe.get("recommended_worker_deep_scan_route")
+            == "future POST /api/candidate-radar/deep-scan-worker"
             and next_execution_recipe.get("provider_parity_dry_run_route")
             == "POST /api/candidate-radar/provider-parity-dry-run"
             and next_execution_recipe.get("quant_projection_acceptance_dry_run_route")
@@ -576,8 +586,12 @@ def build_contract() -> dict[str, Any]:
             and "render cached radar without scanning" in _list(next_execution_recipe.get("recommended_execution_order"))
             and "run button-gated quick/watchlist/custom scan"
             in _list(next_execution_recipe.get("recommended_execution_order"))
+            and "review worker execution recipe before any full-pool/deep-scan production task"
+            in _list(next_execution_recipe.get("recommended_execution_order"))
             and "scan market from GET cache or React render" in _list(next_execution_recipe.get("not_allowed_next_steps"))
             and "treat quick scan as production radar replacement"
+            in _list(next_execution_recipe.get("not_allowed_next_steps"))
+            and "treat worker execution recipe as worker execution done"
             in _list(next_execution_recipe.get("not_allowed_next_steps"))
             and "treat candidate rows as buy instructions" in _list(next_execution_recipe.get("not_allowed_next_steps"))
             and "retire legacy radar fallback before promotion audit clears"
@@ -586,6 +600,8 @@ def build_contract() -> dict[str, Any]:
             in _list(next_execution_recipe.get("required_evidence_before_production_replacement"))
             and next_execution_recipe.get("production_radar_replacement_complete") is False
             and next_execution_recipe.get("legacy_retirement_ready") is False
+            and next_execution_recipe.get("worker_execution_recipe_ready") is True
+            and next_execution_recipe.get("worker_execution_implemented") is False
             and next_execution_recipe.get("provider_execution_implemented") is False
             and next_execution_recipe.get("model_execution_implemented") is False
             and next_execution_recipe.get("page_render_starts_scan") is False
@@ -604,6 +620,8 @@ def build_contract() -> dict[str, Any]:
             and len(next_execution_rows) >= 12
             and _dict(next_execution_rows.get("cache_render_boundary")).get("status") == "passed_no_scan_on_render"
             and _dict(next_execution_rows.get("fast_scan_task_pipeline_ready")).get("required_before_fast_scan") is True
+            and _dict(next_execution_rows.get("worker_execution_recipe_visible")).get("status")
+            == "worker_recipe_visible"
             and _dict(next_execution_rows.get("production_promotion_boundary")).get("status")
             == "promotion_blocked_visible"
             and policy.get("candidate_radar_next_execution_recipe_is_local") is True
@@ -613,6 +631,85 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_next_execution_recipe" in candidate_frontend
             and "雷达下一步执行配方" in candidate_frontend,
             "Candidate Radar next-execution recipe must guide the fast local scan path while preserving no-feature-loss, provider/model/browser, legacy fallback, and no-trade boundaries.",
+        ),
+        _row(
+            "candidate_radar_worker_execution_recipe_is_local_no_worker_start",
+            worker_execution_recipe.get("schema_version") == "candidate_radar_worker_execution_recipe.v1"
+            and worker_execution_recipe.get("status")
+            == "candidate_radar_worker_execution_recipe_ready_production_pending"
+            and worker_execution_recipe.get("scope") == "local_candidate_radar_worker_execution_recipe_no_worker_start"
+            and worker_execution_recipe.get("local_worker_execution_recipe_ready") is True
+            and worker_execution_recipe.get("ready_to_start_worker_from_cache") is False
+            and worker_execution_recipe.get("requires_explicit_user_action") is True
+            and worker_execution_recipe.get("recommended_worker_full_pool_route")
+            == "future POST /api/candidate-radar/full-pool-worker-scan"
+            and worker_execution_recipe.get("recommended_worker_deep_scan_route")
+            == "future POST /api/candidate-radar/deep-scan-worker"
+            and worker_execution_recipe.get("required_storage_datasets")
+            == candidate_service.FULL_POOL_REQUIRED_STORAGE_DATASETS
+            and set(worker_execution_recipe.get("required_legacy_signal_groups") or [])
+            == {str(item.get("group")) for item in candidate_service.LEGACY_RADAR_SIGNAL_GROUPS}
+            and "worker runtime readiness receipt"
+            in _list(worker_execution_recipe.get("required_evidence_before_worker_promotion"))
+            and "start worker from GET cache or React render"
+            in _list(worker_execution_recipe.get("not_allowed_next_steps"))
+            and "treat worker recipe as worker execution done"
+            in _list(worker_execution_recipe.get("not_allowed_next_steps"))
+            and "retire legacy radar before worker/provider/browser acceptance"
+            in _list(worker_execution_recipe.get("not_allowed_next_steps"))
+            and worker_execution_recipe.get("worker_task_created") is False
+            and worker_execution_recipe.get("worker_execution_implemented") is False
+            and worker_execution_recipe.get("async_worker_execution_done") is False
+            and worker_execution_recipe.get("full_pool_scan_done") is False
+            and worker_execution_recipe.get("deep_scan_done") is False
+            and worker_execution_recipe.get("provider_backed_acceptance_done") is False
+            and worker_execution_recipe.get("browser_performance_trace_done") is False
+            and worker_execution_recipe.get("browser_visual_delta_qa_done") is False
+            and worker_execution_recipe.get("durable_ci_evidence_complete") is False
+            and worker_execution_recipe.get("production_radar_replacement_complete") is False
+            and worker_execution_recipe.get("legacy_retirement_ready") is False
+            and worker_execution_recipe.get("legacy_fallback_required") is True
+            and worker_execution_recipe.get("provider_execution_implemented") is False
+            and worker_execution_recipe.get("model_execution_implemented") is False
+            and worker_execution_recipe.get("page_render_starts_worker") is False
+            and worker_execution_recipe.get("page_render_starts_full_pool") is False
+            and worker_execution_recipe.get("page_render_starts_deep_scan") is False
+            and int(worker_execution_recipe.get("row_count") or 0) == len(worker_execution_rows)
+            and int(worker_execution_recipe.get("production_blocker_count") or 0) >= 7
+            and _dict(worker_execution_rows.get("fast_scan_pipeline_locked")).get("local_ready") is True
+            and _dict(worker_execution_rows.get("full_pool_worker_task_scope_required")).get("production_blocker")
+            is True
+            and _dict(worker_execution_rows.get("deep_scan_worker_task_scope_required")).get("production_blocker")
+            is True
+            and _dict(worker_execution_rows.get("storage_dataset_contract_required")).get("production_blocker")
+            is True
+            and _dict(worker_execution_rows.get("cache_render_boundary_preserved")).get("status")
+            == "passed_no_worker_on_render"
+            and policy.get("candidate_radar_worker_execution_recipe_is_local") is True
+            and policy.get("candidate_radar_worker_execution_recipe_does_not_start_worker") is True
+            and policy.get("candidate_radar_worker_execution_recipe_requires_explicit_task") is True
+            and policy.get("candidate_radar_worker_execution_recipe_is_not_production_replacement") is True
+            and policy.get("candidate_radar_worker_execution_recipe_keeps_external_calls_false") is True
+            and _flag_false(
+                worker_execution_recipe,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and worker_execution_recipe.get("does_not_execute_trades") is True
+            and worker_execution_recipe.get("does_not_modify_strategy_action") is True
+            and worker_execution_recipe.get("does_not_modify_holdings") is True
+            and worker_execution_recipe.get("candidate_is_not_buy_instruction") is True
+            and any(
+                _dict(row).get("api") == "local_candidate_radar_worker_execution_recipe"
+                for row in _list(cache_packet.get("call_ledger"))
+            )
+            and "candidate_radar_worker_execution_recipe" in candidate_frontend
+            and "candidate_radar_worker_execution_rows" in candidate_frontend
+            and "雷达 worker 执行配方" in candidate_frontend,
+            "Candidate Radar worker execution recipe must make the future full-pool/deep-scan worker path explicit while starting no worker, calling no providers/models, and preserving legacy/no-trade boundaries.",
         ),
         _row(
             "full_pool_local_execution_receipt_is_local_not_provider_acceptance",
@@ -1323,6 +1420,7 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_search_quant_projection_activation_receipt.v1" in this_script
             and "candidate_radar_search_quant_projection_acceptance_dry_run.v1" in this_script
             and "candidate_radar_production_activation_receipt.v1" in this_script
+            and "candidate_radar_worker_execution_recipe.v1" in this_script
             and "candidate_is_not_buy_instruction" in this_script
             and ("request" + "s") not in this_script
             and ("ht" + "tpx") not in this_script
@@ -1365,6 +1463,10 @@ def build_contract() -> dict[str, Any]:
         is True,
         "candidate_radar_next_execution_recipe_ready": next_execution_recipe.get(
             "recipe_ready_for_user_fast_scan"
+        )
+        is True,
+        "candidate_radar_worker_execution_recipe_ready": worker_execution_recipe.get(
+            "local_worker_execution_recipe_ready"
         )
         is True,
         "cache_only": True,
@@ -1410,6 +1512,10 @@ def build_contract() -> dict[str, Any]:
             "candidate_radar_next_execution_blocker_count": next_execution_recipe.get("blocking_row_count"),
             "candidate_radar_next_execution_production_pending_count": next_execution_recipe.get(
                 "production_pending_phase_count"
+            ),
+            "candidate_radar_worker_execution_recipe_status": worker_execution_recipe.get("status"),
+            "candidate_radar_worker_execution_recipe_production_blocker_count": worker_execution_recipe.get(
+                "production_blocker_count"
             ),
             "result_delta_status": result_delta.get("status"),
             "priority_explanation_status": priority_explanation.get("status"),

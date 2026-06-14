@@ -4458,6 +4458,7 @@ def _attach_no_feature_loss_acceptance_contract(packet: Mapping[str, Any]) -> di
     view = _attach_replacement_gap_triage_contract(view)
     view = _attach_candidate_radar_promotion_blocker_audit(view)
     view = _attach_candidate_radar_production_activation_receipt(view)
+    view = _attach_candidate_radar_worker_execution_recipe(view)
     view = _attach_candidate_radar_next_execution_recipe(view)
     return view
 
@@ -5186,6 +5187,338 @@ def _attach_candidate_radar_production_activation_receipt(packet: Mapping[str, A
     return view
 
 
+def _candidate_radar_worker_execution_recipe_row(
+    recipe_key: str,
+    category: str,
+    status: str,
+    *,
+    local_ready: bool,
+    production_blocker: bool,
+    evidence: str,
+    next_action: str,
+    recommended_order: int,
+) -> dict[str, Any]:
+    return {
+        "recipe_key": recipe_key,
+        "category": category,
+        "status": status,
+        "local_ready": bool(local_ready),
+        "production_blocker": bool(production_blocker),
+        "recommended_order": recommended_order,
+        "evidence": evidence,
+        "next_action": next_action,
+        "recipe_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+    }
+
+
+def _candidate_radar_worker_execution_recipe(
+    packet: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    task_pipeline = _as_dict(packet.get("fast_scan_task_pipeline_contract"))
+    no_loss = _as_dict(packet.get("no_feature_loss_acceptance_contract"))
+    full_pool_receipt = _as_dict(packet.get("full_pool_local_execution_receipt"))
+    deep_scan_receipt = _as_dict(packet.get("deep_scan_local_review_receipt"))
+    legacy_receipt = _as_dict(packet.get("legacy_parity_acceptance_receipt"))
+    provider_parity_dry_run = _as_dict(packet.get("provider_parity_dry_run_receipt"))
+    browser_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
+    activation = _as_dict(packet.get("candidate_radar_production_activation_receipt"))
+    policy = _as_dict(packet.get("policy"))
+    fast_path_ready = task_pipeline.get("local_task_pipeline_ready") is True
+    no_loss_ready = no_loss.get("local_no_feature_loss_contract_ready") is True
+    full_pool_local_ready = (
+        full_pool_receipt.get("schema_version") == "candidate_radar_full_pool_local_execution_receipt.v1"
+    )
+    deep_scan_local_ready = (
+        deep_scan_receipt.get("schema_version") == "candidate_radar_deep_scan_local_review_receipt.v1"
+    )
+    legacy_ready = legacy_receipt.get("local_acceptance_receipt_ready") is True
+    provider_ticket_visible = bool(provider_parity_dry_run.get("acceptance_scope_hash_short"))
+    browser_review_ready = browser_review.get("local_browser_qa_review_ready") is True
+    activation_ready = activation.get("local_activation_receipt_ready") is True
+    trade_guard_ready = bool(
+        packet.get("does_not_execute_trades") is True
+        and packet.get("does_not_modify_strategy_action") is True
+        and packet.get("candidate_is_not_buy_instruction") is not False
+    )
+    rows = [
+        _candidate_radar_worker_execution_recipe_row(
+            "fast_scan_pipeline_locked",
+            "fast_path",
+            "passed_local_fast_path" if fast_path_ready else "blocked_fast_scan_pipeline",
+            local_ready=fast_path_ready,
+            production_blocker=False,
+            evidence=f"pipeline_status={task_pipeline.get('status')}; local_task_pipeline_ready={fast_path_ready}",
+            next_action="Keep quick/watchlist/custom scans cache-first while full/deep worker work stays separate.",
+            recommended_order=1,
+        ),
+        _candidate_radar_worker_execution_recipe_row(
+            "no_feature_loss_surface_ready",
+            "feature_parity",
+            "passed_no_feature_loss_surface" if no_loss_ready else "blocked_no_feature_loss_surface",
+            local_ready=no_loss_ready,
+            production_blocker=False,
+            evidence=f"no_loss_status={no_loss.get('status')}; visible_gaps={no_loss.get('visible_gap_count')}",
+            next_action="Keep legacy signal groups, provider gaps, freshness gaps, and output fields visible.",
+            recommended_order=2,
+        ),
+        _candidate_radar_worker_execution_recipe_row(
+            "full_pool_local_receipt_visible",
+            "local_universe_receipt",
+            "local_receipt_visible" if full_pool_local_ready else "pending_local_full_pool_receipt",
+            local_ready=full_pool_local_ready,
+            production_blocker=False,
+            evidence=(
+                f"local_full_pool_execution_done={full_pool_receipt.get('local_full_pool_execution_done')}; "
+                f"worker_backed_execution_done={full_pool_receipt.get('worker_backed_execution_done')}"
+            ),
+            next_action="Use the local universe receipt as shape evidence only; do not treat it as worker execution.",
+            recommended_order=3,
+        ),
+        _candidate_radar_worker_execution_recipe_row(
+            "deep_scan_local_review_visible",
+            "local_deep_review",
+            "local_review_visible" if deep_scan_local_ready else "pending_local_deep_scan_review",
+            local_ready=deep_scan_local_ready,
+            production_blocker=False,
+            evidence=(
+                f"local_deep_scan_review_done={deep_scan_receipt.get('local_deep_scan_review_done')}; "
+                f"deep_scan_done={deep_scan_receipt.get('deep_scan_done')}"
+            ),
+            next_action="Use the local review receipt as no-feature-loss evidence only; do not treat it as deep scan.",
+            recommended_order=4,
+        ),
+        _candidate_radar_worker_execution_recipe_row(
+            "worker_runtime_required",
+            "worker_pipeline",
+            "pending_worker_runtime",
+            local_ready=activation_ready,
+            production_blocker=True,
+            evidence=(
+                f"activation_status={activation.get('status')}; "
+                f"allowed_next_step={activation.get('allowed_next_step')}"
+            ),
+            next_action="Implement explicit worker orchestration after worker production readiness is accepted.",
+            recommended_order=5,
+        ),
+        _candidate_radar_worker_execution_recipe_row(
+            "full_pool_worker_task_scope_required",
+            "worker_pipeline",
+            "pending_worker_full_pool_scope",
+            local_ready=True,
+            production_blocker=True,
+            evidence="Future full-pool worker task must consume bounded universe scope, storage datasets, task_id, and safe failure rows.",
+            next_action="Bind full-pool execution to a future explicit worker task and call ledger.",
+            recommended_order=6,
+        ),
+        _candidate_radar_worker_execution_recipe_row(
+            "deep_scan_worker_task_scope_required",
+            "worker_pipeline",
+            "pending_worker_deep_scan_scope",
+            local_ready=True,
+            production_blocker=True,
+            evidence="Future deep-scan worker task must keep DeepSeek/model/provider work explicit, optional, and ledgered.",
+            next_action="Bind deep-scan execution to a future explicit worker task with model/provider gates.",
+            recommended_order=7,
+        ),
+        _candidate_radar_worker_execution_recipe_row(
+            "storage_dataset_contract_required",
+            "storage",
+            "pending_dataset_readiness",
+            local_ready=True,
+            production_blocker=True,
+            evidence=f"required_storage_datasets={FULL_POOL_REQUIRED_STORAGE_DATASETS}",
+            next_action="Prove daily/daily_basic/moneyflow/trade_cal datasets are current before worker production execution.",
+            recommended_order=8,
+        ),
+        _candidate_radar_worker_execution_recipe_row(
+            "provider_parity_scope_ticket_required",
+            "provider_parity",
+            "scope_ticket_visible" if provider_ticket_visible else "pending_provider_parity_dry_run",
+            local_ready=True,
+            production_blocker=True,
+            evidence=(
+                f"provider_parity_status={provider_parity_dry_run.get('status')}; "
+                f"scope_hash={provider_parity_dry_run.get('acceptance_scope_hash_short') or 'missing'}"
+            ),
+            next_action="Run provider parity dry-run, then bind the real provider/model task to that scope.",
+            recommended_order=9,
+        ),
+        _candidate_radar_worker_execution_recipe_row(
+            "browser_visual_performance_promotion_required",
+            "browser_qa",
+            "local_review_ready" if browser_review_ready else "pending_browser_promotion",
+            local_ready=True,
+            production_blocker=True,
+            evidence=f"local_browser_qa_review_ready={browser_review_ready}; durable_ci_evidence_complete=false",
+            next_action="Promote only after default/reduced-motion visual and performance evidence is durable.",
+            recommended_order=10,
+        ),
+        _candidate_radar_worker_execution_recipe_row(
+            "legacy_no_feature_loss_required",
+            "legacy_retirement",
+            "legacy_receipt_visible" if legacy_ready else "blocked_legacy_parity_receipt",
+            local_ready=legacy_ready,
+            production_blocker=True,
+            evidence=(
+                f"legacy_acceptance_status={legacy_receipt.get('status')}; "
+                f"legacy_retirement_ready={legacy_receipt.get('legacy_retirement_ready')}"
+            ),
+            next_action="Keep Streamlit legacy radar fallback until worker/provider/browser evidence clears parity gates.",
+            recommended_order=11,
+        ),
+        _candidate_radar_worker_execution_recipe_row(
+            "trade_action_isolation_preserved",
+            "safety",
+            "passed_research_only" if trade_guard_ready else "blocked_trade_action_boundary",
+            local_ready=trade_guard_ready,
+            production_blocker=not trade_guard_ready,
+            evidence="Worker radar recipe cannot create orders, mutate holdings, or change strategy action.",
+            next_action="Keep Candidate Radar output research-only and separate from any future trade chain.",
+            recommended_order=12,
+        ),
+        _candidate_radar_worker_execution_recipe_row(
+            "cache_render_boundary_preserved",
+            "safety",
+            "passed_no_worker_on_render"
+            if policy.get("does_not_scan_market") is True and policy.get("post_task_required_for_scan") is True
+            else "blocked_render_boundary",
+            local_ready=policy.get("does_not_scan_market") is True and policy.get("post_task_required_for_scan") is True,
+            production_blocker=False,
+            evidence=(
+                f"does_not_scan_market={policy.get('does_not_scan_market')}; "
+                f"post_task_required_for_scan={policy.get('post_task_required_for_scan')}"
+            ),
+            next_action="Keep GET cache and React render silent; only explicit future worker tasks may scan.",
+            recommended_order=13,
+        ),
+    ]
+    local_blockers = [row["recipe_key"] for row in rows if not row.get("local_ready")]
+    production_blockers = [row["recipe_key"] for row in rows if row.get("production_blocker")]
+    local_ready = not local_blockers
+    contract = {
+        "schema_version": "candidate_radar_worker_execution_recipe.v1",
+        "status": (
+            "candidate_radar_worker_execution_recipe_ready_production_pending"
+            if local_ready
+            else "candidate_radar_worker_execution_recipe_blocked_local_contract"
+        ),
+        "scope": "local_candidate_radar_worker_execution_recipe_no_worker_start",
+        "ltg": "LTG-13",
+        "local_worker_execution_recipe_ready": local_ready,
+        "ready_to_start_worker_from_cache": False,
+        "requires_explicit_user_action": True,
+        "recommended_worker_full_pool_task_type": "future_run_candidate_radar_full_pool_worker_scan",
+        "recommended_worker_deep_scan_task_type": "future_run_candidate_radar_deep_scan_worker",
+        "recommended_worker_full_pool_route": "future POST /api/candidate-radar/full-pool-worker-scan",
+        "recommended_worker_deep_scan_route": "future POST /api/candidate-radar/deep-scan-worker",
+        "required_storage_datasets": list(FULL_POOL_REQUIRED_STORAGE_DATASETS),
+        "required_legacy_signal_groups": [str(item.get("group")) for item in LEGACY_RADAR_SIGNAL_GROUPS],
+        "required_legacy_parity_items": [str(item.get("key")) for item in LEGACY_RADAR_PARITY_ITEMS],
+        "recommended_execution_order": [
+            "render cached radar without starting worker",
+            "run local quick/watchlist/custom scan first",
+            "review local full-pool receipt and deep-scan local review",
+            "confirm worker runtime readiness and storage dataset freshness",
+            "execute future full-pool worker task with task_id and safe failure rows",
+            "execute future deep-scan worker task with explicit provider/model gates",
+            "run provider parity acceptance and browser promotion before legacy retirement",
+        ],
+        "not_allowed_next_steps": [
+            "start worker from GET cache or React render",
+            "treat worker recipe as worker execution done",
+            "treat local full-pool receipt as worker-backed full-pool scan",
+            "treat local deep-scan review as model/provider deep scan",
+            "call Tushare/DeepSeek/GitHub from render",
+            "skip provider/model call ledger",
+            "turn candidates into buy instructions",
+            "retire legacy radar before worker/provider/browser acceptance",
+        ],
+        "required_evidence_before_worker_promotion": [
+            "worker runtime readiness receipt",
+            "full-pool worker task_id and completion ledger",
+            "deep-scan worker task_id and completion ledger",
+            "storage dataset freshness and schema evidence",
+            "provider-backed parity call ledger",
+            "optional DeepSeek model ledger and sanitizer evidence",
+            "browser visual/performance promotion evidence",
+            "legacy radar retirement review",
+        ],
+        "worker_task_created": False,
+        "worker_execution_implemented": False,
+        "async_worker_execution_done": False,
+        "full_pool_scan_done": False,
+        "deep_scan_done": False,
+        "provider_backed_acceptance_done": False,
+        "browser_performance_trace_done": False,
+        "browser_visual_delta_qa_done": False,
+        "durable_ci_evidence_complete": False,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "legacy_fallback_required": True,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "page_render_starts_worker": False,
+        "page_render_starts_full_pool": False,
+        "page_render_starts_deep_scan": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "candidate_is_not_buy_instruction": True,
+        "row_count": len(rows),
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+        "rows": rows,
+        "note": "This is a local worker execution recipe. It does not create worker tasks, start Celery/Redis, call providers/models, retire legacy radar, or complete production replacement.",
+    }
+    return contract, rows
+
+
+def _attach_candidate_radar_worker_execution_recipe(packet: Mapping[str, Any]) -> dict[str, Any]:
+    view = dict(packet)
+    contract, rows = _candidate_radar_worker_execution_recipe(view)
+    counts = dict(_as_dict(view.get("counts")))
+    counts["candidate_radar_worker_execution_recipe_row_count"] = contract["row_count"]
+    counts["candidate_radar_worker_execution_recipe_local_blocker_count"] = contract["local_blocker_count"]
+    counts["candidate_radar_worker_execution_recipe_production_blocker_count"] = contract["production_blocker_count"]
+    counts["candidate_radar_worker_execution_recipe_ready"] = contract["local_worker_execution_recipe_ready"]
+    policy = dict(_as_dict(view.get("policy")))
+    policy["candidate_radar_worker_execution_recipe_is_local"] = True
+    policy["candidate_radar_worker_execution_recipe_does_not_start_worker"] = True
+    policy["candidate_radar_worker_execution_recipe_requires_explicit_task"] = True
+    policy["candidate_radar_worker_execution_recipe_is_not_production_replacement"] = True
+    policy["candidate_radar_worker_execution_recipe_keeps_external_calls_false"] = True
+    ledger = _as_list(view.get("call_ledger"))
+    ledger.append(
+        _candidate_call_ledger_row(
+            api="local_candidate_radar_worker_execution_recipe",
+            source_snapshot="candidate_radar_packet",
+            row_count=len(rows),
+            call_status=contract["status"],
+        )
+    )
+    view["counts"] = counts
+    view["policy"] = policy
+    view["call_ledger"] = ledger
+    view["candidate_radar_worker_execution_recipe"] = contract
+    view["candidate_radar_worker_execution_rows"] = rows
+    return view
+
+
 def _candidate_radar_next_execution_recipe_row(
     phase: str,
     status: str,
@@ -5228,6 +5561,7 @@ def _candidate_radar_next_execution_recipe(
     browser_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
     promotion = _as_dict(packet.get("candidate_radar_promotion_blocker_audit"))
     activation = _as_dict(packet.get("candidate_radar_production_activation_receipt"))
+    worker_recipe = _as_dict(packet.get("candidate_radar_worker_execution_recipe"))
     policy = _as_dict(packet.get("policy"))
     counts = _as_dict(packet.get("counts"))
     candidate_count = int(counts.get("candidate_count") or 0)
@@ -5249,6 +5583,7 @@ def _candidate_radar_next_execution_recipe(
     provider_parity_ticket_visible = bool(provider_parity_dry_run.get("acceptance_scope_hash_short"))
     quant_ticket_visible = bool(quant_dry_run.get("acceptance_scope_hash_short"))
     browser_review_ready = bool(browser_review.get("local_browser_qa_review_ready"))
+    worker_recipe_ready = worker_recipe.get("local_worker_execution_recipe_ready") is True
     rows = [
         _candidate_radar_next_execution_recipe_row(
             "cache_render_boundary",
@@ -5350,12 +5685,23 @@ def _candidate_radar_next_execution_recipe(
             recommended_order=10,
         ),
         _candidate_radar_next_execution_recipe_row(
+            "worker_execution_recipe_visible",
+            "worker_recipe_visible" if worker_recipe_ready else "pending_worker_execution_recipe",
+            worker_recipe_ready,
+            evidence=(
+                f"worker_recipe_status={worker_recipe.get('status')}; "
+                f"production_blockers={worker_recipe.get('production_blocker_count')}"
+            ),
+            required_before_fast_scan=False,
+            recommended_order=11,
+        ),
+        _candidate_radar_next_execution_recipe_row(
             "browser_qa_review_required",
             "local_review_ready" if browser_review_ready else "pending_browser_qa_review",
             browser_review_ready,
             evidence=f"browser_review_status={browser_review.get('status')}; ready={browser_review_ready}",
             required_before_fast_scan=False,
-            recommended_order=11,
+            recommended_order=12,
         ),
         _candidate_radar_next_execution_recipe_row(
             "production_promotion_boundary",
@@ -5366,7 +5712,7 @@ def _candidate_radar_next_execution_recipe(
                 f"activation_status={activation.get('status')}"
             ),
             required_before_fast_scan=False,
-            recommended_order=12,
+            recommended_order=13,
         ),
     ]
     blocking_rows = [row for row in rows if row["required_before_fast_scan"] and not row["passed"]]
@@ -5391,6 +5737,10 @@ def _candidate_radar_next_execution_recipe(
         "recommended_custom_pool_route": "POST /api/candidate-radar/scan-quick",
         "recommended_full_pool_local_route": "POST /api/candidate-radar/full-pool-local-scan",
         "recommended_deep_scan_local_review_route": "POST /api/candidate-radar/deep-scan-local-review",
+        "recommended_worker_full_pool_route": worker_recipe.get("recommended_worker_full_pool_route")
+        or "future POST /api/candidate-radar/full-pool-worker-scan",
+        "recommended_worker_deep_scan_route": worker_recipe.get("recommended_worker_deep_scan_route")
+        or "future POST /api/candidate-radar/deep-scan-worker",
         "provider_parity_dry_run_route": "POST /api/candidate-radar/provider-parity-dry-run",
         "quant_projection_acceptance_dry_run_route": "POST /api/candidate-radar/quant-projection-acceptance-dry-run",
         "browser_qa_review_route": "POST /api/candidate-radar/browser-qa-review",
@@ -5403,6 +5753,7 @@ def _candidate_radar_next_execution_recipe(
             "review no-feature-loss and result-delta rows",
             "run button-gated full-pool local scan when universe is larger",
             "run button-gated deep-scan local review for parity gaps",
+            "review worker execution recipe before any full-pool/deep-scan production task",
             "run provider parity and quant projection dry-runs before real provider/model acceptance",
             "run browser QA runner and button-gated review",
             "use promotion/activation audits before retiring legacy fallback",
@@ -5412,6 +5763,7 @@ def _candidate_radar_next_execution_recipe(
             "treat quick scan as production radar replacement",
             "treat local full-pool scan as provider-backed full-pool acceptance",
             "treat local deep review as DeepSeek/provider deep scan",
+            "treat worker execution recipe as worker execution done",
             "call Tushare/DeepSeek/GitHub from render",
             "treat candidate rows as buy instructions",
             "modify strategy action or holdings",
@@ -5427,6 +5779,8 @@ def _candidate_radar_next_execution_recipe(
         ],
         "production_radar_replacement_complete": False,
         "legacy_retirement_ready": False,
+        "worker_execution_recipe_ready": worker_recipe_ready,
+        "worker_execution_implemented": False,
         "provider_execution_implemented": False,
         "model_execution_implemented": False,
         "page_render_starts_scan": False,
