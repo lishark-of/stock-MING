@@ -7094,6 +7094,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("target_sample_runbook_ready_review_pending_without_promotion", script)
         self.assertIn("multi_target_sample_runbook_ready_review_pending_without_promotion", script)
         self.assertIn("interface_group_scope_complete_but_provider_acceptance_pending", script)
+        self.assertIn("tushare_production_stage_scope_manifest", script)
+        self.assertIn("tushare_production_stage_scope_manifest_is_complete_and_pending", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -7176,6 +7178,58 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(interface_group_rows["hard_risk"]["provider_backed_acceptance_done"])
         self.assertFalse(interface_group_rows["hard_risk"]["production_tushare_pipeline_complete"])
         self.assertFalse(interface_group_rows["hard_risk"]["tushare_called_by_contract"])
+        required_tushare_stages = {
+            "post_task_route_and_mode_gate",
+            "core_light_api_revalidation",
+            "trade_calendar_long_window_acceptance",
+            "margin_financing_acceptance",
+            "dragon_tiger_acceptance",
+            "limit_emotion_acceptance",
+            "chip_distribution_acceptance",
+            "financial_disclosure_acceptance",
+            "hard_risk_acceptance",
+            "full_interface_promotion_and_storage",
+        }
+        self.assertEqual(payload["tushare_production_stage_scope_count"], len(required_tushare_stages))
+        stage_rows = payload["tushare_production_stage_scope_rows"]
+        self.assertEqual({row["stage_key"] for row in stage_rows}, required_tushare_stages)
+        for row in stage_rows:
+            self.assertEqual(row["scope"], "tushare_production_stage_scope_manifest")
+            self.assertEqual(row["target_status"], "provider_backed_full_interface_direct_evidence_required")
+            self.assertTrue(row["required_before_production_tushare_pipeline"])
+            self.assertFalse(row["provider_backed_acceptance_done"])
+            self.assertFalse(row["production_tushare_pipeline_complete"])
+            self.assertFalse(row["full_interface_acceptance_done"])
+            self.assertTrue(row["real_provider_sample_still_required"])
+            self.assertTrue(row["provider_promotion_still_required"])
+            self.assertFalse(row["provider_execution_implemented"])
+            self.assertFalse(row["provider_call_ledger_evidence_done"])
+            self.assertFalse(row["full_interface_selection_done"])
+            self.assertFalse(row["failure_mode_evidence_done"])
+            self.assertFalse(row["request_parameter_provider_window_done"])
+            self.assertFalse(row["parquet_promotion_done"])
+            self.assertFalse(row["cache_get_external_calls"])
+            self.assertFalse(row["react_render_external_calls"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
+            self.assertGreaterEqual(len(row["missing_evidence"]), 7)
+        self.assertEqual(
+            payload["observed"]["tushare_production_stage_scope_count"],
+            len(required_tushare_stages),
+        )
+        self.assertEqual(
+            payload["observed"]["tushare_production_stage_scope_keys"],
+            sorted(required_tushare_stages),
+        )
+        self.assertEqual(
+            payload["observed"]["tushare_production_stage_scope_pending_count"],
+            len(required_tushare_stages),
+        )
         self.assertIn("provider_evidence_gap_audit", payload["contract_keys"])
         self.assertIn("provider_target_sample_acceptance_contract", payload["contract_keys"])
         self.assertIn("provider_sample_readiness_receipt", payload["contract_keys"])
@@ -7197,6 +7251,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("target_sample_runbook_ready_review_pending_without_promotion", criteria)
         self.assertIn("multi_target_sample_runbook_ready_review_pending_without_promotion", criteria)
         self.assertIn("interface_group_scope_complete_but_provider_acceptance_pending", criteria)
+        self.assertIn("tushare_production_stage_scope_manifest_is_complete_and_pending", criteria)
 
     def test_factor_test_lab_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/factor_test_lab_contract.py")

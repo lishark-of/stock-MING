@@ -37,6 +37,34 @@ CONTRACT_KEYS = [
     "provider_sample_activation_receipt",
     "provider_target_sample_runbook_contract",
 ]
+REQUIRED_TUSHARE_PRODUCTION_STAGE_KEYS = {
+    "post_task_route_and_mode_gate",
+    "core_light_api_revalidation",
+    "trade_calendar_long_window_acceptance",
+    "margin_financing_acceptance",
+    "dragon_tiger_acceptance",
+    "limit_emotion_acceptance",
+    "chip_distribution_acceptance",
+    "financial_disclosure_acceptance",
+    "hard_risk_acceptance",
+    "full_interface_promotion_and_storage",
+}
+TUSHARE_PRODUCTION_STAGE_LABELS = {
+    "post_task_route_and_mode_gate": "POST task route and runtime mode gate stay explicit",
+    "core_light_api_revalidation": "daily / daily_basic / moneyflow light path needs release revalidation",
+    "trade_calendar_long_window_acceptance": "trade_cal long-window provider acceptance is required",
+    "margin_financing_acceptance": "margin financing provider target sample is required",
+    "dragon_tiger_acceptance": "dragon-tiger provider target sample is required",
+    "limit_emotion_acceptance": "limit and market-emotion provider samples are required",
+    "chip_distribution_acceptance": "chip distribution provider samples are required",
+    "financial_disclosure_acceptance": "financial disclosure provider samples are required",
+    "hard_risk_acceptance": "hard-risk provider samples are required",
+    "full_interface_promotion_and_storage": "full-interface promotion and storage review is required",
+}
+LOCAL_TUSHARE_STAGE_EVIDENCE_KEYS = {
+    "post_task_route_and_mode_gate",
+    "core_light_api_revalidation",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -89,6 +117,57 @@ def _read_script(path: str) -> str:
         return (PROJECT_ROOT / path).read_text(encoding="utf-8")
     except Exception:
         return ""
+
+
+def _tushare_production_stage_scope_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    missing_evidence = [
+        "explicit provider task evidence",
+        "safe provider call ledger rows",
+        "non-empty target samples",
+        "provider failure-mode evidence",
+        "full-interface selection evidence",
+        "provider promotion review",
+        "storage or artifact promotion review",
+    ]
+    for stage_key in sorted(REQUIRED_TUSHARE_PRODUCTION_STAGE_KEYS):
+        rows.append(
+            {
+                "stage_key": stage_key,
+                "stage_label": TUSHARE_PRODUCTION_STAGE_LABELS[stage_key],
+                "scope": "tushare_production_stage_scope_manifest",
+                "current_status": (
+                    "local_or_prior_light_evidence_ready_provider_acceptance_pending"
+                    if stage_key in LOCAL_TUSHARE_STAGE_EVIDENCE_KEYS
+                    else "provider_direct_evidence_pending"
+                ),
+                "target_status": "provider_backed_full_interface_direct_evidence_required",
+                "local_stage_evidence_present": stage_key in LOCAL_TUSHARE_STAGE_EVIDENCE_KEYS,
+                "required_before_production_tushare_pipeline": True,
+                "provider_backed_acceptance_done": False,
+                "production_tushare_pipeline_complete": False,
+                "full_interface_acceptance_done": False,
+                "real_provider_sample_still_required": True,
+                "provider_promotion_still_required": True,
+                "provider_execution_implemented": False,
+                "provider_call_ledger_evidence_done": False,
+                "full_interface_selection_done": False,
+                "failure_mode_evidence_done": False,
+                "request_parameter_provider_window_done": False,
+                "parquet_promotion_done": False,
+                "cache_get_external_calls": False,
+                "react_render_external_calls": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "missing_evidence": missing_evidence,
+            }
+        )
+    return rows
 
 
 def build_contract() -> dict[str, Any]:
@@ -491,6 +570,38 @@ def build_contract() -> dict[str, Any]:
                 "does_not_modify_strategy_action": True,
             }
         )
+    production_stage_scope_rows = _tushare_production_stage_scope_rows()
+    production_stage_scope_keys = {str(row.get("stage_key") or "") for row in production_stage_scope_rows}
+    production_stage_scope_ready = (
+        production_stage_scope_keys == REQUIRED_TUSHARE_PRODUCTION_STAGE_KEYS
+        and all(
+            row.get("scope") == "tushare_production_stage_scope_manifest"
+            and row.get("target_status") == "provider_backed_full_interface_direct_evidence_required"
+            and row.get("required_before_production_tushare_pipeline") is True
+            and row.get("provider_backed_acceptance_done") is False
+            and row.get("production_tushare_pipeline_complete") is False
+            and row.get("full_interface_acceptance_done") is False
+            and row.get("real_provider_sample_still_required") is True
+            and row.get("provider_promotion_still_required") is True
+            and row.get("provider_execution_implemented") is False
+            and row.get("provider_call_ledger_evidence_done") is False
+            and row.get("full_interface_selection_done") is False
+            and row.get("failure_mode_evidence_done") is False
+            and row.get("request_parameter_provider_window_done") is False
+            and row.get("parquet_promotion_done") is False
+            and row.get("cache_get_external_calls") is False
+            and row.get("react_render_external_calls") is False
+            and row.get("external_calls_triggered") is False
+            and row.get("tushare_called") is False
+            and row.get("deepseek_called") is False
+            and row.get("github_called") is False
+            and row.get("does_not_execute_trades") is True
+            and row.get("does_not_modify_strategy_action") is True
+            and row.get("contains_secret") is False
+            and len(row.get("missing_evidence") or []) >= 7
+            for row in production_stage_scope_rows
+        )
+    )
 
     rows = [
         _row(
@@ -1013,9 +1124,15 @@ def build_contract() -> dict[str, Any]:
             "Push gate must run the LTG-02 local contract after Data Health and before motion/static QA.",
         ),
         _row(
+            "tushare_production_stage_scope_manifest_is_complete_and_pending",
+            production_stage_scope_ready,
+            "Tushare production pipeline stages are listed as pending direct provider evidence while full-interface acceptance, provider execution, promotion, storage promotion, external calls, trades, action mutation, and secrets stay disabled.",
+        ),
+        _row(
             "script_is_local_no_provider_execution",
             "command_center_3_tushare_acceptance_contract.v1" in this_script
             and "local_matrix_and_readiness_contract_no_provider_execution" in this_script
+            and "tushare_production_stage_scope_manifest" in this_script
             and "provider_backed_acceptance_done" in this_script
             and "production_tushare_pipeline_complete" in this_script
             and "does_not_execute_trades" in this_script
@@ -1052,11 +1169,13 @@ def build_contract() -> dict[str, Any]:
         "target_group_count": len(validation_target_rows),
         "matrix_only_target_count": len(target_matrix_only_rows),
         "row_count": len(rows),
+        "tushare_production_stage_scope_count": len(production_stage_scope_rows),
         "blocking_criterion_count": len(blockers),
         "blockers": blockers,
         "contract_keys": CONTRACT_KEYS,
         "rows": rows,
         "interface_group_scope_rows": interface_group_scope_rows,
+        "tushare_production_stage_scope_rows": production_stage_scope_rows,
         "observed": {
             "refresh_task_route": refresh_catalog.get("route"),
             "default_core_apis": core_apis,
@@ -1103,6 +1222,14 @@ def build_contract() -> dict[str, Any]:
             ),
             "interface_group_real_provider_sample_pending_count": len(
                 [row for row in interface_group_scope_rows if row.get("real_provider_sample_still_required") is True]
+            ),
+            "tushare_production_stage_scope_count": len(production_stage_scope_rows),
+            "tushare_production_stage_scope_keys": sorted(production_stage_scope_keys),
+            "tushare_production_stage_scope_pending_count": sum(
+                1
+                for row in production_stage_scope_rows
+                if row.get("target_status") == "provider_backed_full_interface_direct_evidence_required"
+                and row.get("production_tushare_pipeline_complete") is False
             ),
         },
         "note": "This is a local push-gate contract. Real Tushare samples remain pending until a future explicit POST task/provider acceptance run.",
