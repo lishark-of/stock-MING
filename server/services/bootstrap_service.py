@@ -18,6 +18,16 @@ DEFAULT_MODE = "cache_only"
 BOOTSTRAP_STATUS_ROUTE = "GET /api/bootstrap/status"
 PLANNED_BOOTSTRAP_TASK_ROUTE = "POST /api/bootstrap/live-startup"
 DEFAULT_LIGHT_TUSHARE_APIS = ("trade_cal_if_needed", "daily", "daily_basic", "moneyflow")
+BOOTSTRAP_STAGE_SCHEMA_VERSION = "command_center_live_bootstrap_stage_plan.v1"
+BOOTSTRAP_MODEL_LEDGER_SCHEMA_VERSION = "command_center_live_bootstrap_model_ledger_preview.v1"
+DEEPSEEK_EXPLANATION_FIELDS = (
+    "summary",
+    "support_notes",
+    "suppress_notes",
+    "conflict_notes",
+    "missing_data_notes",
+    "discipline_notes",
+)
 
 
 def _now_iso() -> str:
@@ -207,6 +217,202 @@ def _mode_row(mode: str, active_mode: str) -> dict[str, Any]:
     }
 
 
+def _planned_stage_status(mode: str, enabled: bool, stage_kind: str) -> str:
+    if mode != "live_light":
+        return "skipped_mode_not_live_light"
+    if not enabled:
+        return "skipped_by_config"
+    if stage_kind == "provider":
+        return "planned_provider_pending_not_executed"
+    if stage_kind == "model":
+        return "planned_model_pending_not_executed"
+    return "planned_local_step_pending_not_executed"
+
+
+def _build_live_bootstrap_plan(status_packet: dict[str, Any], payload_safe: dict[str, Any]) -> dict[str, Any]:
+    live_light = status_packet.get("live_light") if isinstance(status_packet.get("live_light"), dict) else {}
+    mode = str(status_packet.get("mode") or DEFAULT_MODE)
+    sources_enabled = bool(live_light.get("sources_enabled"))
+    tushare_enabled = mode == "live_light" and sources_enabled and live_light.get("tushare_on_open") is True
+    deepseek_enabled = mode == "live_light" and sources_enabled and live_light.get("deepseek_on_open") is True
+    now = _now_iso()
+
+    stage_specs = [
+        {
+            "stage_key": "initial_cache_render",
+            "label": "initial GET cache render complete before POST",
+            "stage_kind": "local",
+            "enabled": True,
+            "provider": "FastAPI cache",
+            "apis": [],
+            "depends_on": [],
+        },
+        {
+            "stage_key": "scope_resolution",
+            "label": "resolve current target / holdings / watchlist scope",
+            "stage_kind": "local",
+            "enabled": True,
+            "provider": "local task payload",
+            "apis": [],
+            "depends_on": ["initial_cache_render"],
+        },
+        {
+            "stage_key": "trade_cal_if_needed",
+            "label": "refresh trade calendar only if missing or stale",
+            "stage_kind": "provider",
+            "enabled": tushare_enabled,
+            "provider": "tushare",
+            "apis": ["trade_cal"],
+            "depends_on": ["scope_resolution"],
+        },
+        {
+            "stage_key": "tushare_light_refresh",
+            "label": "refresh daily / daily_basic / moneyflow light facts",
+            "stage_kind": "provider",
+            "enabled": tushare_enabled,
+            "provider": "tushare",
+            "apis": ["daily", "daily_basic", "moneyflow"],
+            "depends_on": ["trade_cal_if_needed"],
+        },
+        {
+            "stage_key": "factor_light_runtime",
+            "label": "run Factor light runtime from prepared cache",
+            "stage_kind": "local",
+            "enabled": sources_enabled,
+            "provider": "local factor runtime",
+            "apis": [],
+            "depends_on": ["tushare_light_refresh"],
+        },
+        {
+            "stage_key": "factor_quant_hub_cache_refresh",
+            "label": "refresh Factor Quant Hub cache packet",
+            "stage_kind": "local",
+            "enabled": sources_enabled,
+            "provider": "FastAPI local cache",
+            "apis": [],
+            "depends_on": ["factor_light_runtime"],
+        },
+        {
+            "stage_key": "next_session_cache_refresh",
+            "label": "refresh Next Session cache packet",
+            "stage_kind": "local",
+            "enabled": sources_enabled,
+            "provider": "FastAPI local cache",
+            "apis": [],
+            "depends_on": ["factor_light_runtime"],
+        },
+        {
+            "stage_key": "deepseek_pro_explanation",
+            "label": "optional DeepSeek pro explanation after data readiness",
+            "stage_kind": "model",
+            "enabled": deepseek_enabled,
+            "provider": "deepseek",
+            "apis": [],
+            "depends_on": ["factor_quant_hub_cache_refresh", "next_session_cache_refresh"],
+        },
+        {
+            "stage_key": "ui_task_polling",
+            "label": "React polls task status and shows safe receipt",
+            "stage_kind": "local",
+            "enabled": True,
+            "provider": "FastAPI task API",
+            "apis": [],
+            "depends_on": ["deepseek_pro_explanation"],
+        },
+    ]
+
+    stage_rows: list[dict[str, Any]] = []
+    for index, spec in enumerate(stage_specs, start=1):
+        stage_kind = str(spec["stage_kind"])
+        enabled = bool(spec["enabled"])
+        planned_external_call = mode == "live_light" and enabled and stage_kind in {"provider", "model"}
+        stage_rows.append(
+            {
+                "schema_version": BOOTSTRAP_STAGE_SCHEMA_VERSION,
+                "order": index,
+                "stage_key": spec["stage_key"],
+                "label": spec["label"],
+                "stage_kind": stage_kind,
+                "status": _planned_stage_status(mode, enabled, stage_kind),
+                "execution_status": "not_executed_skeleton_only",
+                "provider": spec["provider"],
+                "apis": list(spec["apis"]),
+                "depends_on": list(spec["depends_on"]),
+                "planned_external_call": planned_external_call,
+                "provider_execution_implemented": False,
+                "actual_external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "call_ledger_required": True,
+                "model_ledger_required": stage_kind == "model",
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+
+    model_rows = [
+        {
+            "schema_version": BOOTSTRAP_MODEL_LEDGER_SCHEMA_VERSION,
+            "ledger_key": "deepseek_pro_explanation_preview",
+            "purpose": "explain",
+            "model": str(live_light.get("deepseek_model") or get_deepseek_model("explain")),
+            "status": _planned_stage_status(mode, deepseek_enabled, "model"),
+            "execution_status": "not_executed_skeleton_only",
+            "model_call_implemented": False,
+            "model_called": False,
+            "deepseek_called": False,
+            "input_hash_required": True,
+            "output_hash_required": True,
+            "required_model_ledger_fields": [
+                "model_used",
+                "status",
+                "token_usage",
+                "parse_status",
+                "cache_hit",
+                "input_hash",
+                "output_hash",
+            ],
+            "parse_status_required": True,
+            "sanitizer_required": True,
+            "allowed_output_fields": list(DEEPSEEK_EXPLANATION_FIELDS),
+            "does_not_overwrite_numeric_fields": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_execute_trades": True,
+        }
+    ]
+
+    planned_provider_stage_count = sum(1 for row in stage_rows if row["stage_kind"] == "provider" and row["planned_external_call"])
+    planned_model_stage_count = sum(1 for row in stage_rows if row["stage_kind"] == "model" and row["planned_external_call"])
+    summary = {
+        "stage_count": len(stage_rows),
+        "model_ledger_preview_count": len(model_rows),
+        "symbol_count": int(payload_safe.get("symbol_count") or 0),
+        "symbol_limit": int(payload_safe.get("symbol_limit") or 0),
+        "planned_provider_stage_count": planned_provider_stage_count,
+        "planned_model_stage_count": planned_model_stage_count,
+        "actual_provider_execution_count": 0,
+        "actual_model_call_count": 0,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+    return {
+        "bootstrap_stage_schema_version": BOOTSTRAP_STAGE_SCHEMA_VERSION,
+        "bootstrap_model_ledger_schema_version": BOOTSTRAP_MODEL_LEDGER_SCHEMA_VERSION,
+        "planned_at": now,
+        "bootstrap_stage_rows": stage_rows,
+        "bootstrap_model_ledger_preview_rows": model_rows,
+        "bootstrap_plan_summary": summary,
+    }
+
+
 def _live_startup_call_ledger(
     *,
     status_packet: dict[str, Any],
@@ -216,8 +422,10 @@ def _live_startup_call_ledger(
     now: str,
     reused_task_id: str = "",
     rate_limit_age_seconds: int | None = None,
+    plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     live_light = status_packet.get("live_light") if isinstance(status_packet.get("live_light"), dict) else {}
+    plan_summary = plan.get("bootstrap_plan_summary") if isinstance(plan, dict) and isinstance(plan.get("bootstrap_plan_summary"), dict) else {}
     return {
         "api": "local_bootstrap_live_startup_task",
         "endpoint": PLANNED_BOOTSTRAP_TASK_ROUTE,
@@ -233,7 +441,15 @@ def _live_startup_call_ledger(
             "rate_limit_seconds": live_light.get("rate_limit_seconds"),
             "reused_task_id": reused_task_id,
             "rate_limit_age_seconds": rate_limit_age_seconds,
+            "bootstrap_stage_count": int(plan_summary.get("stage_count") or 0),
+            "model_ledger_preview_count": int(plan_summary.get("model_ledger_preview_count") or 0),
+            "planned_provider_stage_count": int(plan_summary.get("planned_provider_stage_count") or 0),
+            "planned_model_stage_count": int(plan_summary.get("planned_model_stage_count") or 0),
         },
+        "bootstrap_stage_count": int(plan_summary.get("stage_count") or 0),
+        "model_ledger_preview_count": int(plan_summary.get("model_ledger_preview_count") or 0),
+        "planned_provider_stage_count": int(plan_summary.get("planned_provider_stage_count") or 0),
+        "planned_model_stage_count": int(plan_summary.get("planned_model_stage_count") or 0),
         "row_count": int(payload_safe.get("symbol_count") or 0),
         "data_date": None,
         "local_fetched_at": now,
@@ -379,6 +595,8 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             "default_light_tushare_apis": list(DEFAULT_LIGHT_TUSHARE_APIS),
             "bootstrap_task_implemented": True,
             "local_task_skeleton_implemented": True,
+            "bootstrap_plan_skeleton_implemented": True,
+            "model_ledger_preview_implemented": True,
             "provider_execution_implemented": False,
             "tushare_execution_implemented": False,
             "deepseek_execution_implemented": False,
@@ -398,6 +616,8 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             "live_light_default_enabled": False,
             "live_light_requires_opt_in": True,
             "live_light_task_implemented": True,
+            "live_light_bootstrap_plan_skeleton_implemented": True,
+            "live_light_model_ledger_preview_implemented": True,
             "live_light_provider_execution_implemented": False,
             "live_full_enabled": False,
             "full_pool_on_open_allowed": False,
@@ -466,6 +686,8 @@ def run_live_startup_task(payload: Any = None) -> dict[str, Any]:
             "does_not_modify_strategy_action": True,
         }
     )
+    plan = _build_live_bootstrap_plan(status_packet, payload_safe)
+    payload_safe.update(plan)
 
     if mode == "live_light":
         recent_task, age_seconds = _recent_live_bootstrap_task(mode, rate_limit_seconds=rate_limit_seconds)
@@ -481,6 +703,7 @@ def run_live_startup_task(payload: Any = None) -> dict[str, Any]:
                     now=now,
                     reused_task_id=str(recent_task.get("task_id") or ""),
                     rate_limit_age_seconds=age_seconds,
+                    plan=plan,
                 )
             ]
             updated = task_service.update_task_status(
@@ -518,6 +741,7 @@ def run_live_startup_task(payload: Any = None) -> dict[str, Any]:
             call_status=call_status,
             current_step=current_step,
             now=now,
+            plan=plan,
         )
     ]
     return task_service.update_task_status(

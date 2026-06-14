@@ -17,6 +17,7 @@ export type TaskRecord = {
   current_step: string;
   error_message_safe?: string;
   output_packet_key: string;
+  payload_safe?: Record<string, unknown>;
   storage_source?: string;
   call_ledger?: Array<Record<string, unknown>>;
   status_history?: Array<Record<string, unknown>>;

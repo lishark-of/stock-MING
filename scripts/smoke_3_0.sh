@@ -120,6 +120,13 @@ if not bootstrap_created.get("call_ledger"):
     raise AssertionError("bootstrap_live_startup.call_ledger must be exposed at envelope top level")
 bootstrap_task = bootstrap_created.get("data", {}).get("task", {})
 assert_cache_safety("bootstrap_live_startup", bootstrap_task)
+bootstrap_payload = bootstrap_task.get("payload_safe") or {}
+if len(bootstrap_payload.get("bootstrap_stage_rows") or []) != 9:
+    raise AssertionError("bootstrap_live_startup must expose 9 staged plan rows")
+if len(bootstrap_payload.get("bootstrap_model_ledger_preview_rows") or []) != 1:
+    raise AssertionError("bootstrap_live_startup must expose 1 model ledger preview row")
+if bootstrap_payload.get("bootstrap_plan_summary", {}).get("external_calls_triggered"):
+    raise AssertionError("bootstrap_live_startup plan must remain no-external-call")
 print("bootstrap_live_startup:", bootstrap_created["data"]["task_id"], bootstrap_task.get("current_step"))
 api_cache_paths = [
     "/api/packets",

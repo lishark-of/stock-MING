@@ -142,6 +142,9 @@ export default function SettingsConfigHealth() {
   const taskPolicy = (taskCatalog.policy as Record<string, unknown> | undefined) ?? {};
   const migrationPolicy = (migration.api_policy as Record<string, unknown> | undefined) ?? {};
   const liveLight = (bootstrapStatus.live_light as Record<string, unknown> | undefined) ?? {};
+  const bootstrapTaskPayload = (bootstrapTask.payload_safe as Record<string, unknown> | undefined) ?? {};
+  const bootstrapStageRows = rows(bootstrapTaskPayload.bootstrap_stage_rows);
+  const bootstrapModelLedgerRows = rows(bootstrapTaskPayload.bootstrap_model_ledger_preview_rows);
   const hasBootstrapTask = Object.keys(bootstrapTask).length > 0;
   const empty = !loading && !error && !Object.keys(health).length && !Object.keys(modelStrategy).length;
 
@@ -221,7 +224,10 @@ export default function SettingsConfigHealth() {
         <PacketCard title="最近 bootstrap task" subtitle="按钮创建的本地任务；不外联、不交易" status={String(bootstrapTask.status ?? (hasBootstrapTask ? "created" : "idle"))}>
           <p>task_id: {String(bootstrapTask.task_id ?? "--")}</p>
           <p>current_step: {String(bootstrapTask.current_step ?? "--")}</p>
+          <p>stage rows / model ledger preview: {String(bootstrapStageRows.length)} / {String(bootstrapModelLedgerRows.length)}</p>
           <p>external / Tushare / DeepSeek / GitHub: {String(bootstrapTask.external_calls_triggered ?? false)} / {String(bootstrapTask.tushare_called ?? false)} / {String(bootstrapTask.deepseek_called ?? false)} / {String(bootstrapTask.github_called ?? false)}</p>
+          {bootstrapStageRows.length ? <DataLineageTable rows={bootstrapStageRows} /> : null}
+          {bootstrapModelLedgerRows.length ? <DataLineageTable rows={bootstrapModelLedgerRows} /> : null}
           <JsonDetails title="bootstrap task" data={bootstrapTask} />
         </PacketCard>
 
