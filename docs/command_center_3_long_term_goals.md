@@ -56,6 +56,8 @@ Current local LTG work must not be treated as shared baseline until tests, build
 
 The long-term boundary is not a permanent ban on all startup-side automation. It is a default-deny, mode-based runtime model. `cache_only` remains the safe default for smoke, CI, quick reads, and disconnected review. Future local-investment-client workflows may opt into `live_light`, but only through auditable FastAPI `POST` tasks, never direct React provider calls or cache GET side effects.
 
+用户确认的运行模式口径：边界问题不是安全线“太强硬”，而是安全线必须分层。默认模式仍应像离线/cache 审阅面板一样安全；本地日常投研客户端则可以在用户明确配置后，于页面已经用 cache 渲染完成之后，启动一次轻量后台任务。
+
 | mode | behavior | external_calls | use_case | default |
 |---|---|---|---|---|
 | `cache_only` | Read existing cache only. GET cache and React render never call providers or models. | none | smoke / CI / quick view / offline review | yes |
@@ -89,6 +91,11 @@ When this is enabled, the UI must show the active mode and automation switches i
 
 `live_light` therefore changes the old "startup never automates anything" rule into a mode-layered rule: startup automation is forbidden in `cache_only`, manual in `manual`, and allowed only as an auditable background POST task in `live_light`. React may request the task after the first cache render, but React still never calls Tushare, DeepSeek, GitHub, Python modules, or adapters directly.
 
+以下两句话必须同时成立：
+
+- GET cache, FastAPI startup, and the initial React render do not call Tushare, DeepSeek, GitHub, intraday providers, or broker/trading adapters.
+- In `live_light`, React mounted behavior may create one rate-limited `POST /api/bootstrap/live-startup` task. Any Tushare refresh, DeepSeek pro explanation, or intraday adapter read must happen behind that task boundary with `call_ledger` / `model_ledger` evidence, safe errors, visible mode state, and no trade/action mutation.
+
 Target `live_light` bootstrap scope:
 
 | area | allowed in `live_light` | required boundary |
@@ -98,6 +105,14 @@ Target `live_light` bootstrap scope:
 | DeepSeek pro explanation | optional after Tushare / factor / next-session cache is ready | model ledger, input/output hash, sanitizer, parse-failed discard, no numeric/action overwrite |
 | Search / radar quant projection | a searched symbol or bounded watchlist subset can create a one-shot task for "生成 3.0 量化推演" / "一键生成量化投研图谱" | no full-pool or deep-scan on render; progress and gaps must stay visible |
 | Intraday or realtime evidence | allowed only through configured provider adapters when Tushare is insufficient | provider identity, freshness, call ledger, mode gate, and safe error are mandatory |
+
+`live_light` provider/model ledger minimums:
+
+| surface | required audit fields | explicit non-goals |
+|---|---|---|
+| Tushare | `api`, `provider`, `request_params_safe`, `row_count`, `data_date`, `local_fetched_at`, `call_status`, `error_message_safe` | no token exposure, no unselected API marked verified, no `no_record` as negative evidence |
+| DeepSeek pro | `model_used`, `status`, `token_usage`, `parse_status`, `cache_hit_or_miss`, `input_hash`, `output_hash` | no data-source role, no price/holding/factor/action/operation-zone overwrite, no buy/sell instruction |
+| Intraday adapter | provider id, freshness, request context, safe error, mode gate, ledger row | no unidentified mixed data source, no page-render provider call |
 
 This mode layering also applies to search-driven research. A future stock search or "生成 3.0 量化推演" action should create a POST task that validates the symbol, refreshes allowed light data, writes call ledger/model ledger, updates Factor Quant Hub and Next Session cache, and displays provenance, freshness, DeepSeek status, and chart results. It remains research-only and cannot turn DeepSeek text, factor scores, or radar candidates into buy/sell instructions.
 
