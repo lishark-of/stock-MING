@@ -6089,6 +6089,185 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(sample_receipt["provider_backed_acceptance_done"])
         self.assertFalse(sample_receipt["production_tushare_pipeline_complete"])
 
+    def test_tushare_target_sample_acceptance_supports_multiple_review_ready_domains_without_promotion(self):
+        db_path = self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        class MultiTargetSampleFakeAdapter:
+            def get_top_list(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "trade_date": params["trade_date"], "amount": 1}], "error": ""}
+
+            def get_top_inst(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "trade_date": params["trade_date"], "net_buy": 1}], "error": ""}
+
+            def get_stk_limit(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "trade_date": params["trade_date"], "up_limit": 10.5}], "error": ""}
+
+            def get_limit_list_d(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "trade_date": params["trade_date"], "limit": "U"}], "error": ""}
+
+            def get_limit_cpt_list(self, **params):
+                return {"ok": True, "data": [{"trade_date": params["trade_date"], "theme": "safe"}], "error": ""}
+
+            def get_cyq_perf(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "trade_date": params["trade_date"], "winner_rate": 0.62}], "error": ""}
+
+            def get_cyq_chips(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "trade_date": params["trade_date"], "price": 10.1}], "error": ""}
+
+            def get_forecast(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "ann_date": params["ann_date"], "type": "safe"}], "error": ""}
+
+            def get_fina_indicator(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "ann_date": params["ann_date"], "roe": 0.12}], "error": ""}
+
+            def get_anns_d(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "ann_date": params["ann_date"], "title": "safe"}], "error": ""}
+
+            def get_stk_holdertrade(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "ann_date": params["ann_date"], "holder_name": "holder"}], "error": ""}
+
+            def get_share_float(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "float_date": params["float_date"], "float_share": 1000}], "error": ""}
+
+            def get_pledge_stat(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "end_date": params["end_date"], "pledge_ratio": 0.1}], "error": ""}
+
+            def get_pledge_detail(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "end_date": "20260610", "pledge_amount": 100}], "error": ""}
+
+            def get_stk_surv(self, **params):
+                return {"ok": True, "data": [{"ts_code": params["ts_code"], "trade_date": params["trade_date"], "status": "L"}], "error": ""}
+
+        requested_targets = [
+            "dragon_tiger",
+            "limit_emotion",
+            "chip_distribution",
+            "financial_disclosure",
+            "hard_risk",
+        ]
+        selected_apis = [
+            "top_list",
+            "top_inst",
+            "stk_limit",
+            "limit_list_d",
+            "limit_cpt_list",
+            "cyq_perf",
+            "cyq_chips",
+            "forecast",
+            "fina_indicator",
+            "anns_d",
+            "stk_holdertrade",
+            "share_float",
+            "pledge_stat",
+            "pledge_detail",
+            "stk_surv",
+        ]
+        task = tushare_task_service.run_tushare_refresh_task(
+            {
+                "apis": selected_apis,
+                "ts_code": "002008.SZ",
+                "trade_date": "20260610",
+                "start_date": "20260601",
+                "end_date": "20260610",
+                "ann_date": "20260610",
+                "period": "20260630",
+                "float_date": "20260610",
+                "acceptance_mode": "provider_target_sample_acceptance",
+                "target_sample_acceptance_groups": requested_targets,
+                "failure_modes_validated": True,
+                "failure_mode_validated_count": 6,
+                "api_key": "SHOULD_DROP",
+            },
+            adapter=MultiTargetSampleFakeAdapter(),
+        )
+
+        self.assertEqual(task["status"], "success")
+        self.assertTrue(task["external_calls_triggered"])
+        self.assertTrue(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+        self.assertEqual([row["api"] for row in task["call_ledger"]], selected_apis)
+        self.assertTrue(all(row["call_status"] == "success" for row in task["call_ledger"]))
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        persisted = SQLiteMetaStore(db_path).read_packet("command_center_tushare_refresh_packet")
+        self.assertIsNotNone(persisted)
+        contract = persisted["provider_target_sample_acceptance_contract"]
+        rows = {row["target"]: row for row in persisted["provider_target_sample_acceptance_rows"]}
+
+        self.assertEqual(contract["status"], "target_sample_acceptance_ready_for_review")
+        self.assertEqual(contract["requested_targets"], requested_targets)
+        self.assertEqual(contract["requested_target_count"], len(requested_targets))
+        self.assertEqual(contract["ready_target_count"], len(requested_targets))
+        self.assertEqual(contract["blocked_target_count"], 0)
+        self.assertEqual(contract["blocking_criterion_count"], 0)
+        self.assertTrue(contract["target_sample_acceptance_ready_for_review"])
+        self.assertTrue(contract["target_sample_acceptance_done"])
+        self.assertTrue(contract["source_task_external_calls_triggered"])
+        self.assertTrue(contract["source_task_tushare_called"])
+        self.assertFalse(contract["acceptance_contract_external_calls_triggered"])
+        self.assertFalse(contract["provider_backed_target_sample_acceptance_done"])
+        self.assertFalse(contract["provider_backed_acceptance_done"])
+        self.assertFalse(contract["production_tushare_pipeline_complete"])
+        self.assertFalse(contract["full_interface_acceptance_done"])
+        self.assertFalse(contract["cache_get_external_calls"])
+        self.assertFalse(contract["react_render_external_calls"])
+        self.assertFalse(contract["deepseek_called"])
+        self.assertFalse(contract["github_called"])
+        self.assertTrue(contract["does_not_execute_trades"])
+        self.assertTrue(contract["does_not_modify_strategy_action"])
+
+        for target in requested_targets:
+            self.assertTrue(rows[target]["requested_for_acceptance"], target)
+            self.assertEqual(rows[target]["target_sample_acceptance_status"], "target_sample_acceptance_ready_for_review")
+            self.assertEqual(rows[target]["target_sample_acceptance_blocker_count"], 0)
+            self.assertTrue(rows[target]["sample_evidence_sufficient"])
+            self.assertFalse(rows[target]["provider_backed_acceptance_done"])
+            self.assertFalse(rows[target]["production_tushare_pipeline_complete"])
+
+        self.assertEqual(rows["trade_calendar"]["target_sample_acceptance_status"], "target_sample_acceptance_not_requested")
+        self.assertEqual(rows["margin_financing"]["target_sample_acceptance_status"], "target_sample_acceptance_not_requested")
+        self.assertEqual(persisted["provider_target_sample_acceptance_requested_count"], len(requested_targets))
+        self.assertEqual(persisted["provider_target_sample_acceptance_ready_count"], len(requested_targets))
+        self.assertEqual(persisted["provider_target_sample_acceptance_blocker_count"], 0)
+        self.assertFalse(persisted["provider_backed_acceptance_done"])
+        self.assertFalse(persisted["production_tushare_pipeline_complete"])
+        self.assertFalse(persisted["full_interface_acceptance_done"])
+
+        gap_audit = persisted["provider_evidence_gap_audit"]
+        gap_rows = {row["target"]: row for row in persisted["provider_evidence_gap_rows"]}
+        self.assertEqual(gap_audit["target_sample_acceptance_ready_count"], len(requested_targets))
+        self.assertTrue(gap_audit["target_sample_acceptance_ready_for_review"])
+        for target in requested_targets:
+            self.assertEqual(gap_rows[target]["gap_status"], "target_sample_ready_promotion_pending", target)
+            self.assertEqual(gap_rows[target]["gap_blockers"], ["provider_promotion_not_ready"], target)
+            self.assertTrue(gap_rows[target]["target_sample_acceptance_ready_for_review"], target)
+            self.assertTrue(gap_rows[target]["target_sample_review_ready_not_promotion"], target)
+            self.assertFalse(gap_rows[target]["provider_backed_acceptance_done"], target)
+            self.assertFalse(gap_rows[target]["production_tushare_pipeline_complete"], target)
+
+        sample_receipt = persisted["provider_sample_readiness_receipt"]
+        sample_receipt_rows = {row["criterion"]: row for row in persisted["provider_sample_readiness_rows"]}
+        self.assertEqual(sample_receipt["target_sample_acceptance_requested_count"], len(requested_targets))
+        self.assertEqual(sample_receipt["target_sample_acceptance_ready_count"], len(requested_targets))
+        self.assertTrue(sample_receipt["target_sample_acceptance_ready_for_review"])
+        self.assertEqual(
+            sample_receipt_rows["target_sample_acceptance_review_evidence"]["status"],
+            "ready_for_review_not_promotion",
+        )
+        self.assertFalse(sample_receipt["provider_backed_acceptance_done"])
+        self.assertFalse(sample_receipt["production_tushare_pipeline_complete"])
+        self.assertFalse(persisted["api_validation_matrix_policy"]["provider_target_sample_acceptance_calls_provider"])
+        self.assertFalse(
+            persisted["api_validation_matrix_policy"]["provider_target_sample_acceptance_is_full_interface_acceptance"]
+        )
+
     def test_tushare_refresh_task_exposes_failure_mode_qa_contract(self):
         db_path = self._with_meta_store()
         self._with_parquet_root()
@@ -6629,6 +6808,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("target_sample_plan_is_plan_only", script)
         self.assertIn("target_sample_acceptance_contract_is_explicit_and_non_promoting", script)
         self.assertIn("target_sample_acceptance_feeds_gap_and_receipt_without_promotion", script)
+        self.assertIn("multi_target_sample_acceptance_feeds_gap_and_receipt_without_promotion", script)
         self.assertIn("provider_readiness_stays_pending", script)
         self.assertIn("provider_promotion_audit_stays_local_pending", script)
         self.assertIn("provider_sample_readiness_receipt_is_local", script)
@@ -6680,6 +6860,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertFalse(payload["observed"]["provider_sample_activation_ready_for_explicit_task"])
         self.assertGreater(payload["observed"]["provider_sample_activation_blocker_count"], 0)
+        self.assertEqual(payload["observed"]["multi_target_sample_acceptance_requested_count"], 5)
+        self.assertEqual(payload["observed"]["multi_target_sample_acceptance_ready_count"], 5)
+        self.assertEqual(
+            payload["observed"]["multi_target_sample_acceptance_status"],
+            "target_sample_acceptance_ready_for_review",
+        )
         self.assertIn("provider_evidence_gap_audit", payload["contract_keys"])
         self.assertIn("provider_target_sample_acceptance_contract", payload["contract_keys"])
         self.assertIn("provider_sample_readiness_receipt", payload["contract_keys"])
@@ -6690,6 +6876,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("target_sample_plan_is_plan_only", criteria)
         self.assertIn("target_sample_acceptance_contract_is_explicit_and_non_promoting", criteria)
         self.assertIn("target_sample_acceptance_feeds_gap_and_receipt_without_promotion", criteria)
+        self.assertIn("multi_target_sample_acceptance_feeds_gap_and_receipt_without_promotion", criteria)
         self.assertIn("provider_readiness_stays_pending", criteria)
         self.assertIn("provider_promotion_audit_stays_local_pending", criteria)
         self.assertIn("provider_evidence_gap_audit_is_local_pending", criteria)

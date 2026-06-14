@@ -51,6 +51,31 @@ def _flag_false(contract: dict[str, Any], *keys: str) -> bool:
     return all(contract.get(key) is False for key in keys)
 
 
+def _success_ledger_row(api: str, params: dict[str, Any], *, data_date: str) -> dict[str, Any]:
+    return {
+        "api": api,
+        "request_params_safe": params,
+        "row_count": 1,
+        "data_date": data_date,
+        "local_fetched_at": "2026-06-10T16:31:00",
+        "call_status": "success",
+        "failure_mode": "none",
+        "failure_mode_status": "success_non_empty",
+        "safe_failure_mode_visible": True,
+        "error_message_safe": "",
+        "parquet_dataset": None,
+        "parquet_status": "not_enabled",
+        "parquet_row_count": 0,
+        "external": True,
+        "external_calls_triggered": True,
+        "tushare_called": True,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
 def _catalog_by_type(task_type: str) -> dict[str, Any]:
     for row in task_service.TASK_CATALOG:
         if row.get("task_type") == task_type:
@@ -269,6 +294,110 @@ def build_contract() -> dict[str, Any]:
     )
     target_sample_gap_rows = {row.get("target"): row for row in target_sample_gap.get("rows", [])}
     target_sample_receipt_rows = {row.get("criterion"): row for row in target_sample_receipt.get("rows", [])}
+    multi_target_groups = [
+        "dragon_tiger",
+        "limit_emotion",
+        "chip_distribution",
+        "financial_disclosure",
+        "hard_risk",
+    ]
+    multi_target_selected_apis = [
+        "top_list",
+        "top_inst",
+        "stk_limit",
+        "limit_list_d",
+        "limit_cpt_list",
+        "cyq_perf",
+        "cyq_chips",
+        "forecast",
+        "fina_indicator",
+        "anns_d",
+        "stk_holdertrade",
+        "share_float",
+        "pledge_stat",
+        "pledge_detail",
+        "stk_surv",
+    ]
+    multi_target_payload = {
+        "apis": multi_target_selected_apis,
+        "ts_code": "002008.SZ",
+        "trade_date": "20260610",
+        "start_date": "20260601",
+        "end_date": "20260610",
+        "ann_date": "20260610",
+        "period": "20260630",
+        "float_date": "20260610",
+        "acceptance_mode": "provider_target_sample_acceptance",
+        "target_sample_acceptance_groups": multi_target_groups,
+        "failure_modes_validated": True,
+        "failure_mode_validated_count": 6,
+    }
+    common_target_params = {
+        "ts_code": "002008.SZ",
+        "trade_date": "20260610",
+        "start_date": "20260601",
+        "end_date": "20260610",
+        "ann_date": "20260610",
+        "period": "20260630",
+        "float_date": "20260610",
+    }
+    multi_target_call_ledger = [
+        _success_ledger_row(api, common_target_params, data_date="20260610")
+        for api in multi_target_selected_apis
+    ]
+    multi_target_validation_rows = tushare_task_service._api_validation_rows(
+        multi_target_selected_apis,
+        multi_target_call_ledger,
+    )
+    multi_target_validation_target_rows = tushare_task_service._validation_target_rows(multi_target_validation_rows)
+    multi_target_plan = tushare_task_service._provider_target_sample_plan_contract(
+        selected_apis=multi_target_selected_apis,
+        payload=multi_target_payload,
+        api_validation_rows=multi_target_validation_rows,
+    )
+    multi_target_acceptance = tushare_task_service._provider_target_sample_acceptance_contract(
+        selected_apis=multi_target_selected_apis,
+        payload=multi_target_payload,
+        api_validation_rows=multi_target_validation_rows,
+        validation_target_rows=multi_target_validation_target_rows,
+        provider_target_sample_plan_contract=multi_target_plan,
+        call_ledger=multi_target_call_ledger,
+    )
+    multi_target_acceptance_audit = tushare_task_service._api_acceptance_audit(
+        multi_target_validation_rows,
+        multi_target_call_ledger,
+    )
+    multi_target_readiness = tushare_task_service._provider_acceptance_readiness_audit(
+        api_validation_rows=multi_target_validation_rows,
+        validation_target_rows=multi_target_validation_target_rows,
+        api_acceptance_audit=multi_target_acceptance_audit,
+    )
+    multi_target_promotion = tushare_task_service._provider_acceptance_promotion_audit(
+        api_validation_rows=multi_target_validation_rows,
+        validation_target_rows=multi_target_validation_target_rows,
+        api_acceptance_audit=multi_target_acceptance_audit,
+        provider_target_sample_plan_contract=multi_target_plan,
+        provider_acceptance_readiness_audit=multi_target_readiness,
+        call_ledger=multi_target_call_ledger,
+    )
+    multi_target_gap = tushare_task_service._provider_evidence_gap_audit(
+        api_validation_rows=multi_target_validation_rows,
+        validation_target_rows=multi_target_validation_target_rows,
+        provider_target_sample_plan_contract=multi_target_plan,
+        provider_acceptance_promotion_audit=multi_target_promotion,
+        call_ledger=multi_target_call_ledger,
+        provider_target_sample_acceptance_contract=multi_target_acceptance,
+    )
+    multi_target_receipt = tushare_task_service._provider_sample_readiness_receipt(
+        provider_target_sample_plan_contract=multi_target_plan,
+        provider_target_sample_acceptance_contract=multi_target_acceptance,
+        provider_acceptance_readiness_audit=multi_target_readiness,
+        provider_acceptance_promotion_audit=multi_target_promotion,
+        provider_evidence_gap_audit=multi_target_gap,
+    )
+    multi_target_rows = {row.get("target"): row for row in multi_target_acceptance.get("rows", [])}
+    multi_target_gap_rows = {row.get("target"): row for row in multi_target_gap.get("rows", [])}
+    multi_target_receipt_rows = {row.get("criterion"): row for row in multi_target_receipt.get("rows", [])}
 
     rows = [
         _row(
@@ -457,6 +586,76 @@ def build_contract() -> dict[str, Any]:
             and target_sample_receipt.get("does_not_execute_trades") is True
             and target_sample_receipt.get("does_not_modify_strategy_action") is True,
             "Target-sample review evidence must feed the gap ledger and receipt as review-ready only, while provider promotion and production completion remain false.",
+        ),
+        _row(
+            "multi_target_sample_acceptance_feeds_gap_and_receipt_without_promotion",
+            multi_target_acceptance.get("schema_version") == "tushare_provider_target_sample_acceptance_contract.v1"
+            and multi_target_acceptance.get("status") == "target_sample_acceptance_ready_for_review"
+            and multi_target_acceptance.get("requested_targets") == multi_target_groups
+            and multi_target_acceptance.get("requested_target_count") == len(multi_target_groups)
+            and multi_target_acceptance.get("ready_target_count") == len(multi_target_groups)
+            and multi_target_acceptance.get("blocking_criterion_count") == 0
+            and multi_target_acceptance.get("target_sample_acceptance_ready_for_review") is True
+            and multi_target_acceptance.get("source_task_tushare_called") is True
+            and multi_target_acceptance.get("acceptance_contract_external_calls_triggered") is False
+            and multi_target_acceptance.get("provider_backed_target_sample_acceptance_done") is False
+            and multi_target_acceptance.get("provider_backed_acceptance_done") is False
+            and multi_target_acceptance.get("production_tushare_pipeline_complete") is False
+            and multi_target_acceptance.get("full_interface_acceptance_done") is False
+            and all(
+                multi_target_rows[target].get("target_sample_acceptance_status")
+                == "target_sample_acceptance_ready_for_review"
+                and multi_target_rows[target].get("requested_for_acceptance") is True
+                and multi_target_rows[target].get("target_sample_acceptance_blocker_count") == 0
+                for target in multi_target_groups
+            )
+            and multi_target_gap.get("target_sample_acceptance_ready_count") == len(multi_target_groups)
+            and multi_target_gap.get("target_sample_acceptance_ready_for_review") is True
+            and all(
+                multi_target_gap_rows[target].get("gap_status") == "target_sample_ready_promotion_pending"
+                and multi_target_gap_rows[target].get("gap_blockers") == ["provider_promotion_not_ready"]
+                and multi_target_gap_rows[target].get("target_sample_acceptance_ready_for_review") is True
+                and multi_target_gap_rows[target].get("target_sample_review_ready_not_promotion") is True
+                and multi_target_gap_rows[target].get("provider_backed_acceptance_done") is False
+                and multi_target_gap_rows[target].get("production_tushare_pipeline_complete") is False
+                for target in multi_target_groups
+            )
+            and multi_target_receipt.get("target_sample_acceptance_ready_count") == len(multi_target_groups)
+            and multi_target_receipt.get("target_sample_acceptance_ready_for_review") is True
+            and multi_target_receipt_rows["target_sample_acceptance_review_evidence"].get("status")
+            == "ready_for_review_not_promotion"
+            and multi_target_receipt.get("provider_backed_acceptance_done") is False
+            and multi_target_receipt.get("production_tushare_pipeline_complete") is False
+            and _flag_false(
+                multi_target_acceptance,
+                "cache_get_external_calls",
+                "react_render_external_calls",
+                "deepseek_called",
+                "github_called",
+            )
+            and _flag_false(
+                multi_target_gap,
+                "cache_get_external_calls",
+                "audit_external_calls_triggered",
+                "tushare_called_by_audit",
+                "deepseek_called",
+                "github_called",
+            )
+            and _flag_false(
+                multi_target_receipt,
+                "cache_get_external_calls",
+                "receipt_external_calls_triggered",
+                "tushare_called_by_receipt",
+                "deepseek_called",
+                "github_called",
+            )
+            and multi_target_acceptance.get("does_not_execute_trades") is True
+            and multi_target_acceptance.get("does_not_modify_strategy_action") is True
+            and multi_target_gap.get("does_not_execute_trades") is True
+            and multi_target_gap.get("does_not_modify_strategy_action") is True
+            and multi_target_receipt.get("does_not_execute_trades") is True
+            and multi_target_receipt.get("does_not_modify_strategy_action") is True,
+            "Multiple target domains can become review-ready from explicit button-task evidence, but gap/receipt rows must keep promotion and production completion pending.",
         ),
         _row(
             "provider_readiness_stays_pending",
@@ -674,6 +873,10 @@ def build_contract() -> dict[str, Any]:
             "trade_cal_acceptance_done_when_replay_and_failure_evidence_present": trade_cal_full_acceptance.get(
                 "provider_backed_long_window_acceptance_done"
             ),
+            "multi_target_sample_acceptance_requested_count": multi_target_acceptance.get("requested_target_count"),
+            "multi_target_sample_acceptance_ready_count": multi_target_acceptance.get("ready_target_count"),
+            "multi_target_sample_acceptance_targets": multi_target_acceptance.get("requested_targets"),
+            "multi_target_sample_acceptance_status": multi_target_acceptance.get("status"),
         },
         "note": "This is a local push-gate contract. Real Tushare samples remain pending until a future explicit POST task/provider acceptance run.",
     }
