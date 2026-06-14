@@ -231,10 +231,18 @@ EXPECTED_FAILURE_MODE_QA = (
     ),
 )
 TRADE_CAL_PROVIDER_ACCEPTANCE_MODE = "provider_backed_trade_cal_long_window"
+PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE = "provider_target_sample_acceptance"
 TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS = 730
 TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_FAILURE_MODES = len(EXPECTED_FAILURE_MODE_QA)
 TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS = 8
 TRADE_CAL_PROVIDER_ACCEPTANCE_MAX_ROWS = 10000
+PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MIN_FAILURE_MODES = len(EXPECTED_FAILURE_MODE_QA)
+PROVIDER_TARGET_SAMPLE_ACCEPTANCE_GROUP_KEYS = (
+    "target_sample_acceptance_groups",
+    "target_sample_groups",
+    "provider_target_groups",
+    "validation_target_groups",
+)
 
 
 def _now_iso() -> str:
@@ -1923,6 +1931,255 @@ def _provider_target_sample_plan_contract(
     }
 
 
+def _truthy_payload_flag(value: Any) -> bool:
+    return value is True or str(value).strip().lower() in {"1", "true", "yes", "y", "passed", "done"}
+
+
+def _target_sample_acceptance_requested_targets(payload: Any) -> tuple[list[str], list[str]]:
+    safe_payload = _safe_payload(payload)
+    raw: Any = None
+    for key in PROVIDER_TARGET_SAMPLE_ACCEPTANCE_GROUP_KEYS:
+        if key in safe_payload:
+            raw = safe_payload.get(key)
+            break
+    if raw is None and "target_sample_acceptance_group" in safe_payload:
+        raw = safe_payload.get("target_sample_acceptance_group")
+    if raw is None:
+        return [], []
+
+    if isinstance(raw, str):
+        values = [item.strip() for item in raw.replace(";", ",").split(",")]
+    elif isinstance(raw, list):
+        values = [str(item).strip() for item in raw]
+    else:
+        values = [str(raw).strip()]
+
+    known_targets = {target for target, _label, _apis in VALIDATION_TARGET_GROUPS}
+    requested: list[str] = []
+    unknown: list[str] = []
+    for value in values:
+        if not value:
+            continue
+        if value in known_targets and value not in requested:
+            requested.append(value)
+        elif value not in known_targets and value not in unknown:
+            unknown.append(value)
+    return requested, unknown
+
+
+def _target_sample_failure_mode_evidence(payload: Any) -> tuple[bool, int]:
+    safe_payload = _safe_payload(payload)
+    count = _safe_int(
+        safe_payload.get("target_sample_failure_mode_validated_count")
+        or safe_payload.get("target_sample_failure_mode_count")
+        or safe_payload.get("failure_mode_validated_count")
+        or safe_payload.get("failure_mode_count")
+    )
+    validated = (
+        _truthy_payload_flag(safe_payload.get("target_sample_failure_modes_validated"))
+        or _truthy_payload_flag(safe_payload.get("failure_modes_validated"))
+        or _truthy_payload_flag(safe_payload.get("failure_mode_qa_passed"))
+    ) and count >= PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MIN_FAILURE_MODES
+    return validated, count
+
+
+def _provider_target_sample_acceptance_contract(
+    *,
+    selected_apis: Iterable[str],
+    payload: Any,
+    api_validation_rows: list[dict[str, Any]],
+    validation_target_rows: list[dict[str, Any]],
+    provider_target_sample_plan_contract: dict[str, Any],
+    call_ledger: list[dict[str, Any]],
+) -> dict[str, Any]:
+    safe_payload = _safe_payload(payload)
+    acceptance_mode = str(
+        safe_payload.get("acceptance_mode")
+        or safe_payload.get("provider_acceptance_mode")
+        or "standard_refresh"
+    )
+    explicit_acceptance_mode = acceptance_mode == PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE
+    requested_targets, unknown_targets = _target_sample_acceptance_requested_targets(payload)
+    failure_modes_validated, failure_mode_count = _target_sample_failure_mode_evidence(payload)
+    validation_by_api = {str(row.get("api") or ""): row for row in api_validation_rows}
+    target_by_key = {str(row.get("target") or ""): row for row in validation_target_rows}
+    sample_plan_by_target = {
+        str(row.get("target") or ""): row for row in provider_target_sample_plan_contract.get("rows", [])
+    }
+    ledger_by_api = {str(row.get("api") or ""): row for row in call_ledger}
+    source_task_external_calls = any(row.get("external_calls_triggered") is True for row in call_ledger)
+    source_task_tushare_called = any(row.get("tushare_called") is True for row in call_ledger)
+
+    rows: list[dict[str, Any]] = []
+    for target_key, label, apis in VALIDATION_TARGET_GROUPS:
+        requested = target_key in requested_targets
+        target_apis = list(apis)
+        plan_row = sample_plan_by_target.get(target_key, {})
+        validation_target_row = target_by_key.get(target_key, {})
+        selected_target_apis = [api for api in target_apis if api in set(selected_apis)]
+        missing_required_apis = [api for api in target_apis if api not in selected_target_apis]
+        missing_call_ledger_apis = [api for api in selected_target_apis if api not in ledger_by_api]
+        non_empty_success_apis = [
+            api
+            for api in selected_target_apis
+            if validation_by_api.get(api, {}).get("call_status") == "success"
+            and int(validation_by_api.get(api, {}).get("row_count") or 0) > 0
+        ]
+        validated_empty_apis = [
+            api for api in selected_target_apis if validation_by_api.get(api, {}).get("call_status") == "empty"
+        ]
+        failed_or_blocked_apis = [
+            api
+            for api in selected_target_apis
+            if validation_by_api.get(api, {}).get("call_status") == "failed"
+            or str(validation_by_api.get(api, {}).get("call_status") or "").startswith("blocked_")
+        ]
+        unsafe_ledger_apis = [
+            api
+            for api in selected_target_apis
+            if _has_sensitive_key(ledger_by_api.get(api, {}).get("request_params_safe"))
+            or _has_unsafe_error_text(ledger_by_api.get(api, {}).get("error_message_safe"))
+        ]
+        sample_evidence_sufficient = bool(non_empty_success_apis or (validated_empty_apis and failure_modes_validated))
+        blockers: list[str] = []
+        if requested:
+            if not explicit_acceptance_mode:
+                blockers.append("explicit_target_sample_acceptance_mode_missing")
+            if missing_required_apis:
+                blockers.append("target_api_selection_incomplete")
+            if missing_call_ledger_apis:
+                blockers.append("call_ledger_evidence_missing")
+            if str(plan_row.get("provider_sample_plan_status") or "") != "ready_to_execute_provider_sample":
+                blockers.append("target_sample_plan_not_ready")
+            if str(validation_target_row.get("readiness") or "") != "validated":
+                blockers.append("target_validation_not_complete")
+            if failed_or_blocked_apis:
+                blockers.append("failed_or_blocked_api_evidence_present")
+            if not sample_evidence_sufficient:
+                blockers.append("non_empty_or_valid_empty_sample_evidence_missing")
+            if not failure_modes_validated:
+                blockers.append("failure_mode_evidence_missing")
+            if unsafe_ledger_apis:
+                blockers.append("unsafe_ledger_evidence")
+        if not requested:
+            status = "target_sample_acceptance_not_requested"
+            meaning = "该目标域本次未进入显式 target-sample acceptance；不得显示为验收完成。"
+        elif blockers:
+            status = "target_sample_acceptance_blocked"
+            meaning = "该目标域已有显式样本验收请求，但证据仍不足或存在阻断项。"
+        else:
+            status = "target_sample_acceptance_ready_for_review"
+            meaning = "该目标域具备可审查的按钮任务样本证据；仍不是全接口生产验收。"
+        rows.append(
+            {
+                "target": target_key,
+                "label": label,
+                "apis": target_apis,
+                "requested_for_acceptance": requested,
+                "selected_apis": selected_target_apis,
+                "missing_required_apis": missing_required_apis,
+                "missing_call_ledger_apis": missing_call_ledger_apis,
+                "non_empty_success_apis": non_empty_success_apis,
+                "validated_empty_apis": validated_empty_apis,
+                "failed_or_blocked_apis": failed_or_blocked_apis,
+                "unsafe_ledger_apis": unsafe_ledger_apis,
+                "validation_readiness": str(validation_target_row.get("readiness") or "unknown"),
+                "provider_sample_plan_status": str(plan_row.get("provider_sample_plan_status") or "unknown"),
+                "target_sample_acceptance_status": status,
+                "target_sample_acceptance_meaning": meaning,
+                "target_sample_acceptance_blockers": blockers,
+                "target_sample_acceptance_blocker_count": len(blockers),
+                "sample_evidence_sufficient": sample_evidence_sufficient,
+                "failure_modes_validated": failure_modes_validated,
+                "failure_mode_validated_count": failure_mode_count,
+                "provider_backed_target_sample_acceptance_done": False,
+                "provider_backed_acceptance_done": False,
+                "production_tushare_pipeline_complete": False,
+                "full_interface_acceptance_done": False,
+                "acceptance_contract_external_calls_triggered": False,
+                "cache_get_external_calls": False,
+                "react_render_external_calls": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+
+    requested_rows = [row for row in rows if row.get("requested_for_acceptance")]
+    ready_rows = [
+        row
+        for row in requested_rows
+        if row.get("target_sample_acceptance_status") == "target_sample_acceptance_ready_for_review"
+    ]
+    blocked_rows = [
+        row
+        for row in requested_rows
+        if row.get("target_sample_acceptance_status") == "target_sample_acceptance_blocked"
+    ]
+    contract_blockers = sorted(
+        {
+            *[str(item) for item in unknown_targets],
+            *[
+                str(blocker)
+                for row in blocked_rows
+                for blocker in row.get("target_sample_acceptance_blockers", [])
+                if blocker
+            ],
+        }
+    )
+    if explicit_acceptance_mode and not requested_targets:
+        contract_blockers.append("requested_target_groups_missing")
+    ready_for_review = bool(
+        explicit_acceptance_mode
+        and requested_rows
+        and not unknown_targets
+        and len(ready_rows) == len(requested_rows)
+    )
+    status = (
+        "target_sample_acceptance_ready_for_review"
+        if ready_for_review
+        else "target_sample_acceptance_blocked"
+        if explicit_acceptance_mode
+        else "target_sample_acceptance_not_requested"
+    )
+    return {
+        "schema_version": "tushare_provider_target_sample_acceptance_contract.v1",
+        "status": status,
+        "scope": "local_target_sample_acceptance_evidence_no_provider_promotion",
+        "acceptance_mode": acceptance_mode,
+        "explicit_acceptance_mode": explicit_acceptance_mode,
+        "requested_targets": requested_targets,
+        "unknown_requested_targets": unknown_targets,
+        "requested_target_count": len(requested_targets),
+        "ready_target_count": len(ready_rows),
+        "blocked_target_count": len(blocked_rows),
+        "target_sample_acceptance_ready_for_review": ready_for_review,
+        "target_sample_acceptance_done": ready_for_review,
+        "provider_backed_target_sample_acceptance_done": False,
+        "provider_backed_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "full_interface_acceptance_done": False,
+        "failure_modes_validated": failure_modes_validated,
+        "failure_mode_validated_count": failure_mode_count,
+        "required_failure_mode_count": PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MIN_FAILURE_MODES,
+        "contract_blockers": contract_blockers,
+        "blocking_criterion_count": len(contract_blockers),
+        "source_task_external_calls_triggered": source_task_external_calls,
+        "source_task_tushare_called": source_task_tushare_called,
+        "acceptance_contract_external_calls_triggered": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "row_count": len(rows),
+        "rows": rows,
+        "note": "Explicit target-sample acceptance records reviewable target-domain evidence from the button task only. It does not call Tushare by itself, does not promote fake/local evidence, and is not full-interface production acceptance.",
+    }
+
+
 def _rows_from_data(data: Any) -> list[dict[str, Any]]:
     if data is None:
         return []
@@ -2353,6 +2610,14 @@ def run_tushare_refresh_task(
         payload=payload,
         api_validation_rows=api_validation_rows,
     )
+    provider_target_sample_acceptance_contract = _provider_target_sample_acceptance_contract(
+        selected_apis=selected_apis,
+        payload=payload,
+        api_validation_rows=api_validation_rows,
+        validation_target_rows=validation_target_rows,
+        provider_target_sample_plan_contract=provider_target_sample_plan_contract,
+        call_ledger=call_ledger,
+    )
     provider_acceptance_readiness_audit = _provider_acceptance_readiness_audit(
         api_validation_rows=api_validation_rows,
         validation_target_rows=validation_target_rows,
@@ -2421,6 +2686,9 @@ def run_tushare_refresh_task(
         "provider_target_sample_plan_contract": provider_target_sample_plan_contract,
         "provider_target_sample_plan_rows": provider_target_sample_plan_contract["rows"],
         "provider_target_sample_plan_status": provider_target_sample_plan_contract["status"],
+        "provider_target_sample_acceptance_contract": provider_target_sample_acceptance_contract,
+        "provider_target_sample_acceptance_rows": provider_target_sample_acceptance_contract["rows"],
+        "provider_target_sample_acceptance_status": provider_target_sample_acceptance_contract["status"],
         "provider_acceptance_readiness_audit": provider_acceptance_readiness_audit,
         "provider_acceptance_readiness_rows": provider_acceptance_readiness_audit["rows"],
         "provider_acceptance_readiness_status": provider_acceptance_readiness_audit["status"],
@@ -2448,6 +2716,7 @@ def run_tushare_refresh_task(
             "failure_mode_qa_scope": "failure_mode_qa_contract 只分类现有 call_ledger 的 empty/permission/parse/missing-param/provider-error 状态；不发起 provider 调用。",
             "request_parameter_qa_scope": "request_parameter_qa_contract 只审计安全参数、ts_code 预检和日期上下文字段；不发起 provider 调用。",
             "provider_target_sample_plan_scope": "provider_target_sample_plan_contract 只声明未来真实样本验收所需目标域、接口、窗口上下文和证据；不发起 provider 调用。",
+            "provider_target_sample_acceptance_scope": "provider_target_sample_acceptance_contract 只审查显式 target-sample acceptance payload 和本次按钮任务 call_ledger；不调用 provider，不提升为全接口生产验收。",
             "call_ledger_required_fields": list(CALL_LEDGER_REQUIRED_FIELDS),
             "cache_get_external_calls": False,
             "button_gated_external_calls_only": True,
@@ -2458,6 +2727,11 @@ def run_tushare_refresh_task(
             "provider_acceptance_promotion_calls_provider": False,
             "provider_evidence_gap_calls_provider": False,
             "provider_evidence_gaps_pending": provider_evidence_gap_audit["target_with_gap_count"] > 0,
+            "provider_target_sample_acceptance_calls_provider": False,
+            "provider_target_sample_acceptance_ready_for_review": provider_target_sample_acceptance_contract[
+                "target_sample_acceptance_ready_for_review"
+            ],
+            "provider_target_sample_acceptance_is_full_interface_acceptance": False,
             "provider_sample_readiness_receipt_scope": "provider_sample_readiness_receipt 只说明下一步显式 POST 样本验收是否可执行；不调用 provider，不提升生产验收。",
             "provider_sample_readiness_receipt_calls_provider": False,
             "provider_sample_ready_for_explicit_task": provider_sample_readiness_receipt[
@@ -2487,6 +2761,16 @@ def run_tushare_refresh_task(
         "full_interface_acceptance_done": api_acceptance_audit["full_interface_acceptance_done"],
         "provider_target_sample_plan_ready_count": provider_target_sample_plan_contract["ready_to_execute_target_count"],
         "provider_target_sample_plan_pending_count": provider_target_sample_plan_contract["pending_or_blocked_target_count"],
+        "provider_target_sample_acceptance_ready_for_review": provider_target_sample_acceptance_contract[
+            "target_sample_acceptance_ready_for_review"
+        ],
+        "provider_target_sample_acceptance_requested_count": provider_target_sample_acceptance_contract[
+            "requested_target_count"
+        ],
+        "provider_target_sample_acceptance_ready_count": provider_target_sample_acceptance_contract["ready_target_count"],
+        "provider_target_sample_acceptance_blocker_count": provider_target_sample_acceptance_contract[
+            "blocking_criterion_count"
+        ],
         "provider_acceptance_production_blocker_count": provider_acceptance_readiness_audit["production_blocker_count"],
         "provider_acceptance_promotion_blocker_count": provider_acceptance_promotion_audit["blocking_criterion_count"],
         "provider_acceptance_promotion_ready": provider_acceptance_promotion_audit["promotion_ready"],

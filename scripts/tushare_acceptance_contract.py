@@ -29,6 +29,7 @@ CONTRACT_KEYS = [
     "failure_mode_qa_contract",
     "request_parameter_qa_contract",
     "provider_target_sample_plan_contract",
+    "provider_target_sample_acceptance_contract",
     "provider_acceptance_readiness_audit",
     "provider_acceptance_promotion_audit",
     "provider_evidence_gap_audit",
@@ -76,6 +77,14 @@ def build_contract() -> dict[str, Any]:
         selected_apis=selected_apis,
         payload={},
         api_validation_rows=validation_rows,
+    )
+    target_sample_acceptance = tushare_task_service._provider_target_sample_acceptance_contract(
+        selected_apis=selected_apis,
+        payload={},
+        api_validation_rows=validation_rows,
+        validation_target_rows=validation_target_rows,
+        provider_target_sample_plan_contract=target_sample_plan,
+        call_ledger=call_ledger,
     )
     provider_readiness = tushare_task_service._provider_acceptance_readiness_audit(
         api_validation_rows=validation_rows,
@@ -167,6 +176,65 @@ def build_contract() -> dict[str, Any]:
         },
         call_status="success",
     )
+    target_sample_selected_apis = ["margin_detail"]
+    target_sample_call_ledger = [
+        {
+            "api": "margin_detail",
+            "request_params_safe": {
+                "ts_code": "002008.SZ",
+                "trade_date": "20260610",
+                "start_date": "20260601",
+                "end_date": "20260610",
+            },
+            "row_count": 1,
+            "data_date": "20260610",
+            "local_fetched_at": "2026-06-10T16:31:00",
+            "call_status": "success",
+            "failure_mode": "none",
+            "failure_mode_status": "success_non_empty",
+            "safe_failure_mode_visible": True,
+            "error_message_safe": "",
+            "parquet_dataset": None,
+            "parquet_status": "not_enabled",
+            "parquet_row_count": 0,
+            "external": True,
+            "external_calls_triggered": True,
+            "tushare_called": True,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+    target_sample_payload = {
+        "apis": target_sample_selected_apis,
+        "ts_code": "002008.SZ",
+        "trade_date": "20260610",
+        "start_date": "20260601",
+        "end_date": "20260610",
+        "acceptance_mode": "provider_target_sample_acceptance",
+        "target_sample_acceptance_groups": ["margin_financing"],
+        "failure_modes_validated": True,
+        "failure_mode_validated_count": 6,
+    }
+    target_sample_validation_rows = tushare_task_service._api_validation_rows(
+        target_sample_selected_apis,
+        target_sample_call_ledger,
+    )
+    target_sample_validation_target_rows = tushare_task_service._validation_target_rows(target_sample_validation_rows)
+    target_sample_plan_ready = tushare_task_service._provider_target_sample_plan_contract(
+        selected_apis=target_sample_selected_apis,
+        payload=target_sample_payload,
+        api_validation_rows=target_sample_validation_rows,
+    )
+    target_sample_acceptance_ready = tushare_task_service._provider_target_sample_acceptance_contract(
+        selected_apis=target_sample_selected_apis,
+        payload=target_sample_payload,
+        api_validation_rows=target_sample_validation_rows,
+        validation_target_rows=target_sample_validation_target_rows,
+        provider_target_sample_plan_contract=target_sample_plan_ready,
+        call_ledger=target_sample_call_ledger,
+    )
 
     rows = [
         _row(
@@ -179,9 +247,12 @@ def build_contract() -> dict[str, Any]:
             and refresh_catalog.get("optional_extended_apis") == extended_apis
             and refresh_catalog.get("parquet_enabled_apis") == parquet_apis
             and refresh_catalog.get("call_ledger_required") is True
-            and refresh_catalog.get("provider_acceptance_modes") == ["provider_backed_trade_cal_long_window"]
+            and refresh_catalog.get("provider_acceptance_modes")
+            == ["provider_backed_trade_cal_long_window", "provider_target_sample_acceptance"]
             and refresh_catalog.get("trade_cal_provider_acceptance_mode_requires_explicit_payload") is True
             and refresh_catalog.get("trade_cal_provider_acceptance_is_full_interface_acceptance") is False
+            and refresh_catalog.get("provider_target_sample_acceptance_mode_requires_explicit_payload") is True
+            and refresh_catalog.get("provider_target_sample_acceptance_is_full_interface_acceptance") is False
             and refresh_catalog.get("full_interface_acceptance_done") is False,
             "Tushare refresh must remain a button-gated POST task with core defaults, optional calendar/extended APIs, and no GET cache external call.",
         ),
@@ -192,6 +263,7 @@ def build_contract() -> dict[str, Any]:
             and factor_refresh_catalog.get("cache_get_external_calls") is False
             and factor_refresh_catalog.get("api_acceptance_audit_contract")
             and factor_refresh_catalog.get("provider_target_sample_plan_is_provider_acceptance") is False
+            and factor_refresh_catalog.get("provider_target_sample_acceptance_is_full_interface_acceptance") is False
             and factor_refresh_catalog.get("request_parameter_qa_is_provider_acceptance") is False
             and factor_refresh_catalog.get("failure_mode_qa_is_provider_acceptance") is False,
             "Delegated factor refresh must inherit Tushare task contracts and cannot promote local QA to provider acceptance.",
@@ -285,6 +357,35 @@ def build_contract() -> dict[str, Any]:
             and target_sample_plan.get("does_not_execute_trades") is True
             and target_sample_plan.get("does_not_modify_strategy_action") is True,
             "Target sample plan declares future real-provider samples only; it is not provider-backed acceptance.",
+        ),
+        _row(
+            "target_sample_acceptance_contract_is_explicit_and_non_promoting",
+            target_sample_acceptance.get("schema_version") == "tushare_provider_target_sample_acceptance_contract.v1"
+            and target_sample_acceptance.get("status") == "target_sample_acceptance_not_requested"
+            and target_sample_acceptance.get("target_sample_acceptance_ready_for_review") is False
+            and target_sample_acceptance.get("provider_backed_acceptance_done") is False
+            and target_sample_acceptance.get("production_tushare_pipeline_complete") is False
+            and target_sample_acceptance_ready.get("status") == "target_sample_acceptance_ready_for_review"
+            and target_sample_acceptance_ready.get("target_sample_acceptance_ready_for_review") is True
+            and target_sample_acceptance_ready.get("requested_targets") == ["margin_financing"]
+            and target_sample_acceptance_ready.get("ready_target_count") == 1
+            and target_sample_acceptance_ready.get("blocking_criterion_count") == 0
+            and target_sample_acceptance_ready.get("source_task_tushare_called") is True
+            and target_sample_acceptance_ready.get("acceptance_contract_external_calls_triggered") is False
+            and target_sample_acceptance_ready.get("provider_backed_target_sample_acceptance_done") is False
+            and target_sample_acceptance_ready.get("provider_backed_acceptance_done") is False
+            and target_sample_acceptance_ready.get("production_tushare_pipeline_complete") is False
+            and target_sample_acceptance_ready.get("full_interface_acceptance_done") is False
+            and _flag_false(
+                target_sample_acceptance_ready,
+                "cache_get_external_calls",
+                "react_render_external_calls",
+                "deepseek_called",
+                "github_called",
+            )
+            and target_sample_acceptance_ready.get("does_not_execute_trades") is True
+            and target_sample_acceptance_ready.get("does_not_modify_strategy_action") is True,
+            "Explicit target-sample acceptance may make one target domain review-ready, but the contract itself must not call providers or promote full-interface production acceptance.",
         ),
         _row(
             "provider_readiness_stays_pending",
