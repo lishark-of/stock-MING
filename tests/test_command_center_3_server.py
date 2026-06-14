@@ -1053,6 +1053,64 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             receipt["missing_evidence_count"],
         )
         self.assertEqual(service_packet["call_ledger"][0]["api"], "local_next_session_cache")
+        parity_recipe = service_packet["next_session_legacy_parity_execution_recipe"]
+        self.assertEqual(parity_recipe["schema_version"], "next_session_legacy_parity_execution_recipe.v1")
+        self.assertEqual(parity_recipe["scope"], "local_next_session_legacy_parity_recipe_no_browser_no_provider")
+        self.assertEqual(parity_recipe["status"], "next_session_legacy_parity_recipe_ready_execution_pending")
+        self.assertTrue(parity_recipe["local_recipe_ready"])
+        self.assertFalse(parity_recipe["execution_done"])
+        self.assertFalse(parity_recipe["streamlit_parity_complete"])
+        self.assertFalse(parity_recipe["production_replacement_complete"])
+        self.assertTrue(parity_recipe["no_feature_loss_required"])
+        self.assertIn("latest close anchor", parity_recipe["preserved_feature_groups"])
+        self.assertIn("operation zones and guardrails", parity_recipe["preserved_feature_groups"])
+        self.assertIn("DeepSeek status display", parity_recipe["preserved_feature_groups"])
+        self.assertIn("read-only action boundary", parity_recipe["preserved_feature_groups"])
+        self.assertIn("legacy Streamlit reference capture", parity_recipe["required_evidence"])
+        self.assertIn("feature-by-feature parity matrix", parity_recipe["required_evidence"])
+        self.assertIn("browser performance trace", parity_recipe["required_evidence"])
+        self.assertIn("durable CI or release evidence", parity_recipe["required_evidence"])
+        self.assertIn("drop_legacy_signal_groups_to_reduce_scope", parity_recipe["not_allowed_next_steps"])
+        self.assertIn("compute_strategy_action_in_frontend", parity_recipe["not_allowed_next_steps"])
+        self.assertFalse(parity_recipe["external_calls_triggered"])
+        self.assertFalse(parity_recipe["tushare_called"])
+        self.assertFalse(parity_recipe["deepseek_called"])
+        self.assertFalse(parity_recipe["github_called"])
+        self.assertTrue(parity_recipe["does_not_execute_trades"])
+        self.assertTrue(parity_recipe["does_not_modify_strategy_action"])
+        self.assertTrue(parity_recipe["does_not_modify_operation_zones"])
+        self.assertFalse(parity_recipe["frontend_computes_trade_action"])
+        self.assertFalse(parity_recipe["contains_secret"])
+        self.assertTrue(service_packet["next_session_legacy_parity_recipe_ready"])
+        self.assertEqual(
+            service_packet["next_session_legacy_parity_pending_phase_count"],
+            parity_recipe["pending_phase_count"],
+        )
+        parity_rows = {row["phase"]: row for row in service_packet["next_session_legacy_parity_execution_rows"]}
+        self.assertEqual(parity_recipe["row_count"], len(parity_rows))
+        self.assertIn("legacy_streamlit_reference_capture", parity_rows)
+        self.assertEqual(parity_rows["cache_payload_snapshot"]["status"], "ready_local_contract")
+        self.assertEqual(
+            parity_rows["legacy_streamlit_reference_capture"]["status"],
+            "pending_legacy_reference",
+        )
+        self.assertEqual(
+            parity_rows["frontend_read_only_no_feature_loss_boundary"]["status"],
+            "ready_local_contract",
+        )
+        self.assertTrue(all(not row["parity_complete"] for row in parity_rows.values()))
+        self.assertTrue(all(row["required_before_production_replacement"] for row in parity_rows.values()))
+        self.assertTrue(all(row["opens_no_browser"] for row in parity_rows.values()))
+        self.assertTrue(all(row["writes_no_artifacts"] for row in parity_rows.values()))
+        self.assertTrue(all(not row["external_calls_triggered"] for row in parity_rows.values()))
+        self.assertTrue(all(not row["tushare_called"] for row in parity_rows.values()))
+        self.assertTrue(all(not row["deepseek_called"] for row in parity_rows.values()))
+        self.assertTrue(all(not row["github_called"] for row in parity_rows.values()))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in parity_rows.values()))
+        self.assertTrue(all(row["does_not_modify_strategy_action"] for row in parity_rows.values()))
+        self.assertTrue(all(row["does_not_modify_operation_zones"] for row in parity_rows.values()))
+        self.assertTrue(all(not row["frontend_computes_trade_action"] for row in parity_rows.values()))
+        self.assertTrue(all(not row["contains_secret"] for row in parity_rows.values()))
         runbook = service_packet["next_session_browser_qa_runbook_contract"]
         self.assertEqual(runbook["schema_version"], "next_session_browser_qa_runbook.v1")
         self.assertEqual(runbook["scope"], "local_next_session_browser_qa_runbook_not_browser_execution")
@@ -7785,9 +7843,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("production_replacement_complete", script)
         self.assertIn("browser_visual_qa_done", script)
         self.assertIn("next_session_replacement_activation_receipt.v1", script)
+        self.assertIn("next_session_legacy_parity_execution_recipe.v1", script)
         self.assertIn("exact_echarts_payload_has_complete_chart_contract", script)
         self.assertIn("interaction_readiness_is_ready_but_parity_pending", script)
         self.assertIn("replacement_activation_receipt_guides_next_safe_step", script)
+        self.assertIn("legacy_parity_execution_recipe_is_no_feature_loss_pending", script)
         self.assertIn("next_session_production_replacement_stage_scope_manifest", script)
         self.assertIn("production_replacement_stage_scope_manifest_is_complete_and_pending", script)
         self.assertIn("chart_contract_is_read_only_no_external_no_action", script)
@@ -7822,6 +7882,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["browser_visual_qa_done"])
         self.assertFalse(payload["browser_performance_trace_done"])
         self.assertTrue(payload["replacement_activation_receipt_ready"])
+        self.assertTrue(payload["legacy_parity_recipe_ready"])
         self.assertFalse(payload["external_calls_triggered"])
         self.assertFalse(payload["tushare_called"])
         self.assertFalse(payload["deepseek_called"])
@@ -7839,6 +7900,23 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "next_session_activation_receipt_ready_replacement_blocked",
         )
         self.assertGreater(payload["observed"]["replacement_activation_production_blocker_count"], 0)
+        self.assertEqual(
+            payload["observed"]["legacy_parity_recipe_status"],
+            "next_session_legacy_parity_recipe_ready_execution_pending",
+        )
+        required_legacy_parity_phases = {
+            "cache_payload_snapshot",
+            "legacy_streamlit_reference_capture",
+            "chart_visual_feature_matrix",
+            "operation_zone_and_guardrail_parity",
+            "position_conflict_and_data_trust_parity",
+            "hover_click_interaction_parity",
+            "browser_visual_performance_parity",
+            "frontend_read_only_no_feature_loss_boundary",
+            "production_replacement_promotion",
+        }
+        self.assertEqual(payload["observed"]["legacy_parity_pending_phase_count"], len(required_legacy_parity_phases))
+        self.assertEqual(set(payload["observed"]["legacy_parity_phase_keys"]), required_legacy_parity_phases)
         self.assertGreaterEqual(payload["observed"]["historical_point_count"], 2)
         self.assertGreaterEqual(payload["observed"]["scenario_series_count"], 1)
         self.assertGreaterEqual(payload["observed"]["reference_line_count"], 4)
@@ -7857,6 +7935,22 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed"]["production_stage_scope_count"], 8)
         self.assertEqual(set(payload["observed"]["production_stage_scope_keys"]), required_production_stages)
         self.assertEqual(payload["observed"]["production_stage_scope_pending_count"], 8)
+        legacy_rows = payload["legacy_parity_execution_rows"]
+        self.assertEqual({row["phase"] for row in legacy_rows}, required_legacy_parity_phases)
+        for row in legacy_rows:
+            self.assertTrue(row["required_before_production_replacement"])
+            self.assertFalse(row["parity_complete"])
+            self.assertTrue(row["opens_no_browser"])
+            self.assertTrue(row["writes_no_artifacts"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_modify_operation_zones"])
+            self.assertFalse(row["frontend_computes_trade_action"])
+            self.assertFalse(row["contains_secret"])
         stage_rows = payload["production_replacement_stage_scope_rows"]
         self.assertEqual({row["stage_key"] for row in stage_rows}, required_production_stages)
         for row in stage_rows:

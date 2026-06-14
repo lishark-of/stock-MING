@@ -49,6 +49,17 @@ REQUIRED_NEXT_SESSION_PRODUCTION_STAGES = {
     "durable_ci_release_evidence",
     "production_replacement_promotion",
 }
+REQUIRED_LEGACY_PARITY_PHASES = {
+    "cache_payload_snapshot",
+    "legacy_streamlit_reference_capture",
+    "chart_visual_feature_matrix",
+    "operation_zone_and_guardrail_parity",
+    "position_conflict_and_data_trust_parity",
+    "hover_click_interaction_parity",
+    "browser_visual_performance_parity",
+    "frontend_read_only_no_feature_loss_boundary",
+    "production_replacement_promotion",
+}
 NEXT_SESSION_PRODUCTION_STAGE_LABELS = {
     "exact_cache_payload_contract": "exact cache payload and chart contract",
     "interaction_hover_click_contract": "hover and click interaction contract",
@@ -262,6 +273,8 @@ def build_contract() -> dict[str, Any]:
     data_trust = _dict(exact_chart.get("data_trust_summary"))
     activation_receipt = _dict(exact_service_packet.get("next_session_replacement_activation_receipt"))
     activation_rows = _rows_by_key(exact_service_packet.get("next_session_replacement_activation_rows"))
+    legacy_parity_recipe = _dict(exact_service_packet.get("next_session_legacy_parity_execution_recipe"))
+    legacy_parity_rows = _rows_by_key(exact_service_packet.get("next_session_legacy_parity_execution_rows"))
     browser_qa_runbook = _dict(exact_service_packet.get("next_session_browser_qa_runbook_contract"))
     browser_qa_runbook_rows = _rows_by_key(exact_service_packet.get("next_session_browser_qa_runbook_rows"))
     browser_qa_matrix_rows = [row for row in _list(exact_service_packet.get("next_session_browser_qa_matrix_rows")) if isinstance(row, dict)]
@@ -396,6 +409,65 @@ def build_contract() -> dict[str, Any]:
             and activation_receipt.get("does_not_modify_strategy_action") is True
             and activation_receipt.get("does_not_modify_operation_zones") is True,
             "Replacement activation receipt must guide Streamlit parity, browser QA, performance trace, and durable evidence without claiming production replacement.",
+        ),
+        _row(
+            "legacy_parity_execution_recipe_is_no_feature_loss_pending",
+            legacy_parity_recipe.get("schema_version") == "next_session_legacy_parity_execution_recipe.v1"
+            and legacy_parity_recipe.get("status") == "next_session_legacy_parity_recipe_ready_execution_pending"
+            and legacy_parity_recipe.get("scope") == "local_next_session_legacy_parity_recipe_no_browser_no_provider"
+            and legacy_parity_recipe.get("local_recipe_ready") is True
+            and legacy_parity_recipe.get("execution_done") is False
+            and legacy_parity_recipe.get("streamlit_parity_complete") is False
+            and legacy_parity_recipe.get("production_replacement_complete") is False
+            and legacy_parity_recipe.get("no_feature_loss_required") is True
+            and set(legacy_parity_recipe.get("pending_phases") or []) == REQUIRED_LEGACY_PARITY_PHASES
+            and int(legacy_parity_recipe.get("pending_phase_count") or 0) == len(REQUIRED_LEGACY_PARITY_PHASES)
+            and int(legacy_parity_recipe.get("row_count") or 0) == len(REQUIRED_LEGACY_PARITY_PHASES)
+            and {
+                "latest close anchor",
+                "scenario paths",
+                "reference and limit lines",
+                "operation zones and guardrails",
+                "position conflict warnings",
+                "freshness and data trust",
+                "DeepSeek status display",
+                "hover and click drilldown",
+                "read-only action boundary",
+            }.issubset(set(legacy_parity_recipe.get("preserved_feature_groups") or []))
+            and {
+                "legacy Streamlit reference capture",
+                "feature-by-feature parity matrix",
+                "browser visual QA across default and reduced motion",
+                "browser performance trace",
+                "durable CI or release evidence",
+            }.issubset(set(legacy_parity_recipe.get("required_evidence") or []))
+            and "drop_legacy_signal_groups_to_reduce_scope" in set(legacy_parity_recipe.get("not_allowed_next_steps") or [])
+            and "compute_strategy_action_in_frontend" in set(legacy_parity_recipe.get("not_allowed_next_steps") or [])
+            and set(legacy_parity_rows) == REQUIRED_LEGACY_PARITY_PHASES
+            and _dict(legacy_parity_rows.get("cache_payload_snapshot")).get("status") == "ready_local_contract"
+            and _dict(legacy_parity_rows.get("legacy_streamlit_reference_capture")).get("status")
+            == "pending_legacy_reference"
+            and _dict(legacy_parity_rows.get("frontend_read_only_no_feature_loss_boundary")).get("status")
+            == "ready_local_contract"
+            and all(row.get("parity_complete") is False for row in legacy_parity_rows.values())
+            and all(row.get("required_before_production_replacement") is True for row in legacy_parity_rows.values())
+            and all(row.get("opens_no_browser") is True for row in legacy_parity_rows.values())
+            and all(row.get("writes_no_artifacts") is True for row in legacy_parity_rows.values())
+            and all(row.get("external_calls_triggered") is False for row in legacy_parity_rows.values())
+            and all(row.get("tushare_called") is False for row in legacy_parity_rows.values())
+            and all(row.get("deepseek_called") is False for row in legacy_parity_rows.values())
+            and all(row.get("github_called") is False for row in legacy_parity_rows.values())
+            and all(row.get("does_not_execute_trades") is True for row in legacy_parity_rows.values())
+            and all(row.get("does_not_modify_strategy_action") is True for row in legacy_parity_rows.values())
+            and all(row.get("does_not_modify_operation_zones") is True for row in legacy_parity_rows.values())
+            and all(row.get("frontend_computes_trade_action") is False for row in legacy_parity_rows.values())
+            and all(row.get("contains_secret") is False for row in legacy_parity_rows.values())
+            and _flag_false(legacy_parity_recipe, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and legacy_parity_recipe.get("does_not_execute_trades") is True
+            and legacy_parity_recipe.get("does_not_modify_strategy_action") is True
+            and legacy_parity_recipe.get("does_not_modify_operation_zones") is True
+            and legacy_parity_recipe.get("frontend_computes_trade_action") is False,
+            "Legacy parity recipe must require no-feature-loss Streamlit comparison while staying local-only and pending.",
         ),
         _row(
             "next_session_task_is_button_gated_local_cache_pipeline",
@@ -564,6 +636,7 @@ def build_contract() -> dict[str, Any]:
         "browser_visual_qa_done": False,
         "browser_performance_trace_done": False,
         "replacement_activation_receipt_ready": activation_receipt.get("local_activation_receipt_ready") is True,
+        "legacy_parity_recipe_ready": legacy_parity_recipe.get("local_recipe_ready") is True,
         "cache_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -585,6 +658,9 @@ def build_contract() -> dict[str, Any]:
             "production_replacement_complete": interaction_audit.get("production_replacement_complete"),
             "replacement_activation_receipt_status": activation_receipt.get("status"),
             "replacement_activation_production_blocker_count": activation_receipt.get("production_blocker_count"),
+            "legacy_parity_recipe_status": legacy_parity_recipe.get("status"),
+            "legacy_parity_pending_phase_count": legacy_parity_recipe.get("pending_phase_count"),
+            "legacy_parity_phase_keys": sorted(row.get("phase") for row in legacy_parity_rows.values()),
             "historical_point_count": series_counts.get("historical_points"),
             "scenario_series_count": series_counts.get("scenario_series"),
             "reference_line_count": series_counts.get("reference_lines"),
@@ -598,6 +674,7 @@ def build_contract() -> dict[str, Any]:
                 1 for row in production_stage_scope_rows if row.get("production_replacement_complete") is False
             ),
         },
+        "legacy_parity_execution_rows": list(legacy_parity_rows.values()),
         "production_replacement_stage_scope_rows": production_stage_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Browser visual QA, performance trace, legacy Streamlit parity, and production ECharts replacement remain pending.",

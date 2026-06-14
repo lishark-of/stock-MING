@@ -783,9 +783,239 @@ def _next_session_replacement_activation_receipt(packet: dict[str, Any]) -> tupl
     return receipt, rows
 
 
+def _next_session_legacy_parity_row(
+    phase: str,
+    status: str,
+    *,
+    local_ready: bool,
+    parity_complete: bool,
+    feature_group: str,
+    evidence: str,
+    next_action: str,
+) -> dict[str, Any]:
+    return {
+        "phase": phase,
+        "status": status,
+        "local_ready": bool(local_ready),
+        "parity_complete": bool(parity_complete),
+        "production_blocker": not bool(parity_complete),
+        "feature_group": feature_group,
+        "evidence": evidence,
+        "next_action": next_action,
+        "required_before_production_replacement": True,
+        "cache_only": True,
+        "runs_no_commands": True,
+        "opens_no_browser": True,
+        "writes_no_artifacts": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_operation_zones": True,
+        "frontend_computes_trade_action": False,
+        "contains_secret": False,
+    }
+
+
+def _next_session_legacy_parity_execution_recipe(packet: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    chart = _as_dict(packet.get("chart_payload"))
+    chart_contract = _as_dict(chart.get("chart_contract"))
+    chart_summary = _as_dict(packet.get("chart_summary"))
+    interaction_audit = _as_dict(chart.get("interaction_readiness_audit"))
+    reference_rows = [row for row in _as_list(chart.get("reference_line_rows")) if isinstance(row, dict)]
+    zone_rows = [row for row in _as_list(chart.get("zone_interaction_rows")) if isinstance(row, dict)]
+    scenario_rows = [row for row in _as_list(chart.get("scenario_anchor_rows")) if isinstance(row, dict)]
+    position_conflict = _as_dict(chart.get("position_conflict"))
+    data_trust = _as_dict(chart.get("data_trust_summary"))
+    exact_payload_ready = (
+        chart.get("status") == "ready"
+        and chart.get("is_exact_next_session_packet") is True
+        and chart_summary.get("has_drawable_data") is True
+        and chart_contract.get("renderer") == "ECharts"
+    )
+    interaction_contract_ready = (
+        interaction_audit.get("status") == "interaction_contract_ready_parity_pending"
+        and int(interaction_audit.get("blocking_count") or 0) == 0
+    )
+    read_only_ready = (
+        chart_contract.get("cache_only") is True
+        and chart_contract.get("frontend_computes_trade_action") is False
+        and chart_contract.get("does_not_modify_action") is True
+        and chart_contract.get("does_not_modify_operation_zones") is True
+    )
+    visual_feature_contract_ready = (
+        bool(reference_rows)
+        and bool(zone_rows)
+        and bool(scenario_rows)
+        and bool(position_conflict)
+        and bool(_as_list(data_trust.get("facts")))
+        and bool(chart.get("deepseek_status"))
+    )
+    rows = [
+        _next_session_legacy_parity_row(
+            "cache_payload_snapshot",
+            "ready_local_contract",
+            local_ready=exact_payload_ready,
+            parity_complete=False,
+            feature_group="exact ECharts cache payload",
+            evidence=(
+                f"status={chart.get('status')}; exact={chart.get('is_exact_next_session_packet')}; "
+                f"has_drawable_data={chart_summary.get('has_drawable_data')}; renderer={chart_contract.get('renderer')}"
+            ),
+            next_action="Capture the same packet beside the legacy Streamlit reference before parity execution.",
+        ),
+        _next_session_legacy_parity_row(
+            "legacy_streamlit_reference_capture",
+            "pending_legacy_reference",
+            local_ready=False,
+            parity_complete=False,
+            feature_group="legacy reference baseline",
+            evidence="No current checked-in Streamlit reference screenshot or parity packet is claimed by this recipe.",
+            next_action="Capture the legacy next-session visual/reference behavior explicitly before replacement promotion.",
+        ),
+        _next_session_legacy_parity_row(
+            "chart_visual_feature_matrix",
+            "pending_feature_matrix_review",
+            local_ready=visual_feature_contract_ready,
+            parity_complete=False,
+            feature_group="latest close, scenarios, reference lines, zones, data credibility, DeepSeek status",
+            evidence=(
+                f"reference_rows={len(reference_rows)}; zone_rows={len(zone_rows)}; "
+                f"scenario_rows={len(scenario_rows)}; data_trust_facts={len(_as_list(data_trust.get('facts')))}"
+            ),
+            next_action="Compare every legacy visual signal group against the React/ECharts payload without removing features.",
+        ),
+        _next_session_legacy_parity_row(
+            "operation_zone_and_guardrail_parity",
+            "pending_zone_parity",
+            local_ready=bool(zone_rows) and all(row.get("frontend_mutable") is False for row in zone_rows),
+            parity_complete=False,
+            feature_group="operation zones and guardrails",
+            evidence=f"zone_rows={len(zone_rows)}; frontend_mutable=false required.",
+            next_action="Verify legacy operation-zone labels, ranges, and guardrail details are present in React/ECharts.",
+        ),
+        _next_session_legacy_parity_row(
+            "position_conflict_and_data_trust_parity",
+            "pending_context_parity",
+            local_ready=bool(position_conflict) and bool(_as_list(data_trust.get("facts"))),
+            parity_complete=False,
+            feature_group="position conflict, freshness, data trust, provider/model status",
+            evidence=f"position_conflict={bool(position_conflict)}; data_trust_facts={len(_as_list(data_trust.get('facts')))}",
+            next_action="Verify conflict warnings, freshness/data trust, and DeepSeek not-called status are equally visible.",
+        ),
+        _next_session_legacy_parity_row(
+            "hover_click_interaction_parity",
+            "pending_interaction_parity",
+            local_ready=interaction_contract_ready,
+            parity_complete=False,
+            feature_group="hover tooltip, click drilldown, source display",
+            evidence=(
+                f"interaction_status={interaction_audit.get('status')}; "
+                f"blocking_count={interaction_audit.get('blocking_count')}"
+            ),
+            next_action="Run explicit hover/click comparison against legacy behavior and record reviewer evidence.",
+        ),
+        _next_session_legacy_parity_row(
+            "browser_visual_performance_parity",
+            "pending_browser_visual_performance",
+            local_ready=False,
+            parity_complete=False,
+            feature_group="browser viewport layout and performance",
+            evidence="Browser visual QA and performance trace are intentionally not executed by GET cache or this recipe.",
+            next_action="Run explicit browser QA and performance trace after legacy feature matrix review.",
+        ),
+        _next_session_legacy_parity_row(
+            "frontend_read_only_no_feature_loss_boundary",
+            "ready_local_contract",
+            local_ready=read_only_ready,
+            parity_complete=False,
+            feature_group="read-only frontend and no-feature-loss boundary",
+            evidence="React/ECharts may render cache values only and must not compute action or mutate operation zones.",
+            next_action="Keep replacement work render-only while closing no-feature-loss parity gaps.",
+        ),
+        _next_session_legacy_parity_row(
+            "production_replacement_promotion",
+            "blocked_until_parity_evidence",
+            local_ready=False,
+            parity_complete=False,
+            feature_group="replacement promotion",
+            evidence="Streamlit parity, browser visual QA, performance trace, reduced-motion QA, and durable evidence are pending.",
+            next_action="Promote ECharts replacement only after direct evidence covers every no-feature-loss phase.",
+        ),
+    ]
+    pending_phases = [row["phase"] for row in rows if not row["parity_complete"]]
+    local_blockers = [row["phase"] for row in rows if not row["local_ready"]]
+    local_recipe_ready = exact_payload_ready and interaction_contract_ready and read_only_ready and visual_feature_contract_ready
+    recipe = {
+        "schema_version": "next_session_legacy_parity_execution_recipe.v1",
+        "status": "next_session_legacy_parity_recipe_ready_execution_pending"
+        if local_recipe_ready
+        else "next_session_legacy_parity_recipe_blocked",
+        "scope": "local_next_session_legacy_parity_recipe_no_browser_no_provider",
+        "ltg": "LTG-08/LTG-10",
+        "local_recipe_ready": local_recipe_ready,
+        "execution_done": False,
+        "streamlit_parity_complete": False,
+        "production_replacement_complete": False,
+        "no_feature_loss_required": True,
+        "preserved_feature_groups": [
+            "latest close anchor",
+            "scenario paths",
+            "reference and limit lines",
+            "operation zones and guardrails",
+            "position conflict warnings",
+            "freshness and data trust",
+            "DeepSeek status display",
+            "hover and click drilldown",
+            "read-only action boundary",
+        ],
+        "required_evidence": [
+            "legacy Streamlit reference capture",
+            "React/ECharts cache snapshot using the same packet",
+            "feature-by-feature parity matrix",
+            "hover/click interaction parity notes",
+            "browser visual QA across default and reduced motion",
+            "browser performance trace",
+            "durable CI or release evidence",
+            "explicit replacement promotion review",
+        ],
+        "allowed_next_step": "run_explicit_streamlit_reference_capture_and_browser_parity_qa",
+        "not_allowed_next_steps": [
+            "treat_recipe_as_streamlit_parity_completion",
+            "treat_local_cache_payload_as_browser_visual_qa",
+            "drop_legacy_signal_groups_to_reduce_scope",
+            "compute_strategy_action_in_frontend",
+            "mark_production_replacement_without_direct_evidence",
+        ],
+        "row_count": len(rows),
+        "pending_phase_count": len(pending_phases),
+        "local_blocker_count": len(local_blockers),
+        "pending_phases": pending_phases,
+        "local_blockers": local_blockers,
+        "cache_only": True,
+        "runs_no_commands": True,
+        "opens_no_browser": True,
+        "writes_no_artifacts": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_operation_zones": True,
+        "frontend_computes_trade_action": False,
+        "contains_secret": False,
+        "note": "This local recipe fixes the no-feature-loss acceptance path for LTG-08. It does not execute browser QA, prove Streamlit parity, or complete production replacement.",
+    }
+    return recipe, rows
+
+
 def read_next_session_cache() -> dict[str, Any]:
     packet = dict(packet_service.build_next_session_cache())
     activation_receipt, activation_rows = _next_session_replacement_activation_receipt(packet)
+    legacy_parity_recipe, legacy_parity_rows = _next_session_legacy_parity_execution_recipe(packet)
     (
         browser_qa_runbook,
         browser_qa_runbook_rows,
@@ -799,6 +1029,10 @@ def read_next_session_cache() -> dict[str, Any]:
         browser_qa_review = _next_session_browser_qa_review_contract(browser_qa_evidence, browser_qa_evidence_rows)
     packet["next_session_replacement_activation_receipt"] = activation_receipt
     packet["next_session_replacement_activation_rows"] = activation_rows
+    packet["next_session_legacy_parity_execution_recipe"] = legacy_parity_recipe
+    packet["next_session_legacy_parity_execution_rows"] = legacy_parity_rows
+    packet["next_session_legacy_parity_recipe_ready"] = legacy_parity_recipe["local_recipe_ready"]
+    packet["next_session_legacy_parity_pending_phase_count"] = legacy_parity_recipe["pending_phase_count"]
     packet["next_session_browser_qa_runbook_contract"] = browser_qa_runbook
     packet["next_session_browser_qa_runbook_rows"] = browser_qa_runbook_rows
     packet["next_session_browser_qa_matrix_rows"] = browser_qa_matrix_rows
