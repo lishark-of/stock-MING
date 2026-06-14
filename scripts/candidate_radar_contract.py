@@ -340,6 +340,12 @@ def build_contract() -> dict[str, Any]:
         for row in _list(cache_packet.get("candidate_radar_production_activation_rows"))
         if isinstance(row, dict)
     }
+    next_execution_recipe = _dict(cache_packet.get("candidate_radar_next_execution_recipe"))
+    next_execution_rows = {
+        str(row.get("phase") or ""): row
+        for row in _list(cache_packet.get("candidate_radar_next_execution_rows"))
+        if isinstance(row, dict)
+    }
     quick_receipt = _dict(cache_packet.get("quick_scan_execution_receipt"))
     quick_receipt_rows = {
         str(row.get("receipt_key") or ""): row
@@ -540,6 +546,73 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_candidate_radar_browser_qa_review"].get("writes_artifacts") is False
             and task_rows["run_candidate_radar_browser_qa_review"].get("production_radar_replacement_complete") is False,
             "Candidate radar scan modes must stay button-gated local tasks; full-pool/deep-scan entries are plan-only and browser QA review reads local artifacts only.",
+        ),
+        _row(
+            "candidate_radar_next_execution_recipe_is_local_fast_scan_path",
+            next_execution_recipe.get("schema_version") == "candidate_radar_next_execution_recipe.v1"
+            and next_execution_recipe.get("scope") == "local_candidate_radar_next_execution_recipe_no_execution"
+            and next_execution_recipe.get("status")
+            in {
+                "candidate_radar_next_execution_ready_for_fast_scan",
+                "candidate_radar_next_execution_blocked_local_fast_scan_readiness",
+            }
+            and next_execution_recipe.get("ready_to_execute_from_cache") is False
+            and next_execution_recipe.get("requires_explicit_user_action") is True
+            and next_execution_recipe.get("recommended_fast_scan_route") == "POST /api/candidate-radar/scan-quick"
+            and next_execution_recipe.get("recommended_full_pool_local_route")
+            == "POST /api/candidate-radar/full-pool-local-scan"
+            and next_execution_recipe.get("recommended_deep_scan_local_review_route")
+            == "POST /api/candidate-radar/deep-scan-local-review"
+            and next_execution_recipe.get("provider_parity_dry_run_route")
+            == "POST /api/candidate-radar/provider-parity-dry-run"
+            and next_execution_recipe.get("quant_projection_acceptance_dry_run_route")
+            == "POST /api/candidate-radar/quant-projection-acceptance-dry-run"
+            and next_execution_recipe.get("browser_qa_review_route") == "POST /api/candidate-radar/browser-qa-review"
+            and next_execution_recipe.get("allowed_next_step")
+            in {
+                "user_confirmed_post_candidate_radar_quick_scan_or_watchlist_custom_scan",
+                "resolve_local_candidate_radar_fast_scan_blockers",
+            }
+            and "render cached radar without scanning" in _list(next_execution_recipe.get("recommended_execution_order"))
+            and "run button-gated quick/watchlist/custom scan"
+            in _list(next_execution_recipe.get("recommended_execution_order"))
+            and "scan market from GET cache or React render" in _list(next_execution_recipe.get("not_allowed_next_steps"))
+            and "treat quick scan as production radar replacement"
+            in _list(next_execution_recipe.get("not_allowed_next_steps"))
+            and "treat candidate rows as buy instructions" in _list(next_execution_recipe.get("not_allowed_next_steps"))
+            and "retire legacy radar fallback before promotion audit clears"
+            in _list(next_execution_recipe.get("not_allowed_next_steps"))
+            and "worker-backed full-pool execution evidence"
+            in _list(next_execution_recipe.get("required_evidence_before_production_replacement"))
+            and next_execution_recipe.get("production_radar_replacement_complete") is False
+            and next_execution_recipe.get("legacy_retirement_ready") is False
+            and next_execution_recipe.get("provider_execution_implemented") is False
+            and next_execution_recipe.get("model_execution_implemented") is False
+            and next_execution_recipe.get("page_render_starts_scan") is False
+            and _flag_false(
+                next_execution_recipe,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and next_execution_recipe.get("does_not_execute_trades") is True
+            and next_execution_recipe.get("does_not_modify_strategy_action") is True
+            and next_execution_recipe.get("candidate_is_not_buy_instruction") is True
+            and int(next_execution_recipe.get("row_count") or 0) == len(next_execution_rows)
+            and len(next_execution_rows) >= 12
+            and _dict(next_execution_rows.get("cache_render_boundary")).get("status") == "passed_no_scan_on_render"
+            and _dict(next_execution_rows.get("fast_scan_task_pipeline_ready")).get("required_before_fast_scan") is True
+            and _dict(next_execution_rows.get("production_promotion_boundary")).get("status")
+            == "promotion_blocked_visible"
+            and policy.get("candidate_radar_next_execution_recipe_is_local") is True
+            and policy.get("candidate_radar_next_execution_recipe_calls_provider_or_model") is False
+            and policy.get("candidate_radar_next_execution_recipe_requires_button_task") is True
+            and policy.get("candidate_radar_next_execution_recipe_is_not_production_replacement") is True
+            and "candidate_radar_next_execution_recipe" in candidate_frontend
+            and "雷达下一步执行配方" in candidate_frontend,
+            "Candidate Radar next-execution recipe must guide the fast local scan path while preserving no-feature-loss, provider/model/browser, legacy fallback, and no-trade boundaries.",
         ),
         _row(
             "full_pool_local_execution_receipt_is_local_not_provider_acceptance",
@@ -1290,6 +1363,10 @@ def build_contract() -> dict[str, Any]:
             "local_dry_run_ready"
         )
         is True,
+        "candidate_radar_next_execution_recipe_ready": next_execution_recipe.get(
+            "recipe_ready_for_user_fast_scan"
+        )
+        is True,
         "cache_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -1329,6 +1406,11 @@ def build_contract() -> dict[str, Any]:
             "activation_receipt_status": activation_receipt.get("status"),
             "activation_receipt_production_blocker_count": activation_receipt.get("production_blocker_count"),
             "activation_receipt_pending_evidence_count": activation_receipt.get("pending_evidence_count"),
+            "candidate_radar_next_execution_status": next_execution_recipe.get("status"),
+            "candidate_radar_next_execution_blocker_count": next_execution_recipe.get("blocking_row_count"),
+            "candidate_radar_next_execution_production_pending_count": next_execution_recipe.get(
+                "production_pending_phase_count"
+            ),
             "result_delta_status": result_delta.get("status"),
             "priority_explanation_status": priority_explanation.get("status"),
             "priority_explanation_gap_count": priority_explanation.get("explanation_gap_count"),

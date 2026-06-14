@@ -4196,6 +4196,39 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["policy"]["degraded_modes_are_visible"])
         self.assertTrue(packet["policy"]["full_pool_scan_requires_future_worker"])
         self.assertTrue(packet["policy"]["fast_scan_runtime_budget_contract_visible"])
+        next_recipe = packet["candidate_radar_next_execution_recipe"]
+        next_recipe_rows = {row["phase"]: row for row in packet["candidate_radar_next_execution_rows"]}
+        self.assertEqual(next_recipe["schema_version"], "candidate_radar_next_execution_recipe.v1")
+        self.assertEqual(next_recipe["status"], "candidate_radar_next_execution_ready_for_fast_scan")
+        self.assertEqual(next_recipe["scope"], "local_candidate_radar_next_execution_recipe_no_execution")
+        self.assertTrue(next_recipe["recipe_ready_for_user_fast_scan"])
+        self.assertFalse(next_recipe["ready_to_execute_from_cache"])
+        self.assertTrue(next_recipe["requires_explicit_user_action"])
+        self.assertEqual(next_recipe["recommended_fast_scan_route"], "POST /api/candidate-radar/scan-quick")
+        self.assertEqual(next_recipe["allowed_next_step"], "user_confirmed_post_candidate_radar_quick_scan_or_watchlist_custom_scan")
+        self.assertIn("render cached radar without scanning", next_recipe["recommended_execution_order"])
+        self.assertIn("scan market from GET cache or React render", next_recipe["not_allowed_next_steps"])
+        self.assertFalse(next_recipe["production_radar_replacement_complete"])
+        self.assertFalse(next_recipe["legacy_retirement_ready"])
+        self.assertFalse(next_recipe["external_calls_triggered"])
+        self.assertFalse(next_recipe["tushare_called"])
+        self.assertFalse(next_recipe["deepseek_called"])
+        self.assertFalse(next_recipe["github_called"])
+        self.assertTrue(next_recipe["does_not_execute_trades"])
+        self.assertTrue(next_recipe["does_not_modify_strategy_action"])
+        self.assertEqual(next_recipe["row_count"], 12)
+        self.assertEqual(next_recipe["blocking_row_count"], 0)
+        self.assertGreater(next_recipe["production_pending_phase_count"], 0)
+        self.assertEqual(next_recipe_rows["fast_scan_task_pipeline_ready"]["status"], "passed_local_task_pipeline")
+        self.assertEqual(next_recipe_rows["provider_parity_scope_ticket_required"]["status"], "pending_provider_parity_dry_run")
+        self.assertEqual(next_recipe_rows["production_promotion_boundary"]["status"], "promotion_blocked_visible")
+        self.assertTrue(packet["policy"]["candidate_radar_next_execution_recipe_is_local"])
+        self.assertFalse(packet["policy"]["candidate_radar_next_execution_recipe_calls_provider_or_model"])
+        self.assertTrue(packet["policy"]["candidate_radar_next_execution_recipe_requires_button_task"])
+        self.assertTrue(packet["policy"]["candidate_radar_next_execution_recipe_is_not_production_replacement"])
+        self.assertEqual(packet["counts"]["candidate_radar_next_execution_row_count"], 12)
+        self.assertEqual(packet["counts"]["candidate_radar_next_execution_blocker_count"], 0)
+        self.assertTrue(any(row["api"] == "local_candidate_radar_next_execution_recipe" for row in packet["call_ledger"]))
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
@@ -7865,6 +7898,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("activation_receipt_guides_next_safe_step", script)
         self.assertIn("candidate_radar_legacy_parity_acceptance_receipt.v1", script)
         self.assertIn("candidate_radar_production_activation_receipt.v1", script)
+        self.assertIn("candidate_radar_next_execution_recipe.v1", script)
+        self.assertIn("candidate_radar_next_execution_recipe_is_local_fast_scan_path", script)
         self.assertIn("priority_explanation_is_local_not_trade_signal", script)
         self.assertIn("full_pool_plan_is_plan_only", script)
         self.assertIn("deep_scan_plan_is_plan_only", script)
@@ -7905,6 +7940,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["legacy_parity_acceptance_receipt_ready"])
         self.assertTrue(payload["deep_scan_local_review_receipt_ready"])
         self.assertTrue(payload["fast_scan_task_pipeline_ready"])
+        self.assertTrue(payload["candidate_radar_next_execution_recipe_ready"])
         self.assertFalse(payload["external_calls_triggered"])
         self.assertFalse(payload["tushare_called"])
         self.assertFalse(payload["deepseek_called"])
@@ -7965,6 +8001,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertGreaterEqual(payload["observed"]["fast_scan_task_pipeline_row_count"], 8)
         self.assertGreater(payload["observed"]["fast_scan_task_pipeline_production_blocker_count"], 0)
+        self.assertEqual(
+            payload["observed"]["candidate_radar_next_execution_status"],
+            "candidate_radar_next_execution_ready_for_fast_scan",
+        )
+        self.assertEqual(payload["observed"]["candidate_radar_next_execution_blocker_count"], 0)
+        self.assertGreater(payload["observed"]["candidate_radar_next_execution_production_pending_count"], 0)
         self.assertEqual(
             payload["observed"]["no_feature_loss_status"],
             "no_feature_loss_acceptance_local_ready_production_pending",
@@ -8027,6 +8069,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("cache_get_is_read_only_no_scan", criteria)
         self.assertIn("no_feature_loss_is_local_not_replacement", criteria)
         self.assertIn("replacement_gap_triage_blocks_legacy_retirement", criteria)
+        self.assertIn("candidate_radar_next_execution_recipe_is_local_fast_scan_path", criteria)
         self.assertIn("fast_scan_task_pipeline_is_local_nonblocking_receipt", criteria)
         self.assertIn("legacy_parity_acceptance_receipt_blocks_feature_loss", criteria)
         self.assertIn("activation_receipt_guides_next_safe_step", criteria)
@@ -13741,6 +13784,70 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["candidate_radar_activation_blocker_count"], activation["production_blocker_count"])
         self.assertEqual(packet["counts"]["candidate_radar_activation_pending_evidence_count"], activation["pending_evidence_count"])
         self.assertTrue(any(row["api"] == "local_candidate_radar_production_activation_receipt" for row in packet["call_ledger"]))
+        next_recipe = packet["candidate_radar_next_execution_recipe"]
+        next_recipe_rows = {row["phase"]: row for row in packet["candidate_radar_next_execution_rows"]}
+        self.assertEqual(next_recipe["schema_version"], "candidate_radar_next_execution_recipe.v1")
+        self.assertEqual(next_recipe["status"], "candidate_radar_next_execution_ready_for_fast_scan")
+        self.assertEqual(next_recipe["scope"], "local_candidate_radar_next_execution_recipe_no_execution")
+        self.assertTrue(next_recipe["recipe_ready_for_user_fast_scan"])
+        self.assertFalse(next_recipe["ready_to_execute_from_cache"])
+        self.assertTrue(next_recipe["requires_explicit_user_action"])
+        self.assertEqual(next_recipe["recommended_fast_scan_route"], "POST /api/candidate-radar/scan-quick")
+        self.assertEqual(
+            next_recipe["recommended_full_pool_local_route"],
+            "POST /api/candidate-radar/full-pool-local-scan",
+        )
+        self.assertEqual(
+            next_recipe["recommended_deep_scan_local_review_route"],
+            "POST /api/candidate-radar/deep-scan-local-review",
+        )
+        self.assertEqual(next_recipe["provider_parity_dry_run_route"], "POST /api/candidate-radar/provider-parity-dry-run")
+        self.assertEqual(
+            next_recipe["quant_projection_acceptance_dry_run_route"],
+            "POST /api/candidate-radar/quant-projection-acceptance-dry-run",
+        )
+        self.assertEqual(next_recipe["browser_qa_review_route"], "POST /api/candidate-radar/browser-qa-review")
+        self.assertEqual(
+            next_recipe["allowed_next_step"],
+            "user_confirmed_post_candidate_radar_quick_scan_or_watchlist_custom_scan",
+        )
+        self.assertIn("render cached radar without scanning", next_recipe["recommended_execution_order"])
+        self.assertIn("run button-gated quick/watchlist/custom scan", next_recipe["recommended_execution_order"])
+        self.assertIn("scan market from GET cache or React render", next_recipe["not_allowed_next_steps"])
+        self.assertIn("treat quick scan as production radar replacement", next_recipe["not_allowed_next_steps"])
+        self.assertIn("treat candidate rows as buy instructions", next_recipe["not_allowed_next_steps"])
+        self.assertIn("worker-backed full-pool execution evidence", next_recipe["required_evidence_before_production_replacement"])
+        self.assertFalse(next_recipe["production_radar_replacement_complete"])
+        self.assertFalse(next_recipe["legacy_retirement_ready"])
+        self.assertFalse(next_recipe["provider_execution_implemented"])
+        self.assertFalse(next_recipe["model_execution_implemented"])
+        self.assertFalse(next_recipe["page_render_starts_scan"])
+        self.assertFalse(next_recipe["external_calls_triggered"])
+        self.assertFalse(next_recipe["tushare_called"])
+        self.assertFalse(next_recipe["deepseek_called"])
+        self.assertFalse(next_recipe["github_called"])
+        self.assertFalse(next_recipe["contains_secret"])
+        self.assertTrue(next_recipe["does_not_execute_trades"])
+        self.assertTrue(next_recipe["does_not_modify_strategy_action"])
+        self.assertTrue(next_recipe["candidate_is_not_buy_instruction"])
+        self.assertEqual(next_recipe["row_count"], 12)
+        self.assertEqual(next_recipe["blocking_row_count"], 0)
+        self.assertGreater(next_recipe["production_pending_phase_count"], 0)
+        self.assertEqual(next_recipe_rows["cache_render_boundary"]["status"], "passed_no_scan_on_render")
+        self.assertEqual(next_recipe_rows["fast_scan_task_pipeline_ready"]["status"], "passed_local_task_pipeline")
+        self.assertEqual(next_recipe_rows["no_feature_loss_surface_ready"]["status"], "passed_no_feature_loss_surface")
+        self.assertEqual(next_recipe_rows["trade_action_isolation_preserved"]["status"], "passed_research_only")
+        self.assertEqual(next_recipe_rows["provider_parity_scope_ticket_required"]["status"], "pending_provider_parity_dry_run")
+        self.assertEqual(next_recipe_rows["quant_projection_scope_ticket_required"]["status"], "pending_quant_projection_dry_run")
+        self.assertEqual(next_recipe_rows["production_promotion_boundary"]["status"], "promotion_blocked_visible")
+        self.assertTrue(packet["policy"]["candidate_radar_next_execution_recipe_is_local"])
+        self.assertFalse(packet["policy"]["candidate_radar_next_execution_recipe_calls_provider_or_model"])
+        self.assertTrue(packet["policy"]["candidate_radar_next_execution_recipe_requires_button_task"])
+        self.assertTrue(packet["policy"]["candidate_radar_next_execution_recipe_is_not_production_replacement"])
+        self.assertEqual(packet["counts"]["candidate_radar_next_execution_row_count"], 12)
+        self.assertEqual(packet["counts"]["candidate_radar_next_execution_blocker_count"], 0)
+        self.assertGreater(packet["counts"]["candidate_radar_next_execution_production_pending_count"], 0)
+        self.assertTrue(any(row["api"] == "local_candidate_radar_next_execution_recipe" for row in packet["call_ledger"]))
         receipt = packet["quick_scan_execution_receipt"]
         receipt_rows = {row["receipt_key"]: row for row in packet["quick_scan_execution_receipt_rows"]}
         self.assertEqual(receipt["schema_version"], "candidate_radar_quick_scan_receipt.v1")

@@ -4458,6 +4458,7 @@ def _attach_no_feature_loss_acceptance_contract(packet: Mapping[str, Any]) -> di
     view = _attach_replacement_gap_triage_contract(view)
     view = _attach_candidate_radar_promotion_blocker_audit(view)
     view = _attach_candidate_radar_production_activation_receipt(view)
+    view = _attach_candidate_radar_next_execution_recipe(view)
     return view
 
 
@@ -5182,6 +5183,298 @@ def _attach_candidate_radar_production_activation_receipt(packet: Mapping[str, A
     view["call_ledger"] = ledger
     view["candidate_radar_production_activation_receipt"] = contract
     view["candidate_radar_production_activation_rows"] = rows
+    return view
+
+
+def _candidate_radar_next_execution_recipe_row(
+    phase: str,
+    status: str,
+    passed: bool,
+    *,
+    evidence: str,
+    required_before_fast_scan: bool = True,
+    recommended_order: int,
+) -> dict[str, Any]:
+    return {
+        "phase": phase,
+        "status": status,
+        "passed": bool(passed),
+        "required_before_fast_scan": bool(required_before_fast_scan),
+        "recommended_order": recommended_order,
+        "evidence": evidence,
+        "recipe_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+    }
+
+
+def _candidate_radar_next_execution_recipe(
+    packet: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    task_pipeline = _as_dict(packet.get("fast_scan_task_pipeline_contract"))
+    no_loss = _as_dict(packet.get("no_feature_loss_acceptance_contract"))
+    runtime_budget = _as_dict(packet.get("fast_scan_runtime_budget_contract"))
+    result_delta = _as_dict(packet.get("result_delta_clarity_contract"))
+    full_pool_receipt = _as_dict(packet.get("full_pool_local_execution_receipt"))
+    deep_scan_receipt = _as_dict(packet.get("deep_scan_local_review_receipt"))
+    provider_parity_dry_run = _as_dict(packet.get("provider_parity_dry_run_receipt"))
+    quant_dry_run = _as_dict(packet.get("search_quant_projection_acceptance_dry_run_receipt"))
+    browser_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
+    promotion = _as_dict(packet.get("candidate_radar_promotion_blocker_audit"))
+    activation = _as_dict(packet.get("candidate_radar_production_activation_receipt"))
+    policy = _as_dict(packet.get("policy"))
+    counts = _as_dict(packet.get("counts"))
+    candidate_count = int(counts.get("candidate_count") or 0)
+    local_pipeline_ready = bool(task_pipeline.get("local_task_pipeline_ready"))
+    no_loss_ready = bool(no_loss.get("local_no_feature_loss_contract_ready"))
+    runtime_ready = runtime_budget.get("status") == "fast_scan_runtime_budget_ready"
+    trade_guard_ready = bool(
+        packet.get("does_not_execute_trades") is True
+        and packet.get("does_not_modify_strategy_action") is True
+        and packet.get("candidate_is_not_buy_instruction") is not False
+    )
+    cache_render_safe = bool(
+        policy.get("does_not_scan_market") is True
+        and policy.get("post_task_required_for_scan") is True
+        and policy.get("does_not_call_tushare") is True
+        and policy.get("does_not_call_deepseek") is True
+        and policy.get("does_not_call_github") is True
+    )
+    provider_parity_ticket_visible = bool(provider_parity_dry_run.get("acceptance_scope_hash_short"))
+    quant_ticket_visible = bool(quant_dry_run.get("acceptance_scope_hash_short"))
+    browser_review_ready = bool(browser_review.get("local_browser_qa_review_ready"))
+    rows = [
+        _candidate_radar_next_execution_recipe_row(
+            "cache_render_boundary",
+            "passed_no_scan_on_render" if cache_render_safe else "blocked_render_boundary",
+            cache_render_safe,
+            evidence=(
+                f"does_not_scan_market={policy.get('does_not_scan_market')}; "
+                f"post_task_required_for_scan={policy.get('post_task_required_for_scan')}"
+            ),
+            recommended_order=1,
+        ),
+        _candidate_radar_next_execution_recipe_row(
+            "fast_scan_task_pipeline_ready",
+            "passed_local_task_pipeline" if local_pipeline_ready else "blocked_task_pipeline",
+            local_pipeline_ready,
+            evidence=f"pipeline_status={task_pipeline.get('status')}; candidate_count={candidate_count}",
+            recommended_order=2,
+        ),
+        _candidate_radar_next_execution_recipe_row(
+            "no_feature_loss_surface_ready",
+            "passed_no_feature_loss_surface" if no_loss_ready else "blocked_no_feature_loss_surface",
+            no_loss_ready,
+            evidence=f"no_loss_status={no_loss.get('status')}; visible_gaps={no_loss.get('visible_gap_count')}",
+            recommended_order=3,
+        ),
+        _candidate_radar_next_execution_recipe_row(
+            "fast_scan_runtime_budget_visible",
+            "passed_runtime_budget_visible" if runtime_ready else "blocked_runtime_budget",
+            runtime_ready,
+            evidence=(
+                f"display_limit={runtime_budget.get('display_candidate_limit')}; "
+                f"truncated={runtime_budget.get('candidate_display_truncated_count')}"
+            ),
+            recommended_order=4,
+        ),
+        _candidate_radar_next_execution_recipe_row(
+            "trade_action_isolation_preserved",
+            "passed_research_only" if trade_guard_ready else "blocked_trade_action_boundary",
+            trade_guard_ready,
+            evidence="Candidate Radar remains research-only: no orders, no holdings mutation, no strategy action mutation.",
+            recommended_order=5,
+        ),
+        _candidate_radar_next_execution_recipe_row(
+            "result_delta_clarity_visible",
+            "passed_delta_surface_visible"
+            if result_delta.get("local_result_delta_clarity_ready") is True
+            else "pending_delta_surface",
+            result_delta.get("local_result_delta_clarity_ready") is True,
+            evidence=f"previous_cache_diff_done={result_delta.get('previous_cache_diff_done')}; visible_gap_count={result_delta.get('visible_gap_count')}",
+            required_before_fast_scan=False,
+            recommended_order=6,
+        ),
+        _candidate_radar_next_execution_recipe_row(
+            "local_full_pool_receipt_available",
+            "local_receipt_visible"
+            if full_pool_receipt.get("schema_version") == "candidate_radar_full_pool_local_execution_receipt.v1"
+            else "pending_local_full_pool_receipt",
+            full_pool_receipt.get("schema_version") == "candidate_radar_full_pool_local_execution_receipt.v1",
+            evidence=(
+                f"local_full_pool_execution_done={full_pool_receipt.get('local_full_pool_execution_done')}; "
+                f"production_full_pool_scan_done={full_pool_receipt.get('production_full_pool_scan_done')}"
+            ),
+            required_before_fast_scan=False,
+            recommended_order=7,
+        ),
+        _candidate_radar_next_execution_recipe_row(
+            "local_deep_scan_review_available",
+            "local_review_visible"
+            if deep_scan_receipt.get("schema_version") == "candidate_radar_deep_scan_local_review_receipt.v1"
+            else "pending_local_deep_review",
+            deep_scan_receipt.get("schema_version") == "candidate_radar_deep_scan_local_review_receipt.v1",
+            evidence=(
+                f"local_deep_scan_review_done={deep_scan_receipt.get('local_deep_scan_review_done')}; "
+                f"deep_scan_done={deep_scan_receipt.get('deep_scan_done')}"
+            ),
+            required_before_fast_scan=False,
+            recommended_order=8,
+        ),
+        _candidate_radar_next_execution_recipe_row(
+            "provider_parity_scope_ticket_required",
+            "scope_ticket_visible" if provider_parity_ticket_visible else "pending_provider_parity_dry_run",
+            provider_parity_ticket_visible,
+            evidence=(
+                f"status={provider_parity_dry_run.get('status')}; "
+                f"scope_hash={provider_parity_dry_run.get('acceptance_scope_hash_short') or 'missing'}"
+            ),
+            required_before_fast_scan=False,
+            recommended_order=9,
+        ),
+        _candidate_radar_next_execution_recipe_row(
+            "quant_projection_scope_ticket_required",
+            "scope_ticket_visible" if quant_ticket_visible else "pending_quant_projection_dry_run",
+            quant_ticket_visible,
+            evidence=(
+                f"status={quant_dry_run.get('status')}; "
+                f"scope_hash={quant_dry_run.get('acceptance_scope_hash_short') or 'missing'}"
+            ),
+            required_before_fast_scan=False,
+            recommended_order=10,
+        ),
+        _candidate_radar_next_execution_recipe_row(
+            "browser_qa_review_required",
+            "local_review_ready" if browser_review_ready else "pending_browser_qa_review",
+            browser_review_ready,
+            evidence=f"browser_review_status={browser_review.get('status')}; ready={browser_review_ready}",
+            required_before_fast_scan=False,
+            recommended_order=11,
+        ),
+        _candidate_radar_next_execution_recipe_row(
+            "production_promotion_boundary",
+            "promotion_blocked_visible",
+            promotion.get("promotion_ready") is not True and activation.get("production_radar_replacement_complete") is not True,
+            evidence=(
+                f"promotion_ready={promotion.get('promotion_ready')}; "
+                f"activation_status={activation.get('status')}"
+            ),
+            required_before_fast_scan=False,
+            recommended_order=12,
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["required_before_fast_scan"] and not row["passed"]]
+    ready_for_user_fast_scan = not blocking_rows
+    production_pending_phases = [
+        row["phase"]
+        for row in rows
+        if not row["required_before_fast_scan"] and not row["passed"]
+    ]
+    contract = {
+        "schema_version": "candidate_radar_next_execution_recipe.v1",
+        "status": "candidate_radar_next_execution_ready_for_fast_scan"
+        if ready_for_user_fast_scan
+        else "candidate_radar_next_execution_blocked_local_fast_scan_readiness",
+        "scope": "local_candidate_radar_next_execution_recipe_no_execution",
+        "ltg": "LTG-13",
+        "recipe_ready_for_user_fast_scan": ready_for_user_fast_scan,
+        "ready_to_execute_from_cache": False,
+        "requires_explicit_user_action": True,
+        "recommended_fast_scan_route": "POST /api/candidate-radar/scan-quick",
+        "recommended_watchlist_route": "POST /api/candidate-radar/scan-quick",
+        "recommended_custom_pool_route": "POST /api/candidate-radar/scan-quick",
+        "recommended_full_pool_local_route": "POST /api/candidate-radar/full-pool-local-scan",
+        "recommended_deep_scan_local_review_route": "POST /api/candidate-radar/deep-scan-local-review",
+        "provider_parity_dry_run_route": "POST /api/candidate-radar/provider-parity-dry-run",
+        "quant_projection_acceptance_dry_run_route": "POST /api/candidate-radar/quant-projection-acceptance-dry-run",
+        "browser_qa_review_route": "POST /api/candidate-radar/browser-qa-review",
+        "allowed_next_step": "user_confirmed_post_candidate_radar_quick_scan_or_watchlist_custom_scan"
+        if ready_for_user_fast_scan
+        else "resolve_local_candidate_radar_fast_scan_blockers",
+        "recommended_execution_order": [
+            "render cached radar without scanning",
+            "run button-gated quick/watchlist/custom scan",
+            "review no-feature-loss and result-delta rows",
+            "run button-gated full-pool local scan when universe is larger",
+            "run button-gated deep-scan local review for parity gaps",
+            "run provider parity and quant projection dry-runs before real provider/model acceptance",
+            "run browser QA runner and button-gated review",
+            "use promotion/activation audits before retiring legacy fallback",
+        ],
+        "not_allowed_next_steps": [
+            "scan market from GET cache or React render",
+            "treat quick scan as production radar replacement",
+            "treat local full-pool scan as provider-backed full-pool acceptance",
+            "treat local deep review as DeepSeek/provider deep scan",
+            "call Tushare/DeepSeek/GitHub from render",
+            "treat candidate rows as buy instructions",
+            "modify strategy action or holdings",
+            "retire legacy radar fallback before promotion audit clears",
+        ],
+        "required_evidence_before_production_replacement": [
+            "worker-backed full-pool execution evidence",
+            "worker-backed deep-scan execution evidence",
+            "provider-backed parity call ledger",
+            "searched-symbol Tushare/DeepSeek acceptance ledger when enabled",
+            "browser visual and performance QA promotion",
+            "legacy retirement review",
+        ],
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "page_render_starts_scan": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "row_count": len(rows),
+        "blocking_row_count": len(blocking_rows),
+        "blocking_phases": [row["phase"] for row in blocking_rows],
+        "production_pending_phase_count": len(production_pending_phases),
+        "production_pending_phases": production_pending_phases,
+        "rows": rows,
+        "note": "This recipe organizes the next safe Candidate Radar steps. It does not run scans, call providers/models, produce buy instructions, retire legacy fallback, or complete production replacement.",
+    }
+    return contract, rows
+
+
+def _attach_candidate_radar_next_execution_recipe(packet: Mapping[str, Any]) -> dict[str, Any]:
+    view = dict(packet)
+    contract, rows = _candidate_radar_next_execution_recipe(view)
+    counts = dict(_as_dict(view.get("counts")))
+    counts["candidate_radar_next_execution_row_count"] = contract["row_count"]
+    counts["candidate_radar_next_execution_blocker_count"] = contract["blocking_row_count"]
+    counts["candidate_radar_next_execution_production_pending_count"] = contract["production_pending_phase_count"]
+    policy = dict(_as_dict(view.get("policy")))
+    policy["candidate_radar_next_execution_recipe_is_local"] = True
+    policy["candidate_radar_next_execution_recipe_calls_provider_or_model"] = False
+    policy["candidate_radar_next_execution_recipe_requires_button_task"] = True
+    policy["candidate_radar_next_execution_recipe_is_not_production_replacement"] = True
+    ledger = _as_list(view.get("call_ledger"))
+    ledger.append(
+        _candidate_call_ledger_row(
+            api="local_candidate_radar_next_execution_recipe",
+            source_snapshot="candidate_radar_packet",
+            row_count=len(rows),
+            call_status=contract["status"],
+        )
+    )
+    view["counts"] = counts
+    view["policy"] = policy
+    view["call_ledger"] = ledger
+    view["candidate_radar_next_execution_recipe"] = contract
+    view["candidate_radar_next_execution_rows"] = rows
     return view
 
 
