@@ -155,6 +155,8 @@ Documentation wording rule for this baseline: do not describe the boundary as a 
 
 User wording checkpoint for future reviews: the boundary is being upgraded from an absolute startup ban to runtime-mode layering, not weakened into hidden automation. `cache_only` remains the default offline/smoke/CI posture. `manual` remains explicit button/task operation. `live_light` may support the local daily research-client experience by creating one visible, rate-limited background task after cache render, but provider/model execution still needs safe configuration, POST-task audit trails, call/model ledger evidence, no UI blocking, no `strategy action` mutation, no real trading, and no token/key exposure. Reviewers should judge each change by its layer: initial render silence, task creation, real Tushare/DeepSeek execution, and production promotion are four different checkpoints.
 
+Latest user wording distilled into this roadmap: the long-term goal is not to keep Command Center 3.0 permanently offline, but to make every external-capable path mode-aware and reviewable. In `cache_only`, startup and render stay fully quiet. In `manual`, a human click or explicit task payload is the trigger. In `live_light`, the local research-client path may create one bounded bootstrap task after cache render, covering current target / holdings / watchlist / searched symbol, but only with visible mode state, symbol caps, rate limits, provider/model ledgers, safe failure, no hidden full-pool scan, no trading chain, and no token/key exposure. Any future wording or implementation should preserve that distinction instead of flattening the boundary back into either "never automate" or "silently automate".
+
 ## Remaining Goals Snapshot
 
 Current snapshot date: 2026-06-14.
