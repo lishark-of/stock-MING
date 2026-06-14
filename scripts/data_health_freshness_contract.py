@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +22,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from server.services import data_health_service  # noqa: E402
+from server.services import data_health_service, task_service  # noqa: E402
 
 
 CONTRACT_KEYS = [
@@ -57,8 +59,118 @@ def _flag_false(contract: dict[str, Any], *keys: str) -> bool:
     return all(contract.get(key) is False for key in keys)
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _serialized(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
+    original_token = os.environ.get("TUSHARE_TOKEN")
+    original_meta_path = task_service.SQLITE_META_PATH
+    fake_token = "TS_OK"
+    try:
+        with tempfile.TemporaryDirectory(prefix="stock_ming_data_health_contract_") as temp_dir:
+            task_service.SQLITE_META_PATH = Path(temp_dir) / "meta.sqlite"
+            task_service.clear_task_statuses_for_tests(clear_persisted=True)
+
+            os.environ["TUSHARE_TOKEN"] = fake_token
+            ready = data_health_service.run_trade_cal_provider_acceptance_dry_run(
+                {
+                    "approved_by_user": True,
+                    "apis": ["trade_cal", "daily_basic"],
+                    "exchange": ["SSE", "SZSE"],
+                    "start_date": "20240614",
+                    "end_date": "20260614",
+                    "token": "SHOULD_DROP",
+                }
+            )
+
+            missing_approval = data_health_service.run_trade_cal_provider_acceptance_dry_run(
+                {
+                    "apis": ["trade_cal"],
+                    "exchange": ["SSE"],
+                    "start_date": "20240614",
+                    "end_date": "20260614",
+                }
+            )
+
+            short_window = data_health_service.run_trade_cal_provider_acceptance_dry_run(
+                {
+                    "approved_by_user": True,
+                    "apis": ["trade_cal"],
+                    "exchange": ["SSE"],
+                    "start_date": "20260613",
+                    "end_date": "20260614",
+                }
+            )
+
+            os.environ.pop("TUSHARE_TOKEN", None)
+            missing_credentials = data_health_service.run_trade_cal_provider_acceptance_dry_run(
+                {
+                    "approved_by_user": True,
+                    "apis": ["trade_cal"],
+                    "exchange": ["SSE", "SZSE"],
+                    "start_date": "20240614",
+                    "end_date": "20260614",
+                }
+            )
+
+            return {
+                "ready": ready,
+                "missing_approval": missing_approval,
+                "short_window": short_window,
+                "missing_credentials": missing_credentials,
+                "_fake_token": {"value": fake_token},
+            }
+    finally:
+        if original_token is None:
+            os.environ.pop("TUSHARE_TOKEN", None)
+        else:
+            os.environ["TUSHARE_TOKEN"] = original_token
+        task_service.clear_task_statuses_for_tests(clear_persisted=False)
+        task_service.SQLITE_META_PATH = original_meta_path
+
+
 def build_contract() -> dict[str, Any]:
     packet = data_health_service.read_data_health_timeline_cache()
+    dry_run_cases = _run_trade_cal_dry_run_contract_cases()
+    dry_ready = dry_run_cases["ready"]
+    dry_missing_approval = dry_run_cases["missing_approval"]
+    dry_short_window = dry_run_cases["short_window"]
+    dry_missing_credentials = dry_run_cases["missing_credentials"]
+    dry_ready_payload = _as_dict(dry_ready.get("payload_safe"))
+    dry_ready_receipt = _as_dict(dry_ready_payload.get("trade_cal_provider_acceptance_dry_run_receipt"))
+    dry_ready_rows = {
+        str(row.get("criterion") or ""): row
+        for row in _as_list(dry_ready_payload.get("trade_cal_provider_acceptance_dry_run_rows"))
+        if isinstance(row, dict)
+    }
+    dry_ready_ledger = [_as_dict(row) for row in _as_list(dry_ready.get("call_ledger"))]
+    dry_missing_approval_receipt = _as_dict(
+        _as_dict(dry_missing_approval.get("payload_safe")).get("trade_cal_provider_acceptance_dry_run_receipt")
+    )
+    dry_short_window_receipt = _as_dict(
+        _as_dict(dry_short_window.get("payload_safe")).get("trade_cal_provider_acceptance_dry_run_receipt")
+    )
+    dry_missing_credentials_receipt = _as_dict(
+        _as_dict(dry_missing_credentials.get("payload_safe")).get("trade_cal_provider_acceptance_dry_run_receipt")
+    )
+    dry_run_serialized = _serialized(
+        {
+            "ready": dry_ready,
+            "missing_approval": dry_missing_approval,
+            "short_window": dry_short_window,
+            "missing_credentials": dry_missing_credentials,
+        }
+    )
+    fake_token = str(_as_dict(dry_run_cases.get("_fake_token")).get("value") or "")
     summary = _get(packet, "freshness_acceptance_summary")
     sample = _get(packet, "freshness_long_window_sample_validation")
     physical = _get(packet, "trade_cal_physical_validation")
@@ -228,6 +340,88 @@ def build_contract() -> dict[str, Any]:
             "Provider acceptance activation receipt must stay a local checklist: either explicit POST is the next step or local blockers remain visible, provider evidence remains missing, and cache/render paths must not call providers or claim production completion.",
         ),
         _row(
+            "trade_cal_dry_run_scope_ticket_is_local_no_provider",
+            dry_ready.get("status") == "success"
+            and dry_ready.get("task_type") == "run_trade_cal_provider_acceptance_dry_run"
+            and dry_ready.get("current_step") == "trade_cal_acceptance_dry_run_ready_real_execution_still_blocked"
+            and dry_ready_receipt.get("status") == "trade_cal_acceptance_dry_run_ready_real_execution_still_blocked"
+            and dry_ready_receipt.get("route") == "POST /api/data-health/trade-cal-provider-acceptance-dry-run"
+            and dry_ready_receipt.get("target_route") == "POST /api/tasks/refresh-tushare-facts"
+            and dry_ready_receipt.get("selected_apis") == ["trade_cal"]
+            and dry_ready_receipt.get("ignored_apis") == ["daily_basic"]
+            and dry_ready_receipt.get("acceptance_mode") == "provider_backed_trade_cal_long_window"
+            and len(str(dry_ready_receipt.get("acceptance_scope_hash_short") or "")) == 16
+            and _as_dict(dry_ready_receipt.get("credential_presence_summary")).get("status")
+            == "all_required_env_keys_present_no_values_read"
+            and dry_ready_receipt.get("ready_to_execute_real_provider_task") is False
+            and dry_ready_receipt.get("provider_execution_implemented") is False
+            and dry_ready_receipt.get("production_freshness_gate_complete") is False
+            and dry_ready_rows.get("server_credential_presence_checked", {}).get("status") == "passed_no_values_read"
+            and dry_ready_ledger
+            and dry_ready_ledger[0].get("api") == "local_trade_cal_provider_acceptance_dry_run"
+            and dry_ready_ledger[0].get("external") is False
+            and _flag_false(dry_ready, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and dry_ready.get("does_not_execute_trades") is True
+            and dry_ready.get("does_not_modify_strategy_action") is True,
+            "The dry-run ticket may bind a future trade_cal acceptance scope, but it must stay local and keep real execution/promotion blocked.",
+        ),
+        _row(
+            "trade_cal_dry_run_blocks_missing_approval",
+            dry_missing_approval.get("current_step")
+            == "trade_cal_acceptance_dry_run_blocked_user_approval_required_no_provider_call"
+            and dry_missing_approval_receipt.get("status")
+            == "trade_cal_acceptance_dry_run_blocked_user_approval_required"
+            and dry_missing_approval_receipt.get("allowed_next_step") == "rerun_dry_run_with_explicit_user_approval"
+            and dry_missing_approval_receipt.get("provider_execution_implemented") is False
+            and _flag_false(
+                dry_missing_approval,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            ),
+            "Missing explicit approval must block the dry-run from being ready for any later real provider task.",
+        ),
+        _row(
+            "trade_cal_dry_run_blocks_short_window",
+            dry_short_window.get("current_step")
+            == "trade_cal_acceptance_dry_run_blocked_window_too_short_no_provider_call"
+            and dry_short_window_receipt.get("status") == "trade_cal_acceptance_dry_run_blocked_window_too_short"
+            and dry_short_window_receipt.get("allowed_next_step") == "rerun_dry_run_with_730_day_window"
+            and dry_short_window_receipt.get("minimum_acceptance_window_days") == 730
+            and dry_short_window_receipt.get("provider_execution_implemented") is False
+            and _flag_false(
+                dry_short_window,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            ),
+            "A too-short window must remain a local blocker and must not trigger provider execution.",
+        ),
+        _row(
+            "trade_cal_dry_run_blocks_missing_credentials_without_leakage",
+            dry_missing_credentials.get("current_step")
+            == "trade_cal_acceptance_dry_run_blocked_missing_credentials_no_provider_call"
+            and dry_missing_credentials_receipt.get("status")
+            == "trade_cal_acceptance_dry_run_blocked_missing_credentials"
+            and dry_missing_credentials_receipt.get("allowed_next_step") == "configure_server_credentials_then_rerun_dry_run"
+            and _as_dict(dry_missing_credentials_receipt.get("credential_presence_summary")).get("status")
+            == "required_env_key_missing_no_values_read"
+            and dry_missing_credentials_receipt.get("provider_execution_implemented") is False
+            and _flag_false(
+                dry_missing_credentials,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and fake_token not in dry_run_serialized
+            and "SHOULD_DROP" not in dry_run_serialized
+            and "TUSHARE_TOKEN" not in dry_run_serialized,
+            "Credential presence may be checked as a boolean, but token values, submitted secret-like payloads, and raw env key names must not appear in dry-run output.",
+        ),
+        _row(
             "current_evidence_boundary_contract",
             current.get("schema_version") == "data_health_current_evidence_freshness_qa.v1"
             and current.get("current_evidence_requires_expected_trade_date") is True
@@ -321,6 +515,7 @@ def build_contract() -> dict[str, Any]:
             "freshness_provider_acceptance_activation_blocker_count": counts.get(
                 "freshness_provider_acceptance_activation_blocker_count"
             ),
+            "trade_cal_dry_run_contract_case_count": 4,
         },
         "note": "This is a local push-gate contract. Pending/provider-backed blockers are expected until explicit provider acceptance is run later.",
     }
