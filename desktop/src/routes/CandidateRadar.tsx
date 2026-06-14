@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolPlan, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
+import { getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -56,6 +56,11 @@ export default function CandidateRadar() {
       setTaskReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
     });
+  const launchFullPoolLocalScan = () =>
+    void postCandidateRadarFullPoolLocalScan({ scan_mode: "full_pool_local_scan", local_execution_only: true }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
   const launchDeepScanPlan = () =>
     void postCandidateRadarDeepScanPlan({ scan_mode: "deep_scan", plan_only: true, scan_depth: "legacy_parity_first" }).then((res) => {
       setTaskReceipt(res);
@@ -90,6 +95,7 @@ export default function CandidateRadar() {
   const browserQaReview = (cache.candidate_browser_qa_review_contract as Record<string, unknown> | undefined) ?? {};
   const freshnessState = (cache.freshness_state as Record<string, unknown> | undefined) ?? {};
   const fullPoolPlan = (cache.full_pool_scan_plan as Record<string, unknown> | undefined) ?? {};
+  const fullPoolLocalExecutionReceipt = (cache.full_pool_local_execution_receipt as Record<string, unknown> | undefined) ?? {};
   const deepScanPlan = (cache.deep_scan_plan as Record<string, unknown> | undefined) ?? {};
   const legacyParityInventory = (cache.legacy_parity_inventory as Record<string, unknown> | undefined) ?? {};
   const legacyParityAcceptanceReceipt = (cache.legacy_parity_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
@@ -126,6 +132,7 @@ export default function CandidateRadar() {
   const fullPoolFilterRows = rows(cache.full_pool_plan_filter_rows);
   const fullPoolSignalRows = rows(cache.full_pool_required_signal_rows);
   const fullPoolBlockerRows = rows(cache.full_pool_blocker_rows);
+  const fullPoolLocalExecutionRows = rows(cache.full_pool_local_execution_rows);
   const deepScanStageRows = rows(cache.deep_scan_stage_rows);
   const deepScanParityRows = rows(cache.deep_scan_parity_rows);
   const deepScanSignalRows = rows(cache.deep_scan_required_signal_rows);
@@ -216,6 +223,9 @@ export default function CandidateRadar() {
           { label: "市场扫描", value: policy.does_not_scan_market === true ? "不会" : "可能", tone: policy.does_not_scan_market === true ? "good" : "bad" },
           { label: "quick scan", value: policy.quick_scan_reads_cache_only === true ? "本地" : "未知", tone: policy.quick_scan_reads_cache_only === true ? "good" : "warn" },
           { label: "full-pool plan", value: String(fullPoolPlan.status ?? "missing"), tone: fullPoolPlan.status === "full_pool_plan_ready" ? "good" : "neutral" },
+          { label: "local full-pool", value: String(fullPoolLocalExecutionReceipt.status ?? "missing"), tone: fullPoolLocalExecutionReceipt.local_full_pool_execution_done === true ? "good" : "warn" },
+          { label: "local universe", value: counts.full_pool_local_execution_candidate_count as number | undefined },
+          { label: "local prod blockers", value: counts.full_pool_local_execution_production_blocker_count as number | undefined, tone: Number(counts.full_pool_local_execution_production_blocker_count ?? 0) ? "warn" : "good" },
           { label: "full-pool done", value: fullPoolPlan.full_pool_scan_done === true ? "完成" : "未执行", tone: fullPoolPlan.full_pool_scan_done === true ? "bad" : "good" },
           { label: "full-pool blockers", value: fullPoolPlan.blocking_issue_count as number | undefined, tone: Number(fullPoolPlan.blocking_issue_count ?? 0) ? "warn" : "good" },
           { label: "deep-scan plan", value: String(deepScanPlan.status ?? "missing"), tone: deepScanPlan.status === "deep_scan_plan_ready" ? "good" : "neutral" },
@@ -263,6 +273,7 @@ export default function CandidateRadar() {
           <div className="actions">
             <button onClick={launchCustomScan}>运行 custom pool scan</button>
             <button onClick={launchFullPoolPlan}>生成 full-pool 计划</button>
+            <button onClick={launchFullPoolLocalScan}>运行本地 full-pool</button>
             <button onClick={launchDeepScanPlan}>生成 deep-scan 清单</button>
           </div>
           <TaskLaunchReceipt receipt={taskReceipt} />
@@ -477,6 +488,14 @@ export default function CandidateRadar() {
         <DataLineageTable rows={fullPoolFilterRows} />
         <DataLineageTable rows={fullPoolSignalRows} />
         <DataLineageTable rows={fullPoolBlockerRows} />
+      </PacketCard>
+
+      <PacketCard title="Full-pool 本地执行收据" subtitle="POST /api/candidate-radar/full-pool-local-scan；只消费本地 universe，不代表 provider-backed 全市场验收" status={String(fullPoolLocalExecutionReceipt.status ?? "local_execution_missing")}>
+        <p>local_full_pool_execution_done: {String(fullPoolLocalExecutionReceipt.local_full_pool_execution_done === true)}；production_full_pool_scan_done: {String(fullPoolLocalExecutionReceipt.production_full_pool_scan_done === true)}</p>
+        <p>provider_backed_acceptance_done: {String(fullPoolLocalExecutionReceipt.provider_backed_acceptance_done === true)}；legacy_retirement_ready: {String(fullPoolLocalExecutionReceipt.legacy_retirement_ready === true)}</p>
+        <p>本地 full-pool 只证明显式 POST 消费了本地 universe 并写入 packet；不刷新 provider、不打开模型、不生成买入指令。</p>
+        <DataLineageTable rows={objectRow(fullPoolLocalExecutionReceipt)} />
+        <DataLineageTable rows={fullPoolLocalExecutionRows} />
       </PacketCard>
 
       <PacketCard title="本地候选池审计" subtitle="local_candidate_pool_audit；watchlist/custom 只读本地输入" status={String(localPoolAudit.input_source ?? "cache")}>

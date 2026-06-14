@@ -30,6 +30,12 @@ def plan_candidate_radar_full_pool(payload: dict[str, Any] | None = None) -> dic
     return task_envelope(task)
 
 
+@router.post("/full-pool-local-scan")
+def scan_candidate_radar_full_pool_local(payload: dict[str, Any] | None = None) -> dict:
+    task = candidate_service.run_candidate_full_pool_local_scan_task(payload)
+    return task_envelope(task)
+
+
 @router.post("/deep-scan-plan")
 def plan_candidate_radar_deep_scan(payload: dict[str, Any] | None = None) -> dict:
     task = candidate_service.run_candidate_deep_scan_plan_task(payload)

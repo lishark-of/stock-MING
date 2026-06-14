@@ -20,10 +20,11 @@ CANDIDATE_BROWSER_QA_RUNBOOK_PATH = PROJECT_ROOT / "scripts" / "candidate_radar_
 MOTION_BROWSER_QA_RUNNER_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runner.mjs"
 MOTION_QA_ARTIFACT_ROOT = PROJECT_ROOT / ".stock_ming_3" / "motion_qa"
 CANDIDATE_ROUTE_SOURCE_PATH = PROJECT_ROOT / "desktop" / "src" / "routes" / "CandidateRadar.tsx"
-SUPPORTED_LOCAL_SCAN_MODES = {"quick_cache_scan", "watchlist_scan", "custom_pool_scan"}
-LOCAL_POOL_SCAN_MODES = {"watchlist_scan", "custom_pool_scan"}
+SUPPORTED_LOCAL_SCAN_MODES = {"quick_cache_scan", "watchlist_scan", "custom_pool_scan", "full_pool_local_scan"}
+LOCAL_POOL_SCAN_MODES = {"watchlist_scan", "custom_pool_scan", "full_pool_local_scan"}
 FAST_SCAN_DISPLAY_CANDIDATE_LIMIT = 120
 FAST_SCAN_LOCAL_POOL_INPUT_LIMIT = 50
+FULL_POOL_LOCAL_INPUT_LIMIT = 500
 FAST_SCAN_WORKER_REQUIRED_UNIVERSE_THRESHOLD = 500
 PRIORITY_EXPLANATION_LIMIT = 30
 SAFE_LIST_LIMIT = 200
@@ -188,6 +189,13 @@ SCAN_MODE_STATUS_ROWS = [
         "notes": "Full-pool plan can be generated locally; actual scan still requires future worker execution and explicit provider refresh tasks.",
     },
     {
+        "scan_mode": "full_pool_local_scan",
+        "status": "implemented_local_universe_receipt",
+        "scope": "explicit local universe payload/cache execution",
+        "external_calls": False,
+        "notes": "Consumes a local universe payload or cached candidates and writes a local execution receipt; it is not provider-backed full-market production acceptance.",
+    },
+    {
         "scan_mode": "deep_scan",
         "status": "implemented_plan_only",
         "scope": "legacy parity, provider, freshness, worker, and action-boundary readiness",
@@ -345,6 +353,15 @@ def _candidate_name_from_item(item: Mapping[str, Any]) -> str:
 def _local_pool_items_from_payload(payload_safe: Mapping[str, Any], scan_mode: str) -> tuple[list[Any], str]:
     if scan_mode == "watchlist_scan":
         keys = ["watchlist_candidates", "watchlist_targets", "candidates", "targets"]
+    elif scan_mode == "full_pool_local_scan":
+        keys = [
+            "full_pool_candidates",
+            "universe_candidates",
+            "local_universe_candidates",
+            "local_universe",
+            "candidates",
+            "targets",
+        ]
     else:
         keys = ["custom_candidates", "custom_pool", "manual_candidates", "candidates", "targets"]
     rows: list[Any] = []
@@ -361,11 +378,21 @@ def _local_pool_items_from_payload(payload_safe: Mapping[str, Any], scan_mode: s
         else:
             rows.append(value)
         break
-    text_value = payload_safe.get("custom_pool_text") if scan_mode == "custom_pool_scan" else payload_safe.get("watchlist_text")
+    if scan_mode == "custom_pool_scan":
+        text_value = payload_safe.get("custom_pool_text")
+    elif scan_mode == "full_pool_local_scan":
+        text_value = payload_safe.get("full_pool_text") or payload_safe.get("local_universe_text")
+    else:
+        text_value = payload_safe.get("watchlist_text")
     text_rows = _split_candidate_text(text_value)
     if text_rows and not rows:
         rows.extend(text_rows)
-        source_key = "payload.custom_pool_text" if scan_mode == "custom_pool_scan" else "payload.watchlist_text"
+        if scan_mode == "custom_pool_scan":
+            source_key = "payload.custom_pool_text"
+        elif scan_mode == "full_pool_local_scan":
+            source_key = "payload.full_pool_text"
+        else:
+            source_key = "payload.watchlist_text"
     return rows, source_key
 
 
@@ -405,7 +432,12 @@ def _normalize_local_pool_candidates(
     invalid_count = 0
     duplicate_count = 0
     truncated_count = max(0, len(raw_items) - max_items)
-    source_label = "持续调查池本地输入" if scan_mode == "watchlist_scan" else "自定义候选池本地输入"
+    if scan_mode == "watchlist_scan":
+        source_label = "持续调查池本地输入"
+    elif scan_mode == "full_pool_local_scan":
+        source_label = "本地 full-pool universe 输入"
+    else:
+        source_label = "自定义候选池本地输入"
 
     for index, raw in enumerate(raw_items[:max_items], start=1):
         safe_raw = _safe_value(raw)
@@ -492,7 +524,7 @@ def _normalize_local_pool_candidates(
         "truncated_candidate_count": truncated_count,
         "skipped_candidate_count": disabled_count + invalid_count + duplicate_count + truncated_count,
         "max_local_candidates": max_items,
-        "sync_input_limit": FAST_SCAN_LOCAL_POOL_INPUT_LIMIT,
+        "sync_input_limit": max_items,
         "requires_worker_when_over_limit": truncated_count > 0,
         "cache_only": True,
         "external_calls_triggered": False,
@@ -515,14 +547,25 @@ def _snapshot_with_local_candidate_pool(
     raw_items, input_source = _local_pool_items_from_payload(payload_safe, scan_mode)
     if scan_mode == "watchlist_scan" and not raw_items:
         raw_items, input_source = _local_watchlist_items_from_snapshot(snapshot_map)
+    if scan_mode == "full_pool_local_scan" and not raw_items:
+        radar_packet = _as_dict(snapshot_map.get("radar_packet") or snapshot_map.get("command_center_radar_packet"))
+        raw_items = _as_list(snapshot_map.get("next_ticket_candidates")) or _as_list(radar_packet.get("top_candidates"))
+        input_source = "snapshot.next_ticket_candidates_or_radar_top_candidates" if raw_items else input_source
+    max_items = FULL_POOL_LOCAL_INPUT_LIMIT if scan_mode == "full_pool_local_scan" else FAST_SCAN_LOCAL_POOL_INPUT_LIMIT
     candidates, skipped, audit = _normalize_local_pool_candidates(
         raw_items,
         scan_mode=scan_mode,
         input_source=input_source,
+        max_items=max_items,
     )
     overlay = dict(snapshot_map)
     existing_radar = _as_dict(snapshot_map.get("radar_packet") or snapshot_map.get("command_center_radar_packet"))
-    source_text = "持续调查池本地扫描" if scan_mode == "watchlist_scan" else "自定义候选池本地扫描"
+    if scan_mode == "watchlist_scan":
+        source_text = "持续调查池本地扫描"
+    elif scan_mode == "full_pool_local_scan":
+        source_text = "本地 full-pool universe 执行"
+    else:
+        source_text = "自定义候选池本地扫描"
     overlay["next_ticket_candidates"] = candidates
     overlay["radar_packet"] = {
         **existing_radar,
@@ -1564,6 +1607,8 @@ def _scan_execution_summary(
     scan_family = (
         "full_pool_plan"
         if scan_mode == "full_pool_plan"
+        else "full_pool_local_execution"
+        if scan_mode == "full_pool_local_scan"
         else "deep_scan_plan"
         if scan_mode == "deep_scan_plan"
         else "local_pool_scan"
@@ -1650,7 +1695,9 @@ def _scan_acceptance_rows(
         },
         {
             "check_key": "scan_mode_contract",
-            "status": "passed" if scan_mode in SUPPORTED_LOCAL_SCAN_MODES or scan_mode in {"cache_only", "full_pool_plan"} else "fallback_reported",
+            "status": "passed"
+            if scan_mode in SUPPORTED_LOCAL_SCAN_MODES or scan_mode in {"cache_only", "full_pool_plan"}
+            else "fallback_reported",
             "observed": scan_mode,
             "user_visible": True,
         },
@@ -1682,8 +1729,12 @@ def _scan_acceptance_rows(
         },
         {
             "check_key": "full_pool_boundary",
-            "status": "plan_only" if full_pool_plan_ready else "not_executed",
-            "observed": "full_pool_scan_done=false; plan does not score candidates or refresh providers.",
+            "status": "local_execution_receipt" if scan_mode == "full_pool_local_scan" else "plan_only" if full_pool_plan_ready else "not_executed",
+            "observed": (
+                "local_full_pool_execution_done=true; production_full_pool_scan_done=false; provider_refresh_executed=false."
+                if scan_mode == "full_pool_local_scan"
+                else "full_pool_scan_done=false; plan does not score candidates or refresh providers."
+            ),
             "user_visible": True,
         },
         {
@@ -4306,6 +4357,152 @@ def _build_full_pool_scan_plan(
     }
 
 
+def _full_pool_local_execution_row(
+    receipt_key: str,
+    status: str,
+    *,
+    passed: bool,
+    production_blocker: bool,
+    evidence: str,
+) -> dict[str, Any]:
+    return {
+        "receipt_key": receipt_key,
+        "status": status,
+        "passed": bool(passed),
+        "production_blocker": bool(production_blocker),
+        "evidence": evidence,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _full_pool_local_execution_receipt(
+    *,
+    scan_mode: str,
+    local_pool_audit: Mapping[str, Any],
+    candidate_rows: list[dict[str, Any]],
+    full_pool_scan_plan: Mapping[str, Any],
+    coverage: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    is_local_full_pool = scan_mode == "full_pool_local_scan"
+    normalized_count = int(local_pool_audit.get("normalized_candidate_count") or 0)
+    input_count = int(local_pool_audit.get("input_candidate_count") or 0)
+    truncated_count = int(local_pool_audit.get("truncated_candidate_count") or 0)
+    freshness = _as_dict(coverage.get("freshness_state"))
+    provider_gap_count = int(_as_dict(coverage.get("coverage_detail_summary")).get("provider_blocked_group_count") or 0) + int(
+        _as_dict(coverage.get("coverage_detail_summary")).get("stale_input_group_count") or 0
+    ) + int(_as_dict(coverage.get("coverage_detail_summary")).get("missing_provider_data_group_count") or 0)
+    local_execution_done = is_local_full_pool and normalized_count > 0
+    rows = [
+        _full_pool_local_execution_row(
+            "explicit_post_task_required",
+            "passed" if is_local_full_pool else "not_applicable",
+            passed=is_local_full_pool,
+            production_blocker=False,
+            evidence=f"scan_mode={scan_mode}; page_render_starts_full_pool=false; cache_get_starts_full_pool=false",
+        ),
+        _full_pool_local_execution_row(
+            "local_universe_consumed",
+            "passed" if normalized_count else "blocked_empty_local_universe",
+            passed=normalized_count > 0,
+            production_blocker=not local_execution_done,
+            evidence=f"input={input_count}; normalized={normalized_count}; source={local_pool_audit.get('input_source')}",
+        ),
+        _full_pool_local_execution_row(
+            "display_cap_visible",
+            "capped_visible" if truncated_count else "passed",
+            passed=True,
+            production_blocker=False,
+            evidence=f"displayed={len(candidate_rows)}; input_limit={local_pool_audit.get('max_local_candidates')}; truncated={truncated_count}",
+        ),
+        _full_pool_local_execution_row(
+            "provider_not_refreshed",
+            "provider_gaps_visible" if provider_gap_count else "passed",
+            passed=True,
+            production_blocker=True,
+            evidence=f"provider_gap_count={provider_gap_count}; provider_refresh_executed=false",
+        ),
+        _full_pool_local_execution_row(
+            "freshness_boundary_visible",
+            "research_only_reported" if freshness.get("source") == "missing" else "visible",
+            passed=True,
+            production_blocker=True,
+            evidence=f"freshness={freshness.get('source') or 'missing'}:{freshness.get('state') or 'unknown'}",
+        ),
+        _full_pool_local_execution_row(
+            "production_full_market_acceptance_pending",
+            "pending_provider_worker_browser_acceptance",
+            passed=False,
+            production_blocker=True,
+            evidence=(
+                f"local_execution_done={local_execution_done}; "
+                f"full_pool_plan_status={full_pool_scan_plan.get('status')}; provider_backed_acceptance_done=false"
+            ),
+        ),
+        _full_pool_local_execution_row(
+            "trade_action_boundary",
+            "passed",
+            passed=True,
+            production_blocker=False,
+            evidence="Local full-pool execution writes research candidates only and never mutates strategy action, holdings, or orders.",
+        ),
+    ]
+    local_blockers = [row["receipt_key"] for row in rows if not row.get("passed") and not row.get("production_blocker")]
+    production_blockers = [row["receipt_key"] for row in rows if row.get("production_blocker")]
+    receipt = {
+        "schema_version": "candidate_radar_full_pool_local_execution_receipt.v1",
+        "status": (
+            "full_pool_local_execution_ready_production_pending"
+            if local_execution_done
+            else "full_pool_local_execution_blocked_empty_universe"
+            if is_local_full_pool
+            else "full_pool_local_execution_not_run"
+        ),
+        "scope": "explicit_local_universe_execution_not_provider_backed_full_market_acceptance",
+        "ltg": "LTG-13",
+        "scan_mode": scan_mode,
+        "local_full_pool_execution_done": local_execution_done,
+        "production_full_pool_scan_done": False,
+        "full_pool_scan_done": False,
+        "provider_backed_acceptance_done": False,
+        "worker_backed_execution_done": False,
+        "browser_visual_qa_done": False,
+        "browser_performance_trace_done": False,
+        "legacy_retirement_ready": False,
+        "legacy_fallback_required": True,
+        "input_candidate_count": input_count,
+        "normalized_candidate_count": normalized_count,
+        "candidate_row_count": len(candidate_rows),
+        "truncated_candidate_count": truncated_count,
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "row_count": len(rows),
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+        "not_allowed_next_steps": [
+            "treat_local_full_pool_execution_as_provider_backed_full_market_acceptance",
+            "retire_legacy_radar_after_local_execution_only",
+            "convert_candidate_rows_to_buy_instruction",
+            "refresh_provider_from_full_pool_local_scan",
+        ],
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "rows": rows,
+        "note": "This receipt proves only an explicit local-universe Candidate Radar task consumed local candidates and wrote a packet. It is not real provider-backed full-market acceptance.",
+    }
+    return receipt, rows
+
+
 def _deep_scan_required_signal_rows(provider_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     by_group = {str(row.get("signal_group") or ""): row for row in provider_rows}
@@ -4678,6 +4875,18 @@ def _build_candidate_radar_packet(
     counts["candidate_display_truncated_count"] = candidate_display_truncated_count
     plan = dict(full_pool_scan_plan or _as_dict(snapshot_map.get("full_pool_scan_plan")))
     deep_plan = dict(deep_scan_plan or _as_dict(snapshot_map.get("deep_scan_plan")))
+    full_pool_local_execution_receipt, full_pool_local_execution_rows = _full_pool_local_execution_receipt(
+        scan_mode=scan_mode,
+        local_pool_audit=local_pool_audit or {},
+        candidate_rows=candidate_rows,
+        full_pool_scan_plan=plan,
+        coverage=coverage,
+    )
+    counts["full_pool_local_execution_row_count"] = full_pool_local_execution_receipt["row_count"]
+    counts["full_pool_local_execution_candidate_count"] = full_pool_local_execution_receipt["normalized_candidate_count"]
+    counts["full_pool_local_execution_production_blocker_count"] = full_pool_local_execution_receipt[
+        "production_blocker_count"
+    ]
     full_pool_blocker_rows = _as_list(plan.get("blocker_rows"))
     deep_scan_blocker_rows = _as_list(deep_plan.get("blocker_rows"))
     scan_execution_summary = _scan_execution_summary(
@@ -4856,6 +5065,8 @@ def _build_candidate_radar_packet(
         "legacy_parity_acceptance_rows": legacy_parity_acceptance_rows,
         "scan_mode_status_rows": [dict(row) for row in SCAN_MODE_STATUS_ROWS],
         "full_pool_scan_plan": plan,
+        "full_pool_local_execution_receipt": full_pool_local_execution_receipt,
+        "full_pool_local_execution_rows": full_pool_local_execution_rows,
         "full_pool_plan_stage_rows": _as_list(plan.get("stage_rows")),
         "full_pool_plan_filter_rows": _as_list(plan.get("filter_rows")),
         "full_pool_required_signal_rows": _as_list(plan.get("required_signal_rows")),
@@ -4895,6 +5106,9 @@ def _build_candidate_radar_packet(
             "full_pool_plan_is_not_full_pool_scan": True,
             "full_pool_plan_writes_no_candidates": True,
             "full_pool_plan_provider_refresh_executed": False,
+            "full_pool_local_execution_is_button_gated": scan_mode == "full_pool_local_scan",
+            "full_pool_local_execution_is_not_provider_backed_acceptance": True,
+            "full_pool_local_execution_does_not_refresh_provider": True,
             "deep_scan_plan_is_not_deep_scan": True,
             "deep_scan_plan_writes_no_new_candidates": True,
             "deep_scan_plan_provider_refresh_executed": False,
@@ -5016,6 +5230,19 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
         view["legacy_parity_acceptance_receipt"] = parity_receipt
         view["legacy_parity_acceptance_rows"] = parity_acceptance_rows
         view["call_ledger"] = view["call_ledger"] + parity_receipt["call_ledger"]
+    if not isinstance(view.get("full_pool_local_execution_receipt"), dict):
+        full_pool_local_receipt, full_pool_local_rows = _full_pool_local_execution_receipt(
+            scan_mode=persisted_scan_mode,
+            local_pool_audit=_as_dict(view.get("local_candidate_pool_audit")),
+            candidate_rows=[row for row in _as_list(view.get("candidate_rows")) if isinstance(row, dict)],
+            full_pool_scan_plan=_as_dict(view.get("full_pool_scan_plan")),
+            coverage={
+                "freshness_state": _as_dict(view.get("freshness_state")),
+                "coverage_detail_summary": _as_dict(view.get("coverage_detail_summary")),
+            },
+        )
+        view["full_pool_local_execution_receipt"] = full_pool_local_receipt
+        view["full_pool_local_execution_rows"] = full_pool_local_rows
     view["candidate_browser_qa_evidence_summary"] = candidate_browser_qa_evidence_summary
     view["candidate_browser_qa_evidence_rows"] = candidate_browser_qa_evidence_rows
     view["candidate_browser_qa_review_contract"] = candidate_browser_qa_review_contract
@@ -5038,6 +5265,12 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     counts["legacy_parity_acceptance_row_count"] = parity_receipt.get("receipt_row_count")
     counts["legacy_parity_acceptance_production_blocker_count"] = parity_receipt.get("production_blocker_count")
     counts["legacy_parity_acceptance_ready_count"] = parity_receipt.get("production_ready_count")
+    full_pool_local_receipt = _as_dict(view.get("full_pool_local_execution_receipt"))
+    counts["full_pool_local_execution_row_count"] = full_pool_local_receipt.get("row_count")
+    counts["full_pool_local_execution_candidate_count"] = full_pool_local_receipt.get("normalized_candidate_count")
+    counts["full_pool_local_execution_production_blocker_count"] = full_pool_local_receipt.get(
+        "production_blocker_count"
+    )
     view["counts"] = counts
     policy = _as_dict(view.get("policy"))
     policy["candidate_browser_qa_evidence_reads_local_artifact_only"] = True
@@ -5051,6 +5284,9 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     policy["legacy_parity_acceptance_receipt_is_local"] = True
     policy["legacy_parity_acceptance_is_not_production_replacement"] = True
     policy["legacy_parity_acceptance_requires_provider_worker_browser_evidence"] = True
+    policy["full_pool_local_execution_is_button_gated"] = persisted_scan_mode == "full_pool_local_scan"
+    policy["full_pool_local_execution_is_not_provider_backed_acceptance"] = True
+    policy["full_pool_local_execution_does_not_refresh_provider"] = True
     view["policy"] = policy
     warnings = _as_list(view.get("warnings"))
     first_warning = "GET /api/candidate-radar/cache 只读展示已持久化的 local scan 结果；不会自动全市场扫描。"
@@ -5266,6 +5502,103 @@ def run_candidate_full_pool_plan_task(payload: Any = None) -> dict[str, Any]:
         current_step="candidate_radar_full_pool_plan_ready",
         call_ledger=[ledger],
         warning="candidate_radar_full_pool_plan_ready_no_external_call",
+    ) or task
+
+
+def run_candidate_full_pool_local_scan_task(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        "run_candidate_radar_full_pool_local_scan",
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="candidate_radar_full_pool_local_scan_queued",
+        warnings=[
+            "下一票雷达 full-pool local scan 只消费本地 universe/payload/cache；不会调用 Tushare、DeepSeek 或 GitHub。",
+            "本地 full-pool 执行收据不是 provider-backed 全市场生产验收，不生成买入指令，不修改 strategy action。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.25,
+        current_step="reading_local_full_pool_universe",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    snapshot = packet_service.load_snapshot_cache()
+    previous_packet = _read_persisted_packet()
+    safe_snapshot = _safe_value(snapshot)
+    snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
+    scan_snapshot, local_pool_audit, local_pool_skipped_rows = _snapshot_with_local_candidate_pool(
+        snapshot_map,
+        payload_safe,
+        "full_pool_local_scan",
+    )
+    now = _now_iso()
+    plan = _build_full_pool_scan_plan(scan_snapshot, payload_safe, now=now)
+    request_params_safe = {
+        "scan_mode": "full_pool_local_scan",
+        "local_execution_only": True,
+        "input_candidate_count": local_pool_audit.get("input_candidate_count"),
+        "normalized_candidate_count": local_pool_audit.get("normalized_candidate_count"),
+        "truncated_candidate_count": local_pool_audit.get("truncated_candidate_count"),
+        "external_sources_allowed": False,
+        "provider_backed_acceptance_done": False,
+        "production_full_pool_scan_done": False,
+    }
+    packet = _build_candidate_radar_packet(
+        scan_snapshot,
+        mode="full_pool_local_scan",
+        cache_source="full_pool_local_scan_task",
+        scan_mode="full_pool_local_scan",
+        request_params_safe=request_params_safe,
+        local_pool_audit=local_pool_audit,
+        local_pool_skipped_rows=local_pool_skipped_rows,
+        full_pool_scan_plan=plan,
+        previous_packet=previous_packet,
+    )
+    receipt = _as_dict(packet.get("full_pool_local_execution_receipt"))
+    ledger = _candidate_call_ledger_row(
+        api="local_candidate_radar_full_pool_local_scan",
+        source_snapshot=str(local_pool_audit.get("input_source") or "local_universe_payload_or_cache"),
+        row_count=len(_as_list(packet.get("candidate_rows"))),
+        call_status=receipt.get("status") or "full_pool_local_execution_ready_production_pending",
+        request_params_safe=request_params_safe,
+    )
+    packet["task_id"] = task["task_id"]
+    packet["full_pool_local_scan_completed_at"] = now
+    packet["call_ledger"] = [ledger]
+    packet["warnings"] = [
+        "下一票雷达 full-pool local scan 已消费本地 universe 并写入执行收据；不刷新 provider、不调用模型、不代表 provider-backed 全市场验收。"
+    ] + [warning for warning in _as_list(packet.get("warnings")) if "full-pool local scan" not in str(warning)]
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
+    except Exception:
+        ledger["call_status"] = "full_pool_local_scan_storage_write_failed"
+        ledger["error_message_safe"] = "candidate_radar_full_pool_local_scan_sqlite_write_failed"
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="candidate_radar_full_pool_local_scan_storage_write_failed",
+            error_message_safe="candidate_radar_full_pool_local_scan_sqlite_write_failed",
+            call_ledger=[ledger],
+            warning="candidate_radar_full_pool_local_scan_failed_no_external_call",
+        ) or task
+
+    final_step = "candidate_radar_full_pool_local_scan_completed"
+    final_warning = "candidate_radar_full_pool_local_scan_completed_no_external_call"
+    if not _as_list(packet.get("candidate_rows")):
+        final_step = "candidate_radar_full_pool_local_scan_empty_universe"
+        final_warning = "candidate_radar_full_pool_local_scan_empty_universe_no_external_call"
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step=final_step,
+        call_ledger=[ledger],
+        warning=final_warning,
     ) or task
 
 

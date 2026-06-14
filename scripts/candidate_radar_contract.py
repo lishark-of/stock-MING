@@ -2,9 +2,10 @@
 """Validate the local LTG-13 Candidate Radar contract.
 
 This push-gate guard is not a production radar scan. It reads local cache and
-builds local plan-only contracts to prevent quick scans, full-pool plans,
-deep-scan plans, no-feature-loss QA, replacement triage, and result-delta
-clarity from being mistaken for production radar replacement or buy signals.
+builds local plan-only and local-universe execution contracts to prevent quick
+scans, full-pool plans, local full-pool execution receipts, deep-scan plans,
+no-feature-loss QA, replacement triage, and result-delta clarity from being
+mistaken for production radar replacement or buy signals.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from server.services import candidate_service, packet_service, task_service  # n
 REQUIRED_TASK_TYPES = {
     "run_candidate_radar_quick_scan",
     "run_candidate_radar_full_pool_plan",
+    "run_candidate_radar_full_pool_local_scan",
     "run_candidate_radar_deep_scan_plan",
     "run_candidate_radar_browser_qa_review",
 }
@@ -119,6 +121,22 @@ def build_contract() -> dict[str, Any]:
     snapshot_map = _snapshot_map()
     cache_packet = candidate_service.read_candidate_radar_cache()
     full_pool_plan = candidate_service._build_full_pool_scan_plan(snapshot_map, {}, now=now)
+    local_universe_packet = candidate_service._build_candidate_radar_packet(
+        snapshot_map,
+        mode="full_pool_local_scan",
+        cache_source="local_contract",
+        scan_mode="full_pool_local_scan",
+        request_params_safe={"local_execution_only": True, "external_sources_allowed": False},
+        local_pool_audit={
+            "scan_mode": "full_pool_local_scan",
+            "input_source": "local_contract_fixture",
+            "input_candidate_count": 2,
+            "normalized_candidate_count": 2,
+            "truncated_candidate_count": 0,
+            "max_local_candidates": candidate_service.FULL_POOL_LOCAL_INPUT_LIMIT,
+        },
+        full_pool_scan_plan=full_pool_plan,
+    )
     deep_scan_plan = candidate_service._build_deep_scan_plan(snapshot_map, {}, now=now)
     plan_packet = candidate_service._build_candidate_radar_packet(
         snapshot_map,
@@ -169,6 +187,12 @@ def build_contract() -> dict[str, Any]:
         for row in _list(cache_packet.get("legacy_parity_acceptance_rows"))
         if isinstance(row, dict)
     }
+    full_pool_local_receipt = _dict(local_universe_packet.get("full_pool_local_execution_receipt"))
+    full_pool_local_rows = {
+        str(row.get("receipt_key") or ""): row
+        for row in _list(local_universe_packet.get("full_pool_local_execution_rows"))
+        if isinstance(row, dict)
+    }
     browser_qa_evidence = _dict(cache_packet.get("candidate_browser_qa_evidence_summary"))
     browser_qa_review = _dict(cache_packet.get("candidate_browser_qa_review_contract"))
     policy = _dict(cache_packet.get("policy"))
@@ -202,6 +226,12 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_candidate_radar_full_pool_plan"].get("route") == "POST /api/candidate-radar/full-pool-plan"
             and task_rows["run_candidate_radar_full_pool_plan"].get("plan_only") is True
             and task_rows["run_candidate_radar_full_pool_plan"].get("full_pool_scan_done") is False
+            and task_rows["run_candidate_radar_full_pool_local_scan"].get("route")
+            == "POST /api/candidate-radar/full-pool-local-scan"
+            and task_rows["run_candidate_radar_full_pool_local_scan"].get("local_execution_only") is True
+            and task_rows["run_candidate_radar_full_pool_local_scan"].get("provider_backed_acceptance_done") is False
+            and task_rows["run_candidate_radar_full_pool_local_scan"].get("production_full_pool_scan_done") is False
+            and task_rows["run_candidate_radar_full_pool_local_scan"].get("provider_refresh_executed") is False
             and task_rows["run_candidate_radar_deep_scan_plan"].get("route") == "POST /api/candidate-radar/deep-scan-plan"
             and task_rows["run_candidate_radar_deep_scan_plan"].get("plan_only") is True
             and task_rows["run_candidate_radar_deep_scan_plan"].get("deep_scan_done") is False
@@ -212,6 +242,37 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_candidate_radar_browser_qa_review"].get("writes_artifacts") is False
             and task_rows["run_candidate_radar_browser_qa_review"].get("production_radar_replacement_complete") is False,
             "Candidate radar scan modes must stay button-gated local tasks; full-pool/deep-scan entries are plan-only and browser QA review reads local artifacts only.",
+        ),
+        _row(
+            "full_pool_local_execution_receipt_is_local_not_provider_acceptance",
+            full_pool_local_receipt.get("schema_version") == "candidate_radar_full_pool_local_execution_receipt.v1"
+            and full_pool_local_receipt.get("status") == "full_pool_local_execution_ready_production_pending"
+            and full_pool_local_receipt.get("local_full_pool_execution_done") is True
+            and full_pool_local_receipt.get("production_full_pool_scan_done") is False
+            and full_pool_local_receipt.get("provider_backed_acceptance_done") is False
+            and full_pool_local_receipt.get("worker_backed_execution_done") is False
+            and full_pool_local_receipt.get("legacy_retirement_ready") is False
+            and full_pool_local_receipt.get("legacy_fallback_required") is True
+            and int(full_pool_local_receipt.get("production_blocker_count") or 0) > 0
+            and _dict(full_pool_local_rows.get("local_universe_consumed")).get("passed") is True
+            and _dict(full_pool_local_rows.get("provider_not_refreshed")).get("production_blocker") is True
+            and _dict(full_pool_local_rows.get("production_full_market_acceptance_pending")).get("production_blocker")
+            is True
+            and "treat_local_full_pool_execution_as_provider_backed_full_market_acceptance"
+            in _list(full_pool_local_receipt.get("not_allowed_next_steps"))
+            and _flag_false(
+                full_pool_local_receipt,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and full_pool_local_receipt.get("does_not_execute_trades") is True
+            and full_pool_local_receipt.get("does_not_modify_strategy_action") is True
+            and full_pool_local_receipt.get("candidate_is_not_buy_instruction") is True
+            and "full_pool_local_execution_receipt" in candidate_frontend
+            and "Full-pool 本地执行收据" in candidate_frontend,
+            "Local full-pool execution must be visible as a receipt while provider-backed full-market acceptance stays pending.",
         ),
         _row(
             "fast_scan_readiness_is_local_pending",
@@ -578,6 +639,7 @@ def build_contract() -> dict[str, Any]:
             and "production_radar_replacement_complete" in this_script
             and "legacy_retirement_ready" in this_script
             and "candidate_radar_quick_scan_receipt.v1" in this_script
+            and "candidate_radar_full_pool_local_execution_receipt.v1" in this_script
             and "candidate_radar_production_activation_receipt.v1" in this_script
             and "candidate_is_not_buy_instruction" in this_script
             and ("request" + "s") not in this_script
@@ -607,6 +669,7 @@ def build_contract() -> dict[str, Any]:
         "candidate_browser_qa_review_ready": browser_qa_review.get("local_browser_qa_review_ready") is True,
         "candidate_radar_activation_receipt_ready": activation_receipt.get("local_activation_receipt_ready") is True,
         "legacy_parity_acceptance_receipt_ready": legacy_parity_acceptance.get("local_acceptance_receipt_ready") is True,
+        "full_pool_local_execution_receipt_ready": full_pool_local_receipt.get("local_full_pool_execution_done") is True,
         "cache_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -633,6 +696,9 @@ def build_contract() -> dict[str, Any]:
             "quick_scan_receipt_production_blocker_count": quick_receipt.get("production_blocker_count"),
             "legacy_parity_acceptance_status": legacy_parity_acceptance.get("status"),
             "legacy_parity_acceptance_production_blocker_count": legacy_parity_acceptance.get("production_blocker_count"),
+            "full_pool_local_execution_status": full_pool_local_receipt.get("status"),
+            "full_pool_local_execution_candidate_count": full_pool_local_receipt.get("normalized_candidate_count"),
+            "full_pool_local_execution_production_blocker_count": full_pool_local_receipt.get("production_blocker_count"),
             "activation_receipt_status": activation_receipt.get("status"),
             "activation_receipt_production_blocker_count": activation_receipt.get("production_blocker_count"),
             "activation_receipt_pending_evidence_count": activation_receipt.get("pending_evidence_count"),
