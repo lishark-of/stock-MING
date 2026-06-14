@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server.services import audit_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, model_strategy_service, next_session_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, tushare_task_service, worker_service
+from server.services import audit_service, bootstrap_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, model_strategy_service, next_session_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, tushare_task_service, worker_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
@@ -6701,6 +6701,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("/api/packets", script)
         self.assertIn("/api/packets/command_center_factor_quant_hub_packet", script)
         self.assertIn("/api/factor-quant/cache", script)
+        self.assertIn("/api/bootstrap/status", script)
         self.assertIn("/api/storage", script)
         self.assertIn("/api/storage/catalog", script)
         self.assertIn("/api/storage/factor-values", script)
@@ -10121,6 +10122,33 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(row["does_not_execute_trades"])
         self.assertTrue(row["does_not_modify_strategy_action"])
 
+    def _with_bootstrap_env(self, **values):
+        keys = (
+            "COMMAND_CENTER_BOOTSTRAP_MODE",
+            "COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN",
+            "COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN",
+            "COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT",
+            "COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS",
+            "COMMAND_CENTER_LIVE_DEEPSEEK_MODEL",
+            "COMMAND_CENTER_LIVE_ALLOW_FULL_POOL",
+        )
+        original = {key: os.environ.get(key) for key in keys}
+        for key in keys:
+            value = values.get(key)
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = str(value)
+
+        def restore():
+            for key, value in original.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        self.addCleanup(restore)
+
     def _with_trade_review_log(self, records):
         original_path = trade_review_service.TRADE_REVIEW_LOG_PATH
         temp_dir = tempfile.TemporaryDirectory()
@@ -10157,6 +10185,48 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             self.assertTrue(response["call_ledger"][0]["does_not_execute_trades"])
             self.assertTrue(response["call_ledger"][0]["does_not_modify_strategy_action"])
 
+    def test_bootstrap_status_live_light_config_is_visible_without_execution(self):
+        self._with_bootstrap_env(
+            COMMAND_CENTER_BOOTSTRAP_MODE="live_light",
+            COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT="12",
+            COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS="900",
+            COMMAND_CENTER_LIVE_DEEPSEEK_MODEL="custom-live-explain-model",
+            COMMAND_CENTER_LIVE_ALLOW_FULL_POOL="true",
+        )
+
+        response = self.client.get("/api/bootstrap/status").json()
+        packet = response["data"]
+        self.assertTrue(response["ok"])
+        self.assertEqual(packet["mode"], "live_light")
+        self.assertEqual(packet["status"], "live_light_config_visible_task_pending")
+        self.assertFalse(packet["cache_only"])
+        self.assertTrue(packet["read_only"])
+        self.assertTrue(packet["live_light"]["enabled"])
+        self.assertTrue(packet["live_light"]["tushare_on_open"])
+        self.assertTrue(packet["live_light"]["deepseek_on_open"])
+        self.assertTrue(packet["live_light"]["sources_enabled"])
+        self.assertEqual(packet["live_light"]["symbol_limit"], 12)
+        self.assertEqual(packet["live_light"]["rate_limit_seconds"], 900)
+        self.assertEqual(packet["live_light"]["deepseek_model"], "custom-live-explain-model")
+        self.assertFalse(packet["live_light"]["bootstrap_task_implemented"])
+        self.assertFalse(packet["live_light"]["full_pool_enabled"])
+        self.assertTrue(packet["live_light"]["full_pool_reserved"])
+        self.assertFalse(packet["policy"]["live_light_default_enabled"])
+        self.assertTrue(packet["policy"]["live_light_requires_opt_in"])
+        self.assertFalse(packet["policy"]["live_light_task_implemented"])
+        self.assertFalse(packet["policy"]["full_pool_on_open_allowed"])
+        self.assertFalse(packet["policy"]["github_probe_on_open_allowed"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertEqual(response["call_ledger"][0]["api"], "local_bootstrap_runtime_mode_cache")
+        self.assertFalse(response["call_ledger"][0]["external"])
+
     def test_health_and_cache_endpoints(self):
         self._with_meta_store()
         self._with_parquet_root()
@@ -10182,6 +10252,44 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(model_strategy["contains_secret"])
         self.assertNotIn("token", json.dumps(model_strategy, ensure_ascii=False).lower())
         self.assertNotIn("api_key", json.dumps(model_strategy, ensure_ascii=False).lower())
+
+        bootstrap = self.client.get("/api/bootstrap/status").json()
+        self.assertTrue(bootstrap["ok"])
+        self.assertEqual(bootstrap["data"]["schema_version"], "command_center_bootstrap_runtime_mode.v1")
+        self.assertEqual(bootstrap["data"]["mode"], "cache_only")
+        self.assertEqual(bootstrap["data"]["status"], "cache_only_ready_no_bootstrap")
+        self.assertTrue(bootstrap["data"]["cache_only"])
+        self.assertTrue(bootstrap["data"]["read_only"])
+        self.assertFalse(bootstrap["data"]["external_calls_triggered"])
+        self.assertFalse(bootstrap["data"]["tushare_called"])
+        self.assertFalse(bootstrap["data"]["deepseek_called"])
+        self.assertFalse(bootstrap["data"]["github_called"])
+        self.assertTrue(bootstrap["data"]["policy"]["cache_api_external_calls"] is False)
+        self.assertTrue(bootstrap["data"]["policy"]["post_task_required_for_external_calls"])
+        self.assertTrue(bootstrap["data"]["policy"]["live_light_requires_opt_in"])
+        self.assertFalse(bootstrap["data"]["policy"]["live_light_task_implemented"])
+        self.assertFalse(bootstrap["data"]["policy"]["live_full_enabled"])
+        self.assertFalse(bootstrap["data"]["live_light"]["enabled"])
+        self.assertFalse(bootstrap["data"]["live_light"]["bootstrap_task_implemented"])
+        self.assertEqual(
+            {row["mode"] for row in bootstrap["data"]["mode_rows"]},
+            {"cache_only", "manual", "live_light", "live_full"},
+        )
+        self.assertEqual({row["config"] for row in bootstrap["data"]["config_rows"]}, {
+            "COMMAND_CENTER_BOOTSTRAP_MODE",
+            "COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN",
+            "COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN",
+            "COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT",
+            "COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS",
+            "COMMAND_CENTER_LIVE_DEEPSEEK_MODEL",
+            "COMMAND_CENTER_LIVE_ALLOW_FULL_POOL",
+        })
+        for row in bootstrap["data"]["config_rows"]:
+            self.assertFalse(row["contains_secret"])
+        self.assertEqual(bootstrap["data"]["call_ledger"][0]["api"], "local_bootstrap_runtime_mode_cache")
+        self.assertEqual(bootstrap["call_ledger"][0]["endpoint"], "GET /api/bootstrap/status")
+        self.assertFalse(bootstrap["call_ledger"][0]["external"])
+        self.assertIn("GET /api/bootstrap/status", bootstrap["warnings"][0])
 
         audit = self.client.get("/api/audit/cache").json()
         self.assertTrue(audit["ok"])

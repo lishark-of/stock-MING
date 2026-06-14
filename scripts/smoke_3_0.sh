@@ -120,6 +120,7 @@ api_cache_paths = [
     "/api/next-session/cache",
     "/api/serenity/cache",
     "/api/chokepoint/cache",
+    "/api/bootstrap/status",
     "/api/model-strategy/cache",
     "/api/audit/cache",
     "/api/legacy/cache",

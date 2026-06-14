@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   getDataHealthCache,
   getDesktopPreflightCache,
+  getBootstrapStatus,
   getHealth,
   getMigrationStatus,
   getModelStrategyCache,
@@ -31,6 +32,7 @@ export default function SettingsConfigHealth() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [health, setHealth] = useState<Record<string, unknown>>({});
+  const [bootstrapStatus, setBootstrapStatus] = useState<Record<string, unknown>>({});
   const [modelStrategy, setModelStrategy] = useState<Record<string, unknown>>({});
   const [dataHealth, setDataHealth] = useState<Record<string, unknown>>({});
   const [desktopPreflight, setDesktopPreflight] = useState<Record<string, unknown>>({});
@@ -47,6 +49,10 @@ export default function SettingsConfigHealth() {
       getHealth().then((res) => {
         setHealth(res.data);
         return { scope: "health", res };
+      }),
+      getBootstrapStatus().then((res) => {
+        setBootstrapStatus(res.data);
+        return { scope: "bootstrap_status", res };
       }),
       getModelStrategyCache().then((res) => {
         setModelStrategy(res.data);
@@ -98,11 +104,14 @@ export default function SettingsConfigHealth() {
   }, []);
 
   const modelRows = rows(modelStrategy.model_rows);
+  const modeRows = rows(bootstrapStatus.mode_rows);
+  const configRuntimeRows = rows(bootstrapStatus.config_rows);
   const dataHealthCounts = (dataHealth.counts as Record<string, unknown> | undefined) ?? {};
   const desktopRuntime = (desktopPreflight.runtime as Record<string, unknown> | undefined) ?? {};
   const storageStatus = (storage.dataset_status as Record<string, unknown> | undefined) ?? {};
   const taskPolicy = (taskCatalog.policy as Record<string, unknown> | undefined) ?? {};
   const migrationPolicy = (migration.api_policy as Record<string, unknown> | undefined) ?? {};
+  const liveLight = (bootstrapStatus.live_light as Record<string, unknown> | undefined) ?? {};
   const empty = !loading && !error && !Object.keys(health).length && !Object.keys(modelStrategy).length;
 
   const configRows = [
@@ -114,8 +123,9 @@ export default function SettingsConfigHealth() {
   ];
 
   const boundaryRows = [
-    { boundary: "default_load", value: "GET cache only", note: "页面启动不调用 Tushare、DeepSeek、GitHub。" },
-    { boundary: "post_task", value: "button_gated", note: "外部请求只允许明确按钮任务触发。" },
+    { boundary: "default_load", value: "GET cache only", note: "cache_only 和初始 render 不调用 Tushare、DeepSeek、GitHub。" },
+    { boundary: "post_task", value: "mode gated", note: "外部请求只能经模式/按钮/显式 payload 门控的 POST task。" },
+    { boundary: "live_light", value: "future bootstrap task", note: "后续可 opt-in；当前状态页只读，不创建任务。" },
     { boundary: "frontend_access", value: "FastAPI only", note: "React 前端不直接调用 Python、不保存 token/key。" },
     { boundary: "strategy_action", value: "read_only", note: "配置健康页不修改 strategy action。" },
     { boundary: "real_trade", value: "disabled", note: "不执行真实交易，不自动下单。" },
@@ -143,6 +153,9 @@ export default function SettingsConfigHealth() {
       <MetricGrid
         items={[
           { label: "FastAPI", value: health.status as string | undefined, tone: health.status === "ok" ? "good" : "warn" },
+          { label: "runtime mode", value: String(bootstrapStatus.mode ?? "--"), tone: bootstrapStatus.mode === "cache_only" ? "good" : "warn" },
+          { label: "live light", value: liveLight.enabled === true ? "opt-in" : "off", tone: liveLight.enabled === true ? "warn" : "good" },
+          { label: "bootstrap task", value: liveLight.bootstrap_task_implemented === true ? "ready" : "pending", tone: liveLight.bootstrap_task_implemented === true ? "good" : "warn" },
           { label: "startup external", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" },
           { label: "model purposes", value: modelRows.length },
           { label: "data health rows", value: dataHealthCounts.timeline_count as number | undefined },
@@ -157,9 +170,18 @@ export default function SettingsConfigHealth() {
 
       <div className="grid">
         <PacketCard title="配置边界" subtitle="只读配置健康；不会读取或展示 token/key" status="read_only">
-          <p>本页聚合 health、model strategy、data health、desktop preflight、storage、task catalog 和 migration cache。</p>
+          <p>本页聚合 health、bootstrap status、model strategy、data health、desktop preflight、storage、task catalog 和 migration cache。</p>
           <p>所有数据来自 FastAPI GET cache API；不会自动调用 Tushare、DeepSeek、GitHub 或真实交易接口。</p>
           <DataLineageTable rows={boundaryRows} />
+        </PacketCard>
+
+        <PacketCard title="运行模式分层" subtitle="cache_only / manual / live_light / live_full，只读展示" status={String(bootstrapStatus.status ?? "cache_only")}>
+          <DataLineageTable rows={modeRows} />
+        </PacketCard>
+
+        <PacketCard title="live_light 配置合同" subtitle="显示安全配置状态；不创建 bootstrap task" status={String(liveLight.enabled === true ? "review_pending" : "cache_only")}>
+          <DataLineageTable rows={configRuntimeRows} />
+          <JsonDetails title="live_light policy" data={liveLight} />
         </PacketCard>
 
         <PacketCard title="关键配置项" subtitle="只展示配置键名和用途，不展示值" status="safe">
@@ -181,6 +203,7 @@ export default function SettingsConfigHealth() {
 
       <PacketCard title="原始配置健康 payload" subtitle="调试用 JSON；只读 cache" status="safe">
         <JsonDetails title="health" data={health} />
+        <JsonDetails title="bootstrap status" data={bootstrapStatus} />
         <JsonDetails title="model strategy" data={modelStrategy} />
         <JsonDetails title="data health" data={dataHealth} />
         <JsonDetails title="desktop preflight" data={desktopPreflight} />

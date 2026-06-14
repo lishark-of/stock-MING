@@ -9,6 +9,7 @@ from typing import Any
 from config import get_deepseek_model_strategy
 from storage.sqlite_meta import SQLiteMetaStore
 from server.services import (
+    bootstrap_service,
     candidate_service,
     data_capability_service,
     data_health_service,
@@ -164,6 +165,7 @@ def _cache_endpoint_specs() -> list[tuple[str, str, Callable[[], dict[str, Any]]
         ("GET /health", "health", _health_check_packet),
         ("GET /api/packets", "packet_index", packet_service.list_packets),
         ("GET /api/migration/status", "migration_status", migration_status_service.build_migration_status),
+        ("GET /api/bootstrap/status", "bootstrap_status", bootstrap_service.read_bootstrap_status_cache),
         ("GET /api/model-strategy/cache", "model_strategy", model_strategy_service.read_deepseek_model_strategy_cache),
         ("GET /api/desktop/preflight-cache", "desktop_preflight", desktop_service.read_desktop_shell_preflight_cache),
         ("GET /api/worker/cache", "worker_runtime", worker_service.read_worker_runtime_cache),
