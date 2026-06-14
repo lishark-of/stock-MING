@@ -216,6 +216,7 @@ export default function TaskCatalog() {
           <p>日历接口 trade_cal 与 margin / limit / cyq / hard-risk 扩展接口只在按钮 payload 明确选择或 include_extended 时进入验证；trade_cal 可落 Parquet，其他扩展接口默认只写审计状态，不会伪装成落盘完成。</p>
           <p>任务 packet 会输出 api_validation_rows 和 api_acceptance_audit：前者区分 matrix_only / validated / partial_failed / blocked，后者只审计 call_ledger 字段、安全状态、未选接口不误标 verified 和非 Parquet 接口不假写入。</p>
           <p>provider_acceptance_readiness_audit 只汇总全接口生产验收阻断项；provider_acceptance_pending / provider_backed_acceptance_done=false 表示还没有真实 provider-backed 全接口验收。</p>
+          <p>provider_sample_activation_receipt 是显式 provider 样本验收前的本地清单：不调用 Tushare、不创建任务、不把 matrix/local QA/gap ledger 当 provider-backed acceptance，也不宣称 production_tushare_pipeline_complete。</p>
           <button onClick={launchTushareRefresh}>刷新 Tushare facts</button>
           <TaskLaunchReceipt receipt={taskReceipt} />
         </PacketCard>

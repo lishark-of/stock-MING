@@ -1475,6 +1475,197 @@ def _provider_sample_readiness_receipt(
     }
 
 
+def _provider_sample_activation_receipt_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    *,
+    evidence: str,
+    required_before_activation: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "required_before_activation": bool(required_before_activation),
+        "evidence": evidence,
+        "cache_get_external_calls": False,
+        "receipt_external_calls_triggered": False,
+        "tushare_called_by_receipt": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _provider_sample_activation_receipt(
+    *,
+    provider_target_sample_plan_contract: dict[str, Any],
+    provider_sample_readiness_receipt: dict[str, Any],
+    provider_acceptance_promotion_audit: dict[str, Any],
+    provider_evidence_gap_audit: dict[str, Any],
+) -> dict[str, Any]:
+    ready_for_explicit_task = bool(provider_sample_readiness_receipt.get("ready_for_explicit_provider_sample_task"))
+    promotion_ready = bool(provider_acceptance_promotion_audit.get("promotion_ready"))
+    target_count = int(provider_target_sample_plan_contract.get("target_count") or 0)
+    ready_target_count = int(provider_target_sample_plan_contract.get("ready_to_execute_target_count") or 0)
+    pending_target_count = int(provider_target_sample_plan_contract.get("pending_or_blocked_target_count") or 0)
+    gap_blocker_count = int(provider_evidence_gap_audit.get("gap_blocker_count") or 0)
+    local_activation_receipt_ready = bool(
+        provider_sample_readiness_receipt.get("schema_version") == "tushare_provider_sample_readiness_receipt.v1"
+        and provider_sample_readiness_receipt.get("provider_refresh_called_by_receipt") is False
+        and provider_target_sample_plan_contract.get("schema_version") == "tushare_provider_target_sample_plan_contract.v1"
+        and provider_target_sample_plan_contract.get("plan_external_calls_triggered") is False
+        and provider_evidence_gap_audit.get("schema_version") == "tushare_provider_evidence_gap_audit.v1"
+        and provider_evidence_gap_audit.get("audit_external_calls_triggered") is False
+    )
+    rows = [
+        _provider_sample_activation_receipt_row(
+            "sample_readiness_receipt_visible",
+            "passed_local_receipt" if local_activation_receipt_ready else "blocked_readiness_receipt",
+            local_activation_receipt_ready,
+            evidence=(
+                f"sample_receipt_status={provider_sample_readiness_receipt.get('status')}; "
+                f"ready_for_explicit_task={ready_for_explicit_task}"
+            ),
+        ),
+        _provider_sample_activation_receipt_row(
+            "explicit_post_task_required",
+            "passed_static_policy" if ready_for_explicit_task else "blocked_no_ready_target",
+            ready_for_explicit_task,
+            evidence="Only a future explicit POST task may gather target-domain Tushare provider samples.",
+        ),
+        _provider_sample_activation_receipt_row(
+            "provider_execution_evidence_required",
+            "pending_provider_execution_evidence",
+            False,
+            evidence=(
+                f"provider_evidence_rows={provider_acceptance_promotion_audit.get('provider_evidence_row_count')}; "
+                f"promotion_ready={promotion_ready}"
+            ),
+        ),
+        _provider_sample_activation_receipt_row(
+            "promotion_review_required",
+            "ready_for_promotion_review" if promotion_ready else "pending_promotion_review",
+            promotion_ready,
+            evidence=(
+                f"promotion_status={provider_acceptance_promotion_audit.get('status')}; "
+                f"promotion_blockers={provider_acceptance_promotion_audit.get('blocking_criterion_count')}"
+            ),
+        ),
+        _provider_sample_activation_receipt_row(
+            "target_gap_ledger_visible",
+            "passed_gaps_visible" if gap_blocker_count > 0 or promotion_ready else "blocked_gap_ledger_missing",
+            gap_blocker_count > 0 or promotion_ready,
+            evidence=f"gap_status={provider_evidence_gap_audit.get('status')}; gap_blocker_count={gap_blocker_count}",
+        ),
+        _provider_sample_activation_receipt_row(
+            "matrix_and_local_qa_not_acceptance",
+            "enforced_not_provider_acceptance",
+            True,
+            evidence="Matrix rows, local QA, sample plans, evidence gaps, and this activation receipt are not provider-backed acceptance.",
+            required_before_activation=False,
+        ),
+        _provider_sample_activation_receipt_row(
+            "cache_render_provider_boundary",
+            "passed_no_provider_call",
+            True,
+            evidence="GET cache and React render do not call Tushare, DeepSeek, or GitHub and do not create provider tasks.",
+            required_before_activation=False,
+        ),
+        _provider_sample_activation_receipt_row(
+            "production_completion_boundary",
+            "enforced_not_complete",
+            True,
+            evidence="Provider sample activation receipt cannot mark production_tushare_pipeline_complete=true.",
+            required_before_activation=False,
+        ),
+        _provider_sample_activation_receipt_row(
+            "no_trade_or_action_boundary",
+            "passed",
+            True,
+            evidence="Receipt does not execute trades and does not mutate strategy action.",
+            required_before_activation=False,
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["required_before_activation"] and not row["passed"]]
+    missing_evidence_items = sorted(
+        {
+            *[str(item) for item in provider_sample_readiness_receipt.get("missing_evidence_items", []) if item],
+            *[str(item) for item in provider_acceptance_promotion_audit.get("blockers", []) if item],
+            "explicit provider target-sample task execution",
+            "safe provider call ledger rows for every target domain",
+            "explicit provider-backed full-interface acceptance marker",
+        }
+    )
+    return {
+        "schema_version": "tushare_provider_sample_activation_receipt.v1",
+        "status": "provider_sample_activation_ready_execution_pending"
+        if local_activation_receipt_ready and ready_for_explicit_task
+        else "provider_sample_activation_blocked_local_readiness"
+        if local_activation_receipt_ready
+        else "provider_sample_activation_blocked_local_contract",
+        "scope": "local_provider_sample_activation_receipt_no_provider_execution",
+        "local_activation_receipt_ready": local_activation_receipt_ready,
+        "ready_for_explicit_provider_sample_task": ready_for_explicit_task,
+        "allowed_next_step": "explicit_post_task_target_sample_acceptance"
+        if ready_for_explicit_task
+        else "complete_target_sample_payload_and_selection",
+        "not_allowed_next_steps": [
+            "GET cache provider refresh",
+            "React render provider refresh",
+            "direct Tushare call from page render",
+            "matrix-only acceptance promotion",
+            "fake/local adapter acceptance promotion",
+            "local QA acceptance promotion",
+            "activation receipt as production Tushare completion",
+            "strategy action mutation",
+            "real trade execution",
+        ],
+        "missing_evidence_items": missing_evidence_items,
+        "target_count": target_count,
+        "ready_target_count": ready_target_count,
+        "pending_or_blocked_target_count": pending_target_count,
+        "provider_evidence_gap_blocker_count": gap_blocker_count,
+        "provider_acceptance_task_executed_by_receipt": False,
+        "provider_refresh_called_by_receipt": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "receipt_external_calls_triggered": False,
+        "external_calls_triggered": False,
+        "tushare_called_by_receipt": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "provider_backed_acceptance_done": promotion_ready,
+        "production_tushare_pipeline_complete": False,
+        "full_interface_acceptance_done": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "blocking_criterion_count": len(blocking_rows),
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_tushare_provider_sample_activation_receipt",
+                "source": "tushare local provider sample contracts",
+                "row_count": len(rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_activation_receipt_provider_execution_pending",
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This receipt is a local activation checklist for future explicit Tushare provider-sample acceptance. It does not call Tushare, create tasks, promote local evidence, execute trades, mutate action, or prove production completion.",
+    }
+
+
 def _request_params_for_api(api: str, payload: Any) -> dict[str, Any]:
     safe = _safe_payload(payload)
     if "ticker" in safe and "ts_code" not in safe:
@@ -1984,6 +2175,12 @@ def run_tushare_refresh_task(
         provider_acceptance_promotion_audit=provider_acceptance_promotion_audit,
         provider_evidence_gap_audit=provider_evidence_gap_audit,
     )
+    provider_sample_activation_receipt = _provider_sample_activation_receipt(
+        provider_target_sample_plan_contract=provider_target_sample_plan_contract,
+        provider_sample_readiness_receipt=provider_sample_readiness_receipt,
+        provider_acceptance_promotion_audit=provider_acceptance_promotion_audit,
+        provider_evidence_gap_audit=provider_evidence_gap_audit,
+    )
     refresh_packet = {
         "packet_key": output_packet_key,
         "schema_version": "command_center_tushare_refresh_task.v1",
@@ -2032,6 +2229,9 @@ def run_tushare_refresh_task(
         "provider_sample_readiness_receipt": provider_sample_readiness_receipt,
         "provider_sample_readiness_rows": provider_sample_readiness_receipt["rows"],
         "provider_sample_readiness_status": provider_sample_readiness_receipt["status"],
+        "provider_sample_activation_receipt": provider_sample_activation_receipt,
+        "provider_sample_activation_rows": provider_sample_activation_receipt["rows"],
+        "provider_sample_activation_status": provider_sample_activation_receipt["status"],
         "api_validation_matrix_policy": {
             "scope": "selected APIs use real task call_ledger; unselected APIs are capability matrix only.",
             "selected_apis": list(selected_apis),
@@ -2059,6 +2259,9 @@ def run_tushare_refresh_task(
             "provider_sample_ready_for_explicit_task": provider_sample_readiness_receipt[
                 "ready_for_explicit_provider_sample_task"
             ],
+            "provider_sample_activation_receipt_scope": "provider_sample_activation_receipt 是显式 provider 样本验收前的本地清单；不调用 provider，不创建任务，不证明生产完成。",
+            "provider_sample_activation_receipt_calls_provider": False,
+            "provider_sample_activation_receipt_is_not_completion": True,
             "production_tushare_pipeline_complete": provider_acceptance_readiness_audit["production_tushare_pipeline_complete"],
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
@@ -2092,6 +2295,11 @@ def run_tushare_refresh_task(
             "ready_for_explicit_provider_sample_task"
         ],
         "provider_sample_readiness_blocker_count": provider_sample_readiness_receipt["blocked_readiness_count"],
+        "provider_sample_activation_status": provider_sample_activation_receipt["status"],
+        "provider_sample_activation_ready_for_explicit_task": provider_sample_activation_receipt[
+            "ready_for_explicit_provider_sample_task"
+        ],
+        "provider_sample_activation_blocker_count": provider_sample_activation_receipt["blocking_criterion_count"],
         "provider_backed_acceptance_done": provider_acceptance_readiness_audit["provider_backed_acceptance_done"],
         "production_tushare_pipeline_complete": provider_acceptance_readiness_audit["production_tushare_pipeline_complete"],
         "external_calls_triggered": any(row.get("external_calls_triggered") is True for row in call_ledger),

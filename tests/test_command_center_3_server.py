@@ -5503,6 +5503,47 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(sample_receipt["production_tushare_pipeline_complete"])
         self.assertEqual(sample_receipt_rows["sample_plan_has_ready_targets"]["status"], "ready_for_explicit_provider_sample")
         self.assertEqual(sample_receipt_rows["provider_promotion_evidence_ticket"]["status"], "pending_provider_execution_evidence")
+        sample_activation = persisted["provider_sample_activation_receipt"]
+        sample_activation_rows = {row["criterion"]: row for row in persisted["provider_sample_activation_rows"]}
+        self.assertEqual(sample_activation["schema_version"], "tushare_provider_sample_activation_receipt.v1")
+        self.assertEqual(sample_activation["status"], "provider_sample_activation_ready_execution_pending")
+        self.assertEqual(sample_activation["scope"], "local_provider_sample_activation_receipt_no_provider_execution")
+        self.assertTrue(sample_activation["local_activation_receipt_ready"])
+        self.assertTrue(sample_activation["ready_for_explicit_provider_sample_task"])
+        self.assertEqual(sample_activation["allowed_next_step"], "explicit_post_task_target_sample_acceptance")
+        self.assertIn("GET cache provider refresh", sample_activation["not_allowed_next_steps"])
+        self.assertIn("activation receipt as production Tushare completion", sample_activation["not_allowed_next_steps"])
+        self.assertIn("explicit provider target-sample task execution", sample_activation["missing_evidence_items"])
+        self.assertIn("safe provider call ledger rows for every target domain", sample_activation["missing_evidence_items"])
+        self.assertFalse(sample_activation["provider_acceptance_task_executed_by_receipt"])
+        self.assertFalse(sample_activation["provider_refresh_called_by_receipt"])
+        self.assertFalse(sample_activation["cache_get_external_calls"])
+        self.assertFalse(sample_activation["react_render_external_calls"])
+        self.assertFalse(sample_activation["receipt_external_calls_triggered"])
+        self.assertFalse(sample_activation["tushare_called_by_receipt"])
+        self.assertFalse(sample_activation["deepseek_called"])
+        self.assertFalse(sample_activation["github_called"])
+        self.assertFalse(sample_activation["production_tushare_pipeline_complete"])
+        self.assertFalse(sample_activation["full_interface_acceptance_done"])
+        self.assertFalse(sample_activation["contains_secret"])
+        self.assertTrue(sample_activation["does_not_execute_trades"])
+        self.assertTrue(sample_activation["does_not_modify_strategy_action"])
+        self.assertEqual(sample_activation_rows["sample_readiness_receipt_visible"]["status"], "passed_local_receipt")
+        self.assertEqual(sample_activation_rows["explicit_post_task_required"]["status"], "passed_static_policy")
+        self.assertEqual(
+            sample_activation_rows["provider_execution_evidence_required"]["status"],
+            "pending_provider_execution_evidence",
+        )
+        self.assertEqual(sample_activation_rows["cache_render_provider_boundary"]["status"], "passed_no_provider_call")
+        self.assertEqual(sample_activation_rows["production_completion_boundary"]["status"], "enforced_not_complete")
+        self.assertEqual(
+            sample_activation["call_ledger"][0]["api"],
+            "local_tushare_provider_sample_activation_receipt",
+        )
+        self.assertFalse(sample_activation["call_ledger"][0]["external"])
+        self.assertEqual(persisted["provider_sample_activation_status"], "provider_sample_activation_ready_execution_pending")
+        self.assertTrue(persisted["provider_sample_activation_ready_for_explicit_task"])
+        self.assertGreater(persisted["provider_sample_activation_blocker_count"], 0)
 
     def test_tushare_acceptance_audit_requires_non_empty_success_for_full_interface_completion(self):
         call_ledger = []
@@ -6176,6 +6217,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_readiness_stays_pending", script)
         self.assertIn("provider_promotion_audit_stays_local_pending", script)
         self.assertIn("provider_sample_readiness_receipt_is_local", script)
+        self.assertIn("provider_sample_activation_receipt_is_local_pending", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -6217,8 +6259,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed"]["provider_sample_readiness_status"], "provider_sample_receipt_blocked")
         self.assertFalse(payload["observed"]["provider_sample_ready_for_explicit_task"])
         self.assertGreater(payload["observed"]["provider_sample_readiness_blocker_count"], 0)
+        self.assertEqual(
+            payload["observed"]["provider_sample_activation_status"],
+            "provider_sample_activation_blocked_local_readiness",
+        )
+        self.assertFalse(payload["observed"]["provider_sample_activation_ready_for_explicit_task"])
+        self.assertGreater(payload["observed"]["provider_sample_activation_blocker_count"], 0)
         self.assertIn("provider_evidence_gap_audit", payload["contract_keys"])
         self.assertIn("provider_sample_readiness_receipt", payload["contract_keys"])
+        self.assertIn("provider_sample_activation_receipt", payload["contract_keys"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("post_task_catalog_button_gate", criteria)
         self.assertIn("api_acceptance_audit_is_semantic_only", criteria)
@@ -6227,6 +6276,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_promotion_audit_stays_local_pending", criteria)
         self.assertIn("provider_evidence_gap_audit_is_local_pending", criteria)
         self.assertIn("provider_sample_readiness_receipt_is_local", criteria)
+        self.assertIn("provider_sample_activation_receipt_is_local_pending", criteria)
 
     def test_factor_test_lab_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/factor_test_lab_contract.py")

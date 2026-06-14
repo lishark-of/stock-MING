@@ -184,6 +184,7 @@ Harden A-share trading-calendar freshness production gate
 - Tushare refresh packets now expose `provider_acceptance_promotion_audit`: a local call-ledger promotion audit that requires all declared APIs selected, all non-empty successful samples, all target groups validated, safe semantic audit, no pending target sample groups, explicit provider-backed acceptance marker, and failure-mode evidence before acceptance can be promoted.
 - Tushare refresh packets now expose `provider_evidence_gap_audit`: a local target-domain evidence gap ledger that reads existing call-ledger rows, target validation rows, sample-plan rows, and promotion audit state, then lists missing provider evidence per target domain without calling Tushare or promoting acceptance.
 - Tushare refresh packets now expose `provider_sample_readiness_receipt`: a local receipt that says whether the next safe step is an explicit POST target-sample acceptance task, promotion evidence review, or completing target sample payload/selection. It keeps matrix, local QA, fake/local adapter, and gap-ledger evidence out of provider-backed acceptance promotion.
+- Tushare refresh packets now expose `provider_sample_activation_receipt`: a local activation checklist for future explicit target-sample provider acceptance. It keeps provider task execution, safe provider call ledger rows for every target domain, explicit full-interface acceptance marker, and production completion pending while confirming GET cache and React render do not call Tushare/DeepSeek/GitHub or mutate action.
 - `scripts/tushare_acceptance_contract.py` is now part of the local push gate. It exercises only local matrix/readiness contract helpers and prevents matrix-only rows, failure-mode QA, request-parameter QA, target-sample plans, or provider-readiness audits from being mistaken for provider-backed production acceptance.
 
 ### Gaps
@@ -203,6 +204,7 @@ Harden A-share trading-calendar freshness production gate
 - `provider_acceptance_promotion_audit.status=provider_acceptance_promotion_pending` is expected until prior full-interface provider evidence is explicit; fake adapter, matrix-only rows, local QA, target sample plans, and readiness audits cannot promote acceptance by themselves.
 - `provider_evidence_gap_audit.status=provider_evidence_gaps_pending` is expected while any target domain lacks required selection, call-ledger evidence, non-empty samples, failure-mode evidence, sample-plan readiness, or explicit promotion readiness.
 - `provider_sample_readiness_receipt.status=provider_sample_receipt_ready_execution_pending` only means a user-triggered POST provider-sample task is the next safe step for ready targets; it is not provider-backed acceptance or production completion.
+- `provider_sample_activation_receipt.status=provider_sample_activation_ready_execution_pending` or `provider_sample_activation_blocked_local_readiness` only describes the local activation checklist; it does not execute provider samples, create tasks, or prove production completion.
 - The local Tushare acceptance push-gate contract is not a provider run; it only blocks regressions in button gating, matrix semantics, call-ledger requirements, pending provider acceptance flags, and no-trade/no-action boundaries.
 
 ### Implementation Phases
@@ -225,6 +227,7 @@ Harden A-share trading-calendar freshness production gate
 - `provider_target_sample_plan_contract` shows each target domain's required APIs, sample window, request context, success evidence, failure evidence, and ready/pending/blocker state without calling provider APIs.
 - `provider_evidence_gap_audit` shows each target domain's missing required APIs, missing call-ledger rows, non-empty sample gaps, failed/blocked evidence, failure-mode evidence gaps, and promotion blockers while staying local/read-only and not provider acceptance.
 - `provider_sample_readiness_receipt` shows ready target count, blocked target count, allowed next step, forbidden shortcuts, missing evidence items, no-provider-call receipt boundary, and no-trade/no-action boundaries.
+- `provider_sample_activation_receipt` shows readiness receipt visibility, explicit POST task requirement, provider execution evidence required, promotion review required, target gap ledger visibility, matrix/local QA not acceptance, cache/render no-provider boundary, production-completion boundary, and no-trade/no-action boundary.
 - `provider_acceptance_readiness_audit.provider_backed_acceptance_done=false` and `production_tushare_pipeline_complete=false` until real provider-backed full-interface acceptance is explicitly proven.
 - `scripts/tushare_acceptance_contract.py` passes in the push gate while still reporting `provider_backed_acceptance_done=false`, `production_tushare_pipeline_complete=false`, and `full_interface_acceptance_done=false`.
 - Tokens are never printed, stored in packets, or exposed to frontend.
@@ -240,6 +243,7 @@ Harden A-share trading-calendar freshness production gate
 - Do not treat `provider_acceptance_readiness_audit` as production completion while it reports `provider_acceptance_pending`.
 - Do not treat `provider_evidence_gap_audit` or cleared gap rows as provider-backed acceptance; it is a local evidence ledger and still requires explicit provider-backed promotion evidence.
 - Do not treat `provider_sample_readiness_receipt.ready_for_explicit_provider_sample_task=true` as provider-backed acceptance; it only means the next safe step is an explicit POST task or promotion review.
+- Do not treat `provider_sample_activation_receipt.local_activation_receipt_ready=true` as provider-backed acceptance, provider task execution, or production Tushare completion.
 - Do not treat `scripts/tushare_acceptance_contract.py` passing as real Tushare provider acceptance; it is only a local push-gate regression guard.
 - Do not commit fetched data artifacts.
 
