@@ -7400,6 +7400,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("factor_deepseek_retry_repair_dry_run_contract.v1", script)
         self.assertIn("production_activation_receipt_guides_next_safe_step", script)
         self.assertIn("deepseek_production_activation_receipt.v1", script)
+        self.assertIn("deepseek_production_stage_scope_manifest", script)
+        self.assertIn("deepseek_production_stage_scope_manifest_is_complete_and_pending", script)
         self.assertIn("deepseek_task_is_button_gated_and_config_driven", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
@@ -7464,6 +7466,42 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("explicit_provider_benchmark", payload["observed"]["activation_receipt_allowed_next_step"])
         self.assertEqual(payload["observed"]["task_backend"], "guarded_prompt_or_payload_sanitizer")
         self.assertTrue(payload["observed"]["task_button_gated"])
+        required_production_stages = {
+            "larger_provider_benchmark",
+            "provider_response_format_enforcement",
+            "bounded_retry_repair_execution",
+            "token_budget_cost_evidence",
+            "auto_after_task_mode_gate",
+            "model_ledger_hash_dedupe",
+            "sanitizer_parse_failed_discard",
+            "production_promotion_review",
+        }
+        self.assertEqual(payload["observed"]["deepseek_production_stage_scope_count"], 8)
+        self.assertEqual(set(payload["observed"]["deepseek_production_stage_scope_keys"]), required_production_stages)
+        self.assertEqual(payload["observed"]["deepseek_production_stage_scope_pending_count"], 8)
+        stage_rows = payload["deepseek_production_stage_scope_rows"]
+        self.assertEqual({row["stage_key"] for row in stage_rows}, required_production_stages)
+        for row in stage_rows:
+            self.assertEqual(row["scope"], "deepseek_production_stage_scope_manifest")
+            self.assertEqual(row["current_status"], "local_governance_or_dry_run_only")
+            self.assertEqual(row["target_status"], "provider_benchmark_or_runtime_evidence_required")
+            self.assertTrue(row["required_before_production"])
+            self.assertFalse(row["provider_benchmark_done"])
+            self.assertFalse(row["response_format_enforced"])
+            self.assertFalse(row["bounded_retry_repair_executed"])
+            self.assertFalse(row["token_budget_cost_evidence_complete"])
+            self.assertFalse(row["auto_after_task_production_ready"])
+            self.assertFalse(row["model_execution_implemented"])
+            self.assertFalse(row["production_deepseek_explanation_complete"])
+            self.assertFalse(row["deepseek_called_by_contract"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_override_numeric_values"])
+            self.assertTrue(row["does_not_output_strategy_action"])
+            self.assertFalse(row["contains_secret"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("cache_get_governance_is_manual_default_no_model_call", criteria)
         self.assertIn("sanitizer_whitelist_discards_action_numeric_fields", criteria)
@@ -7472,6 +7510,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("response_format_review_is_local_not_provider_enforcement", criteria)
         self.assertIn("retry_repair_dry_run_is_local_and_production_blocked", criteria)
         self.assertIn("production_activation_receipt_guides_next_safe_step", criteria)
+        self.assertIn("deepseek_production_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("local_builders_match_cache_governance_boundaries", criteria)
         self.assertIn("deepseek_task_is_button_gated_and_config_driven", criteria)
 

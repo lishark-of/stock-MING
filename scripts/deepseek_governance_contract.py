@@ -75,6 +75,26 @@ REQUIRED_RETRY_REPAIR_PATHS = {
     "sanitize_illegal_fields",
     "parse_failed_discard",
 }
+REQUIRED_DEEPSEEK_PRODUCTION_STAGES = {
+    "larger_provider_benchmark",
+    "provider_response_format_enforcement",
+    "bounded_retry_repair_execution",
+    "token_budget_cost_evidence",
+    "auto_after_task_mode_gate",
+    "model_ledger_hash_dedupe",
+    "sanitizer_parse_failed_discard",
+    "production_promotion_review",
+}
+DEEPSEEK_PRODUCTION_STAGE_LABELS = {
+    "larger_provider_benchmark": "larger provider-backed JSON stability benchmark",
+    "provider_response_format_enforcement": "provider response_format enforcement",
+    "bounded_retry_repair_execution": "bounded retry/repair provider execution",
+    "token_budget_cost_evidence": "token budget and cost evidence",
+    "auto_after_task_mode_gate": "auto_after_task explicit mode gate",
+    "model_ledger_hash_dedupe": "model ledger, input/output hash, and dedupe",
+    "sanitizer_parse_failed_discard": "sanitizer and parse-failed discard evidence",
+    "production_promotion_review": "production promotion review",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -154,6 +174,45 @@ def _local_validation_summary(sanitized: dict[str, Any], prompt_preview: dict[st
     }
 
 
+def _deepseek_production_stage_scope_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for stage_key in sorted(REQUIRED_DEEPSEEK_PRODUCTION_STAGES):
+        rows.append(
+            {
+                "stage_key": stage_key,
+                "stage_label": DEEPSEEK_PRODUCTION_STAGE_LABELS[stage_key],
+                "scope": "deepseek_production_stage_scope_manifest",
+                "current_status": "local_governance_or_dry_run_only",
+                "target_status": "provider_benchmark_or_runtime_evidence_required",
+                "required_before_production": True,
+                "provider_benchmark_done": False,
+                "response_format_enforced": False,
+                "bounded_retry_repair_executed": False,
+                "token_budget_cost_evidence_complete": False,
+                "auto_after_task_production_ready": False,
+                "model_execution_implemented": False,
+                "production_deepseek_explanation_complete": False,
+                "deepseek_called_by_contract": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_override_numeric_values": True,
+                "does_not_output_strategy_action": True,
+                "contains_secret": False,
+                "missing_evidence": [
+                    "provider-backed benchmark sample",
+                    "provider response_format proof",
+                    "bounded retry/repair execution ledger",
+                    "token budget and cost ledger",
+                    "explicit production promotion review",
+                ],
+            }
+        )
+    return rows
+
+
 def build_contract() -> dict[str, Any]:
     cache_packet = factor_service.read_factor_quant_cache()
     governance = _dict(cache_packet.get("deepseek_explain_governance"))
@@ -215,6 +274,7 @@ def build_contract() -> dict[str, Any]:
     )
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/deepseek_governance_contract.py")
+    deepseek_production_stage_scope_rows = _deepseek_production_stage_scope_rows()
 
     rows = [
         _row(
@@ -398,6 +458,36 @@ def build_contract() -> dict[str, Any]:
             "DeepSeek production activation receipt must point to explicit provider benchmark/response-format/retry/cost review while keeping production completion false.",
         ),
         _row(
+            "deepseek_production_stage_scope_manifest_is_complete_and_pending",
+            {row.get("stage_key") for row in deepseek_production_stage_scope_rows}
+            == REQUIRED_DEEPSEEK_PRODUCTION_STAGES
+            and len(deepseek_production_stage_scope_rows) == len(REQUIRED_DEEPSEEK_PRODUCTION_STAGES)
+            and all(row.get("scope") == "deepseek_production_stage_scope_manifest" for row in deepseek_production_stage_scope_rows)
+            and all(row.get("required_before_production") is True for row in deepseek_production_stage_scope_rows)
+            and all(row.get("current_status") == "local_governance_or_dry_run_only" for row in deepseek_production_stage_scope_rows)
+            and all(
+                row.get("target_status") == "provider_benchmark_or_runtime_evidence_required"
+                for row in deepseek_production_stage_scope_rows
+            )
+            and all(row.get("provider_benchmark_done") is False for row in deepseek_production_stage_scope_rows)
+            and all(row.get("response_format_enforced") is False for row in deepseek_production_stage_scope_rows)
+            and all(row.get("bounded_retry_repair_executed") is False for row in deepseek_production_stage_scope_rows)
+            and all(row.get("token_budget_cost_evidence_complete") is False for row in deepseek_production_stage_scope_rows)
+            and all(row.get("auto_after_task_production_ready") is False for row in deepseek_production_stage_scope_rows)
+            and all(row.get("model_execution_implemented") is False for row in deepseek_production_stage_scope_rows)
+            and all(row.get("production_deepseek_explanation_complete") is False for row in deepseek_production_stage_scope_rows)
+            and all(row.get("deepseek_called_by_contract") is False for row in deepseek_production_stage_scope_rows)
+            and all(row.get("external_calls_triggered") is False for row in deepseek_production_stage_scope_rows)
+            and all(row.get("tushare_called") is False for row in deepseek_production_stage_scope_rows)
+            and all(row.get("github_called") is False for row in deepseek_production_stage_scope_rows)
+            and all(row.get("does_not_execute_trades") is True for row in deepseek_production_stage_scope_rows)
+            and all(row.get("does_not_modify_strategy_action") is True for row in deepseek_production_stage_scope_rows)
+            and all(row.get("does_not_override_numeric_values") is True for row in deepseek_production_stage_scope_rows)
+            and all(row.get("does_not_output_strategy_action") is True for row in deepseek_production_stage_scope_rows)
+            and all(row.get("contains_secret") is False for row in deepseek_production_stage_scope_rows),
+            "DeepSeek production scope rows must enumerate every pending evidence stage and keep provider benchmark, model execution, automatic production readiness, trades, actions, and secrets disabled.",
+        ),
+        _row(
             "push_gate_runs_deepseek_contract_after_factor_lab",
             "scripts/deepseek_governance_contract.py" in push_gate_script
             and "DeepSeek governance contract" in push_gate_script
@@ -414,6 +504,7 @@ def build_contract() -> dict[str, Any]:
             and "factor_deepseek_retry_repair_dry_run_contract.v1" in this_script
             and "provider_benchmark_done" in this_script
             and "production_deepseek_explanation_complete" in this_script
+            and "deepseek_production_stage_scope_manifest" in this_script
             and "response_format_enforced" in this_script
             and "does_not_execute_trades" in this_script
             and ("request" + "s") not in this_script
@@ -475,7 +566,17 @@ def build_contract() -> dict[str, Any]:
             "activation_receipt_blockers": activation_receipt.get("blockers"),
             "task_backend": task.get("current_backend"),
             "task_button_gated": task.get("button_gated"),
+            "deepseek_production_stage_scope_count": len(deepseek_production_stage_scope_rows),
+            "deepseek_production_stage_scope_keys": sorted(
+                row.get("stage_key") for row in deepseek_production_stage_scope_rows
+            ),
+            "deepseek_production_stage_scope_pending_count": sum(
+                1
+                for row in deepseek_production_stage_scope_rows
+                if row.get("production_deepseek_explanation_complete") is False
+            ),
         },
+        "deepseek_production_stage_scope_rows": deepseek_production_stage_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Real provider-backed DeepSeek benchmark, provider response_format enforcement, bounded retry/repair, and production automatic explanation remain pending.",
     }
