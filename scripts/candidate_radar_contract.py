@@ -250,6 +250,12 @@ def build_contract() -> dict[str, Any]:
         for row in _list(cache_packet.get("quick_scan_execution_receipt_rows"))
         if isinstance(row, dict)
     }
+    task_pipeline = _dict(cache_packet.get("fast_scan_task_pipeline_contract"))
+    task_pipeline_rows = {
+        str(row.get("criterion") or ""): row
+        for row in _list(cache_packet.get("fast_scan_task_pipeline_rows"))
+        if isinstance(row, dict)
+    }
     result_delta = _dict(cache_packet.get("result_delta_clarity_contract"))
     priority_explanation = _dict(cache_packet.get("candidate_priority_explanation_contract"))
     legacy_parity_acceptance = _dict(cache_packet.get("legacy_parity_acceptance_receipt"))
@@ -729,6 +735,57 @@ def build_contract() -> dict[str, Any]:
             "Quick-scan receipt must make local scan coverage, limits, gaps, and production blockers visible without becoming production replacement evidence.",
         ),
         _row(
+            "fast_scan_task_pipeline_is_local_nonblocking_receipt",
+            task_pipeline.get("schema_version") == "candidate_radar_fast_scan_task_pipeline.v1"
+            and task_pipeline.get("status") == "fast_scan_task_pipeline_ready_local_only"
+            and task_pipeline.get("scope")
+            == "local_candidate_radar_task_pipeline_not_async_worker_or_provider_execution"
+            and task_pipeline.get("local_task_pipeline_ready") is True
+            and task_pipeline.get("initial_render_nonblocking") is True
+            and task_pipeline.get("post_task_boundary_visible") is True
+            and task_pipeline.get("task_id_visible") is True
+            and task_pipeline.get("task_status_panel_required") is True
+            and task_pipeline.get("last_success_cache_fallback_visible") is True
+            and task_pipeline.get("safe_failure_boundary_visible") is True
+            and task_pipeline.get("input_budget_worker_boundary_visible") is True
+            and task_pipeline.get("no_feature_loss_gap_visibility") is True
+            and task_pipeline.get("async_worker_execution_done") is False
+            and task_pipeline.get("provider_backed_acceptance_done") is False
+            and task_pipeline.get("production_radar_replacement_complete") is False
+            and task_pipeline.get("legacy_retirement_ready") is False
+            and task_pipeline.get("full_pool_scan_done") is False
+            and task_pipeline.get("deep_scan_done") is False
+            and int(task_pipeline.get("row_count") or 0) >= 8
+            and int(task_pipeline.get("production_blocker_count") or 0) > 0
+            and all(
+                _dict(task_pipeline_rows.get(key)).get("local_contract_passed") is True
+                for key in {
+                    "initial_cache_render_nonblocking",
+                    "post_task_boundary_visible",
+                    "task_id_status_visible",
+                    "last_success_cache_fallback_visible",
+                    "safe_failure_boundary_visible",
+                    "input_budget_worker_boundary_visible",
+                    "no_feature_loss_gap_visibility",
+                }
+            )
+            and _dict(task_pipeline_rows.get("production_replacement_stays_blocked")).get("production_blocker") is True
+            and policy.get("fast_scan_task_pipeline_contract_is_local") is True
+            and policy.get("fast_scan_task_pipeline_nonblocking_ui_contract_ready") is True
+            and policy.get("fast_scan_task_pipeline_is_not_async_worker_execution") is True
+            and policy.get("fast_scan_task_pipeline_does_not_call_provider_or_model") is True
+            and policy.get("fast_scan_task_pipeline_is_not_production_replacement") is True
+            and _flag_false(task_pipeline, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and task_pipeline.get("does_not_execute_trades") is True
+            and task_pipeline.get("does_not_modify_strategy_action") is True
+            and task_pipeline.get("candidate_is_not_buy_instruction") is True
+            and "fast_scan_task_pipeline_contract" in candidate_frontend
+            and "fast_scan_task_pipeline_rows" in candidate_frontend
+            and "快扫任务流水线合同" in candidate_frontend
+            and "TaskStatusPanel" in candidate_frontend,
+            "Fast-scan task pipeline must show cache-first render, explicit POST task status, local fallback, input budgets, visible gaps, and production replacement blockers.",
+        ),
+        _row(
             "legacy_parity_acceptance_receipt_blocks_feature_loss",
             legacy_parity_acceptance.get("schema_version") == "candidate_radar_legacy_parity_acceptance_receipt.v1"
             and legacy_parity_acceptance.get("status") == "legacy_parity_acceptance_local_ready_production_pending"
@@ -1006,6 +1063,7 @@ def build_contract() -> dict[str, Any]:
         "legacy_parity_acceptance_receipt_ready": legacy_parity_acceptance.get("local_acceptance_receipt_ready") is True,
         "full_pool_local_execution_receipt_ready": full_pool_local_receipt.get("local_full_pool_execution_done") is True,
         "deep_scan_local_review_receipt_ready": deep_scan_local_receipt.get("local_deep_scan_review_done") is True,
+        "fast_scan_task_pipeline_ready": task_pipeline.get("local_task_pipeline_ready") is True,
         "search_quant_projection_receipt_ready": search_quant_projection_receipt.get("local_receipt_ready") is True,
         "search_quant_projection_activation_receipt_ready": search_quant_projection_activation.get(
             "local_activation_receipt_ready"
@@ -1039,6 +1097,9 @@ def build_contract() -> dict[str, Any]:
             "promotion_blocking_count": promotion_audit.get("blocking_promotion_count"),
             "quick_scan_receipt_status": quick_receipt.get("status"),
             "quick_scan_receipt_production_blocker_count": quick_receipt.get("production_blocker_count"),
+            "fast_scan_task_pipeline_status": task_pipeline.get("status"),
+            "fast_scan_task_pipeline_row_count": task_pipeline.get("row_count"),
+            "fast_scan_task_pipeline_production_blocker_count": task_pipeline.get("production_blocker_count"),
             "legacy_parity_acceptance_status": legacy_parity_acceptance.get("status"),
             "legacy_parity_acceptance_production_blocker_count": legacy_parity_acceptance.get("production_blocker_count"),
             "full_pool_local_execution_status": full_pool_local_receipt.get("status"),

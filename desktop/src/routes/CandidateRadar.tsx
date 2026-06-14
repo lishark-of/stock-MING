@@ -111,6 +111,7 @@ export default function CandidateRadar() {
   const coverageDetail = (cache.coverage_detail_summary as Record<string, unknown> | undefined) ?? {};
   const scanExecutionSummary = (cache.scan_execution_summary as Record<string, unknown> | undefined) ?? {};
   const quickScanReceipt = (cache.quick_scan_execution_receipt as Record<string, unknown> | undefined) ?? {};
+  const fastScanTaskPipeline = (cache.fast_scan_task_pipeline_contract as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionReceipt = (cache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionActivation = (cache.search_quant_projection_activation_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionAcceptanceDryRun = (cache.search_quant_projection_acceptance_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
@@ -146,6 +147,7 @@ export default function CandidateRadar() {
   const scanModeRows = rows(cache.scan_mode_status_rows);
   const scanAcceptanceRows = rows(cache.scan_acceptance_rows);
   const quickScanReceiptRows = rows(cache.quick_scan_execution_receipt_rows);
+  const fastScanTaskPipelineRows = rows(cache.fast_scan_task_pipeline_rows);
   const searchQuantProjectionRows = rows(cache.search_quant_projection_rows);
   const searchQuantProjectionActivationRows = rows(cache.search_quant_projection_activation_rows);
   const searchQuantProjectionAcceptanceDryRunRows = rows(cache.search_quant_projection_acceptance_dry_run_rows);
@@ -201,6 +203,8 @@ export default function CandidateRadar() {
           { label: "scan mode", value: String(cache.scan_mode ?? "--") },
           { label: "scan family", value: String(scanExecutionSummary.scan_family ?? "--") },
           { label: "quick receipt", value: String(quickScanReceipt.status ?? "missing"), tone: quickScanReceipt.local_quick_scan_receipt_ready === true ? "good" : "warn" },
+          { label: "task pipeline", value: String(fastScanTaskPipeline.status ?? "missing"), tone: fastScanTaskPipeline.local_task_pipeline_ready === true ? "good" : "warn" },
+          { label: "pipeline blockers", value: counts.fast_scan_task_pipeline_production_blocker_count as number | undefined, tone: Number(counts.fast_scan_task_pipeline_production_blocker_count ?? 0) ? "warn" : "good" },
           { label: "receipt blockers", value: counts.quick_scan_receipt_production_blocker_count as number | undefined, tone: Number(counts.quick_scan_receipt_production_blocker_count ?? 0) ? "warn" : "good" },
           { label: "receipt provider", value: counts.quick_scan_receipt_provider_gap_count as number | undefined, tone: Number(counts.quick_scan_receipt_provider_gap_count ?? 0) ? "warn" : "good" },
           { label: "receipt rows", value: counts.quick_scan_receipt_row_count as number | undefined },
@@ -414,6 +418,17 @@ export default function CandidateRadar() {
         <p>这个回执是本地可见性证明：它说明快扫没有静默降能、没有外联、没有改 action；它不等于 full-pool、deep-scan、provider-backed 或浏览器性能验收完成。</p>
         <DataLineageTable rows={objectRow(quickScanReceipt)} />
         <DataLineageTable rows={quickScanReceiptRows} />
+      </PacketCard>
+
+      <PacketCard title="快扫任务流水线合同" subtitle="fast_scan_task_pipeline_contract；证明先渲染 cache，再通过 POST task 快扫，失败和缺口都可见" status={String(fastScanTaskPipeline.status ?? "missing")}>
+        <p>local_task_pipeline_ready: {String(fastScanTaskPipeline.local_task_pipeline_ready === true)}</p>
+        <p>initial_render_nonblocking: {String(fastScanTaskPipeline.initial_render_nonblocking === true)}；post_task_boundary_visible: {String(fastScanTaskPipeline.post_task_boundary_visible === true)}</p>
+        <p>task_id_visible: {String(fastScanTaskPipeline.task_id_visible === true)}；task_status_panel_required: {String(fastScanTaskPipeline.task_status_panel_required === true)}</p>
+        <p>last_success_cache_fallback_visible: {String(fastScanTaskPipeline.last_success_cache_fallback_visible === true)}；safe_failure_boundary_visible: {String(fastScanTaskPipeline.safe_failure_boundary_visible === true)}</p>
+        <p>async_worker_execution_done: {String(fastScanTaskPipeline.async_worker_execution_done === true)}；provider_backed_acceptance_done: {String(fastScanTaskPipeline.provider_backed_acceptance_done === true)}；production_radar_replacement_complete: {String(fastScanTaskPipeline.production_radar_replacement_complete === true)}</p>
+        <p>这个合同只证明 3.0 本地快扫流水线形状：页面不等待扫描、按钮发起 POST task、TaskStatusPanel 轮询状态、上次 cache 仍可读、输入预算和 feature gap 可见；它不是 worker 全量扫描、provider-backed parity、浏览器性能或生产替代完成。</p>
+        <DataLineageTable rows={objectRow(fastScanTaskPipeline)} />
+        <DataLineageTable rows={fastScanTaskPipelineRows} />
       </PacketCard>
 
       <PacketCard title="快扫运行预算" subtitle="fast_scan_runtime_budget_contract；控制同步展示规模，超限必须可见并转 worker" status={String(fastScanRuntimeBudget.status ?? "missing")}>

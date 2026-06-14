@@ -3986,6 +3986,28 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(runtime_budget_rows["sync_candidate_display_budget"]["status"], "passed")
         self.assertEqual(runtime_budget_rows["local_pool_sync_input_budget"]["status"], "passed")
         self.assertEqual(runtime_budget_rows["large_universe_worker_boundary"]["status"], "not_required")
+        task_pipeline = packet["fast_scan_task_pipeline_contract"]
+        task_pipeline_rows = {row["criterion"]: row for row in packet["fast_scan_task_pipeline_rows"]}
+        self.assertEqual(task_pipeline["schema_version"], "candidate_radar_fast_scan_task_pipeline.v1")
+        self.assertEqual(task_pipeline["status"], "fast_scan_task_pipeline_ready_local_only")
+        self.assertTrue(task_pipeline["local_task_pipeline_ready"])
+        self.assertTrue(task_pipeline["initial_render_nonblocking"])
+        self.assertTrue(task_pipeline["post_task_boundary_visible"])
+        self.assertTrue(task_pipeline["task_id_visible"])
+        self.assertTrue(task_pipeline["task_status_panel_required"])
+        self.assertTrue(task_pipeline["last_success_cache_fallback_visible"])
+        self.assertFalse(task_pipeline["async_worker_execution_done"])
+        self.assertFalse(task_pipeline["provider_backed_acceptance_done"])
+        self.assertFalse(task_pipeline["production_radar_replacement_complete"])
+        self.assertFalse(task_pipeline["external_calls_triggered"])
+        self.assertTrue(task_pipeline["does_not_execute_trades"])
+        self.assertEqual(task_pipeline_rows["initial_cache_render_nonblocking"]["status"], "passed")
+        self.assertEqual(task_pipeline_rows["post_task_boundary_visible"]["status"], "cache_view_waiting_for_post")
+        self.assertEqual(task_pipeline_rows["task_id_status_visible"]["status"], "cache_view_uses_last_packet")
+        self.assertEqual(task_pipeline_rows["production_replacement_stays_blocked"]["status"], "pending_worker_provider_browser_acceptance")
+        self.assertTrue(packet["policy"]["fast_scan_task_pipeline_contract_is_local"])
+        self.assertTrue(packet["policy"]["fast_scan_task_pipeline_nonblocking_ui_contract_ready"])
+        self.assertTrue(packet["policy"]["fast_scan_task_pipeline_is_not_production_replacement"])
         result_delta = packet["result_delta_clarity_contract"]
         result_delta_rows = {row["criterion"]: row for row in packet["result_delta_clarity_rows"]}
         self.assertEqual(result_delta["schema_version"], "candidate_radar_result_delta_clarity.v1")
@@ -4240,6 +4262,28 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(persisted["scan_coverage"]["freshness_state"], persisted["freshness_state"])
         self.assertTrue(persisted["policy"]["quick_scan_reads_cache_only"])
         self.assertTrue(persisted["policy"]["quick_scan_preserves_legacy_signal_groups"])
+        task_pipeline = persisted["fast_scan_task_pipeline_contract"]
+        task_pipeline_rows = {row["criterion"]: row for row in persisted["fast_scan_task_pipeline_rows"]}
+        self.assertEqual(task_pipeline["schema_version"], "candidate_radar_fast_scan_task_pipeline.v1")
+        self.assertEqual(task_pipeline["status"], "fast_scan_task_pipeline_ready_local_only")
+        self.assertEqual(task_pipeline["scan_mode"], "quick_cache_scan")
+        self.assertTrue(task_pipeline["local_task_pipeline_ready"])
+        self.assertFalse(task_pipeline["cache_view_only"])
+        self.assertTrue(task_pipeline["writes_sqlite_packet"])
+        self.assertTrue(task_pipeline["post_task_boundary_visible"])
+        self.assertTrue(task_pipeline["task_id_visible"])
+        self.assertTrue(task_pipeline["task_status_panel_required"])
+        self.assertTrue(task_pipeline["last_success_cache_fallback_visible"])
+        self.assertTrue(task_pipeline["safe_failure_boundary_visible"])
+        self.assertFalse(task_pipeline["async_worker_execution_done"])
+        self.assertFalse(task_pipeline["provider_backed_acceptance_done"])
+        self.assertFalse(task_pipeline["production_radar_replacement_complete"])
+        self.assertEqual(task_pipeline_rows["post_task_boundary_visible"]["status"], "passed_post_task")
+        self.assertEqual(task_pipeline_rows["task_id_status_visible"]["status"], "task_envelope_required")
+        self.assertEqual(task_pipeline_rows["production_replacement_stays_blocked"]["status"], "pending_worker_provider_browser_acceptance")
+        self.assertTrue(persisted["policy"]["fast_scan_task_pipeline_contract_is_local"])
+        self.assertTrue(persisted["policy"]["fast_scan_task_pipeline_nonblocking_ui_contract_ready"])
+        self.assertTrue(persisted["policy"]["fast_scan_task_pipeline_does_not_call_provider_or_model"])
         self.assertFalse(persisted["external_calls_triggered"])
         self.assertFalse(persisted["tushare_called"])
         self.assertFalse(persisted["deepseek_called"])
@@ -7355,6 +7399,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("no_feature_loss_is_local_not_replacement", script)
         self.assertIn("replacement_gap_triage_blocks_legacy_retirement", script)
         self.assertIn("legacy_parity_acceptance_receipt_blocks_feature_loss", script)
+        self.assertIn("fast_scan_task_pipeline_is_local_nonblocking_receipt", script)
+        self.assertIn("candidate_radar_fast_scan_task_pipeline.v1", script)
         self.assertIn("activation_receipt_guides_next_safe_step", script)
         self.assertIn("candidate_radar_legacy_parity_acceptance_receipt.v1", script)
         self.assertIn("candidate_radar_production_activation_receipt.v1", script)
@@ -7396,6 +7442,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["candidate_radar_activation_receipt_ready"])
         self.assertTrue(payload["legacy_parity_acceptance_receipt_ready"])
         self.assertTrue(payload["deep_scan_local_review_receipt_ready"])
+        self.assertTrue(payload["fast_scan_task_pipeline_ready"])
         self.assertFalse(payload["external_calls_triggered"])
         self.assertFalse(payload["tushare_called"])
         self.assertFalse(payload["deepseek_called"])
@@ -7405,6 +7452,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["candidate_is_not_buy_instruction"])
         self.assertEqual(payload["blocking_criterion_count"], 0)
         self.assertEqual(payload["observed"]["fast_scan_readiness_status"], "fast_scan_local_ready_full_pool_pending")
+        self.assertEqual(
+            payload["observed"]["fast_scan_task_pipeline_status"],
+            "fast_scan_task_pipeline_ready_local_only",
+        )
+        self.assertGreaterEqual(payload["observed"]["fast_scan_task_pipeline_row_count"], 8)
+        self.assertGreater(payload["observed"]["fast_scan_task_pipeline_production_blocker_count"], 0)
         self.assertEqual(
             payload["observed"]["no_feature_loss_status"],
             "no_feature_loss_acceptance_local_ready_production_pending",
@@ -7455,6 +7508,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("cache_get_is_read_only_no_scan", criteria)
         self.assertIn("no_feature_loss_is_local_not_replacement", criteria)
         self.assertIn("replacement_gap_triage_blocks_legacy_retirement", criteria)
+        self.assertIn("fast_scan_task_pipeline_is_local_nonblocking_receipt", criteria)
         self.assertIn("legacy_parity_acceptance_receipt_blocks_feature_loss", criteria)
         self.assertIn("activation_receipt_guides_next_safe_step", criteria)
         self.assertIn("result_delta_clarity_is_local_not_visual_qa", criteria)
@@ -12081,6 +12135,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(fast_rows["local_scan_modes_supported"]["status"], "passed")
         self.assertEqual(fast_rows["provider_gap_visible"]["status"], "gap_reported")
         self.assertEqual(fast_rows["production_full_replacement_pending"]["status"], "pending")
+        task_pipeline = packet["fast_scan_task_pipeline_contract"]
+        task_pipeline_rows = {row["criterion"]: row for row in packet["fast_scan_task_pipeline_rows"]}
+        self.assertEqual(task_pipeline["schema_version"], "candidate_radar_fast_scan_task_pipeline.v1")
+        self.assertEqual(task_pipeline["status"], "fast_scan_task_pipeline_ready_local_only")
+        self.assertTrue(task_pipeline["local_task_pipeline_ready"])
+        self.assertTrue(task_pipeline["initial_render_nonblocking"])
+        self.assertTrue(task_pipeline["post_task_boundary_visible"])
+        self.assertTrue(task_pipeline_rows["safe_failure_boundary_visible"]["local_contract_passed"])
+        self.assertTrue(task_pipeline_rows["no_feature_loss_gap_visibility"]["local_contract_passed"])
+        self.assertTrue(packet["policy"]["fast_scan_task_pipeline_contract_is_local"])
+        self.assertTrue(packet["policy"]["fast_scan_task_pipeline_is_not_async_worker_execution"])
         browser_qa = packet["candidate_browser_qa_runbook_contract"]
         self.assertEqual(browser_qa["schema_version"], "candidate_radar_browser_qa_runbook.v1")
         self.assertEqual(browser_qa["status"], "candidate_radar_browser_qa_runbook_ready_execution_pending")

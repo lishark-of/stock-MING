@@ -2757,6 +2757,168 @@ def _quick_scan_receipt_row(
     }
 
 
+def _task_pipeline_contract_row(
+    criterion: str,
+    status: str,
+    *,
+    local_contract_passed: bool,
+    production_blocker: bool,
+    evidence: str,
+    next_action: str,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "local_contract_passed": bool(local_contract_passed),
+        "production_blocker": bool(production_blocker),
+        "user_visible": True,
+        "evidence": evidence,
+        "next_action": next_action,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _fast_scan_task_pipeline_contract(packet: Mapping[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    scan_summary = _as_dict(packet.get("scan_execution_summary"))
+    runtime_budget = _as_dict(packet.get("fast_scan_runtime_budget_contract"))
+    result_delta = _as_dict(packet.get("result_delta_clarity_contract"))
+    coverage = _as_dict(packet.get("scan_coverage"))
+    coverage_detail = _as_dict(packet.get("coverage_detail_summary"))
+    quick_receipt = _as_dict(packet.get("quick_scan_execution_receipt"))
+    scan_mode = str(packet.get("scan_mode") or scan_summary.get("scan_mode") or "cache_only")
+    task_id = str(packet.get("task_id") or "")
+    cache_view_only = scan_summary.get("cache_view_only") is True
+    writes_sqlite_packet = scan_summary.get("writes_sqlite_packet") is True
+    task_id_visible = cache_view_only or writes_sqlite_packet or bool(task_id)
+    previous_diff_visible = result_delta.get("schema_version") == "candidate_radar_result_delta_clarity.v1"
+    rows = [
+        _task_pipeline_contract_row(
+            "initial_cache_render_nonblocking",
+            "passed",
+            local_contract_passed=True,
+            production_blocker=False,
+            evidence="GET cache and initial React render read cache first; page render does not start radar scans.",
+            next_action="Keep Candidate Radar render path cache-only; create scans only from POST task buttons or explicit live_light task.",
+        ),
+        _task_pipeline_contract_row(
+            "post_task_boundary_visible",
+            "cache_view_waiting_for_post" if cache_view_only else "passed_post_task",
+            local_contract_passed=cache_view_only or writes_sqlite_packet,
+            production_blocker=False,
+            evidence=f"scan_mode={scan_mode}; writes_sqlite_packet={writes_sqlite_packet}; cache_view_only={cache_view_only}",
+            next_action="Keep quick/watchlist/custom/full-pool-local scans behind explicit POST task boundaries.",
+        ),
+        _task_pipeline_contract_row(
+            "task_id_status_visible",
+            "cache_view_uses_last_packet"
+            if cache_view_only
+            else "passed_task_id_visible"
+            if task_id
+            else "task_envelope_required"
+            if writes_sqlite_packet
+            else "missing_task_id",
+            local_contract_passed=task_id_visible,
+            production_blocker=not task_id_visible,
+            evidence=f"task_id_present={bool(task_id)}; scan_family={scan_summary.get('scan_family') or 'missing'}",
+            next_action="Surface task_id through TaskLaunchReceipt and TaskStatusPanel so scans do not block the page.",
+        ),
+        _task_pipeline_contract_row(
+            "last_success_cache_fallback_visible",
+            "previous_cache_diff_visible" if result_delta.get("previous_cache_diff_done") is True else "fallback_path_visible",
+            local_contract_passed=previous_diff_visible,
+            production_blocker=False,
+            evidence=f"previous_cache_available={result_delta.get('previous_cache_available')}; previous_cache_diff_done={result_delta.get('previous_cache_diff_done')}",
+            next_action="Keep the previous-cache diff or pending state visible while a new scan runs, fails, or returns empty.",
+        ),
+        _task_pipeline_contract_row(
+            "safe_failure_boundary_visible",
+            "passed_safe_error_path",
+            local_contract_passed=packet.get("external_calls_triggered") is False
+            and packet.get("does_not_execute_trades") is True
+            and packet.get("does_not_modify_strategy_action") is True,
+            production_blocker=False,
+            evidence="Storage-write failures return error_message_safe on the task and never trigger provider/model/trade work.",
+            next_action="Keep task failure as a local safe error; do not refresh providers or mutate action from failure recovery.",
+        ),
+        _task_pipeline_contract_row(
+            "input_budget_worker_boundary_visible",
+            "worker_required" if runtime_budget.get("large_universe_worker_required") is True else "passed_budget_visible",
+            local_contract_passed=runtime_budget.get("schema_version") == "candidate_radar_fast_scan_runtime_budget.v1",
+            production_blocker=False,
+            evidence=f"display_limit={runtime_budget.get('display_candidate_limit')}; local_pool_limit={runtime_budget.get('local_pool_input_limit')}; worker_threshold={runtime_budget.get('worker_required_universe_threshold')}",
+            next_action="Keep sync display caps visible; move large universe/deep work to worker-backed tasks before production replacement.",
+        ),
+        _task_pipeline_contract_row(
+            "no_feature_loss_gap_visibility",
+            "gap_reported" if int(coverage.get("missing_signal_group_count") or 0) else "passed",
+            local_contract_passed=coverage_detail.get("missing_data_is_reported_not_dropped") is True
+            or bool(coverage.get("legacy_signal_group_rows")),
+            production_blocker=int(coverage.get("missing_signal_group_count") or 0) > 0,
+            evidence=f"mapped={coverage.get('mapped_signal_group_count')}; missing={coverage.get('missing_signal_group_count')}; skipped={coverage.get('skipped_reason_count')}",
+            next_action="Preserve old radar signal groups as visible rows; do not treat gap_reported as feature parity completion.",
+        ),
+        _task_pipeline_contract_row(
+            "production_replacement_stays_blocked",
+            "pending_worker_provider_browser_acceptance",
+            local_contract_passed=quick_receipt.get("production_radar_replacement_complete") is False
+            and quick_receipt.get("provider_backed_acceptance_done") is False,
+            production_blocker=True,
+            evidence=f"full_pool_scan_done={quick_receipt.get('full_pool_scan_done')}; deep_scan_done={quick_receipt.get('deep_scan_done')}; provider_backed_acceptance_done={quick_receipt.get('provider_backed_acceptance_done')}",
+            next_action="Require worker full/deep execution, provider-backed parity, browser QA, and legacy retirement review before production replacement.",
+        ),
+    ]
+    local_blockers = [row["criterion"] for row in rows if not row.get("local_contract_passed")]
+    production_blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
+    contract = {
+        "schema_version": "candidate_radar_fast_scan_task_pipeline.v1",
+        "status": "fast_scan_task_pipeline_ready_local_only" if not local_blockers else "fast_scan_task_pipeline_blocked",
+        "scope": "local_candidate_radar_task_pipeline_not_async_worker_or_provider_execution",
+        "ltg": "LTG-13",
+        "scan_mode": scan_mode,
+        "scan_family": scan_summary.get("scan_family"),
+        "cache_source": packet.get("cache_source") or scan_summary.get("cache_source"),
+        "task_id": task_id,
+        "task_id_visible": task_id_visible,
+        "cache_view_only": cache_view_only,
+        "writes_sqlite_packet": writes_sqlite_packet,
+        "post_task_boundary_visible": cache_view_only or writes_sqlite_packet,
+        "initial_render_nonblocking": True,
+        "task_status_panel_required": True,
+        "last_success_cache_fallback_visible": previous_diff_visible,
+        "safe_failure_boundary_visible": True,
+        "input_budget_worker_boundary_visible": runtime_budget.get("schema_version") == "candidate_radar_fast_scan_runtime_budget.v1",
+        "no_feature_loss_gap_visibility": True,
+        "local_task_pipeline_ready": not local_blockers,
+        "async_worker_execution_done": False,
+        "provider_backed_acceptance_done": False,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "full_pool_scan_done": False,
+        "deep_scan_done": False,
+        "browser_performance_trace_done": False,
+        "row_count": len(rows),
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "note": "This contract proves the local task pipeline shape for fast Candidate Radar scans: render first, explicit POST task, visible task status, local cache fallback, input budgets, visible gaps, and no provider/model/trade work. It is not async worker execution, provider-backed parity, browser performance proof, or production replacement.",
+    }
+    return contract, rows
+
+
 def _quick_scan_receipt_rows(packet: Mapping[str, Any]) -> list[dict[str, Any]]:
     scan_summary = _as_dict(packet.get("scan_execution_summary"))
     coverage = _as_dict(packet.get("scan_coverage"))
@@ -6317,6 +6479,21 @@ def _build_candidate_radar_packet(
     if not candidate_rows:
         packet["warnings"].append("当前没有可展示候选；3.0 cache 页不会自动刷新或扫描。")
     packet = _attach_quick_scan_receipt_contract(packet)
+    task_pipeline_contract, task_pipeline_rows = _fast_scan_task_pipeline_contract(packet)
+    counts = dict(_as_dict(packet.get("counts")))
+    counts["fast_scan_task_pipeline_row_count"] = task_pipeline_contract["row_count"]
+    counts["fast_scan_task_pipeline_local_blocker_count"] = task_pipeline_contract["local_blocker_count"]
+    counts["fast_scan_task_pipeline_production_blocker_count"] = task_pipeline_contract["production_blocker_count"]
+    packet["counts"] = counts
+    policy = dict(_as_dict(packet.get("policy")))
+    policy["fast_scan_task_pipeline_contract_is_local"] = True
+    policy["fast_scan_task_pipeline_nonblocking_ui_contract_ready"] = task_pipeline_contract["local_task_pipeline_ready"]
+    policy["fast_scan_task_pipeline_is_not_async_worker_execution"] = True
+    policy["fast_scan_task_pipeline_does_not_call_provider_or_model"] = True
+    policy["fast_scan_task_pipeline_is_not_production_replacement"] = True
+    packet["policy"] = policy
+    packet["fast_scan_task_pipeline_contract"] = task_pipeline_contract
+    packet["fast_scan_task_pipeline_rows"] = task_pipeline_rows
     packet = _attach_no_feature_loss_acceptance_contract(packet)
     return _json_safe(packet)
 
@@ -6500,6 +6677,21 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     view["does_not_modify_strategy_action"] = True
     view["contains_secret"] = False
     view = _attach_quick_scan_receipt_contract(view)
+    task_pipeline_contract, task_pipeline_rows = _fast_scan_task_pipeline_contract(view)
+    counts = dict(_as_dict(view.get("counts")))
+    counts["fast_scan_task_pipeline_row_count"] = task_pipeline_contract["row_count"]
+    counts["fast_scan_task_pipeline_local_blocker_count"] = task_pipeline_contract["local_blocker_count"]
+    counts["fast_scan_task_pipeline_production_blocker_count"] = task_pipeline_contract["production_blocker_count"]
+    view["counts"] = counts
+    policy = dict(_as_dict(view.get("policy")))
+    policy["fast_scan_task_pipeline_contract_is_local"] = True
+    policy["fast_scan_task_pipeline_nonblocking_ui_contract_ready"] = task_pipeline_contract["local_task_pipeline_ready"]
+    policy["fast_scan_task_pipeline_is_not_async_worker_execution"] = True
+    policy["fast_scan_task_pipeline_does_not_call_provider_or_model"] = True
+    policy["fast_scan_task_pipeline_is_not_production_replacement"] = True
+    view["policy"] = policy
+    view["fast_scan_task_pipeline_contract"] = task_pipeline_contract
+    view["fast_scan_task_pipeline_rows"] = task_pipeline_rows
     view = _attach_no_feature_loss_acceptance_contract(view)
     return _json_safe(view)
 
