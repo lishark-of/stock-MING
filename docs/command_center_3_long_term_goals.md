@@ -194,7 +194,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 | LTG-11 | 测试 / CI / smoke / 安全扫描标准化 | local tests, smoke, local contract guards, CI mirror, push readiness receipt, and release gate stage-scope manifest exist | Repeatable gate for every release candidate | P0/P4 | unittest, frontend build, smoke, diff check, secret scan, artifact scan, and local LTG contracts are documented and enforced. |
 | LTG-12 | 真实交易链路继续保持隔离 | auto trading not connected; local trade-isolation stage-scope manifest exists | Trading remains explicitly out of automatic chains until a separate real-trading project passes every required stage | Always | No automatic order path; strategy action cannot be mutated by research/cache/model/frontend paths; future trading work is mode-tiered and evidence-gated, not silently enabled. |
 | LTG-13 | 下一票雷达快扫生产化 | local fast-scan readiness, fast-scan task-pipeline contract, no-feature-loss QA, legacy parity acceptance receipt, local full-pool execution receipt, local deep-scan review receipt, search-to-quant projection local receipt, production stage-scope manifest, and push-gate contract exist; provider-backed full-pool/deep-scan and provider/model-backed quant projection acceptance pending | Fast radar scan and search-driven quant projection in Command Center 3 without feature loss or degraded signal coverage | P3 | Radar and search tasks run through task pipeline, preserve legacy signal groups, avoid UI stalls, report coverage gaps instead of hiding them, and require direct evidence before production replacement. |
-| LTG-14 | Command Center 3 动效与可视化清晰度优化 | first motion clarity layer, static readiness audit, and production QA contract exist; browser visual/performance QA pending | Apple keynote-grade clarity and restrained motion that makes state changes easier to see | P8 | Motion is purposeful, performant, accessible, respects reduced-motion, and never obscures data or decisions. |
+| LTG-14 | Command Center 3 动效与可视化清晰度优化 | first motion clarity layer, static readiness audit, production QA contract, local browser runner/review receipts, and production stage-scope manifest exist; durable browser visual/performance promotion pending | Apple keynote-grade clarity and restrained motion that makes state changes easier to see | P8 | Motion is purposeful, performant, accessible, respects reduced-motion, never obscures data or decisions, and requires direct visual/performance evidence before production completion. |
 
 ## LTG-01: A 股交易日历级 Freshness 生产化
 
@@ -1432,6 +1432,7 @@ Productionize non-blocking next-ticket radar scans
 - `POST /api/audit/motion-production-promotion-dry-run` now creates a button-gated LTG-14 promotion dry-run. It reads the local audit cache plus ignored motion QA summaries, binds the reviewed local artifact, visual promotion scope, performance promotion scope, and durable CI/release evidence gap into `motion_promotion_dry_run_receipt` and rows, and still keeps `production_motion_complete=false`, `browser_visual_qa_promoted=false`, `browser_performance_promoted=false`, and `ci_evidence_complete=false`.
 - On 2026-06-14, the explicit local browser runner completed two local passes after manual FastAPI/Vite startup: default motion passed 20/20 route-viewport rows with zero console errors, and reduced-motion passed 20/20 route-viewport rows with zero console errors. The button-gated Motion browser QA review reached `motion_browser_qa_review_ready_local_artifact` with zero blocking review rows in the same local app session. These reports are local ignored artifacts and still require durable review/promotion before production completion claims.
 - Mobile layout now has a responsive breakpoint so navigation no longer squeezes Command Center content or state clarity rails on narrow screens. Local default-motion and reduced-motion browser runner reports can prove a specific run, but ignored local artifacts are not durable CI or production motion completion.
+- `scripts/motion_viewport_qa_contract.py` now exposes `motion_production_stage_scope_manifest`: a local static manifest for the remaining production-motion path. It tracks motion source guardrails, state-change confirmation cues, chart/radar delta choreography, reduced-motion review, viewport visual QA, browser performance trace, local artifact review, durable CI/release evidence, production promotion review, and no-trade/no-action boundaries while keeping `production_motion_complete=false`.
 - Further polish should improve clarity without distracting from risk, freshness, and decision boundaries.
 
 ### Gaps
@@ -1453,6 +1454,7 @@ Productionize non-blocking next-ticket radar scans
 - `motion_keynote_roadmap_local_ready_promotion_pending` means the high-polish motion roadmap is visible and auditable; it does not run browser QA, promote ignored local artifacts, prove performance, or complete production motion.
 - `motion_activation_receipt_ready_production_blocked` means LTG-14 has a clear next safe path; it still does not run the browser runner, perform button-gated review, promote visual/performance evidence, create durable CI proof, or complete production motion.
 - `motion_promotion_dry_run_ready_production_still_blocked` means local reviewed evidence and promotion scope are bound for human review; it still does not promote visual/performance evidence, verify remote CI, call GitHub, or complete production motion.
+- The production stage-scope manifest is a local pending checklist. It does not execute browser QA, promote local ignored artifacts, prove reduced-motion browser behavior, create durable release evidence, or mark production motion complete.
 
 ### Implementation Phases
 
@@ -1461,6 +1463,7 @@ Productionize non-blocking next-ticket radar scans
 3. Apply motion first to task progress, cache refresh, page transitions, ECharts updates, and candidate-radar scan results.
 4. Add reduced-motion fallbacks and performance checks.
 5. Verify desktop and mobile viewports so animation does not overlap, occlude, or resize critical text.
+6. Keep the production stage-scope manifest current whenever local visual evidence, performance evidence, durable release evidence, or production promotion status changes.
 
 ### Acceptance Criteria
 
@@ -1485,6 +1488,7 @@ Productionize non-blocking next-ticket radar scans
 - `motion_production_activation_receipt.local_activation_receipt_ready=true` only means the next safe sequence is explicit local browser runner, button-gated local review, durable visual/performance promotion, and CI/release evidence. It is not browser execution, CI evidence, visual promotion, performance promotion, or production motion completion.
 - `motion_promotion_dry_run_receipt.ready_for_local_promotion_review=true` only means the local promotion scope is bound after explicit approval and reviewed local evidence; `ready_to_mark_production_motion_complete`, `browser_visual_qa_promoted`, `browser_performance_promoted`, `ci_evidence_complete`, and `production_motion_complete` must remain false until a separate durable promotion step exists.
 - `motion_clarity_audit.static_ready=true` is allowed only when static source checks pass.
+- `motion_production_stage_scope_manifest` contains every required production-motion stage and each row keeps `production_motion_complete=false`, `visual_qa_complete=false`, `browser_performance_verified=false`, `browser_visual_qa_promoted=false`, `browser_performance_promoted=false`, `durable_ci_evidence_complete=false`, `browser_runner_executed_by_contract=false`, `local_artifact_reviewed_for_production=false`, `changes_packet_values=false`, `changes_strategy_action=false`, `changes_price_or_position=false`, no external/model/provider/GitHub calls, and no trade execution.
 - `production_motion_complete` remains false until browser viewport and performance QA are complete.
 
 ### Forbidden
@@ -1501,6 +1505,7 @@ Productionize non-blocking next-ticket radar scans
 - Do not treat `motion_browser_qa_review_contract` as browser execution, CI evidence, visual QA promotion, performance promotion, or production motion completion.
 - Do not treat `motion_production_activation_receipt` as browser execution, durable CI evidence, visual QA promotion, performance promotion, or production motion completion.
 - Do not treat `motion_promotion_dry_run_receipt` as browser execution, GitHub Actions proof, durable CI evidence, visual QA promotion, performance promotion, or production motion completion.
+- Do not treat `motion_production_stage_scope_manifest` as browser execution, reduced-motion browser proof, visual/performance promotion, durable release evidence, or production motion completion.
 
 ### Recommended Commit Message
 

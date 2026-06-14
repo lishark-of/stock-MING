@@ -8665,12 +8665,80 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("mobile_responsive_motion_layout", script)
         self.assertIn("packet_status_clarity_cue", script)
         self.assertIn("motion_browser_qa_runner.mjs", script)
+        self.assertIn("motion_production_stage_scope_manifest", script)
+        self.assertIn("motion_production_stage_scope_manifest_is_complete_and_pending", script)
         self.assertIn("external_calls_triggered", script)
         self.assertIn("does_not_execute_trades", script)
         self.assertNotIn("requests.", script)
         self.assertNotIn("httpx.", script)
         self.assertNotIn("subprocess", script)
         self.assertNotIn("openai", script.lower())
+
+        result = subprocess.run(
+            [sys.executable, str(path), "--json"],
+            cwd=Path.cwd(),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["schema_version"], "command_center_3_motion_viewport_qa_contract.v1")
+        self.assertEqual(payload["scope"], "local_static_contract_not_browser_execution")
+        self.assertEqual(payload["status"], "motion_viewport_qa_contract_ready_visual_run_pending")
+        self.assertTrue(payload["contract_ready"])
+        self.assertFalse(payload["production_motion_complete"])
+        self.assertFalse(payload["visual_qa_complete"])
+        self.assertFalse(payload["browser_performance_verified"])
+        self.assertFalse(payload["external_calls_triggered"])
+        self.assertFalse(payload["tushare_called"])
+        self.assertFalse(payload["deepseek_called"])
+        self.assertFalse(payload["github_called"])
+        self.assertTrue(payload["does_not_execute_trades"])
+        self.assertTrue(payload["does_not_modify_strategy_action"])
+        required_motion_stages = {
+            "motion_token_source_guardrails",
+            "state_change_confirmation_cues",
+            "chart_radar_delta_choreography",
+            "reduced_motion_accessibility_review",
+            "viewport_visual_qa_execution",
+            "browser_performance_trace_execution",
+            "local_artifact_review",
+            "durable_ci_or_release_evidence",
+            "production_promotion_review",
+            "no_trade_no_action_boundary",
+        }
+        self.assertEqual(payload["motion_production_stage_scope_count"], len(required_motion_stages))
+        self.assertEqual(payload["motion_production_stage_scope_pending_count"], len(required_motion_stages))
+        self.assertEqual(payload["motion_production_stage_scope_keys"], sorted(required_motion_stages))
+        stage_rows = payload["motion_production_stage_scope_rows"]
+        self.assertEqual({row["stage_key"] for row in stage_rows}, required_motion_stages)
+        for row in stage_rows:
+            self.assertEqual(row["scope"], "motion_production_stage_scope_manifest")
+            self.assertEqual(row["target_status"], "production_motion_direct_evidence_required")
+            self.assertTrue(row["required_before_production_motion"])
+            self.assertFalse(row["production_motion_complete"])
+            self.assertFalse(row["visual_qa_complete"])
+            self.assertFalse(row["browser_performance_verified"])
+            self.assertFalse(row["browser_visual_qa_promoted"])
+            self.assertFalse(row["browser_performance_promoted"])
+            self.assertFalse(row["durable_ci_evidence_complete"])
+            self.assertFalse(row["browser_runner_executed_by_contract"])
+            self.assertFalse(row["local_artifact_reviewed_for_production"])
+            self.assertFalse(row["reduced_motion_verified_by_browser"])
+            self.assertFalse(row["changes_packet_values"])
+            self.assertFalse(row["changes_strategy_action"])
+            self.assertFalse(row["changes_price_or_position"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
+            self.assertGreaterEqual(len(row["missing_evidence"]), 6)
+        criteria = {row["criterion"] for row in payload["static_rows"]}
+        self.assertIn("motion_production_stage_scope_manifest_is_complete_and_pending", criteria)
 
     def test_motion_browser_qa_runbook_script_is_local_static(self):
         path = Path("scripts/motion_browser_qa_runbook.py")

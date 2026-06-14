@@ -31,6 +31,36 @@ QA_VIEWPORTS = [
     {"name": "tablet", "width": 834, "height": 1112},
     {"name": "mobile", "width": 390, "height": 844},
 ]
+REQUIRED_MOTION_PRODUCTION_STAGE_KEYS = {
+    "motion_token_source_guardrails",
+    "state_change_confirmation_cues",
+    "chart_radar_delta_choreography",
+    "reduced_motion_accessibility_review",
+    "viewport_visual_qa_execution",
+    "browser_performance_trace_execution",
+    "local_artifact_review",
+    "durable_ci_or_release_evidence",
+    "production_promotion_review",
+    "no_trade_no_action_boundary",
+}
+MOTION_PRODUCTION_STAGE_LABELS = {
+    "motion_token_source_guardrails": "motion tokens and source guardrails are static and finite",
+    "state_change_confirmation_cues": "state changes are visible without timers or recomputation",
+    "chart_radar_delta_choreography": "chart and radar deltas need restrained visual choreography",
+    "reduced_motion_accessibility_review": "reduced-motion accessibility review is required",
+    "viewport_visual_qa_execution": "desktop and mobile viewport visual QA is required",
+    "browser_performance_trace_execution": "browser performance trace is required",
+    "local_artifact_review": "ignored local artifacts need explicit review",
+    "durable_ci_or_release_evidence": "durable CI or release evidence is required",
+    "production_promotion_review": "production motion promotion review is required",
+    "no_trade_no_action_boundary": "motion must never imply or mutate trading action",
+}
+LOCAL_MOTION_STAGE_EVIDENCE_KEYS = {
+    "motion_token_source_guardrails",
+    "state_change_confirmation_cues",
+    "chart_radar_delta_choreography",
+    "no_trade_no_action_boundary",
+}
 
 
 def read_text(path: Path) -> str:
@@ -49,6 +79,55 @@ def row(criterion: str, passed: bool, evidence: str, *, status: str | None = Non
     }
 
 
+def motion_production_stage_scope_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    missing_evidence = [
+        "browser viewport visual QA",
+        "browser performance trace",
+        "reduced-motion review",
+        "explicit local artifact review",
+        "durable CI or release evidence",
+        "production promotion approval",
+    ]
+    for stage_key in sorted(REQUIRED_MOTION_PRODUCTION_STAGE_KEYS):
+        rows.append(
+            {
+                "stage_key": stage_key,
+                "stage_label": MOTION_PRODUCTION_STAGE_LABELS[stage_key],
+                "scope": "motion_production_stage_scope_manifest",
+                "current_status": (
+                    "local_source_guard_ready_production_pending"
+                    if stage_key in LOCAL_MOTION_STAGE_EVIDENCE_KEYS
+                    else "direct_visual_or_performance_evidence_pending"
+                ),
+                "target_status": "production_motion_direct_evidence_required",
+                "local_stage_evidence_present": stage_key in LOCAL_MOTION_STAGE_EVIDENCE_KEYS,
+                "required_before_production_motion": True,
+                "production_motion_complete": False,
+                "visual_qa_complete": False,
+                "browser_performance_verified": False,
+                "browser_visual_qa_promoted": False,
+                "browser_performance_promoted": False,
+                "durable_ci_evidence_complete": False,
+                "browser_runner_executed_by_contract": False,
+                "local_artifact_reviewed_for_production": False,
+                "reduced_motion_verified_by_browser": False,
+                "changes_packet_values": False,
+                "changes_strategy_action": False,
+                "changes_price_or_position": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "missing_evidence": missing_evidence,
+            }
+        )
+    return rows
+
+
 def build_contract() -> dict[str, Any]:
     styles = read_text(DESKTOP_SRC / "styles.css")
     app = read_text(DESKTOP_SRC / "App.tsx")
@@ -62,6 +141,37 @@ def build_contract() -> dict[str, Any]:
     package_json = read_text(ROOT / "desktop" / "package.json")
     runner_source = read_text(ROOT / "scripts" / "motion_browser_qa_runner.mjs")
     audited_text = "\n".join([styles, app, packet_card, metric_grid, page_state, task_panel, task_receipt, next_chart, candidate_radar])
+    production_stage_rows = motion_production_stage_scope_rows()
+    production_stage_keys = {str(item.get("stage_key") or "") for item in production_stage_rows}
+    production_stage_scope_ready = (
+        production_stage_keys == REQUIRED_MOTION_PRODUCTION_STAGE_KEYS
+        and all(
+            item.get("scope") == "motion_production_stage_scope_manifest"
+            and item.get("target_status") == "production_motion_direct_evidence_required"
+            and item.get("required_before_production_motion") is True
+            and item.get("production_motion_complete") is False
+            and item.get("visual_qa_complete") is False
+            and item.get("browser_performance_verified") is False
+            and item.get("browser_visual_qa_promoted") is False
+            and item.get("browser_performance_promoted") is False
+            and item.get("durable_ci_evidence_complete") is False
+            and item.get("browser_runner_executed_by_contract") is False
+            and item.get("local_artifact_reviewed_for_production") is False
+            and item.get("reduced_motion_verified_by_browser") is False
+            and item.get("changes_packet_values") is False
+            and item.get("changes_strategy_action") is False
+            and item.get("changes_price_or_position") is False
+            and item.get("external_calls_triggered") is False
+            and item.get("tushare_called") is False
+            and item.get("deepseek_called") is False
+            and item.get("github_called") is False
+            and item.get("does_not_execute_trades") is True
+            and item.get("does_not_modify_strategy_action") is True
+            and item.get("contains_secret") is False
+            and len(item.get("missing_evidence") or []) >= 6
+            for item in production_stage_rows
+        )
+    )
 
     static_rows = [
         row(
@@ -164,6 +274,11 @@ def build_contract() -> dict[str, Any]:
             and ".stock_ming_3/motion_qa" in runner_source,
             "explicit runner can execute the pinned route/viewport matrix after local services are started",
         ),
+        row(
+            "motion_production_stage_scope_manifest_is_complete_and_pending",
+            production_stage_scope_ready,
+            "Motion production stages are listed as pending direct evidence while browser execution, visual QA promotion, performance promotion, durable evidence, packet/action mutation, external calls, and trade execution stay disabled.",
+        ),
     ]
     blockers = [item["criterion"] for item in static_rows if item["status"] == "blocked"]
     qa_matrix = [
@@ -207,6 +322,15 @@ def build_contract() -> dict[str, Any]:
         "qa_matrix": qa_matrix,
         "qa_matrix_count": len(qa_matrix),
         "static_rows": static_rows,
+        "motion_production_stage_scope_rows": production_stage_rows,
+        "motion_production_stage_scope_count": len(production_stage_rows),
+        "motion_production_stage_scope_pending_count": sum(
+            1
+            for item in production_stage_rows
+            if item.get("target_status") == "production_motion_direct_evidence_required"
+            and item.get("production_motion_complete") is False
+        ),
+        "motion_production_stage_scope_keys": sorted(production_stage_keys),
         "blocking_criterion_count": len(blockers),
         "blockers": blockers,
         "next_action": "Run a browser viewport and performance pass over this matrix before setting visual_qa_complete=true.",
