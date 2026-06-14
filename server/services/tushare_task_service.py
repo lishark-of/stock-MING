@@ -230,6 +230,11 @@ EXPECTED_FAILURE_MODE_QA = (
         "unselected APIs remain capability rows and must not be marked verified.",
     ),
 )
+TRADE_CAL_PROVIDER_ACCEPTANCE_MODE = "provider_backed_trade_cal_long_window"
+TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS = 730
+TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_FAILURE_MODES = len(EXPECTED_FAILURE_MODE_QA)
+TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS = 8
+TRADE_CAL_PROVIDER_ACCEPTANCE_MAX_ROWS = 10000
 
 
 def _now_iso() -> str:
@@ -1935,6 +1940,23 @@ def _rows_from_data(data: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _trade_cal_acceptance_rows_from_data(data: Any) -> list[dict[str, Any]]:
+    if data is None:
+        return []
+    if hasattr(data, "empty") and hasattr(data, "where") and hasattr(data, "notna"):
+        if bool(getattr(data, "empty", True)):
+            return []
+        return data.head(TRADE_CAL_PROVIDER_ACCEPTANCE_MAX_ROWS).where(data.notna(), None).to_dict("records")
+    if isinstance(data, list):
+        return [dict(item) for item in data if isinstance(item, Mapping)][:TRADE_CAL_PROVIDER_ACCEPTANCE_MAX_ROWS]
+    if isinstance(data, Mapping):
+        rows = data.get("rows")
+        if isinstance(rows, list):
+            return [dict(item) for item in rows if isinstance(item, Mapping)][:TRADE_CAL_PROVIDER_ACCEPTANCE_MAX_ROWS]
+        return [dict(data)]
+    return []
+
+
 def _row_count(data: Any) -> int:
     try:
         if hasattr(data, "__len__"):
@@ -1951,6 +1973,160 @@ def _data_date(rows: list[dict[str, Any]]) -> Any:
             if value not in (None, ""):
                 return value
     return None
+
+
+def _parse_trade_cal_date(value: Any) -> _dt.date | None:
+    text = str(value or "").strip()
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if len(digits) >= 8:
+        try:
+            return _dt.datetime.strptime(digits[:8], "%Y%m%d").date()
+        except ValueError:
+            return None
+    try:
+        return _dt.date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _trade_cal_is_open(value: Any) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "open", "交易"}
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _trade_cal_provider_acceptance_fields(
+    api: str,
+    *,
+    params: dict[str, Any],
+    rows: list[dict[str, Any]],
+    payload: Any,
+    call_status: str,
+) -> dict[str, Any]:
+    if api != "trade_cal":
+        return {}
+
+    safe_payload = _safe_payload(payload)
+    acceptance_mode = str(
+        safe_payload.get("acceptance_mode")
+        or safe_payload.get("provider_acceptance_mode")
+        or "standard_refresh"
+    )
+    explicit_acceptance_mode = acceptance_mode == TRADE_CAL_PROVIDER_ACCEPTANCE_MODE
+    dates = sorted(
+        {
+            parsed
+            for parsed in (_parse_trade_cal_date(row.get("cal_date") or row.get("trade_date") or row.get("date")) for row in rows)
+            if parsed is not None
+        }
+    )
+    open_dates = sorted(
+        {
+            parsed
+            for row in rows
+            if _trade_cal_is_open(row.get("is_open", 1))
+            for parsed in [_parse_trade_cal_date(row.get("cal_date") or row.get("trade_date") or row.get("date"))]
+            if parsed is not None
+        }
+    )
+    closed_dates = sorted(
+        {
+            parsed
+            for row in rows
+            if not _trade_cal_is_open(row.get("is_open", 1))
+            for parsed in [_parse_trade_cal_date(row.get("cal_date") or row.get("trade_date") or row.get("date"))]
+            if parsed is not None
+        }
+    )
+    start_date = dates[0] if dates else None
+    end_date = dates[-1] if dates else None
+    window_days = ((end_date - start_date).days + 1) if start_date and end_date else 0
+    latest_completed = max((day for day in open_dates if day <= _dt.date.today()), default=max(open_dates, default=None))
+    schema_fields_present = bool(rows) and all(
+        isinstance(row, Mapping) and "cal_date" in row and "is_open" in row for row in rows
+    )
+    failure_mode_count = _safe_int(safe_payload.get("failure_mode_validated_count") or safe_payload.get("failure_mode_count"))
+    replay_scenario_count = _safe_int(
+        safe_payload.get("freshness_replay_scenario_count") or safe_payload.get("replay_scenario_count")
+    )
+    freshness_replay_passed = (
+        safe_payload.get("freshness_replay_passed") is True
+        or safe_payload.get("freshness_gate_replay_passed") is True
+    ) and replay_scenario_count >= TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS
+    failure_modes_validated = (
+        safe_payload.get("failure_modes_validated") is True
+        or safe_payload.get("failure_mode_qa_passed") is True
+    ) and failure_mode_count >= TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_FAILURE_MODES
+    minimum_window_days_passed = window_days >= TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS
+    provider_backed_done = bool(
+        explicit_acceptance_mode
+        and call_status == "success"
+        and schema_fields_present
+        and minimum_window_days_passed
+        and open_dates
+        and closed_dates
+        and latest_completed
+        and freshness_replay_passed
+        and failure_modes_validated
+    )
+    blockers = []
+    if not explicit_acceptance_mode:
+        blockers.append("explicit_acceptance_mode_missing")
+    if call_status != "success":
+        blockers.append("trade_cal_call_not_success")
+    if not schema_fields_present:
+        blockers.append("cal_date_is_open_schema_missing")
+    if not minimum_window_days_passed:
+        blockers.append("minimum_730_day_window_missing")
+    if not open_dates:
+        blockers.append("open_day_rows_missing")
+    if not closed_dates:
+        blockers.append("closed_day_rows_missing")
+    if not latest_completed:
+        blockers.append("latest_completed_trade_date_missing")
+    if not freshness_replay_passed:
+        blockers.append("freshness_replay_evidence_missing")
+    if not failure_modes_validated:
+        blockers.append("failure_mode_evidence_missing")
+
+    return {
+        "acceptance_mode": acceptance_mode,
+        "provider_called": call_status in {"success", "empty", "failed"},
+        "provider_acceptance_marker": TRADE_CAL_PROVIDER_ACCEPTANCE_MODE if provider_backed_done else "",
+        "provider_backed_long_window_acceptance_done": provider_backed_done,
+        "provider_backed_trade_cal_acceptance_done": provider_backed_done,
+        "production_freshness_gate_complete": False,
+        "production_tushare_pipeline_complete": False,
+        "trade_cal_schema_fields_present": schema_fields_present,
+        "window_start": start_date.isoformat() if start_date else None,
+        "window_end": end_date.isoformat() if end_date else None,
+        "window_days": window_days,
+        "minimum_acceptance_window_days": TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS,
+        "minimum_window_days_passed": minimum_window_days_passed,
+        "open_day_count": len(open_dates),
+        "closed_day_count": len(closed_dates),
+        "latest_completed_trade_date": latest_completed.isoformat() if latest_completed else None,
+        "latest_completed_trade_date_resolved": bool(latest_completed),
+        "freshness_replay_passed": freshness_replay_passed,
+        "freshness_replay_scenario_count": replay_scenario_count,
+        "failure_modes_validated": failure_modes_validated,
+        "failure_mode_validated_count": failure_mode_count,
+        "provider_acceptance_required_failure_mode_count": TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_FAILURE_MODES,
+        "provider_acceptance_required_replay_scenario_count": TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS,
+        "provider_acceptance_blockers": blockers,
+        "provider_acceptance_blocker_count": len(blockers),
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
 
 
 def _dataframe_for_write(data: Any) -> Any:
@@ -1995,9 +2171,18 @@ def _write_parquet_dataset(api: str, data: Any) -> dict[str, Any]:
     return result
 
 
-def _call_ledger_row(api: str, *, params: dict[str, Any], result: dict[str, Any], parquet_result: dict[str, Any] | None, now: str) -> dict[str, Any]:
+def _call_ledger_row(
+    api: str,
+    *,
+    params: dict[str, Any],
+    result: dict[str, Any],
+    parquet_result: dict[str, Any] | None,
+    now: str,
+    payload: Any = None,
+) -> dict[str, Any]:
     data = result.get("data") if isinstance(result, Mapping) else None
     rows = _rows_from_data(data)
+    acceptance_rows = _trade_cal_acceptance_rows_from_data(data) if api == "trade_cal" else rows
     ok = bool(result.get("ok")) if isinstance(result, Mapping) else False
     row_count = _row_count(data)
     raw_error = result.get("error") if isinstance(result, Mapping) else "invalid_tushare_result"
@@ -2011,7 +2196,7 @@ def _call_ledger_row(api: str, *, params: dict[str, Any], result: dict[str, Any]
     else:
         call_status = "failed"
         failure_mode = _failure_mode_from_error(raw_error)
-    return {
+    row = {
         "api": api,
         "request_params_safe": params,
         "row_count": row_count,
@@ -2033,6 +2218,16 @@ def _call_ledger_row(api: str, *, params: dict[str, Any], result: dict[str, Any]
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
     }
+    row.update(
+        _trade_cal_provider_acceptance_fields(
+            api,
+            params=params,
+            rows=acceptance_rows,
+            payload=payload,
+            call_status=call_status,
+        )
+    )
+    return row
 
 
 def _blocked_missing_param_ledger_row(api: str, *, params: dict[str, Any], missing_param: str, now: str) -> dict[str, Any]:
@@ -2117,7 +2312,16 @@ def run_tushare_refresh_task(
         except Exception as exc:
             result = {"ok": False, "data": None, "error": _safe_text(exc)}
         parquet_result = _write_parquet_dataset(api, result.get("data")) if bool(result.get("ok")) else {"status": "not_written_failed_call"}
-        call_ledger.append(_call_ledger_row(api, params=params, result=dict(result), parquet_result=parquet_result, now=now))
+        call_ledger.append(
+            _call_ledger_row(
+                api,
+                params=params,
+                result=dict(result),
+                parquet_result=parquet_result,
+                now=now,
+                payload=payload,
+            )
+        )
 
     success_or_empty = [row for row in call_ledger if row.get("call_status") in {"success", "empty"}]
     failed = [row for row in call_ledger if row.get("call_status") == "failed"]

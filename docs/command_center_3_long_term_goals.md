@@ -108,6 +108,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - Data Health now exposes `freshness_production_blocker_audit`: a local read-only blocker summary across the freshness matrix, long-window replay fixture, local `trade_cal` artifact validation, provider-backed promotion evidence, current-evidence boundary, decision-surface isolation, and producer expected-date coverage.
 - Data Health now exposes `freshness_provider_acceptance_readiness_receipt`: a local read-only receipt that tells whether LTG-01 is ready for an explicit POST `trade_cal` provider acceptance task, what evidence is still missing before promotion, and which shortcuts remain forbidden. It keeps `production_freshness_gate_complete=false`.
 - Data Health now exposes `freshness_provider_acceptance_activation_receipt`: a local activation checklist for the future explicit `trade_cal` provider acceptance task. It keeps provider task execution, provider call ledger evidence, explicit promotion marker, and production completion pending while confirming GET cache and React render do not call Tushare/DeepSeek/GitHub or mutate action.
+- Tushare refresh task call-ledger rows can now record explicit `acceptance_mode=provider_backed_trade_cal_long_window` evidence for future provider-backed `trade_cal` acceptance: 730-day window, `cal_date/is_open` schema, open/closed row counts, latest completed trading day, freshness replay evidence, failure-mode evidence, and no-trade/no-action boundaries. This is still button-gated POST evidence, not GET cache execution.
 
 ### Gaps
 
@@ -121,6 +122,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - The freshness production blocker audit is not production completion; it only makes LTG-01 blockers visible and keeps `production_freshness_gate_complete=false`.
 - The provider acceptance readiness receipt is not provider execution; it only clarifies the next allowed step and missing evidence. It cannot promote synthetic fixtures, local Parquet checks, runbooks, or page renders to provider-backed acceptance.
 - The provider acceptance activation receipt is not provider execution; it is the final local checklist before a future explicit POST task. It cannot call Tushare, create tasks, promote fixtures/artifacts/runbooks, mutate strategy action, or mark production freshness complete.
+- A `trade_cal` call-ledger row with `acceptance_mode=provider_backed_trade_cal_long_window` is not enough by itself. It only becomes provider-backed long-window evidence when the explicit task also records successful provider rows, 730-day schema/window checks, freshness replay evidence, and failure-mode evidence.
 
 ### Implementation Phases
 
@@ -188,6 +190,7 @@ Harden A-share trading-calendar freshness production gate
 - Tushare refresh packets now expose `provider_sample_readiness_receipt`: a local receipt that says whether the next safe step is an explicit POST target-sample acceptance task, promotion evidence review, or completing target sample payload/selection. It keeps matrix, local QA, fake/local adapter, and gap-ledger evidence out of provider-backed acceptance promotion.
 - Tushare refresh packets now expose `provider_sample_activation_receipt`: a local activation checklist for future explicit target-sample provider acceptance. It keeps provider task execution, safe provider call ledger rows for every target domain, explicit full-interface acceptance marker, and production completion pending while confirming GET cache and React render do not call Tushare/DeepSeek/GitHub or mutate action.
 - `scripts/tushare_acceptance_contract.py` is now part of the local push gate. It exercises only local matrix/readiness contract helpers and prevents matrix-only rows, failure-mode QA, request-parameter QA, target-sample plans, or provider-readiness audits from being mistaken for provider-backed production acceptance.
+- `POST /api/tasks/refresh-tushare-facts` now exposes an explicit `provider_backed_trade_cal_long_window` call-ledger evidence mode for future `trade_cal` provider acceptance. It does not run by default, does not make `trade_cal` full-interface acceptance, and still requires replay/failure-mode evidence before provider-backed long-window acceptance can be marked on the ledger row.
 
 ### Gaps
 
@@ -208,6 +211,7 @@ Harden A-share trading-calendar freshness production gate
 - `provider_sample_readiness_receipt.status=provider_sample_receipt_ready_execution_pending` only means a user-triggered POST provider-sample task is the next safe step for ready targets; it is not provider-backed acceptance or production completion.
 - `provider_sample_activation_receipt.status=provider_sample_activation_ready_execution_pending` or `provider_sample_activation_blocked_local_readiness` only describes the local activation checklist; it does not execute provider samples, create tasks, or prove production completion.
 - The local Tushare acceptance push-gate contract is not a provider run; it only blocks regressions in button gating, matrix semantics, call-ledger requirements, pending provider acceptance flags, and no-trade/no-action boundaries.
+- The `provider_backed_trade_cal_long_window` task mode is a controlled evidence marker for the `trade_cal` target only. It is not Tushare full-interface acceptance, not production pipeline completion, and not automatic provider execution.
 
 ### Implementation Phases
 
@@ -233,6 +237,7 @@ Harden A-share trading-calendar freshness production gate
 - `provider_acceptance_readiness_audit.provider_backed_acceptance_done=false` and `production_tushare_pipeline_complete=false` until real provider-backed full-interface acceptance is explicitly proven.
 - `scripts/tushare_acceptance_contract.py` passes in the push gate while still reporting `provider_backed_acceptance_done=false`, `production_tushare_pipeline_complete=false`, and `full_interface_acceptance_done=false`.
 - Tokens are never printed, stored in packets, or exposed to frontend.
+- `trade_cal` provider-backed long-window evidence requires explicit payload, long-window schema evidence, freshness replay, and failure-mode validation; a plain successful `trade_cal` refresh remains a normal selected API result.
 
 ### Forbidden
 

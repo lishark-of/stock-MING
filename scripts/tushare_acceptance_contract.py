@@ -10,6 +10,7 @@ claimed from local QA contracts, or lost no-trade/no-action boundaries.
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import sys
 from pathlib import Path
@@ -133,6 +134,39 @@ def build_contract() -> dict[str, Any]:
         {"include_extended": True},
         tushare_task_service.CORE_REFRESH_APIS,
     )
+    trade_cal_start = _dt.date(2024, 1, 1)
+    trade_cal_end = trade_cal_start + _dt.timedelta(days=820)
+    trade_cal_rows = []
+    cursor = trade_cal_start
+    while cursor <= trade_cal_end:
+        trade_cal_rows.append(
+            {
+                "exchange": "SSE",
+                "cal_date": cursor.strftime("%Y%m%d"),
+                "is_open": 1 if cursor.weekday() < 5 else 0,
+            }
+        )
+        cursor += _dt.timedelta(days=1)
+    trade_cal_partial_acceptance = tushare_task_service._trade_cal_provider_acceptance_fields(
+        "trade_cal",
+        params={"start_date": trade_cal_start.strftime("%Y%m%d"), "end_date": trade_cal_end.strftime("%Y%m%d")},
+        rows=trade_cal_rows,
+        payload={"acceptance_mode": "provider_backed_trade_cal_long_window"},
+        call_status="success",
+    )
+    trade_cal_full_acceptance = tushare_task_service._trade_cal_provider_acceptance_fields(
+        "trade_cal",
+        params={"start_date": trade_cal_start.strftime("%Y%m%d"), "end_date": trade_cal_end.strftime("%Y%m%d")},
+        rows=trade_cal_rows,
+        payload={
+            "acceptance_mode": "provider_backed_trade_cal_long_window",
+            "freshness_replay_passed": True,
+            "freshness_replay_scenario_count": 8,
+            "failure_modes_validated": True,
+            "failure_mode_validated_count": 6,
+        },
+        call_status="success",
+    )
 
     rows = [
         _row(
@@ -145,6 +179,9 @@ def build_contract() -> dict[str, Any]:
             and refresh_catalog.get("optional_extended_apis") == extended_apis
             and refresh_catalog.get("parquet_enabled_apis") == parquet_apis
             and refresh_catalog.get("call_ledger_required") is True
+            and refresh_catalog.get("provider_acceptance_modes") == ["provider_backed_trade_cal_long_window"]
+            and refresh_catalog.get("trade_cal_provider_acceptance_mode_requires_explicit_payload") is True
+            and refresh_catalog.get("trade_cal_provider_acceptance_is_full_interface_acceptance") is False
             and refresh_catalog.get("full_interface_acceptance_done") is False,
             "Tushare refresh must remain a button-gated POST task with core defaults, optional calendar/extended APIs, and no GET cache external call.",
         ),
@@ -174,6 +211,21 @@ def build_contract() -> dict[str, Any]:
             and calendar_selection == core_apis + calendar_apis
             and set(extended_selection) == set(core_apis + calendar_apis + extended_apis),
             "Default selection is core only; trade_cal and extended APIs require explicit payload flags or API selection.",
+        ),
+        _row(
+            "trade_cal_provider_acceptance_mode_is_explicit",
+            trade_cal_partial_acceptance.get("acceptance_mode") == "provider_backed_trade_cal_long_window"
+            and trade_cal_partial_acceptance.get("minimum_window_days_passed") is True
+            and trade_cal_partial_acceptance.get("provider_backed_long_window_acceptance_done") is False
+            and "freshness_replay_evidence_missing" in trade_cal_partial_acceptance.get("provider_acceptance_blockers", [])
+            and "failure_mode_evidence_missing" in trade_cal_partial_acceptance.get("provider_acceptance_blockers", [])
+            and trade_cal_full_acceptance.get("provider_backed_long_window_acceptance_done") is True
+            and trade_cal_full_acceptance.get("provider_backed_trade_cal_acceptance_done") is True
+            and int(trade_cal_full_acceptance.get("freshness_replay_scenario_count") or 0) >= 8
+            and int(trade_cal_full_acceptance.get("failure_mode_validated_count") or 0) >= 6
+            and trade_cal_full_acceptance.get("production_tushare_pipeline_complete") is False
+            and trade_cal_full_acceptance.get("does_not_modify_strategy_action") is True,
+            "trade_cal provider-backed long-window acceptance requires explicit payload, 730-day schema/window evidence, freshness replay evidence, and failure-mode evidence.",
         ),
         _row(
             "matrix_only_rows_not_verified",
@@ -445,6 +497,11 @@ def build_contract() -> dict[str, Any]:
             "provider_sample_activation_blocker_count": provider_sample_activation.get("blocking_criterion_count"),
             "target_sample_plan_ready_count": target_sample_plan.get("ready_to_execute_target_count"),
             "target_sample_plan_pending_count": target_sample_plan.get("pending_or_blocked_target_count"),
+            "trade_cal_acceptance_mode": trade_cal_full_acceptance.get("acceptance_mode"),
+            "trade_cal_acceptance_window_days": trade_cal_full_acceptance.get("window_days"),
+            "trade_cal_acceptance_done_when_replay_and_failure_evidence_present": trade_cal_full_acceptance.get(
+                "provider_backed_long_window_acceptance_done"
+            ),
         },
         "note": "This is a local push-gate contract. Real Tushare samples remain pending until a future explicit POST task/provider acceptance run.",
     }

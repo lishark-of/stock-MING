@@ -5862,6 +5862,108 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(sample_receipt_rows["provider_promotion_evidence_ticket"]["status"], "ready_for_promotion_review")
         self.assertEqual(sample_receipt_rows["matrix_and_local_qa_not_acceptance"]["status"], "enforced_not_provider_acceptance")
 
+    def test_tushare_trade_cal_provider_acceptance_mode_records_long_window_evidence_safely(self):
+        db_path = self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        start = _dt.date(2024, 1, 1)
+        end = start + _dt.timedelta(days=820)
+        rows = []
+        cursor = start
+        previous_open = ""
+        while cursor <= end:
+            is_open = cursor.weekday() < 5
+            rows.append(
+                {
+                    "exchange": "SSE",
+                    "cal_date": cursor.strftime("%Y%m%d"),
+                    "is_open": 1 if is_open else 0,
+                    "pretrade_date": previous_open,
+                }
+            )
+            if is_open:
+                previous_open = cursor.strftime("%Y%m%d")
+            cursor += _dt.timedelta(days=1)
+
+        class TradeCalAcceptanceFakeAdapter:
+            def get_trade_cal(self, **params):
+                return {"ok": True, "data": rows, "error": ""}
+
+        partial_task = tushare_task_service.run_tushare_refresh_task(
+            {
+                "apis": ["trade_cal"],
+                "start_date": start.strftime("%Y%m%d"),
+                "end_date": end.strftime("%Y%m%d"),
+                "acceptance_mode": "provider_backed_trade_cal_long_window",
+                "token": "SHOULD_DROP",
+            },
+            adapter=TradeCalAcceptanceFakeAdapter(),
+        )
+        partial_row = partial_task["call_ledger"][0]
+        self.assertEqual(partial_task["status"], "success")
+        self.assertEqual(partial_row["api"], "trade_cal")
+        self.assertEqual(partial_row["acceptance_mode"], "provider_backed_trade_cal_long_window")
+        self.assertTrue(partial_row["minimum_window_days_passed"])
+        self.assertTrue(partial_row["trade_cal_schema_fields_present"])
+        self.assertGreaterEqual(partial_row["window_days"], 730)
+        self.assertGreater(partial_row["open_day_count"], 0)
+        self.assertGreater(partial_row["closed_day_count"], 0)
+        self.assertFalse(partial_row["provider_backed_long_window_acceptance_done"])
+        self.assertIn("freshness_replay_evidence_missing", partial_row["provider_acceptance_blockers"])
+        self.assertIn("failure_mode_evidence_missing", partial_row["provider_acceptance_blockers"])
+        self.assertFalse(partial_row["deepseek_called"])
+        self.assertFalse(partial_row["github_called"])
+        self.assertTrue(partial_row["does_not_execute_trades"])
+        self.assertTrue(partial_row["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(partial_task, ensure_ascii=False))
+
+        clear_task_statuses_for_tests(clear_persisted=True)
+        accepted_task = tushare_task_service.run_tushare_refresh_task(
+            {
+                "apis": ["trade_cal"],
+                "start_date": start.strftime("%Y%m%d"),
+                "end_date": end.strftime("%Y%m%d"),
+                "acceptance_mode": "provider_backed_trade_cal_long_window",
+                "freshness_replay_passed": True,
+                "freshness_replay_scenario_count": 8,
+                "failure_modes_validated": True,
+                "failure_mode_validated_count": 6,
+            },
+            adapter=TradeCalAcceptanceFakeAdapter(),
+        )
+        accepted_row = accepted_task["call_ledger"][0]
+        self.assertEqual(accepted_task["status"], "success")
+        self.assertTrue(accepted_row["provider_called"])
+        self.assertTrue(accepted_row["provider_backed_long_window_acceptance_done"])
+        self.assertTrue(accepted_row["provider_backed_trade_cal_acceptance_done"])
+        self.assertEqual(accepted_row["provider_acceptance_marker"], "provider_backed_trade_cal_long_window")
+        self.assertEqual(accepted_row["freshness_replay_scenario_count"], 8)
+        self.assertEqual(accepted_row["failure_mode_validated_count"], 6)
+        self.assertEqual(accepted_row["provider_acceptance_blocker_count"], 0)
+        self.assertTrue(accepted_row["latest_completed_trade_date_resolved"])
+        self.assertFalse(accepted_row["production_freshness_gate_complete"])
+        self.assertFalse(accepted_row["production_tushare_pipeline_complete"])
+        self.assertFalse(accepted_row["deepseek_called"])
+        self.assertFalse(accepted_row["github_called"])
+        self.assertTrue(accepted_row["does_not_execute_trades"])
+        self.assertTrue(accepted_row["does_not_modify_strategy_action"])
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        persisted = SQLiteMetaStore(db_path).read_packet("command_center_tushare_refresh_packet")
+        self.assertIsNotNone(persisted)
+        ledger_row = persisted["call_ledger"][0]
+        self.assertTrue(ledger_row["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(persisted["provider_backed_acceptance_done"])
+        self.assertFalse(persisted["production_tushare_pipeline_complete"])
+        self.assertFalse(persisted["full_interface_acceptance_done"])
+        self.assertFalse(persisted["api_validation_matrix_policy"]["production_tushare_pipeline_complete"])
+        self.assertTrue(persisted["tushare_called"])
+        self.assertFalse(persisted["deepseek_called"])
+        self.assertFalse(persisted["github_called"])
+        self.assertTrue(persisted["does_not_modify_strategy_action"])
+
     def test_tushare_refresh_task_exposes_failure_mode_qa_contract(self):
         db_path = self._with_meta_store()
         self._with_parquet_root()
@@ -7857,6 +7959,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(by_type["refresh_tushare_facts"]["provider_target_sample_plan_is_provider_acceptance"])
         self.assertIn("local target-domain evidence gap ledger", by_type["refresh_tushare_facts"]["provider_evidence_gap_audit_contract"])
         self.assertFalse(by_type["refresh_tushare_facts"]["provider_evidence_gap_audit_is_provider_acceptance"])
+        self.assertEqual(by_type["refresh_tushare_facts"]["provider_acceptance_modes"], ["provider_backed_trade_cal_long_window"])
+        self.assertTrue(by_type["refresh_tushare_facts"]["trade_cal_provider_acceptance_mode_requires_explicit_payload"])
+        self.assertEqual(by_type["refresh_tushare_facts"]["trade_cal_provider_acceptance_requires_long_window_days"], 730)
+        self.assertTrue(by_type["refresh_tushare_facts"]["trade_cal_provider_acceptance_requires_failure_mode_evidence"])
+        self.assertTrue(by_type["refresh_tushare_facts"]["trade_cal_provider_acceptance_requires_freshness_replay"])
+        self.assertFalse(by_type["refresh_tushare_facts"]["trade_cal_provider_acceptance_is_full_interface_acceptance"])
         self.assertFalse(by_type["refresh_tushare_facts"]["full_interface_acceptance_done"])
         self.assertFalse(by_type["refresh_tushare_facts"]["cache_get_external_calls"])
         self.assertEqual(by_type["refresh_factor_data"]["route"], "POST /api/factor-quant/refresh-data")
