@@ -246,6 +246,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             build_artifact["binary_path"],
             "desktop/src-tauri/target/release/stock_ming_command_center",
         )
+        if build_artifact["binary_exists"]:
+            self.assertGreater(build_artifact["binary_size_bytes"], 0)
+            self.assertTrue(build_artifact["binary_executable"])
+            self.assertEqual(build_artifact["binary_kind"], "macos_mach_o_release_binary")
+        else:
+            self.assertEqual(build_artifact["binary_size_bytes"], 0)
+            self.assertFalse(build_artifact["binary_executable"])
+        self.assertFalse(build_artifact["packaged_app_bundle_detected"])
+        self.assertFalse(build_artifact["distribution_dmg_detected"])
         self.assertFalse(build_artifact["build_command_executed_by_get_cache"])
         self.assertTrue(build_artifact["artifact_is_gitignored"])
         self.assertFalse(build_artifact["packaged_runtime_validated"])
@@ -399,12 +408,25 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(qa_contract["does_not_execute_trades"])
         self.assertTrue(qa_contract["does_not_modify_strategy_action"])
         self.assertEqual(qa_contract["qa_matrix_count"], len(desktop["packaged_runtime_qa_rows"]))
-        self.assertGreaterEqual(qa_contract["pending_qa_count"], 5)
+        self.assertEqual(qa_contract["release_binary_qa_passed"], build_artifact["binary_exists"])
+        self.assertEqual(qa_contract["release_binary_executable"], build_artifact["binary_executable"])
+        self.assertFalse(qa_contract["packaged_app_bundle_detected"])
+        self.assertFalse(qa_contract["distribution_dmg_detected"])
+        self.assertGreaterEqual(qa_contract["pending_qa_count"], 4)
         self.assertIn("release_artifact_qa", qa_rows)
         self.assertIn("backend_startup_strategy_qa", qa_rows)
         self.assertIn("backend_offline_ux_packaged_qa", qa_rows)
         self.assertIn("config_log_runtime_path_qa", qa_rows)
         self.assertIn("macos_signing_notarization_qa", qa_rows)
+        self.assertEqual(qa_rows["release_artifact_qa"]["passed"], build_artifact["binary_exists"])
+        if build_artifact["binary_exists"]:
+            self.assertEqual(qa_rows["release_artifact_qa"]["status"], "passed_local_binary_artifact")
+        else:
+            self.assertEqual(qa_rows["release_artifact_qa"]["status"], "pending")
+        self.assertFalse(qa_rows["backend_startup_strategy_qa"]["passed"])
+        self.assertFalse(qa_rows["backend_offline_ux_packaged_qa"]["passed"])
+        self.assertFalse(qa_rows["config_log_runtime_path_qa"]["passed"])
+        self.assertFalse(qa_rows["macos_signing_notarization_qa"]["passed"])
         self.assertTrue(qa_rows["startup_external_call_boundary"]["passed"])
         self.assertTrue(qa_rows["secret_bundle_boundary"]["passed"])
         self.assertIn("production_package_readiness_receipt", desktop)

@@ -54,9 +54,11 @@ Current local LTG work must not be treated as shared baseline until tests, build
 
 ## Remaining Goals Snapshot
 
-Current snapshot date: 2026-06-13.
+Current snapshot date: 2026-06-14.
 
 Strict completion status: none of the 14 long-term goals should be closed as fully complete yet. LTG-11 and LTG-12 are the closest to stable operating policy, but they still remain ongoing release boundaries rather than one-time completed features.
+
+Progress summary as of 2026-06-14: the Command Center 3.0 migration foundation is roughly 70% established, while production acceptance across the 14 LTGs is roughly 25-35% complete. The strict closeout count remains `0 / 14` because every LTG still has at least one provider-backed, packaged-runtime, browser-performance, worker/storage, or retirement acceptance item pending.
 
 | bucket | count | goals | current meaning |
 |---|---:|---|---|
@@ -80,7 +82,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 | LTG-06 | Worker / Celery / Redis 生产化 | local task fallback, preflight, blocker audit, healthcheck QA contract, readiness/activation receipts, and push-gate contract exist | Production-capable worker orchestration with local fallback | P4 | POST returns task_id, worker runs heavy jobs, Redis absence falls back gracefully, scheduler stays off by default. |
 | LTG-07 | DeepSeek pro 稳定解释生产化 | manual governance, sanitizer, local JSON stability audit, response-format review, activation receipt, and push-gate contract exist; mini-benchmark below production target | Stable manual explanation, optional background auto-after-task | P5 | JSON success rate > 90%, no action leakage, no numeric overwrite, cost predictable. |
 | LTG-08 | ECharts 次日操作图谱成熟版 | maturing chart contract with interaction readiness audit; legacy parity pending | React/ECharts replaces Streamlit main next-session visual | P5 | Complete cache display, evidence interactions, no frontend action/price/position mutation. |
-| LTG-09 | Tauri desktop production package | dev/preflight with runtime contract and local release artifact detection; packaged runtime QA pending | Production desktop shell for ordinary users | P6 | tauri dev/build pass; backend-offline state is friendly; config/log policy is validated; token/key never enters frontend. |
+| LTG-09 | Tauri desktop production package | dev/preflight with runtime contract and local executable release binary QA; `.app`/DMG packaged runtime QA pending | Production desktop shell for ordinary users | P6 | tauri dev/build pass; backend-offline state is friendly; config/log policy is validated; token/key never enters frontend. |
 | LTG-10 | Streamlit 完全退出普通主流程 | `legacy/admin/debug` marked, fallback dependency contract visible, still used for fallback | Streamlit only for debug/admin/fallback | P7 | Ordinary research workflow runs through Command Center 3 desktop. |
 | LTG-11 | 测试 / CI / smoke / 安全扫描标准化 | local tests, smoke, and local contract guards exist | Repeatable gate for every release candidate | P0/P4 | unittest, frontend build, smoke, diff check, secret scan, artifact scan, and local LTG contracts are documented and enforced. |
 | LTG-12 | 真实交易链路继续保持隔离 | auto trading not connected | Trading remains explicitly out of automatic chains | Always | No automatic order path; strategy action cannot be mutated by research/cache/model/frontend paths. |
@@ -725,9 +727,11 @@ Mature ECharts next-session operation map interactions
 - Desktop preflight now exposes `production_blocker_audit` and `production_blocker_rows`, separating dev/preflight readiness from production package readiness.
 - Desktop preflight now exposes `production_runtime_contract` and `production_runtime_contract_rows`, declaring the current manual FastAPI backend startup strategy, path-only config/log policy, local API base contract, no frontend token/key exposure, no config value reads, and no log writes.
 - A local `npm run tauri build` has produced a release binary on this workstation, and desktop preflight now exposes `tauri_build_artifact` so GET cache can detect `desktop/src-tauri/target/release/stock_ming_command_center` without executing build commands.
+- On 2026-06-14, `npm run tauri build` completed locally and produced an executable macOS Mach-O release binary at `desktop/src-tauri/target/release/stock_ming_command_center`. Desktop preflight now records binary size, modified time, executable status, binary kind, `.app` bundle count, and DMG count without running npm, cargo, Tauri, FastAPI, providers, models, config reads, log writes, or trades.
 - React API client now returns a safe `backend_offline_or_unreachable` envelope when local FastAPI is unavailable, and `BackendOfflineNotice` surfaces a clear offline state with display-safe API base text, without calling providers, models, GitHub, or trades.
 - Desktop preflight now exposes `backend_offline_ux_contract` and `backend_offline_ux_rows` as a static frontend source audit; packaged runtime offline UX validation remains pending.
 - Desktop preflight now exposes `packaged_runtime_qa_contract` and `packaged_runtime_qa_rows`, a static package QA matrix for release artifact QA, backend startup strategy, packaged offline UX, config/log runtime paths, signing/notarization, startup external-call boundary, and secret bundle boundary.
+- `packaged_runtime_qa_contract.release_binary_qa_passed=true` can now be set when the local release binary exists, is non-empty, is executable, and was not produced by GET cache. This only closes the local binary artifact QA row; it keeps packaged runtime QA, `.app`/DMG detection, backend startup, offline UX, config/log runtime behavior, signing, notarization, and production package completion pending.
 - Desktop preflight now exposes `tauri_release_manifest_contract` and `tauri_release_manifest_rows`, a local release-manifest contract covering app identity (`productName` / version / bundle identifier), `frontendDist`, local dev URL, icon asset, ignored generated artifacts, backend startup policy, config/log path policy, packaged QA gaps, signing/notarization gaps, and startup no-external/no-trade boundaries. It keeps `local_release_manifest_ready=true` while `ready_for_production_package_promotion=false` and `production_package_complete=false`.
 - Desktop preflight now exposes `production_package_readiness_receipt`: a local next-step receipt that ties production readiness, runtime contract, artifact detection, backend-offline UX source contract, blocker audit, and packaged QA matrix into one LTG-09 checkpoint. It can mark `ready_for_explicit_tauri_build=true`, but keeps `production_package_complete=false`, `tauri_build_executed_by_receipt=false`, `npm_or_cargo_executed_by_receipt=false`, `tauri_runtime_started_by_receipt=false`, `packaged_app_opened_by_receipt=false`, `fastapi_started_by_receipt=false`, `config_values_read_by_receipt=false`, and `log_files_written_by_receipt=false`.
 - `scripts/tauri_desktop_contract.py` is now part of the local push gate. It validates desktop preflight cache, production runtime contract, backend-offline UX source contract, packaged runtime QA matrix, release manifest contract, production blocker audit, production package readiness receipt, frontend secret boundary, and no-build/no-runtime/no-config/no-log/no-provider/no-trade boundaries while `production_package_complete=false`.
@@ -736,7 +740,7 @@ Mature ECharts next-session operation map interactions
 ### Gaps
 
 - Rust/Cargo production environment.
-- `npm run tauri build` can produce a local release binary, but repeatable package acceptance and artifact QA are not yet complete.
+- `npm run tauri build` can produce a local release binary, and local binary artifact QA can pass, but repeatable `.app`/DMG package acceptance and runtime QA are not yet complete.
 - Packaged FastAPI sidecar or manual backend launch strategy validation.
 - Local config path is declared as policy, but not validated in packaged runtime.
 - Log path is declared as policy, but not validated in packaged runtime.
@@ -746,6 +750,8 @@ Mature ECharts next-session operation map interactions
 - `tauri_release_manifest_contract.status=release_manifest_contract_ready_packaged_execution_pending` means the release identity/dist/path/safety manifest is locally ready, not that Tauri build, packaged app launch, runtime QA, signing, notarization, or production promotion is complete.
 - `production_runtime_contract.status=runtime_contract_ready_packaged_validation_pending` means the path/startup contract is declared only; it is not packaged runtime proof.
 - `tauri_build_artifact.status=artifact_detected` means a local release binary exists; it is not sidecar/offline UX/signing/notarization proof and the artifact remains ignored by git.
+- `tauri_build_artifact.packaged_app_bundle_detected=false` and `distribution_dmg_detected=false` are expected until a future explicit package/bundle flow creates and validates those artifacts.
+- `packaged_runtime_qa_contract.release_binary_qa_passed=true` is only local binary artifact evidence; it is not packaged app launch, backend startup validation, offline UX validation, config/log runtime validation, signing, notarization, or production package promotion.
 - `backend_offline_ux_contract.status=frontend_offline_notice_ready_packaged_runtime_validation_pending` means the React source path is ready, but the packaged app has not been opened and validated offline.
 - `production_blocker_audit.status=production_package_blocked` is expected until build artifact QA, backend startup strategy, packaged offline UX, config/log runtime behavior, and macOS signing/notarization are validated.
 - `production_package_readiness_receipt.status=tauri_package_readiness_receipt_ready_build_pending` or `tauri_package_readiness_receipt_ready_packaged_qa_pending` only clarifies the next safe explicit step. It does not run `npm`, `cargo`, Tauri, packaged app, FastAPI, config reads, log writes, provider/model calls, or production package promotion.
@@ -766,6 +772,8 @@ Mature ECharts next-session operation map interactions
 - `tauri dev` passes.
 - `tauri build` passes.
 - `tauri_build_artifact` detects the local release binary without GET cache executing `npm`, `cargo`, or Tauri.
+- `tauri_build_artifact.binary_executable=true`, `binary_kind=macos_mach_o_release_binary`, and `packaged_runtime_qa_contract.release_binary_qa_passed=true` are visible after an explicit successful local build.
+- `.app` bundle and DMG detection remain separate from release binary QA; missing `.app`/DMG keeps packaged runtime QA pending.
 - Backend-offline UI is friendly at React source-contract level and packaged runtime validation is separately tracked.
 - Packaged runtime QA matrix is visible, keeps artifact/backend/offline/config-log/signing checks pending, and preserves startup no-external/no-trade boundaries.
 - Local config and token/key are not exposed to frontend.

@@ -106,6 +106,7 @@ def build_contract() -> dict[str, Any]:
     blocker_criteria = {str(row.get("criterion") or "") for row in blocker_rows}
     qa_rows = [row for row in _list(packet.get("packaged_runtime_qa_rows")) if isinstance(row, dict)]
     qa_criteria = {str(row.get("criterion") or "") for row in qa_rows}
+    qa_rows_by_criterion = {str(row.get("criterion") or ""): row for row in qa_rows}
     release_manifest = _dict(packet.get("tauri_release_manifest_contract"))
     release_manifest_rows = [row for row in _list(packet.get("tauri_release_manifest_rows")) if isinstance(row, dict)]
     release_manifest_criteria = {str(row.get("criterion") or "") for row in release_manifest_rows}
@@ -113,6 +114,29 @@ def build_contract() -> dict[str, Any]:
     readiness_receipt_rows = [row for row in _list(packet.get("production_package_readiness_receipt_rows")) if isinstance(row, dict)]
     readiness_receipt_criteria = {str(row.get("criterion") or "") for row in readiness_receipt_rows}
     build_artifact = _dict(packet.get("tauri_build_artifact"))
+    release_binary_detected = build_artifact.get("binary_exists") is True
+    release_binary_state_valid = (
+        (
+            release_binary_detected
+            and int(build_artifact.get("binary_size_bytes") or 0) > 0
+            and build_artifact.get("binary_executable") is True
+            and build_artifact.get("binary_kind") == "macos_mach_o_release_binary"
+            and packaged_qa.get("release_binary_qa_passed") is True
+            and packaged_qa.get("release_binary_executable") is True
+            and qa_rows_by_criterion.get("release_artifact_qa", {}).get("status") == "passed_local_binary_artifact"
+            and qa_rows_by_criterion.get("release_artifact_qa", {}).get("passed") is True
+        )
+        or (
+            not release_binary_detected
+            and int(build_artifact.get("binary_size_bytes") or 0) == 0
+            and build_artifact.get("binary_executable") is False
+            and build_artifact.get("binary_kind") == "missing"
+            and packaged_qa.get("release_binary_qa_passed") is False
+            and packaged_qa.get("release_binary_executable") is False
+            and qa_rows_by_criterion.get("release_artifact_qa", {}).get("status") == "pending"
+            and qa_rows_by_criterion.get("release_artifact_qa", {}).get("passed") is False
+        )
+    )
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     preflight_script = _read_script("scripts/check_tauri_env.sh")
     route_source = _read_script("desktop/src/routes/DesktopShellPreflight.tsx")
@@ -189,6 +213,13 @@ def build_contract() -> dict[str, Any]:
             and packaged_qa.get("qa_contract_ready") is True
             and int(packaged_qa.get("pending_qa_count") or 0) > 0
             and REQUIRED_PACKAGED_QA_CRITERIA.issubset(qa_criteria)
+            and release_binary_state_valid
+            and packaged_qa.get("packaged_app_bundle_detected") is False
+            and packaged_qa.get("distribution_dmg_detected") is False
+            and qa_rows_by_criterion.get("backend_startup_strategy_qa", {}).get("passed") is False
+            and qa_rows_by_criterion.get("backend_offline_ux_packaged_qa", {}).get("passed") is False
+            and qa_rows_by_criterion.get("config_log_runtime_path_qa", {}).get("passed") is False
+            and qa_rows_by_criterion.get("macos_signing_notarization_qa", {}).get("passed") is False
             and packaged_qa.get("browser_or_packaged_app_opened") is False
             and packaged_qa.get("npm_or_cargo_executed") is False
             and packaged_qa.get("config_values_read") is False
@@ -322,6 +353,10 @@ def build_contract() -> dict[str, Any]:
             and runtime_contract.get("token_key_frontend_exposure") is False
             and blocker_audit.get("frontend_stores_tokens") is False
             and blocker_audit.get("contains_secret") is False
+            and release_binary_state_valid
+            and build_artifact.get("packaged_app_bundle_detected") is False
+            and build_artifact.get("distribution_dmg_detected") is False
+            and build_artifact.get("build_command_executed_by_get_cache") is False
             and build_artifact.get("contains_secret") is False
             and policy.get("contains_secret") is False,
             "Desktop frontend must display sanitized local API base and must not store token/key material.",

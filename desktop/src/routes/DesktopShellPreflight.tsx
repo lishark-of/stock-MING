@@ -66,6 +66,10 @@ export default function DesktopShellPreflight() {
           { label: "node_modules", value: runtime.node_modules_present === true ? "present" : "missing", tone: runtime.node_modules_present === true ? "good" : "warn" },
           { label: "dist", value: runtime.dist_present === true ? "present" : "missing" },
           { label: "release binary", value: tauriBuildArtifact.binary_exists === true ? "detected" : "missing", tone: tauriBuildArtifact.binary_exists === true ? "good" : "warn" },
+          { label: "binary executable", value: tauriBuildArtifact.binary_executable === true ? "yes" : "no", tone: tauriBuildArtifact.binary_executable === true ? "good" : "warn" },
+          { label: "binary kind", value: tauriBuildArtifact.binary_kind as string | undefined },
+          { label: "app bundle", value: tauriBuildArtifact.packaged_app_bundle_detected === true ? "detected" : "missing", tone: tauriBuildArtifact.packaged_app_bundle_detected === true ? "good" : "warn" },
+          { label: "DMG", value: tauriBuildArtifact.distribution_dmg_detected === true ? "detected" : "missing", tone: tauriBuildArtifact.distribution_dmg_detected === true ? "good" : "warn" },
           { label: "backend autostart", value: runtime.backend_autostart_configured === true ? "enabled" : "manual", tone: runtime.backend_autostart_configured === true ? "warn" : "good" },
           { label: "package audit", value: productionBlockerAudit.status as string | undefined, tone: productionBlockerAudit.package_ready === true ? "good" : "warn" },
           { label: "runtime contract", value: productionRuntimeContract.status as string | undefined, tone: productionRuntimeContract.config_paths_declared === true ? "good" : "warn" },
@@ -75,6 +79,7 @@ export default function DesktopShellPreflight() {
           { label: "config/log paths", value: productionBlockerAudit.config_log_paths_declared === true ? "declared" : "pending", tone: productionBlockerAudit.config_log_paths_declared === true ? "good" : "warn" },
           { label: "packaged offline UX", value: productionRuntimeContract.backend_offline_ui_packaged_runtime_verified === true ? "verified" : "pending", tone: productionRuntimeContract.backend_offline_ui_packaged_runtime_verified === true ? "good" : "warn" },
           { label: "packaged QA", value: packagedRuntimeQaContract.status as string | undefined, tone: packagedRuntimeQaContract.packaged_runtime_validated === true ? "good" : "warn" },
+          { label: "binary QA", value: packagedRuntimeQaContract.release_binary_qa_passed === true ? "passed" : "pending", tone: packagedRuntimeQaContract.release_binary_qa_passed === true ? "good" : "warn" },
           { label: "pending QA", value: packagedRuntimeQaContract.pending_qa_count as number | undefined, tone: Number(packagedRuntimeQaContract.pending_qa_count ?? 0) > 0 ? "warn" : "good" },
           { label: "release manifest", value: tauriReleaseManifestContract.local_release_manifest_ready === true ? "ready" : "review", tone: tauriReleaseManifestContract.local_release_manifest_ready === true ? "good" : "warn" },
           { label: "manifest blockers", value: tauriReleaseManifestContract.production_blocker_count as number | undefined, tone: Number(tauriReleaseManifestContract.production_blocker_count ?? 0) > 0 ? "warn" : "good" },
@@ -144,6 +149,9 @@ export default function DesktopShellPreflight() {
         <p>tauri_build_artifact_status: {String(productionBlockerAudit.tauri_build_artifact_status ?? tauriBuildArtifact.status ?? "artifact_missing")}</p>
         <p>tauri_build_artifact_path: {String(productionBlockerAudit.tauri_build_artifact_path ?? tauriBuildArtifact.binary_path ?? "desktop/src-tauri/target/release/stock_ming_command_center")}</p>
         <p>tauri_build_artifact_size_bytes: {String(productionBlockerAudit.tauri_build_artifact_size_bytes ?? tauriBuildArtifact.binary_size_bytes ?? 0)}</p>
+        <p>binary_executable / binary_kind: {String(tauriBuildArtifact.binary_executable ?? false)} / {String(tauriBuildArtifact.binary_kind ?? "missing")}</p>
+        <p>bundle_app_count / packaged_app_bundle_detected: {String(tauriBuildArtifact.bundle_app_count ?? 0)} / {String(tauriBuildArtifact.packaged_app_bundle_detected ?? false)}</p>
+        <p>bundle_dmg_count / distribution_dmg_detected: {String(tauriBuildArtifact.bundle_dmg_count ?? 0)} / {String(tauriBuildArtifact.distribution_dmg_detected ?? false)}</p>
         <p>manual_backend_launch_required: {String(productionBlockerAudit.manual_backend_launch_required ?? true)}</p>
         <p>backend_offline_ui_packaged_runtime_verified: {String(productionBlockerAudit.backend_offline_ui_packaged_runtime_verified ?? false)}</p>
         <p>backend_offline_ux_contract_status: {String(productionBlockerAudit.backend_offline_ux_contract_status ?? backendOfflineUxContract.status ?? "frontend_offline_notice_contract_incomplete")}</p>
@@ -162,6 +170,8 @@ export default function DesktopShellPreflight() {
         <p>scope: {String(packagedRuntimeQaContract.scope ?? "local_static_qa_matrix_not_packaged_runtime_execution")}</p>
         <p>qa_contract_ready: {String(packagedRuntimeQaContract.qa_contract_ready ?? false)}</p>
         <p>packaged_runtime_validated: {String(packagedRuntimeQaContract.packaged_runtime_validated ?? false)}</p>
+        <p>release_binary_qa_passed / release_binary_executable: {String(packagedRuntimeQaContract.release_binary_qa_passed ?? false)} / {String(packagedRuntimeQaContract.release_binary_executable ?? false)}</p>
+        <p>packaged_app_bundle_detected / distribution_dmg_detected: {String(packagedRuntimeQaContract.packaged_app_bundle_detected ?? false)} / {String(packagedRuntimeQaContract.distribution_dmg_detected ?? false)}</p>
         <p>browser_or_packaged_app_opened: {String(packagedRuntimeQaContract.browser_or_packaged_app_opened ?? false)}</p>
         <p>npm_or_cargo_executed: {String(packagedRuntimeQaContract.npm_or_cargo_executed ?? false)}</p>
         <p>config_values_read: {String(packagedRuntimeQaContract.config_values_read ?? false)}</p>

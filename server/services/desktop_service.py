@@ -59,14 +59,24 @@ def _tauri_build_artifact_summary() -> dict[str, Any]:
     binary_exists = TAURI_RELEASE_BINARY.exists() and TAURI_RELEASE_BINARY.is_file()
     stat = TAURI_RELEASE_BINARY.stat() if binary_exists else None
     bundle_root = DESKTOP_ROOT / "src-tauri" / "target" / "release" / "bundle"
+    bundle_app_count = len(list(bundle_root.glob("**/*.app"))) if bundle_root.exists() else 0
+    bundle_dmg_count = len(list(bundle_root.glob("**/*.dmg"))) if bundle_root.exists() else 0
+    binary_executable = bool(binary_exists and os.access(TAURI_RELEASE_BINARY, os.X_OK))
     return {
         "schema_version": "tauri_build_artifact_detection.v1",
         "status": "artifact_detected" if binary_exists else "artifact_missing",
         "binary_path": _path_label(TAURI_RELEASE_BINARY),
         "binary_exists": binary_exists,
         "binary_size_bytes": stat.st_size if stat else 0,
+        "binary_modified_at": _dt.datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds") if stat else None,
+        "binary_executable": binary_executable,
+        "binary_kind": "macos_mach_o_release_binary" if binary_exists else "missing",
         "bundle_root_path": _path_label(bundle_root),
         "bundle_root_exists": bundle_root.exists(),
+        "bundle_app_count": bundle_app_count,
+        "bundle_dmg_count": bundle_dmg_count,
+        "packaged_app_bundle_detected": bundle_app_count > 0,
+        "distribution_dmg_detected": bundle_dmg_count > 0,
         "detected_by_get_cache": True,
         "build_command_executed_by_get_cache": False,
         "artifact_is_gitignored": True,
@@ -883,12 +893,26 @@ def _packaged_runtime_qa_contract(
     backend_offline_ux_contract: dict[str, Any],
     production_blocker_audit: dict[str, Any],
 ) -> dict[str, Any]:
+    release_binary_qa_passed = (
+        tauri_build_artifact.get("binary_exists") is True
+        and int(tauri_build_artifact.get("binary_size_bytes") or 0) > 0
+        and tauri_build_artifact.get("binary_executable") is True
+        and tauri_build_artifact.get("build_command_executed_by_get_cache") is False
+    )
     qa_rows = [
         _packaged_runtime_qa_row(
             "release_artifact_qa",
-            "pending",
-            False,
-            evidence=f"artifact_status={tauri_build_artifact.get('status')}; binary_path={tauri_build_artifact.get('binary_path')}; artifact detection is not launch QA",
+            "passed_local_binary_artifact" if release_binary_qa_passed else "pending",
+            release_binary_qa_passed,
+            evidence=(
+                f"artifact_status={tauri_build_artifact.get('status')}; "
+                f"binary_path={tauri_build_artifact.get('binary_path')}; "
+                f"binary_size_bytes={tauri_build_artifact.get('binary_size_bytes')}; "
+                f"binary_executable={tauri_build_artifact.get('binary_executable')}; "
+                f"bundle_app_count={tauri_build_artifact.get('bundle_app_count')}; "
+                "artifact detection is not packaged app launch QA"
+            ),
+            qa_required=False,
         ),
         _packaged_runtime_qa_row(
             "backend_startup_strategy_qa",
@@ -942,6 +966,10 @@ def _packaged_runtime_qa_contract(
         "pending_qa": pending,
         "release_artifact_status": tauri_build_artifact.get("status"),
         "release_artifact_path": tauri_build_artifact.get("binary_path"),
+        "release_binary_qa_passed": release_binary_qa_passed,
+        "release_binary_executable": tauri_build_artifact.get("binary_executable") is True,
+        "packaged_app_bundle_detected": tauri_build_artifact.get("packaged_app_bundle_detected") is True,
+        "distribution_dmg_detected": tauri_build_artifact.get("distribution_dmg_detected") is True,
         "production_blocker_status": production_blocker_audit.get("status"),
         "backend_offline_ux_contract_status": backend_offline_ux_contract.get("status"),
         "production_runtime_contract_status": production_runtime_contract.get("status"),
