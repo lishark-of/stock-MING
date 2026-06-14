@@ -151,6 +151,8 @@ Required mode-layering tests before any real `live_light` provider/model promoti
 
 Documentation wording rule for this baseline: do not describe the boundary as a flat "page startup never calls providers" once `live_light` is in scope. Future docs, tests, and review notes must name the layer being discussed: `cache_only` startup/render silence, React-created POST task, provider/model execution inside that task, and production acceptance evidence. A `live_light` task creation is allowed only after cache render and only when explicitly configured; a real provider/model call is a separate acceptance step; production completion still requires direct call/model ledger evidence and promotion review.
 
+User wording checkpoint for future reviews: the boundary is being upgraded from an absolute startup ban to runtime-mode layering, not weakened into hidden automation. `cache_only` remains the default offline/smoke/CI posture. `manual` remains explicit button/task operation. `live_light` may support the local daily research-client experience by creating one visible, rate-limited background task after cache render, but provider/model execution still needs safe configuration, POST-task audit trails, call/model ledger evidence, no UI blocking, no `strategy action` mutation, no real trading, and no token/key exposure. Reviewers should judge each change by its layer: initial render silence, task creation, real Tushare/DeepSeek execution, and production promotion are four different checkpoints.
+
 ## Remaining Goals Snapshot
 
 Current snapshot date: 2026-06-14.
