@@ -192,7 +192,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 | LTG-09 | Tauri desktop production package | dev/preflight with runtime contract, local executable release binary QA, and production package stage-scope manifest; `.app`/DMG packaged runtime QA pending | Production desktop shell for ordinary users | P6 | tauri dev/build pass; backend-offline state is friendly; config/log policy is validated; token/key never enters frontend. |
 | LTG-10 | Streamlit 完全退出普通主流程 | `legacy/admin/debug` marked, fallback dependency contract and retirement stage-scope manifest visible, still used for fallback | Streamlit only for debug/admin/fallback | P7 | Ordinary research workflow runs through Command Center 3 desktop. |
 | LTG-11 | 测试 / CI / smoke / 安全扫描标准化 | local tests, smoke, local contract guards, CI mirror, push readiness receipt, and release gate stage-scope manifest exist | Repeatable gate for every release candidate | P0/P4 | unittest, frontend build, smoke, diff check, secret scan, artifact scan, and local LTG contracts are documented and enforced. |
-| LTG-12 | 真实交易链路继续保持隔离 | auto trading not connected | Trading remains explicitly out of automatic chains | Always | No automatic order path; strategy action cannot be mutated by research/cache/model/frontend paths. |
+| LTG-12 | 真实交易链路继续保持隔离 | auto trading not connected; local trade-isolation stage-scope manifest exists | Trading remains explicitly out of automatic chains until a separate real-trading project passes every required stage | Always | No automatic order path; strategy action cannot be mutated by research/cache/model/frontend paths; future trading work is mode-tiered and evidence-gated, not silently enabled. |
 | LTG-13 | 下一票雷达快扫生产化 | local fast-scan readiness, fast-scan task-pipeline contract, no-feature-loss QA, legacy parity acceptance receipt, local full-pool execution receipt, local deep-scan review receipt, search-to-quant projection local receipt, and push-gate contract exist; provider-backed full-pool/deep-scan and provider/model-backed quant projection acceptance pending | Fast radar scan and search-driven quant projection in Command Center 3 without feature loss or degraded signal coverage | P3 | Radar and search tasks run through task pipeline, preserve legacy signal groups, avoid UI stalls, and report coverage gaps instead of hiding them. |
 | LTG-14 | Command Center 3 动效与可视化清晰度优化 | first motion clarity layer, static readiness audit, and production QA contract exist; browser visual/performance QA pending | Apple keynote-grade clarity and restrained motion that makes state changes easier to see | P8 | Motion is purposeful, performant, accessible, respects reduced-motion, and never obscures data or decisions. |
 
@@ -1198,6 +1198,7 @@ Add release gate readiness audit
 - `GET /api/risk/cache` now exposes `trade_isolation_audit`, `trade_isolation_rows`, and `trade_isolation_boundary_rows`: a cache-only audit of risk policy, task catalog POST route boundaries, and frontend no-trade/no-action visibility.
 - `GET /api/risk/cache` now exposes `trade_isolation_release_receipt` and rows: a local LTG-12 release receipt that allows research-client release only while keeping `ready_for_real_trading_integration=false`, `real_trading_connected=false`, `broker_adapter_connected=false`, `order_endpoint_present=false`, `trade_execution_api_enabled=false`, and `future_real_trading_requires_separate_project=true`.
 - `scripts/trade_isolation_contract.py` is now part of the local push gate. It reads only local risk cache, task catalog, frontend source contracts, and the push-gate script, then keeps `real_trading_connected=false`, `broker_adapter_connected=false`, `order_endpoint_present=false`, and `trade_execution_api_enabled=false` auditable.
+- `scripts/trade_isolation_contract.py` now exposes a `trade_isolation_stage_scope_manifest` for the future real-trading path. It keeps the current app in research-client mode while listing the future stages that must be proven separately: no-broker boundary, no-order task catalog, no frontend trade controls, no model/provider action mutation, separate project decision, broker adapter design review, order endpoint security review, and paper/simulated trade sandbox.
 
 ### Gaps
 
@@ -1206,6 +1207,7 @@ Add release gate readiness audit
 - The audit proves current Command Center 3 cache/task/frontend contracts, not a future broker/order integration design.
 - The release receipt is not real-trading approval; it only records that the current research client remains isolated from broker/order execution.
 - The push-gate contract is local and static; it blocks accidental boundary regression but does not prove broker integration safety, simulated trading, order routing, or production trade compliance.
+- The desired boundary is not an absolute forever-ban; it is a run-mode split. Research/cache/render/manual-review modes stay active, while any future execution mode must remain unavailable until the separate stage evidence exists.
 
 ### Implementation Phases
 
@@ -1214,6 +1216,7 @@ Add release gate readiness audit
 3. Add tests whenever a new route or task can affect decision-adjacent data.
 4. Keep `trade_isolation_release_receipt` current so release candidates can state research-client safety without implying broker/order approval.
 5. Keep the local trade-isolation push-gate contract updated whenever task routes, risk cache policy, packet registry boundaries, or frontend task controls change.
+6. Treat any future real-trading work as a separate run mode with its own project approval, broker threat model, order endpoint security review, simulated-trade sandbox, audit trail, kill switch, and explicit operator approval.
 
 ### Acceptance Criteria
 
@@ -1223,6 +1226,7 @@ Add release gate readiness audit
 - `trade_isolation_audit.status=trade_isolation_ready`, with zero blockers and all known POST routes covered by the task catalog.
 - `trade_isolation_release_receipt.status=trade_isolation_release_receipt_ready_research_release_only`, with `allowed_next_step=continue_research_client_release_or_create_separate_real_trading_project_design` and not-allowed shortcuts blocking broker adapters, order endpoints, model/factor-to-order paths, frontend trade submission, and treating the receipt as real-trading approval.
 - `scripts/trade_isolation_contract.py` passes in the local push gate while reporting `real_trading_connected=false`, `broker_adapter_connected=false`, `order_endpoint_present=false`, `trade_execution_api_enabled=false`, `does_not_modify_holdings=true`, `trade_isolation_release_receipt_ready=true`, and `future_real_trading_requires_separate_project=true`.
+- `trade_isolation_stage_scope_manifest` contains every required future stage, and each row keeps `real_trading_connected=false`, `broker_adapter_connected=false`, `order_endpoint_present=false`, `trade_execution_api_enabled=false`, `order_route_present=false`, `frontend_trade_controls_present=false`, `model_or_provider_can_modify_action=false`, `paper_trading_sandbox_ready=false`, `separate_project_approved=false`, `order_submitted=false`, and `future_real_trading_requires_separate_project=true`.
 
 ### Forbidden
 
@@ -1231,6 +1235,7 @@ Add release gate readiness audit
 - Do not let model or factor output become orders.
 - Do not treat the local trade-isolation contract as approval to connect real broker/order execution; it only proves current isolation remains intact.
 - Do not treat `trade_isolation_release_receipt` as approval to connect broker/order execution; it only proves the current research client stays isolated.
+- Do not treat the stage-scope manifest as broker integration, paper-trading completion, order API approval, security review completion, or production trading readiness.
 
 ### Recommended Commit Message
 

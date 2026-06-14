@@ -43,6 +43,26 @@ REQUIRED_RELEASE_RECEIPT_CRITERIA = {
     "release_receipt_not_trade_approval",
     "cache_render_no_external_no_trade",
 }
+REQUIRED_TRADE_ISOLATION_STAGE_SCOPE_KEYS = {
+    "current_no_broker_adapter_boundary",
+    "task_catalog_no_order_routes",
+    "frontend_no_trade_controls",
+    "model_provider_no_action_mutation",
+    "separate_real_trading_project_decision",
+    "broker_adapter_design_review",
+    "order_endpoint_security_review",
+    "paper_or_simulated_trade_sandbox",
+}
+TRADE_ISOLATION_STAGE_SCOPE_LABELS = {
+    "current_no_broker_adapter_boundary": "current Command Center 3 has no broker adapter",
+    "task_catalog_no_order_routes": "task catalog has no order routes",
+    "frontend_no_trade_controls": "frontend exposes no trade submission controls",
+    "model_provider_no_action_mutation": "model and provider paths cannot mutate action",
+    "separate_real_trading_project_decision": "real trading requires a separate project decision",
+    "broker_adapter_design_review": "broker adapter design review is required later",
+    "order_endpoint_security_review": "order endpoint security review is required later",
+    "paper_or_simulated_trade_sandbox": "paper or simulated trade sandbox is required later",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -109,6 +129,50 @@ def _task_boundary_rows(catalog: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def _trade_isolation_stage_scope_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for stage_key in sorted(REQUIRED_TRADE_ISOLATION_STAGE_SCOPE_KEYS):
+        rows.append(
+            {
+                "stage_key": stage_key,
+                "stage_label": TRADE_ISOLATION_STAGE_SCOPE_LABELS[stage_key],
+                "scope": "trade_isolation_stage_scope_manifest",
+                "current_status": "current_research_client_isolated",
+                "target_status": "separate_real_trading_project_evidence_required",
+                "required_before_real_trading": True,
+                "real_trading_connected": False,
+                "broker_adapter_connected": False,
+                "order_endpoint_present": False,
+                "trade_execution_api_enabled": False,
+                "order_route_present": False,
+                "frontend_trade_controls_present": False,
+                "model_or_provider_can_modify_action": False,
+                "strategy_action_mutated_by_contract": False,
+                "paper_trading_sandbox_ready": False,
+                "separate_project_approved": False,
+                "future_real_trading_requires_separate_project": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "broker_called": False,
+                "order_submitted": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "missing_evidence": [
+                    "separate project approval",
+                    "broker adapter threat model",
+                    "order endpoint security review",
+                    "paper or simulated trade sandbox",
+                    "audit trail and kill switch plan",
+                    "explicit operator approval",
+                ],
+            }
+        )
+    return rows
+
+
 def build_contract() -> dict[str, Any]:
     packet = risk_service.read_risk_guardrails_cache()
     policy = _dict(packet.get("policy"))
@@ -123,6 +187,10 @@ def build_contract() -> dict[str, Any]:
     catalog = task_service.build_task_catalog()
     route_coverage = _dict(catalog.get("route_coverage"))
     boundary_rows = _task_boundary_rows(catalog)
+    trade_isolation_stage_scope_rows = _trade_isolation_stage_scope_rows()
+    trade_isolation_stage_scope_keys = {
+        str(row.get("stage_key") or "") for row in trade_isolation_stage_scope_rows
+    }
 
     risk_page = _read_script("desktop/src/routes/RiskGuardrails.tsx")
     task_page = _read_script("desktop/src/routes/TaskCatalog.tsx")
@@ -183,6 +251,37 @@ def build_contract() -> dict[str, Any]:
         and push_gate_script.find('run_step "Streamlit legacy contract"')
         < push_gate_script.find('run_step "Trade isolation contract"')
         < push_gate_script.find('run_step "Motion viewport QA contract"')
+    )
+    trade_isolation_stage_scope_ready = (
+        REQUIRED_TRADE_ISOLATION_STAGE_SCOPE_KEYS == trade_isolation_stage_scope_keys
+        and all(
+            row.get("scope") == "trade_isolation_stage_scope_manifest"
+            and row.get("current_status") == "current_research_client_isolated"
+            and row.get("target_status") == "separate_real_trading_project_evidence_required"
+            and row.get("required_before_real_trading") is True
+            and row.get("real_trading_connected") is False
+            and row.get("broker_adapter_connected") is False
+            and row.get("order_endpoint_present") is False
+            and row.get("trade_execution_api_enabled") is False
+            and row.get("order_route_present") is False
+            and row.get("frontend_trade_controls_present") is False
+            and row.get("model_or_provider_can_modify_action") is False
+            and row.get("strategy_action_mutated_by_contract") is False
+            and row.get("paper_trading_sandbox_ready") is False
+            and row.get("separate_project_approved") is False
+            and row.get("future_real_trading_requires_separate_project") is True
+            and row.get("external_calls_triggered") is False
+            and row.get("tushare_called") is False
+            and row.get("deepseek_called") is False
+            and row.get("github_called") is False
+            and row.get("broker_called") is False
+            and row.get("order_submitted") is False
+            and row.get("does_not_execute_trades") is True
+            and row.get("does_not_modify_strategy_action") is True
+            and row.get("contains_secret") is False
+            and len(_list(row.get("missing_evidence"))) >= 6
+            for row in trade_isolation_stage_scope_rows
+        )
     )
 
     rows = [
@@ -281,9 +380,15 @@ def build_contract() -> dict[str, Any]:
             "Push gate must run LTG-12 contract after Streamlit legacy and before motion/static QA.",
         ),
         _row(
+            "trade_isolation_stage_scope_manifest_is_complete_and_pending",
+            trade_isolation_stage_scope_ready,
+            "Future real-trading stages are listed as pending evidence while broker, order, frontend submission, model action mutation, provider/probe calls, and real order submission remain disabled.",
+        ),
+        _row(
             "script_is_local_no_broker_or_order_execution",
             "command_center_3_trade_isolation_contract.v1" in this_script
             and "local_trade_isolation_contract_no_broker_or_order_execution" in this_script
+            and "trade_isolation_stage_scope_manifest" in this_script
             and "real_trading_connected" in this_script
             and "broker_adapter_connected" in this_script
             and "order_endpoint_present" in this_script
@@ -333,6 +438,7 @@ def build_contract() -> dict[str, Any]:
         "contains_secret": False,
         "row_count": len(rows),
         "task_boundary_row_count": len(boundary_rows),
+        "trade_isolation_stage_scope_count": len(trade_isolation_stage_scope_rows),
         "blocking_criterion_count": len(blockers),
         "blockers": blockers,
         "observed": {
@@ -345,10 +451,20 @@ def build_contract() -> dict[str, Any]:
             "release_receipt_status": release_receipt.get("status"),
             "release_receipt_allowed_next_step": release_receipt.get("allowed_next_step"),
             "release_receipt_blocker_count": release_receipt.get("blocking_criterion_count"),
+            "trade_isolation_stage_scope_count": len(trade_isolation_stage_scope_rows),
+            "trade_isolation_stage_scope_keys": sorted(trade_isolation_stage_scope_keys),
+            "trade_isolation_stage_scope_pending_count": sum(
+                1
+                for row in trade_isolation_stage_scope_rows
+                if row.get("current_status") == "current_research_client_isolated"
+                and row.get("target_status") == "separate_real_trading_project_evidence_required"
+                and row.get("real_trading_connected") is False
+            ),
             "task_routes_button_gated": task_routes_button_gated,
             "task_routes_call_ledger_required": task_routes_call_ledger_required,
         },
         "rows": rows,
+        "trade_isolation_stage_scope_rows": trade_isolation_stage_scope_rows,
         "note": "This is a local push-gate contract. Real trading remains disconnected; broker/order integration requires a separate approved project.",
     }
 

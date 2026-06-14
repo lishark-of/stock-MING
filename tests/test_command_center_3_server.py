@@ -8418,6 +8418,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("order_endpoint_present", script)
         self.assertIn("trade_execution_api_enabled", script)
         self.assertIn("future_real_trading_requires_separate_project", script)
+        self.assertIn("trade_isolation_stage_scope_manifest", script)
         self.assertIn("risk_cache_is_read_only_no_trade", script)
         self.assertIn("trade_isolation_audit_keeps_real_trading_disabled", script)
         self.assertIn("task_catalog_has_no_trade_execution_routes", script)
@@ -8425,6 +8426,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_lifecycle_records_no_trade_no_action", script)
         self.assertIn("frontend_trade_boundaries_visible", script)
         self.assertIn("push_gate_runs_trade_isolation_contract_after_streamlit", script)
+        self.assertIn("trade_isolation_stage_scope_manifest_is_complete_and_pending", script)
         self.assertIn("script_is_local_no_broker_or_order_execution", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
@@ -8475,6 +8477,45 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["contains_secret"])
         self.assertEqual(payload["blocking_criterion_count"], 0)
         self.assertGreaterEqual(payload["task_boundary_row_count"], 18)
+        required_trade_stages = {
+            "current_no_broker_adapter_boundary",
+            "task_catalog_no_order_routes",
+            "frontend_no_trade_controls",
+            "model_provider_no_action_mutation",
+            "separate_real_trading_project_decision",
+            "broker_adapter_design_review",
+            "order_endpoint_security_review",
+            "paper_or_simulated_trade_sandbox",
+        }
+        self.assertEqual(payload["trade_isolation_stage_scope_count"], len(required_trade_stages))
+        stage_rows = payload["trade_isolation_stage_scope_rows"]
+        self.assertEqual({row["stage_key"] for row in stage_rows}, required_trade_stages)
+        for row in stage_rows:
+            self.assertEqual(row["scope"], "trade_isolation_stage_scope_manifest")
+            self.assertEqual(row["current_status"], "current_research_client_isolated")
+            self.assertEqual(row["target_status"], "separate_real_trading_project_evidence_required")
+            self.assertTrue(row["required_before_real_trading"])
+            self.assertFalse(row["real_trading_connected"])
+            self.assertFalse(row["broker_adapter_connected"])
+            self.assertFalse(row["order_endpoint_present"])
+            self.assertFalse(row["trade_execution_api_enabled"])
+            self.assertFalse(row["order_route_present"])
+            self.assertFalse(row["frontend_trade_controls_present"])
+            self.assertFalse(row["model_or_provider_can_modify_action"])
+            self.assertFalse(row["strategy_action_mutated_by_contract"])
+            self.assertFalse(row["paper_trading_sandbox_ready"])
+            self.assertFalse(row["separate_project_approved"])
+            self.assertTrue(row["future_real_trading_requires_separate_project"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["broker_called"])
+            self.assertFalse(row["order_submitted"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
+            self.assertGreaterEqual(len(row["missing_evidence"]), 6)
         self.assertEqual(payload["observed"]["trade_isolation_status"], "trade_isolation_ready")
         self.assertEqual(
             payload["observed"]["release_receipt_status"],
@@ -8485,6 +8526,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "continue_research_client_release_or_create_separate_real_trading_project_design",
         )
         self.assertEqual(payload["observed"]["release_receipt_blocker_count"], 0)
+        self.assertEqual(payload["observed"]["trade_isolation_stage_scope_count"], len(required_trade_stages))
+        self.assertEqual(payload["observed"]["trade_isolation_stage_scope_keys"], sorted(required_trade_stages))
+        self.assertEqual(
+            payload["observed"]["trade_isolation_stage_scope_pending_count"],
+            len(required_trade_stages),
+        )
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("risk_cache_is_read_only_no_trade", criteria)
         self.assertIn("trade_isolation_audit_keeps_real_trading_disabled", criteria)
@@ -8493,6 +8540,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_lifecycle_records_no_trade_no_action", criteria)
         self.assertIn("frontend_trade_boundaries_visible", criteria)
         self.assertIn("push_gate_runs_trade_isolation_contract_after_streamlit", criteria)
+        self.assertIn("trade_isolation_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("script_is_local_no_broker_or_order_execution", criteria)
         self.assertIn("future_real_trading_requires_separate_project", criteria)
 
