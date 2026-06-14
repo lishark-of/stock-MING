@@ -63,6 +63,26 @@ REQUIRED_PACKAGE_READINESS_RECEIPT_CRITERIA = {
     "secret_bundle_boundary",
     "production_completion_evidence_ticket",
 }
+REQUIRED_TAURI_PRODUCTION_PACKAGE_STAGES = {
+    "tauri_dev_runtime_smoke",
+    "tauri_build_repeatability",
+    "app_bundle_detection",
+    "dmg_distribution_detection",
+    "backend_startup_strategy_runtime_qa",
+    "backend_offline_packaged_ux_qa",
+    "config_log_runtime_path_qa",
+    "signing_notarization_review",
+}
+TAURI_PRODUCTION_PACKAGE_STAGE_LABELS = {
+    "tauri_dev_runtime_smoke": "tauri dev runtime smoke",
+    "tauri_build_repeatability": "repeatable tauri build",
+    "app_bundle_detection": ".app bundle detection and QA",
+    "dmg_distribution_detection": "DMG distribution artifact detection",
+    "backend_startup_strategy_runtime_qa": "backend startup strategy runtime QA",
+    "backend_offline_packaged_ux_qa": "backend-offline packaged UX QA",
+    "config_log_runtime_path_qa": "config and log runtime path QA",
+    "signing_notarization_review": "macOS signing and notarization review",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -91,6 +111,58 @@ def _read_script(path: str) -> str:
         return (PROJECT_ROOT / path).read_text(encoding="utf-8")
     except Exception:
         return ""
+
+
+def _tauri_production_package_stage_scope_rows(release_binary_detected: bool) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for stage_key in sorted(REQUIRED_TAURI_PRODUCTION_PACKAGE_STAGES):
+        rows.append(
+            {
+                "stage_key": stage_key,
+                "stage_label": TAURI_PRODUCTION_PACKAGE_STAGE_LABELS[stage_key],
+                "scope": "tauri_production_package_stage_scope_manifest",
+                "current_status": "local_manifest_or_static_qa_only",
+                "target_status": "explicit_build_or_packaged_runtime_evidence_required",
+                "required_before_production_package": True,
+                "release_binary_detected": bool(release_binary_detected),
+                "release_binary_is_completion": False,
+                "tauri_dev_runtime_smoke_done": False,
+                "tauri_build_repeatability_done": False,
+                "app_bundle_detected": False,
+                "dmg_distribution_detected": False,
+                "backend_startup_runtime_validated": False,
+                "backend_offline_packaged_ux_verified": False,
+                "config_log_runtime_paths_validated": False,
+                "signing_notarization_done": False,
+                "production_package_complete": False,
+                "tauri_build_executed_by_contract": False,
+                "npm_or_cargo_executed_by_contract": False,
+                "tauri_runtime_started_by_contract": False,
+                "packaged_app_opened_by_contract": False,
+                "fastapi_started_by_contract": False,
+                "config_values_read_by_contract": False,
+                "log_files_written_by_contract": False,
+                "provider_model_task_dispatched_by_contract": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "missing_evidence": [
+                    "explicit tauri dev runtime smoke",
+                    "repeatable tauri build log",
+                    ".app bundle and DMG artifact QA",
+                    "backend startup strategy runtime evidence",
+                    "packaged backend-offline UX evidence",
+                    "config/log runtime path evidence without values",
+                    "signing and notarization review",
+                    "explicit production package promotion approval",
+                ],
+            }
+        )
+    return rows
 
 
 def build_contract() -> dict[str, Any]:
@@ -142,6 +214,7 @@ def build_contract() -> dict[str, Any]:
     route_source = _read_script("desktop/src/routes/DesktopShellPreflight.tsx")
     api_client_source = _read_script("desktop/src/api/client.ts")
     this_script = _read_script("scripts/tauri_desktop_contract.py")
+    production_package_stage_scope_rows = _tauri_production_package_stage_scope_rows(release_binary_detected)
 
     frontend_secret_boundary = (
         "getDesktopPreflightCache" in route_source
@@ -333,6 +406,48 @@ def build_contract() -> dict[str, Any]:
             "Tauri package readiness receipt may select the next explicit build/package-QA step, but it must not run build/runtime commands, read config, write logs, call providers, or claim production completion.",
         ),
         _row(
+            "production_package_stage_scope_manifest_is_complete_and_pending",
+            {row.get("stage_key") for row in production_package_stage_scope_rows}
+            == REQUIRED_TAURI_PRODUCTION_PACKAGE_STAGES
+            and len(production_package_stage_scope_rows) == len(REQUIRED_TAURI_PRODUCTION_PACKAGE_STAGES)
+            and all(
+                row.get("scope") == "tauri_production_package_stage_scope_manifest"
+                for row in production_package_stage_scope_rows
+            )
+            and all(row.get("required_before_production_package") is True for row in production_package_stage_scope_rows)
+            and all(row.get("current_status") == "local_manifest_or_static_qa_only" for row in production_package_stage_scope_rows)
+            and all(
+                row.get("target_status") == "explicit_build_or_packaged_runtime_evidence_required"
+                for row in production_package_stage_scope_rows
+            )
+            and all(row.get("release_binary_is_completion") is False for row in production_package_stage_scope_rows)
+            and all(row.get("tauri_dev_runtime_smoke_done") is False for row in production_package_stage_scope_rows)
+            and all(row.get("tauri_build_repeatability_done") is False for row in production_package_stage_scope_rows)
+            and all(row.get("app_bundle_detected") is False for row in production_package_stage_scope_rows)
+            and all(row.get("dmg_distribution_detected") is False for row in production_package_stage_scope_rows)
+            and all(row.get("backend_startup_runtime_validated") is False for row in production_package_stage_scope_rows)
+            and all(row.get("backend_offline_packaged_ux_verified") is False for row in production_package_stage_scope_rows)
+            and all(row.get("config_log_runtime_paths_validated") is False for row in production_package_stage_scope_rows)
+            and all(row.get("signing_notarization_done") is False for row in production_package_stage_scope_rows)
+            and all(row.get("production_package_complete") is False for row in production_package_stage_scope_rows)
+            and all(row.get("tauri_build_executed_by_contract") is False for row in production_package_stage_scope_rows)
+            and all(row.get("npm_or_cargo_executed_by_contract") is False for row in production_package_stage_scope_rows)
+            and all(row.get("tauri_runtime_started_by_contract") is False for row in production_package_stage_scope_rows)
+            and all(row.get("packaged_app_opened_by_contract") is False for row in production_package_stage_scope_rows)
+            and all(row.get("fastapi_started_by_contract") is False for row in production_package_stage_scope_rows)
+            and all(row.get("config_values_read_by_contract") is False for row in production_package_stage_scope_rows)
+            and all(row.get("log_files_written_by_contract") is False for row in production_package_stage_scope_rows)
+            and all(row.get("provider_model_task_dispatched_by_contract") is False for row in production_package_stage_scope_rows)
+            and all(row.get("external_calls_triggered") is False for row in production_package_stage_scope_rows)
+            and all(row.get("tushare_called") is False for row in production_package_stage_scope_rows)
+            and all(row.get("deepseek_called") is False for row in production_package_stage_scope_rows)
+            and all(row.get("github_called") is False for row in production_package_stage_scope_rows)
+            and all(row.get("does_not_execute_trades") is True for row in production_package_stage_scope_rows)
+            and all(row.get("does_not_modify_strategy_action") is True for row in production_package_stage_scope_rows)
+            and all(row.get("contains_secret") is False for row in production_package_stage_scope_rows),
+            "Tauri production package stage rows must enumerate every runtime/package/signing evidence stage without running build commands, opening the app, reading config values, writing logs, calling providers, executing trades, or claiming production completion.",
+        ),
+        _row(
             "tauri_task_policy_does_not_run_build_or_runtime",
             "tauri_dev_command=cd desktop && npm run tauri dev" in preflight_script
             and "tauri_build_command=cd desktop && npm run tauri build" in preflight_script
@@ -375,6 +490,7 @@ def build_contract() -> dict[str, Any]:
             "command_center_3_tauri_desktop_contract.v1" in this_script
             and "local_tauri_desktop_contract_no_build_or_runtime_execution" in this_script
             and "release_manifest_contract_is_local_package_manifest_only" in this_script
+            and "tauri_production_package_stage_scope_manifest" in this_script
             and "production_package_complete" in this_script
             and "packaged_runtime_qa_done" in this_script
             and "tauri_build_executed" in this_script
@@ -448,7 +564,15 @@ def build_contract() -> dict[str, Any]:
             "production_package_readiness_receipt_blocker_count": readiness_receipt.get("blocking_criterion_count"),
             "production_package_readiness_allowed_next_step": readiness_receipt.get("allowed_next_step"),
             "api_base_is_localhost": _dict(packet.get("api_base_info")).get("is_localhost"),
+            "production_package_stage_scope_count": len(production_package_stage_scope_rows),
+            "production_package_stage_scope_keys": sorted(
+                row.get("stage_key") for row in production_package_stage_scope_rows
+            ),
+            "production_package_stage_scope_pending_count": sum(
+                1 for row in production_package_stage_scope_rows if row.get("production_package_complete") is False
+            ),
         },
+        "production_package_stage_scope_rows": production_package_stage_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Tauri dev/build execution, packaged runtime launch QA, backend sidecar/manual startup acceptance, config/log runtime behavior, signing/notarization, and production desktop package completion remain pending.",
     }

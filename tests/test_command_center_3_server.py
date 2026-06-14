@@ -8104,6 +8104,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("production_blocker_audit_blocks_completion", script)
         self.assertIn("release_manifest_contract_is_local_package_manifest_only", script)
         self.assertIn("production_readiness_receipt_allows_only_explicit_package_qa", script)
+        self.assertIn("tauri_production_package_stage_scope_manifest", script)
+        self.assertIn("production_package_stage_scope_manifest_is_complete_and_pending", script)
         self.assertIn("tauri_task_policy_does_not_run_build_or_runtime", script)
         self.assertIn("frontend_does_not_expose_secrets", script)
         self.assertIn("push_gate_runs_tauri_contract_after_worker", script)
@@ -8199,6 +8201,51 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["production_package_readiness_allowed_next_step"],
             "explicit_tauri_build_then_packaged_runtime_qa_review",
         )
+        required_package_stages = {
+            "tauri_dev_runtime_smoke",
+            "tauri_build_repeatability",
+            "app_bundle_detection",
+            "dmg_distribution_detection",
+            "backend_startup_strategy_runtime_qa",
+            "backend_offline_packaged_ux_qa",
+            "config_log_runtime_path_qa",
+            "signing_notarization_review",
+        }
+        self.assertEqual(payload["observed"]["production_package_stage_scope_count"], 8)
+        self.assertEqual(set(payload["observed"]["production_package_stage_scope_keys"]), required_package_stages)
+        self.assertEqual(payload["observed"]["production_package_stage_scope_pending_count"], 8)
+        stage_rows = payload["production_package_stage_scope_rows"]
+        self.assertEqual({row["stage_key"] for row in stage_rows}, required_package_stages)
+        for row in stage_rows:
+            self.assertEqual(row["scope"], "tauri_production_package_stage_scope_manifest")
+            self.assertEqual(row["current_status"], "local_manifest_or_static_qa_only")
+            self.assertEqual(row["target_status"], "explicit_build_or_packaged_runtime_evidence_required")
+            self.assertTrue(row["required_before_production_package"])
+            self.assertFalse(row["release_binary_is_completion"])
+            self.assertFalse(row["tauri_dev_runtime_smoke_done"])
+            self.assertFalse(row["tauri_build_repeatability_done"])
+            self.assertFalse(row["app_bundle_detected"])
+            self.assertFalse(row["dmg_distribution_detected"])
+            self.assertFalse(row["backend_startup_runtime_validated"])
+            self.assertFalse(row["backend_offline_packaged_ux_verified"])
+            self.assertFalse(row["config_log_runtime_paths_validated"])
+            self.assertFalse(row["signing_notarization_done"])
+            self.assertFalse(row["production_package_complete"])
+            self.assertFalse(row["tauri_build_executed_by_contract"])
+            self.assertFalse(row["npm_or_cargo_executed_by_contract"])
+            self.assertFalse(row["tauri_runtime_started_by_contract"])
+            self.assertFalse(row["packaged_app_opened_by_contract"])
+            self.assertFalse(row["fastapi_started_by_contract"])
+            self.assertFalse(row["config_values_read_by_contract"])
+            self.assertFalse(row["log_files_written_by_contract"])
+            self.assertFalse(row["provider_model_task_dispatched_by_contract"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("preflight_cache_is_read_only", criteria)
         self.assertIn("production_runtime_contract_is_policy_only", criteria)
@@ -8207,6 +8254,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("production_blocker_audit_blocks_completion", criteria)
         self.assertIn("release_manifest_contract_is_local_package_manifest_only", criteria)
         self.assertIn("production_readiness_receipt_allows_only_explicit_package_qa", criteria)
+        self.assertIn("production_package_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("tauri_task_policy_does_not_run_build_or_runtime", criteria)
         self.assertIn("frontend_does_not_expose_secrets", criteria)
         self.assertIn("push_gate_runs_tauri_contract_after_worker", criteria)
