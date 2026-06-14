@@ -20,6 +20,30 @@ ACTIVATION_REVIEW_PACKET_KEY = "command_center_3_worker_activation_review_packet
 ACTIVATION_REVIEW_SCHEMA_VERSION = "worker_activation_review_task_receipt.v1"
 PRODUCTION_EVIDENCE_PLAN_PACKET_KEY = "command_center_3_worker_production_evidence_plan_packet"
 PRODUCTION_EVIDENCE_PLAN_SCHEMA_VERSION = "worker_production_evidence_plan_receipt.v1"
+WORKER_RUNTIME_QA_EXECUTION_PHASES = [
+    "evidence_plan_scope_ticket",
+    "celery_process_manual_start",
+    "redis_broker_redacted_reachability",
+    "queue_binding_and_synthetic_round_trip",
+    "cross_process_retry_cancel_lock_dedupe",
+    "append_only_worker_log_validation",
+    "scheduler_default_off_runtime",
+    "provider_model_no_autoschedule_boundary",
+    "local_fallback_rollback_plan",
+    "production_worker_promotion_review",
+]
+WORKER_RUNTIME_QA_EXECUTION_PHASE_LABELS = {
+    "evidence_plan_scope_ticket": "Evidence-plan scope ticket",
+    "celery_process_manual_start": "Celery process manual start evidence",
+    "redis_broker_redacted_reachability": "Redis broker redacted reachability evidence",
+    "queue_binding_and_synthetic_round_trip": "Queue binding and synthetic round-trip evidence",
+    "cross_process_retry_cancel_lock_dedupe": "Cross-process retry/cancel/lock/dedupe evidence",
+    "append_only_worker_log_validation": "Append-only worker log validation",
+    "scheduler_default_off_runtime": "Scheduler default-off runtime evidence",
+    "provider_model_no_autoschedule_boundary": "Provider/model no-autoschedule boundary",
+    "local_fallback_rollback_plan": "Local fallback rollback plan",
+    "production_worker_promotion_review": "Production worker promotion review",
+}
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 
@@ -1749,6 +1773,258 @@ def _read_worker_production_evidence_plan_packet(
 
 
 
+def _worker_runtime_qa_execution_recipe_row(
+    phase: str,
+    *,
+    status: str,
+    local_ready: bool,
+    evidence: str,
+    evidence_required: str,
+    next_action: str,
+) -> dict[str, Any]:
+    return {
+        "phase": phase,
+        "phase_label": WORKER_RUNTIME_QA_EXECUTION_PHASE_LABELS.get(phase, phase),
+        "status": status,
+        "local_ready": bool(local_ready),
+        "runtime_qa_done": False,
+        "production_ready": False,
+        "production_blocker": True,
+        "required_before_production": True,
+        "evidence": evidence,
+        "evidence_required": evidence_required,
+        "next_action": next_action,
+        "cache_only": True,
+        "runs_no_commands": True,
+        "worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "task_dispatched": False,
+        "provider_model_task_dispatched": False,
+        "healthcheck_executed": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def _worker_runtime_qa_execution_recipe(
+    *,
+    production_evidence_plan: dict[str, Any],
+    production_activation_receipt: dict[str, Any],
+    readiness_receipt: dict[str, Any],
+    healthcheck_qa_contract: dict[str, Any],
+    task_log_persistence_audit: dict[str, Any],
+    queue_routing_contract: dict[str, Any],
+) -> dict[str, Any]:
+    evidence_scope = [
+        str(item)
+        for item in (
+            _json_safe(production_evidence_plan.get("scope_ticket_payload") or {}).get("evidence_scope")
+            if isinstance(production_evidence_plan.get("scope_ticket_payload"), dict)
+            else []
+        )
+    ]
+    evidence_plan_visible = production_evidence_plan.get("schema_version") == PRODUCTION_EVIDENCE_PLAN_SCHEMA_VERSION
+    activation_receipt_visible = production_activation_receipt.get("schema_version") == "worker_production_activation_receipt.v1"
+    readiness_visible = readiness_receipt.get("schema_version") == "worker_production_readiness_receipt.v1"
+    healthcheck_contract_visible = healthcheck_qa_contract.get("schema_version") == "worker_healthcheck_qa_contract.v1"
+    task_log_audit_visible = task_log_persistence_audit.get("schema_version") == "worker_task_log_persistence_audit.v1"
+    queue_routing_visible = queue_routing_contract.get("schema_version") == "worker_queue_routing_contract.v1"
+    safety_boundary_ready = (
+        production_evidence_plan.get("starts_celery_worker") is False
+        and production_evidence_plan.get("pings_redis") is False
+        and production_evidence_plan.get("starts_scheduler") is False
+        and production_evidence_plan.get("task_dispatched") is False
+        and production_evidence_plan.get("provider_model_task_dispatched") is False
+        and production_activation_receipt.get("worker_started_by_receipt") is False
+        and production_activation_receipt.get("redis_pinged_by_receipt") is False
+        and production_activation_receipt.get("scheduler_started_by_receipt") is False
+        and production_activation_receipt.get("task_dispatched_by_receipt") is False
+        and production_activation_receipt.get("provider_model_task_dispatched_by_receipt") is False
+    )
+    local_recipe_ready = all(
+        [
+            evidence_plan_visible,
+            activation_receipt_visible,
+            readiness_visible,
+            healthcheck_contract_visible,
+            task_log_audit_visible,
+            queue_routing_visible,
+            safety_boundary_ready,
+        ]
+    )
+    rows = [
+        _worker_runtime_qa_execution_recipe_row(
+            "evidence_plan_scope_ticket",
+            status=(
+                "ready_runtime_qa_scope_ticket"
+                if production_evidence_plan.get("evidence_plan_ready") is True
+                else "pending_explicit_evidence_plan_or_activation_review"
+            ),
+            local_ready=evidence_plan_visible and bool(evidence_scope),
+            evidence=(
+                f"evidence_plan_status={production_evidence_plan.get('status')}; "
+                f"evidence_scope_count={len(evidence_scope)}"
+            ),
+            evidence_required="approved production evidence plan scope ticket with SHA-256 fingerprint",
+            next_action="Create or reuse the explicit POST evidence-plan scope ticket before runtime QA.",
+        ),
+        _worker_runtime_qa_execution_recipe_row(
+            "celery_process_manual_start",
+            status="pending_manual_worker_process_evidence",
+            local_ready=activation_receipt_visible,
+            evidence="No Celery process is started or inspected by this recipe.",
+            evidence_required="manual Celery process identity, queue registration, and safe startup log evidence",
+            next_action="Start Celery only in a separately approved runtime QA path and record redacted process evidence.",
+        ),
+        _worker_runtime_qa_execution_recipe_row(
+            "redis_broker_redacted_reachability",
+            status="pending_manual_broker_evidence",
+            local_ready=activation_receipt_visible,
+            evidence="Redis is not pinged and Redis URL/credentials are not exposed by this recipe.",
+            evidence_required="redacted Redis broker reachability evidence without URL, token, key, or password values",
+            next_action="Verify Redis only through a future explicit runtime QA path with redacted evidence.",
+        ),
+        _worker_runtime_qa_execution_recipe_row(
+            "queue_binding_and_synthetic_round_trip",
+            status="pending_live_queue_round_trip",
+            local_ready=queue_routing_visible and healthcheck_contract_visible,
+            evidence=f"queue_count={queue_routing_contract.get('queue_count')}; healthcheck_status={healthcheck_qa_contract.get('status')}",
+            evidence_required="live worker queue binding plus synthetic task round-trip evidence",
+            next_action="Bind queues and run a synthetic round trip only after Celery/Redis runtime evidence is present.",
+        ),
+        _worker_runtime_qa_execution_recipe_row(
+            "cross_process_retry_cancel_lock_dedupe",
+            status="pending_cross_process_controls",
+            local_ready=healthcheck_contract_visible,
+            evidence=f"healthcheck_pending_count={healthcheck_qa_contract.get('pending_criterion_count')}",
+            evidence_required="cross-process retry/cancel/lock/dedupe evidence across worker process boundaries",
+            next_action="Prove retry, cancel, lock, and dedupe semantics across live worker processes.",
+        ),
+        _worker_runtime_qa_execution_recipe_row(
+            "append_only_worker_log_validation",
+            status="pending_append_only_log_evidence",
+            local_ready=task_log_audit_visible,
+            evidence=f"task_log_audit_status={task_log_persistence_audit.get('status')}",
+            evidence_required="append-only redacted worker log storage plus cross-process log readback",
+            next_action="Collect append-only worker log evidence without raw payload or secret leakage.",
+        ),
+        _worker_runtime_qa_execution_recipe_row(
+            "scheduler_default_off_runtime",
+            status="pending_scheduler_runtime_evidence",
+            local_ready=activation_receipt_visible,
+            evidence="Scheduler remains default-off in cache and review paths.",
+            evidence_required="runtime proof that scheduler stays disabled unless separately approved",
+            next_action="Capture scheduler default-off evidence during runtime QA; do not start APScheduler from cache.",
+        ),
+        _worker_runtime_qa_execution_recipe_row(
+            "provider_model_no_autoschedule_boundary",
+            status="ready_local_boundary_runtime_proof_pending",
+            local_ready=safety_boundary_ready,
+            evidence="Provider/model/probe-capable work remains button-gated and is not autoscheduled by receipts.",
+            evidence_required="runtime evidence that Tushare/DeepSeek/GitHub-capable tasks remain explicit and ledgered",
+            next_action="Keep provider/model/probe tasks out of scheduler defaults and live worker auto-dispatch.",
+        ),
+        _worker_runtime_qa_execution_recipe_row(
+            "local_fallback_rollback_plan",
+            status="pending_runtime_rollback_evidence",
+            local_ready=readiness_visible,
+            evidence="Local fallback remains available while Celery/Redis production worker is blocked.",
+            evidence_required="rollback evidence showing local fallback when Celery/Redis is unavailable or disabled",
+            next_action="Prove graceful fallback before any production worker promotion.",
+        ),
+        _worker_runtime_qa_execution_recipe_row(
+            "production_worker_promotion_review",
+            status="blocked_until_runtime_evidence_passes",
+            local_ready=False,
+            evidence=f"production_blocker_count={production_evidence_plan.get('production_blocker_count')}",
+            evidence_required="all runtime QA evidence plus explicit production worker promotion review",
+            next_action="Promote production worker only after direct runtime evidence clears every blocker.",
+        ),
+    ]
+    pending_phases = [row["phase"] for row in rows if not row.get("runtime_qa_done")]
+    local_blockers = [row["phase"] for row in rows if not row.get("local_ready")]
+    status = "worker_runtime_qa_recipe_ready_execution_pending" if local_recipe_ready else "worker_runtime_qa_recipe_blocked"
+    return {
+        "schema_version": "worker_runtime_qa_execution_recipe.v1",
+        "status": status,
+        "scope": "local_worker_runtime_qa_execution_recipe_no_process_start",
+        "ltg": "LTG-06/LTG-11",
+        "local_recipe_ready": local_recipe_ready,
+        "runtime_qa_done": False,
+        "production_worker_complete": False,
+        "requires_manual_runtime_qa": True,
+        "requires_explicit_post_sequence": True,
+        "phase_count": len(rows),
+        "pending_phase_count": len(pending_phases),
+        "local_blocker_count": len(local_blockers),
+        "phase_keys": [row["phase"] for row in rows],
+        "pending_phases": pending_phases,
+        "local_blockers": local_blockers,
+        "allowed_execution_sequence": list(WORKER_RUNTIME_QA_EXECUTION_PHASES),
+        "required_evidence": [
+            "approved production evidence plan scope ticket",
+            "manual Celery process evidence",
+            "redacted Redis broker reachability evidence",
+            "live queue binding and synthetic round-trip evidence",
+            "cross-process retry/cancel/lock/dedupe evidence",
+            "append-only worker log evidence",
+            "scheduler default-off runtime evidence",
+            "provider/model no-autoschedule runtime evidence",
+            "local fallback rollback evidence",
+            "production worker promotion review",
+        ],
+        "not_allowed_next_steps": [
+            "treat_recipe_as_runtime_qa_evidence",
+            "start Celery from GET cache",
+            "ping Redis from GET cache",
+            "start scheduler from GET cache",
+            "dispatch tasks from GET cache",
+            "autoschedule Tushare DeepSeek GitHub tasks",
+            "mark_production_worker_complete_from_scope_ticket",
+        ],
+        "cache_only": True,
+        "runs_no_commands": True,
+        "worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "task_dispatched": False,
+        "provider_model_task_dispatched": False,
+        "healthcheck_executed": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_worker_runtime_qa_execution_recipe",
+                "source": "worker production evidence plan and activation receipts",
+                "row_count": len(rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": status,
+                "external": False,
+                "external_calls_triggered": False,
+                "redis_pinged": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This recipe sequences LTG-06 manual runtime QA. It does not start Celery, ping Redis, start scheduler, dispatch tasks, call providers/models/probes, execute trades, modify strategy action, or prove production worker completion.",
+    }
+
+
 def _synthetic_healthcheck_rows(task: dict[str, Any], readback: dict[str, Any] | None) -> list[dict[str, Any]]:
     task_log = task.get("task_log") if isinstance(task.get("task_log"), list) else []
     readback_log = readback.get("task_log") if isinstance(readback, dict) and isinstance(readback.get("task_log"), list) else []
@@ -2887,6 +3163,16 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     production_evidence_plan_rows = production_evidence_plan_receipt.get("rows") or []
     production_readiness["worker_production_evidence_plan_receipt"] = production_evidence_plan_receipt
     production_readiness["worker_production_evidence_plan_rows"] = production_evidence_plan_rows
+    runtime_qa_execution_recipe = _worker_runtime_qa_execution_recipe(
+        production_evidence_plan=production_evidence_plan_receipt,
+        production_activation_receipt=production_activation_receipt,
+        readiness_receipt=production_readiness_receipt,
+        healthcheck_qa_contract=healthcheck_qa_contract,
+        task_log_persistence_audit=task_log_persistence_audit,
+        queue_routing_contract=queue_routing_contract,
+    )
+    production_readiness["worker_runtime_qa_execution_recipe"] = runtime_qa_execution_recipe
+    production_readiness["worker_runtime_qa_execution_recipe_rows"] = runtime_qa_execution_recipe["rows"]
     module_ready_count = sum(1 for row in worker_module_rows if row["module_available"] and row["file_exists"])
     manual_preflight_steps = production_readiness.get("manual_preflight_steps") or []
     status = "ready" if module_ready_count == len(worker_module_rows) else "partial"
@@ -2975,6 +3261,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         "worker_activation_review_task_rows": activation_review_task_rows,
         "worker_production_evidence_plan_receipt": production_evidence_plan_receipt,
         "worker_production_evidence_plan_rows": production_evidence_plan_rows,
+        "worker_runtime_qa_execution_recipe": runtime_qa_execution_recipe,
+        "worker_runtime_qa_execution_recipe_rows": runtime_qa_execution_recipe["rows"],
         "dispatch_plan_status": "contract_ready_local_fallback",
         "dispatch_plan_rows": dispatch_plan_rows,
         "dispatch_plan_summary": {
@@ -3039,6 +3327,9 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_production_evidence_plan_local_blocker_count": production_evidence_plan_receipt.get("local_blocker_count", 0),
             "worker_production_evidence_plan_production_blocker_count": production_evidence_plan_receipt.get("production_blocker_count", 0),
             "worker_production_evidence_plan_row_count": production_evidence_plan_receipt.get("row_count", 0),
+            "worker_runtime_qa_execution_recipe_ready": 1 if runtime_qa_execution_recipe.get("local_recipe_ready") else 0,
+            "worker_runtime_qa_execution_recipe_phase_count": runtime_qa_execution_recipe.get("phase_count", 0),
+            "worker_runtime_qa_execution_recipe_pending_phase_count": runtime_qa_execution_recipe.get("pending_phase_count", 0),
             "manual_preflight_step_count": len(manual_preflight_steps),
             "manual_preflight_operator_action_count": sum(1 for row in manual_preflight_steps if row.get("operator_action_required")),
             "dispatch_plan_task_count": len(dispatch_plan_rows),
@@ -3078,6 +3369,9 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_production_evidence_plan_is_button_gated": True,
             "worker_production_evidence_plan_is_not_process_start": True,
             "worker_production_evidence_plan_is_not_production_completion": True,
+            "worker_runtime_qa_execution_recipe_is_local": True,
+            "worker_runtime_qa_execution_recipe_is_not_process_start": True,
+            "worker_runtime_qa_execution_recipe_is_not_production_completion": True,
             "task_implementation_status_is_read_only": True,
             "stub_tasks_must_not_be_reported_as_complete": True,
             "contains_secret": False,
@@ -3094,7 +3388,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         ]
         + queue_routing_contract["call_ledger"]
         + production_readiness_receipt["call_ledger"]
-        + production_activation_receipt["call_ledger"],
+        + production_activation_receipt["call_ledger"]
+        + runtime_qa_execution_recipe["call_ledger"],
         "queue_call_ledger": queue_routing_contract["call_ledger"],
         "external_calls_triggered": False,
         "redis_pinged": False,

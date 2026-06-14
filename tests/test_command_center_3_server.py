@@ -8536,6 +8536,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("activation_review_task_is_button_gated_no_process_start", script)
         self.assertIn("worker_production_evidence_plan_receipt.v1", script)
         self.assertIn("production_evidence_plan_is_scope_ticket_only", script)
+        self.assertIn("worker_runtime_qa_execution_recipe.v1", script)
+        self.assertIn("runtime_qa_execution_recipe_is_local_pending", script)
         self.assertIn("worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending", script)
         self.assertIn("worker_runtime_evidence_stage_scope_rows", script)
         self.assertNotIn("requests", script)
@@ -8570,6 +8572,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["worker_production_evidence_plan_status"],
             "worker_production_evidence_plan_pending_activation_review",
         )
+        self.assertTrue(payload["worker_runtime_qa_execution_recipe_ready"])
+        self.assertEqual(
+            payload["worker_runtime_qa_execution_recipe_status"],
+            "worker_runtime_qa_recipe_ready_execution_pending",
+        )
         self.assertEqual(
             payload["worker_production_activation_receipt_status"],
             "worker_activation_receipt_ready_production_blocked",
@@ -8596,6 +8603,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertGreater(payload["observed"]["worker_production_evidence_plan_local_blocker_count"], 0)
         self.assertGreater(payload["observed"]["worker_production_evidence_plan_production_blocker_count"], 0)
         self.assertEqual(
+            payload["observed"]["worker_runtime_qa_execution_recipe_status"],
+            "worker_runtime_qa_recipe_ready_execution_pending",
+        )
+        self.assertTrue(payload["observed"]["worker_runtime_qa_execution_recipe_ready"])
+        self.assertEqual(
             payload["observed"]["worker_production_activation_receipt_status"],
             "worker_activation_receipt_ready_production_blocked",
         )
@@ -8605,6 +8617,53 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(payload["observed"]["scheduler_auto_task_count"], 0)
         self.assertEqual(payload["observed"]["cache_get_external_call_count"], 0)
+        required_runtime_qa_phases = [
+            "evidence_plan_scope_ticket",
+            "celery_process_manual_start",
+            "redis_broker_redacted_reachability",
+            "queue_binding_and_synthetic_round_trip",
+            "cross_process_retry_cancel_lock_dedupe",
+            "append_only_worker_log_validation",
+            "scheduler_default_off_runtime",
+            "provider_model_no_autoschedule_boundary",
+            "local_fallback_rollback_plan",
+            "production_worker_promotion_review",
+        ]
+        self.assertEqual(payload["observed"]["worker_runtime_qa_execution_phase_count"], len(required_runtime_qa_phases))
+        self.assertEqual(payload["observed"]["worker_runtime_qa_execution_phase_keys"], required_runtime_qa_phases)
+        self.assertEqual(
+            payload["observed"]["worker_runtime_qa_execution_pending_phase_count"],
+            len(required_runtime_qa_phases),
+        )
+        runtime_qa_rows = {row["phase"]: row for row in payload["worker_runtime_qa_execution_recipe_rows"]}
+        self.assertEqual(set(runtime_qa_rows), set(required_runtime_qa_phases))
+        self.assertEqual(
+            runtime_qa_rows["evidence_plan_scope_ticket"]["status"],
+            "pending_explicit_evidence_plan_or_activation_review",
+        )
+        self.assertEqual(runtime_qa_rows["celery_process_manual_start"]["status"], "pending_manual_worker_process_evidence")
+        self.assertEqual(
+            runtime_qa_rows["production_worker_promotion_review"]["status"],
+            "blocked_until_runtime_evidence_passes",
+        )
+        for row in runtime_qa_rows.values():
+            self.assertTrue(row["required_before_production"])
+            self.assertFalse(row["runtime_qa_done"])
+            self.assertFalse(row["production_ready"])
+            self.assertTrue(row["production_blocker"])
+            self.assertFalse(row["worker_started"])
+            self.assertFalse(row["redis_pinged"])
+            self.assertFalse(row["scheduler_started"])
+            self.assertFalse(row["task_dispatched"])
+            self.assertFalse(row["provider_model_task_dispatched"])
+            self.assertFalse(row["healthcheck_executed"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
         required_stages = [
             "celery_process",
             "redis_broker",
@@ -8651,6 +8710,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("activation_review_keeps_manual_activation_pending", criteria)
         self.assertIn("activation_review_task_is_button_gated_no_process_start", criteria)
         self.assertIn("production_evidence_plan_is_scope_ticket_only", criteria)
+        self.assertIn("runtime_qa_execution_recipe_is_local_pending", criteria)
         self.assertIn("worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("production_activation_receipt_keeps_worker_blocked", criteria)
 
@@ -10746,6 +10806,83 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(any(row["redis_pinged"] for row in production_evidence_plan["rows"]))
         self.assertFalse(any(row["scheduler_started"] for row in production_evidence_plan["rows"]))
         self.assertFalse(any(row["task_dispatched"] for row in production_evidence_plan["rows"]))
+        runtime_qa_recipe = packet["production_readiness"]["worker_runtime_qa_execution_recipe"]
+        self.assertEqual(runtime_qa_recipe["schema_version"], "worker_runtime_qa_execution_recipe.v1")
+        self.assertEqual(runtime_qa_recipe["scope"], "local_worker_runtime_qa_execution_recipe_no_process_start")
+        self.assertEqual(runtime_qa_recipe["status"], "worker_runtime_qa_recipe_ready_execution_pending")
+        self.assertTrue(runtime_qa_recipe["local_recipe_ready"])
+        self.assertFalse(runtime_qa_recipe["runtime_qa_done"])
+        self.assertFalse(runtime_qa_recipe["production_worker_complete"])
+        self.assertTrue(runtime_qa_recipe["requires_manual_runtime_qa"])
+        self.assertTrue(runtime_qa_recipe["requires_explicit_post_sequence"])
+        self.assertIn("manual Celery process evidence", runtime_qa_recipe["required_evidence"])
+        self.assertIn("redacted Redis broker reachability evidence", runtime_qa_recipe["required_evidence"])
+        self.assertIn("append-only worker log evidence", runtime_qa_recipe["required_evidence"])
+        self.assertIn("treat_recipe_as_runtime_qa_evidence", runtime_qa_recipe["not_allowed_next_steps"])
+        self.assertIn("start Celery from GET cache", runtime_qa_recipe["not_allowed_next_steps"])
+        self.assertIn("ping Redis from GET cache", runtime_qa_recipe["not_allowed_next_steps"])
+        self.assertIn("mark_production_worker_complete_from_scope_ticket", runtime_qa_recipe["not_allowed_next_steps"])
+        self.assertFalse(runtime_qa_recipe["worker_started"])
+        self.assertFalse(runtime_qa_recipe["redis_pinged"])
+        self.assertFalse(runtime_qa_recipe["scheduler_started"])
+        self.assertFalse(runtime_qa_recipe["task_dispatched"])
+        self.assertFalse(runtime_qa_recipe["provider_model_task_dispatched"])
+        self.assertFalse(runtime_qa_recipe["healthcheck_executed"])
+        self.assertFalse(runtime_qa_recipe["external_calls_triggered"])
+        self.assertFalse(runtime_qa_recipe["tushare_called"])
+        self.assertFalse(runtime_qa_recipe["deepseek_called"])
+        self.assertFalse(runtime_qa_recipe["github_called"])
+        self.assertTrue(runtime_qa_recipe["does_not_execute_trades"])
+        self.assertTrue(runtime_qa_recipe["does_not_modify_strategy_action"])
+        self.assertFalse(runtime_qa_recipe["contains_secret"])
+        required_runtime_qa_phases = [
+            "evidence_plan_scope_ticket",
+            "celery_process_manual_start",
+            "redis_broker_redacted_reachability",
+            "queue_binding_and_synthetic_round_trip",
+            "cross_process_retry_cancel_lock_dedupe",
+            "append_only_worker_log_validation",
+            "scheduler_default_off_runtime",
+            "provider_model_no_autoschedule_boundary",
+            "local_fallback_rollback_plan",
+            "production_worker_promotion_review",
+        ]
+        self.assertEqual(runtime_qa_recipe["allowed_execution_sequence"], required_runtime_qa_phases)
+        self.assertEqual(runtime_qa_recipe["phase_keys"], required_runtime_qa_phases)
+        self.assertEqual(runtime_qa_recipe["pending_phases"], required_runtime_qa_phases)
+        self.assertEqual(packet["worker_runtime_qa_execution_recipe"], runtime_qa_recipe)
+        self.assertEqual(packet["worker_runtime_qa_execution_recipe_rows"], runtime_qa_recipe["rows"])
+        runtime_qa_rows = {row["phase"]: row for row in runtime_qa_recipe["rows"]}
+        self.assertEqual(set(runtime_qa_rows), set(required_runtime_qa_phases))
+        self.assertEqual(
+            runtime_qa_rows["evidence_plan_scope_ticket"]["status"],
+            "pending_explicit_evidence_plan_or_activation_review",
+        )
+        self.assertEqual(runtime_qa_rows["celery_process_manual_start"]["status"], "pending_manual_worker_process_evidence")
+        self.assertEqual(
+            runtime_qa_rows["production_worker_promotion_review"]["status"],
+            "blocked_until_runtime_evidence_passes",
+        )
+        for row in runtime_qa_rows.values():
+            self.assertTrue(row["required_before_production"])
+            self.assertFalse(row["runtime_qa_done"])
+            self.assertFalse(row["production_ready"])
+            self.assertTrue(row["production_blocker"])
+            self.assertFalse(row["worker_started"])
+            self.assertFalse(row["redis_pinged"])
+            self.assertFalse(row["scheduler_started"])
+            self.assertFalse(row["task_dispatched"])
+            self.assertFalse(row["provider_model_task_dispatched"])
+            self.assertFalse(row["healthcheck_executed"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
+        self.assertEqual(runtime_qa_recipe["call_ledger"][0]["api"], "local_worker_runtime_qa_execution_recipe")
+        self.assertFalse(runtime_qa_recipe["call_ledger"][0]["external"])
         preflight_by_key = {row["step_key"]: row for row in packet["production_readiness"]["manual_preflight_steps"]}
         self.assertIn("configure_redis_broker", preflight_by_key)
         self.assertIn("start_celery_worker", preflight_by_key)
@@ -10909,6 +11046,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             production_evidence_plan["production_blocker_count"],
         )
         self.assertEqual(packet["counts"]["worker_production_evidence_plan_row_count"], production_evidence_plan["row_count"])
+        self.assertEqual(packet["counts"]["worker_runtime_qa_execution_recipe_ready"], 1)
+        self.assertEqual(packet["counts"]["worker_runtime_qa_execution_recipe_phase_count"], runtime_qa_recipe["phase_count"])
+        self.assertEqual(
+            packet["counts"]["worker_runtime_qa_execution_recipe_pending_phase_count"],
+            runtime_qa_recipe["pending_phase_count"],
+        )
         self.assertEqual(packet["counts"]["dispatch_plan_task_count"], len(packet["dispatch_plan_rows"]))
         self.assertEqual(packet["counts"]["dispatch_plan_queue_count"], len(packet["dispatch_plan_summary"]["queue_names"]))
         self.assertEqual(packet["counts"]["manual_preflight_step_count"], len(packet["production_readiness"]["manual_preflight_steps"]))
@@ -10931,6 +11074,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["policy"]["worker_production_evidence_plan_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_production_evidence_plan_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_production_evidence_plan_is_not_production_completion"])
+        self.assertTrue(packet["policy"]["worker_runtime_qa_execution_recipe_is_local"])
+        self.assertTrue(packet["policy"]["worker_runtime_qa_execution_recipe_is_not_process_start"])
+        self.assertTrue(packet["policy"]["worker_runtime_qa_execution_recipe_is_not_production_completion"])
         self.assertTrue(packet["policy"]["does_not_ping_redis"])
         self.assertTrue(packet["policy"]["does_not_start_celery_worker"])
         self.assertTrue(packet["policy"]["does_not_start_scheduler"])

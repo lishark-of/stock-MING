@@ -124,6 +124,18 @@ REQUIRED_RUNTIME_EVIDENCE_STAGES = (
     "provider_model_no_autoschedule_boundary",
     "no_trade_no_action_boundary",
 )
+REQUIRED_RUNTIME_QA_EXECUTION_PHASES = (
+    "evidence_plan_scope_ticket",
+    "celery_process_manual_start",
+    "redis_broker_redacted_reachability",
+    "queue_binding_and_synthetic_round_trip",
+    "cross_process_retry_cancel_lock_dedupe",
+    "append_only_worker_log_validation",
+    "scheduler_default_off_runtime",
+    "provider_model_no_autoschedule_boundary",
+    "local_fallback_rollback_plan",
+    "production_worker_promotion_review",
+)
 RUNTIME_EVIDENCE_STAGE_LABELS = {
     "celery_process": "Celery process evidence",
     "redis_broker": "Redis broker evidence",
@@ -265,6 +277,11 @@ def build_contract() -> dict[str, Any]:
     production_evidence_plan_criteria = {
         str(row.get("criterion") or "") for row in production_evidence_plan_rows
     }
+    runtime_qa_recipe = _dict(packet.get("worker_runtime_qa_execution_recipe"))
+    runtime_qa_recipe_rows = [
+        row for row in _list(packet.get("worker_runtime_qa_execution_recipe_rows")) if isinstance(row, dict)
+    ]
+    runtime_qa_recipe_phases = {str(row.get("phase") or "") for row in runtime_qa_recipe_rows}
     task_persistence = _dict(packet.get("task_persistence"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/worker_contract.py")
@@ -615,6 +632,68 @@ def build_contract() -> dict[str, Any]:
             "Worker production evidence plan may create a later runtime-QA scope ticket, but it must not start processes, ping Redis, dispatch tasks, call providers/models, execute trades, or claim production worker completion.",
         ),
         _row(
+            "runtime_qa_execution_recipe_is_local_pending",
+            runtime_qa_recipe.get("schema_version") == "worker_runtime_qa_execution_recipe.v1"
+            and runtime_qa_recipe.get("scope") == "local_worker_runtime_qa_execution_recipe_no_process_start"
+            and runtime_qa_recipe.get("status") == "worker_runtime_qa_recipe_ready_execution_pending"
+            and runtime_qa_recipe.get("local_recipe_ready") is True
+            and runtime_qa_recipe.get("runtime_qa_done") is False
+            and runtime_qa_recipe.get("production_worker_complete") is False
+            and runtime_qa_recipe.get("requires_manual_runtime_qa") is True
+            and runtime_qa_recipe.get("requires_explicit_post_sequence") is True
+            and tuple(runtime_qa_recipe.get("allowed_execution_sequence") or ()) == REQUIRED_RUNTIME_QA_EXECUTION_PHASES
+            and tuple(runtime_qa_recipe.get("phase_keys") or ()) == REQUIRED_RUNTIME_QA_EXECUTION_PHASES
+            and set(runtime_qa_recipe.get("pending_phases") or []) == set(REQUIRED_RUNTIME_QA_EXECUTION_PHASES)
+            and int(runtime_qa_recipe.get("pending_phase_count") or 0) == len(REQUIRED_RUNTIME_QA_EXECUTION_PHASES)
+            and int(runtime_qa_recipe.get("phase_count") or 0) == len(REQUIRED_RUNTIME_QA_EXECUTION_PHASES)
+            and runtime_qa_recipe_phases == set(REQUIRED_RUNTIME_QA_EXECUTION_PHASES)
+            and {
+                "approved production evidence plan scope ticket",
+                "manual Celery process evidence",
+                "redacted Redis broker reachability evidence",
+                "append-only worker log evidence",
+                "production worker promotion review",
+            }.issubset(set(runtime_qa_recipe.get("required_evidence") or []))
+            and {
+                "treat_recipe_as_runtime_qa_evidence",
+                "start Celery from GET cache",
+                "ping Redis from GET cache",
+                "dispatch tasks from GET cache",
+                "mark_production_worker_complete_from_scope_ticket",
+            }.issubset(set(runtime_qa_recipe.get("not_allowed_next_steps") or []))
+            and runtime_qa_recipe.get("worker_started") is False
+            and runtime_qa_recipe.get("redis_pinged") is False
+            and runtime_qa_recipe.get("scheduler_started") is False
+            and runtime_qa_recipe.get("task_dispatched") is False
+            and runtime_qa_recipe.get("provider_model_task_dispatched") is False
+            and runtime_qa_recipe.get("healthcheck_executed") is False
+            and _flag_false(runtime_qa_recipe, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and runtime_qa_recipe.get("does_not_execute_trades") is True
+            and runtime_qa_recipe.get("does_not_modify_strategy_action") is True
+            and runtime_qa_recipe.get("contains_secret") is False
+            and all(row.get("required_before_production") is True for row in runtime_qa_recipe_rows)
+            and all(row.get("runtime_qa_done") is False for row in runtime_qa_recipe_rows)
+            and all(row.get("production_ready") is False for row in runtime_qa_recipe_rows)
+            and all(row.get("production_blocker") is True for row in runtime_qa_recipe_rows)
+            and all(row.get("worker_started") is False for row in runtime_qa_recipe_rows)
+            and all(row.get("redis_pinged") is False for row in runtime_qa_recipe_rows)
+            and all(row.get("scheduler_started") is False for row in runtime_qa_recipe_rows)
+            and all(row.get("task_dispatched") is False for row in runtime_qa_recipe_rows)
+            and all(row.get("provider_model_task_dispatched") is False for row in runtime_qa_recipe_rows)
+            and all(row.get("healthcheck_executed") is False for row in runtime_qa_recipe_rows)
+            and all(row.get("external_calls_triggered") is False for row in runtime_qa_recipe_rows)
+            and all(row.get("tushare_called") is False for row in runtime_qa_recipe_rows)
+            and all(row.get("deepseek_called") is False for row in runtime_qa_recipe_rows)
+            and all(row.get("github_called") is False for row in runtime_qa_recipe_rows)
+            and all(row.get("does_not_execute_trades") is True for row in runtime_qa_recipe_rows)
+            and all(row.get("does_not_modify_strategy_action") is True for row in runtime_qa_recipe_rows)
+            and all(row.get("contains_secret") is False for row in runtime_qa_recipe_rows)
+            and _list(runtime_qa_recipe.get("call_ledger"))
+            and _dict(_list(runtime_qa_recipe.get("call_ledger"))[0]).get("api")
+            == "local_worker_runtime_qa_execution_recipe",
+            "Worker runtime QA recipe must sequence manual Celery/Redis evidence without starting processes, pinging Redis, dispatching tasks, calling providers/models, trading, or claiming production worker completion.",
+        ),
+        _row(
             "worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending",
             [row.get("stage_key") for row in worker_runtime_evidence_stage_scope_rows]
             == list(REQUIRED_RUNTIME_EVIDENCE_STAGES)
@@ -715,12 +794,14 @@ def build_contract() -> dict[str, Any]:
             and "worker_production_activation_receipt.v1" in this_script
             and "worker_activation_review_task_receipt.v1" in this_script
             and "worker_production_evidence_plan_receipt.v1" in this_script
+            and "worker_runtime_qa_execution_recipe.v1" in this_script
             and "worker_queue_routing_contract.v1" in this_script
             and "task_readback_fingerprint_matches" in this_script
             and "queue_routing_contract_is_local_and_button_gated" in this_script
             and "production_activation_receipt_keeps_worker_blocked" in this_script
             and "activation_review_task_is_button_gated_no_process_start" in this_script
             and "production_evidence_plan_is_scope_ticket_only" in this_script
+            and "runtime_qa_execution_recipe_is_local_pending" in this_script
             and "worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending" in this_script
             and "production_worker_complete" in this_script
             and "healthcheck_executed" in this_script
@@ -758,6 +839,8 @@ def build_contract() -> dict[str, Any]:
         "worker_activation_review_task_status": activation_review_task.get("status"),
         "worker_production_evidence_plan_ready": production_evidence_plan.get("evidence_plan_ready") is True,
         "worker_production_evidence_plan_status": production_evidence_plan.get("status"),
+        "worker_runtime_qa_execution_recipe_ready": runtime_qa_recipe.get("local_recipe_ready") is True,
+        "worker_runtime_qa_execution_recipe_status": runtime_qa_recipe.get("status"),
         "worker_queue_routing_contract_ready": queue_routing.get("queue_routing_contract_ready") is True,
         "worker_queue_routing_contract_status": queue_routing.get("status"),
         "local_fallback_available": True,
@@ -810,6 +893,13 @@ def build_contract() -> dict[str, Any]:
             "worker_production_evidence_plan_production_blocker_count": production_evidence_plan.get(
                 "production_blocker_count"
             ),
+            "worker_runtime_qa_execution_recipe_status": runtime_qa_recipe.get("status"),
+            "worker_runtime_qa_execution_recipe_ready": runtime_qa_recipe.get("local_recipe_ready"),
+            "worker_runtime_qa_execution_phase_count": len(runtime_qa_recipe_rows),
+            "worker_runtime_qa_execution_phase_keys": [row.get("phase") for row in runtime_qa_recipe_rows],
+            "worker_runtime_qa_execution_pending_phase_count": sum(
+                1 for row in runtime_qa_recipe_rows if row.get("runtime_qa_done") is False
+            ),
             "worker_runtime_evidence_stage_scope_count": len(worker_runtime_evidence_stage_scope_rows),
             "worker_runtime_evidence_stage_scope_keys": [
                 row.get("stage_key") for row in worker_runtime_evidence_stage_scope_rows
@@ -822,6 +912,7 @@ def build_contract() -> dict[str, Any]:
             "scheduler_auto_task_count": dispatch_summary.get("scheduler_auto_task_count"),
             "cache_get_external_call_count": dispatch_summary.get("cache_get_external_call_count"),
         },
+        "worker_runtime_qa_execution_recipe_rows": runtime_qa_recipe_rows,
         "worker_runtime_evidence_stage_scope_rows": worker_runtime_evidence_stage_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. It does not run the synthetic healthcheck. Celery worker startup, Redis broker reachability, cross-process task controls, scheduler production config, and production worker activation remain pending.",
