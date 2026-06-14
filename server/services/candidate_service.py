@@ -3464,9 +3464,21 @@ def _candidate_radar_promotion_blocker_audit(packet: Mapping[str, Any]) -> tuple
         ),
     ]
     blocking_rows = [row for row in rows if row.get("blocks_promotion")]
-    provider_rows = [row for row in rows if row.get("evidence_kind") == "provider_acceptance_required"]
-    worker_rows = [row for row in rows if row.get("evidence_kind") == "worker_execution_required"]
-    browser_rows = [row for row in rows if row.get("evidence_kind") == "browser_evidence_required"]
+    provider_rows = [
+        row
+        for row in rows
+        if row.get("evidence_kind") == "provider_acceptance_required" and row.get("blocks_promotion") is True
+    ]
+    worker_rows = [
+        row
+        for row in rows
+        if row.get("evidence_kind") == "worker_execution_required" and row.get("blocks_promotion") is True
+    ]
+    browser_rows = [
+        row
+        for row in rows
+        if row.get("evidence_kind") == "browser_evidence_required" and row.get("blocks_promotion") is True
+    ]
     promotion_ready = not blocking_rows
     contract = {
         "schema_version": "candidate_radar_promotion_blocker_audit.v1",

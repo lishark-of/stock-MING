@@ -3805,6 +3805,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         json.dumps(packet, ensure_ascii=False)
 
     def test_candidate_radar_cache_reads_local_candidates_without_market_scan(self):
+        self._with_meta_store()
+        self._with_candidate_motion_qa_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
         self._with_snapshot_cache(
             {
                 "radar_packet": {
@@ -3992,6 +3995,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         json.dumps(packet, ensure_ascii=False)
 
     def test_candidate_radar_large_cache_scan_reports_runtime_budget_without_hiding_gaps(self):
+        self._with_meta_store()
+        self._with_candidate_motion_qa_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
         large_candidates = [
             {
                 "rank": index,
@@ -10871,6 +10877,130 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["candidate_browser_qa_review_is_button_gated"])
         self.assertEqual(packet["call_ledger"][1]["api"], "local_candidate_radar_browser_qa_review")
 
+    def test_candidate_radar_browser_qa_review_ready_after_default_and_reduced_reports(self):
+        artifact_root = self._with_candidate_motion_qa_root()
+        for run_id, reduced in (("default-run", False), ("reduced-run", True)):
+            report_dir = artifact_root / run_id
+            report_dir.mkdir(parents=True)
+            rows = [
+                {
+                    "route": "#candidates",
+                    "label": "Candidate Radar",
+                    "viewport": viewport,
+                    "width": width,
+                    "height": height,
+                    "url": "http://127.0.0.1:5173/#candidates",
+                    "status": "passed",
+                    "visual_qa_complete": True,
+                    "performance_trace_complete": True,
+                    "route_transition_observed_ms": 120,
+                    "route_transition_budget_ms": 500,
+                    "long_task_over_50ms_count": 0,
+                    "largest_motion_layout_shift": 0,
+                    "clipped_count": 0,
+                    "offscreen_count": 0,
+                }
+                for viewport, width, height in [
+                    ("desktop", 1440, 900),
+                    ("laptop", 1280, 800),
+                    ("tablet", 834, 1112),
+                    ("mobile", 390, 844),
+                ]
+            ]
+            (report_dir / "motion_browser_qa_report.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "command_center_3_motion_browser_qa_result.v1",
+                        "status": "motion_browser_qa_passed",
+                        "scope": "explicit_local_browser_visual_performance_run",
+                        "run_id": run_id,
+                        "generated_at": "2026-06-14T02:30:00.000Z",
+                        "base_url": "http://127.0.0.1:5173",
+                        "artifact_root": ".stock_ming_3/motion_qa",
+                        "reduced_motion": reduced,
+                        "route_count": 5,
+                        "viewport_count": 4,
+                        "qa_matrix_count": 20,
+                        "passed_count": 20,
+                        "review_required_count": 0,
+                        "console_error_count": 0,
+                        "visual_qa_complete": True,
+                        "browser_performance_verified": True,
+                        "production_motion_complete": False,
+                        "performance_budgets": {"route_transition_observed_ms": 500},
+                        "rows": rows,
+                        "errors": [],
+                        "cache_only": True,
+                        "starts_no_servers": True,
+                        "local_urls_only": True,
+                        "external_calls_triggered": False,
+                        "tushare_called": False,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        response = self.client.post(
+            "/api/candidate-radar/browser-qa-review",
+            json={"review_scope": "candidate_route_browser_qa_local_artifact", "token": "SHOULD_DROP"},
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["task_type"], "run_candidate_radar_browser_qa_review")
+        self.assertEqual(task["current_step"], "candidate_radar_browser_qa_review_ready")
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+        cache = self.client.get("/api/candidate-radar/cache").json()["data"]
+        evidence = cache["candidate_browser_qa_evidence_summary"]
+        self.assertEqual(evidence["status"], "candidate_browser_qa_evidence_passed_local_artifact")
+        self.assertTrue(evidence["default_motion_passed"])
+        self.assertTrue(evidence["reduced_motion_passed"])
+        self.assertTrue(evidence["candidate_visual_qa_evidence_passed"])
+        self.assertTrue(evidence["candidate_browser_performance_evidence_passed"])
+        review = cache["candidate_browser_qa_review_contract"]
+        self.assertEqual(review["status"], "candidate_browser_qa_review_ready_local_artifact")
+        self.assertTrue(review["explicit_review_task_done"])
+        self.assertTrue(review["local_browser_qa_review_ready"])
+        self.assertEqual(review["blocking_review_count"], 0)
+        self.assertEqual(review["blocking_review_keys"], [])
+        self.assertTrue(review["default_motion_passed"])
+        self.assertTrue(review["reduced_motion_passed"])
+        self.assertFalse(review["production_radar_replacement_complete"])
+        self.assertFalse(review["legacy_retirement_ready"])
+        self.assertFalse(review["full_pool_scan_done"])
+        self.assertFalse(review["deep_scan_done"])
+        self.assertFalse(review["provider_backed_acceptance_done"])
+        self.assertTrue(cache["policy"]["candidate_browser_qa_review_is_button_gated"])
+        self.assertTrue(cache["policy"]["candidate_browser_qa_review_does_not_open_browser"])
+        self.assertTrue(cache["policy"]["candidate_browser_qa_review_is_not_production_replacement"])
+        promotion = cache["candidate_radar_promotion_blocker_audit"]
+        promotion_rows = {row["criterion"]: row for row in cache["candidate_radar_promotion_blocker_rows"]}
+        self.assertFalse(promotion["promotion_ready"])
+        self.assertFalse(promotion["production_radar_replacement_complete"])
+        self.assertEqual(promotion["browser_evidence_blocker_count"], 0)
+        self.assertGreater(promotion["provider_acceptance_blocker_count"], 0)
+        self.assertGreater(promotion["worker_execution_blocker_count"], 0)
+        self.assertEqual(promotion_rows["browser_visual_and_performance_reviewed"]["status"], "passed")
+        self.assertFalse(promotion_rows["browser_visual_and_performance_reviewed"]["blocks_promotion"])
+        self.assertIn("provider_signal_coverage_complete", promotion["blocking_promotion_keys"])
+        self.assertIn("full_pool_execution_complete", promotion["blocking_promotion_keys"])
+        self.assertIn("deep_scan_execution_complete", promotion["blocking_promotion_keys"])
+
     def test_candidate_radar_quick_scan_endpoint_is_button_gated_local_cache_only(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
@@ -12734,6 +12864,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(cache["worker_synthetic_healthcheck"]["external_calls_triggered"])
 
     def test_call_ledger_audit_cache_endpoint_returns_read_only_audit(self):
+        self._with_meta_store()
+        self._with_motion_qa_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
         response = self.client.get("/api/audit/cache").json()
 
         self.assertTrue(response["ok"])

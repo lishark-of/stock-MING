@@ -45,7 +45,7 @@ REQUIRED_REPLACEMENT_GAPS = {
     "deep_scan_execution",
     "provider_backed_acceptance",
 }
-REQUIRED_PROMOTION_BLOCKERS = {
+REQUIRED_PROMOTION_ROWS = {
     "legacy_retirement_triage_clear",
     "provider_signal_coverage_complete",
     "browser_visual_and_performance_reviewed",
@@ -53,6 +53,7 @@ REQUIRED_PROMOTION_BLOCKERS = {
     "full_pool_execution_complete",
     "deep_scan_execution_complete",
 }
+REQUIRED_PROMOTION_BLOCKERS = REQUIRED_PROMOTION_ROWS - {"browser_visual_and_performance_reviewed"}
 REQUIRED_ACTIVATION_BLOCKERS = {
     "production_promotion_blocked_visible",
     "full_pool_worker_execution_required",
@@ -428,8 +429,16 @@ def build_contract() -> dict[str, Any]:
             and int(promotion_audit.get("blocking_promotion_count") or 0) > 0
             and int(promotion_audit.get("provider_acceptance_blocker_count") or 0) > 0
             and int(promotion_audit.get("worker_execution_blocker_count") or 0) > 0
-            and int(promotion_audit.get("browser_evidence_blocker_count") or 0) > 0
+            and int(promotion_audit.get("browser_evidence_blocker_count") or 0) >= 0
+            and all(key in promotion_rows for key in REQUIRED_PROMOTION_ROWS)
             and all(_dict(promotion_rows.get(key)).get("blocks_promotion") is True for key in REQUIRED_PROMOTION_BLOCKERS)
+            and (
+                _dict(promotion_rows.get("browser_visual_and_performance_reviewed")).get("status") == "passed"
+                and _dict(promotion_rows.get("browser_visual_and_performance_reviewed")).get("blocks_promotion") is False
+                and int(promotion_audit.get("browser_evidence_blocker_count") or 0) == 0
+                or _dict(promotion_rows.get("browser_visual_and_performance_reviewed")).get("blocks_promotion") is True
+                and int(promotion_audit.get("browser_evidence_blocker_count") or 0) > 0
+            )
             and policy.get("candidate_radar_promotion_audit_is_local") is True
             and policy.get("candidate_radar_promotion_audit_is_not_production_replacement") is True
             and policy.get("candidate_radar_promotion_requires_provider_worker_browser_evidence") is True
