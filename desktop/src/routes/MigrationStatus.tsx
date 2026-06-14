@@ -25,6 +25,7 @@ export default function MigrationStatus() {
   const longTermNextPriority = (longTermGoalSummary.next_priority_order as Array<string> | undefined) ?? [];
   const tushareDeepseekLinkage = (packet.tushare_deepseek_linkage_review as Record<string, unknown> | undefined) ?? {};
   const tushareDeepseekLinkageRows = (packet.tushare_deepseek_linkage_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const tushareDeepseekModeLayerRows = (packet.tushare_deepseek_mode_layer_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const principles = Array.isArray(packet.principles) ? packet.principles : [];
   const policy = packet.api_policy as Record<string, unknown> | undefined;
   const baselinePolicy = packet.baseline_policy as Record<string, unknown> | undefined;
@@ -62,6 +63,7 @@ export default function MigrationStatus() {
           { label: "production acceptance", value: String(longTermGoalSummary.production_acceptance_estimate ?? "--") },
           { label: "Tushare/DeepSeek linkage", value: String(tushareDeepseekLinkage.status ?? "pending") },
           { label: "linkage layers", value: tushareDeepseekLinkageRows.length },
+          { label: "mode layers", value: tushareDeepseekModeLayerRows.length },
           { label: "linkage blockers", value: Number(tushareDeepseekLinkage.blocking_row_count ?? 0), tone: Number(tushareDeepseekLinkage.blocking_row_count ?? 0) ? "bad" : "good" },
           { label: "cache envelope ledger", value: cacheCallLedger.length },
           { label: "cache warnings", value: cacheWarnings.length },
@@ -87,8 +89,9 @@ export default function MigrationStatus() {
       />
       <DataLineageTable rows={longTermGoalRows} />
       <h3>Tushare / DeepSeek 联动审查</h3>
-      <p className="risk-note">cache GET 和 React render 仍保持安静；真实 provider/model execution 与 production promotion 仍需后续显式验收。</p>
+      <p className="risk-note">按四层审查：cache/render 安静、POST task 门控、task 内真实 provider/model execution、production promotion ledger；真实执行仍需后续显式验收。</p>
       <DataLineageTable rows={[tushareDeepseekLinkage]} />
+      <DataLineageTable rows={tushareDeepseekModeLayerRows} />
       <DataLineageTable rows={tushareDeepseekLinkageRows} />
       <h3>长期迁移原则</h3>
       <p className="risk-note">这组原则来自用户长期基线；React/Tauri 主入口只读展示，不重新估算、不创建任务。</p>

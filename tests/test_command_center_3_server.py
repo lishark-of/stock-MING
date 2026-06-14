@@ -218,7 +218,35 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(migration["tushare_deepseek_linkage_review"]["provider_execution_implemented"])
         self.assertFalse(migration["tushare_deepseek_linkage_review"]["model_execution_implemented"])
         self.assertEqual(migration["tushare_deepseek_linkage_review"]["row_count"], 7)
+        self.assertEqual(migration["tushare_deepseek_linkage_review"]["mode_layer_row_count"], 4)
+        self.assertEqual(
+            migration["tushare_deepseek_linkage_review"]["boundary_interpretation"],
+            "mode_layered_not_absolute_global_ban",
+        )
+        self.assertTrue(migration["tushare_deepseek_linkage_review"]["cache_render_silent"])
+        self.assertTrue(migration["tushare_deepseek_linkage_review"]["post_task_creation_button_gated"])
+        self.assertTrue(migration["tushare_deepseek_linkage_review"]["provider_model_execution_pending"])
+        self.assertTrue(migration["tushare_deepseek_linkage_review"]["production_promotion_pending"])
         self.assertEqual(migration["tushare_deepseek_linkage_review"]["blocking_row_count"], 0)
+        mode_layer_rows = {row["layer_key"]: row for row in migration["tushare_deepseek_mode_layer_rows"]}
+        self.assertEqual(
+            set(mode_layer_rows),
+            {
+                "cache_render_startup",
+                "post_task_creation",
+                "provider_model_execution_inside_task",
+                "production_promotion_evidence",
+            },
+        )
+        self.assertEqual(mode_layer_rows["cache_render_startup"]["current_status"], "silent_confirmed")
+        self.assertEqual(mode_layer_rows["post_task_creation"]["current_status"], "button_gated_allowed")
+        self.assertEqual(
+            mode_layer_rows["provider_model_execution_inside_task"]["current_status"],
+            "pending_real_call_ledger",
+        )
+        self.assertFalse(any(row["external_calls_triggered"] for row in mode_layer_rows.values()))
+        self.assertFalse(any(row["tushare_called"] for row in mode_layer_rows.values()))
+        self.assertFalse(any(row["deepseek_called"] for row in mode_layer_rows.values()))
         linkage_rows = {row["linkage_key"]: row for row in migration["tushare_deepseek_linkage_rows"]}
         self.assertEqual(
             set(linkage_rows),
@@ -243,6 +271,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(all(row["does_not_execute_trades"] for row in linkage_rows.values()))
         self.assertEqual(migration["call_ledger"][0]["api"], "local_migration_status_cache")
         self.assertEqual(migration["call_ledger"][0]["tushare_deepseek_linkage_row_count"], 7)
+        self.assertEqual(migration["call_ledger"][0]["tushare_deepseek_mode_layer_row_count"], 4)
         self.assertFalse(migration["call_ledger"][0]["external"])
         self.assertIn("GET /api/migration/status", migration["warnings"][0])
         self.assertTrue(migration["baseline_policy"]["use_as_planning_baseline"])
@@ -11863,7 +11892,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(migration["data"]["tushare_deepseek_linkage_review"]["provider_execution_implemented"])
         self.assertFalse(migration["data"]["tushare_deepseek_linkage_review"]["model_execution_implemented"])
         self.assertEqual(migration["data"]["tushare_deepseek_linkage_review"]["row_count"], 7)
+        self.assertEqual(migration["data"]["tushare_deepseek_linkage_review"]["mode_layer_row_count"], 4)
+        self.assertEqual(
+            migration["data"]["tushare_deepseek_linkage_review"]["mode_layer_model"],
+            "cache_render_startup -> post_task_creation -> provider_model_execution_inside_task -> production_promotion_evidence",
+        )
         self.assertEqual(migration["data"]["tushare_deepseek_linkage_review"]["blocking_row_count"], 0)
+        mode_layer_rows = {row["layer_key"]: row for row in migration["data"]["tushare_deepseek_mode_layer_rows"]}
+        self.assertEqual(mode_layer_rows["cache_render_startup"]["current_status"], "silent_confirmed")
+        self.assertEqual(mode_layer_rows["post_task_creation"]["current_status"], "button_gated_allowed")
+        self.assertEqual(
+            mode_layer_rows["provider_model_execution_inside_task"]["current_status"],
+            "pending_real_call_ledger",
+        )
+        self.assertFalse(any(row["external_calls_triggered"] for row in mode_layer_rows.values()))
+        self.assertFalse(any(row["tushare_called"] for row in mode_layer_rows.values()))
+        self.assertFalse(any(row["deepseek_called"] for row in mode_layer_rows.values()))
         linkage_rows = {row["linkage_key"]: row for row in migration["data"]["tushare_deepseek_linkage_rows"]}
         self.assertEqual(linkage_rows["cache_startup_render_boundary"]["status"], "offline_enforced")
         self.assertEqual(linkage_rows["live_light_post_task_creation"]["allowed_in_mode"], "live_light")
@@ -11882,6 +11926,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(migration["data"]["api_policy"]["does_not_execute_trades"])
         self.assertEqual(migration["call_ledger"][0]["api"], "local_migration_status_cache")
         self.assertEqual(migration["call_ledger"][0]["tushare_deepseek_linkage_row_count"], 7)
+        self.assertEqual(migration["call_ledger"][0]["tushare_deepseek_mode_layer_row_count"], 4)
         self.assertFalse(migration["call_ledger"][0]["external"])
         self.assertIn("GET /api/migration/status", migration["warnings"][0])
 

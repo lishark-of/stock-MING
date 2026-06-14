@@ -247,6 +247,120 @@ def _linkage_row(
     }
 
 
+def _mode_layer_row(
+    *,
+    layer_order: int,
+    layer_key: str,
+    layer: str,
+    mode_scope: str,
+    current_status: str,
+    allowed_action: str,
+    forbidden_actions: list[str],
+    required_evidence: list[str],
+    provider_model_execution_allowed: bool = False,
+    production_promotion_allowed: bool = False,
+) -> dict[str, Any]:
+    return {
+        "layer_order": layer_order,
+        "layer_key": layer_key,
+        "layer": layer,
+        "mode_scope": mode_scope,
+        "current_status": current_status,
+        "allowed_action": allowed_action,
+        "forbidden_actions": forbidden_actions,
+        "required_evidence": required_evidence,
+        "provider_model_execution_allowed": provider_model_execution_allowed,
+        "production_promotion_allowed": production_promotion_allowed,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "real_trading_connected": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def _build_tushare_deepseek_mode_layer_rows() -> list[dict[str, Any]]:
+    return [
+        _mode_layer_row(
+            layer_order=1,
+            layer_key="cache_render_startup",
+            layer="GET cache / FastAPI startup / initial React render",
+            mode_scope="cache_only/manual/live_light/live_full",
+            current_status="silent_confirmed",
+            allowed_action="read local cache and render existing rows",
+            forbidden_actions=[
+                "call Tushare from GET cache",
+                "call DeepSeek from GET cache",
+                "call GitHub from initial render",
+                "create provider/model task before cache render",
+                "mutate strategy action",
+            ],
+            required_evidence=["cache_get_no_provider_call", "react_render_no_provider_call", "call_ledger_external_false"],
+        ),
+        _mode_layer_row(
+            layer_order=2,
+            layer_key="post_task_creation",
+            layer="explicit POST task creation",
+            mode_scope="manual/live_light after opt-in and rate limit",
+            current_status="button_gated_allowed",
+            allowed_action="create a local task receipt or staged execution plan after explicit user/mode gate",
+            forbidden_actions=[
+                "direct provider/model call from React render",
+                "unbounded full-pool/deep-scan task on startup",
+                "GitHub probe in live_light default chain",
+                "trade/order submission",
+            ],
+            required_evidence=["task_id", "mode", "safe_payload", "rate_limit_or_session_dedupe", "call_ledger"],
+        ),
+        _mode_layer_row(
+            layer_order=3,
+            layer_key="provider_model_execution_inside_task",
+            layer="provider/model execution inside the task",
+            mode_scope="manual or explicitly approved live_light",
+            current_status="pending_real_call_ledger",
+            allowed_action="run scoped Tushare light APIs and optional DeepSeek pro explanation only inside approved task execution",
+            forbidden_actions=[
+                "mark dry-run as real Tushare rows",
+                "treat DeepSeek as data source",
+                "allow parse_failed output into packet",
+                "overwrite numeric fields, prices, holdings, operation_zones, or strategy action",
+            ],
+            required_evidence=[
+                "Tushare call_ledger api/provider/request_params_safe",
+                "row_count/data_date/local_fetched_at/call_status/error_message_safe",
+                "DeepSeek model_used/status/token_usage/parse_status/cache_hit_or_miss/input_hash/output_hash",
+                "six_field_sanitizer",
+            ],
+            provider_model_execution_allowed=True,
+        ),
+        _mode_layer_row(
+            layer_order=4,
+            layer_key="production_promotion_evidence",
+            layer="production promotion review",
+            mode_scope="manual review only",
+            current_status="blocked_until_real_provider_model_browser_redaction_evidence",
+            allowed_action="promote only after real provider/model ledgers, UI non-blocking proof, redaction review, and production review are complete",
+            forbidden_actions=[
+                "promote from scaffold/preflight/matrix/sanitizer/dry-run/local receipt",
+                "hide credential or ledger redaction gaps",
+                "retire fallback before provider/browser evidence",
+                "connect real trading",
+            ],
+            required_evidence=[
+                "real_tushare_call_ledger",
+                "deepseek_model_ledger_if_enabled",
+                "browser_nonblocking_evidence",
+                "ledger_redaction_review",
+                "production_promotion_review",
+            ],
+            production_promotion_allowed=False,
+        ),
+    ]
+
+
 def _build_tushare_deepseek_linkage_rows() -> list[dict[str, Any]]:
     return [
         _linkage_row(
@@ -308,7 +422,10 @@ def _build_tushare_deepseek_linkage_rows() -> list[dict[str, Any]]:
     ]
 
 
-def _build_tushare_deepseek_linkage_review(linkage_rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _build_tushare_deepseek_linkage_review(
+    linkage_rows: list[dict[str, Any]],
+    mode_layer_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
     blocking_rows = [
         row
         for row in linkage_rows
@@ -321,15 +438,23 @@ def _build_tushare_deepseek_linkage_review(linkage_rows: list[dict[str, Any]]) -
         "status": "linkage_contract_visible_provider_model_execution_pending",
         "schema_version": "command_center_3_tushare_deepseek_linkage_review.v1",
         "row_count": len(linkage_rows),
+        "mode_layer_row_count": len(mode_layer_rows),
+        "mode_layer_model": "cache_render_startup -> post_task_creation -> provider_model_execution_inside_task -> production_promotion_evidence",
+        "boundary_interpretation": "mode_layered_not_absolute_global_ban",
         "blocking_row_count": len(blocking_rows),
         "cache_get_calls_tushare": False,
         "cache_get_calls_deepseek": False,
         "react_render_calls_tushare": False,
         "react_render_calls_deepseek": False,
+        "cache_render_silent": True,
         "live_light_post_task_allowed": True,
+        "post_task_creation_button_gated": True,
+        "provider_model_execution_pending": True,
         "provider_execution_implemented": False,
         "model_execution_implemented": False,
+        "production_promotion_pending": True,
         "production_promotion_complete": False,
+        "real_trading_disconnected": True,
         "allowed_tushare_light_scope": ["trade_cal_if_needed", "daily", "daily_basic", "moneyflow"],
         "deepseek_allowed_after_data_ready": True,
         "deepseek_sanitizer_schema": [
@@ -376,7 +501,11 @@ def build_migration_status() -> dict[str, Any]:
     long_term_goal_rows = [dict(item) for item in LONG_TERM_GOAL_PROGRESS]
     long_term_goal_summary = _build_long_term_goal_summary(long_term_goal_rows)
     tushare_deepseek_linkage_rows = _build_tushare_deepseek_linkage_rows()
-    tushare_deepseek_linkage_review = _build_tushare_deepseek_linkage_review(tushare_deepseek_linkage_rows)
+    tushare_deepseek_mode_layer_rows = _build_tushare_deepseek_mode_layer_rows()
+    tushare_deepseek_linkage_review = _build_tushare_deepseek_linkage_review(
+        tushare_deepseek_linkage_rows,
+        tushare_deepseek_mode_layer_rows,
+    )
     return {
         "packet_key": "command_center_3_migration_status",
         "schema_version": "command_center_3_migration_status.v2",
@@ -388,6 +517,7 @@ def build_migration_status() -> dict[str, Any]:
         "long_term_goal_rows": long_term_goal_rows,
         "tushare_deepseek_linkage_review": tushare_deepseek_linkage_review,
         "tushare_deepseek_linkage_rows": tushare_deepseek_linkage_rows,
+        "tushare_deepseek_mode_layer_rows": tushare_deepseek_mode_layer_rows,
         "target_stack": list(TARGET_STACK),
         "principles": list(MIGRATION_PRINCIPLES),
         "baseline_policy": {
@@ -412,8 +542,12 @@ def build_migration_status() -> dict[str, Any]:
                 "api": "local_migration_status_cache",
                 "endpoint": "GET /api/migration/status",
                 "source_type": "user_provided_long_term_reference_baseline",
-                "row_count": len(MIGRATION_PROGRESS_BASELINE) + len(long_term_goal_rows) + len(tushare_deepseek_linkage_rows),
+                "row_count": len(MIGRATION_PROGRESS_BASELINE)
+                + len(long_term_goal_rows)
+                + len(tushare_deepseek_linkage_rows)
+                + len(tushare_deepseek_mode_layer_rows),
                 "tushare_deepseek_linkage_row_count": len(tushare_deepseek_linkage_rows),
+                "tushare_deepseek_mode_layer_row_count": len(tushare_deepseek_mode_layer_rows),
                 "local_fetched_at": loaded_at,
                 "call_status": "cache_read",
                 "external": False,
@@ -428,7 +562,7 @@ def build_migration_status() -> dict[str, Any]:
         "warnings": [
             "GET /api/migration/status 只读展示用户提供的长期迁移基线；不会重新估算、外联或触发任务。",
             "14 个长期目标严格关闭数仍为 0/14；scaffold / preflight / mock / matrix / sanitizer / dry-run / local receipt 不能作为生产完成证据。",
-            "Tushare / DeepSeek 联动目前展示为本地合同和 preflight；真实 provider/model execution 与 production promotion 仍需后续显式验收。",
+            "Tushare / DeepSeek 联动按四层审查：cache/render 安静、POST task 门控、task 内真实 provider/model execution、production promotion ledger；真实执行与生产提升仍需后续显式验收。",
             "进度表用于规划判断，不代表自动完成迁移；后续阶段仍需逐项实现和测试。",
         ],
     }

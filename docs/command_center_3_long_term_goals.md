@@ -1478,7 +1478,7 @@ Add Command Center 3 motion clarity system
 - `cache_only` 是默认安全模式；cache API、FastAPI 启动、React 初始 render 不自动外联。
 - GET cache API 不直接调用 Tushare / DeepSeek / GitHub。
 - React render 不直接调用 Tushare / DeepSeek / GitHub。
-- 评审 Tushare / DeepSeek 联动时必须分清四层：初始 render 是否安静、是否创建 POST task、task 内是否真实调用 provider/model、是否具备生产验收 ledger。
+- 评审 Tushare / DeepSeek 联动时必须分清四层：初始 render 是否安静、是否创建 POST task、task 内是否真实调用 provider/model、是否具备生产验收 ledger；`GET /api/migration/status` 会用 `tushare_deepseek_mode_layer_rows` 固定这四层，而不是用一句绝对禁止或全部允许概括。
 - POST task / worker / local fallback 才可能外部调用，且必须有模式、按钮或显式 payload 门控。
 - `manual` 模式只允许用户点击按钮或提交显式任务后外联。
 - `live_light` 模式可以在初始 cache render 后创建一次限频后台 bootstrap task，用于轻量 Tushare 刷新和可选 DeepSeek pro 解释；这不是 render 直接外联。
