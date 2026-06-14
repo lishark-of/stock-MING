@@ -7888,6 +7888,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("activation_review_task_is_button_gated_no_process_start", script)
         self.assertIn("worker_production_evidence_plan_receipt.v1", script)
         self.assertIn("production_evidence_plan_is_scope_ticket_only", script)
+        self.assertIn("worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending", script)
+        self.assertIn("worker_runtime_evidence_stage_scope_rows", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -7955,6 +7957,42 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(payload["observed"]["scheduler_auto_task_count"], 0)
         self.assertEqual(payload["observed"]["cache_get_external_call_count"], 0)
+        required_stages = [
+            "celery_process",
+            "redis_broker",
+            "cross_process_retry_cancel_lock_dedupe",
+            "append_only_worker_logs",
+            "scheduler_default_off_runtime",
+            "provider_model_no_autoschedule_boundary",
+            "no_trade_no_action_boundary",
+        ]
+        self.assertEqual(payload["observed"]["worker_runtime_evidence_stage_scope_count"], len(required_stages))
+        self.assertEqual(payload["observed"]["worker_runtime_evidence_stage_scope_keys"], required_stages)
+        self.assertEqual(payload["observed"]["worker_runtime_evidence_stage_scope_pending_count"], len(required_stages))
+        stage_rows = {row["stage_key"]: row for row in payload["worker_runtime_evidence_stage_scope_rows"]}
+        self.assertEqual(set(stage_rows), set(required_stages))
+        for row in stage_rows.values():
+            self.assertEqual(row["scope"], "worker_runtime_evidence_stage_scope_manifest")
+            self.assertTrue(row["selected_by_evidence_plan_scope"])
+            self.assertTrue(row["required_before_production"])
+            self.assertFalse(row["worker_started"])
+            self.assertFalse(row["redis_pinged"])
+            self.assertFalse(row["scheduler_started"])
+            self.assertFalse(row["task_dispatched"])
+            self.assertFalse(row["provider_model_task_dispatched"])
+            self.assertFalse(row["healthcheck_executed"])
+            self.assertFalse(row["task_log_persistence_verified"])
+            self.assertFalse(row["append_only_worker_log_verified"])
+            self.assertFalse(row["cross_process_task_control_verified"])
+            self.assertFalse(row["activation_ready"])
+            self.assertFalse(row["production_worker_complete"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called_by_contract"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("worker_cache_is_diagnostic_only", criteria)
         self.assertIn("runtime_does_not_start_processes", criteria)
@@ -7965,6 +8003,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("activation_review_keeps_manual_activation_pending", criteria)
         self.assertIn("activation_review_task_is_button_gated_no_process_start", criteria)
         self.assertIn("production_evidence_plan_is_scope_ticket_only", criteria)
+        self.assertIn("worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("production_activation_receipt_keeps_worker_blocked", criteria)
 
     def test_tauri_desktop_contract_script_is_local_push_gate_guard(self):

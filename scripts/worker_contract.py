@@ -115,6 +115,24 @@ REQUIRED_READINESS_RECEIPT_CRITERIA = {
     "manual_activation_review_pending",
     "production_completion_evidence_ticket",
 }
+REQUIRED_RUNTIME_EVIDENCE_STAGES = (
+    "celery_process",
+    "redis_broker",
+    "cross_process_retry_cancel_lock_dedupe",
+    "append_only_worker_logs",
+    "scheduler_default_off_runtime",
+    "provider_model_no_autoschedule_boundary",
+    "no_trade_no_action_boundary",
+)
+RUNTIME_EVIDENCE_STAGE_LABELS = {
+    "celery_process": "Celery process evidence",
+    "redis_broker": "Redis broker evidence",
+    "cross_process_retry_cancel_lock_dedupe": "Cross-process controls evidence",
+    "append_only_worker_logs": "Append-only worker log evidence",
+    "scheduler_default_off_runtime": "Scheduler default-off runtime evidence",
+    "provider_model_no_autoschedule_boundary": "Provider/model no-autoschedule boundary",
+    "no_trade_no_action_boundary": "No-trade/no-action boundary",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -166,6 +184,46 @@ def _read_script(path: str) -> str:
         return ""
 
 
+def _worker_runtime_evidence_stage_scope_rows(evidence_scope: list[str]) -> list[dict[str, Any]]:
+    selected = set(evidence_scope)
+    return [
+        {
+            "stage_key": stage_key,
+            "stage_label": RUNTIME_EVIDENCE_STAGE_LABELS.get(stage_key, stage_key),
+            "scope": "worker_runtime_evidence_stage_scope_manifest",
+            "current_status": "local_evidence_plan_scope_ticket_only",
+            "target_status": "manual_runtime_qa_evidence_required",
+            "selected_by_evidence_plan_scope": stage_key in selected,
+            "required_before_production": True,
+            "worker_started": False,
+            "redis_pinged": False,
+            "scheduler_started": False,
+            "task_dispatched": False,
+            "provider_model_task_dispatched": False,
+            "healthcheck_executed": False,
+            "task_log_persistence_verified": False,
+            "append_only_worker_log_verified": False,
+            "cross_process_task_control_verified": False,
+            "activation_ready": False,
+            "production_worker_complete": False,
+            "external_calls_triggered": False,
+            "tushare_called_by_contract": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "required_real_evidence": [
+                "explicit manual runtime QA evidence",
+                "safe runtime task log rows",
+                "redacted worker/broker evidence",
+                "production promotion review",
+            ],
+        }
+        for stage_key in REQUIRED_RUNTIME_EVIDENCE_STAGES
+    ]
+
+
 def build_contract() -> dict[str, Any]:
     packet = worker_service.read_worker_runtime_cache()
     catalog = task_service.build_task_catalog()
@@ -210,6 +268,11 @@ def build_contract() -> dict[str, Any]:
     task_persistence = _dict(packet.get("task_persistence"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/worker_contract.py")
+    production_evidence_scope = [
+        str(item)
+        for item in _list(_dict(production_evidence_plan.get("scope_ticket_payload")).get("evidence_scope"))
+    ]
+    worker_runtime_evidence_stage_scope_rows = _worker_runtime_evidence_stage_scope_rows(production_evidence_scope)
 
     rows = [
         _row(
@@ -552,6 +615,38 @@ def build_contract() -> dict[str, Any]:
             "Worker production evidence plan may create a later runtime-QA scope ticket, but it must not start processes, ping Redis, dispatch tasks, call providers/models, execute trades, or claim production worker completion.",
         ),
         _row(
+            "worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending",
+            [row.get("stage_key") for row in worker_runtime_evidence_stage_scope_rows]
+            == list(REQUIRED_RUNTIME_EVIDENCE_STAGES)
+            and production_evidence_scope == list(REQUIRED_RUNTIME_EVIDENCE_STAGES)
+            and all(
+                isinstance(row, dict)
+                and row.get("scope") == "worker_runtime_evidence_stage_scope_manifest"
+                and row.get("selected_by_evidence_plan_scope") is True
+                and row.get("required_before_production") is True
+                and row.get("worker_started") is False
+                and row.get("redis_pinged") is False
+                and row.get("scheduler_started") is False
+                and row.get("task_dispatched") is False
+                and row.get("provider_model_task_dispatched") is False
+                and row.get("healthcheck_executed") is False
+                and row.get("task_log_persistence_verified") is False
+                and row.get("append_only_worker_log_verified") is False
+                and row.get("cross_process_task_control_verified") is False
+                and row.get("activation_ready") is False
+                and row.get("production_worker_complete") is False
+                and row.get("external_calls_triggered") is False
+                and row.get("tushare_called_by_contract") is False
+                and row.get("deepseek_called") is False
+                and row.get("github_called") is False
+                and row.get("does_not_execute_trades") is True
+                and row.get("does_not_modify_strategy_action") is True
+                and row.get("contains_secret") is False
+                for row in worker_runtime_evidence_stage_scope_rows
+            ),
+            "Worker runtime evidence stages must be visible as a pending local scope manifest without process start, Redis ping, scheduler start, task dispatch, provider/model calls, trades, or production completion.",
+        ),
+        _row(
             "production_activation_receipt_keeps_worker_blocked",
             activation_receipt.get("schema_version") == "worker_production_activation_receipt.v1"
             and activation_receipt.get("status") == "worker_activation_receipt_ready_production_blocked"
@@ -626,6 +721,7 @@ def build_contract() -> dict[str, Any]:
             and "production_activation_receipt_keeps_worker_blocked" in this_script
             and "activation_review_task_is_button_gated_no_process_start" in this_script
             and "production_evidence_plan_is_scope_ticket_only" in this_script
+            and "worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending" in this_script
             and "production_worker_complete" in this_script
             and "healthcheck_executed" in this_script
             and "activation_ready" in this_script
@@ -714,9 +810,19 @@ def build_contract() -> dict[str, Any]:
             "worker_production_evidence_plan_production_blocker_count": production_evidence_plan.get(
                 "production_blocker_count"
             ),
+            "worker_runtime_evidence_stage_scope_count": len(worker_runtime_evidence_stage_scope_rows),
+            "worker_runtime_evidence_stage_scope_keys": [
+                row.get("stage_key") for row in worker_runtime_evidence_stage_scope_rows
+            ],
+            "worker_runtime_evidence_stage_scope_pending_count": sum(
+                1
+                for row in worker_runtime_evidence_stage_scope_rows
+                if row.get("production_worker_complete") is False
+            ),
             "scheduler_auto_task_count": dispatch_summary.get("scheduler_auto_task_count"),
             "cache_get_external_call_count": dispatch_summary.get("cache_get_external_call_count"),
         },
+        "worker_runtime_evidence_stage_scope_rows": worker_runtime_evidence_stage_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. It does not run the synthetic healthcheck. Celery worker startup, Redis broker reachability, cross-process task controls, scheduler production config, and production worker activation remain pending.",
     }
