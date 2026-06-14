@@ -2005,6 +2005,91 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "local_storage_physical_migration_activation_receipt",
         )
         self.assert_local_ledger_boundary(activation_receipt["call_ledger"][0])
+        execution_recipe = overview["storage_physical_execution_recipe"]
+        self.assertEqual(
+            execution_recipe["schema_version"],
+            "command_center_3_storage_physical_execution_recipe.v1",
+        )
+        self.assertEqual(
+            execution_recipe["scope"],
+            "local_storage_physical_execution_recipe_no_write_no_provider",
+        )
+        self.assertEqual(
+            execution_recipe["status"],
+            "storage_physical_execution_recipe_ready_execution_pending",
+        )
+        self.assertTrue(execution_recipe["local_recipe_ready"])
+        self.assertFalse(execution_recipe["execution_done"])
+        self.assertFalse(execution_recipe["physical_execution_done"])
+        self.assertFalse(execution_recipe["production_storage_complete"])
+        self.assertTrue(execution_recipe["requires_explicit_post_sequence"])
+        self.assertTrue(execution_recipe["requires_manual_review"])
+        self.assertEqual(execution_recipe["canonical_dataset_count"], 6)
+        self.assertIn("schema validation acceptance packet", execution_recipe["required_evidence"])
+        self.assertIn("confirm-gated dataset version manifest write receipt", execution_recipe["required_evidence"])
+        self.assertIn("DuckDB post-migration query contract", execution_recipe["required_evidence"])
+        self.assertIn("treat_recipe_as_physical_execution_evidence", execution_recipe["not_allowed_next_steps"])
+        self.assertIn("write_parquet_from_get_storage_cache", execution_recipe["not_allowed_next_steps"])
+        self.assertIn("delete_artifacts_from_dry_run", execution_recipe["not_allowed_next_steps"])
+        self.assertFalse(execution_recipe["writes_parquet"])
+        self.assertFalse(execution_recipe["writes_manifest"])
+        self.assertFalse(execution_recipe["reads_row_payloads"])
+        self.assertFalse(execution_recipe["refreshes_providers"])
+        self.assertFalse(execution_recipe["deletes_artifacts"])
+        self.assertFalse(execution_recipe["external_calls_triggered"])
+        self.assertFalse(execution_recipe["tushare_called"])
+        self.assertFalse(execution_recipe["deepseek_called"])
+        self.assertFalse(execution_recipe["github_called"])
+        self.assertTrue(execution_recipe["does_not_execute_trades"])
+        self.assertTrue(execution_recipe["does_not_modify_strategy_action"])
+        self.assertFalse(execution_recipe["contains_secret"])
+        self.assertEqual(overview["storage_physical_execution_recipe_status"], execution_recipe["status"])
+        self.assertTrue(overview["storage_physical_execution_recipe_ready"])
+        self.assertEqual(
+            overview["storage_physical_execution_pending_phase_count"],
+            execution_recipe["pending_phase_count"],
+        )
+        required_execution_phases = [
+            "physical_schema_validation_acceptance",
+            "dataset_version_manifest_write_validate",
+            "schema_migration_execution_plan",
+            "partition_migration_execution_plan",
+            "physical_compaction_execution_plan",
+            "cache_ttl_refresh_execution_plan",
+            "artifact_cleanup_delete_review",
+            "duckdb_post_migration_validation",
+            "production_promotion_review",
+        ]
+        self.assertEqual(execution_recipe["allowed_execution_sequence"], required_execution_phases)
+        self.assertEqual(execution_recipe["phase_keys"], required_execution_phases)
+        self.assertEqual(execution_recipe["pending_phases"], required_execution_phases)
+        execution_rows = {row["phase"]: row for row in overview["storage_physical_execution_recipe_rows"]}
+        self.assertEqual(set(execution_rows), set(required_execution_phases))
+        self.assertEqual(execution_rows["physical_schema_validation_acceptance"]["status"], "ready_for_explicit_acceptance_review")
+        self.assertEqual(
+            execution_rows["dataset_version_manifest_write_validate"]["status"],
+            "ready_for_confirm_gated_manifest_write_then_validate",
+        )
+        self.assertEqual(execution_rows["production_promotion_review"]["status"], "blocked_until_all_physical_evidence_passes")
+        for row in execution_rows.values():
+            self.assertTrue(row["required_before_production"])
+            self.assertFalse(row["execution_done"])
+            self.assertFalse(row["production_ready"])
+            self.assertTrue(row["production_blocker"])
+            self.assertFalse(row["writes_parquet"])
+            self.assertFalse(row["writes_manifest"])
+            self.assertFalse(row["reads_row_payloads"])
+            self.assertFalse(row["refreshes_providers"])
+            self.assertFalse(row["deletes_artifacts"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
+        self.assertEqual(execution_recipe["call_ledger"][0]["api"], "local_storage_physical_execution_recipe")
+        self.assert_local_ledger_boundary(execution_recipe["call_ledger"][0])
         readiness_by_component = {row["component"]: row for row in overview["production_readiness"]["rows"]}
         self.assertIn("sqlite_meta", readiness_by_component)
         self.assertIn("schema_migration_preflight", readiness_by_component)
@@ -8254,7 +8339,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("production_storage_complete", script)
         self.assertIn("dry_runs_are_not_production_completion", script)
         self.assertIn("command_center_3_storage_physical_migration_activation_receipt.v1", script)
+        self.assertIn("command_center_3_storage_physical_execution_recipe.v1", script)
         self.assertIn("physical_migration_activation_receipt_keeps_execution_pending", script)
+        self.assertIn("physical_execution_recipe_is_local_pending", script)
         self.assertIn("physical_migration_stage_scope_manifest_is_complete_and_pending", script)
         self.assertIn("physical_migration_stage_scope_rows", script)
         self.assertIn("schema_validation_dry_run_writes_no_parquet", script)
@@ -8290,6 +8377,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["storage_physical_migration_activation_status"],
             "storage_physical_migration_activation_receipt_ready_execution_pending",
         )
+        self.assertTrue(payload["storage_physical_execution_recipe_ready"])
+        self.assertEqual(
+            payload["storage_physical_execution_recipe_status"],
+            "storage_physical_execution_recipe_ready_execution_pending",
+        )
         self.assertFalse(payload["partition_migration_executed"])
         self.assertFalse(payload["physical_compaction_executed"])
         self.assertFalse(payload["cache_ttl_refresh_executed"])
@@ -8312,6 +8404,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "storage_physical_migration_activation_receipt_ready_execution_pending",
         )
         self.assertTrue(payload["observed"]["storage_physical_migration_activation_ready"])
+        self.assertEqual(
+            payload["observed"]["storage_physical_execution_recipe_status"],
+            "storage_physical_execution_recipe_ready_execution_pending",
+        )
+        self.assertTrue(payload["observed"]["storage_physical_execution_recipe_ready"])
         self.assertEqual(payload["observed"]["schema_migration_preflight_status"], "preflight_ready")
         self.assertEqual(payload["observed"]["dataset_version_policy_status"], "policy_ready")
         self.assertEqual(payload["observed"]["schema_validation_status"], "dry_run_completed")
@@ -8328,6 +8425,54 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "artifact_cleanup_review",
             "production_promotion",
         ]
+        required_execution_phases = [
+            "physical_schema_validation_acceptance",
+            "dataset_version_manifest_write_validate",
+            "schema_migration_execution_plan",
+            "partition_migration_execution_plan",
+            "physical_compaction_execution_plan",
+            "cache_ttl_refresh_execution_plan",
+            "artifact_cleanup_delete_review",
+            "duckdb_post_migration_validation",
+            "production_promotion_review",
+        ]
+        self.assertEqual(payload["observed"]["storage_physical_execution_phase_count"], len(required_execution_phases))
+        self.assertEqual(payload["observed"]["storage_physical_execution_phase_keys"], required_execution_phases)
+        self.assertEqual(
+            payload["observed"]["storage_physical_execution_pending_phase_count"],
+            len(required_execution_phases),
+        )
+        execution_rows = {row["phase"]: row for row in payload["storage_physical_execution_recipe_rows"]}
+        self.assertEqual(set(execution_rows), set(required_execution_phases))
+        self.assertEqual(
+            execution_rows["physical_schema_validation_acceptance"]["status"],
+            "ready_for_explicit_acceptance_review",
+        )
+        self.assertEqual(
+            execution_rows["dataset_version_manifest_write_validate"]["status"],
+            "ready_for_confirm_gated_manifest_write_then_validate",
+        )
+        self.assertEqual(
+            execution_rows["production_promotion_review"]["status"],
+            "blocked_until_all_physical_evidence_passes",
+        )
+        for row in execution_rows.values():
+            self.assertTrue(row["required_before_production"])
+            self.assertFalse(row["execution_done"])
+            self.assertFalse(row["production_ready"])
+            self.assertTrue(row["production_blocker"])
+            self.assertFalse(row["writes_parquet"])
+            self.assertFalse(row["writes_manifest"])
+            self.assertFalse(row["reads_row_payloads"])
+            self.assertFalse(row["refreshes_providers"])
+            self.assertFalse(row["deletes_artifacts"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
         self.assertEqual(payload["observed"]["physical_migration_stage_scope_count"], len(required_stages))
         self.assertEqual(payload["observed"]["physical_migration_stage_scope_keys"], required_stages)
         self.assertEqual(payload["observed"]["physical_migration_stage_scope_pending_count"], len(required_stages))
@@ -8358,6 +8503,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("storage_overview_cache_is_read_only", criteria)
         self.assertIn("production_blocker_audit_keeps_storage_blocked", criteria)
         self.assertIn("physical_migration_activation_receipt_keeps_execution_pending", criteria)
+        self.assertIn("physical_execution_recipe_is_local_pending", criteria)
         self.assertIn("physical_migration_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("dataset_version_policy_is_not_manifest_validation", criteria)
         self.assertIn("dataset_version_manifest_review_writes_no_manifest", criteria)

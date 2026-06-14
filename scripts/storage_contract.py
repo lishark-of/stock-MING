@@ -55,6 +55,17 @@ REQUIRED_PHYSICAL_MIGRATION_STAGES = (
     "artifact_cleanup_review",
     "production_promotion",
 )
+REQUIRED_STORAGE_PHYSICAL_EXECUTION_PHASES = (
+    "physical_schema_validation_acceptance",
+    "dataset_version_manifest_write_validate",
+    "schema_migration_execution_plan",
+    "partition_migration_execution_plan",
+    "physical_compaction_execution_plan",
+    "cache_ttl_refresh_execution_plan",
+    "artifact_cleanup_delete_review",
+    "duckdb_post_migration_validation",
+    "production_promotion_review",
+)
 PHYSICAL_MIGRATION_STAGE_LABELS = {
     "physical_schema_validation": "Physical schema validation",
     "schema_migration": "Schema migration",
@@ -196,6 +207,12 @@ def build_contract() -> dict[str, Any]:
     activation_criteria = {
         str(row.get("criterion") or "")
         for row in _list(overview.get("storage_physical_migration_activation_rows"))
+        if isinstance(row, dict)
+    }
+    physical_execution_recipe = _dict(overview.get("storage_physical_execution_recipe"))
+    physical_execution_rows = {
+        str(row.get("phase") or ""): row
+        for row in _list(overview.get("storage_physical_execution_recipe_rows"))
         if isinstance(row, dict)
     }
     blocker_criteria = {
@@ -348,6 +365,66 @@ def build_contract() -> dict[str, Any]:
                 "no_trade_or_action_boundary",
             }.issubset(activation_criteria),
             "Storage physical migration activation receipt must expose the next explicit execution prerequisites while keeping all physical writes, provider refreshes, deletes, trades, and production completion pending.",
+        ),
+        _row(
+            "physical_execution_recipe_is_local_pending",
+            physical_execution_recipe.get("schema_version") == "command_center_3_storage_physical_execution_recipe.v1"
+            and physical_execution_recipe.get("scope") == "local_storage_physical_execution_recipe_no_write_no_provider"
+            and physical_execution_recipe.get("status") == "storage_physical_execution_recipe_ready_execution_pending"
+            and physical_execution_recipe.get("local_recipe_ready") is True
+            and physical_execution_recipe.get("execution_done") is False
+            and physical_execution_recipe.get("physical_execution_done") is False
+            and physical_execution_recipe.get("production_storage_complete") is False
+            and physical_execution_recipe.get("requires_explicit_post_sequence") is True
+            and physical_execution_recipe.get("requires_manual_review") is True
+            and tuple(physical_execution_recipe.get("allowed_execution_sequence") or ())
+            == REQUIRED_STORAGE_PHYSICAL_EXECUTION_PHASES
+            and tuple(physical_execution_recipe.get("phase_keys") or ()) == REQUIRED_STORAGE_PHYSICAL_EXECUTION_PHASES
+            and set(physical_execution_recipe.get("pending_phases") or []) == set(REQUIRED_STORAGE_PHYSICAL_EXECUTION_PHASES)
+            and int(physical_execution_recipe.get("pending_phase_count") or 0)
+            == len(REQUIRED_STORAGE_PHYSICAL_EXECUTION_PHASES)
+            and int(physical_execution_recipe.get("phase_count") or 0) == len(REQUIRED_STORAGE_PHYSICAL_EXECUTION_PHASES)
+            and set(physical_execution_rows) == set(REQUIRED_STORAGE_PHYSICAL_EXECUTION_PHASES)
+            and {
+                "schema validation acceptance packet",
+                "confirm-gated dataset version manifest write receipt",
+                "manifest validation receipt",
+                "DuckDB post-migration query contract",
+                "production promotion review",
+            }.issubset(set(physical_execution_recipe.get("required_evidence") or []))
+            and {
+                "treat_recipe_as_physical_execution_evidence",
+                "write_parquet_from_get_storage_cache",
+                "refresh_providers_from_get_storage_cache",
+                "delete_artifacts_from_dry_run",
+                "mark_production_storage_complete_from_preflight_or_dry_run",
+            }.issubset(set(physical_execution_recipe.get("not_allowed_next_steps") or []))
+            and physical_execution_recipe.get("writes_parquet") is False
+            and physical_execution_recipe.get("writes_manifest") is False
+            and physical_execution_recipe.get("reads_row_payloads") is False
+            and physical_execution_recipe.get("refreshes_providers") is False
+            and physical_execution_recipe.get("deletes_artifacts") is False
+            and _flag_false(physical_execution_recipe, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and physical_execution_recipe.get("does_not_execute_trades") is True
+            and physical_execution_recipe.get("does_not_modify_strategy_action") is True
+            and physical_execution_recipe.get("contains_secret") is False
+            and all(row.get("required_before_production") is True for row in physical_execution_rows.values())
+            and all(row.get("execution_done") is False for row in physical_execution_rows.values())
+            and all(row.get("production_ready") is False for row in physical_execution_rows.values())
+            and all(row.get("production_blocker") is True for row in physical_execution_rows.values())
+            and all(row.get("writes_parquet") is False for row in physical_execution_rows.values())
+            and all(row.get("writes_manifest") is False for row in physical_execution_rows.values())
+            and all(row.get("reads_row_payloads") is False for row in physical_execution_rows.values())
+            and all(row.get("refreshes_providers") is False for row in physical_execution_rows.values())
+            and all(row.get("deletes_artifacts") is False for row in physical_execution_rows.values())
+            and all(row.get("external_calls_triggered") is False for row in physical_execution_rows.values())
+            and all(row.get("tushare_called") is False for row in physical_execution_rows.values())
+            and all(row.get("deepseek_called") is False for row in physical_execution_rows.values())
+            and all(row.get("github_called") is False for row in physical_execution_rows.values())
+            and all(row.get("does_not_execute_trades") is True for row in physical_execution_rows.values())
+            and all(row.get("does_not_modify_strategy_action") is True for row in physical_execution_rows.values())
+            and all(row.get("contains_secret") is False for row in physical_execution_rows.values()),
+            "Physical execution recipe must sequence LTG-05 production work while staying local-only, no-write, no-provider, no-delete, no-trade, and pending.",
         ),
         _row(
             "physical_migration_stage_scope_manifest_is_complete_and_pending",
@@ -658,7 +735,9 @@ def build_contract() -> dict[str, Any]:
             "command_center_3_storage_contract.v1" in this_script
             and "local_storage_contract_no_physical_migration" in this_script
             and "command_center_3_storage_physical_migration_activation_receipt.v1" in this_script
+            and "command_center_3_storage_physical_execution_recipe.v1" in this_script
             and "physical_migration_activation_receipt_keeps_execution_pending" in this_script
+            and "physical_execution_recipe_is_local_pending" in this_script
             and "physical_migration_stage_scope_manifest_is_complete_and_pending" in this_script
             and "production_storage_complete" in this_script
             and "dry_runs_are_not_production_completion" in this_script
@@ -694,6 +773,8 @@ def build_contract() -> dict[str, Any]:
             activation_receipt.get("local_activation_receipt_ready")
         ),
         "storage_physical_migration_activation_status": activation_receipt.get("status"),
+        "storage_physical_execution_recipe_ready": bool(physical_execution_recipe.get("local_recipe_ready")),
+        "storage_physical_execution_recipe_status": physical_execution_recipe.get("status"),
         "partition_migration_executed": False,
         "physical_compaction_executed": False,
         "cache_ttl_refresh_executed": False,
@@ -720,6 +801,15 @@ def build_contract() -> dict[str, Any]:
             "storage_production_readiness_receipt_ready": readiness_receipt.get("local_receipt_ready"),
             "storage_physical_migration_activation_status": activation_receipt.get("status"),
             "storage_physical_migration_activation_ready": activation_receipt.get("local_activation_receipt_ready"),
+            "storage_physical_execution_recipe_status": physical_execution_recipe.get("status"),
+            "storage_physical_execution_recipe_ready": physical_execution_recipe.get("local_recipe_ready"),
+            "storage_physical_execution_phase_count": len(physical_execution_rows),
+            "storage_physical_execution_phase_keys": [
+                row.get("phase") for row in physical_execution_rows.values()
+            ],
+            "storage_physical_execution_pending_phase_count": sum(
+                1 for row in physical_execution_rows.values() if row.get("execution_done") is False
+            ),
             "schema_migration_preflight_status": schema_preflight.get("status"),
             "dataset_version_policy_status": dataset_version_policy.get("status"),
             "dataset_version_manifest_evidence_status": dataset_version_manifest_evidence.get("status"),
@@ -755,6 +845,7 @@ def build_contract() -> dict[str, Any]:
                 if row.get("production_storage_complete") is False
             ),
         },
+        "storage_physical_execution_recipe_rows": list(physical_execution_rows.values()),
         "physical_migration_stage_scope_rows": physical_migration_stage_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Physical schema validation, schema migration, dataset version manifest validation, partition migration, physical compaction, TTL refresh execution, and delete cleanup remain pending.",

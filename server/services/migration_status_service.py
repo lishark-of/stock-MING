@@ -64,9 +64,9 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "Storage / DuckDB / Parquet 生产化",
         "completion_bucket": "productionization_required",
         "completion_estimate": "50%-60%",
-        "current_state": "schema/version preflight, manifest writer/validator, DuckDB read API, filters, cursor pagination, and dry-runs exist.",
-        "not_complete_because": "physical schema migration, partition migration, compaction, TTL refresh execution, and cleanup execution remain pending.",
-        "next_step": "Promote physical migration tasks one at a time with explicit review and no data artifacts in git.",
+        "current_state": "schema/version preflight, manifest writer/validator, DuckDB read API, filters, cursor pagination, dry-runs, physical activation receipt, and physical execution recipe exist.",
+        "not_complete_because": "physical schema validation evidence, schema migration, partition migration, compaction, TTL refresh execution, cleanup execution, and production promotion remain pending.",
+        "next_step": "Run the physical execution recipe one phase at a time with explicit review, no GET writes, no provider refresh from cache, and no data artifacts in git.",
         "production_complete": False,
     },
     {
@@ -191,7 +191,13 @@ LTG_NEXT_EVIDENCE_REQUIRED = {
     "LTG-02": ["provider target samples", "full-interface selection", "failure-mode evidence", "storage promotion"],
     "LTG-03": ["provider small-pool samples", "rolling metrics", "cost/neutralization validation", "promotion review"],
     "LTG-04": ["worker batch execution", "rank/zscore", "neutralization", "full-pool validation"],
-    "LTG-05": ["physical schema validation", "partition migration", "compaction", "TTL cleanup evidence"],
+    "LTG-05": [
+        "physical schema validation",
+        "manifest validation evidence",
+        "schema/partition migration",
+        "compaction",
+        "TTL cleanup evidence",
+    ],
     "LTG-06": ["Celery/Redis process evidence", "broker healthcheck", "cross-process control", "durable task logs"],
     "LTG-07": ["larger provider benchmark", "response_format enforcement", "retry/repair evidence", "cost budget"],
     "LTG-08": [
