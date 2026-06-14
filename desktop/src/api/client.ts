@@ -511,3 +511,10 @@ export function runWorkerSyntheticHealthcheck(payload: Record<string, unknown> =
     body: JSON.stringify(payload)
   });
 }
+
+export function runWorkerActivationReview(payload: Record<string, unknown> = {}) {
+  return request<Record<string, unknown>>("/api/worker/activation-review", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}

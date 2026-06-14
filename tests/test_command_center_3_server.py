@@ -7715,6 +7715,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("activation_review_keeps_manual_activation_pending", script)
         self.assertIn("worker_production_activation_receipt.v1", script)
         self.assertIn("production_activation_receipt_keeps_worker_blocked", script)
+        self.assertIn("worker_activation_review_task_receipt.v1", script)
+        self.assertIn("activation_review_task_is_button_gated_no_process_start", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -7740,6 +7742,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["healthcheck_task_dispatched"])
         self.assertFalse(payload["activation_ready"])
         self.assertTrue(payload["worker_production_activation_receipt_ready"])
+        self.assertFalse(payload["worker_activation_review_task_ready"])
+        self.assertEqual(payload["worker_activation_review_task_status"], "worker_activation_review_task_pending")
         self.assertEqual(
             payload["worker_production_activation_receipt_status"],
             "worker_activation_receipt_ready_production_blocked",
@@ -7758,6 +7762,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed"]["production_blocker_status"], "production_worker_blocked")
         self.assertEqual(payload["observed"]["healthcheck_status"], "worker_healthcheck_qa_contract_ready_execution_pending")
         self.assertEqual(payload["observed"]["activation_review_status"], "worker_activation_review_ready_activation_pending")
+        self.assertEqual(payload["observed"]["worker_activation_review_task_status"], "worker_activation_review_task_pending")
         self.assertEqual(
             payload["observed"]["worker_production_activation_receipt_status"],
             "worker_activation_receipt_ready_production_blocked",
@@ -7776,6 +7781,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("production_blocker_audit_keeps_worker_blocked", criteria)
         self.assertIn("healthcheck_contract_is_execution_pending", criteria)
         self.assertIn("activation_review_keeps_manual_activation_pending", criteria)
+        self.assertIn("activation_review_task_is_button_gated_no_process_start", criteria)
         self.assertIn("production_activation_receipt_keeps_worker_blocked", criteria)
 
     def test_tauri_desktop_contract_script_is_local_push_gate_guard(self):
@@ -8342,7 +8348,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 36)
+        self.assertEqual(catalog["task_count"], 37)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -8361,7 +8367,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 36)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 37)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -8372,8 +8378,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 38)
-        self.assertEqual(route_coverage["task_creation_route_count"], 36)
+        self.assertEqual(route_coverage["known_post_route_count"], 39)
+        self.assertEqual(route_coverage["task_creation_route_count"], 37)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -8382,11 +8388,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 36)
+        self.assertEqual(implementation_status["task_count"], 37)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 33)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 34)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 34)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 35)
         self.assertEqual(implementation_status["external_capable_task_count"], 6)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -8428,6 +8434,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_storage_compaction_dry_run",
                 "run_storage_cache_ttl_dry_run",
                 "run_worker_synthetic_healthcheck",
+                "run_worker_activation_review",
             },
         )
         self.assertEqual(implementation_status["guarded_local_task_types"], ["run_deepseek_factor_explanation"])
@@ -8467,6 +8474,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_storage_compaction_dry_run",
                 "run_storage_cache_ttl_dry_run",
                 "run_worker_synthetic_healthcheck",
+                "run_worker_activation_review",
                 "run_deepseek_factor_explanation",
             },
         )
@@ -8489,6 +8497,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/factor-quant/universe-worker-batch-dry-run", route_coverage["known_post_routes"])
         self.assertIn("POST /api/factor-quant/provider-small-pool-dry-run", route_coverage["known_post_routes"])
         self.assertIn("POST /api/worker/synthetic-healthcheck", route_coverage["known_post_routes"])
+        self.assertIn("POST /api/worker/activation-review", route_coverage["known_post_routes"])
         self.assertIn("POST /api/candidate-radar/deep-scan-local-review", route_coverage["known_post_routes"])
         self.assertIn("POST /api/audit/motion-production-promotion-dry-run", route_coverage["known_post_routes"])
         self.assertEqual(catalog["task_lifecycle_routes"][0]["route"], "POST /api/tasks/{task_id}/cancel")
@@ -9270,6 +9279,23 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(by_type["run_worker_synthetic_healthcheck"]["starts_scheduler"])
         self.assertFalse(by_type["run_worker_synthetic_healthcheck"]["production_worker_complete"])
         self.assertTrue(by_type["run_worker_synthetic_healthcheck"]["call_ledger_required"])
+        self.assertEqual(by_type["run_worker_activation_review"]["route"], "POST /api/worker/activation-review")
+        self.assertEqual(by_type["run_worker_activation_review"]["current_backend"], "local_activation_review_pipeline")
+        self.assertEqual(
+            by_type["run_worker_activation_review"]["external_call_policy"],
+            "explicit_post_local_worker_activation_review_no_process_start",
+        )
+        self.assertEqual(by_type["run_worker_activation_review"]["possible_external_sources"], [])
+        self.assertTrue(by_type["run_worker_activation_review"]["local_review_only"])
+        self.assertTrue(by_type["run_worker_activation_review"]["requires_synthetic_healthcheck"])
+        self.assertFalse(by_type["run_worker_activation_review"]["cache_get_external_calls"])
+        self.assertFalse(by_type["run_worker_activation_review"]["starts_celery_worker"])
+        self.assertFalse(by_type["run_worker_activation_review"]["pings_redis"])
+        self.assertFalse(by_type["run_worker_activation_review"]["starts_scheduler"])
+        self.assertFalse(by_type["run_worker_activation_review"]["task_dispatched"])
+        self.assertFalse(by_type["run_worker_activation_review"]["production_worker_complete"])
+        self.assertFalse(by_type["run_worker_activation_review"]["activation_ready"])
+        self.assertTrue(by_type["run_worker_activation_review"]["call_ledger_required"])
 
     def test_task_catalog_covers_all_fastapi_post_routes(self):
         catalog = task_service.build_task_catalog()
@@ -9309,6 +9335,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/storage/compaction/dry-run", discovered_routes)
         self.assertIn("POST /api/storage/cache-ttl/dry-run", discovered_routes)
         self.assertIn("POST /api/worker/synthetic-healthcheck", discovered_routes)
+        self.assertIn("POST /api/worker/activation-review", discovered_routes)
 
     def test_worker_runtime_cache_reads_local_scaffold_without_starting_backends(self):
         self._with_meta_store()
@@ -9328,16 +9355,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 33)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 34)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 34)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 35)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 33)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 34)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 34)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 35)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("refresh_factor_data", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -9367,6 +9394,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("run_storage_compaction_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_storage_cache_ttl_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_worker_synthetic_healthcheck", packet["task_implementation_status"]["local_pipeline_task_types"])
+        self.assertIn("run_worker_activation_review", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_deepseek_factor_explanation", packet["task_implementation_status"]["guarded_local_task_types"])
         self.assertIn("task_retry_policy_summary", packet)
         self.assertEqual(packet["task_retry_policy_summary"]["status"], "audit_ready")
@@ -9542,6 +9570,41 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(any(row["cache_api_started_workers"] for row in activation_review["rows"]))
         self.assertFalse(any(row["cache_api_pinged_redis"] for row in activation_review["rows"]))
         self.assertFalse(any(row["task_dispatched"] for row in activation_review["rows"]))
+        activation_review_task = packet["production_readiness"]["worker_activation_review_task_receipt"]
+        self.assertEqual(activation_review_task["schema_version"], "worker_activation_review_task_receipt.v1")
+        self.assertEqual(activation_review_task["status"], "worker_activation_review_task_pending")
+        self.assertEqual(activation_review_task["scope"], "button_gated_worker_activation_review_no_process_start")
+        self.assertFalse(activation_review_task["explicit_activation_review_done"])
+        self.assertFalse(activation_review_task["operator_approved"])
+        self.assertFalse(activation_review_task["activation_review_ready"])
+        self.assertFalse(activation_review_task["production_worker_complete"])
+        self.assertFalse(activation_review_task["activation_ready"])
+        self.assertFalse(activation_review_task["synthetic_healthcheck_executed"])
+        self.assertFalse(activation_review_task["starts_celery_worker"])
+        self.assertFalse(activation_review_task["pings_redis"])
+        self.assertFalse(activation_review_task["starts_scheduler"])
+        self.assertFalse(activation_review_task["task_dispatched"])
+        self.assertFalse(activation_review_task["external_calls_triggered"])
+        self.assertFalse(activation_review_task["tushare_called"])
+        self.assertFalse(activation_review_task["deepseek_called"])
+        self.assertFalse(activation_review_task["github_called"])
+        self.assertTrue(activation_review_task["does_not_execute_trades"])
+        self.assertTrue(activation_review_task["does_not_modify_strategy_action"])
+        self.assertGreater(activation_review_task["local_blocker_count"], 0)
+        self.assertGreater(activation_review_task["production_blocker_count"], 0)
+        self.assertEqual(packet["worker_activation_review_task_receipt"], activation_review_task)
+        self.assertEqual(packet["worker_activation_review_task_rows"], activation_review_task["rows"])
+        activation_review_task_rows = {row["criterion"]: row for row in activation_review_task["rows"]}
+        self.assertIn("explicit_post_activation_review_done", activation_review_task_rows)
+        self.assertIn("operator_approval_recorded", activation_review_task_rows)
+        self.assertIn("synthetic_healthcheck_executed", activation_review_task_rows)
+        self.assertIn("production_evidence_required", activation_review_task_rows)
+        self.assertEqual(activation_review_task_rows["explicit_post_activation_review_done"]["status"], "blocked")
+        self.assertEqual(activation_review_task_rows["production_evidence_required"]["status"], "pending_production_worker_evidence")
+        self.assertFalse(any(row["worker_started"] for row in activation_review_task["rows"]))
+        self.assertFalse(any(row["redis_pinged"] for row in activation_review_task["rows"]))
+        self.assertFalse(any(row["scheduler_started"] for row in activation_review_task["rows"]))
+        self.assertFalse(any(row["task_dispatched"] for row in activation_review_task["rows"]))
         preflight_by_key = {row["step_key"]: row for row in packet["production_readiness"]["manual_preflight_steps"]}
         self.assertIn("configure_redis_broker", preflight_by_key)
         self.assertIn("start_celery_worker", preflight_by_key)
@@ -9685,6 +9748,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             packet["counts"]["worker_activation_operator_action_count"],
             activation_review["operator_action_required_count"],
         )
+        self.assertEqual(packet["counts"]["worker_activation_review_task_ready"], 0)
+        self.assertEqual(
+            packet["counts"]["worker_activation_review_task_local_blocker_count"],
+            activation_review_task["local_blocker_count"],
+        )
+        self.assertEqual(
+            packet["counts"]["worker_activation_review_task_production_blocker_count"],
+            activation_review_task["production_blocker_count"],
+        )
+        self.assertEqual(packet["counts"]["worker_activation_review_task_row_count"], activation_review_task["row_count"])
         self.assertEqual(packet["counts"]["dispatch_plan_task_count"], len(packet["dispatch_plan_rows"]))
         self.assertEqual(packet["counts"]["dispatch_plan_queue_count"], len(packet["dispatch_plan_summary"]["queue_names"]))
         self.assertEqual(packet["counts"]["manual_preflight_step_count"], len(packet["production_readiness"]["manual_preflight_steps"]))
@@ -9698,9 +9771,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 33)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 34)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 34)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 35)
+        self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
+        self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
+        self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
         self.assertTrue(packet["policy"]["does_not_ping_redis"])
         self.assertTrue(packet["policy"]["does_not_start_celery_worker"])
         self.assertTrue(packet["policy"]["does_not_start_scheduler"])
@@ -9844,9 +9920,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 33)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 34)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 34)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 35)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -9877,9 +9953,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 33)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 34)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 34)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 35)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("refresh_factor_data", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -9908,6 +9984,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("run_storage_compaction_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_storage_cache_ttl_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_worker_synthetic_healthcheck", packet["task_implementation_status"]["local_pipeline_task_types"])
+        self.assertIn("run_worker_activation_review", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_deepseek_factor_explanation", packet["task_implementation_status"]["guarded_local_task_types"])
         self.assertEqual(packet["task_persistence"]["storage_backend"], "memory_plus_sqlite_fallback")
         self.assertTrue(packet["task_persistence"]["task_rows_include_storage_source"])
@@ -11796,7 +11873,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 36)
+        self.assertEqual(task_catalog["data"]["task_count"], 37)
         self.assertIn("POST /api/bootstrap/live-startup", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-research-plan", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-worker-batch-dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
@@ -11835,6 +11912,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("POST /api/storage/compaction/dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/storage/cache-ttl/dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/worker/synthetic-healthcheck", task_catalog["data"]["route_coverage"]["known_post_routes"])
+        self.assertIn("POST /api/worker/activation-review", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertTrue(task_catalog["data"]["policy"]["get_catalog_cache_only"])
         self.assertTrue(task_catalog["data"]["policy"]["all_tasks_button_gated"])
         self.assertTrue(task_catalog["data"]["policy"]["call_ledger_required_for_all"])
@@ -15266,6 +15344,30 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("review_celery_manual_start", activation_review_steps)
         self.assertIn("review_synthetic_healthcheck", activation_review_steps)
         self.assertIn("review_provider_model_isolation", activation_review_steps)
+        activation_review_task = packet["worker_activation_review_task_receipt"]
+        self.assertEqual(activation_review_task["schema_version"], "worker_activation_review_task_receipt.v1")
+        self.assertEqual(activation_review_task["status"], "worker_activation_review_task_pending")
+        self.assertEqual(activation_review_task["scope"], "button_gated_worker_activation_review_no_process_start")
+        self.assertFalse(activation_review_task["explicit_activation_review_done"])
+        self.assertFalse(activation_review_task["activation_review_ready"])
+        self.assertFalse(activation_review_task["production_worker_complete"])
+        self.assertFalse(activation_review_task["starts_celery_worker"])
+        self.assertFalse(activation_review_task["pings_redis"])
+        self.assertFalse(activation_review_task["starts_scheduler"])
+        self.assertFalse(activation_review_task["task_dispatched"])
+        self.assertFalse(activation_review_task["external_calls_triggered"])
+        self.assertFalse(activation_review_task["tushare_called"])
+        self.assertFalse(activation_review_task["deepseek_called"])
+        self.assertFalse(activation_review_task["github_called"])
+        self.assertEqual(packet["production_readiness"]["worker_activation_review_task_receipt"], activation_review_task)
+        activation_review_task_criteria = {row["criterion"] for row in packet["worker_activation_review_task_rows"]}
+        self.assertIn("explicit_post_activation_review_done", activation_review_task_criteria)
+        self.assertIn("operator_approval_recorded", activation_review_task_criteria)
+        self.assertIn("synthetic_healthcheck_executed", activation_review_task_criteria)
+        self.assertIn("production_evidence_required", activation_review_task_criteria)
+        self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
+        self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
+        self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
         readiness_receipt = packet["worker_production_readiness_receipt"]
         self.assertEqual(readiness_receipt["schema_version"], "worker_production_readiness_receipt.v1")
         self.assertEqual(
@@ -15417,6 +15519,77 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(cache["worker_synthetic_healthcheck"]["task_readback_hash_matches"])
         self.assertFalse(cache["worker_synthetic_healthcheck"]["production_worker_complete"])
         self.assertFalse(cache["worker_synthetic_healthcheck"]["external_calls_triggered"])
+
+    def test_worker_activation_review_endpoint_runs_local_review_only(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        healthcheck = self.client.post(
+            "/api/worker/synthetic-healthcheck",
+            json={"requested_from": "test", "token": "SHOULD_DROP"},
+        ).json()
+        self.assertTrue(healthcheck["ok"])
+        response = self.client.post(
+            "/api/worker/activation-review",
+            json={"requested_from": "test", "operator_approved": True, "secret": "SHOULD_DROP"},
+        ).json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        self.assertEqual(packet["packet_key"], "command_center_3_worker_activation_review_packet")
+        self.assertEqual(packet["schema_version"], "worker_activation_review_task_receipt.v1")
+        self.assertEqual(packet["status"], "worker_activation_review_task_ready_production_blocked")
+        receipt = packet["worker_activation_review_task_receipt"]
+        self.assertEqual(receipt["schema_version"], "worker_activation_review_task_receipt.v1")
+        self.assertEqual(receipt["scope"], "button_gated_worker_activation_review_no_process_start")
+        self.assertTrue(receipt["explicit_activation_review_done"])
+        self.assertTrue(receipt["operator_approved"])
+        self.assertTrue(receipt["activation_review_ready"])
+        self.assertTrue(receipt["ready_for_manual_celery_redis_activation_review"])
+        self.assertTrue(receipt["synthetic_healthcheck_executed"])
+        self.assertTrue(receipt["local_task_round_trip_verified"])
+        self.assertTrue(receipt["task_log_round_trip_verified"])
+        self.assertFalse(receipt["production_worker_complete"])
+        self.assertFalse(receipt["activation_ready"])
+        self.assertFalse(receipt["starts_celery_worker"])
+        self.assertFalse(receipt["pings_redis"])
+        self.assertFalse(receipt["starts_scheduler"])
+        self.assertFalse(receipt["task_dispatched"])
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertFalse(receipt["tushare_called"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(receipt["does_not_modify_strategy_action"])
+        self.assertEqual(receipt["local_blocker_count"], 0)
+        self.assertEqual(receipt["production_blocker_count"], 1)
+        rows = {row["criterion"]: row for row in receipt["rows"]}
+        self.assertEqual(rows["explicit_post_activation_review_done"]["status"], "passed")
+        self.assertEqual(rows["operator_approval_recorded"]["status"], "passed")
+        self.assertEqual(rows["synthetic_healthcheck_executed"]["status"], "passed")
+        self.assertEqual(rows["production_evidence_required"]["status"], "pending_production_worker_evidence")
+        self.assertFalse(any(row["worker_started"] for row in receipt["rows"]))
+        self.assertFalse(any(row["redis_pinged"] for row in receipt["rows"]))
+        self.assertFalse(any(row["scheduler_started"] for row in receipt["rows"]))
+        self.assertFalse(any(row["task_dispatched"] for row in receipt["rows"]))
+        self.assertEqual(response["call_ledger"][0]["api"], "local_worker_activation_review_task")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertFalse(response["call_ledger"][0]["external_calls_triggered"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+        task = read_task_status(packet["task_id"])
+        self.assertIsNotNone(task)
+        self.assertEqual(task["task_type"], "run_worker_activation_review")
+        self.assertEqual(task["status"], "success")
+        self.assertNotIn("secret", task["payload_safe"])
+
+        cache = self.client.get("/api/worker/cache").json()["data"]
+        cached_receipt = cache["worker_activation_review_task_receipt"]
+        self.assertEqual(cached_receipt["review_task_id"], packet["task_id"])
+        self.assertTrue(cached_receipt["activation_review_ready"])
+        self.assertEqual(cached_receipt["production_blocker_count"], 1)
+        self.assertFalse(cached_receipt["production_worker_complete"])
+        self.assertFalse(cached_receipt["external_calls_triggered"])
 
     def test_call_ledger_audit_cache_endpoint_returns_read_only_audit(self):
         self._with_meta_store()

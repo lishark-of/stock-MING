@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getWorkerRuntimeCache, runWorkerSyntheticHealthcheck } from "../api/client";
+import { getWorkerRuntimeCache, runWorkerActivationReview, runWorkerSyntheticHealthcheck } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -17,6 +17,9 @@ export default function WorkerRuntime() {
   const [healthcheckResult, setHealthcheckResult] = useState<Record<string, unknown>>({});
   const [healthcheckRunning, setHealthcheckRunning] = useState(false);
   const [healthcheckError, setHealthcheckError] = useState("");
+  const [activationReviewResult, setActivationReviewResult] = useState<Record<string, unknown>>({});
+  const [activationReviewRunning, setActivationReviewRunning] = useState(false);
+  const [activationReviewError, setActivationReviewError] = useState("");
 
   const refreshCache = () => {
     return getWorkerRuntimeCache().then((res) => {
@@ -40,6 +43,22 @@ export default function WorkerRuntime() {
       })
       .catch((err: unknown) => setHealthcheckError(err instanceof Error ? err.message : String(err)))
       .finally(() => setHealthcheckRunning(false));
+  };
+
+  const launchActivationReview = () => {
+    setActivationReviewRunning(true);
+    setActivationReviewError("");
+    void runWorkerActivationReview({
+      requested_from: "worker_runtime_page",
+      operator_approved: true,
+      review_scope: "worker_activation_local_review_no_process_start"
+    })
+      .then((res) => {
+        setActivationReviewResult(res.data);
+        return refreshCache();
+      })
+      .catch((err: unknown) => setActivationReviewError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setActivationReviewRunning(false));
   };
 
   const runtime = (cache.runtime as Record<string, unknown> | undefined) ?? {};
@@ -68,7 +87,13 @@ export default function WorkerRuntime() {
   const workerProductionActivationReceipt =
     (productionReadiness.worker_production_activation_receipt as Record<string, unknown> | undefined) ??
     ((cache.worker_production_activation_receipt as Record<string, unknown> | undefined) ?? {});
+  const workerActivationReviewTaskReceipt =
+    (productionReadiness.worker_activation_review_task_receipt as Record<string, unknown> | undefined) ??
+    ((cache.worker_activation_review_task_receipt as Record<string, unknown> | undefined) ?? {});
   const visibleHealthcheck = Object.keys(healthcheckResult).length ? healthcheckResult : workerSyntheticHealthcheck;
+  const visibleActivationReview = Object.keys(activationReviewResult).length
+    ? ((activationReviewResult.worker_activation_review_task_receipt as Record<string, unknown> | undefined) ?? activationReviewResult)
+    : workerActivationReviewTaskReceipt;
   const dispatchPlanSummary = (cache.dispatch_plan_summary as Record<string, unknown> | undefined) ?? {};
   const dispatchPlanStatusCounts = dispatchPlanSummary.status_counts as Record<string, unknown> | undefined;
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
@@ -122,6 +147,8 @@ export default function WorkerRuntime() {
           { label: "prod activation", value: workerProductionActivationReceipt.local_activation_receipt_ready === true ? "是" : "否", tone: workerProductionActivationReceipt.local_activation_receipt_ready === true ? "good" : "warn" },
           { label: "activation evidence", value: workerProductionActivationReceipt.blocking_criterion_count ?? counts.worker_production_activation_blocker_count, tone: Number(workerProductionActivationReceipt.blocking_criterion_count ?? counts.worker_production_activation_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "activation ready", value: workerActivationReview.activation_ready === true ? "是" : "否", tone: workerActivationReview.activation_ready === true ? "bad" : "good" },
+          { label: "review task", value: visibleActivationReview.activation_review_ready === true ? "ready" : "pending", tone: visibleActivationReview.activation_review_ready === true ? "good" : "warn" },
+          { label: "review task blockers", value: visibleActivationReview.production_blocker_count ?? counts.worker_activation_review_task_production_blocker_count, tone: Number(visibleActivationReview.production_blocker_count ?? counts.worker_activation_review_task_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "worker complete", value: productionBlockerAudit.production_worker_complete === true ? "是" : "否", tone: productionBlockerAudit.production_worker_complete === true ? "bad" : "good" },
           { label: "local fallback", value: runtime.local_fallback_enabled, tone: runtime.local_fallback_enabled === false ? "bad" : "good" },
           { label: "Celery", value: runtime.celery_available, tone: runtime.celery_available === true ? "good" : "warn" },
@@ -275,6 +302,27 @@ export default function WorkerRuntime() {
         <DataLineageTable rows={rows(productionReadiness.worker_activation_review_rows ?? cache.worker_activation_review_rows)} />
       </PacketCard>
 
+      <PacketCard title="Worker activation review task" subtitle="POST /api/worker/activation-review：按钮门控审查本地 healthcheck 与 activation receipt，不启动进程" status={String(visibleActivationReview.status ?? "worker_activation_review_task_pending")}>
+        <div className="actions">
+          <button onClick={launchActivationReview} disabled={activationReviewRunning || healthcheckRunning}>
+            {activationReviewRunning ? "审查中" : "审查 activation 本地证据"}
+          </button>
+        </div>
+        {activationReviewError ? <p className="risk-note">activation_review_error: {activationReviewError}</p> : null}
+        <p>schema_version: {String(visibleActivationReview.schema_version ?? "worker_activation_review_task_receipt.v1")}</p>
+        <p>scope: {String(visibleActivationReview.scope ?? "button_gated_worker_activation_review_no_process_start")}</p>
+        <p>explicit_activation_review_done: {String(visibleActivationReview.explicit_activation_review_done === true)}</p>
+        <p>operator_approved: {String(visibleActivationReview.operator_approved === true)}</p>
+        <p>activation_review_ready / ready_for_manual_celery_redis_activation_review: {String(visibleActivationReview.activation_review_ready === true)} / {String(visibleActivationReview.ready_for_manual_celery_redis_activation_review === true)}</p>
+        <p>production_worker_complete / activation_ready: {String(visibleActivationReview.production_worker_complete === true)} / {String(visibleActivationReview.activation_ready === true)}</p>
+        <p>synthetic_healthcheck_executed / task_log_round_trip_verified: {String(visibleActivationReview.synthetic_healthcheck_executed === true)} / {String(visibleActivationReview.task_log_round_trip_verified === true)}</p>
+        <p>starts_celery_worker / pings_redis / starts_scheduler / task_dispatched: {String(visibleActivationReview.starts_celery_worker === true)} / {String(visibleActivationReview.pings_redis === true)} / {String(visibleActivationReview.starts_scheduler === true)} / {String(visibleActivationReview.task_dispatched === true)}</p>
+        <p>external_calls_triggered / tushare_called / deepseek_called / github_called: {String(visibleActivationReview.external_calls_triggered === true)} / {String(visibleActivationReview.tushare_called === true)} / {String(visibleActivationReview.deepseek_called === true)} / {String(visibleActivationReview.github_called === true)}</p>
+        <p>not_allowed_next_steps: {Array.isArray(visibleActivationReview.not_allowed_next_steps) ? visibleActivationReview.not_allowed_next_steps.join(" / ") : "start Celery from activation review / ping Redis from activation review / activation review as production worker completion"}</p>
+        <p>该任务只把本地 healthcheck 与 activation receipt 审查成票据；不能当作 Celery/Redis process proof 或 production worker complete。</p>
+        <DataLineageTable rows={rows(productionReadiness.worker_activation_review_task_rows ?? cache.worker_activation_review_task_rows ?? visibleActivationReview.rows)} />
+      </PacketCard>
+
       <PacketCard title="Worker production readiness receipt" subtitle="LTG-06 下一步收据；只允许显式 POST healthcheck 和人工 activation review" status={String(workerProductionReadinessReceipt.status ?? "worker_readiness_receipt_ready_synthetic_healthcheck_pending")}>
         <p>schema_version: {String(workerProductionReadinessReceipt.schema_version ?? "worker_production_readiness_receipt.v1")}</p>
         <p>scope: {String(workerProductionReadinessReceipt.scope ?? "local_worker_production_readiness_receipt_no_process_start")}</p>
@@ -337,6 +385,7 @@ export default function WorkerRuntime() {
         <JsonDetails title="worker activation review raw" data={workerActivationReview} />
         <JsonDetails title="worker production readiness receipt raw" data={workerProductionReadinessReceipt} />
         <JsonDetails title="worker production activation receipt raw" data={workerProductionActivationReceipt} />
+        <JsonDetails title="worker activation review task raw" data={visibleActivationReview} />
       </PacketCard>
     </>
   );

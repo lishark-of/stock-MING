@@ -77,6 +77,19 @@ REQUIRED_QUEUE_ROUTING_CRITERIA = {
     "celery_redis_not_started_by_routing_contract",
     "no_trade_or_action_boundary",
 }
+REQUIRED_ACTIVATION_REVIEW_TASK_CRITERIA = {
+    "explicit_post_activation_review_done",
+    "operator_approval_recorded",
+    "synthetic_healthcheck_executed",
+    "activation_review_contract_visible",
+    "production_activation_receipt_visible",
+    "celery_redis_not_started_by_review",
+    "scheduler_default_off_preserved",
+    "provider_model_no_autoschedule_boundary",
+    "production_worker_completion_stays_blocked",
+    "production_evidence_required",
+}
+
 REQUIRED_READINESS_RECEIPT_CRITERIA = {
     "local_worker_contracts_visible",
     "explicit_post_synthetic_healthcheck_boundary",
@@ -170,6 +183,9 @@ def build_contract() -> dict[str, Any]:
     activation_receipt = _dict(packet.get("worker_production_activation_receipt"))
     activation_receipt_rows = [row for row in _list(packet.get("worker_production_activation_rows")) if isinstance(row, dict)]
     activation_receipt_criteria = {str(row.get("criterion") or "") for row in activation_receipt_rows}
+    activation_review_task = _dict(packet.get("worker_activation_review_task_receipt"))
+    activation_review_task_rows = [row for row in _list(packet.get("worker_activation_review_task_rows")) if isinstance(row, dict)]
+    activation_review_task_criteria = {str(row.get("criterion") or "") for row in activation_review_task_rows}
     task_persistence = _dict(packet.get("task_persistence"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/worker_contract.py")
@@ -422,6 +438,47 @@ def build_contract() -> dict[str, Any]:
             "Worker production readiness receipt may choose the next safe explicit step, but it must not start processes, ping Redis, dispatch tasks, call providers/models, or claim production completion.",
         ),
         _row(
+            "activation_review_task_is_button_gated_no_process_start",
+            "POST /api/worker/activation-review" in _dict(catalog.get("route_coverage")).get("known_post_routes", [])
+            and activation_review_task.get("schema_version") == "worker_activation_review_task_receipt.v1"
+            and activation_review_task.get("status")
+            in {
+                "worker_activation_review_task_pending",
+                "worker_activation_review_task_ready_production_blocked",
+                "worker_activation_review_task_blocked_operator_approval_required",
+            }
+            and activation_review_task.get("scope") == "button_gated_worker_activation_review_no_process_start"
+            and activation_review_task.get("button_gated") is True
+            and activation_review_task.get("local_review_only") is True
+            and activation_review_task.get("ready_to_mark_production_worker_complete") is False
+            and activation_review_task.get("production_worker_complete") is False
+            and activation_review_task.get("activation_ready") is False
+            and int(activation_review_task.get("production_blocker_count") or 0) > 0
+            and REQUIRED_ACTIVATION_REVIEW_TASK_CRITERIA.issubset(activation_review_task_criteria)
+            and "activation review as production worker completion" in _list(
+                activation_review_task.get("not_allowed_next_steps")
+            )
+            and "celery worker process evidence" in _list(activation_review_task.get("missing_evidence_items"))
+            and activation_review_task.get("starts_celery_worker") is False
+            and activation_review_task.get("pings_redis") is False
+            and activation_review_task.get("starts_scheduler") is False
+            and activation_review_task.get("task_dispatched") is False
+            and activation_review_task.get("provider_model_task_dispatched") is False
+            and activation_review_task.get("cache_get_external_calls") is False
+            and _flag_false(activation_review_task, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and activation_review_task.get("does_not_execute_trades") is True
+            and activation_review_task.get("does_not_modify_strategy_action") is True
+            and activation_review_task.get("contains_secret") is False
+            and all(row.get("worker_started") is False for row in activation_review_task_rows)
+            and all(row.get("redis_pinged") is False for row in activation_review_task_rows)
+            and all(row.get("scheduler_started") is False for row in activation_review_task_rows)
+            and all(row.get("task_dispatched") is False for row in activation_review_task_rows)
+            and policy.get("worker_activation_review_task_is_button_gated") is True
+            and policy.get("worker_activation_review_task_is_not_process_start") is True
+            and policy.get("worker_activation_review_task_is_not_production_completion") is True,
+            "Worker activation review task may bind local synthetic-healthcheck evidence, but must not start processes, ping Redis, dispatch tasks, call providers/models, or claim production completion.",
+        ),
+        _row(
             "production_activation_receipt_keeps_worker_blocked",
             activation_receipt.get("schema_version") == "worker_production_activation_receipt.v1"
             and activation_receipt.get("status") == "worker_activation_receipt_ready_production_blocked"
@@ -488,10 +545,12 @@ def build_contract() -> dict[str, Any]:
             "command_center_3_worker_contract.v1" in this_script
             and "local_worker_contract_no_process_start" in this_script
             and "worker_production_activation_receipt.v1" in this_script
+            and "worker_activation_review_task_receipt.v1" in this_script
             and "worker_queue_routing_contract.v1" in this_script
             and "task_readback_fingerprint_matches" in this_script
             and "queue_routing_contract_is_local_and_button_gated" in this_script
             and "production_activation_receipt_keeps_worker_blocked" in this_script
+            and "activation_review_task_is_button_gated_no_process_start" in this_script
             and "production_worker_complete" in this_script
             and "healthcheck_executed" in this_script
             and "activation_ready" in this_script
@@ -524,6 +583,8 @@ def build_contract() -> dict[str, Any]:
         "worker_production_readiness_receipt_status": readiness_receipt.get("status"),
         "worker_production_activation_receipt_ready": activation_receipt.get("local_activation_receipt_ready") is True,
         "worker_production_activation_receipt_status": activation_receipt.get("status"),
+        "worker_activation_review_task_ready": activation_review_task.get("activation_review_ready") is True,
+        "worker_activation_review_task_status": activation_review_task.get("status"),
         "worker_queue_routing_contract_ready": queue_routing.get("queue_routing_contract_ready") is True,
         "worker_queue_routing_contract_status": queue_routing.get("status"),
         "local_fallback_available": True,
@@ -568,6 +629,9 @@ def build_contract() -> dict[str, Any]:
             "worker_production_activation_receipt_status": activation_receipt.get("status"),
             "worker_production_activation_blocker_count": activation_receipt.get("blocking_criterion_count"),
             "worker_production_activation_allowed_next_step": activation_receipt.get("allowed_next_step"),
+            "worker_activation_review_task_status": activation_review_task.get("status"),
+            "worker_activation_review_task_local_blocker_count": activation_review_task.get("local_blocker_count"),
+            "worker_activation_review_task_production_blocker_count": activation_review_task.get("production_blocker_count"),
             "scheduler_auto_task_count": dispatch_summary.get("scheduler_auto_task_count"),
             "cache_get_external_call_count": dispatch_summary.get("cache_get_external_call_count"),
         },

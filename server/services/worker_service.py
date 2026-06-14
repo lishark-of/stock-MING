@@ -16,6 +16,8 @@ PACKET_KEY = "command_center_3_worker_runtime_cache"
 SCHEMA_VERSION = "worker_runtime_cache.v1"
 SYNTHETIC_HEALTHCHECK_PACKET_KEY = "command_center_3_worker_synthetic_healthcheck_packet"
 SYNTHETIC_HEALTHCHECK_SCHEMA_VERSION = "worker_synthetic_healthcheck.v1"
+ACTIVATION_REVIEW_PACKET_KEY = "command_center_3_worker_activation_review_packet"
+ACTIVATION_REVIEW_SCHEMA_VERSION = "worker_activation_review_task_receipt.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 
@@ -1173,6 +1175,268 @@ def _read_worker_synthetic_healthcheck_packet() -> dict[str, Any]:
     return safe_packet
 
 
+def _activation_review_task_row(
+    criterion: str,
+    passed: bool,
+    *,
+    status: str | None = None,
+    evidence: str,
+    next_action: str,
+    local_required: bool = True,
+    production_required: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status or ("passed" if passed else "blocked"),
+        "passed": bool(passed),
+        "blocks_activation_review": bool(local_required and not passed),
+        "production_blocker": bool(production_required and not passed),
+        "evidence": evidence,
+        "next_action": next_action,
+        "worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "task_dispatched": False,
+        "provider_model_task_dispatched": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "production_worker_complete": False,
+    }
+
+
+def _worker_activation_review_task_receipt(
+    *,
+    synthetic_healthcheck: dict[str, Any],
+    activation_review_contract: dict[str, Any],
+    production_activation_receipt: dict[str, Any],
+    explicit_review: bool = False,
+    task_id: str | None = None,
+    reviewed_at: str | None = None,
+    payload_safe: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    safe_payload = payload_safe if isinstance(payload_safe, dict) else {}
+    approved = safe_payload.get("operator_approved") is True or safe_payload.get("approved") is True
+    synthetic_executed = synthetic_healthcheck.get("synthetic_healthcheck_executed") is True
+    local_round_trip = synthetic_healthcheck.get("local_task_round_trip_verified") is True
+    task_log_round_trip = synthetic_healthcheck.get("task_log_round_trip_verified") is True
+    activation_contract_ready = activation_review_contract.get("schema_version") == "worker_activation_review_contract.v1"
+    activation_receipt_ready = production_activation_receipt.get("local_activation_receipt_ready") is True
+    scheduler_off = production_activation_receipt.get("scheduler_started") is False
+    provider_boundary_ok = (
+        production_activation_receipt.get("provider_model_task_dispatched_by_receipt") is False
+        and production_activation_receipt.get("external_calls_triggered") is False
+    )
+    rows = [
+        _activation_review_task_row(
+            "explicit_post_activation_review_done",
+            explicit_review,
+            evidence="Activation review must be created through POST /api/worker/activation-review.",
+            next_action="Use the button-gated POST review after synthetic healthcheck evidence exists.",
+        ),
+        _activation_review_task_row(
+            "operator_approval_recorded",
+            approved,
+            evidence="Payload must include operator_approved=true or approved=true for local activation review scoping.",
+            next_action="Record explicit operator approval for the local review scope; do not infer approval from cache state.",
+        ),
+        _activation_review_task_row(
+            "synthetic_healthcheck_executed",
+            synthetic_executed and local_round_trip and task_log_round_trip,
+            evidence=(
+                f"synthetic={synthetic_executed}; local_round_trip={local_round_trip}; "
+                f"task_log_round_trip={task_log_round_trip}"
+            ),
+            next_action="Run POST /api/worker/synthetic-healthcheck before activation review if local evidence is missing.",
+        ),
+        _activation_review_task_row(
+            "activation_review_contract_visible",
+            activation_contract_ready,
+            evidence=str(activation_review_contract.get("status") or "missing"),
+            next_action="Repair worker_activation_review_contract before activation review.",
+        ),
+        _activation_review_task_row(
+            "production_activation_receipt_visible",
+            activation_receipt_ready,
+            evidence=str(production_activation_receipt.get("status") or "missing"),
+            next_action="Keep worker_production_activation_receipt visible as the production blocker checklist.",
+        ),
+        _activation_review_task_row(
+            "celery_redis_not_started_by_review",
+            True,
+            evidence="Activation review reads local packets only; it does not start Celery or ping Redis.",
+            next_action="Start Celery/Redis only in a future manually approved production run outside cache/review paths.",
+            local_required=False,
+            production_required=False,
+        ),
+        _activation_review_task_row(
+            "scheduler_default_off_preserved",
+            scheduler_off,
+            evidence=f"scheduler_started={production_activation_receipt.get('scheduler_started')}",
+            next_action="Keep scheduler disabled unless a separate production scheduler review approves it.",
+        ),
+        _activation_review_task_row(
+            "provider_model_no_autoschedule_boundary",
+            provider_boundary_ok,
+            evidence="Tushare, DeepSeek and GitHub-capable work remains button-gated and is not dispatched by review.",
+            next_action="Keep provider/model/probe tasks behind explicit POST routes with call ledger.",
+        ),
+        _activation_review_task_row(
+            "production_worker_completion_stays_blocked",
+            True,
+            evidence="Activation review keeps production_worker_complete=false and activation_ready=false.",
+            next_action="Require later Celery process, Redis broker, cross-process controls, append-only logs, and promotion evidence.",
+            local_required=False,
+            production_required=False,
+        ),
+        _activation_review_task_row(
+            "production_evidence_required",
+            False,
+            status="pending_production_worker_evidence",
+            evidence="Celery process, Redis broker, cross-process controls, append-only logs, scheduler runtime, and promotion evidence are still missing.",
+            next_action="Collect production worker evidence in a separate production activation task; this review only binds local scope.",
+            local_required=False,
+            production_required=True,
+        ),
+    ]
+    local_blockers = [str(row["criterion"]) for row in rows if row.get("blocks_activation_review")]
+    production_blockers = [str(row["criterion"]) for row in rows if row.get("production_blocker")]
+    review_ready = not local_blockers
+    status = (
+        "worker_activation_review_task_blocked_operator_approval_required"
+        if explicit_review and not approved
+        else "worker_activation_review_task_ready_production_blocked"
+        if review_ready
+        else "worker_activation_review_task_pending"
+    )
+    request_params_safe = {
+        "review_scope": "worker_activation_local_review_no_process_start",
+        "operator_approved": approved,
+        "synthetic_healthcheck_task_id": synthetic_healthcheck.get("task_id") or "",
+        "external_sources_allowed": False,
+        "starts_celery_worker": False,
+        "pings_redis": False,
+        "starts_scheduler": False,
+        "task_dispatched": False,
+        "production_worker_complete": False,
+    }
+    receipt = {
+        "packet_key": ACTIVATION_REVIEW_PACKET_KEY,
+        "schema_version": ACTIVATION_REVIEW_SCHEMA_VERSION,
+        "status": status,
+        "scope": "button_gated_worker_activation_review_no_process_start",
+        "ltg": "LTG-06",
+        "mode": "button_gated_local_activation_review",
+        "explicit_activation_review_done": bool(explicit_review),
+        "review_task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "button_gated": True,
+        "local_review_only": True,
+        "operator_approved": approved,
+        "activation_review_ready": review_ready,
+        "ready_for_manual_celery_redis_activation_review": review_ready,
+        "ready_to_mark_production_worker_complete": False,
+        "production_worker_complete": False,
+        "activation_ready": False,
+        "synthetic_healthcheck_executed": synthetic_executed,
+        "synthetic_healthcheck_task_id": synthetic_healthcheck.get("task_id") or "",
+        "local_task_round_trip_verified": local_round_trip,
+        "task_log_round_trip_verified": task_log_round_trip,
+        "activation_contract_ready": activation_contract_ready,
+        "activation_receipt_ready": activation_receipt_ready,
+        "production_blocker_count": len(production_blockers),
+        "local_blocker_count": len(local_blockers),
+        "row_count": len(rows),
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+        "allowed_next_step": "manual_celery_redis_start_then_production_worker_evidence_ticket" if review_ready else "run_synthetic_healthcheck_then_activation_review",
+        "not_allowed_next_steps": [
+            "start Celery from activation review",
+            "ping Redis from activation review",
+            "start scheduler from activation review",
+            "dispatch worker task from activation review",
+            "automatic Tushare/DeepSeek/GitHub scheduling",
+            "activation review as production worker completion",
+            "synthetic healthcheck as Celery/Redis process proof",
+        ],
+        "missing_evidence_items": [
+            "celery worker process evidence",
+            "redis broker reachability evidence",
+            "cross-process retry/cancel/lock/dedupe evidence",
+            "append-only worker task log evidence",
+            "scheduler default-off runtime evidence",
+            "production worker promotion evidence",
+        ],
+        "request_params_safe": request_params_safe,
+        "starts_celery_worker": False,
+        "pings_redis": False,
+        "starts_scheduler": False,
+        "task_dispatched": False,
+        "provider_model_task_dispatched": False,
+        "cache_get_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": rows,
+        "note": "This explicit activation review binds local LTG-06 evidence after synthetic healthcheck. It does not start Celery, ping Redis, start scheduler, dispatch tasks, call providers/models/probes, execute trades, or prove production worker completion.",
+    }
+    return receipt
+
+
+def _missing_worker_activation_review_packet(
+    synthetic_healthcheck: dict[str, Any],
+    activation_review_contract: dict[str, Any],
+    production_activation_receipt: dict[str, Any],
+) -> dict[str, Any]:
+    return _worker_activation_review_task_receipt(
+        synthetic_healthcheck=synthetic_healthcheck,
+        activation_review_contract=activation_review_contract,
+        production_activation_receipt=production_activation_receipt,
+        explicit_review=False,
+    )
+
+
+def _read_worker_activation_review_packet(
+    synthetic_healthcheck: dict[str, Any],
+    activation_review_contract: dict[str, Any],
+    production_activation_receipt: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(ACTIVATION_REVIEW_PACKET_KEY)
+    except Exception:
+        packet = None
+    if not isinstance(packet, dict):
+        return _missing_worker_activation_review_packet(
+            synthetic_healthcheck,
+            activation_review_contract,
+            production_activation_receipt,
+        )
+    receipt = _json_safe(packet.get("worker_activation_review_task_receipt") or packet)
+    if not isinstance(receipt, dict) or receipt.get("schema_version") != ACTIVATION_REVIEW_SCHEMA_VERSION:
+        return _missing_worker_activation_review_packet(
+            synthetic_healthcheck,
+            activation_review_contract,
+            production_activation_receipt,
+        )
+    rebuilt = _worker_activation_review_task_receipt(
+        synthetic_healthcheck=synthetic_healthcheck,
+        activation_review_contract=activation_review_contract,
+        production_activation_receipt=production_activation_receipt,
+        explicit_review=receipt.get("explicit_activation_review_done") is True,
+        task_id=str(receipt.get("review_task_id") or "") or None,
+        reviewed_at=str(receipt.get("reviewed_at") or "") or None,
+        payload_safe=receipt.get("request_params_safe") if isinstance(receipt.get("request_params_safe"), dict) else {},
+    )
+    return rebuilt
+
+
 def _synthetic_healthcheck_rows(task: dict[str, Any], readback: dict[str, Any] | None) -> list[dict[str, Any]]:
     task_log = task.get("task_log") if isinstance(task.get("task_log"), list) else []
     readback_log = readback.get("task_log") if isinstance(readback, dict) and isinstance(readback.get("task_log"), list) else []
@@ -1980,6 +2244,110 @@ def _worker_production_activation_receipt(
     }
 
 
+def run_worker_activation_review(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        "run_worker_activation_review",
+        output_packet_key=ACTIVATION_REVIEW_PACKET_KEY,
+        payload=payload,
+        current_step="worker_activation_review_queued_no_process_start",
+        warnings=[
+            "Worker activation review 只审查本地 synthetic healthcheck 与 activation receipt；不会启动 Celery、ping Redis、启动 scheduler、派发任务或调用 provider/model/probe。"
+        ],
+    )
+    task = task_service.update_task_status(
+        str(task["task_id"]),
+        status="running",
+        progress=0.5,
+        current_step="worker_activation_review_reading_local_cache_only",
+    ) or task
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    runtime_packet = read_worker_runtime_cache()
+    synthetic_healthcheck = runtime_packet.get("worker_synthetic_healthcheck") if isinstance(runtime_packet.get("worker_synthetic_healthcheck"), dict) else {}
+    activation_review_contract = runtime_packet.get("worker_activation_review_contract") if isinstance(runtime_packet.get("worker_activation_review_contract"), dict) else {}
+    production_activation_receipt = runtime_packet.get("worker_production_activation_receipt") if isinstance(runtime_packet.get("worker_production_activation_receipt"), dict) else {}
+    reviewed_at = _now_iso()
+    receipt = _worker_activation_review_task_receipt(
+        synthetic_healthcheck=synthetic_healthcheck,
+        activation_review_contract=activation_review_contract,
+        production_activation_receipt=production_activation_receipt,
+        explicit_review=True,
+        task_id=str(task.get("task_id") or ""),
+        reviewed_at=reviewed_at,
+        payload_safe=payload_safe,
+    )
+    rows = receipt.get("rows") if isinstance(receipt.get("rows"), list) else []
+    ledger = [
+        {
+            "api": "local_worker_activation_review_task",
+            "source": "worker_runtime_cache + worker_synthetic_healthcheck_packet",
+            "row_count": len(rows),
+            "task_id": task.get("task_id"),
+            "local_fetched_at": reviewed_at,
+            "call_status": receipt["status"],
+            "request_params_safe": receipt["request_params_safe"],
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "redis_pinged": False,
+            "celery_started": False,
+            "scheduler_started": False,
+            "task_dispatched": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "error_message_safe": "",
+        }
+    ]
+    task = task_service.update_task_status(
+        str(task["task_id"]),
+        status="success",
+        progress=1.0,
+        current_step="worker_activation_review_completed_local_only",
+        call_ledger=ledger,
+        warning="worker_activation_review_completed_no_process_start",
+    ) or task
+    packet = {
+        "packet_key": ACTIVATION_REVIEW_PACKET_KEY,
+        "schema_version": ACTIVATION_REVIEW_SCHEMA_VERSION,
+        "status": receipt["status"],
+        "scope": receipt["scope"],
+        "mode": receipt["mode"],
+        "executed_at": reviewed_at,
+        "task_id": task.get("task_id"),
+        "task_status": task.get("status"),
+        "task_type": task.get("task_type"),
+        "output_packet_key": ACTIVATION_REVIEW_PACKET_KEY,
+        "worker_activation_review_task_receipt": receipt,
+        "worker_activation_review_task_rows": rows,
+        "activation_review_ready": receipt["activation_review_ready"],
+        "production_worker_complete": False,
+        "activation_ready": False,
+        "starts_celery_worker": False,
+        "pings_redis": False,
+        "starts_scheduler": False,
+        "task_dispatched": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": ledger,
+        "warnings": [
+            "这是显式 POST 的本地 Worker activation review，只证明本地 synthetic healthcheck 和 activation receipt 已被审查。",
+            "它不启动 Celery、不 ping Redis、不启动 scheduler、不派发任务、不调用 Tushare/DeepSeek/GitHub、不执行真实交易，也不代表 production worker 完成。",
+        ],
+    }
+    packet = _json_safe(packet)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(ACTIVATION_REVIEW_PACKET_KEY, packet)
+    except Exception:
+        packet.setdefault("warnings", []).append("worker_activation_review_packet_persist_failed_safe")
+    return packet
+
+
 def read_worker_runtime_cache() -> dict[str, Any]:
     celery_available = _module_available("celery")
     redis_available = _module_available("redis")
@@ -2084,6 +2452,14 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     )
     production_readiness["worker_production_activation_receipt"] = production_activation_receipt
     production_readiness["worker_production_activation_rows"] = production_activation_receipt["rows"]
+    activation_review_task_receipt = _read_worker_activation_review_packet(
+        synthetic_healthcheck,
+        activation_review_contract,
+        production_activation_receipt,
+    )
+    activation_review_task_rows = activation_review_task_receipt.get("rows") or []
+    production_readiness["worker_activation_review_task_receipt"] = activation_review_task_receipt
+    production_readiness["worker_activation_review_task_rows"] = activation_review_task_rows
     module_ready_count = sum(1 for row in worker_module_rows if row["module_available"] and row["file_exists"])
     manual_preflight_steps = production_readiness.get("manual_preflight_steps") or []
     status = "ready" if module_ready_count == len(worker_module_rows) else "partial"
@@ -2168,6 +2544,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         "worker_production_readiness_receipt_rows": production_readiness_receipt["rows"],
         "worker_production_activation_receipt": production_activation_receipt,
         "worker_production_activation_rows": production_activation_receipt["rows"],
+        "worker_activation_review_task_receipt": activation_review_task_receipt,
+        "worker_activation_review_task_rows": activation_review_task_rows,
         "dispatch_plan_status": "contract_ready_local_fallback",
         "dispatch_plan_rows": dispatch_plan_rows,
         "dispatch_plan_summary": {
@@ -2224,6 +2602,10 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             if production_activation_receipt.get("local_activation_receipt_ready")
             else 0,
             "worker_production_activation_blocker_count": production_activation_receipt["blocking_criterion_count"],
+            "worker_activation_review_task_ready": 1 if activation_review_task_receipt.get("activation_review_ready") else 0,
+            "worker_activation_review_task_local_blocker_count": activation_review_task_receipt.get("local_blocker_count", 0),
+            "worker_activation_review_task_production_blocker_count": activation_review_task_receipt.get("production_blocker_count", 0),
+            "worker_activation_review_task_row_count": activation_review_task_receipt.get("row_count", 0),
             "manual_preflight_step_count": len(manual_preflight_steps),
             "manual_preflight_operator_action_count": sum(1 for row in manual_preflight_steps if row.get("operator_action_required")),
             "dispatch_plan_task_count": len(dispatch_plan_rows),
@@ -2257,6 +2639,9 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_production_activation_receipt_is_local": True,
             "worker_production_activation_receipt_is_not_process_start": True,
             "worker_production_activation_receipt_is_not_production_completion": True,
+            "worker_activation_review_task_is_button_gated": True,
+            "worker_activation_review_task_is_not_process_start": True,
+            "worker_activation_review_task_is_not_production_completion": True,
             "task_implementation_status_is_read_only": True,
             "stub_tasks_must_not_be_reported_as_complete": True,
             "contains_secret": False,
@@ -2286,6 +2671,7 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         "warnings": [
             "GET /api/worker/cache 只读检查本地 worker scaffold 和依赖可见性；不会连接 Redis。",
             "本页不会启动 Celery worker 或 APScheduler，不会调度真实 Tushare、DeepSeek 或 GitHub 任务。",
+            "Worker activation review task 只审查本地 synthetic healthcheck 和 activation receipt；不会启动 Celery、ping Redis、启动 scheduler 或完成 production worker。",
             "Worker runtime 只做诊断说明，不执行真实交易，不修改 strategy action。",
         ],
     }
