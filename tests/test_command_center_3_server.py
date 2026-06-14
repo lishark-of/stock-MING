@@ -10279,6 +10279,58 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(provider_linkage["github_probe_boundary"]["status"], "manual_or_explicit_task_only")
         self.assertFalse(provider_linkage["github_probe_boundary"]["live_light_on_open_allowed"])
         self.assertEqual(provider_linkage["real_trading_boundary"]["status"], "disconnected")
+        self.assertEqual(
+            packet["activation_receipt_schema_version"],
+            "command_center_live_bootstrap_activation_receipt.v1",
+        )
+        self.assertTrue(packet["live_light"]["activation_receipt_visible"])
+        self.assertTrue(packet["live_light"]["ready_for_provider_execution_design"])
+        self.assertFalse(packet["live_light"]["ready_for_provider_execution"])
+        self.assertFalse(packet["live_light"]["ready_for_model_execution"])
+        self.assertTrue(packet["policy"]["live_light_activation_receipt_visible"])
+        self.assertTrue(packet["policy"]["live_light_ready_for_provider_execution_design"])
+        self.assertFalse(packet["policy"]["live_light_ready_for_provider_execution"])
+        self.assertFalse(packet["policy"]["live_light_ready_for_model_execution"])
+        self.assertFalse(packet["policy"]["production_live_light_complete"])
+        activation = packet["live_light_activation_receipt"]
+        self.assertEqual(activation["schema_version"], "command_center_live_bootstrap_activation_receipt.v1")
+        self.assertEqual(activation["status"], "live_light_activation_receipt_ready_execution_blocked")
+        self.assertEqual(activation["scope"], "local_live_light_activation_receipt_no_provider_or_model_execution")
+        self.assertTrue(activation["local_activation_receipt_ready"])
+        self.assertEqual(activation["mode"], "live_light")
+        self.assertTrue(activation["live_light_enabled"])
+        self.assertTrue(activation["tushare_on_open"])
+        self.assertTrue(activation["deepseek_on_open"])
+        self.assertTrue(activation["ready_for_provider_execution_design"])
+        self.assertFalse(activation["ready_for_provider_execution"])
+        self.assertFalse(activation["ready_for_model_execution"])
+        self.assertFalse(activation["provider_execution_implemented"])
+        self.assertFalse(activation["model_execution_implemented"])
+        self.assertFalse(activation["production_live_light_complete"])
+        self.assertFalse(activation["external_calls_triggered"])
+        self.assertFalse(activation["tushare_called"])
+        self.assertFalse(activation["deepseek_called"])
+        self.assertFalse(activation["github_called"])
+        self.assertTrue(activation["does_not_execute_trades"])
+        self.assertTrue(activation["does_not_modify_strategy_action"])
+        self.assertEqual(activation["call_ledger"][0]["api"], "local_live_light_activation_receipt")
+        activation_rows = {row["criterion"]: row for row in packet["live_light_activation_rows"]}
+        self.assertEqual(activation_rows["mode_layering_visible"]["status"], "passed")
+        self.assertEqual(activation_rows["cache_render_boundary_enforced"]["status"], "passed")
+        self.assertEqual(activation_rows["post_task_boundary_visible"]["status"], "passed")
+        self.assertEqual(
+            activation_rows["tushare_stage_requires_provider_adapter"]["status"],
+            "pending_provider_execution_implementation",
+        )
+        self.assertEqual(
+            activation_rows["deepseek_stage_requires_model_execution_gate"]["status"],
+            "pending_model_execution_implementation",
+        )
+        self.assertEqual(activation_rows["real_trading_disconnected"]["status"], "passed")
+        self.assertEqual(
+            activation_rows["production_activation_pending"]["status"],
+            "blocked_until_explicit_provider_and_model_acceptance",
+        )
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
@@ -10286,6 +10338,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertEqual(response["call_ledger"][0]["api"], "local_bootstrap_runtime_mode_cache")
+        self.assertEqual(response["call_ledger"][0]["activation_row_count"], len(packet["live_light_activation_rows"]))
+        self.assertTrue(response["call_ledger"][0]["activation_receipt_ready"])
         self.assertFalse(response["call_ledger"][0]["external"])
 
     def test_bootstrap_live_startup_cache_only_creates_safe_skipped_task(self):
@@ -10482,10 +10536,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(bootstrap["data"]["policy"]["live_light_task_implemented"])
         self.assertFalse(bootstrap["data"]["policy"]["live_light_provider_execution_implemented"])
         self.assertTrue(bootstrap["data"]["policy"]["provider_linkage_rows_visible"])
+        self.assertTrue(bootstrap["data"]["policy"]["live_light_activation_receipt_visible"])
+        self.assertFalse(bootstrap["data"]["policy"]["production_live_light_complete"])
         self.assertFalse(bootstrap["data"]["policy"]["live_full_enabled"])
         self.assertFalse(bootstrap["data"]["live_light"]["enabled"])
         self.assertTrue(bootstrap["data"]["live_light"]["bootstrap_task_implemented"])
         self.assertFalse(bootstrap["data"]["live_light"]["provider_execution_implemented"])
+        self.assertTrue(bootstrap["data"]["live_light"]["activation_receipt_visible"])
+        self.assertTrue(bootstrap["data"]["live_light"]["ready_for_provider_execution_design"])
+        self.assertFalse(bootstrap["data"]["live_light"]["ready_for_provider_execution"])
+        self.assertFalse(bootstrap["data"]["live_light"]["ready_for_model_execution"])
         self.assertEqual(len(bootstrap["data"]["provider_linkage_rows"]), 6)
         provider_linkage = {row["linkage_key"]: row for row in bootstrap["data"]["provider_linkage_rows"]}
         self.assertEqual(provider_linkage["cache_startup_render_boundary"]["status"], "offline_enforced")
@@ -10493,6 +10553,31 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(provider_linkage["deepseek_pro_after_task"]["status"], "skipped_mode_not_live_light")
         self.assertFalse(provider_linkage["github_probe_boundary"]["external_calls_triggered"])
         self.assertFalse(provider_linkage["real_trading_boundary"]["real_trading_connected"])
+        activation = bootstrap["data"]["live_light_activation_receipt"]
+        self.assertEqual(activation["status"], "live_light_activation_receipt_ready_execution_blocked")
+        self.assertTrue(activation["local_activation_receipt_ready"])
+        self.assertTrue(activation["ready_for_provider_execution_design"])
+        self.assertFalse(activation["ready_for_provider_execution"])
+        self.assertFalse(activation["ready_for_model_execution"])
+        self.assertFalse(activation["production_live_light_complete"])
+        self.assertFalse(activation["external_calls_triggered"])
+        self.assertEqual(
+            {row["criterion"] for row in bootstrap["data"]["live_light_activation_rows"]},
+            {
+                "mode_layering_visible",
+                "cache_render_boundary_enforced",
+                "post_task_boundary_visible",
+                "tushare_stage_requires_provider_adapter",
+                "deepseek_stage_requires_model_execution_gate",
+                "rate_limit_and_symbol_cap_visible",
+                "safe_ledger_required",
+                "github_probe_excluded_from_live_light",
+                "real_trading_disconnected",
+                "full_pool_reserved",
+                "token_key_frontend_exposure_blocked",
+                "production_activation_pending",
+            },
+        )
         self.assertEqual(
             {row["mode"] for row in bootstrap["data"]["mode_rows"]},
             {"cache_only", "manual", "live_light", "live_full"},

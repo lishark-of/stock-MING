@@ -121,6 +121,12 @@ def _cache_only_rows() -> list[dict[str, Any]]:
         for row in _list(status.get("provider_linkage_rows"))
         if isinstance(row, dict)
     }
+    activation = _dict(status.get("live_light_activation_receipt"))
+    activation_rows = {
+        str(row.get("criterion") or ""): row
+        for row in _list(status.get("live_light_activation_rows"))
+        if isinstance(row, dict)
+    }
     return [
         _row(
             "cache_only_status_is_offline_default",
@@ -149,6 +155,25 @@ def _cache_only_rows() -> list[dict[str, Any]]:
             and provider_linkage.get("github_probe_boundary", {}).get("live_light_on_open_allowed") is False
             and provider_linkage.get("real_trading_boundary", {}).get("real_trading_connected") is False,
             f"provider_linkage_keys={sorted(provider_linkage)}",
+        ),
+        _row(
+            "cache_only_activation_receipt_keeps_execution_blocked",
+            status.get("activation_receipt_schema_version") == "command_center_live_bootstrap_activation_receipt.v1"
+            and activation.get("status") == "live_light_activation_receipt_ready_execution_blocked"
+            and activation.get("scope") == "local_live_light_activation_receipt_no_provider_or_model_execution"
+            and activation.get("local_activation_receipt_ready") is True
+            and activation.get("ready_for_provider_execution_design") is True
+            and activation.get("ready_for_provider_execution") is False
+            and activation.get("ready_for_model_execution") is False
+            and activation.get("production_live_light_complete") is False
+            and activation.get("external_calls_triggered") is False
+            and activation_rows.get("cache_render_boundary_enforced", {}).get("status") == "passed"
+            and activation_rows.get("tushare_stage_requires_provider_adapter", {}).get("status")
+            == "pending_provider_execution_implementation"
+            and activation_rows.get("deepseek_stage_requires_model_execution_gate", {}).get("status")
+            == "pending_model_execution_implementation"
+            and activation_rows.get("production_activation_pending", {}).get("passed") is False,
+            f"activation_status={activation.get('status')} rows={sorted(activation_rows)}",
         ),
         _row(
             "cache_only_stage_and_model_plan_visible",
@@ -184,6 +209,12 @@ def _live_light_disabled_rows() -> list[dict[str, Any]]:
         for row in _list(status.get("provider_linkage_rows"))
         if isinstance(row, dict)
     }
+    activation = _dict(status.get("live_light_activation_receipt"))
+    activation_rows = {
+        str(row.get("criterion") or ""): row
+        for row in _list(status.get("live_light_activation_rows"))
+        if isinstance(row, dict)
+    }
     return [
         _row(
             "live_light_sources_disabled_skips_safely",
@@ -200,6 +231,18 @@ def _live_light_disabled_rows() -> list[dict[str, Any]]:
             and linkage.get("tushare_light_refresh", {}).get("status") == "skipped_by_config"
             and linkage.get("deepseek_pro_after_task", {}).get("status") == "skipped_by_config",
             f"linkage={linkage}",
+        ),
+        _row(
+            "live_light_disabled_activation_receipt_visible_execution_blocked",
+            activation.get("mode") == "live_light"
+            and activation.get("live_light_enabled") is True
+            and activation.get("ready_for_provider_execution_design") is True
+            and activation.get("ready_for_provider_execution") is False
+            and activation.get("ready_for_model_execution") is False
+            and activation.get("production_live_light_complete") is False
+            and activation_rows.get("post_task_boundary_visible", {}).get("status") == "passed"
+            and activation_rows.get("real_trading_disconnected", {}).get("status") == "passed",
+            f"activation={activation}",
         ),
         _row(
             "live_light_disabled_provider_model_rows_are_skipped_by_config",
@@ -256,6 +299,12 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
         for row in _list(status.get("provider_linkage_rows"))
         if isinstance(row, dict)
     }
+    activation = _dict(status.get("live_light_activation_receipt"))
+    activation_rows = {
+        str(row.get("criterion") or ""): row
+        for row in _list(status.get("live_light_activation_rows"))
+        if isinstance(row, dict)
+    }
     return [
         _row(
             "live_light_records_plan_without_provider_execution",
@@ -282,6 +331,29 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             and linkage.get("github_probe_boundary", {}).get("live_light_on_open_allowed") is False
             and linkage.get("real_trading_boundary", {}).get("real_trading_connected") is False,
             f"linkage={linkage}",
+        ),
+        _row(
+            "live_light_activation_receipt_blocks_provider_model_completion",
+            activation.get("mode") == "live_light"
+            and activation.get("tushare_on_open") is True
+            and activation.get("deepseek_on_open") is True
+            and activation.get("ready_for_provider_execution_design") is True
+            and activation.get("ready_for_provider_execution") is False
+            and activation.get("ready_for_model_execution") is False
+            and activation.get("provider_execution_implemented") is False
+            and activation.get("model_execution_implemented") is False
+            and activation.get("production_live_light_complete") is False
+            and activation.get("external_calls_triggered") is False
+            and activation.get("tushare_called") is False
+            and activation.get("deepseek_called") is False
+            and activation.get("github_called") is False
+            and activation_rows.get("tushare_stage_requires_provider_adapter", {}).get("status")
+            == "pending_provider_execution_implementation"
+            and activation_rows.get("deepseek_stage_requires_model_execution_gate", {}).get("status")
+            == "pending_model_execution_implementation"
+            and activation_rows.get("production_activation_pending", {}).get("status")
+            == "blocked_until_explicit_provider_and_model_acceptance",
+            f"activation={activation}",
         ),
         _row(
             "live_light_symbol_limit_is_enforced",

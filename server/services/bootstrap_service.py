@@ -21,6 +21,7 @@ DEFAULT_LIGHT_TUSHARE_APIS = ("trade_cal_if_needed", "daily", "daily_basic", "mo
 BOOTSTRAP_STAGE_SCHEMA_VERSION = "command_center_live_bootstrap_stage_plan.v1"
 BOOTSTRAP_MODEL_LEDGER_SCHEMA_VERSION = "command_center_live_bootstrap_model_ledger_preview.v1"
 BOOTSTRAP_PROVIDER_LINKAGE_SCHEMA_VERSION = "command_center_bootstrap_provider_linkage.v1"
+BOOTSTRAP_ACTIVATION_RECEIPT_SCHEMA_VERSION = "command_center_live_bootstrap_activation_receipt.v1"
 DEEPSEEK_EXPLANATION_FIELDS = (
     "summary",
     "support_notes",
@@ -342,6 +343,184 @@ def _provider_linkage_rows(
             "does_not_modify_strategy_action": True,
         },
     ]
+
+
+def _activation_receipt_row(criterion: str, status: str, evidence: str, *, passed: bool) -> dict[str, Any]:
+    return {
+        "schema_version": BOOTSTRAP_ACTIVATION_RECEIPT_SCHEMA_VERSION,
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "evidence": evidence,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _live_light_activation_receipt(
+    *,
+    active_mode: str,
+    mode_valid: bool,
+    live_light_enabled: bool,
+    live_light_sources_enabled: bool,
+    tushare_on_open: bool,
+    deepseek_on_open: bool,
+    symbol_limit: int,
+    rate_limit_seconds: int,
+    provider_linkage_rows: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    linkage = {str(row.get("linkage_key") or ""): row for row in provider_linkage_rows}
+    cache_boundary = linkage.get("cache_startup_render_boundary", {})
+    task_boundary = linkage.get("live_light_bootstrap_task_boundary", {})
+    github_boundary = linkage.get("github_probe_boundary", {})
+    trading_boundary = linkage.get("real_trading_boundary", {})
+    rows = [
+        _activation_receipt_row(
+            "mode_layering_visible",
+            "passed" if mode_valid and active_mode in BOOTSTRAP_MODES else "blocked_invalid_mode",
+            f"mode={active_mode}; live_light_enabled={live_light_enabled}",
+            passed=mode_valid and active_mode in BOOTSTRAP_MODES,
+        ),
+        _activation_receipt_row(
+            "cache_render_boundary_enforced",
+            "passed"
+            if cache_boundary.get("status") == "offline_enforced"
+            and cache_boundary.get("external_calls_allowed") is False
+            else "blocked_cache_boundary",
+            "GET cache, FastAPI startup, and React initial render stay provider/model/GitHub silent.",
+            passed=cache_boundary.get("status") == "offline_enforced"
+            and cache_boundary.get("external_calls_allowed") is False,
+        ),
+        _activation_receipt_row(
+            "post_task_boundary_visible",
+            "passed"
+            if task_boundary.get("route") == PLANNED_BOOTSTRAP_TASK_ROUTE
+            and task_boundary.get("post_task_required") is True
+            else "blocked_post_task_boundary",
+            f"route={task_boundary.get('route')}; sources_enabled={live_light_sources_enabled}",
+            passed=task_boundary.get("route") == PLANNED_BOOTSTRAP_TASK_ROUTE
+            and task_boundary.get("post_task_required") is True,
+        ),
+        _activation_receipt_row(
+            "tushare_stage_requires_provider_adapter",
+            "pending_provider_execution_implementation",
+            "Light Tushare is mode-gated and planned, but provider execution and real call ledger evidence are still pending.",
+            passed=False,
+        ),
+        _activation_receipt_row(
+            "deepseek_stage_requires_model_execution_gate",
+            "pending_model_execution_implementation",
+            "DeepSeek pro is optional after data readiness, but model execution, input hash dedupe, and model ledger evidence are still pending.",
+            passed=False,
+        ),
+        _activation_receipt_row(
+            "rate_limit_and_symbol_cap_visible",
+            "passed" if symbol_limit > 0 and rate_limit_seconds >= 60 else "blocked_rate_limit_or_symbol_cap",
+            f"symbol_limit={symbol_limit}; rate_limit_seconds={rate_limit_seconds}",
+            passed=symbol_limit > 0 and rate_limit_seconds >= 60,
+        ),
+        _activation_receipt_row(
+            "safe_ledger_required",
+            "passed",
+            "Provider calls require call_ledger; model calls require model_ledger, safe errors, and hash evidence.",
+            passed=True,
+        ),
+        _activation_receipt_row(
+            "github_probe_excluded_from_live_light",
+            "passed" if github_boundary.get("live_light_on_open_allowed") is False else "blocked_github_probe_on_open",
+            "GitHub probe remains manual/explicit task only and is not part of live_light startup.",
+            passed=github_boundary.get("live_light_on_open_allowed") is False,
+        ),
+        _activation_receipt_row(
+            "real_trading_disconnected",
+            "passed" if trading_boundary.get("real_trading_connected") is False else "blocked_real_trading_connected",
+            "Broker/order/trading chain is disconnected from live_light bootstrap.",
+            passed=trading_boundary.get("real_trading_connected") is False,
+        ),
+        _activation_receipt_row(
+            "full_pool_reserved",
+            "passed",
+            "live_full/full-pool/deep-scan remains reserved and cannot be enabled by page render.",
+            passed=True,
+        ),
+        _activation_receipt_row(
+            "token_key_frontend_exposure_blocked",
+            "passed",
+            "Status cache exposes only safe config keys/flags; token/key values are not read or returned.",
+            passed=True,
+        ),
+        _activation_receipt_row(
+            "production_activation_pending",
+            "blocked_until_explicit_provider_and_model_acceptance",
+            "Production live_light requires explicit provider execution, real call ledger/model ledger, browser-safe UI evidence, and promotion review.",
+            passed=False,
+        ),
+    ]
+    blocking_count = sum(1 for row in rows if not row.get("passed"))
+    receipt = {
+        "schema_version": BOOTSTRAP_ACTIVATION_RECEIPT_SCHEMA_VERSION,
+        "status": "live_light_activation_receipt_ready_execution_blocked",
+        "scope": "local_live_light_activation_receipt_no_provider_or_model_execution",
+        "local_activation_receipt_ready": True,
+        "mode": active_mode,
+        "live_light_enabled": live_light_enabled,
+        "tushare_on_open": bool(tushare_on_open and live_light_enabled),
+        "deepseek_on_open": bool(deepseek_on_open and live_light_enabled),
+        "allowed_next_step": "explicit_live_light_provider_model_acceptance_design_then_user_approved_task_execution",
+        "not_allowed_next_steps": [
+            "GET cache provider/model execution",
+            "React render direct provider/model call",
+            "GitHub probe on live_light open",
+            "real trading integration",
+            "full-pool/deep-scan on open",
+            "treat skeleton/linkage rows as provider execution",
+            "treat activation receipt as production completion",
+        ],
+        "missing_evidence_items": [
+            "provider_execution_implementation",
+            "real Tushare call ledger for allowed light APIs",
+            "DeepSeek model execution gate and model ledger evidence",
+            "provider-backed acceptance results",
+            "browser/runtime evidence for non-blocking task behavior",
+        ],
+        "ready_for_provider_execution_design": True,
+        "ready_for_provider_execution": False,
+        "ready_for_model_execution": False,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "production_live_light_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "activation_row_count": len(rows),
+        "blocking_criterion_count": blocking_count,
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_live_light_activation_receipt",
+                "endpoint": BOOTSTRAP_STATUS_ROUTE,
+                "row_count": len(rows),
+                "blocking_criterion_count": blocking_count,
+                "call_status": "local_activation_receipt_ready_execution_blocked",
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+    }
+    return receipt, rows
 
 
 def _planned_stage_status(mode: str, enabled: bool, stage_kind: str) -> str:
@@ -700,10 +879,22 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
         rate_limit_seconds=rate_limit_seconds,
         deepseek_model=deepseek_model,
     )
+    activation_receipt, activation_rows = _live_light_activation_receipt(
+        active_mode=active_mode,
+        mode_valid=mode_valid,
+        live_light_enabled=live_light_enabled,
+        live_light_sources_enabled=live_light_sources_enabled,
+        tushare_on_open=tushare_on_open,
+        deepseek_on_open=deepseek_on_open,
+        symbol_limit=symbol_limit,
+        rate_limit_seconds=rate_limit_seconds,
+        provider_linkage_rows=provider_linkage_rows,
+    )
 
     packet = {
         "packet_key": PACKET_KEY,
         "schema_version": SCHEMA_VERSION,
+        "activation_receipt_schema_version": BOOTSTRAP_ACTIVATION_RECEIPT_SCHEMA_VERSION,
         "status": status,
         "mode": active_mode,
         "cache_only": active_mode == "cache_only",
@@ -716,6 +907,8 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
         "config_rows": config_rows,
         "provider_linkage_schema_version": BOOTSTRAP_PROVIDER_LINKAGE_SCHEMA_VERSION,
         "provider_linkage_rows": provider_linkage_rows,
+        "live_light_activation_receipt": activation_receipt,
+        "live_light_activation_rows": activation_rows,
         "live_light": {
             "enabled": live_light_enabled,
             "tushare_on_open": tushare_on_open if live_light_enabled else False,
@@ -737,6 +930,10 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             "bootstrap_plan_skeleton_implemented": True,
             "model_ledger_preview_implemented": True,
             "provider_linkage_rows_visible": True,
+            "activation_receipt_visible": True,
+            "ready_for_provider_execution_design": activation_receipt["ready_for_provider_execution_design"],
+            "ready_for_provider_execution": False,
+            "ready_for_model_execution": False,
             "provider_execution_implemented": False,
             "tushare_execution_implemented": False,
             "deepseek_execution_implemented": False,
@@ -759,7 +956,12 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             "live_light_bootstrap_plan_skeleton_implemented": True,
             "live_light_model_ledger_preview_implemented": True,
             "provider_linkage_rows_visible": True,
+            "live_light_activation_receipt_visible": True,
+            "live_light_ready_for_provider_execution_design": True,
+            "live_light_ready_for_provider_execution": False,
+            "live_light_ready_for_model_execution": False,
             "live_light_provider_execution_implemented": False,
+            "production_live_light_complete": False,
             "live_full_enabled": False,
             "full_pool_on_open_allowed": False,
             "github_probe_on_open_allowed": False,
@@ -783,8 +985,11 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             {
                 "api": "local_bootstrap_runtime_mode_cache",
                 "endpoint": BOOTSTRAP_STATUS_ROUTE,
-                "row_count": len(config_rows) + len(provider_linkage_rows),
+                "row_count": len(config_rows) + len(provider_linkage_rows) + len(activation_rows),
                 "provider_linkage_row_count": len(provider_linkage_rows),
+                "activation_row_count": len(activation_rows),
+                "activation_receipt_status": activation_receipt["status"],
+                "activation_receipt_ready": activation_receipt["local_activation_receipt_ready"],
                 "local_fetched_at": loaded_at,
                 "call_status": "cache_read",
                 "external": False,

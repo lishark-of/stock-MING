@@ -124,6 +124,8 @@ Current implementation checkpoint: `GET /api/bootstrap/status` now exposes the r
 
 `GET /api/bootstrap/status` now also exposes `provider_linkage_rows`: a runtime linkage audit for cache/render, `live_light` POST bootstrap, Tushare light refresh, DeepSeek pro after-task explanation, GitHub probe, and real-trading boundaries. Command Center Home and Settings / Config Health display these rows so the Tushare/DeepSeek linkage state is visible before provider execution is implemented. This audit is still local/read-only and keeps Tushare/DeepSeek/GitHub calls false.
 
+`GET /api/bootstrap/status` now also exposes `live_light_activation_receipt` and `live_light_activation_rows`. This receipt is the next-step checklist between linkage visibility and real provider/model execution: mode layering, cache/render silence, POST task boundary, rate limit, symbol cap, call/model ledger requirements, GitHub exclusion, full-pool reserve, token/key boundary, and real-trading isolation are visible; Tushare provider execution, DeepSeek model execution, and production promotion remain explicitly blocked. It is ready for provider/model execution design, not ready for provider/model execution.
+
 Mode-layered acceptance contract from the latest user baseline:
 
 - The boundary is not "never automate anything"; it is `cache_only` default-deny plus explicit upgrades to `manual` or `live_light`.
