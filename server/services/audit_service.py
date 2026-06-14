@@ -603,6 +603,15 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "does_not_execute_trades" in tushare_acceptance_script
         and "tushare_adapter" not in tushare_acceptance_script
         and "api.github.com" not in tushare_acceptance_script,
+        "tushare_production_stage_scope_manifest_is_local": "tushare_production_stage_scope_manifest"
+        in tushare_acceptance_script
+        and "tushare_production_stage_scope_manifest_is_complete_and_pending" in tushare_acceptance_script
+        and "provider_backed_acceptance_done" in tushare_acceptance_script
+        and "production_tushare_pipeline_complete" in tushare_acceptance_script
+        and "external_calls_triggered" in tushare_acceptance_script
+        and "does_not_execute_trades" in tushare_acceptance_script
+        and "tushare_adapter" not in tushare_acceptance_script
+        and "api.github.com" not in tushare_acceptance_script,
         "bootstrap_runtime_contract_is_local": "command_center_3_bootstrap_runtime_contract.v1" in bootstrap_runtime_script
         and "local_bootstrap_runtime_contract_no_provider_or_model_execution" in bootstrap_runtime_script
         and "cache_only_payload_sanitizes_secret_like_inputs" in bootstrap_runtime_script
@@ -633,6 +642,16 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "local_factor_test_lab_contract_no_provider_execution" in factor_test_lab_script
         and "provider_backed_small_pool_validation_done" in factor_test_lab_script
         and "production_factor_test_validation_complete" in factor_test_lab_script
+        and "does_not_execute_trades" in factor_test_lab_script
+        and "tushare_adapter" not in factor_test_lab_script
+        and "api.github.com" not in factor_test_lab_script,
+        "factor_test_production_stage_scope_manifest_is_local": "factor_test_production_stage_scope_manifest"
+        in factor_test_lab_script
+        and "factor_test_production_stage_scope_manifest_is_complete_and_pending" in factor_test_lab_script
+        and "provider_backed_small_pool_validation_done" in factor_test_lab_script
+        and "full_market_validation_done" in factor_test_lab_script
+        and "production_factor_test_validation_complete" in factor_test_lab_script
+        and "external_calls_triggered" in factor_test_lab_script
         and "does_not_execute_trades" in factor_test_lab_script
         and "tushare_adapter" not in factor_test_lab_script
         and "api.github.com" not in factor_test_lab_script,
@@ -777,6 +796,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "tushare_acceptance_contract_exists",
             "tushare_acceptance_contract_step",
             "tushare_acceptance_contract_is_local",
+            "tushare_production_stage_scope_manifest_is_local",
             "bootstrap_runtime_contract_exists",
             "bootstrap_runtime_contract_step",
             "bootstrap_runtime_contract_is_local",
@@ -786,6 +806,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "factor_test_lab_contract_exists",
             "factor_test_lab_contract_step",
             "factor_test_lab_contract_is_local",
+            "factor_test_production_stage_scope_manifest_is_local",
             "factor_universe_contract_exists",
             "factor_universe_contract_step",
             "factor_universe_contract_is_local",
@@ -885,6 +906,11 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             evidence="contract keeps LTG-02 matrix/readiness/provider-sample plans separate from provider-backed production acceptance",
         ),
         _release_gate_row(
+            "tushare_production_stage_scope_manifest_is_local",
+            checks["tushare_production_stage_scope_manifest_is_local"],
+            evidence="contract exposes LTG-02 production stage scope while provider execution, full-interface acceptance, and production completion remain pending",
+        ),
+        _release_gate_row(
             "bootstrap_runtime_contract_exists",
             checks["bootstrap_runtime_contract_exists"],
             evidence=_relative_path(BOOTSTRAP_RUNTIME_CONTRACT_PATH),
@@ -928,6 +954,11 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "factor_test_lab_contract_is_local",
             checks["factor_test_lab_contract_is_local"],
             evidence="contract keeps LTG-03 light metrics, small-pool readiness, and production QA separate from provider-backed/full-market validation",
+        ),
+        _release_gate_row(
+            "factor_test_production_stage_scope_manifest_is_local",
+            checks["factor_test_production_stage_scope_manifest_is_local"],
+            evidence="contract exposes LTG-03 production stage scope while provider-backed small-pool, full-market validation, and production completion remain pending",
         ),
         _release_gate_row(
             "factor_universe_contract_exists",
