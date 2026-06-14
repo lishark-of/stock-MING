@@ -7273,6 +7273,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("read_plan_consumes_storage_contracts_only", script)
         self.assertIn("execution_readiness_keeps_production_blockers_visible", script)
         self.assertIn("task_catalog_is_button_gated_read_plan_and_worker_dry_run_only", script)
+        self.assertIn("worker_stage_scope_manifest_is_complete_and_pending", script)
+        self.assertIn("worker_stage_scope_rows", script)
         self.assertIn("frontend_displays_plan_and_does_not_compute_universe", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
@@ -7331,12 +7333,49 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             set(payload["observed"]["declared_universe_modes"]),
             {"current_target", "watchlist", "custom_pool", "full_pool"},
         )
+        required_stages = [
+            "storage_read_plan",
+            "worker_batch_scope",
+            "cross_sectional_rank",
+            "zscore",
+            "neutralization",
+            "factor_combination",
+            "result_summary",
+            "promotion_review",
+        ]
+        self.assertEqual(payload["observed"]["worker_stage_scope_count"], len(required_stages))
+        self.assertEqual(payload["observed"]["worker_stage_scope_keys"], required_stages)
+        self.assertEqual(payload["observed"]["worker_stage_scope_pending_count"], len(required_stages))
+        stage_scope_rows = {row["stage_key"]: row for row in payload["worker_stage_scope_rows"]}
+        self.assertEqual(set(stage_scope_rows), set(required_stages))
+        for row in stage_scope_rows.values():
+            self.assertEqual(row["scope"], "factor_universe_worker_batch_stage_scope_manifest")
+            self.assertTrue(row["selected_by_worker_dry_run_scope"])
+            self.assertTrue(row["required_before_production"])
+            self.assertFalse(row["worker_execution_implemented"])
+            self.assertFalse(row["worker_batch_executed"])
+            self.assertFalse(row["large_universe_pipeline_done"])
+            self.assertFalse(row["cross_sectional_rank_zscore_done"])
+            self.assertFalse(row["neutralization_done"])
+            self.assertFalse(row["factor_combination_research_done"])
+            self.assertFalse(row["full_pool_validation_done"])
+            self.assertFalse(row["production_factor_universe_complete"])
+            self.assertFalse(row["page_render_starts_full_pool"])
+            self.assertFalse(row["frontend_computes_rank_zscore"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called_by_contract"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("universe_modes_are_declared_not_executed", criteria)
         self.assertIn("read_plan_consumes_storage_contracts_only", criteria)
         self.assertIn("storage_read_rows_do_not_expose_metric_samples", criteria)
         self.assertIn("execution_readiness_keeps_production_blockers_visible", criteria)
         self.assertIn("worker_batch_dry_run_ticket_is_local", criteria)
+        self.assertIn("worker_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("local_rank_zscore_dry_run_is_research_only", criteria)
         self.assertIn("task_catalog_is_button_gated_read_plan_and_worker_dry_run_only", criteria)
         self.assertIn("frontend_displays_plan_and_does_not_compute_universe", criteria)

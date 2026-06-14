@@ -32,6 +32,16 @@ PRODUCTION_PENDING_CRITERIA = {
     "neutralization_pending",
     "full_pool_validation_pending",
 }
+WORKER_STAGE_SCOPE_LABELS = {
+    "storage_read_plan": "Storage read plan",
+    "worker_batch_scope": "Worker batch scope",
+    "cross_sectional_rank": "Cross-sectional rank",
+    "zscore": "Z-score",
+    "neutralization": "Neutralization",
+    "factor_combination": "Factor combination",
+    "result_summary": "Result summary",
+    "promotion_review": "Promotion review",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -62,6 +72,45 @@ def _read_script(path: str) -> str:
         return ""
 
 
+def _worker_stage_scope_rows(required_stages: list[str], selected_stages: list[str]) -> list[dict[str, Any]]:
+    selected = set(selected_stages)
+    return [
+        {
+            "stage_key": stage_key,
+            "stage_label": WORKER_STAGE_SCOPE_LABELS.get(stage_key, stage_key),
+            "scope": "factor_universe_worker_batch_stage_scope_manifest",
+            "current_status": "local_worker_batch_scope_ticket_only",
+            "target_status": "worker_backed_execution_required",
+            "selected_by_worker_dry_run_scope": stage_key in selected,
+            "required_before_production": True,
+            "worker_execution_implemented": False,
+            "worker_batch_executed": False,
+            "large_universe_pipeline_done": False,
+            "cross_sectional_rank_zscore_done": False,
+            "neutralization_done": False,
+            "factor_combination_research_done": False,
+            "full_pool_validation_done": False,
+            "production_factor_universe_complete": False,
+            "page_render_starts_full_pool": False,
+            "frontend_computes_rank_zscore": False,
+            "external_calls_triggered": False,
+            "tushare_called_by_contract": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "required_real_evidence": [
+                "explicit worker-backed task execution",
+                "durable task log rows",
+                "large-universe result rows",
+                "promotion review before production completion",
+            ],
+        }
+        for stage_key in required_stages
+    ]
+
+
 def build_contract() -> dict[str, Any]:
     now = "2026-06-09T11:09:00"
     payload = {"universe_mode": "full_pool", "universe": ["002008.SZ", "300750.SZ", "600519.SH"]}
@@ -80,6 +129,9 @@ def build_contract() -> dict[str, Any]:
         now,
     )
     worker_batch_dry_run, worker_batch_rows = factor_service._factor_universe_worker_batch_dry_run_receipt(worker_batch_payload, now)
+    required_worker_stage_scope = list(factor_service.FACTOR_UNIVERSE_WORKER_BATCH_REQUIRED_STAGES)
+    selected_worker_stage_scope = [str(item) for item in _list(worker_batch_payload.get("requested_stages"))]
+    worker_stage_scope_rows = _worker_stage_scope_rows(required_worker_stage_scope, selected_worker_stage_scope)
 
     plan_contract = dict(base_contract)
     plan_contract.update(
@@ -294,6 +346,38 @@ def build_contract() -> dict[str, Any]:
             "Worker-batch dry-run may create a local scope ticket only; it must not start workers, call providers/models, compute production metrics, or promote completion flags.",
         ),
         _row(
+            "worker_stage_scope_manifest_is_complete_and_pending",
+            [row.get("stage_key") for row in worker_stage_scope_rows] == required_worker_stage_scope
+            and set(selected_worker_stage_scope) == set(required_worker_stage_scope)
+            and worker_batch_payload.get("missing_required_stages") == []
+            and worker_batch_dry_run.get("missing_required_stages") == []
+            and all(
+                isinstance(row, dict)
+                and row.get("scope") == "factor_universe_worker_batch_stage_scope_manifest"
+                and row.get("selected_by_worker_dry_run_scope") is True
+                and row.get("required_before_production") is True
+                and row.get("worker_execution_implemented") is False
+                and row.get("worker_batch_executed") is False
+                and row.get("large_universe_pipeline_done") is False
+                and row.get("cross_sectional_rank_zscore_done") is False
+                and row.get("neutralization_done") is False
+                and row.get("factor_combination_research_done") is False
+                and row.get("full_pool_validation_done") is False
+                and row.get("production_factor_universe_complete") is False
+                and row.get("page_render_starts_full_pool") is False
+                and row.get("frontend_computes_rank_zscore") is False
+                and row.get("external_calls_triggered") is False
+                and row.get("tushare_called_by_contract") is False
+                and row.get("deepseek_called") is False
+                and row.get("github_called") is False
+                and row.get("does_not_execute_trades") is True
+                and row.get("does_not_modify_strategy_action") is True
+                and row.get("contains_secret") is False
+                for row in worker_stage_scope_rows
+            ),
+            "Required Factor universe worker stages must be visible as a pending local scope manifest without worker/provider/model execution.",
+        ),
+        _row(
             "local_rank_zscore_dry_run_is_research_only",
             rank_zscore_dry_run.get("schema_version") == "factor_universe_local_rank_zscore_dry_run.v1"
             and rank_zscore_dry_run.get("scope") == "local_factor_values_rank_zscore_dry_run_not_full_pool_validation"
@@ -411,6 +495,7 @@ def build_contract() -> dict[str, Any]:
             and "cross_sectional_rank_zscore_done" in this_script
             and "local_rank_zscore_dry_run_is_research_only" in this_script
             and "worker_batch_dry_run_ticket_is_local" in this_script
+            and "worker_stage_scope_manifest_is_complete_and_pending" in this_script
             and "run_factor_universe_worker_batch_dry_run" in this_script
             and "execution_readiness_receipt_is_local" in this_script
             and "execution_activation_receipt_is_local" in this_script
@@ -476,9 +561,15 @@ def build_contract() -> dict[str, Any]:
             "execution_activation_production_blocker_count": execution_activation.get("production_blocker_count"),
             "worker_batch_dry_run_status": worker_batch_dry_run.get("status"),
             "worker_batch_scope_hash_short": worker_batch_dry_run.get("worker_batch_scope_hash_short"),
+            "worker_stage_scope_count": len(worker_stage_scope_rows),
+            "worker_stage_scope_keys": [row.get("stage_key") for row in worker_stage_scope_rows],
+            "worker_stage_scope_pending_count": sum(
+                1 for row in worker_stage_scope_rows if row.get("worker_execution_implemented") is False
+            ),
             "task_backend": universe_task.get("current_backend"),
             "worker_batch_task_backend": worker_batch_task.get("current_backend"),
         },
+        "worker_stage_scope_rows": worker_stage_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Worker batch dry-run is only a scope ticket; worker execution, rank/zscore, neutralization, provider-backed validation, and full-pool production research remain pending.",
     }
