@@ -6064,6 +6064,30 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(
             persisted["api_validation_matrix_policy"]["provider_target_sample_acceptance_is_full_interface_acceptance"]
         )
+        gap_audit = persisted["provider_evidence_gap_audit"]
+        gap_rows = {row["target"]: row for row in persisted["provider_evidence_gap_rows"]}
+        self.assertEqual(gap_audit["target_sample_acceptance_ready_count"], 1)
+        self.assertTrue(gap_audit["target_sample_acceptance_ready_for_review"])
+        self.assertEqual(
+            gap_rows["margin_financing"]["gap_status"],
+            "target_sample_ready_promotion_pending",
+        )
+        self.assertEqual(gap_rows["margin_financing"]["gap_blockers"], ["provider_promotion_not_ready"])
+        self.assertTrue(gap_rows["margin_financing"]["target_sample_acceptance_ready_for_review"])
+        self.assertTrue(gap_rows["margin_financing"]["target_sample_review_ready_not_promotion"])
+        self.assertFalse(gap_rows["margin_financing"]["provider_backed_acceptance_done"])
+        self.assertFalse(gap_rows["margin_financing"]["production_tushare_pipeline_complete"])
+
+        sample_receipt = persisted["provider_sample_readiness_receipt"]
+        sample_receipt_rows = {row["criterion"]: row for row in persisted["provider_sample_readiness_rows"]}
+        self.assertEqual(sample_receipt["target_sample_acceptance_ready_count"], 1)
+        self.assertTrue(sample_receipt["target_sample_acceptance_ready_for_review"])
+        self.assertEqual(
+            sample_receipt_rows["target_sample_acceptance_review_evidence"]["status"],
+            "ready_for_review_not_promotion",
+        )
+        self.assertFalse(sample_receipt["provider_backed_acceptance_done"])
+        self.assertFalse(sample_receipt["production_tushare_pipeline_complete"])
 
     def test_tushare_refresh_task_exposes_failure_mode_qa_contract(self):
         db_path = self._with_meta_store()
@@ -6604,6 +6628,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("matrix_only_rows_not_verified", script)
         self.assertIn("target_sample_plan_is_plan_only", script)
         self.assertIn("target_sample_acceptance_contract_is_explicit_and_non_promoting", script)
+        self.assertIn("target_sample_acceptance_feeds_gap_and_receipt_without_promotion", script)
         self.assertIn("provider_readiness_stays_pending", script)
         self.assertIn("provider_promotion_audit_stays_local_pending", script)
         self.assertIn("provider_sample_readiness_receipt_is_local", script)
@@ -6664,6 +6689,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("api_acceptance_audit_is_semantic_only", criteria)
         self.assertIn("target_sample_plan_is_plan_only", criteria)
         self.assertIn("target_sample_acceptance_contract_is_explicit_and_non_promoting", criteria)
+        self.assertIn("target_sample_acceptance_feeds_gap_and_receipt_without_promotion", criteria)
         self.assertIn("provider_readiness_stays_pending", criteria)
         self.assertIn("provider_promotion_audit_stays_local_pending", criteria)
         self.assertIn("provider_evidence_gap_audit_is_local_pending", criteria)

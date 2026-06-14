@@ -1170,6 +1170,9 @@ def _provider_evidence_gap_row(
     sample_plan_status: str,
     promotion_ready: bool,
     failure_mode_evidence_done: bool,
+    target_sample_acceptance_status: str,
+    target_sample_acceptance_ready_for_review: bool,
+    target_sample_acceptance_blockers: list[str],
     required_success_evidence: list[str],
     required_failure_evidence: list[str],
 ) -> dict[str, Any]:
@@ -1192,6 +1195,8 @@ def _provider_evidence_gap_row(
         blockers.append("provider_promotion_not_ready")
     if not blockers:
         gap_status = "provider_evidence_gap_review_ready"
+    elif target_sample_acceptance_ready_for_review and blockers == ["provider_promotion_not_ready"]:
+        gap_status = "target_sample_ready_promotion_pending"
     elif not selected_apis:
         gap_status = "matrix_only_gap_pending"
     elif missing_required_apis:
@@ -1223,6 +1228,10 @@ def _provider_evidence_gap_row(
         "required_failure_evidence": required_failure_evidence,
         "provider_promotion_ready": promotion_ready,
         "failure_mode_evidence_done": failure_mode_evidence_done,
+        "target_sample_acceptance_status": target_sample_acceptance_status,
+        "target_sample_acceptance_ready_for_review": target_sample_acceptance_ready_for_review,
+        "target_sample_acceptance_blockers": target_sample_acceptance_blockers,
+        "target_sample_review_ready_not_promotion": bool(target_sample_acceptance_ready_for_review and not promotion_ready),
         "provider_backed_acceptance_done": False,
         "production_tushare_pipeline_complete": False,
         "cache_get_external_calls": False,
@@ -1242,11 +1251,17 @@ def _provider_evidence_gap_audit(
     provider_target_sample_plan_contract: dict[str, Any],
     provider_acceptance_promotion_audit: dict[str, Any],
     call_ledger: list[dict[str, Any]],
+    provider_target_sample_acceptance_contract: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     validation_by_api = {str(row.get("api") or ""): row for row in api_validation_rows}
     target_by_key = {str(row.get("target") or ""): row for row in validation_target_rows}
     sample_plan_by_target = {
         str(row.get("target") or ""): row for row in provider_target_sample_plan_contract.get("rows", [])
+    }
+    target_sample_acceptance_contract = provider_target_sample_acceptance_contract or {}
+    target_sample_acceptance_by_target = {
+        str(row.get("target") or ""): row for row in target_sample_acceptance_contract.get("rows", [])
+        if isinstance(row, Mapping)
     }
     ledger_by_api = {str(row.get("api") or ""): row for row in call_ledger}
     promotion_ready = bool(provider_acceptance_promotion_audit.get("promotion_ready"))
@@ -1274,6 +1289,21 @@ def _provider_evidence_gap_audit(
         ]
         target_row = target_by_key.get(target_key, {})
         sample_plan_row = sample_plan_by_target.get(target_key, {})
+        target_sample_acceptance_row = target_sample_acceptance_by_target.get(target_key, {})
+        target_sample_acceptance_status = str(
+            target_sample_acceptance_row.get("target_sample_acceptance_status")
+            or "target_sample_acceptance_not_requested"
+        )
+        target_sample_acceptance_ready = (
+            target_sample_acceptance_status == "target_sample_acceptance_ready_for_review"
+        )
+        target_failure_mode_evidence_done = bool(
+            failure_mode_evidence_done
+            or (
+                target_sample_acceptance_ready
+                and target_sample_acceptance_contract.get("failure_modes_validated") is True
+            )
+        )
         rows.append(
             _provider_evidence_gap_row(
                 target=target_key,
@@ -1288,7 +1318,12 @@ def _provider_evidence_gap_audit(
                 validation_readiness=str(target_row.get("readiness") or "unknown"),
                 sample_plan_status=str(sample_plan_row.get("provider_sample_plan_status") or "unknown"),
                 promotion_ready=promotion_ready,
-                failure_mode_evidence_done=failure_mode_evidence_done,
+                failure_mode_evidence_done=target_failure_mode_evidence_done,
+                target_sample_acceptance_status=target_sample_acceptance_status,
+                target_sample_acceptance_ready_for_review=target_sample_acceptance_ready,
+                target_sample_acceptance_blockers=list(
+                    target_sample_acceptance_row.get("target_sample_acceptance_blockers") or []
+                ),
                 required_success_evidence=list(sample_plan_row.get("required_success_evidence") or []),
                 required_failure_evidence=list(sample_plan_row.get("required_failure_evidence") or []),
             )
@@ -1296,6 +1331,8 @@ def _provider_evidence_gap_audit(
 
     target_with_gap_count = sum(1 for row in rows if int(row.get("gap_blocker_count") or 0) > 0)
     gap_blocker_count = sum(int(row.get("gap_blocker_count") or 0) for row in rows)
+    target_sample_ready_count = sum(1 for row in rows if row.get("target_sample_acceptance_ready_for_review"))
+    target_sample_requested_count = int(target_sample_acceptance_contract.get("requested_target_count") or 0)
     return {
         "schema_version": "tushare_provider_evidence_gap_audit.v1",
         "status": "provider_evidence_gaps_cleared_for_review" if target_with_gap_count == 0 else "provider_evidence_gaps_pending",
@@ -1303,6 +1340,15 @@ def _provider_evidence_gap_audit(
         "target_count": len(rows),
         "target_with_gap_count": target_with_gap_count,
         "gap_blocker_count": gap_blocker_count,
+        "target_sample_acceptance_requested_count": target_sample_requested_count,
+        "target_sample_acceptance_ready_count": target_sample_ready_count,
+        "target_sample_acceptance_status": target_sample_acceptance_contract.get(
+            "status",
+            "target_sample_acceptance_not_requested",
+        ),
+        "target_sample_acceptance_ready_for_review": bool(
+            target_sample_acceptance_contract.get("target_sample_acceptance_ready_for_review")
+        ),
         "provider_promotion_ready": promotion_ready,
         "failure_mode_evidence_done": failure_mode_evidence_done,
         "provider_backed_acceptance_done": False,
@@ -1347,6 +1393,7 @@ def _provider_sample_readiness_receipt_row(
 def _provider_sample_readiness_receipt(
     *,
     provider_target_sample_plan_contract: dict[str, Any],
+    provider_target_sample_acceptance_contract: dict[str, Any] | None = None,
     provider_acceptance_readiness_audit: dict[str, Any],
     provider_acceptance_promotion_audit: dict[str, Any],
     provider_evidence_gap_audit: dict[str, Any],
@@ -1355,6 +1402,10 @@ def _provider_sample_readiness_receipt(
     pending_target_count = int(provider_target_sample_plan_contract.get("pending_or_blocked_target_count") or 0)
     target_count = int(provider_target_sample_plan_contract.get("target_count") or 0)
     gap_blocker_count = int(provider_evidence_gap_audit.get("gap_blocker_count") or 0)
+    target_sample_acceptance = provider_target_sample_acceptance_contract or {}
+    target_sample_acceptance_ready_count = int(target_sample_acceptance.get("ready_target_count") or 0)
+    target_sample_acceptance_requested_count = int(target_sample_acceptance.get("requested_target_count") or 0)
+    target_sample_acceptance_ready = bool(target_sample_acceptance.get("target_sample_acceptance_ready_for_review"))
     promotion_ready = bool(provider_acceptance_promotion_audit.get("promotion_ready"))
     readiness_local_safe = bool(
         provider_acceptance_readiness_audit.get("schema_version") == "tushare_provider_acceptance_readiness_audit.v1"
@@ -1415,6 +1466,19 @@ def _provider_sample_readiness_receipt(
             evidence=f"gap_status={provider_evidence_gap_audit.get('status')}; gap_blocker_count={gap_blocker_count}",
         ),
         _provider_sample_readiness_receipt_row(
+            "target_sample_acceptance_review_evidence",
+            "ready_for_review_not_promotion"
+            if target_sample_acceptance_ready
+            else "not_requested_or_blocked",
+            target_sample_acceptance_ready,
+            evidence=(
+                f"acceptance_status={target_sample_acceptance.get('status', 'target_sample_acceptance_not_requested')}; "
+                f"requested_targets={target_sample_acceptance_requested_count}; "
+                f"ready_targets={target_sample_acceptance_ready_count}"
+            ),
+            required_before_promotion=False,
+        ),
+        _provider_sample_readiness_receipt_row(
             "provider_promotion_evidence_ticket",
             "ready_for_promotion_review" if promotion_ready else "pending_provider_execution_evidence",
             promotion_ready,
@@ -1466,6 +1530,9 @@ def _provider_sample_readiness_receipt(
         "target_count": target_count,
         "ready_target_count": ready_target_count,
         "pending_or_blocked_target_count": pending_target_count,
+        "target_sample_acceptance_requested_count": target_sample_acceptance_requested_count,
+        "target_sample_acceptance_ready_count": target_sample_acceptance_ready_count,
+        "target_sample_acceptance_ready_for_review": target_sample_acceptance_ready,
         "provider_evidence_gap_blocker_count": gap_blocker_count,
         "provider_promotion_ready": promotion_ready,
         "provider_backed_acceptance_done": promotion_ready,
@@ -2637,9 +2704,11 @@ def run_tushare_refresh_task(
         provider_target_sample_plan_contract=provider_target_sample_plan_contract,
         provider_acceptance_promotion_audit=provider_acceptance_promotion_audit,
         call_ledger=call_ledger,
+        provider_target_sample_acceptance_contract=provider_target_sample_acceptance_contract,
     )
     provider_sample_readiness_receipt = _provider_sample_readiness_receipt(
         provider_target_sample_plan_contract=provider_target_sample_plan_contract,
+        provider_target_sample_acceptance_contract=provider_target_sample_acceptance_contract,
         provider_acceptance_readiness_audit=provider_acceptance_readiness_audit,
         provider_acceptance_promotion_audit=provider_acceptance_promotion_audit,
         provider_evidence_gap_audit=provider_evidence_gap_audit,
@@ -2778,6 +2847,9 @@ def run_tushare_refresh_task(
         "provider_evidence_gap_target_count": provider_evidence_gap_audit["target_count"],
         "provider_evidence_gap_target_with_gap_count": provider_evidence_gap_audit["target_with_gap_count"],
         "provider_evidence_gap_blocker_count": provider_evidence_gap_audit["gap_blocker_count"],
+        "provider_evidence_gap_target_sample_ready_count": provider_evidence_gap_audit[
+            "target_sample_acceptance_ready_count"
+        ],
         "provider_sample_readiness_status": provider_sample_readiness_receipt["status"],
         "provider_sample_ready_for_explicit_task": provider_sample_readiness_receipt[
             "ready_for_explicit_provider_sample_task"

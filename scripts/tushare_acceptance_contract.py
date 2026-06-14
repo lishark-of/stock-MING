@@ -235,6 +235,40 @@ def build_contract() -> dict[str, Any]:
         provider_target_sample_plan_contract=target_sample_plan_ready,
         call_ledger=target_sample_call_ledger,
     )
+    target_sample_acceptance_audit = tushare_task_service._api_acceptance_audit(
+        target_sample_validation_rows,
+        target_sample_call_ledger,
+    )
+    target_sample_readiness = tushare_task_service._provider_acceptance_readiness_audit(
+        api_validation_rows=target_sample_validation_rows,
+        validation_target_rows=target_sample_validation_target_rows,
+        api_acceptance_audit=target_sample_acceptance_audit,
+    )
+    target_sample_promotion = tushare_task_service._provider_acceptance_promotion_audit(
+        api_validation_rows=target_sample_validation_rows,
+        validation_target_rows=target_sample_validation_target_rows,
+        api_acceptance_audit=target_sample_acceptance_audit,
+        provider_target_sample_plan_contract=target_sample_plan_ready,
+        provider_acceptance_readiness_audit=target_sample_readiness,
+        call_ledger=target_sample_call_ledger,
+    )
+    target_sample_gap = tushare_task_service._provider_evidence_gap_audit(
+        api_validation_rows=target_sample_validation_rows,
+        validation_target_rows=target_sample_validation_target_rows,
+        provider_target_sample_plan_contract=target_sample_plan_ready,
+        provider_acceptance_promotion_audit=target_sample_promotion,
+        call_ledger=target_sample_call_ledger,
+        provider_target_sample_acceptance_contract=target_sample_acceptance_ready,
+    )
+    target_sample_receipt = tushare_task_service._provider_sample_readiness_receipt(
+        provider_target_sample_plan_contract=target_sample_plan_ready,
+        provider_target_sample_acceptance_contract=target_sample_acceptance_ready,
+        provider_acceptance_readiness_audit=target_sample_readiness,
+        provider_acceptance_promotion_audit=target_sample_promotion,
+        provider_evidence_gap_audit=target_sample_gap,
+    )
+    target_sample_gap_rows = {row.get("target"): row for row in target_sample_gap.get("rows", [])}
+    target_sample_receipt_rows = {row.get("criterion"): row for row in target_sample_receipt.get("rows", [])}
 
     rows = [
         _row(
@@ -386,6 +420,43 @@ def build_contract() -> dict[str, Any]:
             and target_sample_acceptance_ready.get("does_not_execute_trades") is True
             and target_sample_acceptance_ready.get("does_not_modify_strategy_action") is True,
             "Explicit target-sample acceptance may make one target domain review-ready, but the contract itself must not call providers or promote full-interface production acceptance.",
+        ),
+        _row(
+            "target_sample_acceptance_feeds_gap_and_receipt_without_promotion",
+            target_sample_gap.get("schema_version") == "tushare_provider_evidence_gap_audit.v1"
+            and target_sample_gap.get("target_sample_acceptance_ready_count") == 1
+            and target_sample_gap.get("target_sample_acceptance_ready_for_review") is True
+            and target_sample_gap_rows["margin_financing"].get("gap_status") == "target_sample_ready_promotion_pending"
+            and target_sample_gap_rows["margin_financing"].get("target_sample_acceptance_ready_for_review") is True
+            and target_sample_gap_rows["margin_financing"].get("target_sample_review_ready_not_promotion") is True
+            and target_sample_gap_rows["margin_financing"].get("gap_blockers") == ["provider_promotion_not_ready"]
+            and target_sample_receipt.get("target_sample_acceptance_ready_count") == 1
+            and target_sample_receipt.get("target_sample_acceptance_ready_for_review") is True
+            and target_sample_receipt_rows["target_sample_acceptance_review_evidence"].get("status")
+            == "ready_for_review_not_promotion"
+            and target_sample_receipt.get("provider_backed_acceptance_done") is False
+            and target_sample_receipt.get("production_tushare_pipeline_complete") is False
+            and _flag_false(
+                target_sample_gap,
+                "cache_get_external_calls",
+                "audit_external_calls_triggered",
+                "tushare_called_by_audit",
+                "deepseek_called",
+                "github_called",
+            )
+            and _flag_false(
+                target_sample_receipt,
+                "cache_get_external_calls",
+                "receipt_external_calls_triggered",
+                "tushare_called_by_receipt",
+                "deepseek_called",
+                "github_called",
+            )
+            and target_sample_gap.get("does_not_execute_trades") is True
+            and target_sample_gap.get("does_not_modify_strategy_action") is True
+            and target_sample_receipt.get("does_not_execute_trades") is True
+            and target_sample_receipt.get("does_not_modify_strategy_action") is True,
+            "Target-sample review evidence must feed the gap ledger and receipt as review-ready only, while provider promotion and production completion remain false.",
         ),
         _row(
             "provider_readiness_stays_pending",
