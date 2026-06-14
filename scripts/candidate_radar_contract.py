@@ -4,8 +4,9 @@
 This push-gate guard is not a production radar scan. It reads local cache and
 builds local plan-only and local-universe execution contracts to prevent quick
 scans, full-pool plans, local full-pool execution receipts, deep-scan plans,
-no-feature-loss QA, replacement triage, and result-delta clarity from being
-mistaken for production radar replacement or buy signals.
+search quant projection receipts, no-feature-loss QA, replacement triage, and
+result-delta clarity from being mistaken for production radar replacement,
+provider/model execution, or buy signals.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from server.services import candidate_service, packet_service, task_service  # n
 
 REQUIRED_TASK_TYPES = {
     "run_candidate_radar_quick_scan",
+    "run_candidate_radar_quant_projection",
     "run_candidate_radar_full_pool_plan",
     "run_candidate_radar_full_pool_local_scan",
     "run_candidate_radar_deep_scan_plan",
@@ -186,6 +188,21 @@ def build_contract() -> dict[str, Any]:
         full_pool_scan_plan=full_pool_plan,
         deep_scan_plan=deep_scan_plan,
     )
+    quant_snapshot, _, _ = candidate_service._snapshot_with_quant_projection(
+        contract_snapshot,
+        {"symbol": "000001", "include_tushare": True, "include_deepseek": True},
+    )
+    quant_packet = candidate_service._build_candidate_radar_packet(
+        quant_snapshot,
+        mode=candidate_service.QUANT_PROJECTION_SCAN_MODE,
+        cache_source="local_contract",
+        scan_mode=candidate_service.QUANT_PROJECTION_SCAN_MODE,
+        request_params_safe={
+            "scan_mode": candidate_service.QUANT_PROJECTION_SCAN_MODE,
+            "symbol": "000001.SZ",
+            "external_sources_allowed": False,
+        },
+    )
     readiness = _dict(cache_packet.get("fast_scan_readiness_audit"))
     runtime_budget = _dict(cache_packet.get("fast_scan_runtime_budget_contract"))
     no_loss = _dict(cache_packet.get("no_feature_loss_acceptance_contract"))
@@ -238,6 +255,12 @@ def build_contract() -> dict[str, Any]:
         for row in _list(local_deep_review_packet.get("deep_scan_local_review_rows"))
         if isinstance(row, dict)
     }
+    search_quant_projection_receipt = _dict(quant_packet.get("search_quant_projection_receipt"))
+    search_quant_projection_rows = {
+        str(row.get("step_key") or ""): row
+        for row in _list(quant_packet.get("search_quant_projection_rows"))
+        if isinstance(row, dict)
+    }
     browser_qa_evidence = _dict(cache_packet.get("candidate_browser_qa_evidence_summary"))
     browser_qa_review = _dict(cache_packet.get("candidate_browser_qa_review_contract"))
     policy = _dict(cache_packet.get("policy"))
@@ -268,6 +291,13 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_candidate_radar_quick_scan"].get("route") == "POST /api/candidate-radar/scan-quick"
             and task_rows["run_candidate_radar_quick_scan"].get("possible_external_sources") == []
             and set(task_rows["run_candidate_radar_quick_scan"].get("scan_modes") or []) == candidate_service.SUPPORTED_LOCAL_SCAN_MODES
+            and task_rows["run_candidate_radar_quant_projection"].get("route")
+            == "POST /api/candidate-radar/quant-projection"
+            and task_rows["run_candidate_radar_quant_projection"].get("local_receipt_only") is True
+            and task_rows["run_candidate_radar_quant_projection"].get("provider_model_pending") is True
+            and task_rows["run_candidate_radar_quant_projection"].get("provider_execution_implemented") is False
+            and task_rows["run_candidate_radar_quant_projection"].get("model_execution_implemented") is False
+            and task_rows["run_candidate_radar_quant_projection"].get("production_quant_projection_complete") is False
             and task_rows["run_candidate_radar_full_pool_plan"].get("route") == "POST /api/candidate-radar/full-pool-plan"
             and task_rows["run_candidate_radar_full_pool_plan"].get("plan_only") is True
             and task_rows["run_candidate_radar_full_pool_plan"].get("full_pool_scan_done") is False
@@ -358,6 +388,44 @@ def build_contract() -> dict[str, Any]:
             and "deep_scan_local_review_receipt" in candidate_frontend
             and "Deep-scan 本地审查收据" in candidate_frontend,
             "Deep-scan local review must stay a local evidence review receipt; it must not call DeepSeek/providers or mark deep_scan production acceptance complete.",
+        ),
+        _row(
+            "search_quant_projection_receipt_is_local_provider_model_pending",
+            search_quant_projection_receipt.get("schema_version")
+            == "candidate_radar_search_quant_projection_receipt.v1"
+            and search_quant_projection_receipt.get("status")
+            == "quant_projection_local_receipt_ready_provider_model_pending"
+            and search_quant_projection_receipt.get("scan_mode") == candidate_service.QUANT_PROJECTION_SCAN_MODE
+            and search_quant_projection_receipt.get("symbol") == "000001.SZ"
+            and search_quant_projection_receipt.get("symbol_valid") is True
+            and search_quant_projection_receipt.get("ready_for_real_provider_model_projection") is False
+            and search_quant_projection_receipt.get("provider_execution_implemented") is False
+            and search_quant_projection_receipt.get("model_execution_implemented") is False
+            and search_quant_projection_receipt.get("factor_refresh_executed") is False
+            and search_quant_projection_receipt.get("next_session_refresh_executed") is False
+            and search_quant_projection_receipt.get("echarts_payload_refreshed") is False
+            and search_quant_projection_receipt.get("production_quant_projection_complete") is False
+            and int(search_quant_projection_receipt.get("production_blocker_count") or 0) > 0
+            and _dict(search_quant_projection_rows.get("symbol_validation")).get("local_ready") is True
+            and _dict(search_quant_projection_rows.get("tushare_light_refresh_pending")).get("production_blocker")
+            is True
+            and _dict(search_quant_projection_rows.get("deepseek_pro_explanation_pending")).get("production_blocker")
+            is True
+            and _flag_false(
+                search_quant_projection_receipt,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and search_quant_projection_receipt.get("does_not_execute_trades") is True
+            and search_quant_projection_receipt.get("does_not_modify_strategy_action") is True
+            and search_quant_projection_receipt.get("candidate_is_not_buy_instruction") is True
+            and "postCandidateRadarQuantProjection" in candidate_frontend
+            and "search_quant_projection_receipt" in candidate_frontend
+            and "搜票量化推演" in candidate_frontend
+            and "生成 3.0 量化推演" in candidate_frontend,
+            "Search quant projection must be a button-gated local receipt with provider/model/factor/chart evidence pending, not a trade signal or external acceptance.",
         ),
         _row(
             "fast_scan_readiness_is_local_pending",
@@ -734,6 +802,7 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_quick_scan_receipt.v1" in this_script
             and "candidate_radar_full_pool_local_execution_receipt.v1" in this_script
             and "candidate_radar_deep_scan_local_review_receipt.v1" in this_script
+            and "candidate_radar_search_quant_projection_receipt.v1" in this_script
             and "candidate_radar_production_activation_receipt.v1" in this_script
             and "candidate_is_not_buy_instruction" in this_script
             and ("request" + "s") not in this_script
@@ -765,6 +834,7 @@ def build_contract() -> dict[str, Any]:
         "legacy_parity_acceptance_receipt_ready": legacy_parity_acceptance.get("local_acceptance_receipt_ready") is True,
         "full_pool_local_execution_receipt_ready": full_pool_local_receipt.get("local_full_pool_execution_done") is True,
         "deep_scan_local_review_receipt_ready": deep_scan_local_receipt.get("local_deep_scan_review_done") is True,
+        "search_quant_projection_receipt_ready": search_quant_projection_receipt.get("local_receipt_ready") is True,
         "cache_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,

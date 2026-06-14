@@ -300,6 +300,13 @@ export function postCandidateRadarQuickScan(payload: Record<string, unknown> = {
   });
 }
 
+export function postCandidateRadarQuantProjection(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/candidate-radar/quant-projection", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function postCandidateRadarFullPoolPlan(payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>("/api/candidate-radar/full-pool-plan", {
     method: "POST",

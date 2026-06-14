@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
+import { getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarQuantProjection, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -24,6 +24,7 @@ export default function CandidateRadar() {
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [customPoolText, setCustomPoolText] = useState("");
+  const [searchSymbol, setSearchSymbol] = useState("");
 
   const refreshCache = () => {
     void getCandidateRadarCache().then((res) => {
@@ -34,6 +35,17 @@ export default function CandidateRadar() {
   };
   const launchQuickScan = () =>
     void postCandidateRadarQuickScan({ scan_mode: "quick_cache_scan", universe_mode: "cache_snapshot" }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
+  const launchQuantProjection = () =>
+    void postCandidateRadarQuantProjection({
+      scan_mode: "search_quant_projection",
+      symbol: searchSymbol,
+      include_tushare: true,
+      include_deepseek: true,
+      requested_by: "candidate_radar_page"
+    }).then((res) => {
       setTaskReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
     });
@@ -87,6 +99,7 @@ export default function CandidateRadar() {
   const coverageDetail = (cache.coverage_detail_summary as Record<string, unknown> | undefined) ?? {};
   const scanExecutionSummary = (cache.scan_execution_summary as Record<string, unknown> | undefined) ?? {};
   const quickScanReceipt = (cache.quick_scan_execution_receipt as Record<string, unknown> | undefined) ?? {};
+  const searchQuantProjectionReceipt = (cache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
   const fastScanRuntimeBudget = (cache.fast_scan_runtime_budget_contract as Record<string, unknown> | undefined) ?? {};
   const fastScanReadinessAudit = (cache.fast_scan_readiness_audit as Record<string, unknown> | undefined) ?? {};
   const noFeatureLossAcceptance = (cache.no_feature_loss_acceptance_contract as Record<string, unknown> | undefined) ?? {};
@@ -119,6 +132,7 @@ export default function CandidateRadar() {
   const scanModeRows = rows(cache.scan_mode_status_rows);
   const scanAcceptanceRows = rows(cache.scan_acceptance_rows);
   const quickScanReceiptRows = rows(cache.quick_scan_execution_receipt_rows);
+  const searchQuantProjectionRows = rows(cache.search_quant_projection_rows);
   const fastScanRuntimeBudgetRows = rows(cache.fast_scan_runtime_budget_rows);
   const fastScanReadinessRows = rows(cache.fast_scan_readiness_rows);
   const noFeatureLossAcceptanceRows = rows(cache.no_feature_loss_acceptance_rows);
@@ -173,6 +187,10 @@ export default function CandidateRadar() {
           { label: "receipt blockers", value: counts.quick_scan_receipt_production_blocker_count as number | undefined, tone: Number(counts.quick_scan_receipt_production_blocker_count ?? 0) ? "warn" : "good" },
           { label: "receipt provider", value: counts.quick_scan_receipt_provider_gap_count as number | undefined, tone: Number(counts.quick_scan_receipt_provider_gap_count ?? 0) ? "warn" : "good" },
           { label: "receipt rows", value: counts.quick_scan_receipt_row_count as number | undefined },
+          { label: "quant projection", value: String(searchQuantProjectionReceipt.status ?? "missing"), tone: searchQuantProjectionReceipt.symbol_valid === true ? "good" : "warn" },
+          { label: "quant symbol", value: String(searchQuantProjectionReceipt.symbol ?? "--") },
+          { label: "quant blockers", value: counts.search_quant_projection_production_blocker_count as number | undefined, tone: Number(counts.search_quant_projection_production_blocker_count ?? 0) ? "warn" : "good" },
+          { label: "quant rows", value: counts.search_quant_projection_row_count as number | undefined },
           { label: "fast readiness", value: String(fastScanReadinessAudit.status ?? "missing"), tone: fastScanReadinessAudit.local_fast_scan_ready === true ? "good" : "warn" },
           { label: "fast blockers", value: counts.fast_scan_readiness_blocker_count as number | undefined, tone: Number(counts.fast_scan_readiness_blocker_count ?? 0) ? "bad" : "good" },
           { label: "no-loss QA", value: String(noFeatureLossAcceptance.status ?? "missing"), tone: noFeatureLossAcceptance.local_no_feature_loss_contract_ready === true ? "good" : "warn" },
@@ -269,6 +287,24 @@ export default function CandidateRadar() {
               { label: "trade guard", state: cache.does_not_execute_trades === false ? "blocked" : "done", detail: "safe" }
             ]}
           />
+        </PacketCard>
+
+        <PacketCard title="搜票量化推演" subtitle="POST /api/candidate-radar/quant-projection；本地回执，不调用 Tushare/DeepSeek" status={String(searchQuantProjectionReceipt.status ?? "local_receipt")}>
+          <div className="actions">
+            <input
+              value={searchSymbol}
+              onChange={(event) => setSearchSymbol(event.target.value)}
+              placeholder="002008.SZ 或 002008"
+              aria-label="search quant projection symbol"
+            />
+            <button onClick={launchQuantProjection}>生成 3.0 量化推演</button>
+          </div>
+          <p>一键生成量化投研图谱 当前只写本地回执：校验股票代码，列出 Tushare / Factor / Next Session / DeepSeek / ECharts 待补证据。</p>
+          <p>symbol: {String(searchQuantProjectionReceipt.symbol ?? "--")}；symbol_valid: {String(searchQuantProjectionReceipt.symbol_valid === true)}；ready_for_real_provider_model_projection: {String(searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true)}</p>
+          <p>provider_execution_implemented: {String(searchQuantProjectionReceipt.provider_execution_implemented === true)}；model_execution_implemented: {String(searchQuantProjectionReceipt.model_execution_implemented === true)}；production_quant_projection_complete: {String(searchQuantProjectionReceipt.production_quant_projection_complete === true)}</p>
+          <p>tushare_called: {String(searchQuantProjectionReceipt.tushare_called === true)}；deepseek_called: {String(searchQuantProjectionReceipt.deepseek_called === true)}；candidate_is_not_buy_instruction: {String(searchQuantProjectionReceipt.candidate_is_not_buy_instruction !== false)}</p>
+          <DataLineageTable rows={objectRow(searchQuantProjectionReceipt)} />
+          <DataLineageTable rows={searchQuantProjectionRows} />
         </PacketCard>
 
         <PacketCard title="快速雷达扫描" subtitle="POST /api/candidate-radar/scan-quick 只读取本地 snapshot/cache" status={String(scanCoverage.coverage_status ?? "cache")}>

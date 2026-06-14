@@ -189,7 +189,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 | LTG-10 | Streamlit 完全退出普通主流程 | `legacy/admin/debug` marked, fallback dependency contract visible, still used for fallback | Streamlit only for debug/admin/fallback | P7 | Ordinary research workflow runs through Command Center 3 desktop. |
 | LTG-11 | 测试 / CI / smoke / 安全扫描标准化 | local tests, smoke, and local contract guards exist | Repeatable gate for every release candidate | P0/P4 | unittest, frontend build, smoke, diff check, secret scan, artifact scan, and local LTG contracts are documented and enforced. |
 | LTG-12 | 真实交易链路继续保持隔离 | auto trading not connected | Trading remains explicitly out of automatic chains | Always | No automatic order path; strategy action cannot be mutated by research/cache/model/frontend paths. |
-| LTG-13 | 下一票雷达快扫生产化 | local fast-scan readiness, no-feature-loss QA, legacy parity acceptance receipt, local full-pool execution receipt, local deep-scan review receipt, and push-gate contract exist; provider-backed full-pool/deep-scan acceptance pending; search-to-quant projection remains future mode-gated work | Fast radar scan and search-driven quant projection in Command Center 3 without feature loss or degraded signal coverage | P3 | Radar and search tasks run through task pipeline, preserve legacy signal groups, avoid UI stalls, and report coverage gaps instead of hiding them. |
+| LTG-13 | 下一票雷达快扫生产化 | local fast-scan readiness, no-feature-loss QA, legacy parity acceptance receipt, local full-pool execution receipt, local deep-scan review receipt, search-to-quant projection local receipt, and push-gate contract exist; provider-backed full-pool/deep-scan and provider/model-backed quant projection acceptance pending | Fast radar scan and search-driven quant projection in Command Center 3 without feature loss or degraded signal coverage | P3 | Radar and search tasks run through task pipeline, preserve legacy signal groups, avoid UI stalls, and report coverage gaps instead of hiding them. |
 | LTG-14 | Command Center 3 动效与可视化清晰度优化 | first motion clarity layer, static readiness audit, and production QA contract exist; browser visual/performance QA pending | Apple keynote-grade clarity and restrained motion that makes state changes easier to see | P8 | Motion is purposeful, performant, accessible, respects reduced-motion, and never obscures data or decisions. |
 
 ## LTG-01: A 股交易日历级 Freshness 生产化
@@ -1196,6 +1196,7 @@ Keep real trading isolated from Command Center 3 automation
 - `scripts/candidate_radar_browser_qa_runbook.py` is now part of the local push gate after the LTG-13 contract and before generic motion QA. It is a static execution runbook only; it keeps `visual_qa_complete=false`, `browser_performance_trace_done=false`, `production_radar_replacement_complete=false`, and `legacy_retirement_ready=false`.
 - Current 3.0 radar path is still not a full replacement for the legacy radar workflow.
 - Runtime mode policy turns search-driven radar/quant projection into future mode-gated work: `cache_only` shows existing radar cache only, `manual` uses explicit scan/plan/review buttons, and future `live_light` may create a one-shot background task for a searched symbol or watchlist subset without starting full-market/deep scans on render.
+- A button-gated local `run_candidate_radar_quant_projection` task now writes `search_quant_projection_receipt` and `search_quant_projection_rows` for a searched A-share symbol. It validates/infers the symbol suffix, shows the "生成 3.0 量化推演" path in React, and lists the missing Tushare light call ledger, Factor Quant Hub refresh, Next Session/ECharts cache refresh, optional DeepSeek pro model ledger, and freshness evidence. This is a local receipt only: it does not call Tushare, does not call DeepSeek, does not refresh Factor/Next Session/ECharts, does not start full-pool/deep-scan, and does not generate a buy/sell instruction.
 
 ### Gaps
 
@@ -1223,7 +1224,7 @@ Keep real trading isolated from Command Center 3 automation
 - The local Candidate Radar push-gate contract is not a production radar run; it only blocks regressions where local quick scans, plan-only rows, no-feature-loss QA, replacement triage, promotion-blocker audit, result-delta clarity, or candidate-priority explanation could be mistaken for full replacement.
 - `fast_scan_local_ready_full_pool_pending` is not production replacement; it only proves local readiness and visible gaps.
 - Need parity acceptance before removing any Streamlit fallback.
-- Need a search-to-quant projection workflow that validates the symbol, refreshes allowed light data, writes call ledger/model ledger, updates factor and next-session cache, and renders chart/provenance without reducing legacy radar signal coverage.
+- Need provider/model-backed search-to-quant projection beyond the current local receipt: validate the symbol, refresh allowed light data, write real call ledger/model ledger, update factor and next-session cache, and render chart/provenance without reducing legacy radar signal coverage.
 - Need explicit intraday-provider strategy before adding any realtime market state: every non-Tushare source must have provider identity, call ledger, freshness, mode gating, and safe-error status.
 
 ### Implementation Phases
@@ -1252,6 +1253,7 @@ Keep real trading isolated from Command Center 3 automation
 - Deep-scan local review can be run only through explicit POST, reviews existing local candidate rows and gaps, writes `deep_scan_local_review_receipt`, and must keep `deep_scan_done=false`, `deepseek_called=false`, `provider_backed_acceptance_done=false`, `legacy_retirement_ready=false`, and `candidate_is_not_buy_instruction=true`.
 - `fast_scan_readiness_audit.local_fast_scan_ready=true` only when page-render, local task, legacy gap, provider gap, freshness, last-cache, full-pool, deep-scan and trade boundaries are all visible.
 - Search-to-quant projection validates the symbol, refreshes allowed light data, writes call ledger/model ledger, refreshes factor and next-session cache, builds ECharts payload, and shows task progress, provenance, freshness, factor support/suppress/neutral/missing, DeepSeek state, and chart results.
+- Current search-to-quant projection local receipt validates the symbol, writes receipt rows, exposes missing provider/model/factor/chart evidence, and keeps `ready_for_real_provider_model_projection=false`, `provider_execution_implemented=false`, `model_execution_implemented=false`, and `production_quant_projection_complete=false`.
 - The 3.0 radar replacement cannot drop legacy radar functions silently; missing or degraded legacy signal coverage must appear as explicit coverage gaps.
 - `no_feature_loss_acceptance_contract.local_no_feature_loss_contract_ready=true` only means the local QA surface is visible; `production_radar_replacement_complete` remains false until browser performance, real full-pool/deep-scan execution, and provider-backed parity acceptance are complete.
 - `replacement_gap_triage_contract.local_triage_ready=true` only means blockers to retiring the legacy radar are classified and visible; `legacy_retirement_ready` must remain false while critical/provider/freshness/browser/performance/full-pool/deep-scan/provider-backed gaps remain.
@@ -1276,6 +1278,7 @@ Keep real trading isolated from Command Center 3 automation
 - Do not scan the full market on page load.
 - Do not start full-pool or deep-scan execution from `live_light` page open; only bounded light bootstrap may be considered after opt-in.
 - Do not treat a search-to-quant projection result as a buy/sell recommendation.
+- Do not treat `search_quant_projection_receipt` as real Tushare refresh, DeepSeek execution, Factor/Next Session refresh, ECharts payload refresh, browser non-blocking evidence, production quant projection, or a buy/sell recommendation.
 - Do not treat `full_pool_scan_plan` as full-pool scan completion.
 - Do not treat `full_pool_local_execution_receipt` as provider-backed full-market acceptance, production worker completion, browser QA completion, or permission to remove the legacy fallback.
 - Do not treat `deep_scan_plan` as deep scan completion or legacy radar replacement.
