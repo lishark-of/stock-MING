@@ -88,6 +88,18 @@ LOCAL_FACTOR_TEST_STAGE_EVIDENCE_KEYS = {
     "local_light_metric_baseline",
     "provider_small_pool_scope_ticket",
 }
+REQUIRED_PROVIDER_SMALL_POOL_EXECUTION_PHASES = (
+    "scope_ticket_review",
+    "explicit_provider_task_creation",
+    "provider_call_ledger_capture",
+    "sample_row_collection",
+    "multi_horizon_forward_returns",
+    "rolling_ic_icir_validation",
+    "cost_turnover_validation",
+    "neutralization_stability_validation",
+    "pit_bias_controls_validation",
+    "promotion_review",
+)
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -288,11 +300,19 @@ def build_contract() -> dict[str, Any]:
         now,
     )
     dry_run_receipt, dry_run_rows = factor_service._factor_test_provider_small_pool_dry_run_receipt(dry_run_payload, now)
+    factor_tests["provider_small_pool_acceptance_dry_run_receipt"] = dry_run_receipt
     dry_run_rows_by_criterion = {
         str(row.get("criterion") or ""): row
         for row in dry_run_rows
         if isinstance(row, dict)
     }
+    provider_small_pool_execution_recipe = factor_service._factor_test_provider_small_pool_execution_recipe(factor_tests, now)
+    provider_small_pool_execution_rows = [
+        row for row in _list(provider_small_pool_execution_recipe.get("rows")) if isinstance(row, dict)
+    ]
+    provider_small_pool_execution_phase_keys = [
+        str(row.get("phase_key") or "") for row in provider_small_pool_execution_rows
+    ]
     required_metric_scope = list(factor_service.FACTOR_TEST_PROVIDER_SMALL_POOL_REQUIRED_METRICS)
     selected_metric_scope = [str(item) for item in _list(dry_run_receipt.get("metrics"))]
     factor_metric_scope_rows = _factor_metric_scope_rows(required_metric_scope, selected_metric_scope)
@@ -568,6 +588,78 @@ def build_contract() -> dict[str, Any]:
             "Provider small-pool dry-run may issue a local scope ticket only; it must not call providers, expose credentials, or prove production validation.",
         ),
         _row(
+            "provider_small_pool_execution_recipe_is_local_pending",
+            provider_small_pool_execution_recipe.get("schema_version") == "factor_test_provider_small_pool_execution_recipe.v1"
+            and provider_small_pool_execution_recipe.get("scope") == "local_factor_test_provider_small_pool_execution_recipe_no_provider_execution"
+            and provider_small_pool_execution_recipe.get("status") == "factor_test_provider_small_pool_execution_recipe_ready_execution_pending"
+            and provider_small_pool_execution_recipe.get("local_recipe_ready") is True
+            and provider_small_pool_execution_recipe.get("scope_ticket_ready") is True
+            and provider_small_pool_execution_recipe.get("acceptance_scope_hash_short")
+            and provider_small_pool_execution_recipe.get("phase_keys") == list(REQUIRED_PROVIDER_SMALL_POOL_EXECUTION_PHASES)
+            and provider_small_pool_execution_recipe.get("pending_phases") == list(REQUIRED_PROVIDER_SMALL_POOL_EXECUTION_PHASES)
+            and provider_small_pool_execution_recipe.get("allowed_execution_sequence") == list(REQUIRED_PROVIDER_SMALL_POOL_EXECUTION_PHASES)
+            and "explicit provider task_id bound to scope hash" in provider_small_pool_execution_recipe.get("required_evidence", [])
+            and "safe provider call ledger rows for target pool" in provider_small_pool_execution_recipe.get("required_evidence", [])
+            and "rolling IC/Rank IC/ICIR evidence" in provider_small_pool_execution_recipe.get("required_evidence", [])
+            and "manual Factor Test production promotion review" in provider_small_pool_execution_recipe.get("required_evidence", [])
+            and "treat_recipe_as_provider_execution_evidence" in provider_small_pool_execution_recipe.get("not_allowed_next_steps", [])
+            and "create provider task from GET cache" in provider_small_pool_execution_recipe.get("not_allowed_next_steps", [])
+            and "call Tushare from this recipe" in provider_small_pool_execution_recipe.get("not_allowed_next_steps", [])
+            and "local metrics as provider acceptance" in provider_small_pool_execution_recipe.get("not_allowed_next_steps", [])
+            and "mark production Factor Test complete from recipe" in provider_small_pool_execution_recipe.get("not_allowed_next_steps", [])
+            and provider_small_pool_execution_recipe.get("provider_task_created") is False
+            and provider_small_pool_execution_recipe.get("provider_execution_implemented") is False
+            and provider_small_pool_execution_recipe.get("provider_call_ledger_evidence_done") is False
+            and provider_small_pool_execution_recipe.get("sample_rows_collected") is False
+            and provider_small_pool_execution_recipe.get("multi_horizon_forward_returns_done") is False
+            and provider_small_pool_execution_recipe.get("rolling_window_validation_done") is False
+            and provider_small_pool_execution_recipe.get("cost_assumption_validation_done") is False
+            and provider_small_pool_execution_recipe.get("neutralization_stability_done") is False
+            and provider_small_pool_execution_recipe.get("pit_bias_controls_done") is False
+            and provider_small_pool_execution_recipe.get("provider_backed_small_pool_validation_done") is False
+            and provider_small_pool_execution_recipe.get("full_market_validation_done") is False
+            and provider_small_pool_execution_recipe.get("production_factor_test_validation_complete") is False
+            and provider_small_pool_execution_recipe.get("cache_get_external_calls") is False
+            and provider_small_pool_execution_recipe.get("react_render_external_calls") is False
+            and _flag_false(provider_small_pool_execution_recipe, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and provider_small_pool_execution_recipe.get("does_not_execute_trades") is True
+            and provider_small_pool_execution_recipe.get("does_not_modify_strategy_action") is True
+            and provider_small_pool_execution_recipe.get("contains_secret") is False
+            and provider_small_pool_execution_recipe.get("env_key_name_exposed") is False
+            and provider_small_pool_execution_recipe.get("credential_value_exposed") is False
+            and provider_small_pool_execution_phase_keys == list(REQUIRED_PROVIDER_SMALL_POOL_EXECUTION_PHASES)
+            and all(
+                row.get("scope") == "factor_test_provider_small_pool_execution_recipe"
+                and row.get("selected_by_dry_run_scope") is True
+                and row.get("required_before_production_factor_test_validation") is True
+                and row.get("provider_task_created") is False
+                and row.get("provider_execution_implemented") is False
+                and row.get("provider_call_ledger_evidence_done") is False
+                and row.get("sample_rows_collected") is False
+                and row.get("multi_horizon_forward_returns_done") is False
+                and row.get("rolling_window_validation_done") is False
+                and row.get("cost_assumption_validation_done") is False
+                and row.get("neutralization_stability_done") is False
+                and row.get("pit_bias_controls_done") is False
+                and row.get("provider_backed_small_pool_validation_done") is False
+                and row.get("full_market_validation_done") is False
+                and row.get("production_factor_test_validation_complete") is False
+                and row.get("cache_get_external_calls") is False
+                and row.get("react_render_external_calls") is False
+                and row.get("external_calls_triggered") is False
+                and row.get("tushare_called") is False
+                and row.get("deepseek_called") is False
+                and row.get("github_called") is False
+                and row.get("does_not_execute_trades") is True
+                and row.get("does_not_modify_strategy_action") is True
+                and row.get("contains_secret") is False
+                for row in provider_small_pool_execution_rows
+            )
+            and _list(provider_small_pool_execution_recipe.get("call_ledger"))[0].get("api")
+            == "local_factor_test_provider_small_pool_execution_recipe",
+            "Provider small-pool execution recipe may define the future provider-backed validation order only; it must not create tasks, call providers/models, compute production metrics, expose credentials, or promote completion.",
+        ),
+        _row(
             "factor_metric_scope_manifest_is_complete_and_research_only",
             [row.get("metric_key") for row in factor_metric_scope_rows] == required_metric_scope
             and set(selected_metric_scope) == set(required_metric_scope)
@@ -677,6 +769,9 @@ def build_contract() -> dict[str, Any]:
             and "provider_sample_readiness_receipt_is_local" in this_script
             and "provider_sample_activation_receipt_is_local_pending" in this_script
             and "provider_small_pool_dry_run_scope_ticket_is_local" in this_script
+            and "provider_small_pool_execution_recipe_is_local_pending" in this_script
+            and "factor_test_provider_small_pool_execution_recipe.v1" in this_script
+            and "local_factor_test_provider_small_pool_execution_recipe_no_provider_execution" in this_script
             and "factor_metric_scope_manifest_is_complete_and_research_only" in this_script
             and "factor_test_production_stage_scope_manifest" in this_script
             and "local_dataset_sample_evidence_is_not_validation" in this_script
@@ -706,6 +801,7 @@ def build_contract() -> dict[str, Any]:
         "github_called": False,
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
+        "provider_small_pool_execution_recipe_ready": bool(provider_small_pool_execution_recipe.get("local_recipe_ready")),
         "row_count": len(rows),
         "factor_test_production_stage_scope_count": len(production_stage_scope_rows),
         "blocking_criterion_count": len(blockers),
@@ -725,6 +821,12 @@ def build_contract() -> dict[str, Any]:
             "provider_sample_activation_allowed_next_step": provider_sample_activation.get("allowed_next_step"),
             "provider_small_pool_dry_run_status": dry_run_receipt.get("status"),
             "provider_small_pool_dry_run_scope_hash_short": dry_run_receipt.get("acceptance_scope_hash_short"),
+            "provider_small_pool_execution_recipe_status": provider_small_pool_execution_recipe.get("status"),
+            "provider_small_pool_execution_phase_count": len(provider_small_pool_execution_rows),
+            "provider_small_pool_execution_phase_keys": provider_small_pool_execution_phase_keys,
+            "provider_small_pool_execution_pending_phase_count": sum(
+                1 for row in provider_small_pool_execution_rows if row.get("provider_execution_implemented") is False
+            ),
             "cache_production_qa_status": cache_production_qa.get("status"),
             "cache_provider_blocker_status": cache_provider_blocker_audit.get("status"),
             "cache_provider_sample_receipt_status": cache_provider_sample_receipt.get("status"),
@@ -749,6 +851,8 @@ def build_contract() -> dict[str, Any]:
         },
         "factor_metric_scope_rows": factor_metric_scope_rows,
         "factor_test_production_stage_scope_rows": production_stage_scope_rows,
+        "provider_small_pool_execution_recipe": provider_small_pool_execution_recipe,
+        "provider_small_pool_execution_rows": provider_small_pool_execution_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Real provider-backed small-pool and full-market Factor Test Lab validation remain pending.",
     }

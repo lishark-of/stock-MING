@@ -82,6 +82,7 @@ export default function FactorQuantHub() {
   const factorTestProviderSampleReadinessReceipt = factorTests.provider_sample_readiness_receipt ?? {};
   const factorTestProviderSampleActivationReceipt = factorTests.provider_sample_activation_receipt ?? {};
   const factorTestProviderSmallPoolDryRun = factorTests.provider_small_pool_acceptance_dry_run_receipt ?? {};
+  const factorTestProviderSmallPoolExecutionRecipe = factorTests.provider_small_pool_execution_recipe ?? {};
   const tushareFailureModeQa = packet.failure_mode_qa_contract ?? {};
   const tushareRequestParameterQa = packet.request_parameter_qa_contract ?? {};
   const tushareProviderTargetSamplePlan = packet.provider_target_sample_plan_contract ?? {};
@@ -150,6 +151,8 @@ export default function FactorQuantHub() {
   const factorTestProviderSampleActivationCriterionRows = toRows(factorTests.provider_sample_activation_rows);
   const factorTestProviderSmallPoolDryRunRows = objectRows(factorTestProviderSmallPoolDryRun as Record<string, unknown>, "provider_small_pool_dry_run");
   const factorTestProviderSmallPoolDryRunCriterionRows = toRows(factorTests.provider_small_pool_acceptance_dry_run_rows);
+  const factorTestProviderSmallPoolExecutionRecipeRows = objectRows(factorTestProviderSmallPoolExecutionRecipe as Record<string, unknown>, "provider_small_pool_execution_recipe");
+  const factorTestProviderSmallPoolExecutionPhaseRows = toRows(factorTests.provider_small_pool_execution_rows);
   const tushareFailureModeQaRows = objectRows(tushareFailureModeQa as Record<string, unknown>, "failure_mode_contract");
   const tushareFailureModeCriterionRows = toRows(packet.failure_mode_qa_rows);
   const tushareRequestParameterQaRows = objectRows(tushareRequestParameterQa as Record<string, unknown>, "request_parameter_contract");
@@ -279,6 +282,8 @@ export default function FactorQuantHub() {
           { label: "provider receipt", value: factorTestProviderSampleReadinessReceipt.status ?? "missing", tone: factorTestProviderSampleReadinessReceipt.ready_for_explicit_provider_small_pool_task === true ? "good" : "warn" },
           { label: "receipt blockers", value: factorTestProviderSampleReadinessReceipt.blocked_readiness_count ?? 0, tone: Number(factorTestProviderSampleReadinessReceipt.blocked_readiness_count ?? 0) > 0 ? "warn" : "good" },
           { label: "small-pool dry-run", value: factorTestProviderSmallPoolDryRun.status ?? "not_run", tone: factorTestProviderSmallPoolDryRun.preflight_ready_for_user_approved_real_task === true ? "good" : "warn" },
+          { label: "small-pool recipe", value: factorTestProviderSmallPoolExecutionRecipe.status ?? "missing", tone: factorTestProviderSmallPoolExecutionRecipe.local_recipe_ready === true ? "good" : "warn" },
+          { label: "recipe phases", value: factorTestProviderSmallPoolExecutionRecipe.pending_phase_count ?? 0, tone: Number(factorTestProviderSmallPoolExecutionRecipe.pending_phase_count ?? 0) > 0 ? "warn" : "neutral" },
           { label: "dry-run blockers", value: factorTestProviderSmallPoolDryRun.blocking_criterion_count ?? 0, tone: Number(factorTestProviderSmallPoolDryRun.blocking_criterion_count ?? 0) > 0 ? "warn" : "good" },
           { label: "research pass", value: factorTestQuality.research_pass_count ?? 0 },
           { label: "watchlist", value: factorTestQuality.watchlist_count ?? 0 },
@@ -507,6 +512,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">provider_small_pool_acceptance_dry_run 只绑定未来真实小池验收范围、凭据存在布尔和 scope hash；不调用 Tushare，不计算生产 IC，不泄露 token/key，不代表 provider-backed validation。</p>
       <DataLineageTable rows={factorTestProviderSmallPoolDryRunCriterionRows} />
       <DataLineageTable rows={factorTestProviderSmallPoolDryRunRows} />
+      <h3>Factor Test provider 小股票池 execution recipe</h3>
+      <p className="risk-note">provider_small_pool_execution_recipe 只固定未来真实 provider-backed 小股票池验收顺序和证据清单；不创建 provider task、不调用 Tushare/DeepSeek/GitHub、不计算生产 IC/Rank IC/ICIR、不进入 strategy action，也不代表 production_factor_test_validation_complete。</p>
+      <DataLineageTable rows={factorTestProviderSmallPoolExecutionPhaseRows} />
+      <DataLineageTable rows={factorTestProviderSmallPoolExecutionRecipeRows} />
       <h3>Factor Test 指标 schema</h3>
       <DataLineageTable rows={factorTestMetricRows} />
       <h3>Factor Test 阶段计划</h3>

@@ -7486,6 +7486,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_validation_blocker_audit_stays_pending", script)
         self.assertIn("provider_sample_readiness_receipt_is_local", script)
         self.assertIn("provider_sample_activation_receipt_is_local_pending", script)
+        self.assertIn("provider_small_pool_execution_recipe_is_local_pending", script)
+        self.assertIn("factor_test_provider_small_pool_execution_recipe.v1", script)
+        self.assertIn("local_factor_test_provider_small_pool_execution_recipe_no_provider_execution", script)
         self.assertIn("factor_metric_scope_manifest_is_complete_and_research_only", script)
         self.assertIn("factor_test_production_stage_scope_manifest", script)
         self.assertIn("factor_test_production_stage_scope_manifest_is_complete_and_pending", script)
@@ -7516,6 +7519,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["github_called"])
         self.assertTrue(payload["does_not_execute_trades"])
         self.assertTrue(payload["does_not_modify_strategy_action"])
+        self.assertTrue(payload["provider_small_pool_execution_recipe_ready"])
         self.assertEqual(payload["blocking_criterion_count"], 0)
         self.assertEqual(payload["observed"]["primary_factor_status"], "research_pass")
         self.assertEqual(payload["observed"]["small_pool_status"], "local_small_pool_acceptance_ready")
@@ -7533,6 +7537,25 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["provider_sample_activation_allowed_next_step"],
             "complete_local_dataset_sample_and_forward_returns",
         )
+        self.assertEqual(
+            payload["observed"]["provider_small_pool_execution_recipe_status"],
+            "factor_test_provider_small_pool_execution_recipe_ready_execution_pending",
+        )
+        required_execution_phases = [
+            "scope_ticket_review",
+            "explicit_provider_task_creation",
+            "provider_call_ledger_capture",
+            "sample_row_collection",
+            "multi_horizon_forward_returns",
+            "rolling_ic_icir_validation",
+            "cost_turnover_validation",
+            "neutralization_stability_validation",
+            "pit_bias_controls_validation",
+            "promotion_review",
+        ]
+        self.assertEqual(payload["observed"]["provider_small_pool_execution_phase_count"], len(required_execution_phases))
+        self.assertEqual(payload["observed"]["provider_small_pool_execution_phase_keys"], required_execution_phases)
+        self.assertEqual(payload["observed"]["provider_small_pool_execution_pending_phase_count"], len(required_execution_phases))
         required_metrics = [
             "ic",
             "rank_ic",
@@ -7563,6 +7586,67 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(row["frontend_computes_action"])
             self.assertFalse(row["external_calls_triggered"])
             self.assertFalse(row["tushare_called_by_contract"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
+        execution_recipe = payload["provider_small_pool_execution_recipe"]
+        self.assertEqual(execution_recipe["schema_version"], "factor_test_provider_small_pool_execution_recipe.v1")
+        self.assertEqual(
+            execution_recipe["scope"],
+            "local_factor_test_provider_small_pool_execution_recipe_no_provider_execution",
+        )
+        self.assertEqual(execution_recipe["status"], "factor_test_provider_small_pool_execution_recipe_ready_execution_pending")
+        self.assertTrue(execution_recipe["local_recipe_ready"])
+        self.assertTrue(execution_recipe["scope_ticket_ready"])
+        self.assertEqual(execution_recipe["phase_keys"], required_execution_phases)
+        self.assertIn("explicit provider task_id bound to scope hash", execution_recipe["required_evidence"])
+        self.assertIn("safe provider call ledger rows for target pool", execution_recipe["required_evidence"])
+        self.assertIn("treat_recipe_as_provider_execution_evidence", execution_recipe["not_allowed_next_steps"])
+        self.assertIn("create provider task from GET cache", execution_recipe["not_allowed_next_steps"])
+        self.assertIn("call Tushare from this recipe", execution_recipe["not_allowed_next_steps"])
+        self.assertFalse(execution_recipe["provider_task_created"])
+        self.assertFalse(execution_recipe["provider_execution_implemented"])
+        self.assertFalse(execution_recipe["provider_call_ledger_evidence_done"])
+        self.assertFalse(execution_recipe["sample_rows_collected"])
+        self.assertFalse(execution_recipe["multi_horizon_forward_returns_done"])
+        self.assertFalse(execution_recipe["rolling_window_validation_done"])
+        self.assertFalse(execution_recipe["cost_assumption_validation_done"])
+        self.assertFalse(execution_recipe["neutralization_stability_done"])
+        self.assertFalse(execution_recipe["pit_bias_controls_done"])
+        self.assertFalse(execution_recipe["provider_backed_small_pool_validation_done"])
+        self.assertFalse(execution_recipe["production_factor_test_validation_complete"])
+        self.assertFalse(execution_recipe["external_calls_triggered"])
+        self.assertFalse(execution_recipe["tushare_called"])
+        self.assertFalse(execution_recipe["deepseek_called"])
+        self.assertFalse(execution_recipe["github_called"])
+        self.assertTrue(execution_recipe["does_not_execute_trades"])
+        self.assertTrue(execution_recipe["does_not_modify_strategy_action"])
+        self.assertFalse(execution_recipe["contains_secret"])
+        self.assertFalse(execution_recipe["env_key_name_exposed"])
+        self.assertFalse(execution_recipe["credential_value_exposed"])
+        execution_rows = {row["phase_key"]: row for row in payload["provider_small_pool_execution_rows"]}
+        self.assertEqual(set(execution_rows), set(required_execution_phases))
+        for row in execution_rows.values():
+            self.assertEqual(row["scope"], "factor_test_provider_small_pool_execution_recipe")
+            self.assertTrue(row["selected_by_dry_run_scope"])
+            self.assertTrue(row["required_before_production_factor_test_validation"])
+            self.assertFalse(row["provider_task_created"])
+            self.assertFalse(row["provider_execution_implemented"])
+            self.assertFalse(row["provider_call_ledger_evidence_done"])
+            self.assertFalse(row["sample_rows_collected"])
+            self.assertFalse(row["multi_horizon_forward_returns_done"])
+            self.assertFalse(row["rolling_window_validation_done"])
+            self.assertFalse(row["cost_assumption_validation_done"])
+            self.assertFalse(row["neutralization_stability_done"])
+            self.assertFalse(row["pit_bias_controls_done"])
+            self.assertFalse(row["provider_backed_small_pool_validation_done"])
+            self.assertFalse(row["production_factor_test_validation_complete"])
+            self.assertFalse(row["cache_get_external_calls"])
+            self.assertFalse(row["react_render_external_calls"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
             self.assertFalse(row["deepseek_called"])
             self.assertFalse(row["github_called"])
             self.assertTrue(row["does_not_execute_trades"])
@@ -18721,8 +18805,100 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(
             factor["data"]["factor_tests"]["acceptance_contract"]["provider_small_pool_dry_run_is_not_provider_execution"]
         )
+        execution_recipe = factor["data"]["factor_tests"]["provider_small_pool_execution_recipe"]
+        self.assertEqual(execution_recipe["schema_version"], "factor_test_provider_small_pool_execution_recipe.v1")
+        self.assertEqual(
+            execution_recipe["scope"],
+            "local_factor_test_provider_small_pool_execution_recipe_no_provider_execution",
+        )
+        self.assertEqual(
+            execution_recipe["status"],
+            "factor_test_provider_small_pool_execution_recipe_ready_execution_pending",
+        )
+        self.assertTrue(execution_recipe["local_recipe_ready"])
+        self.assertTrue(execution_recipe["scope_ticket_ready"])
+        self.assertFalse(execution_recipe["activation_ready_for_provider_task"])
+        self.assertEqual(execution_recipe["acceptance_scope_hash_short"], receipt["acceptance_scope_hash_short"])
+        expected_phases = [
+            "scope_ticket_review",
+            "explicit_provider_task_creation",
+            "provider_call_ledger_capture",
+            "sample_row_collection",
+            "multi_horizon_forward_returns",
+            "rolling_ic_icir_validation",
+            "cost_turnover_validation",
+            "neutralization_stability_validation",
+            "pit_bias_controls_validation",
+            "promotion_review",
+        ]
+        self.assertEqual(execution_recipe["phase_keys"], expected_phases)
+        self.assertEqual(execution_recipe["pending_phases"], expected_phases)
+        self.assertIn("explicit provider task_id bound to scope hash", execution_recipe["required_evidence"])
+        self.assertIn("safe provider call ledger rows for target pool", execution_recipe["required_evidence"])
+        self.assertIn("treat_recipe_as_provider_execution_evidence", execution_recipe["not_allowed_next_steps"])
+        self.assertIn("create provider task from GET cache", execution_recipe["not_allowed_next_steps"])
+        self.assertIn("call Tushare from this recipe", execution_recipe["not_allowed_next_steps"])
+        self.assertIn("local metrics as provider acceptance", execution_recipe["not_allowed_next_steps"])
+        self.assertFalse(execution_recipe["provider_task_created"])
+        self.assertFalse(execution_recipe["provider_execution_implemented"])
+        self.assertFalse(execution_recipe["provider_call_ledger_evidence_done"])
+        self.assertFalse(execution_recipe["sample_rows_collected"])
+        self.assertFalse(execution_recipe["multi_horizon_forward_returns_done"])
+        self.assertFalse(execution_recipe["rolling_window_validation_done"])
+        self.assertFalse(execution_recipe["cost_assumption_validation_done"])
+        self.assertFalse(execution_recipe["neutralization_stability_done"])
+        self.assertFalse(execution_recipe["pit_bias_controls_done"])
+        self.assertFalse(execution_recipe["provider_backed_small_pool_validation_done"])
+        self.assertFalse(execution_recipe["production_factor_test_validation_complete"])
+        self.assertFalse(execution_recipe["external_calls_triggered"])
+        self.assertFalse(execution_recipe["tushare_called"])
+        self.assertFalse(execution_recipe["deepseek_called"])
+        self.assertFalse(execution_recipe["github_called"])
+        self.assertTrue(execution_recipe["does_not_execute_trades"])
+        self.assertTrue(execution_recipe["does_not_modify_strategy_action"])
+        self.assertFalse(execution_recipe["contains_secret"])
+        self.assertFalse(execution_recipe["env_key_name_exposed"])
+        self.assertFalse(execution_recipe["credential_value_exposed"])
+        rows_by_phase = {row["phase_key"]: row for row in factor["data"]["factor_tests"]["provider_small_pool_execution_rows"]}
+        self.assertEqual(set(rows_by_phase), set(expected_phases))
+        self.assertEqual(rows_by_phase["scope_ticket_review"]["current_status"], "ready_scope_ticket_visible")
+        self.assertEqual(
+            rows_by_phase["explicit_provider_task_creation"]["current_status"],
+            "pending_explicit_post_provider_small_pool_validation",
+        )
+        for row in rows_by_phase.values():
+            self.assertFalse(row["provider_task_created"])
+            self.assertFalse(row["provider_execution_implemented"])
+            self.assertFalse(row["provider_call_ledger_evidence_done"])
+            self.assertFalse(row["sample_rows_collected"])
+            self.assertFalse(row["multi_horizon_forward_returns_done"])
+            self.assertFalse(row["rolling_window_validation_done"])
+            self.assertFalse(row["cost_assumption_validation_done"])
+            self.assertFalse(row["neutralization_stability_done"])
+            self.assertFalse(row["pit_bias_controls_done"])
+            self.assertFalse(row["provider_backed_small_pool_validation_done"])
+            self.assertFalse(row["production_factor_test_validation_complete"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
+        self.assertTrue(
+            factor["data"]["factor_tests"]["acceptance_contract"]["provider_small_pool_execution_recipe_ready"]
+        )
+        self.assertTrue(
+            factor["data"]["factor_tests"]["acceptance_contract"]["provider_small_pool_execution_recipe_is_not_provider_execution"]
+        )
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["provider_backed_small_pool_validation_done"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["production_factor_test_validation_complete"])
+        self.assertIn(
+            "local_factor_test_provider_small_pool_execution_recipe",
+            {item.get("api") for item in factor["call_ledger"]},
+        )
+        self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(factor, ensure_ascii=False))
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(factor, ensure_ascii=False))
 
     def test_factor_universe_research_plan_endpoint_is_local_read_plan(self):
         self._with_meta_store()
