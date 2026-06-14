@@ -1,17 +1,43 @@
 import { useEffect, useState } from "react";
-import { getAuditCache, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageCatalog, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, type TaskStatusIndex } from "../api/client";
+import { getAuditCache, getBootstrapStatus, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageCatalog, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, postBootstrapLiveStartup, type TaskCreationEnvelope, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
 import StatusBadge from "../components/StatusBadge";
+import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
+import TaskStatusPanel from "../components/TaskStatusPanel";
+
+const LIVE_BOOTSTRAP_SESSION_KEY = "command_center_3_live_bootstrap_session_key";
+
+function readLiveBootstrapSessionKey(): string {
+  try {
+    return window.sessionStorage.getItem(LIVE_BOOTSTRAP_SESSION_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeLiveBootstrapSessionKey(value: string) {
+  try {
+    window.sessionStorage.setItem(LIVE_BOOTSTRAP_SESSION_KEY, value);
+  } catch {
+    // Session storage can be unavailable in privacy modes; backend rate-limit still protects the task.
+  }
+}
 
 export default function CommandCenterHome() {
   const [health, setHealth] = useState<Record<string, unknown>>({});
   const [healthEnvelopeLedger, setHealthEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [healthEnvelopeWarnings, setHealthEnvelopeWarnings] = useState<Array<string>>([]);
   const [audit, setAudit] = useState<Record<string, unknown>>({});
+  const [bootstrapStatus, setBootstrapStatus] = useState<Record<string, unknown>>({});
+  const [bootstrapEnvelopeLedger, setBootstrapEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [bootstrapEnvelopeWarnings, setBootstrapEnvelopeWarnings] = useState<Array<string>>([]);
+  const [liveBootstrapReceipt, setLiveBootstrapReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [liveBootstrapTaskId, setLiveBootstrapTaskId] = useState("");
+  const [liveBootstrapAutoStatus, setLiveBootstrapAutoStatus] = useState("not_checked");
   const [packets, setPackets] = useState<Record<string, unknown>>({});
   const [packetEnvelopeLedger, setPacketEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [market, setMarket] = useState<Record<string, unknown>>({});
@@ -84,6 +110,11 @@ export default function CommandCenterHome() {
       setHealthEnvelopeWarnings(res.warnings ?? []);
     });
     track("audit", getAuditCache(), (res) => setAudit(res.data));
+    track("bootstrap", getBootstrapStatus(), (res) => {
+      setBootstrapStatus(res.data);
+      setBootstrapEnvelopeLedger(res.call_ledger ?? []);
+      setBootstrapEnvelopeWarnings(res.warnings ?? []);
+    });
     track("packets", getPackets(), (res) => {
       setPacketEnvelopeLedger(res.call_ledger ?? []);
       setPackets(res.data);
@@ -193,6 +224,16 @@ export default function CommandCenterHome() {
   const positionSummary = position.position_summary as Record<string, unknown> | undefined;
   const candidateCounts = candidates.counts as Record<string, unknown> | undefined;
   const riskCounts = risk.counts as Record<string, unknown> | undefined;
+  const liveLight = (bootstrapStatus.live_light as Record<string, unknown> | undefined) ?? {};
+  const liveBootstrapRunKey = [
+    bootstrapStatus.mode,
+    liveLight.tushare_on_open,
+    liveLight.deepseek_on_open,
+    liveLight.symbol_limit,
+    positionSummary?.ticker,
+  ].map((item) => String(item ?? "")).join(":");
+  const liveBootstrapTaskLedger = liveBootstrapReceipt?.call_ledger ?? liveBootstrapReceipt?.data?.task?.call_ledger ?? [];
+  const liveBootstrapWarnings = liveBootstrapReceipt?.warnings ?? liveBootstrapReceipt?.data?.task?.warnings ?? [];
   const factorScoreChart = factor.score_chart_payload as Record<string, unknown> | undefined;
   const factorScoreChartContract = factorScoreChart?.chart_contract as Record<string, unknown> | undefined;
   const healthWarnings = healthEnvelopeWarnings.length ? healthEnvelopeWarnings : ((health.warnings as Array<string> | undefined) ?? []);
@@ -207,6 +248,8 @@ export default function CommandCenterHome() {
   const taskIndexPayloadLedger = taskIndex?.call_ledger ?? [];
   const envelopeLedgerRows = [
     ...healthEnvelopeLedger.map((row) => ({ scope: "health", ...row })),
+    ...bootstrapEnvelopeLedger.map((row) => ({ scope: "bootstrap_status", ...row })),
+    ...liveBootstrapTaskLedger.map((row) => ({ scope: "live_bootstrap", ...row })),
     ...(packetEnvelopeLedger.length ? packetEnvelopeLedger : packetPayloadLedger).map((row) => ({ scope: "packet_index", ...row })),
     ...(marketEnvelopeLedger.length ? marketEnvelopeLedger : marketPayloadLedger).map((row) => ({ scope: "market", ...row })),
     ...(disciplineEnvelopeLedger.length ? disciplineEnvelopeLedger : disciplinePayloadLedger).map((row) => ({ scope: "discipline", ...row })),
@@ -218,6 +261,45 @@ export default function CommandCenterHome() {
     ...(taskIndexEnvelopeLedger.length ? taskIndexEnvelopeLedger : taskIndexPayloadLedger).map((row) => ({ scope: "task_status_index", ...row }))
   ];
   const empty = !loading && !error && !Object.keys(health).length && !Object.keys(packets).length;
+
+  useEffect(() => {
+    if (loading) return;
+    if (!Object.keys(bootstrapStatus).length) return;
+    const mode = String(bootstrapStatus.mode ?? "cache_only");
+    if (mode !== "live_light") {
+      setLiveBootstrapAutoStatus("disabled_not_live_light");
+      return;
+    }
+    if (liveLight.sources_enabled !== true) {
+      setLiveBootstrapAutoStatus("skipped_sources_disabled");
+      return;
+    }
+    if (liveLight.bootstrap_task_implemented !== true) {
+      setLiveBootstrapAutoStatus("blocked_task_not_ready");
+      return;
+    }
+    if (liveBootstrapTaskId || liveBootstrapAutoStatus === "creating") return;
+    if (readLiveBootstrapSessionKey() === liveBootstrapRunKey) {
+      setLiveBootstrapAutoStatus("skipped_session_once");
+      return;
+    }
+    setLiveBootstrapAutoStatus("creating");
+    void postBootstrapLiveStartup({
+      source: "command_center_home_auto",
+      requested_by: "local_user",
+      current_target: positionSummary?.ticker,
+    }).then((res) => {
+      setLiveBootstrapReceipt(res);
+      setLiveBootstrapTaskId(String(res.data?.task_id ?? ""));
+      const taskStep = String(res.data?.task?.current_step ?? (res.ok ? "created" : "failed"));
+      if (res.ok) writeLiveBootstrapSessionKey(liveBootstrapRunKey);
+      setLiveBootstrapAutoStatus(taskStep);
+      if (!res.ok) setError((current) => current || `bootstrap: ${res.error ?? "request_not_ok"}`);
+    }).catch((err) => {
+      setLiveBootstrapAutoStatus("failed_safe");
+      setError((current) => current || `bootstrap: ${err instanceof Error ? err.message : String(err)}`);
+    });
+  }, [bootstrapStatus, liveBootstrapAutoStatus, liveBootstrapRunKey, liveBootstrapTaskId, liveLight.bootstrap_task_implemented, liveLight.sources_enabled, loading, positionSummary?.ticker]);
 
   return (
     <>
@@ -235,6 +317,8 @@ export default function CommandCenterHome() {
       <MetricGrid
         items={[
           { label: "FastAPI", value: String(health.status ?? "unknown"), tone: health.status === "ok" ? "good" : "warn" },
+          { label: "runtime mode", value: String(bootstrapStatus.mode ?? "cache_only"), tone: bootstrapStatus.mode === "live_light" ? "warn" : "good" },
+          { label: "live bootstrap", value: liveBootstrapAutoStatus, tone: liveBootstrapAutoStatus.includes("failed") ? "bad" : liveBootstrapAutoStatus.includes("disabled") || liveBootstrapAutoStatus.includes("skipped") ? "good" : "warn" },
           { label: "health envelope ledger", value: healthEnvelopeLedger.length },
           { label: "health warnings", value: healthWarnings.length },
           { label: "本地快照", value: snapshotAvailable, tone: snapshotAvailable ? "good" : "warn" },
@@ -274,6 +358,21 @@ export default function CommandCenterHome() {
         ]}
       />
       <div className="grid">
+        <PacketCard title="live_light bootstrap" subtitle="cache 渲染完成后才会在 live_light 模式创建一次本地 POST task" status={liveBootstrapAutoStatus}>
+          <p>runtime mode: {String(bootstrapStatus.mode ?? "cache_only")}</p>
+          <p>auto status: {liveBootstrapAutoStatus}</p>
+          <p>sources enabled: {String(liveLight.sources_enabled ?? false)}</p>
+          <p>Tushare / DeepSeek on open: {String(liveLight.tushare_on_open ?? false)} / {String(liveLight.deepseek_on_open ?? false)}</p>
+          <p>task skeleton / provider execution: {String(liveLight.bootstrap_task_implemented ?? false)} / {String(liveLight.provider_execution_implemented ?? false)}</p>
+          <p>task_id: {String(liveBootstrapTaskId || liveBootstrapReceipt?.data?.task_id || "--")}</p>
+          <p>session dedupe key present: {String(Boolean(readLiveBootstrapSessionKey()))}</p>
+          <p>React 只在 live_light opt-in 后调用 FastAPI POST；不直接调用 Tushare、DeepSeek、GitHub、Python adapter 或真实交易接口。</p>
+          <TaskLaunchReceipt receipt={liveBootstrapReceipt} />
+          {liveBootstrapTaskId ? <TaskStatusPanel taskId={liveBootstrapTaskId} /> : null}
+          {bootstrapEnvelopeWarnings.length || liveBootstrapWarnings.length ? <p className="risk-note">{String([...bootstrapEnvelopeWarnings, ...liveBootstrapWarnings][0])}</p> : null}
+          <DataLineageTable rows={[...bootstrapEnvelopeLedger, ...liveBootstrapTaskLedger]} />
+          <JsonDetails title="bootstrap status" data={bootstrapStatus} />
+        </PacketCard>
         <PacketCard title="Packet Registry" subtitle="现有 packet contract 只读映射" status={snapshotAvailable ? "snapshot" : "cache"}>
           <p>本地快照路径：{String(packets.snapshot_cache_path ?? "--")}</p>
           <p>alias keys: {String((packets.snapshot_alias_keys as unknown[] | undefined)?.length ?? 0)}</p>

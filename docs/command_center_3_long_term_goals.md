@@ -91,7 +91,7 @@ Target `live_light` bootstrap scope:
 
 This mode layering also applies to search-driven research. A future stock search or "生成 3.0 量化推演" action should create a POST task that validates the symbol, refreshes allowed light data, writes call ledger/model ledger, updates Factor Quant Hub and Next Session cache, and displays provenance, freshness, DeepSeek status, and chart results. It remains research-only and cannot turn DeepSeek text, factor scores, or radar candidates into buy/sell instructions.
 
-Current implementation checkpoint: `GET /api/bootstrap/status` now exposes the runtime mode cache, safe configuration rows, mode rows, and `live_light` policy. `POST /api/bootstrap/live-startup` is now registered as a local task skeleton and Settings / Config Health can create it manually. This is still local-only: it records mode, rate limit, payload-safe request context, task status, and call ledger, but it does not call Tushare/DeepSeek/GitHub, does not read token/key values, and keeps `provider_execution_implemented=false`.
+Current implementation checkpoint: `GET /api/bootstrap/status` now exposes the runtime mode cache, safe configuration rows, mode rows, and `live_light` policy. `POST /api/bootstrap/live-startup` is registered as a local task skeleton; Settings / Config Health can create it manually, and Command Center Home can create it once after first cache render when `COMMAND_CENTER_BOOTSTRAP_MODE=live_light` and sources are enabled. This is still local-only: it records mode, rate limit, session dedupe, payload-safe request context, task status, and call ledger, but it does not call Tushare/DeepSeek/GitHub, does not read token/key values, and keeps `provider_execution_implemented=false`.
 
 ## Remaining Goals Snapshot
 
@@ -116,7 +116,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 | id | long_term_goal | current_status | target_state | priority | success_criteria |
 |---|---|---|---|---|---|
 | LTG-01 | A 股交易日历级 freshness 生产化 | `done_real` MVP, still needs production validation | All current evidence is gated by expected trade date | P1 | stale / expired / historical / unknown data cannot enter score, support, evidence preview, or action. |
-| LTG-02 | Tushare 全接口生产流水线 | core light path `done_real`; extended APIs `matrix` / `mock`; `live_light` status contract exists; bootstrap task remains future work | All selected interfaces run through task pipeline with call ledger and mode-gated refresh rules | P2 | Each interface has real target samples, safe failure states, no false verified claims, and no cache/render direct provider calls. |
+| LTG-02 | Tushare 全接口生产流水线 | core light path `done_real`; extended APIs `matrix` / `mock`; `live_light` status contract and local bootstrap skeleton exist; provider execution remains pending | All selected interfaces run through task pipeline with call ledger and mode-gated refresh rules | P2 | Each interface has real target samples, safe failure states, no false verified claims, and no cache/render direct provider calls. |
 | LTG-03 | Factor Test Lab 完整生产化 | light research metrics `done_real`; production QA contract visible; production research incomplete | Research-grade factor validation for single factors | P3 | IC, Rank IC, ICIR, groups, cost, drawdown, sample split, decay, and neutral IC are auditable and research-only. |
 | LTG-04 | Factor 全市场 / 股票池研究 | light mode plus local read-plan and execution readiness audit; batch execution pending | watchlist / custom pool / full pool research pipeline | P3 | Large universe runs in task pipeline without blocking UI or entering strategy action. |
 | LTG-05 | Storage / DuckDB / Parquet 生产化 | dataset scaffold, dry-runs, query policy, and push-gate contract exist | Versioned, queryable local data layer | P4 | schema/version/TTL/compaction/query services are auditable; data artifacts stay out of git. |
@@ -262,7 +262,7 @@ Harden A-share trading-calendar freshness production gate
 - `provider_target_sample_runbook_contract.status=target_sample_runbook_ready_provider_review_pending` only means the explicit provider-sample review checklist is complete for the requested target domains. It is not provider execution, provider-backed acceptance, full-interface acceptance, or production Tushare completion.
 - The local Tushare acceptance push-gate contract is not a provider run; it only blocks regressions in button gating, matrix semantics, call-ledger requirements, pending provider acceptance flags, and no-trade/no-action boundaries.
 - The `provider_backed_trade_cal_long_window` task mode is a controlled evidence marker for the `trade_cal` target only. It is not Tushare full-interface acceptance, not production pipeline completion, and not automatic provider execution.
-- `GET /api/bootstrap/status` now exposes safe runtime mode visibility, config rows, and `live_light` policy; `POST /api/bootstrap/live-startup` now creates a local-only task skeleton with task catalog coverage, rate limiting, one-task-per-window dedupe/reuse, safe failure display, and token-safe call ledger. Provider execution is still pending: the skeleton does not refresh Tushare, does not call DeepSeek, and does not start worker orchestration.
+- `GET /api/bootstrap/status` now exposes safe runtime mode visibility, config rows, and `live_light` policy; `POST /api/bootstrap/live-startup` now creates a local-only task skeleton with task catalog coverage, rate limiting, one-task-per-window dedupe/reuse, safe failure display, and token-safe call ledger. Command Center Home can create that local skeleton once per browser session after initial cache render only in `live_light` mode with sources enabled. Provider execution is still pending: the skeleton does not refresh Tushare, does not call DeepSeek, and does not start worker orchestration.
 
 ### Implementation Phases
 
@@ -301,13 +301,13 @@ Harden A-share trading-calendar freshness production gate
 - `scripts/tushare_acceptance_contract.py` passes in the push gate while still reporting `provider_backed_acceptance_done=false`, `production_tushare_pipeline_complete=false`, and `full_interface_acceptance_done=false`.
 - Tokens are never printed, stored in packets, or exposed to frontend.
 - `trade_cal` provider-backed long-window evidence requires explicit payload, long-window schema evidence, freshness replay, and failure-mode validation; a plain successful `trade_cal` refresh remains a normal selected API result.
-- Future live startup UI shows current mode, Tushare auto-refresh on/off, latest bootstrap task status, skipped-by-rate-limit state, and safe errors without exposing token/key.
-- Settings / Config Health shows current runtime mode and the `live_light` config contract through `GET /api/bootstrap/status` while remaining cache-only and no-task.
+- Live startup UI shows current mode, Tushare auto-refresh on/off, latest bootstrap task status, skipped-by-rate-limit/session state, and safe errors without exposing token/key.
+- Settings / Config Health shows current runtime mode and the `live_light` config contract through `GET /api/bootstrap/status`; Command Center Home can request the local skeleton after cache render when `live_light` is explicitly enabled.
 
 ### Forbidden
 
 - Do not call Tushare from GET cache or page render.
-- Do not treat a future React mounted POST bootstrap task as a direct render/provider call; keep the distinction explicit in tests and docs.
+- Do not treat the React mounted POST bootstrap skeleton as a direct render/provider call; keep the distinction explicit in tests and docs.
 - Do not enable `live_light` by default; local users must opt in through config or an explicit UI mode.
 - Do not mark matrix-only rows as real validation.
 - Do not treat `api_acceptance_audit` as proof that provider coverage or production refresh is complete.

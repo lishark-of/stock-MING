@@ -92,7 +92,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 
 - `GET .../cache` 不触发 Tushare、DeepSeek、GitHub。
 - `/health` 返回启动安全摘要；`GET /api/model-strategy/cache` 返回当前 DeepSeek 模型策略、用途映射和配置来源。二者都不包含 token/key，不触发模型调用。
-- `GET /api/bootstrap/status` 返回 `cache_only/manual/live_light/live_full` 运行模式、safe config rows、`live_light` policy 和 call ledger。它只读、不创建 task、不调用 Tushare/DeepSeek/GitHub、不读取 token/key；`POST /api/bootstrap/live-startup` 现在作为本地 task skeleton 接入 task catalog，可记录模式、限频、payload 安全摘要和 call ledger，但仍保持 `provider_execution_implemented=false`，不会调用 Tushare/DeepSeek/GitHub。
+- `GET /api/bootstrap/status` 返回 `cache_only/manual/live_light/live_full` 运行模式、safe config rows、`live_light` policy 和 call ledger。它只读、不创建 task、不调用 Tushare/DeepSeek/GitHub、不读取 token/key；`POST /api/bootstrap/live-startup` 现在作为本地 task skeleton 接入 task catalog，可记录模式、限频、session 去重、payload 安全摘要和 call ledger。Command Center Home 只会在初始 cache render 完成后、运行模式为 `live_light` 且 source 开关启用时创建一次本地 skeleton；仍保持 `provider_execution_implemented=false`，不会调用 Tushare/DeepSeek/GitHub。
 - `/api/migration/status` 返回用户给定的 3.0 长期迁移进度基线、目标技术栈和安全原则；该接口只读、不外联、不重新估算进度。
 - `/api/tasks/catalog` 返回按钮门控任务目录、可能外部源、call ledger 要求和交易边界；DeepSeek-capable 任务会声明 `deepseek_model_strategy_purpose`、配置键和非硬编码模型来源；该接口只读，不创建任务。
 - `GET .../cache` 优先读取 `.stock_ming_3/meta.sqlite` 中已有持久化 packet；没有持久化 packet 时再读取 `.stock_ming_cache/command_center_latest.json` 本地快照或本地 builder；没有精确 packet 时返回 `cache_missing`，不会把旧 packet 冒充新 packet。
@@ -226,7 +226,7 @@ Command Center 3.0 的外联边界采用默认安全、显式升级的运行模�
 | `live_light` | 初始 cache render 后，页面可创建一次限频后台 bootstrap task。 | 轻量 Tushare、可选 DeepSeek pro，均经 task/worker/local fallback | 本地日常投研客户端 |
 | `live_full` | 预留给全池、深扫、生产 worker 流程。 | 后续显式 worker 模式 | 不默认启用 |
 
-`live_light` 的目标不是让 React 直接外联，而是把本地日常投研的轻量刷新变成可配置、可审计、可跳过、可失败降级的后台任务。未来 bootstrap task 只能在初始 cache 渲染之后触发，必须限频、去重、显示当前模式和最近任务状态，并记录 call ledger / model ledger。它可覆盖当前标的、当前持仓或 watchlist 的轻量 Tushare 数据，数据准备后可选触发 DeepSeek pro 解释；不得阻塞 UI、不得修改 `strategy action`、不得改价格/持仓/`operation_zones`、不得执行真实交易、不得暴露 token/key。
+`live_light` 的目标不是让 React 直接外联，而是把本地日常投研的轻量刷新变成可配置、可审计、可跳过、可失败降级的后台任务。当前 bootstrap skeleton 已能在初始 cache 渲染之后触发，必须限频、session 去重、显示当前模式和最近任务状态，并记录 call ledger；model ledger 和真实 provider/model 执行仍待后续验收。未来它可覆盖当前标的、当前持仓或 watchlist 的轻量 Tushare 数据，数据准备后可选触发 DeepSeek pro 解释；不得阻塞 UI、不得修改 `strategy action`、不得改价格/持仓/`operation_zones`、不得执行真实交易、不得暴露 token/key。
 
 ## 边界
 
