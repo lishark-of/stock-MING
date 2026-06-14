@@ -126,6 +126,23 @@ textarea:focus {
   z-index: 0;
 }
 
+.motion-surface[data-motion-purpose="visual_hierarchy_clarity"]::after {
+  animation: cc-keynote-focus-sweep var(--motion-duration-hierarchy) var(--motion-ease-emphasized) both;
+  background: linear-gradient(105deg, transparent 0%, rgba(255, 255, 255, 0.54) 43%, transparent 72%);
+  content: "";
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  transform: translateX(-112%);
+  z-index: 0;
+}
+
+.motion-surface[data-motion-purpose="visual_hierarchy_clarity"] > * {
+  position: relative;
+  z-index: 1;
+}
+
 .metric-card[data-metric-tone="good"],
 .status-good {
   --motion-hierarchy-cue: var(--motion-hierarchy-good);
@@ -302,6 +319,20 @@ textarea:focus {
   to {
     opacity: 0.72;
     transform: scaleY(1);
+  }
+}
+
+@keyframes cc-keynote-focus-sweep {
+  from {
+    opacity: 0;
+    transform: translateX(-112%);
+  }
+  34% {
+    opacity: 0.56;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(112%);
   }
 }
 
@@ -1092,6 +1123,7 @@ pre {
 
   .motion-surface,
   .motion-surface[data-motion-purpose="visual_hierarchy_clarity"]::before,
+  .motion-surface[data-motion-purpose="visual_hierarchy_clarity"]::after,
   .route-stage,
   .page-head,
   .chart-refresh-frame,

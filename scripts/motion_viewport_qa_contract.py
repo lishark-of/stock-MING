@@ -218,6 +218,17 @@ def build_contract() -> dict[str, Any]:
             "metric and packet surfaces expose a finite non-interactive hierarchy cue for dense-page scanability",
         ),
         row(
+            "keynote_focus_sweep_cue",
+            '.motion-surface[data-motion-purpose="visual_hierarchy_clarity"]::after' in styles
+            and "@keyframes cc-keynote-focus-sweep" in styles
+            and "linear-gradient(105deg" in styles
+            and '.motion-surface[data-motion-purpose="visual_hierarchy_clarity"] > *' in styles
+            and "z-index: 1" in styles
+            and ".motion-surface[data-motion-purpose=\"visual_hierarchy_clarity\"]::after" in styles
+            and "@media (prefers-reduced-motion: reduce)" in styles,
+            "visual hierarchy surfaces add a finite keynote-style focus sweep while keeping child content above the cue and reduced-motion guarded",
+        ),
+        row(
             "packet_status_clarity_cue",
             'data-motion-scope="packet_status_clarity"' in packet_card
             and "function statusTone" in packet_card

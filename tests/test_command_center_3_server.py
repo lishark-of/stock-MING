@@ -8919,6 +8919,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("explicit_browser_runner_script_available", script)
         self.assertIn("mobile_responsive_motion_layout", script)
         self.assertIn("packet_status_clarity_cue", script)
+        self.assertIn("keynote_focus_sweep_cue", script)
         self.assertIn("motion_browser_qa_runner.mjs", script)
         self.assertIn("motion_production_stage_scope_manifest", script)
         self.assertIn("motion_production_stage_scope_manifest_is_complete_and_pending", script)
@@ -8993,6 +8994,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(row["contains_secret"])
             self.assertGreaterEqual(len(row["missing_evidence"]), 6)
         criteria = {row["criterion"] for row in payload["static_rows"]}
+        self.assertIn("keynote_focus_sweep_cue", criteria)
         self.assertIn("motion_production_stage_scope_manifest_is_complete_and_pending", criteria)
 
     def test_motion_browser_qa_runbook_script_is_local_static(self):
@@ -17404,6 +17406,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("task_receipt_confirmation_cue", motion_criteria)
         self.assertIn("cache_refresh_confirmation_cue", motion_criteria)
         self.assertIn("visual_hierarchy_clarity_cue", motion_criteria)
+        self.assertIn("keynote_focus_sweep_cue", motion_criteria)
         self.assertIn("packet_status_clarity_cue", motion_criteria)
         self.assertIn("motion_viewport_qa_contract_ready", motion_criteria)
         self.assertIn("motion_browser_qa_runbook_ready", motion_criteria)
@@ -17418,6 +17421,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(motion["task_receipt_confirmation_cue"])
         self.assertTrue(motion["cache_refresh_confirmation_cue"])
         self.assertTrue(motion["visual_hierarchy_clarity_cue"])
+        self.assertTrue(motion["keynote_focus_sweep_cue"])
         self.assertTrue(motion["packet_status_clarity_cue"])
         self.assertTrue(motion["mobile_responsive_motion_layout"])
         self.assertTrue(motion["motion_viewport_qa_contract_ready"])
