@@ -47,6 +47,7 @@ PUSH_GATE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "push_gate_3_0.sh"
 SMOKE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "smoke_3_0.sh"
 DATA_HEALTH_FRESHNESS_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "data_health_freshness_contract.py"
 TUSHARE_ACCEPTANCE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "tushare_acceptance_contract.py"
+BOOTSTRAP_RUNTIME_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "bootstrap_runtime_contract.py"
 FACTOR_TEST_LAB_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "factor_test_lab_contract.py"
 FACTOR_UNIVERSE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "factor_universe_contract.py"
 DEEPSEEK_GOVERNANCE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "deepseek_governance_contract.py"
@@ -447,6 +448,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
     smoke_script = _read_local_text(SMOKE_SCRIPT_PATH)
     data_health_freshness_script = _read_local_text(DATA_HEALTH_FRESHNESS_CONTRACT_PATH)
     tushare_acceptance_script = _read_local_text(TUSHARE_ACCEPTANCE_CONTRACT_PATH)
+    bootstrap_runtime_script = _read_local_text(BOOTSTRAP_RUNTIME_CONTRACT_PATH)
     factor_test_lab_script = _read_local_text(FACTOR_TEST_LAB_CONTRACT_PATH)
     factor_universe_script = _read_local_text(FACTOR_UNIVERSE_CONTRACT_PATH)
     deepseek_governance_script = _read_local_text(DEEPSEEK_GOVERNANCE_CONTRACT_PATH)
@@ -495,6 +497,8 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and bool(data_health_freshness_script),
         "tushare_acceptance_contract_exists": TUSHARE_ACCEPTANCE_CONTRACT_PATH.exists()
         and bool(tushare_acceptance_script),
+        "bootstrap_runtime_contract_exists": BOOTSTRAP_RUNTIME_CONTRACT_PATH.exists()
+        and bool(bootstrap_runtime_script),
         "factor_test_lab_contract_exists": FACTOR_TEST_LAB_CONTRACT_PATH.exists()
         and bool(factor_test_lab_script),
         "factor_universe_contract_exists": FACTOR_UNIVERSE_CONTRACT_PATH.exists()
@@ -523,6 +527,8 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "Data Health freshness contract" in script,
         "tushare_acceptance_contract_step": "scripts/tushare_acceptance_contract.py" in script
         and "Tushare acceptance contract" in script,
+        "bootstrap_runtime_contract_step": "scripts/bootstrap_runtime_contract.py" in script
+        and "Bootstrap runtime contract" in script,
         "factor_test_lab_contract_step": "scripts/factor_test_lab_contract.py" in script
         and "Factor Test Lab contract" in script,
         "factor_universe_contract_step": "scripts/factor_universe_contract.py" in script
@@ -569,6 +575,17 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "does_not_execute_trades" in tushare_acceptance_script
         and "tushare_adapter" not in tushare_acceptance_script
         and "api.github.com" not in tushare_acceptance_script,
+        "bootstrap_runtime_contract_is_local": "command_center_3_bootstrap_runtime_contract.v1" in bootstrap_runtime_script
+        and "local_bootstrap_runtime_contract_no_provider_or_model_execution" in bootstrap_runtime_script
+        and "cache_only_payload_sanitizes_secret_like_inputs" in bootstrap_runtime_script
+        and "live_light_records_plan_without_provider_execution" in bootstrap_runtime_script
+        and "live_light_rate_limit_reuses_existing_task" in bootstrap_runtime_script
+        and "provider_execution_implemented" in bootstrap_runtime_script
+        and "model_execution_implemented" in bootstrap_runtime_script
+        and "does_not_execute_trades" in bootstrap_runtime_script
+        and "tushare_adapter" not in bootstrap_runtime_script
+        and "deepseek_adapter" not in bootstrap_runtime_script
+        and "api.github.com" not in bootstrap_runtime_script,
         "factor_test_lab_contract_is_local": "command_center_3_factor_test_lab_contract.v1" in factor_test_lab_script
         and "local_factor_test_lab_contract_no_provider_execution" in factor_test_lab_script
         and "provider_backed_small_pool_validation_done" in factor_test_lab_script
@@ -717,6 +734,9 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "tushare_acceptance_contract_exists",
             "tushare_acceptance_contract_step",
             "tushare_acceptance_contract_is_local",
+            "bootstrap_runtime_contract_exists",
+            "bootstrap_runtime_contract_step",
+            "bootstrap_runtime_contract_is_local",
             "factor_test_lab_contract_exists",
             "factor_test_lab_contract_step",
             "factor_test_lab_contract_is_local",
@@ -817,6 +837,21 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "tushare_acceptance_contract_is_local",
             checks["tushare_acceptance_contract_is_local"],
             evidence="contract keeps LTG-02 matrix/readiness/provider-sample plans separate from provider-backed production acceptance",
+        ),
+        _release_gate_row(
+            "bootstrap_runtime_contract_exists",
+            checks["bootstrap_runtime_contract_exists"],
+            evidence=_relative_path(BOOTSTRAP_RUNTIME_CONTRACT_PATH),
+        ),
+        _release_gate_row(
+            "bootstrap_runtime_contract_step",
+            checks["bootstrap_runtime_contract_step"],
+            evidence="push gate runs scripts/bootstrap_runtime_contract.py after Tushare acceptance and before Factor Test Lab",
+        ),
+        _release_gate_row(
+            "bootstrap_runtime_contract_is_local",
+            checks["bootstrap_runtime_contract_is_local"],
+            evidence="contract keeps cache_only offline and live_light bootstrap as a local plan/model-ledger skeleton with no provider/model execution",
         ),
         _release_gate_row(
             "factor_test_lab_contract_exists",

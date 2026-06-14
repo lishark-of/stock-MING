@@ -109,6 +109,7 @@ write_release_readiness_report() {
 - command_center_3_smoke: passed
 - data_health_freshness_contract: passed_local_contract_provider_execution_pending
 - tushare_acceptance_contract: passed_local_contract_provider_execution_pending
+- bootstrap_runtime_contract: passed_local_contract_provider_execution_pending
 - factor_test_lab_contract: passed_local_contract_provider_execution_pending
 - factor_universe_contract: passed_local_contract_read_plan_execution_pending
 - deepseek_governance_contract: passed_local_contract_provider_benchmark_pending
@@ -150,6 +151,7 @@ run_step "Desktop build" bash -c "cd desktop && npm run build"
 run_step "Command Center 3 smoke" env PYTHON_BIN="$PYTHON_BIN" scripts/smoke_3_0.sh
 run_step "Data Health freshness contract" "$PYTHON_BIN" scripts/data_health_freshness_contract.py
 run_step "Tushare acceptance contract" "$PYTHON_BIN" scripts/tushare_acceptance_contract.py
+run_step "Bootstrap runtime contract" "$PYTHON_BIN" scripts/bootstrap_runtime_contract.py
 run_step "Factor Test Lab contract" "$PYTHON_BIN" scripts/factor_test_lab_contract.py
 run_step "Factor universe contract" "$PYTHON_BIN" scripts/factor_universe_contract.py
 run_step "DeepSeek governance contract" "$PYTHON_BIN" scripts/deepseek_governance_contract.py
