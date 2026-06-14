@@ -28,6 +28,7 @@ CONTRACT_KEYS = [
     "freshness_long_window_sample_validation",
     "trade_cal_physical_validation",
     "trade_cal_provider_acceptance_runbook",
+    "local_tushare_refresh_packet_summary",
     "trade_cal_provider_acceptance_promotion_audit",
     "freshness_production_blocker_audit",
     "freshness_provider_acceptance_readiness_receipt",
@@ -62,6 +63,7 @@ def build_contract() -> dict[str, Any]:
     sample = _get(packet, "freshness_long_window_sample_validation")
     physical = _get(packet, "trade_cal_physical_validation")
     runbook = _get(packet, "trade_cal_provider_acceptance_runbook")
+    local_tushare_refresh = _get(packet, "local_tushare_refresh_packet_summary")
     promotion = _get(packet, "trade_cal_provider_acceptance_promotion_audit")
     blockers_audit = _get(packet, "freshness_production_blocker_audit")
     readiness_receipt = _get(packet, "freshness_provider_acceptance_readiness_receipt")
@@ -136,6 +138,25 @@ def build_contract() -> dict[str, Any]:
             and promotion.get("production_freshness_gate_complete") is False
             and _flag_false(promotion, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called"),
             "Provider acceptance promotion audit must read local prior evidence only and never run trade_cal refresh itself.",
+        ),
+        _row(
+            "local_tushare_refresh_packet_lookup_is_read_only",
+            local_tushare_refresh.get("schema_version") == "data_health_local_tushare_refresh_packet_summary.v1"
+            and local_tushare_refresh.get("source_packet_key") == "command_center_tushare_refresh_packet"
+            and local_tushare_refresh.get("read_only_sqlite_packet_lookup") is True
+            and local_tushare_refresh.get("cache_get_external_calls") is False
+            and local_tushare_refresh.get("provider_backed_acceptance_done") is False
+            and local_tushare_refresh.get("production_tushare_pipeline_complete") is False
+            and _flag_false(
+                local_tushare_refresh,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and policy.get("local_tushare_refresh_packet_lookup_is_read_only") is True
+            and policy.get("local_tushare_refresh_packet_lookup_calls_provider") is False,
+            "Data Health may read the persisted Tushare refresh packet as local evidence, but the lookup must stay read-only and no-provider.",
         ),
         _row(
             "freshness_production_blocker_audit_is_local_pending",
@@ -289,6 +310,9 @@ def build_contract() -> dict[str, Any]:
             ),
             "trade_cal_provider_acceptance_evidence_row_count": counts.get(
                 "trade_cal_provider_acceptance_evidence_row_count"
+            ),
+            "local_tushare_refresh_packet_trade_cal_evidence_row_count": counts.get(
+                "local_tushare_refresh_packet_trade_cal_evidence_row_count"
             ),
             "freshness_production_blocker_count": counts.get("freshness_production_blocker_count"),
             "freshness_provider_acceptance_readiness_blocker_count": counts.get(

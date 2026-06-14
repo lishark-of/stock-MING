@@ -12452,6 +12452,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             self.skipTest("pyarrow/pandas parquet dependency missing")
         import pandas as pd
 
+        self._with_meta_store()
         root = self._with_parquet_root()
         today = _dt.date.today()
         start = today - _dt.timedelta(days=820)
@@ -12546,6 +12547,102 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["freshness_production_blocker_count"], 0)
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
+
+    def test_data_health_reads_persisted_tushare_trade_cal_acceptance_packet_without_snapshot_ledger(self):
+        if importlib.util.find_spec("pyarrow") is None or importlib.util.find_spec("pandas") is None:
+            self.skipTest("pyarrow/pandas parquet dependency missing")
+        import pandas as pd
+
+        self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        today = _dt.date.today()
+        start = today - _dt.timedelta(days=820)
+        end = today + _dt.timedelta(days=20)
+        rows = []
+        cursor = start
+        previous_open = ""
+        while cursor <= end:
+            is_open = cursor.weekday() < 5
+            rows.append(
+                {
+                    "exchange": "SSE",
+                    "cal_date": cursor.strftime("%Y%m%d"),
+                    "is_open": 1 if is_open else 0,
+                    "pretrade_date": previous_open,
+                }
+            )
+            if is_open:
+                previous_open = cursor.strftime("%Y%m%d")
+            cursor += _dt.timedelta(days=1)
+
+        class TradeCalAcceptanceFakeAdapter:
+            def get_trade_cal(self, **params):
+                return {"ok": True, "data": rows, "error": ""}
+
+        task = tushare_task_service.run_tushare_refresh_task(
+            {
+                "apis": ["trade_cal"],
+                "start_date": start.strftime("%Y%m%d"),
+                "end_date": end.strftime("%Y%m%d"),
+                "acceptance_mode": "provider_backed_trade_cal_long_window",
+                "freshness_replay_passed": True,
+                "freshness_replay_scenario_count": 8,
+                "failure_modes_validated": True,
+                "failure_mode_validated_count": 6,
+            },
+            adapter=TradeCalAcceptanceFakeAdapter(),
+        )
+        self.assertTrue(task["call_ledger"][0]["provider_backed_long_window_acceptance_done"])
+        storage_service.parquet_store.write_dataset(
+            pd.DataFrame(rows),
+            root=storage_service.PARQUET_ROOT,
+            name="trade_cal",
+        )
+
+        self._with_snapshot_cache(
+            {
+                "data_freshness": {
+                    "state": "fresh",
+                    "expected_trade_date": today.strftime("%Y-%m-%d"),
+                    "data_date": today.strftime("%Y-%m-%d"),
+                }
+            }
+        )
+
+        packet = data_health_service.read_data_health_timeline_cache()
+        local_summary = packet["local_tushare_refresh_packet_summary"]
+        promotion = packet["trade_cal_provider_acceptance_promotion_audit"]
+        blocker_audit = packet["freshness_production_blocker_audit"]
+
+        self.assertEqual(local_summary["schema_version"], "data_health_local_tushare_refresh_packet_summary.v1")
+        self.assertTrue(local_summary["available"])
+        self.assertEqual(local_summary["source_cache"], "sqlite_meta")
+        self.assertEqual(local_summary["trade_cal_call_ledger_count"], 1)
+        self.assertEqual(local_summary["trade_cal_provider_acceptance_evidence_row_count"], 1)
+        self.assertTrue(local_summary["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(local_summary["tushare_called"])
+        self.assertFalse(local_summary["deepseek_called"])
+        self.assertFalse(local_summary["github_called"])
+        self.assertTrue(packet["policy"]["local_tushare_refresh_packet_lookup_is_read_only"])
+        self.assertFalse(packet["policy"]["local_tushare_refresh_packet_lookup_calls_provider"])
+        self.assertEqual(packet["counts"]["local_tushare_refresh_packet_trade_cal_evidence_row_count"], 1)
+        self.assertGreaterEqual(packet["counts"]["trade_cal_provider_acceptance_evidence_row_count"], 1)
+        self.assertEqual(promotion["status"], "trade_cal_provider_acceptance_promotion_ready")
+        self.assertTrue(promotion["promotion_ready"])
+        self.assertTrue(promotion["provider_evidence_from_prior_task"])
+        self.assertTrue(promotion["provider_backed_long_window_acceptance_done"])
+        self.assertTrue(promotion["explicit_promotion_marker_found"])
+        self.assertEqual(promotion["blocking_criterion_count"], 0)
+        self.assertTrue(blocker_audit["production_ready"])
+        self.assertTrue(blocker_audit["provider_backed_trade_cal_acceptance_done"])
+        self.assertFalse(blocker_audit["production_freshness_gate_complete"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
 
     def test_recovery_center_cache_endpoint_returns_manual_recovery_plan(self):
         self._with_snapshot_cache(

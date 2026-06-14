@@ -1207,18 +1207,97 @@ def _trade_cal_provider_acceptance_promotion_row(
 
 
 def _trade_cal_provider_acceptance_evidence_rows(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
-    rows = _combined_rows(
-        (_first_value(snapshot, "data_health_ledger", "command_center_data_health_ledger"), "data_health_ledger", "ledger"),
-        (_first_value(snapshot, "tushare_refresh_facts_packet", "command_center_tushare_refresh_facts_packet"), "tushare_refresh_facts_packet", "ledger"),
-        (_first_value(snapshot, "tushare_refresh_packet", "command_center_tushare_refresh_packet"), "tushare_refresh_packet", "ledger"),
-        (_first_value(snapshot, "trade_cal_provider_acceptance_result", "trade_cal_acceptance_packet"), "trade_cal_provider_acceptance_result", "ledger"),
+    sources = (
+        (_first_value(snapshot, "data_health_ledger", "command_center_data_health_ledger"), "data_health_ledger"),
+        (
+            _first_value(snapshot, "tushare_refresh_facts_packet", "command_center_tushare_refresh_facts_packet"),
+            "tushare_refresh_facts_packet",
+        ),
+        (_first_value(snapshot, "tushare_refresh_packet", "command_center_tushare_refresh_packet"), "tushare_refresh_packet"),
+        (
+            _first_value(snapshot, "trade_cal_provider_acceptance_result", "trade_cal_acceptance_packet"),
+            "trade_cal_provider_acceptance_result",
+        ),
     )
     evidence_rows: list[dict[str, Any]] = []
-    for row in rows:
-        row_text = json.dumps(_json_safe(row), ensure_ascii=False, sort_keys=True).lower()
-        if "trade_cal" in row_text:
+    seen: set[str] = set()
+    for value, source in sources:
+        candidate_rows: list[dict[str, Any]] = []
+        if isinstance(value, Mapping):
+            if str(value.get("api") or value.get("required_api") or "").strip().lower() == "trade_cal":
+                candidate_rows.append(dict(value))
+            for key in ("call_ledger", "rows"):
+                for raw in _as_list(value.get(key)):
+                    if isinstance(raw, Mapping):
+                        candidate_rows.append(dict(raw))
+        else:
+            candidate_rows.extend(_rows(value, source=source, text_key="ledger"))
+        for row in candidate_rows:
+            api_name = str(row.get("api") or row.get("required_api") or "").strip().lower()
+            has_trade_cal_evidence_field = any(
+                key in row
+                for key in (
+                    "call_status",
+                    "row_count",
+                    "window_days",
+                    "acceptance_mode",
+                    "provider_backed_long_window_acceptance_done",
+                    "provider_backed_trade_cal_acceptance_done",
+                    "trade_cal_provider_acceptance_done",
+                )
+            )
+            if api_name != "trade_cal" or not has_trade_cal_evidence_field:
+                continue
+            row.setdefault("source", source)
+            signature = json.dumps(_json_safe(row), ensure_ascii=False, sort_keys=True)
+            if signature in seen:
+                continue
+            seen.add(signature)
             evidence_rows.append(row)
     return evidence_rows[:40]
+
+
+def _local_tushare_refresh_packet_for_data_health() -> dict[str, Any]:
+    try:
+        packet = packet_service.read_packet("command_center_tushare_refresh_packet")
+    except Exception:
+        packet = {}
+    if not isinstance(packet, Mapping) or packet.get("status") == "cache_missing":
+        return {}
+    return dict(_safe_value(packet))
+
+
+def _local_tushare_refresh_packet_summary(packet: Mapping[str, Any]) -> dict[str, Any]:
+    call_ledger = _as_list(packet.get("call_ledger"))
+    trade_cal_rows = [
+        row
+        for row in call_ledger
+        if isinstance(row, Mapping) and str(row.get("api") or "").lower() == "trade_cal"
+    ]
+    accepted_rows = [row for row in trade_cal_rows if row.get("provider_backed_long_window_acceptance_done") is True]
+    return {
+        "schema_version": "data_health_local_tushare_refresh_packet_summary.v1",
+        "available": bool(packet),
+        "source_packet_key": "command_center_tushare_refresh_packet",
+        "source_cache": packet.get("cache_source"),
+        "status": packet.get("status"),
+        "selected_apis": [str(item) for item in _as_list(packet.get("selected_apis"))],
+        "call_ledger_count": len(call_ledger),
+        "trade_cal_call_ledger_count": len(trade_cal_rows),
+        "trade_cal_provider_acceptance_evidence_row_count": len(accepted_rows),
+        "provider_backed_long_window_acceptance_done": bool(accepted_rows),
+        "provider_backed_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "cache_get_external_calls": False,
+        "read_only_sqlite_packet_lookup": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "Data Health reads this persisted packet only as local evidence. It does not create tasks or call Tushare.",
+    }
 
 
 def _row_truthy(row: Mapping[str, Any], *keys: str) -> bool:
@@ -1947,6 +2026,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
     snapshot = packet_service.load_snapshot_cache()
     safe_snapshot = _safe_value(snapshot)
     snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
+    local_tushare_refresh_packet = _local_tushare_refresh_packet_for_data_health()
+    if local_tushare_refresh_packet:
+        snapshot_map = dict(snapshot_map)
+        snapshot_map.setdefault("command_center_tushare_refresh_packet", local_tushare_refresh_packet)
+        snapshot_map.setdefault("tushare_refresh_packet", local_tushare_refresh_packet)
+    local_tushare_refresh_packet_summary = _local_tushare_refresh_packet_summary(local_tushare_refresh_packet)
 
     timeline_value = _first_value(snapshot_map, "data_health_timeline", "command_center_data_health_timeline")
     recovery_actions_value = _first_value(
@@ -2063,6 +2148,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             capability_rows,
             ledger_rows,
             gap_rows,
+            local_tushare_refresh_packet_summary.get("available"),
         )
     )
     status = "ready" if timeline_rows or provider_rows or capability_rows or ledger_rows else "partial" if has_specific_cache or snapshot else "cache_missing"
@@ -2104,6 +2190,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "current_evidence_freshness_qa_contract",
             "current_evidence_decision_surface_audit",
             "current_evidence_producer_coverage_audit",
+            "command_center_tushare_refresh_packet",
         ],
         "summary": visibility_summary.get("summary")
         or visibility_summary.get("headline")
@@ -2127,6 +2214,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         "trade_cal_physical_validation_rows": trade_cal_physical_validation_rows,
         "trade_cal_provider_acceptance_runbook": trade_cal_provider_acceptance_runbook,
         "trade_cal_provider_acceptance_runbook_rows": trade_cal_provider_acceptance_runbook_rows,
+        "local_tushare_refresh_packet_summary": local_tushare_refresh_packet_summary,
         "trade_cal_provider_acceptance_promotion_audit": trade_cal_provider_acceptance_promotion_audit,
         "trade_cal_provider_acceptance_promotion_rows": trade_cal_provider_acceptance_promotion_rows,
         "freshness_production_blocker_audit": freshness_production_blocker_audit,
@@ -2172,6 +2260,9 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             ),
             "trade_cal_provider_acceptance_evidence_row_count": int(
                 trade_cal_provider_acceptance_promotion_audit.get("evidence_row_count") or 0
+            ),
+            "local_tushare_refresh_packet_trade_cal_evidence_row_count": int(
+                local_tushare_refresh_packet_summary.get("trade_cal_provider_acceptance_evidence_row_count") or 0
             ),
             "freshness_production_blocker_row_count": len(freshness_production_blocker_rows),
             "freshness_production_blocker_count": int(
@@ -2238,6 +2329,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal_provider_acceptance_still_pending": True,
             "trade_cal_provider_acceptance_promotion_audit_is_local": True,
             "trade_cal_provider_acceptance_promotion_audit_calls_provider": False,
+            "local_tushare_refresh_packet_lookup_is_read_only": True,
+            "local_tushare_refresh_packet_lookup_calls_provider": False,
             "trade_cal_provider_acceptance_promotion_ready": bool(
                 trade_cal_provider_acceptance_promotion_audit.get("promotion_ready")
             ),
@@ -2297,6 +2390,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 ),
                 "trade_cal_provider_acceptance_evidence_row_count": int(
                     trade_cal_provider_acceptance_promotion_audit.get("evidence_row_count") or 0
+                ),
+                "local_tushare_refresh_packet_available": bool(
+                    local_tushare_refresh_packet_summary.get("available")
+                ),
+                "local_tushare_refresh_packet_trade_cal_evidence_row_count": int(
+                    local_tushare_refresh_packet_summary.get("trade_cal_provider_acceptance_evidence_row_count") or 0
                 ),
                 "trade_cal_provider_acceptance_promotion_ready": bool(
                     trade_cal_provider_acceptance_promotion_audit.get("promotion_ready")
