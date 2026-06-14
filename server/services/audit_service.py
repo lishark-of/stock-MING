@@ -42,6 +42,27 @@ RELEASE_GATE_SCHEMA_VERSION = "command_center_3_release_gate_readiness_audit.v1"
 CI_NOTIFICATION_TRIAGE_SCHEMA_VERSION = "command_center_3_ci_notification_triage.v1"
 PUSH_READINESS_RECEIPT_SCHEMA_VERSION = "command_center_3_push_readiness_receipt.v1"
 MOTION_CLARITY_SCHEMA_VERSION = "command_center_3_motion_clarity_audit.v1"
+RELEASE_GATE_STAGE_SCOPE = "release_gate_stage_scope_manifest"
+REQUIRED_RELEASE_GATE_STAGE_KEYS = {
+    "local_push_gate_static_contract",
+    "fresh_local_gate_command_run",
+    "secret_artifact_allowlist_review",
+    "ci_mirror_workflow_contract",
+    "matching_remote_actions_status",
+    "failure_email_triage_evidence",
+    "release_report_artifact_policy",
+    "explicit_push_approval_boundary",
+}
+RELEASE_GATE_STAGE_LABELS = {
+    "local_push_gate_static_contract": "local push gate static contract",
+    "fresh_local_gate_command_run": "fresh local push gate command run",
+    "secret_artifact_allowlist_review": "secret/artifact allowlist review",
+    "ci_mirror_workflow_contract": "CI mirror workflow contract",
+    "matching_remote_actions_status": "matching remote Actions status",
+    "failure_email_triage_evidence": "failure email triage evidence",
+    "release_report_artifact_policy": "release readiness report artifact policy",
+    "explicit_push_approval_boundary": "explicit push approval boundary",
+}
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 PUSH_GATE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "push_gate_3_0.sh"
@@ -1476,6 +1497,59 @@ def _release_gate_push_readiness_receipt(
         "note": "This receipt selects the safe push sequence. It does not run the gate, call GitHub, push commits, or prove remote CI is green.",
     }
     return receipt, rows
+
+
+def _release_gate_stage_scope_rows(
+    release_gate_readiness_audit: Mapping[str, Any],
+    release_gate_push_readiness_receipt: Mapping[str, Any],
+    ci_notification_triage_contract: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    local_gate_ready = release_gate_readiness_audit.get("local_gate_ready") is True
+    ci_mirror_ready = release_gate_readiness_audit.get("ci_mirror_ready") is True
+    for_push_ready = release_gate_push_readiness_receipt.get("ready_for_explicit_local_gate_then_push") is True
+    rows: list[dict[str, Any]] = []
+    for stage_key in sorted(REQUIRED_RELEASE_GATE_STAGE_KEYS):
+        rows.append(
+            {
+                "stage_key": stage_key,
+                "stage_label": RELEASE_GATE_STAGE_LABELS[stage_key],
+                "scope": RELEASE_GATE_STAGE_SCOPE,
+                "current_status": "local_static_or_pending_evidence",
+                "target_status": "fresh_local_gate_or_remote_ci_evidence_required",
+                "required_before_release_push": True,
+                "local_static_contract_ready": local_gate_ready,
+                "ci_mirror_ready": ci_mirror_ready,
+                "ready_for_explicit_push_sequence": for_push_ready,
+                "fresh_local_gate_run_observed": False,
+                "remote_actions_status_known": False,
+                "latest_remote_run_verified_green": False,
+                "failure_email_has_matching_head_and_logs": False,
+                "can_dismiss_failure_email_without_matching_head_and_logs": False,
+                "periodic_allowlist_review_ready": False,
+                "release_report_written_by_cache": False,
+                "release_report_is_ci_status": False,
+                "release_gate_complete": False,
+                "stage_complete": False,
+                "did_not_push": True,
+                "git_add_dot_used": False,
+                "github_api_called": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "missing_evidence": [
+                    "fresh scripts/push_gate_3_0.sh output for current HEAD",
+                    "matching remote Actions run for pushed commit",
+                    "latest remote Actions green evidence",
+                    "safe failure log excerpt when email reports a failure",
+                    "periodic secret/artifact allowlist review",
+                    "explicit user/operator push approval",
+                ],
+            }
+        )
+    return rows
 
 
 def _motion_source(path: str) -> str:
@@ -3015,6 +3089,11 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         release_gate_readiness_audit,
         ci_notification_triage_contract,
     )
+    release_gate_stage_scope_rows = _release_gate_stage_scope_rows(
+        release_gate_readiness_audit,
+        release_gate_push_readiness_receipt,
+        ci_notification_triage_contract,
+    )
     motion_clarity_audit, motion_clarity_rows = _motion_clarity_readiness_audit()
     motion_production_qa_contract, motion_production_qa_rows = _motion_production_qa_contract(
         motion_clarity_audit,
@@ -3094,6 +3173,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "release_gate_workflow_rows": release_gate_workflow_rows,
         "release_gate_push_readiness_receipt": release_gate_push_readiness_receipt,
         "release_gate_push_readiness_rows": release_gate_push_readiness_rows,
+        "release_gate_stage_scope_rows": release_gate_stage_scope_rows,
         "ci_notification_triage_contract": ci_notification_triage_contract,
         "ci_notification_triage_rows": ci_notification_triage_rows,
         "motion_clarity_audit": motion_clarity_audit,
@@ -3144,6 +3224,10 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "release_gate_complete": release_gate_readiness_audit.get("release_gate_complete") is True,
             "release_gate_ci_mirror_ready": release_gate_readiness_audit.get("ci_mirror_ready") is True,
             "release_gate_workflow_count": release_gate_readiness_audit.get("workflow_count", 0),
+            "release_gate_stage_scope_count": len(release_gate_stage_scope_rows),
+            "release_gate_stage_scope_pending_count": sum(
+                1 for row in release_gate_stage_scope_rows if row.get("stage_complete") is False
+            ),
             "push_readiness_receipt_ready": release_gate_push_readiness_receipt.get("local_receipt_ready") is True,
             "push_readiness_remote_status_known": release_gate_push_readiness_receipt.get(
                 "remote_actions_status_known"
@@ -3219,6 +3303,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "release_gate_audit_runs_no_commands": True,
             "release_gate_audit_calls_no_github_api": True,
             "release_gate_local_ready_is_not_ci_status": True,
+            "release_gate_stage_scope_is_local": True,
+            "release_gate_stage_scope_is_not_fresh_gate_or_remote_ci": True,
             "push_readiness_receipt_is_local": True,
             "push_readiness_receipt_runs_no_commands": True,
             "push_readiness_receipt_calls_no_github_api": True,

@@ -16368,6 +16368,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["release_gate_audit_runs_no_commands"])
         self.assertTrue(packet["policy"]["release_gate_audit_calls_no_github_api"])
         self.assertTrue(packet["policy"]["release_gate_local_ready_is_not_ci_status"])
+        self.assertTrue(packet["policy"]["release_gate_stage_scope_is_local"])
+        self.assertTrue(packet["policy"]["release_gate_stage_scope_is_not_fresh_gate_or_remote_ci"])
         self.assertTrue(packet["policy"]["push_readiness_receipt_is_local"])
         self.assertTrue(packet["policy"]["push_readiness_receipt_runs_no_commands"])
         self.assertTrue(packet["policy"]["push_readiness_receipt_calls_no_github_api"])
@@ -16543,6 +16545,47 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["counts"]["release_gate_local_ready"])
         self.assertTrue(packet["counts"]["release_gate_ci_mirror_ready"])
         self.assertFalse(packet["counts"]["release_gate_complete"])
+        required_release_stages = {
+            "local_push_gate_static_contract",
+            "fresh_local_gate_command_run",
+            "secret_artifact_allowlist_review",
+            "ci_mirror_workflow_contract",
+            "matching_remote_actions_status",
+            "failure_email_triage_evidence",
+            "release_report_artifact_policy",
+            "explicit_push_approval_boundary",
+        }
+        self.assertEqual(packet["counts"]["release_gate_stage_scope_count"], 8)
+        self.assertEqual(packet["counts"]["release_gate_stage_scope_pending_count"], 8)
+        release_stage_rows = packet["release_gate_stage_scope_rows"]
+        self.assertEqual({row["stage_key"] for row in release_stage_rows}, required_release_stages)
+        for row in release_stage_rows:
+            self.assertEqual(row["scope"], "release_gate_stage_scope_manifest")
+            self.assertEqual(row["current_status"], "local_static_or_pending_evidence")
+            self.assertEqual(row["target_status"], "fresh_local_gate_or_remote_ci_evidence_required")
+            self.assertTrue(row["required_before_release_push"])
+            self.assertTrue(row["local_static_contract_ready"])
+            self.assertTrue(row["ci_mirror_ready"])
+            self.assertTrue(row["ready_for_explicit_push_sequence"])
+            self.assertFalse(row["fresh_local_gate_run_observed"])
+            self.assertFalse(row["remote_actions_status_known"])
+            self.assertFalse(row["latest_remote_run_verified_green"])
+            self.assertFalse(row["failure_email_has_matching_head_and_logs"])
+            self.assertFalse(row["can_dismiss_failure_email_without_matching_head_and_logs"])
+            self.assertFalse(row["periodic_allowlist_review_ready"])
+            self.assertFalse(row["release_report_written_by_cache"])
+            self.assertFalse(row["release_report_is_ci_status"])
+            self.assertFalse(row["release_gate_complete"])
+            self.assertFalse(row["stage_complete"])
+            self.assertTrue(row["did_not_push"])
+            self.assertFalse(row["git_add_dot_used"])
+            self.assertFalse(row["github_api_called"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
         push_receipt = packet["release_gate_push_readiness_receipt"]
         self.assertEqual(push_receipt["schema_version"], "command_center_3_push_readiness_receipt.v1")
         self.assertEqual(push_receipt["scope"], "local_push_readiness_receipt_no_command_or_github_api")
