@@ -306,6 +306,10 @@ export default function SettingsConfigHealth() {
           <p>ready for real acceptance: {String(acceptanceDryRunSummary.ready_for_user_approved_real_acceptance ?? false)}</p>
           <p>blocked by missing credentials: {String(acceptanceDryRunSummary.blocked_by_missing_credentials ?? false)}</p>
           <p>credential presence status: {String(acceptanceDryRunSummary.credential_presence_status ?? "--")}</p>
+          <p>allowed next step: {String(acceptanceDryRunSummary.allowed_next_step ?? "--")}</p>
+          <p>real acceptance task implemented: {String(acceptanceDryRunSummary.real_acceptance_task_implemented ?? false)}</p>
+          <p>missing evidence: {JSON.stringify(acceptanceDryRunSummary.missing_evidence_items ?? [])}</p>
+          <p>not allowed next steps: {JSON.stringify(acceptanceDryRunSummary.not_allowed_next_steps ?? [])}</p>
           <p>selected APIs: {JSON.stringify(acceptanceDryRunPayload.selected_apis ?? [])}</p>
           <p>ignored APIs: {JSON.stringify(acceptanceDryRunPayload.ignored_apis ?? [])}</p>
           <p>credential present/missing: {String(acceptanceDryRunSummary.credential_present_provider_count ?? 0)} / {String(acceptanceDryRunSummary.credential_missing_provider_count ?? 0)}</p>

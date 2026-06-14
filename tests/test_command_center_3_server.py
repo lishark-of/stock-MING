@@ -10663,6 +10663,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(summary["credential_values_read"])
         self.assertFalse(summary["credential_values_exposed"])
         self.assertTrue(summary["ready_for_user_approved_real_acceptance"])
+        self.assertEqual(
+            summary["allowed_next_step"],
+            "explicit_user_confirmed_real_provider_model_acceptance_task_pending_implementation",
+        )
+        self.assertFalse(summary["real_acceptance_task_implemented"])
+        self.assertIn("real provider call ledger", summary["missing_evidence_items"])
+        self.assertIn("GET cache provider/model execution", summary["not_allowed_next_steps"])
+        self.assertIn("skip credential presence gate", summary["not_allowed_next_steps"])
         self.assertFalse(summary["provider_execution_implemented"])
         self.assertFalse(summary["model_execution_implemented"])
         self.assertFalse(summary["external_calls_triggered"])
@@ -10747,6 +10755,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(summary["credential_missing_provider_count"], 2)
         self.assertTrue(summary["blocked_by_missing_credentials"])
         self.assertFalse(summary["ready_for_user_approved_real_acceptance"])
+        self.assertEqual(summary["allowed_next_step"], "configure_server_credentials_then_rerun_dry_run")
+        self.assertFalse(summary["real_acceptance_task_implemented"])
+        self.assertIn("server credential presence for selected providers", summary["missing_evidence_items"])
+        self.assertIn("skip credential presence gate", summary["not_allowed_next_steps"])
+        self.assertIn("promote dry-run to provider-backed acceptance", summary["not_allowed_next_steps"])
         rows = {row["phase_key"]: row for row in payload["acceptance_dry_run_rows"]}
         self.assertEqual(rows["server_secret_preflight"]["status"], "dry_run_secret_presence_missing_no_values_exposed")
         self.assertFalse(rows["server_secret_preflight"]["passed"])

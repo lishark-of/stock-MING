@@ -1080,6 +1080,21 @@ def _build_acceptance_dry_run(
         status = "acceptance_dry_run_blocked_missing_credentials"
     else:
         status = "acceptance_dry_run_ready_execution_pending"
+    if not user_approved:
+        allowed_next_step = "submit_dry_run_with_explicit_user_approval"
+        missing_evidence = ["explicit user approval"]
+    elif credential_missing_count:
+        allowed_next_step = "configure_server_credentials_then_rerun_dry_run"
+        missing_evidence = ["server credential presence for selected providers"]
+    else:
+        allowed_next_step = "explicit_user_confirmed_real_provider_model_acceptance_task_pending_implementation"
+        missing_evidence = [
+            "real provider call ledger",
+            "real model ledger",
+            "browser/runtime nonblocking evidence",
+            "ledger redaction safety review",
+            "production promotion review",
+        ]
     summary = {
         "schema_version": BOOTSTRAP_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
         "status": status,
@@ -1105,6 +1120,18 @@ def _build_acceptance_dry_run(
         "selected_model_phase_count": len(selected_model_rows),
         "blocking_phase_count": len(blocking_rows),
         "ready_for_user_approved_real_acceptance": user_approved and not credential_missing_count,
+        "allowed_next_step": allowed_next_step,
+        "missing_evidence_items": missing_evidence,
+        "not_allowed_next_steps": [
+            "GET cache provider/model execution",
+            "React render provider/model execution",
+            "skip credential presence gate",
+            "skip explicit user confirmation",
+            "promote dry-run to provider-backed acceptance",
+            "write token/key material to frontend/log/packet/cache",
+            "execute real trades or mutate strategy action",
+        ],
+        "real_acceptance_task_implemented": False,
         "provider_execution_implemented": False,
         "model_execution_implemented": False,
         "production_live_light_complete": False,

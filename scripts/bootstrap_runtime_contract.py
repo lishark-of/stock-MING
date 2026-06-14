@@ -595,6 +595,11 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             and dry_summary.get("credential_missing_provider_count") == 0
             and dry_summary.get("blocked_by_missing_credentials") is False
             and dry_summary.get("ready_for_user_approved_real_acceptance") is True
+            and dry_summary.get("allowed_next_step")
+            == "explicit_user_confirmed_real_provider_model_acceptance_task_pending_implementation"
+            and dry_summary.get("real_acceptance_task_implemented") is False
+            and "real provider call ledger" in _list(dry_summary.get("missing_evidence_items"))
+            and "skip credential presence gate" in _list(dry_summary.get("not_allowed_next_steps"))
             and dry_summary.get("credential_values_read") is False
             and dry_summary.get("credential_values_exposed") is False
             and credential_rows.get("tushare", {}).get("status") == "present_no_value_read"
@@ -628,6 +633,14 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             and missing_summary.get("credential_missing_provider_count") == 2
             and missing_summary.get("blocked_by_missing_credentials") is True
             and missing_summary.get("ready_for_user_approved_real_acceptance") is False
+            and missing_summary.get("allowed_next_step") == "configure_server_credentials_then_rerun_dry_run"
+            and missing_summary.get("real_acceptance_task_implemented") is False
+            and "server credential presence for selected providers" in _list(
+                missing_summary.get("missing_evidence_items")
+            )
+            and "promote dry-run to provider-backed acceptance" in _list(
+                missing_summary.get("not_allowed_next_steps")
+            )
             and missing_credential_rows.get("tushare", {}).get("status") == "missing_no_value_read"
             and missing_credential_rows.get("deepseek", {}).get("status") == "missing_no_value_read"
             and missing_rows.get("server_secret_preflight", {}).get("status")
