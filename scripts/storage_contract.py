@@ -45,6 +45,26 @@ REQUIRED_STORAGE_TASK_TYPES = {
     "run_storage_compaction_dry_run",
     "run_storage_cache_ttl_dry_run",
 }
+REQUIRED_PHYSICAL_MIGRATION_STAGES = (
+    "physical_schema_validation",
+    "schema_migration",
+    "dataset_version_manifest_validation",
+    "partition_migration",
+    "physical_compaction",
+    "cache_ttl_refresh",
+    "artifact_cleanup_review",
+    "production_promotion",
+)
+PHYSICAL_MIGRATION_STAGE_LABELS = {
+    "physical_schema_validation": "Physical schema validation",
+    "schema_migration": "Schema migration",
+    "dataset_version_manifest_validation": "Dataset version manifest validation",
+    "partition_migration": "Partition migration",
+    "physical_compaction": "Physical compaction",
+    "cache_ttl_refresh": "Cache TTL refresh",
+    "artifact_cleanup_review": "Artifact cleanup review",
+    "production_promotion": "Production promotion",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -94,6 +114,44 @@ def _read_script(path: str) -> str:
         return (PROJECT_ROOT / path).read_text(encoding="utf-8")
     except Exception:
         return ""
+
+
+def _physical_migration_stage_scope_rows() -> list[dict[str, Any]]:
+    return [
+        {
+            "stage_key": stage_key,
+            "stage_label": PHYSICAL_MIGRATION_STAGE_LABELS.get(stage_key, stage_key),
+            "scope": "storage_physical_migration_stage_scope_manifest",
+            "current_status": "local_preflight_or_dry_run_only",
+            "target_status": "physical_execution_or_promotion_evidence_required",
+            "required_before_production": True,
+            "physical_schema_validation_done": False,
+            "schema_migration_executed": False,
+            "dataset_version_manifest_validated": False,
+            "partition_migration_executed": False,
+            "physical_compaction_executed": False,
+            "cache_ttl_refresh_executed": False,
+            "artifact_cleanup_delete_executed": False,
+            "production_storage_complete": False,
+            "writes_parquet_on_get": False,
+            "writes_parquet_by_contract": False,
+            "reads_row_payloads": False,
+            "external_calls_triggered": False,
+            "tushare_called_by_contract": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "required_real_evidence": [
+                "explicit POST task evidence",
+                "physical artifact or manifest validation evidence",
+                "safe local task call ledger",
+                "production promotion review",
+            ],
+        }
+        for stage_key in REQUIRED_PHYSICAL_MIGRATION_STAGES
+    ]
 
 
 def build_contract() -> dict[str, Any]:
@@ -154,6 +212,7 @@ def build_contract() -> dict[str, Any]:
     task_rows = _storage_task_rows()
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/storage_contract.py")
+    physical_migration_stage_scope_rows = _physical_migration_stage_scope_rows()
 
     canonical_datasets = set(storage_service.CANONICAL_PARQUET_DATASETS)
     catalog_datasets = {
@@ -289,6 +348,36 @@ def build_contract() -> dict[str, Any]:
                 "no_trade_or_action_boundary",
             }.issubset(activation_criteria),
             "Storage physical migration activation receipt must expose the next explicit execution prerequisites while keeping all physical writes, provider refreshes, deletes, trades, and production completion pending.",
+        ),
+        _row(
+            "physical_migration_stage_scope_manifest_is_complete_and_pending",
+            [row.get("stage_key") for row in physical_migration_stage_scope_rows]
+            == list(REQUIRED_PHYSICAL_MIGRATION_STAGES)
+            and all(
+                isinstance(row, dict)
+                and row.get("scope") == "storage_physical_migration_stage_scope_manifest"
+                and row.get("required_before_production") is True
+                and row.get("physical_schema_validation_done") is False
+                and row.get("schema_migration_executed") is False
+                and row.get("dataset_version_manifest_validated") is False
+                and row.get("partition_migration_executed") is False
+                and row.get("physical_compaction_executed") is False
+                and row.get("cache_ttl_refresh_executed") is False
+                and row.get("artifact_cleanup_delete_executed") is False
+                and row.get("production_storage_complete") is False
+                and row.get("writes_parquet_on_get") is False
+                and row.get("writes_parquet_by_contract") is False
+                and row.get("reads_row_payloads") is False
+                and row.get("external_calls_triggered") is False
+                and row.get("tushare_called_by_contract") is False
+                and row.get("deepseek_called") is False
+                and row.get("github_called") is False
+                and row.get("does_not_execute_trades") is True
+                and row.get("does_not_modify_strategy_action") is True
+                and row.get("contains_secret") is False
+                for row in physical_migration_stage_scope_rows
+            ),
+            "Physical storage migration stages must be visible as a pending local scope manifest without writes, provider calls, deletes, or production completion.",
         ),
         _row(
             "schema_migration_preflight_is_not_physical_migration",
@@ -570,6 +659,7 @@ def build_contract() -> dict[str, Any]:
             and "local_storage_contract_no_physical_migration" in this_script
             and "command_center_3_storage_physical_migration_activation_receipt.v1" in this_script
             and "physical_migration_activation_receipt_keeps_execution_pending" in this_script
+            and "physical_migration_stage_scope_manifest_is_complete_and_pending" in this_script
             and "production_storage_complete" in this_script
             and "dry_runs_are_not_production_completion" in this_script
             and "does_not_execute_trades" in this_script
@@ -655,7 +745,17 @@ def build_contract() -> dict[str, Any]:
             "compaction_status": compaction_packet.get("status"),
             "cache_ttl_status": ttl_packet.get("status"),
             "artifact_cleanup_status": cleanup_packet.get("status"),
+            "physical_migration_stage_scope_count": len(physical_migration_stage_scope_rows),
+            "physical_migration_stage_scope_keys": [
+                row.get("stage_key") for row in physical_migration_stage_scope_rows
+            ],
+            "physical_migration_stage_scope_pending_count": sum(
+                1
+                for row in physical_migration_stage_scope_rows
+                if row.get("production_storage_complete") is False
+            ),
         },
+        "physical_migration_stage_scope_rows": physical_migration_stage_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Physical schema validation, schema migration, dataset version manifest validation, partition migration, physical compaction, TTL refresh execution, and delete cleanup remain pending.",
     }

@@ -7753,6 +7753,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("dry_runs_are_not_production_completion", script)
         self.assertIn("command_center_3_storage_physical_migration_activation_receipt.v1", script)
         self.assertIn("physical_migration_activation_receipt_keeps_execution_pending", script)
+        self.assertIn("physical_migration_stage_scope_manifest_is_complete_and_pending", script)
+        self.assertIn("physical_migration_stage_scope_rows", script)
         self.assertIn("schema_validation_dry_run_writes_no_parquet", script)
         self.assertIn("dataset_version_manifest_review_writes_no_manifest", script)
         self.assertIn("partition_migration_dry_run_writes_no_parquet", script)
@@ -7814,10 +7816,47 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed"]["partition_migration_status"], "dry_run_completed")
         self.assertEqual(payload["observed"]["compaction_status"], "dry_run_completed")
         self.assertEqual(payload["observed"]["cache_ttl_status"], "dry_run_completed")
+        required_stages = [
+            "physical_schema_validation",
+            "schema_migration",
+            "dataset_version_manifest_validation",
+            "partition_migration",
+            "physical_compaction",
+            "cache_ttl_refresh",
+            "artifact_cleanup_review",
+            "production_promotion",
+        ]
+        self.assertEqual(payload["observed"]["physical_migration_stage_scope_count"], len(required_stages))
+        self.assertEqual(payload["observed"]["physical_migration_stage_scope_keys"], required_stages)
+        self.assertEqual(payload["observed"]["physical_migration_stage_scope_pending_count"], len(required_stages))
+        stage_rows = {row["stage_key"]: row for row in payload["physical_migration_stage_scope_rows"]}
+        self.assertEqual(set(stage_rows), set(required_stages))
+        for row in stage_rows.values():
+            self.assertEqual(row["scope"], "storage_physical_migration_stage_scope_manifest")
+            self.assertTrue(row["required_before_production"])
+            self.assertFalse(row["physical_schema_validation_done"])
+            self.assertFalse(row["schema_migration_executed"])
+            self.assertFalse(row["dataset_version_manifest_validated"])
+            self.assertFalse(row["partition_migration_executed"])
+            self.assertFalse(row["physical_compaction_executed"])
+            self.assertFalse(row["cache_ttl_refresh_executed"])
+            self.assertFalse(row["artifact_cleanup_delete_executed"])
+            self.assertFalse(row["production_storage_complete"])
+            self.assertFalse(row["writes_parquet_on_get"])
+            self.assertFalse(row["writes_parquet_by_contract"])
+            self.assertFalse(row["reads_row_payloads"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called_by_contract"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("storage_overview_cache_is_read_only", criteria)
         self.assertIn("production_blocker_audit_keeps_storage_blocked", criteria)
         self.assertIn("physical_migration_activation_receipt_keeps_execution_pending", criteria)
+        self.assertIn("physical_migration_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("dataset_version_policy_is_not_manifest_validation", criteria)
         self.assertIn("dataset_version_manifest_review_writes_no_manifest", criteria)
         self.assertIn("schema_validation_dry_run_writes_no_parquet", criteria)
