@@ -253,6 +253,13 @@ export function getDataHealthCache() {
   return request<Record<string, unknown>>("/api/data-health/cache");
 }
 
+export function postTradeCalProviderAcceptanceDryRun(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/data-health/trade-cal-provider-acceptance-dry-run", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getDesktopPreflightCache() {
   return request<Record<string, unknown>>("/api/desktop/preflight-cache");
 }

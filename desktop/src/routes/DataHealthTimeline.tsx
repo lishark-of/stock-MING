@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { getDataHealthCache } from "../api/client";
+import { getDataHealthCache, postTradeCalProviderAcceptanceDryRun, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import StatusBadge from "../components/StatusBadge";
+import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 
 function rows(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
@@ -18,6 +19,8 @@ export default function DataHealthTimeline() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
+  const [tradeCalDryRunReceipt, setTradeCalDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [tradeCalDryRunError, setTradeCalDryRunError] = useState("");
 
   useEffect(() => {
     void getDataHealthCache().then((res) => {
@@ -26,6 +29,30 @@ export default function DataHealthTimeline() {
       setCacheEnvelopeWarnings(res.warnings ?? []);
     });
   }, []);
+
+  function launchTradeCalDryRun() {
+    const end = new Date();
+    const start = new Date(end);
+    start.setDate(start.getDate() - 730);
+    const yyyymmdd = (date: Date) => date.toISOString().slice(0, 10).replace(/-/g, "");
+    setTradeCalDryRunError("");
+    void postTradeCalProviderAcceptanceDryRun({
+      approved_by_user: true,
+      apis: ["trade_cal"],
+      exchange: ["SSE", "SZSE"],
+      start_date: yyyymmdd(start),
+      end_date: yyyymmdd(end),
+      requested_by: "command_center_3_data_health",
+      source: "data_health_page"
+    }).then((res) => {
+      setTradeCalDryRunReceipt(res);
+      if (!res.ok) {
+        setTradeCalDryRunError(String(res.error ?? "trade_cal_provider_acceptance_dry_run_failed"));
+      }
+    }).catch((err: unknown) => {
+      setTradeCalDryRunError(err instanceof Error ? err.message : String(err));
+    });
+  }
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
@@ -42,6 +69,10 @@ export default function DataHealthTimeline() {
   const currentEvidenceFreshness = (cache.current_evidence_freshness_qa_contract as Record<string, unknown> | undefined) ?? {};
   const decisionSurfaceAudit = (cache.current_evidence_decision_surface_audit as Record<string, unknown> | undefined) ?? {};
   const producerCoverageAudit = (cache.current_evidence_producer_coverage_audit as Record<string, unknown> | undefined) ?? {};
+  const tradeCalDryRunPayload = (tradeCalDryRunReceipt?.data?.task?.payload_safe as Record<string, unknown> | undefined) ?? {};
+  const tradeCalDryRun = (tradeCalDryRunPayload.trade_cal_provider_acceptance_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
+  const tradeCalDryRunRows = rows(tradeCalDryRunPayload.trade_cal_provider_acceptance_dry_run_rows);
+  const tradeCalDryRunCredentialRows = rows(tradeCalDryRunPayload.credential_presence_rows);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
@@ -165,6 +196,24 @@ export default function DataHealthTimeline() {
         <p>runbook 只固定 payload、call_ledger、schema、长窗口、失败模式、artifact promotion 和 current evidence 边界；真实 provider-backed 验收仍需后续显式按钮任务。</p>
         <DataLineageTable rows={objectRow(tradeCalProviderRunbook)} />
         <DataLineageTable rows={rows(cache.trade_cal_provider_acceptance_runbook_rows)} />
+      </PacketCard>
+
+      <PacketCard title="Trade_cal provider 验收 dry-run ticket" subtitle="按钮生成本地 scope ticket；不调用 Tushare、不写 Parquet、不完成验收" status={String(tradeCalDryRun.status ?? "not_run")}>
+        <div className="actions">
+          <button onClick={launchTradeCalDryRun}>生成 trade_cal 验收 ticket</button>
+        </div>
+        <p>status: {String(tradeCalDryRun.status ?? "not_run")}</p>
+        <p>scope hash: {String(tradeCalDryRun.acceptance_scope_hash_short ?? "--")}</p>
+        <p>window: {String(tradeCalDryRun.start_date ?? "--")} - {String(tradeCalDryRun.end_date ?? "--")} ({String(tradeCalDryRun.window_days ?? "--")} days)</p>
+        <p>credential presence: {String((tradeCalDryRun.credential_presence_summary as Record<string, unknown> | undefined)?.status ?? "--")}</p>
+        <p>provider_execution_implemented / production_freshness_gate_complete: {String(tradeCalDryRun.provider_execution_implemented ?? false)} / {String(tradeCalDryRun.production_freshness_gate_complete ?? false)}</p>
+        <p>allowed_next_step: {String(tradeCalDryRun.allowed_next_step ?? "--")}</p>
+        <p>dry-run 只绑定未来真实验收的范围；真实 Tushare call ledger、freshness replay、failure modes、redaction review 和 production promotion 仍未执行。</p>
+        {tradeCalDryRunError ? <p className="risk-note">{tradeCalDryRunError}</p> : null}
+        <TaskLaunchReceipt receipt={tradeCalDryRunReceipt} />
+        <DataLineageTable rows={objectRow(tradeCalDryRun)} />
+        <DataLineageTable rows={tradeCalDryRunRows} />
+        <DataLineageTable rows={tradeCalDryRunCredentialRows} />
       </PacketCard>
 
       <PacketCard title="Trade_cal provider 验收提升审计" subtitle="trade_cal_provider_acceptance_promotion_audit；只读本地证据，不调用 Tushare" status={String(tradeCalPromotionAudit.status ?? "provider_acceptance_promotion")}>

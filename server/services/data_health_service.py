@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import json
+import os
 from collections.abc import Mapping
 from typing import Any
 
-from server.services import packet_service
+from server.services import packet_service, task_service
 
 
 PACKET_KEY = "command_center_3_data_health_timeline_cache"
@@ -16,6 +18,14 @@ REAL_TRADE_CAL_QUERY_LIMIT = 10000
 REAL_TRADE_CAL_MIN_WINDOW_DAYS = 180
 REAL_TRADE_CAL_MIN_OPEN_DAYS = 60
 REAL_TRADE_CAL_REQUIRED_COLUMNS = ("exchange", "cal_date", "is_open")
+TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION = "data_health_trade_cal_provider_acceptance_dry_run.v1"
+TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_TASK_TYPE = "run_trade_cal_provider_acceptance_dry_run"
+TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_ROUTE = "POST /api/data-health/trade-cal-provider-acceptance-dry-run"
+TRADE_CAL_PROVIDER_ACCEPTANCE_MODE = "provider_backed_trade_cal_long_window"
+TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS = 730
+TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS = 8
+TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_FAILURE_MODES = 6
+TRADE_CAL_PROVIDER_ACCEPTANCE_ENV_KEYS = ("TUSHARE_TOKEN",)
 
 
 def _freshness_long_window_sample_validation() -> dict[str, Any]:
@@ -1132,6 +1142,346 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _safe_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    lowered = str(value).strip().lower()
+    if lowered in {"1", "true", "yes", "on", "enabled"}:
+        return True
+    if lowered in {"0", "false", "no", "off", "disabled"}:
+        return False
+    return bool(default)
+
+
+def _safe_date_yyyymmdd(value: Any, default: _dt.date) -> tuple[str, str]:
+    parsed = _parse_cal_date(value)
+    if parsed is None:
+        return default.strftime("%Y%m%d"), "defaulted"
+    return parsed.strftime("%Y%m%d"), "payload"
+
+
+def _safe_exchange_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        raw_items = value.replace(";", ",").split(",")
+    elif isinstance(value, (list, tuple, set)):
+        raw_items = list(value)
+    else:
+        raw_items = ["SSE", "SZSE"]
+    allowed = {"SSE", "SZSE"}
+    exchanges: list[str] = []
+    for item in raw_items:
+        exchange = "".join(ch for ch in str(item or "").upper() if ch.isalnum())
+        if exchange in allowed and exchange not in exchanges:
+            exchanges.append(exchange)
+    return exchanges or ["SSE", "SZSE"]
+
+
+def _trade_cal_acceptance_payload_safe(payload: Any = None) -> dict[str, Any]:
+    raw = payload if isinstance(payload, Mapping) else {}
+    today = _dt.date.today()
+    default_start = today - _dt.timedelta(days=TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS)
+    end_date, end_source = _safe_date_yyyymmdd(raw.get("end_date"), today)
+    start_date, start_source = _safe_date_yyyymmdd(raw.get("start_date"), default_start)
+    start_parsed = _parse_cal_date(start_date)
+    end_parsed = _parse_cal_date(end_date)
+    window_days = ((end_parsed - start_parsed).days + 1) if start_parsed and end_parsed else 0
+    requested_apis = []
+    raw_apis = raw.get("apis")
+    if isinstance(raw_apis, str):
+        requested_apis = [item.strip().lower() for item in raw_apis.replace(";", ",").split(",") if item.strip()]
+    elif isinstance(raw_apis, (list, tuple, set)):
+        requested_apis = [str(item or "").strip().lower() for item in raw_apis if str(item or "").strip()]
+    ignored_apis = [api for api in requested_apis if api != "trade_cal"]
+    user_approved = _safe_bool(raw.get("approved_by_user", raw.get("user_approval", raw.get("approved"))), False)
+    return {
+        "schema_version": TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
+        "route": TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_ROUTE,
+        "task_type": TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_TASK_TYPE,
+        "user_approved": user_approved,
+        "approval_mode": "explicit_payload_true" if user_approved else "missing_or_false",
+        "selected_apis": ["trade_cal"],
+        "ignored_apis": ignored_apis,
+        "acceptance_mode": TRADE_CAL_PROVIDER_ACCEPTANCE_MODE,
+        "exchange": _safe_exchange_list(raw.get("exchange")),
+        "start_date": start_date,
+        "end_date": end_date,
+        "start_date_source": start_source,
+        "end_date_source": end_source,
+        "window_days": window_days,
+        "minimum_acceptance_window_days": TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS,
+        "window_satisfies_minimum": window_days >= TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS,
+        "requested_by": _safe_text(raw.get("requested_by") or "local_user", limit=80),
+        "source": _safe_text(raw.get("source") or "data_health", limit=80),
+        "contains_secret": False,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _trade_cal_acceptance_credential_rows() -> list[dict[str, Any]]:
+    present = any(key in os.environ and bool(os.environ.get(key)) for key in TRADE_CAL_PROVIDER_ACCEPTANCE_ENV_KEYS)
+    return [
+        {
+            "schema_version": TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
+            "provider": "tushare",
+            "credential_refs": ["tushare_primary_credential"],
+            "credential_ref_count": 1,
+            "required_for_selected_dry_run": True,
+            "present": present,
+            "present_key_count": 1 if present else 0,
+            "status": "present_no_values_read" if present else "missing_no_values_read",
+            "presence_check_method": "environment_key_membership_only",
+            "env_key_names_exposed": False,
+            "values_read": False,
+            "values_exposed": False,
+            "value_lengths_exposed": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+
+
+def _trade_cal_acceptance_credential_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    missing = [row for row in rows if row.get("present") is not True]
+    return {
+        "schema_version": TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
+        "status": "all_required_env_keys_present_no_values_read" if not missing else "required_env_key_missing_no_values_read",
+        "required_provider_count": len(rows),
+        "present_provider_count": len(rows) - len(missing),
+        "missing_provider_count": len(missing),
+        "presence_check_method": "environment_key_membership_only",
+        "env_key_names_exposed": False,
+        "values_read": False,
+        "values_exposed": False,
+        "contains_secret": False,
+    }
+
+
+def _trade_cal_acceptance_scope_ticket(
+    *,
+    payload_safe: Mapping[str, Any],
+    credential_summary: Mapping[str, Any],
+) -> dict[str, Any]:
+    scope_input = {
+        "route": TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_ROUTE,
+        "target_route": "POST /api/tasks/refresh-tushare-facts",
+        "selected_apis": ["trade_cal"],
+        "acceptance_mode": TRADE_CAL_PROVIDER_ACCEPTANCE_MODE,
+        "exchange": list(payload_safe.get("exchange") or []),
+        "start_date": payload_safe.get("start_date"),
+        "end_date": payload_safe.get("end_date"),
+        "window_days": payload_safe.get("window_days"),
+        "minimum_acceptance_window_days": TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS,
+        "user_approved": payload_safe.get("user_approved") is True,
+        "credential_presence_status": credential_summary.get("status"),
+    }
+    serialized = json.dumps(scope_input, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    scope_hash = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    return {
+        "schema_version": TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
+        "scope_hash_algorithm": "sha256",
+        "scope_hash": scope_hash,
+        "scope_hash_short": scope_hash[:16],
+        "scope_hash_input": scope_input,
+        "scope_hash_input_field_count": len(scope_input),
+        "credential_values_included": False,
+        "env_key_names_included": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _trade_cal_acceptance_dry_run_row(
+    criterion: str,
+    status: str,
+    *,
+    passed: bool,
+    blocks_real_execution: bool,
+    evidence: str,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "blocks_real_execution": bool(blocks_real_execution),
+        "evidence": evidence,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _build_trade_cal_provider_acceptance_dry_run(
+    payload_safe: Mapping[str, Any],
+    *,
+    credential_rows: list[dict[str, Any]],
+    credential_summary: Mapping[str, Any],
+    scope_ticket: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    user_approved = payload_safe.get("user_approved") is True
+    window_ready = payload_safe.get("window_satisfies_minimum") is True
+    credentials_ready = int(credential_summary.get("missing_provider_count") or 0) == 0
+    rows = [
+        _trade_cal_acceptance_dry_run_row(
+            "explicit_user_approval_recorded",
+            "passed" if user_approved else "blocked_user_approval_required",
+            passed=user_approved,
+            blocks_real_execution=not user_approved,
+            evidence=f"approval_mode={payload_safe.get('approval_mode')}",
+        ),
+        _trade_cal_acceptance_dry_run_row(
+            "trade_cal_only_scope",
+            "passed",
+            passed=True,
+            blocks_real_execution=False,
+            evidence=f"selected_apis={payload_safe.get('selected_apis')}; ignored_apis={payload_safe.get('ignored_apis')}",
+        ),
+        _trade_cal_acceptance_dry_run_row(
+            "minimum_window_scope",
+            "passed" if window_ready else "blocked_window_too_short",
+            passed=window_ready,
+            blocks_real_execution=not window_ready,
+            evidence=(
+                f"start_date={payload_safe.get('start_date')}; end_date={payload_safe.get('end_date')}; "
+                f"window_days={payload_safe.get('window_days')}"
+            ),
+        ),
+        _trade_cal_acceptance_dry_run_row(
+            "server_credential_presence_checked",
+            "passed_no_values_read" if credentials_ready else "blocked_missing_server_credentials",
+            passed=credentials_ready,
+            blocks_real_execution=not credentials_ready,
+            evidence=f"credential_presence_status={credential_summary.get('status')}; missing={credential_summary.get('missing_provider_count')}",
+        ),
+        _trade_cal_acceptance_dry_run_row(
+            "call_ledger_required",
+            "pending_real_provider_task",
+            passed=False,
+            blocks_real_execution=True,
+            evidence="Future real task must record api, provider, safe params, row_count, data window, local_fetched_at, call_status, and safe error.",
+        ),
+        _trade_cal_acceptance_dry_run_row(
+            "freshness_replay_required",
+            "pending_real_provider_task",
+            passed=False,
+            blocks_real_execution=True,
+            evidence=f"Requires at least {TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS} replay scenarios before promotion.",
+        ),
+        _trade_cal_acceptance_dry_run_row(
+            "failure_modes_required",
+            "pending_real_provider_task",
+            passed=False,
+            blocks_real_execution=True,
+            evidence=f"Requires permission denied / no record / empty window / parse error / missing parameter / provider error evidence before promotion.",
+        ),
+        _trade_cal_acceptance_dry_run_row(
+            "production_promotion_blocked",
+            "blocked_until_real_evidence",
+            passed=False,
+            blocks_real_execution=True,
+            evidence="Dry-run cannot promote provider-backed acceptance, write Parquet, or complete LTG-01.",
+        ),
+        _trade_cal_acceptance_dry_run_row(
+            "secret_trade_action_boundary",
+            "passed",
+            passed=True,
+            blocks_real_execution=False,
+            evidence="Dry-run exposes no token/key, executes no trade, and does not mutate strategy action.",
+        ),
+    ]
+    blocking_rows = [row for row in rows if row.get("blocks_real_execution")]
+    missing_credentials = int(credential_summary.get("missing_provider_count") or 0)
+    if not user_approved:
+        status = "trade_cal_acceptance_dry_run_blocked_user_approval_required"
+        allowed_next_step = "rerun_dry_run_with_explicit_user_approval"
+    elif not window_ready:
+        status = "trade_cal_acceptance_dry_run_blocked_window_too_short"
+        allowed_next_step = "rerun_dry_run_with_730_day_window"
+    elif missing_credentials:
+        status = "trade_cal_acceptance_dry_run_blocked_missing_credentials"
+        allowed_next_step = "configure_server_credentials_then_rerun_dry_run"
+    else:
+        status = "trade_cal_acceptance_dry_run_ready_real_execution_still_blocked"
+        allowed_next_step = "explicit_user_confirmed_real_trade_cal_provider_task_pending_implementation"
+    receipt = {
+        "schema_version": TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_trade_cal_provider_acceptance_dry_run_no_provider_execution",
+        "route": TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_ROUTE,
+        "target_route": "POST /api/tasks/refresh-tushare-facts",
+        "task_type": TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_TASK_TYPE,
+        "user_approved": user_approved,
+        "selected_apis": ["trade_cal"],
+        "ignored_apis": list(payload_safe.get("ignored_apis") or []),
+        "acceptance_mode": TRADE_CAL_PROVIDER_ACCEPTANCE_MODE,
+        "exchange": list(payload_safe.get("exchange") or []),
+        "start_date": payload_safe.get("start_date"),
+        "end_date": payload_safe.get("end_date"),
+        "window_days": payload_safe.get("window_days"),
+        "minimum_acceptance_window_days": TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS,
+        "credential_presence_summary": dict(credential_summary),
+        "credential_presence_rows": credential_rows,
+        "acceptance_scope_ticket": dict(scope_ticket),
+        "acceptance_scope_hash": scope_ticket.get("scope_hash"),
+        "acceptance_scope_hash_short": scope_ticket.get("scope_hash_short"),
+        "acceptance_scope_hash_algorithm": scope_ticket.get("scope_hash_algorithm"),
+        "ready_for_user_approved_real_acceptance": False,
+        "ready_to_execute_real_provider_task": False,
+        "provider_execution_implemented": False,
+        "production_freshness_gate_complete": False,
+        "provider_backed_long_window_acceptance_done": False,
+        "allowed_next_step": allowed_next_step,
+        "missing_evidence_items": [
+            "real Tushare trade_cal provider call ledger",
+            "730-day schema/window/open/closed/latest-completed evidence",
+            "freshness replay evidence",
+            "failure-mode evidence",
+            "ledger redaction review",
+            "explicit production promotion review",
+        ],
+        "not_allowed_next_steps": [
+            "GET cache provider refresh",
+            "React render provider refresh",
+            "promote dry-run to provider-backed acceptance",
+            "write token/key material to frontend/log/packet/cache",
+            "execute real trades or mutate strategy action",
+        ],
+        "row_count": len(rows),
+        "blocking_row_count": len(blocking_rows),
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    return receipt, rows
 
 
 def _first_value(snapshot: Mapping[str, Any], *keys: str) -> Any:
@@ -2472,3 +2822,92 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
     if status == "cache_missing":
         packet["warnings"].append("当前没有数据健康时间线缓存；3.0 cache 页不会自动创建 provider 探测任务。")
     return _json_safe(packet)
+
+
+def run_trade_cal_provider_acceptance_dry_run(payload: Any = None) -> dict[str, Any]:
+    payload_safe = _trade_cal_acceptance_payload_safe(payload)
+    credential_rows = _trade_cal_acceptance_credential_rows()
+    credential_summary = _trade_cal_acceptance_credential_summary(credential_rows)
+    scope_ticket = _trade_cal_acceptance_scope_ticket(
+        payload_safe=payload_safe,
+        credential_summary=credential_summary,
+    )
+    receipt, rows = _build_trade_cal_provider_acceptance_dry_run(
+        payload_safe,
+        credential_rows=credential_rows,
+        credential_summary=credential_summary,
+        scope_ticket=scope_ticket,
+    )
+    payload_safe.update(
+        {
+            "trade_cal_provider_acceptance_dry_run_receipt": receipt,
+            "trade_cal_provider_acceptance_dry_run_rows": rows,
+            "credential_presence_rows": credential_rows,
+            "credential_presence_summary": credential_summary,
+            "acceptance_scope_ticket": scope_ticket,
+            "dry_run_only": True,
+            "provider_execution_implemented": False,
+            "production_freshness_gate_complete": False,
+        }
+    )
+    task = task_service.create_task_record(
+        TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload_safe,
+        current_step="trade_cal_provider_acceptance_dry_run_requested_local_only",
+        warnings=[
+            "trade_cal provider acceptance dry-run 只生成本地验收 scope ticket，不调用 Tushare。",
+            "dry-run 只检查服务端凭据存在性布尔值，不读取、不返回 token/key 值或 env key 名。",
+            "dry-run 不写 Parquet、不执行真实交易、不修改 strategy action。",
+        ],
+    )
+    now = _now_iso()
+    ledger = [
+        {
+            "api": "local_trade_cal_provider_acceptance_dry_run",
+            "endpoint": TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_ROUTE,
+            "request_params_safe": {
+                "selected_apis": receipt["selected_apis"],
+                "ignored_apis": receipt["ignored_apis"],
+                "acceptance_mode": receipt["acceptance_mode"],
+                "exchange": receipt["exchange"],
+                "start_date": receipt["start_date"],
+                "end_date": receipt["end_date"],
+                "window_days": receipt["window_days"],
+                "acceptance_scope_hash_short": receipt["acceptance_scope_hash_short"],
+                "credential_presence_status": credential_summary["status"],
+                "credential_missing_provider_count": credential_summary["missing_provider_count"],
+                "provider_execution_implemented": False,
+                "production_freshness_gate_complete": False,
+            },
+            "row_count": len(rows),
+            "data_date": receipt["end_date"],
+            "local_fetched_at": now,
+            "call_status": str(receipt.get("status") or "trade_cal_acceptance_dry_run_recorded_no_provider_call"),
+            "error_message_safe": "",
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+    if receipt["user_approved"] is not True:
+        current_step = "trade_cal_acceptance_dry_run_blocked_user_approval_required_no_provider_call"
+    elif receipt["status"] == "trade_cal_acceptance_dry_run_blocked_window_too_short":
+        current_step = "trade_cal_acceptance_dry_run_blocked_window_too_short_no_provider_call"
+    elif credential_summary["missing_provider_count"]:
+        current_step = "trade_cal_acceptance_dry_run_blocked_missing_credentials_no_provider_call"
+    else:
+        current_step = "trade_cal_acceptance_dry_run_ready_real_execution_still_blocked"
+    return task_service.update_task_status(
+        str(task.get("task_id") or ""),
+        status="success",
+        progress=1.0,
+        current_step=current_step,
+        output_packet_key=PACKET_KEY,
+        call_ledger=ledger,
+        warning="trade_cal_provider_acceptance_dry_run_completed_no_external_call",
+    ) or task
