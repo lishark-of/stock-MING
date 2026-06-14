@@ -190,6 +190,14 @@ export default function SettingsConfigHealth() {
   const credentialPresenceRows = rows(acceptanceDryRunPayload.credential_presence_rows);
   const hasBootstrapTask = Object.keys(bootstrapTask).length > 0;
   const hasAcceptanceDryRunTask = Object.keys(acceptanceDryRunTask).length > 0;
+  const acceptanceDryRunStatus = String(acceptanceDryRunSummary.status ?? "");
+  const acceptanceDryRunBlocked = acceptanceDryRunSummary.blocked_by_missing_credentials === true || acceptanceDryRunStatus.includes("blocked");
+  const acceptanceDryRunReady = acceptanceDryRunSummary.ready_for_user_approved_real_acceptance === true;
+  const acceptanceDryRunCardStatus = acceptanceDryRunBlocked
+    ? "blocked_missing_credentials"
+    : acceptanceDryRunReady
+      ? "ready_for_user_approved_real_acceptance"
+      : String(acceptanceDryRunTask.status ?? (hasAcceptanceDryRunTask ? "created" : "idle"));
   const empty = !loading && !error && !Object.keys(health).length && !Object.keys(modelStrategy).length;
 
   const configRows = [
@@ -243,7 +251,8 @@ export default function SettingsConfigHealth() {
           { label: "provider linkage", value: providerLinkageRows.length },
           { label: "activation rows", value: activationRows.length },
           { label: "acceptance phases", value: acceptanceRows.length },
-          { label: "acceptance dry-run", value: acceptanceDryRunRows.length || "--", tone: acceptanceDryRunRows.length ? "good" : "warn" },
+          { label: "acceptance dry-run", value: acceptanceDryRunRows.length || "--", tone: acceptanceDryRunBlocked ? "bad" : acceptanceDryRunRows.length ? "good" : "warn" },
+          { label: "credential gate", value: acceptanceDryRunReady ? "ready" : acceptanceDryRunBlocked ? "blocked" : "--", tone: acceptanceDryRunReady ? "good" : acceptanceDryRunBlocked ? "bad" : "warn" },
           { label: "startup external", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" },
           { label: "model purposes", value: modelRows.length },
           { label: "data health rows", value: dataHealthCounts.timeline_count as number | undefined },
@@ -290,9 +299,13 @@ export default function SettingsConfigHealth() {
           <JsonDetails title="bootstrap task" data={bootstrapTask} />
         </PacketCard>
 
-        <PacketCard title="Provider/model 验收 dry-run" subtitle="用户批准前的本地预检；不调用 Tushare、DeepSeek、GitHub" status={String(acceptanceDryRunTask.status ?? (hasAcceptanceDryRunTask ? "created" : "idle"))}>
+        <PacketCard title="Provider/model 验收 dry-run" subtitle="用户批准前的本地预检；不调用 Tushare、DeepSeek、GitHub" status={acceptanceDryRunCardStatus}>
           <p>task_id: {String(acceptanceDryRunTask.task_id ?? "--")}</p>
           <p>current_step: {String(acceptanceDryRunTask.current_step ?? "--")}</p>
+          <p>dry-run status: {String(acceptanceDryRunSummary.status ?? "--")}</p>
+          <p>ready for real acceptance: {String(acceptanceDryRunSummary.ready_for_user_approved_real_acceptance ?? false)}</p>
+          <p>blocked by missing credentials: {String(acceptanceDryRunSummary.blocked_by_missing_credentials ?? false)}</p>
+          <p>credential presence status: {String(acceptanceDryRunSummary.credential_presence_status ?? "--")}</p>
           <p>selected APIs: {JSON.stringify(acceptanceDryRunPayload.selected_apis ?? [])}</p>
           <p>ignored APIs: {JSON.stringify(acceptanceDryRunPayload.ignored_apis ?? [])}</p>
           <p>credential present/missing: {String(acceptanceDryRunSummary.credential_present_provider_count ?? 0)} / {String(acceptanceDryRunSummary.credential_missing_provider_count ?? 0)}</p>
