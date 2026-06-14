@@ -225,6 +225,7 @@ export default function CommandCenterHome() {
   const candidateCounts = candidates.counts as Record<string, unknown> | undefined;
   const riskCounts = risk.counts as Record<string, unknown> | undefined;
   const liveLight = (bootstrapStatus.live_light as Record<string, unknown> | undefined) ?? {};
+  const bootstrapProviderLinkageRows = (bootstrapStatus.provider_linkage_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const liveBootstrapRunKey = [
     bootstrapStatus.mode,
     liveLight.tushare_on_open,
@@ -322,6 +323,7 @@ export default function CommandCenterHome() {
           { label: "FastAPI", value: String(health.status ?? "unknown"), tone: health.status === "ok" ? "good" : "warn" },
           { label: "runtime mode", value: String(bootstrapStatus.mode ?? "cache_only"), tone: bootstrapStatus.mode === "live_light" ? "warn" : "good" },
           { label: "live bootstrap", value: liveBootstrapAutoStatus, tone: liveBootstrapAutoStatus.includes("failed") ? "bad" : liveBootstrapAutoStatus.includes("disabled") || liveBootstrapAutoStatus.includes("skipped") ? "good" : "warn" },
+          { label: "provider linkage", value: bootstrapProviderLinkageRows.length },
           { label: "health envelope ledger", value: healthEnvelopeLedger.length },
           { label: "health warnings", value: healthWarnings.length },
           { label: "本地快照", value: snapshotAvailable, tone: snapshotAvailable ? "good" : "warn" },
@@ -367,6 +369,7 @@ export default function CommandCenterHome() {
           <p>sources enabled: {String(liveLight.sources_enabled ?? false)}</p>
           <p>Tushare / DeepSeek on open: {String(liveLight.tushare_on_open ?? false)} / {String(liveLight.deepseek_on_open ?? false)}</p>
           <p>task skeleton / provider execution: {String(liveLight.bootstrap_task_implemented ?? false)} / {String(liveLight.provider_execution_implemented ?? false)}</p>
+          <p>provider linkage rows: {String(bootstrapProviderLinkageRows.length)}</p>
           <p>task_id: {String(liveBootstrapTaskId || liveBootstrapReceipt?.data?.task_id || "--")}</p>
           <p>stage rows / model ledger preview: {String(liveBootstrapStageRows.length)} / {String(liveBootstrapModelLedgerRows.length)}</p>
           <p>session dedupe key present: {String(Boolean(readLiveBootstrapSessionKey()))}</p>
@@ -375,6 +378,7 @@ export default function CommandCenterHome() {
           {liveBootstrapTaskId ? <TaskStatusPanel taskId={liveBootstrapTaskId} /> : null}
           {bootstrapEnvelopeWarnings.length || liveBootstrapWarnings.length ? <p className="risk-note">{String([...bootstrapEnvelopeWarnings, ...liveBootstrapWarnings][0])}</p> : null}
           <DataLineageTable rows={[...bootstrapEnvelopeLedger, ...liveBootstrapTaskLedger]} />
+          {bootstrapProviderLinkageRows.length ? <DataLineageTable rows={bootstrapProviderLinkageRows} /> : null}
           {liveBootstrapStageRows.length ? <DataLineageTable rows={liveBootstrapStageRows} /> : null}
           {liveBootstrapModelLedgerRows.length ? <DataLineageTable rows={liveBootstrapModelLedgerRows} /> : null}
           <JsonDetails title="bootstrap status" data={bootstrapStatus} />

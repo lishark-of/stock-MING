@@ -10244,14 +10244,41 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["live_light"]["full_pool_reserved"])
         self.assertTrue(packet["live_light"]["bootstrap_plan_skeleton_implemented"])
         self.assertTrue(packet["live_light"]["model_ledger_preview_implemented"])
+        self.assertTrue(packet["live_light"]["provider_linkage_rows_visible"])
         self.assertFalse(packet["policy"]["live_light_default_enabled"])
         self.assertTrue(packet["policy"]["live_light_requires_opt_in"])
         self.assertTrue(packet["policy"]["live_light_task_implemented"])
         self.assertTrue(packet["policy"]["live_light_bootstrap_plan_skeleton_implemented"])
         self.assertTrue(packet["policy"]["live_light_model_ledger_preview_implemented"])
+        self.assertTrue(packet["policy"]["provider_linkage_rows_visible"])
         self.assertFalse(packet["policy"]["live_light_provider_execution_implemented"])
         self.assertFalse(packet["policy"]["full_pool_on_open_allowed"])
         self.assertFalse(packet["policy"]["github_probe_on_open_allowed"])
+        self.assertEqual(packet["provider_linkage_schema_version"], "command_center_bootstrap_provider_linkage.v1")
+        provider_linkage = {row["linkage_key"]: row for row in packet["provider_linkage_rows"]}
+        self.assertEqual(set(provider_linkage), {
+            "cache_startup_render_boundary",
+            "live_light_bootstrap_task_boundary",
+            "tushare_light_refresh",
+            "deepseek_pro_after_task",
+            "github_probe_boundary",
+            "real_trading_boundary",
+        })
+        self.assertEqual(provider_linkage["cache_startup_render_boundary"]["status"], "offline_enforced")
+        self.assertFalse(provider_linkage["cache_startup_render_boundary"]["external_calls_allowed"])
+        self.assertEqual(provider_linkage["live_light_bootstrap_task_boundary"]["status"], "available_after_cache_render")
+        self.assertTrue(provider_linkage["live_light_bootstrap_task_boundary"]["external_calls_allowed"])
+        self.assertEqual(provider_linkage["tushare_light_refresh"]["status"], "planned_provider_pending_not_executed")
+        self.assertEqual(provider_linkage["tushare_light_refresh"]["default_apis"], ["trade_cal_if_needed", "daily", "daily_basic", "moneyflow"])
+        self.assertFalse(provider_linkage["tushare_light_refresh"]["tushare_called"])
+        self.assertFalse(provider_linkage["tushare_light_refresh"]["provider_execution_implemented"])
+        self.assertEqual(provider_linkage["deepseek_pro_after_task"]["status"], "planned_model_pending_not_executed")
+        self.assertEqual(provider_linkage["deepseek_pro_after_task"]["model"], "custom-live-explain-model")
+        self.assertFalse(provider_linkage["deepseek_pro_after_task"]["deepseek_called"])
+        self.assertFalse(provider_linkage["deepseek_pro_after_task"]["model_execution_implemented"])
+        self.assertEqual(provider_linkage["github_probe_boundary"]["status"], "manual_or_explicit_task_only")
+        self.assertFalse(provider_linkage["github_probe_boundary"]["live_light_on_open_allowed"])
+        self.assertEqual(provider_linkage["real_trading_boundary"]["status"], "disconnected")
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
@@ -10454,10 +10481,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(bootstrap["data"]["policy"]["live_light_requires_opt_in"])
         self.assertTrue(bootstrap["data"]["policy"]["live_light_task_implemented"])
         self.assertFalse(bootstrap["data"]["policy"]["live_light_provider_execution_implemented"])
+        self.assertTrue(bootstrap["data"]["policy"]["provider_linkage_rows_visible"])
         self.assertFalse(bootstrap["data"]["policy"]["live_full_enabled"])
         self.assertFalse(bootstrap["data"]["live_light"]["enabled"])
         self.assertTrue(bootstrap["data"]["live_light"]["bootstrap_task_implemented"])
         self.assertFalse(bootstrap["data"]["live_light"]["provider_execution_implemented"])
+        self.assertEqual(len(bootstrap["data"]["provider_linkage_rows"]), 6)
+        provider_linkage = {row["linkage_key"]: row for row in bootstrap["data"]["provider_linkage_rows"]}
+        self.assertEqual(provider_linkage["cache_startup_render_boundary"]["status"], "offline_enforced")
+        self.assertEqual(provider_linkage["tushare_light_refresh"]["status"], "skipped_mode_not_live_light")
+        self.assertEqual(provider_linkage["deepseek_pro_after_task"]["status"], "skipped_mode_not_live_light")
+        self.assertFalse(provider_linkage["github_probe_boundary"]["external_calls_triggered"])
+        self.assertFalse(provider_linkage["real_trading_boundary"]["real_trading_connected"])
         self.assertEqual(
             {row["mode"] for row in bootstrap["data"]["mode_rows"]},
             {"cache_only", "manual", "live_light", "live_full"},

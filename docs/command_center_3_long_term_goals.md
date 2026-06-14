@@ -122,6 +122,8 @@ Current implementation checkpoint: `GET /api/bootstrap/status` now exposes the r
 
 `scripts/bootstrap_runtime_contract.py` is now part of the local push gate. It validates `cache_only`, `live_light` with sources disabled, and `live_light` with Tushare/DeepSeek switches enabled while keeping provider/model execution pending. The contract proves the staged plan, model-ledger preview, rate-limit reuse, symbol cap, payload sanitization, no provider/model/GitHub calls, no real trades, and no `strategy action` mutation remain visible before future execution is enabled.
 
+`GET /api/bootstrap/status` now also exposes `provider_linkage_rows`: a runtime linkage audit for cache/render, `live_light` POST bootstrap, Tushare light refresh, DeepSeek pro after-task explanation, GitHub probe, and real-trading boundaries. Command Center Home and Settings / Config Health display these rows so the Tushare/DeepSeek linkage state is visible before provider execution is implemented. This audit is still local/read-only and keeps Tushare/DeepSeek/GitHub calls false.
+
 ## Remaining Goals Snapshot
 
 Current snapshot date: 2026-06-14.

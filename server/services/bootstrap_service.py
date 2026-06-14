@@ -20,6 +20,7 @@ PLANNED_BOOTSTRAP_TASK_ROUTE = "POST /api/bootstrap/live-startup"
 DEFAULT_LIGHT_TUSHARE_APIS = ("trade_cal_if_needed", "daily", "daily_basic", "moneyflow")
 BOOTSTRAP_STAGE_SCHEMA_VERSION = "command_center_live_bootstrap_stage_plan.v1"
 BOOTSTRAP_MODEL_LEDGER_SCHEMA_VERSION = "command_center_live_bootstrap_model_ledger_preview.v1"
+BOOTSTRAP_PROVIDER_LINKAGE_SCHEMA_VERSION = "command_center_bootstrap_provider_linkage.v1"
 DEEPSEEK_EXPLANATION_FIELDS = (
     "summary",
     "support_notes",
@@ -215,6 +216,132 @@ def _mode_row(mode: str, active_mode: str) -> dict[str, Any]:
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
     }
+
+
+def _provider_linkage_rows(
+    *,
+    active_mode: str,
+    live_light_enabled: bool,
+    live_light_sources_enabled: bool,
+    tushare_on_open: bool,
+    deepseek_on_open: bool,
+    symbol_limit: int,
+    rate_limit_seconds: int,
+    deepseek_model: str,
+) -> list[dict[str, Any]]:
+    live_light_tushare_planned = live_light_enabled and live_light_sources_enabled and tushare_on_open
+    live_light_deepseek_planned = live_light_enabled and live_light_sources_enabled and deepseek_on_open
+    return [
+        {
+            "schema_version": BOOTSTRAP_PROVIDER_LINKAGE_SCHEMA_VERSION,
+            "linkage_key": "cache_startup_render_boundary",
+            "surface": "GET cache / FastAPI startup / React initial render",
+            "status": "offline_enforced",
+            "mode": active_mode,
+            "route": BOOTSTRAP_STATUS_ROUTE,
+            "external_calls_allowed": False,
+            "external_calls_triggered": False,
+            "tushare_allowed": False,
+            "deepseek_allowed": False,
+            "github_allowed": False,
+            "post_task_required": True,
+            "provider_execution_implemented": False,
+            "model_execution_implemented": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "schema_version": BOOTSTRAP_PROVIDER_LINKAGE_SCHEMA_VERSION,
+            "linkage_key": "live_light_bootstrap_task_boundary",
+            "surface": "React mounted POST bootstrap task",
+            "status": "available_after_cache_render" if live_light_enabled else "inactive_until_live_light",
+            "mode": active_mode,
+            "route": PLANNED_BOOTSTRAP_TASK_ROUTE,
+            "external_calls_allowed": live_light_sources_enabled,
+            "external_calls_triggered": False,
+            "post_task_required": True,
+            "initial_cache_render_required": True,
+            "rate_limit_seconds": rate_limit_seconds,
+            "symbol_limit": symbol_limit,
+            "provider_execution_implemented": False,
+            "model_execution_implemented": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "schema_version": BOOTSTRAP_PROVIDER_LINKAGE_SCHEMA_VERSION,
+            "linkage_key": "tushare_light_refresh",
+            "surface": "Tushare light refresh",
+            "status": "planned_provider_pending_not_executed"
+            if live_light_tushare_planned
+            else ("skipped_by_config" if live_light_enabled else "skipped_mode_not_live_light"),
+            "mode": active_mode,
+            "provider": "tushare",
+            "default_apis": list(DEFAULT_LIGHT_TUSHARE_APIS),
+            "allowed_scope": "current_target_holdings_watchlist_light_only",
+            "external_calls_allowed": live_light_tushare_planned,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "call_ledger_required": True,
+            "request_params_safe_required": True,
+            "safe_error_required": True,
+            "token_key_exposure_allowed": False,
+            "provider_execution_implemented": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "schema_version": BOOTSTRAP_PROVIDER_LINKAGE_SCHEMA_VERSION,
+            "linkage_key": "deepseek_pro_after_task",
+            "surface": "DeepSeek pro explanation after data readiness",
+            "status": "planned_model_pending_not_executed"
+            if live_light_deepseek_planned
+            else ("skipped_by_config" if live_light_enabled else "skipped_mode_not_live_light"),
+            "mode": active_mode,
+            "provider": "deepseek",
+            "model": deepseek_model,
+            "external_calls_allowed": live_light_deepseek_planned,
+            "external_calls_triggered": False,
+            "deepseek_called": False,
+            "model_called": False,
+            "model_ledger_required": True,
+            "allowed_output_fields": list(DEEPSEEK_EXPLANATION_FIELDS),
+            "sanitizer_required": True,
+            "parse_failed_discard_required": True,
+            "model_execution_implemented": False,
+            "does_not_overwrite_numeric_fields": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "schema_version": BOOTSTRAP_PROVIDER_LINKAGE_SCHEMA_VERSION,
+            "linkage_key": "github_probe_boundary",
+            "surface": "GitHub probe",
+            "status": "manual_or_explicit_task_only",
+            "mode": active_mode,
+            "external_calls_allowed": False,
+            "external_calls_triggered": False,
+            "github_called": False,
+            "live_light_on_open_allowed": False,
+            "post_task_required": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "schema_version": BOOTSTRAP_PROVIDER_LINKAGE_SCHEMA_VERSION,
+            "linkage_key": "real_trading_boundary",
+            "surface": "broker / order / real trading",
+            "status": "disconnected",
+            "mode": active_mode,
+            "external_calls_allowed": False,
+            "external_calls_triggered": False,
+            "real_trading_connected": False,
+            "order_endpoint_present": False,
+            "trade_execution_api_enabled": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+    ]
 
 
 def _planned_stage_status(mode: str, enabled: bool, stage_kind: str) -> str:
@@ -563,6 +690,16 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             "contains_secret": False,
         },
     ]
+    provider_linkage_rows = _provider_linkage_rows(
+        active_mode=active_mode,
+        live_light_enabled=live_light_enabled,
+        live_light_sources_enabled=live_light_sources_enabled,
+        tushare_on_open=tushare_on_open,
+        deepseek_on_open=deepseek_on_open,
+        symbol_limit=symbol_limit,
+        rate_limit_seconds=rate_limit_seconds,
+        deepseek_model=deepseek_model,
+    )
 
     packet = {
         "packet_key": PACKET_KEY,
@@ -577,6 +714,8 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
         "configured_mode_valid": mode_valid,
         "mode_rows": [_mode_row(mode, active_mode) for mode in BOOTSTRAP_MODES],
         "config_rows": config_rows,
+        "provider_linkage_schema_version": BOOTSTRAP_PROVIDER_LINKAGE_SCHEMA_VERSION,
+        "provider_linkage_rows": provider_linkage_rows,
         "live_light": {
             "enabled": live_light_enabled,
             "tushare_on_open": tushare_on_open if live_light_enabled else False,
@@ -597,6 +736,7 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             "local_task_skeleton_implemented": True,
             "bootstrap_plan_skeleton_implemented": True,
             "model_ledger_preview_implemented": True,
+            "provider_linkage_rows_visible": True,
             "provider_execution_implemented": False,
             "tushare_execution_implemented": False,
             "deepseek_execution_implemented": False,
@@ -618,6 +758,7 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             "live_light_task_implemented": True,
             "live_light_bootstrap_plan_skeleton_implemented": True,
             "live_light_model_ledger_preview_implemented": True,
+            "provider_linkage_rows_visible": True,
             "live_light_provider_execution_implemented": False,
             "live_full_enabled": False,
             "full_pool_on_open_allowed": False,
@@ -642,7 +783,8 @@ def read_bootstrap_status_cache() -> dict[str, Any]:
             {
                 "api": "local_bootstrap_runtime_mode_cache",
                 "endpoint": BOOTSTRAP_STATUS_ROUTE,
-                "row_count": len(config_rows),
+                "row_count": len(config_rows) + len(provider_linkage_rows),
+                "provider_linkage_row_count": len(provider_linkage_rows),
                 "local_fetched_at": loaded_at,
                 "call_status": "cache_read",
                 "external": False,

@@ -116,6 +116,11 @@ def _cache_only_rows() -> list[dict[str, Any]]:
     models = _model_rows(task)
     summary = _summary(task)
     task_text = _serialized(task)
+    provider_linkage = {
+        str(row.get("linkage_key") or ""): row
+        for row in _list(status.get("provider_linkage_rows"))
+        if isinstance(row, dict)
+    }
     return [
         _row(
             "cache_only_status_is_offline_default",
@@ -134,6 +139,16 @@ def _cache_only_rows() -> list[dict[str, Any]]:
             and summary.get("planned_provider_stage_count") == 0
             and summary.get("planned_model_stage_count") == 0,
             f"current_step={task.get('current_step')} summary={summary}",
+        ),
+        _row(
+            "cache_only_provider_linkage_rows_are_offline",
+            status.get("provider_linkage_schema_version") == "command_center_bootstrap_provider_linkage.v1"
+            and provider_linkage.get("cache_startup_render_boundary", {}).get("status") == "offline_enforced"
+            and provider_linkage.get("tushare_light_refresh", {}).get("status") == "skipped_mode_not_live_light"
+            and provider_linkage.get("deepseek_pro_after_task", {}).get("status") == "skipped_mode_not_live_light"
+            and provider_linkage.get("github_probe_boundary", {}).get("live_light_on_open_allowed") is False
+            and provider_linkage.get("real_trading_boundary", {}).get("real_trading_connected") is False,
+            f"provider_linkage_keys={sorted(provider_linkage)}",
         ),
         _row(
             "cache_only_stage_and_model_plan_visible",
@@ -159,10 +174,16 @@ def _live_light_disabled_rows() -> list[dict[str, Any]]:
         COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="false",
     )
     task_service.clear_task_statuses_for_tests(clear_persisted=True)
+    status = bootstrap_service.read_bootstrap_status_cache()
     task = bootstrap_service.run_live_startup_task({"source": "bootstrap_runtime_contract", "symbols": ["000001.SZ"]})
     stages = _stage_rows(task)
     summary = _summary(task)
     provider_or_model = [row for row in stages if row.get("stage_kind") in {"provider", "model"}]
+    linkage = {
+        str(row.get("linkage_key") or ""): row
+        for row in _list(status.get("provider_linkage_rows"))
+        if isinstance(row, dict)
+    }
     return [
         _row(
             "live_light_sources_disabled_skips_safely",
@@ -171,6 +192,14 @@ def _live_light_disabled_rows() -> list[dict[str, Any]]:
             and summary.get("planned_model_stage_count") == 0
             and summary.get("external_calls_triggered") is False,
             f"current_step={task.get('current_step')} summary={summary}",
+        ),
+        _row(
+            "live_light_disabled_provider_linkage_rows_are_config_skipped",
+            linkage.get("live_light_bootstrap_task_boundary", {}).get("status") == "available_after_cache_render"
+            and linkage.get("live_light_bootstrap_task_boundary", {}).get("external_calls_allowed") is False
+            and linkage.get("tushare_light_refresh", {}).get("status") == "skipped_by_config"
+            and linkage.get("deepseek_pro_after_task", {}).get("status") == "skipped_by_config",
+            f"linkage={linkage}",
         ),
         _row(
             "live_light_disabled_provider_model_rows_are_skipped_by_config",
@@ -193,6 +222,7 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
         COMMAND_CENTER_LIVE_ALLOW_FULL_POOL="false",
     )
     task_service.clear_task_statuses_for_tests(clear_persisted=True)
+    status = bootstrap_service.read_bootstrap_status_cache()
     task = bootstrap_service.run_live_startup_task(
         {
             "source": "bootstrap_runtime_contract",
@@ -221,6 +251,11 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
     last_repeated = repeated_ledger[-1] if repeated_ledger else {}
     required_fields = set(_list(model.get("required_model_ledger_fields")))
     allowed_fields = set(_list(model.get("allowed_output_fields")))
+    linkage = {
+        str(row.get("linkage_key") or ""): row
+        for row in _list(status.get("provider_linkage_rows"))
+        if isinstance(row, dict)
+    }
     return [
         _row(
             "live_light_records_plan_without_provider_execution",
@@ -233,6 +268,20 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             and summary.get("actual_model_call_count") == 0
             and summary.get("external_calls_triggered") is False,
             f"current_step={task.get('current_step')} summary={summary}",
+        ),
+        _row(
+            "live_light_provider_linkage_rows_are_planned_not_called",
+            linkage.get("live_light_bootstrap_task_boundary", {}).get("status") == "available_after_cache_render"
+            and linkage.get("live_light_bootstrap_task_boundary", {}).get("external_calls_allowed") is True
+            and linkage.get("tushare_light_refresh", {}).get("status") == "planned_provider_pending_not_executed"
+            and linkage.get("tushare_light_refresh", {}).get("tushare_called") is False
+            and linkage.get("tushare_light_refresh", {}).get("provider_execution_implemented") is False
+            and linkage.get("deepseek_pro_after_task", {}).get("status") == "planned_model_pending_not_executed"
+            and linkage.get("deepseek_pro_after_task", {}).get("deepseek_called") is False
+            and linkage.get("deepseek_pro_after_task", {}).get("model_execution_implemented") is False
+            and linkage.get("github_probe_boundary", {}).get("live_light_on_open_allowed") is False
+            and linkage.get("real_trading_boundary", {}).get("real_trading_connected") is False,
+            f"linkage={linkage}",
         ),
         _row(
             "live_light_symbol_limit_is_enforced",
