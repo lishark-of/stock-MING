@@ -124,6 +124,25 @@ Current implementation checkpoint: `GET /api/bootstrap/status` now exposes the r
 
 `GET /api/bootstrap/status` now also exposes `provider_linkage_rows`: a runtime linkage audit for cache/render, `live_light` POST bootstrap, Tushare light refresh, DeepSeek pro after-task explanation, GitHub probe, and real-trading boundaries. Command Center Home and Settings / Config Health display these rows so the Tushare/DeepSeek linkage state is visible before provider execution is implemented. This audit is still local/read-only and keeps Tushare/DeepSeek/GitHub calls false.
 
+Mode-layered acceptance contract from the latest user baseline:
+
+- The boundary is not "never automate anything"; it is `cache_only` default-deny plus explicit upgrades to `manual` or `live_light`.
+- `cache_only` remains the only acceptable mode for smoke, CI, quick offline review, and no-network runs. It must not create bootstrap tasks, call providers, call models, ping GitHub, or inspect secrets.
+- `manual` remains the safest research mode: Tushare, DeepSeek, GitHub probe, intraday adapters, and heavy scans require an explicit button or submitted task payload.
+- `live_light` may become the local daily research-client mode: after the first cache render, React may create one rate-limited background bootstrap task. That task may refresh bounded Tushare light data and optionally enqueue DeepSeek pro after data readiness. It must remain capped, deduped, non-blocking, ledgered, and safe to fail.
+- `live_light` is not production provider/model execution until the task records real provider call ledger and model ledger evidence. The current skeleton, staged run plan, provider linkage rows, and sanitizer checks remain scaffold/preflight/audit states.
+- `live_full` is reserved for full-pool, deep-scan, and production worker orchestration. It must not be enabled by page render or hidden defaults.
+
+The first production-shaped `live_light` implementation should preserve this exact scope: current target / current holdings / watchlist or a searched symbol, default maximum 20 symbols, `trade_cal` when needed, `daily`, `daily_basic`, `moneyflow`, optional staged interfaces only by payload/config, and optional DeepSeek pro with same-input hash dedupe, model ledger, six-field sanitized output, parse-failed discard, and no price/holding/factor/action/operation-zone overwrite.
+
+Required mode-layering tests before any real `live_light` provider/model promotion:
+
+- `cache_only`: page startup creates no bootstrap task; GET cache and initial React render stay provider/model/GitHub silent.
+- `live_light`: page startup can create one background task after cache render, respects rate limit/session dedupe, never blocks UI, and reports safe failure.
+- Tushare: mock or provider-backed acceptance rows record call ledger, distinguish permission denied / no record / empty window / parse error / stale states, and never expose token.
+- DeepSeek: optional after-task execution uses configured model name, input hash dedupe, sanitizer, parse-failed fallback, no trading language, and no numeric/action overwrite.
+- Search-to-quant projection: a searched symbol creates a task, exposes task id/progress/provenance/freshness/DeepSeek status/ECharts result, and never starts full-pool or deep-scan work from render.
+
 ## Remaining Goals Snapshot
 
 Current snapshot date: 2026-06-14.
