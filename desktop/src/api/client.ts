@@ -321,6 +321,13 @@ export function postCandidateRadarQuantProjectionAcceptanceDryRun(payload: Recor
   });
 }
 
+export function postCandidateRadarProviderParityDryRun(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/candidate-radar/provider-parity-dry-run", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function postCandidateRadarFullPoolPlan(payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>("/api/candidate-radar/full-pool-plan", {
     method: "POST",

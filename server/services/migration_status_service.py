@@ -144,9 +144,9 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "下一票雷达快扫生产化",
         "completion_bucket": "real_validation_required",
         "completion_estimate": "35%-45%",
-        "current_state": "local quick-scan readiness, fast-scan task pipeline contract, no-feature-loss QA, legacy parity receipt, full/deep plan receipts, search-to-quant projection receipt, and result-delta clarity exist.",
-        "not_complete_because": "async worker execution, provider-backed radar parity, full-pool/deep-scan execution, browser performance proof, and production replacement evidence are pending.",
-        "next_step": "Promote fast task-pipeline radar scanning from local contract to worker/provider/browser acceptance without losing legacy signal groups or blocking UI.",
+        "current_state": "local quick-scan readiness, fast-scan task pipeline contract, no-feature-loss QA, legacy parity receipt, full/deep plan receipts, search-to-quant projection receipt, provider parity dry-run ticket, and result-delta clarity exist.",
+        "not_complete_because": "async worker execution, real provider-backed radar parity execution, full-pool/deep-scan execution, browser performance promotion, and production replacement evidence are pending.",
+        "next_step": "Use the provider parity dry-run ticket to bind the next real Tushare/DeepSeek acceptance task, then add worker-backed full-pool/deep-scan evidence without losing legacy signal groups or blocking UI.",
         "production_complete": False,
     },
     {

@@ -29,6 +29,7 @@ REQUIRED_TASK_TYPES = {
     "run_candidate_radar_quick_scan",
     "run_candidate_radar_quant_projection",
     "run_candidate_radar_quant_projection_acceptance_dry_run",
+    "run_candidate_radar_provider_parity_dry_run",
     "run_candidate_radar_full_pool_plan",
     "run_candidate_radar_full_pool_local_scan",
     "run_candidate_radar_deep_scan_plan",
@@ -218,6 +219,18 @@ def build_contract() -> dict[str, Any]:
     quant_packet["search_quant_projection_acceptance_dry_run_receipt"] = dry_run_receipt
     quant_packet["search_quant_projection_acceptance_dry_run_rows"] = dry_run_rows
     quant_packet["search_quant_projection_credential_presence_rows"] = credential_rows
+    provider_parity_receipt, provider_parity_rows, provider_parity_credential_rows = (
+        candidate_service._build_candidate_provider_parity_dry_run(
+            packet=plan_packet,
+            payload_safe={
+                "candidate_symbols": ["000001.SZ", "000002.SZ"],
+                "include_tushare": True,
+                "include_deepseek": True,
+                "user_approved": True,
+                "selected_signal_groups": ["moneyflow", "dragon_tiger", "hard_risk", "unknown_group"],
+            },
+        )
+    )
     readiness = _dict(cache_packet.get("fast_scan_readiness_audit"))
     runtime_budget = _dict(cache_packet.get("fast_scan_runtime_budget_contract"))
     no_loss = _dict(cache_packet.get("no_feature_loss_acceptance_contract"))
@@ -301,6 +314,16 @@ def build_contract() -> dict[str, Any]:
         for row in _list(quant_packet.get("search_quant_projection_credential_presence_rows"))
         if isinstance(row, dict)
     }
+    provider_parity_rows_by_criterion = {
+        str(row.get("criterion") or ""): row
+        for row in provider_parity_rows
+        if isinstance(row, dict)
+    }
+    provider_parity_credential_rows_by_provider = {
+        str(row.get("provider") or ""): row
+        for row in provider_parity_credential_rows
+        if isinstance(row, dict)
+    }
     browser_qa_evidence = _dict(cache_packet.get("candidate_browser_qa_evidence_summary"))
     browser_qa_review = _dict(cache_packet.get("candidate_browser_qa_review_contract"))
     policy = _dict(cache_packet.get("policy"))
@@ -361,6 +384,20 @@ def build_contract() -> dict[str, Any]:
                 "production_quant_projection_complete"
             )
             is False
+            and task_rows["run_candidate_radar_provider_parity_dry_run"].get("route")
+            == "POST /api/candidate-radar/provider-parity-dry-run"
+            and task_rows["run_candidate_radar_provider_parity_dry_run"].get("local_dry_run_only") is True
+            and task_rows["run_candidate_radar_provider_parity_dry_run"].get("user_approval_required") is True
+            and task_rows["run_candidate_radar_provider_parity_dry_run"].get("server_secret_values_read") is False
+            and task_rows["run_candidate_radar_provider_parity_dry_run"].get("env_key_names_exposed") is False
+            and task_rows["run_candidate_radar_provider_parity_dry_run"].get("credential_values_exposed") is False
+            and task_rows["run_candidate_radar_provider_parity_dry_run"].get("tushare_called") is False
+            and task_rows["run_candidate_radar_provider_parity_dry_run"].get("deepseek_called") is False
+            and task_rows["run_candidate_radar_provider_parity_dry_run"].get("provider_execution_implemented") is False
+            and task_rows["run_candidate_radar_provider_parity_dry_run"].get("model_execution_implemented") is False
+            and task_rows["run_candidate_radar_provider_parity_dry_run"].get("production_radar_replacement_complete") is False
+            and task_rows["run_candidate_radar_provider_parity_dry_run"].get("page_render_starts_full_pool") is False
+            and task_rows["run_candidate_radar_provider_parity_dry_run"].get("page_render_starts_deep_scan") is False
             and task_rows["run_candidate_radar_full_pool_plan"].get("route") == "POST /api/candidate-radar/full-pool-plan"
             and task_rows["run_candidate_radar_full_pool_plan"].get("plan_only") is True
             and task_rows["run_candidate_radar_full_pool_plan"].get("full_pool_scan_done") is False
@@ -602,6 +639,63 @@ def build_contract() -> dict[str, Any]:
             and "search_quant_projection_acceptance_dry_run_receipt" in candidate_frontend
             and "search_quant_projection_credential_presence_rows" in candidate_frontend,
             "Search quant projection acceptance dry-run must be explicit, local, secret-safe, and blocked from being treated as provider/model execution.",
+        ),
+        _row(
+            "provider_parity_dry_run_is_local_preflight",
+            provider_parity_receipt.get("schema_version") == "candidate_radar_provider_parity_dry_run.v1"
+            and provider_parity_receipt.get("status")
+            in {
+                "candidate_provider_parity_dry_run_ready_real_execution_still_blocked",
+                "candidate_provider_parity_dry_run_blocked_missing_credentials",
+            }
+            and provider_parity_receipt.get("route") == "POST /api/candidate-radar/provider-parity-dry-run"
+            and provider_parity_receipt.get("user_approved") is True
+            and provider_parity_receipt.get("include_tushare") is True
+            and provider_parity_receipt.get("include_deepseek") is True
+            and provider_parity_receipt.get("selected_signal_groups") == ["moneyflow", "dragon_tiger", "hard_risk"]
+            and provider_parity_receipt.get("ignored_signal_groups") == ["unknown_group"]
+            and provider_parity_receipt.get("candidate_symbol_count") == 2
+            and provider_parity_receipt.get("ready_to_execute_real_provider_parity_task") is False
+            and provider_parity_receipt.get("provider_execution_implemented") is False
+            and provider_parity_receipt.get("model_execution_implemented") is False
+            and provider_parity_receipt.get("production_radar_replacement_complete") is False
+            and provider_parity_receipt.get("legacy_retirement_ready") is False
+            and provider_parity_receipt.get("credential_values_read") is False
+            and provider_parity_receipt.get("credential_values_exposed") is False
+            and provider_parity_receipt.get("env_key_names_included") is False
+            and _dict(provider_parity_receipt.get("acceptance_scope_ticket")).get("credential_values_included") is False
+            and _dict(provider_parity_receipt.get("acceptance_scope_ticket")).get("env_key_names_included") is False
+            and _dict(provider_parity_rows_by_criterion.get("explicit_user_approval_recorded")).get("passed") is True
+            and _dict(provider_parity_rows_by_criterion.get("candidate_scope_bound")).get("passed") is True
+            and _dict(provider_parity_rows_by_criterion.get("provider_api_scope_white_listed")).get("passed") is True
+            and _dict(provider_parity_rows_by_criterion.get("full_pool_worker_execution_required")).get(
+                "blocks_real_execution"
+            )
+            is True
+            and _dict(provider_parity_rows_by_criterion.get("deep_scan_worker_execution_required")).get(
+                "blocks_real_execution"
+            )
+            is True
+            and _dict(provider_parity_rows_by_criterion.get("deepseek_model_ledger_required")).get(
+                "blocks_real_execution"
+            )
+            is True
+            and _dict(provider_parity_credential_rows_by_provider.get("tushare")).get("values_read") is False
+            and _dict(provider_parity_credential_rows_by_provider.get("deepseek")).get("values_exposed") is False
+            and _flag_false(
+                provider_parity_receipt,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and provider_parity_receipt.get("does_not_execute_trades") is True
+            and provider_parity_receipt.get("does_not_modify_strategy_action") is True
+            and provider_parity_receipt.get("candidate_is_not_buy_instruction") is True
+            and "postCandidateRadarProviderParityDryRun" in candidate_frontend
+            and "provider_parity_dry_run_receipt" in candidate_frontend
+            and "雷达 provider parity dry-run" in candidate_frontend,
+            "Provider parity dry-run must be explicit, local, secret-safe, and blocked from being treated as provider/model/worker/browser execution or production radar replacement.",
         ),
         _row(
             "fast_scan_readiness_is_local_pending",

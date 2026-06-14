@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
+import { getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -53,6 +53,19 @@ export default function CandidateRadar() {
     void postCandidateRadarQuantProjectionAcceptanceDryRun({
       scan_mode: "search_quant_projection",
       symbol: searchSymbol || String(searchQuantProjectionReceipt.symbol ?? ""),
+      include_tushare: true,
+      include_deepseek: true,
+      user_approved: true,
+      requested_by: "candidate_radar_page"
+    }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
+  const launchProviderParityDryRun = () =>
+    void postCandidateRadarProviderParityDryRun({
+      scan_mode: "provider_parity_dry_run",
+      candidate_symbols: searchSymbol || String(searchQuantProjectionReceipt.symbol ?? ""),
+      selected_signal_groups: ["moneyflow", "dragon_tiger", "limit_emotion", "chip_radar", "hard_risk"],
       include_tushare: true,
       include_deepseek: true,
       user_approved: true,
@@ -115,6 +128,7 @@ export default function CandidateRadar() {
   const searchQuantProjectionReceipt = (cache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionActivation = (cache.search_quant_projection_activation_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionAcceptanceDryRun = (cache.search_quant_projection_acceptance_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
+  const providerParityDryRun = (cache.provider_parity_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
   const fastScanRuntimeBudget = (cache.fast_scan_runtime_budget_contract as Record<string, unknown> | undefined) ?? {};
   const fastScanReadinessAudit = (cache.fast_scan_readiness_audit as Record<string, unknown> | undefined) ?? {};
   const noFeatureLossAcceptance = (cache.no_feature_loss_acceptance_contract as Record<string, unknown> | undefined) ?? {};
@@ -152,6 +166,8 @@ export default function CandidateRadar() {
   const searchQuantProjectionActivationRows = rows(cache.search_quant_projection_activation_rows);
   const searchQuantProjectionAcceptanceDryRunRows = rows(cache.search_quant_projection_acceptance_dry_run_rows);
   const searchQuantProjectionCredentialRows = rows(cache.search_quant_projection_credential_presence_rows);
+  const providerParityDryRunRows = rows(cache.provider_parity_dry_run_rows);
+  const providerParityCredentialRows = rows(cache.provider_parity_credential_presence_rows);
   const fastScanRuntimeBudgetRows = rows(cache.fast_scan_runtime_budget_rows);
   const fastScanReadinessRows = rows(cache.fast_scan_readiness_rows);
   const noFeatureLossAcceptanceRows = rows(cache.no_feature_loss_acceptance_rows);
@@ -217,6 +233,10 @@ export default function CandidateRadar() {
           { label: "quant dry-run", value: String(searchQuantProjectionAcceptanceDryRun.status ?? "missing"), tone: searchQuantProjectionAcceptanceDryRun.ready_for_user_approved_real_acceptance === true ? "good" : "warn" },
           { label: "dry-run blockers", value: counts.search_quant_projection_acceptance_dry_run_blocking_count as number | undefined, tone: Number(counts.search_quant_projection_acceptance_dry_run_blocking_count ?? 0) ? "warn" : "good" },
           { label: "credential missing", value: counts.search_quant_projection_acceptance_credential_missing_count as number | undefined, tone: Number(counts.search_quant_projection_acceptance_credential_missing_count ?? 0) ? "warn" : "good" },
+          { label: "provider parity", value: String(providerParityDryRun.status ?? "missing"), tone: providerParityDryRun.ready_for_user_approved_provider_parity === true ? "good" : "warn" },
+          { label: "parity blockers", value: counts.provider_parity_dry_run_blocking_count as number | undefined, tone: Number(counts.provider_parity_dry_run_blocking_count ?? 0) ? "warn" : "good" },
+          { label: "parity symbols", value: counts.provider_parity_candidate_symbol_count as number | undefined },
+          { label: "parity credential", value: counts.provider_parity_credential_missing_count as number | undefined, tone: Number(counts.provider_parity_credential_missing_count ?? 0) ? "warn" : "good" },
           { label: "fast readiness", value: String(fastScanReadinessAudit.status ?? "missing"), tone: fastScanReadinessAudit.local_fast_scan_ready === true ? "good" : "warn" },
           { label: "fast blockers", value: counts.fast_scan_readiness_blocker_count as number | undefined, tone: Number(counts.fast_scan_readiness_blocker_count ?? 0) ? "bad" : "good" },
           { label: "no-loss QA", value: String(noFeatureLossAcceptance.status ?? "missing"), tone: noFeatureLossAcceptance.local_no_feature_loss_contract_ready === true ? "good" : "warn" },
@@ -352,6 +372,20 @@ export default function CandidateRadar() {
           <DataLineageTable rows={objectRow(searchQuantProjectionAcceptanceDryRun)} />
           <DataLineageTable rows={searchQuantProjectionAcceptanceDryRunRows} />
           <DataLineageTable rows={searchQuantProjectionCredentialRows} />
+        </PacketCard>
+
+        <PacketCard title="雷达 provider parity dry-run" subtitle="POST /api/candidate-radar/provider-parity-dry-run；本地预检，不调用 Tushare/DeepSeek" status={String(providerParityDryRun.status ?? "missing")}>
+          <div className="actions">
+            <button onClick={launchProviderParityDryRun}>运行雷达 provider parity dry-run</button>
+          </div>
+          <p>ready_for_user_approved_provider_parity: {String(providerParityDryRun.ready_for_user_approved_provider_parity === true)}；ready_to_execute_real_provider_parity_task: {String(providerParityDryRun.ready_to_execute_real_provider_parity_task === true)}</p>
+          <p>candidate_symbol_count: {String(providerParityDryRun.candidate_symbol_count ?? 0)}；provider_coverage_gap_count: {String(providerParityDryRun.provider_coverage_gap_count ?? 0)}；acceptance_scope_hash_short: {String(providerParityDryRun.acceptance_scope_hash_short ?? "--")}</p>
+          <p>provider_execution_implemented: {String(providerParityDryRun.provider_execution_implemented === true)}；model_execution_implemented: {String(providerParityDryRun.model_execution_implemented === true)}；production_radar_replacement_complete: {String(providerParityDryRun.production_radar_replacement_complete === true)}</p>
+          <p>credential_values_read: {String(providerParityDryRun.credential_values_read === true)}；credential_values_exposed: {String(providerParityDryRun.credential_values_exposed === true)}；env_key_names_included: {String(providerParityDryRun.env_key_names_included === true)}</p>
+          <p>这个 dry-run 只把下一票雷达的 provider-backed parity、full-pool worker、deep-scan worker、浏览器性能和 DeepSeek model ledger 验收范围固定住；它不会从 render 调 provider，也不会退掉 legacy fallback。</p>
+          <DataLineageTable rows={objectRow(providerParityDryRun)} />
+          <DataLineageTable rows={providerParityDryRunRows} />
+          <DataLineageTable rows={providerParityCredentialRows} />
         </PacketCard>
 
         <PacketCard title="快速雷达扫描" subtitle="POST /api/candidate-radar/scan-quick 只读取本地 snapshot/cache" status={String(scanCoverage.coverage_status ?? "cache")}>
