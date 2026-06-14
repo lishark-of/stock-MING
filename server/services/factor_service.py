@@ -22,6 +22,18 @@ DEEPSEEK_FACTOR_PROMPT_VERSION = "factor_deepseek_explanation_prompt.v1"
 FACTOR_UNIVERSE_RESEARCH_PLAN_MODES = {"watchlist", "custom_pool", "full_pool"}
 FACTOR_UNIVERSE_RESEARCH_PLAN_DATASETS = ("factor_values", "daily", "daily_basic", "moneyflow", "trade_cal")
 FACTOR_UNIVERSE_ITEM_SECRET_MARKERS = ("token", "api_key", "secret", "password", "authorization", "bearer")
+FACTOR_UNIVERSE_WORKER_BATCH_SYMBOL_LIMIT = 500
+FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS = 20
+FACTOR_UNIVERSE_WORKER_BATCH_REQUIRED_STAGES = (
+    "storage_read_plan",
+    "worker_batch_scope",
+    "cross_sectional_rank",
+    "zscore",
+    "neutralization",
+    "factor_combination",
+    "result_summary",
+    "promotion_review",
+)
 FACTOR_TEST_PROVIDER_SMALL_POOL_SYMBOL_LIMIT = 20
 FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_SYMBOLS = 5
 FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS = 60
@@ -3112,6 +3124,411 @@ def _factor_universe_read_plan_call_ledger(plan: dict[str, Any], now: str) -> li
     ]
 
 
+def _factor_universe_worker_batch_items_from_payload(payload: Any) -> tuple[list[str], list[str]]:
+    if not isinstance(payload, dict):
+        return [], []
+    values: list[Any] = []
+    for key in ("universe", "items", "ts_codes", "symbols", "watchlist", "custom_pool"):
+        candidate = payload.get(key)
+        if isinstance(candidate, list):
+            values.extend(candidate)
+        elif isinstance(candidate, str) and candidate.strip():
+            values.extend(part.strip() for part in candidate.replace(";", ",").split(","))
+    items: list[str] = []
+    ignored: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        if any(marker in text.lower() for marker in FACTOR_UNIVERSE_ITEM_SECRET_MARKERS):
+            if "secret_like_item_redacted" not in ignored:
+                ignored.append("secret_like_item_redacted")
+            continue
+        safe_text = text[:32]
+        if safe_text in seen:
+            continue
+        seen.add(safe_text)
+        if len(items) >= FACTOR_UNIVERSE_WORKER_BATCH_SYMBOL_LIMIT:
+            ignored.append("symbol_limit_exceeded")
+            continue
+        items.append(safe_text)
+    return items, ignored[:20]
+
+
+def _factor_universe_worker_batch_requested_stages(payload: Any) -> tuple[list[str], list[str], list[str]]:
+    raw: list[Any] = []
+    if isinstance(payload, dict):
+        candidate = payload.get("requested_stages") or payload.get("stages") or payload.get("stage_scope")
+        if isinstance(candidate, str):
+            raw = [part.strip() for part in candidate.replace(";", ",").split(",")]
+        elif isinstance(candidate, list):
+            raw = candidate
+    if not raw:
+        raw = list(FACTOR_UNIVERSE_WORKER_BATCH_REQUIRED_STAGES)
+    allowed = set(FACTOR_UNIVERSE_WORKER_BATCH_REQUIRED_STAGES)
+    stages: list[str] = []
+    ignored: list[str] = []
+    for item in raw:
+        text = "".join(char if char.isalnum() else "_" for char in str(item or "").strip().lower()).strip("_")[:48]
+        if not text:
+            continue
+        if text not in allowed:
+            if text not in ignored:
+                ignored.append(text)
+            continue
+        if text not in stages:
+            stages.append(text)
+    missing = [stage for stage in FACTOR_UNIVERSE_WORKER_BATCH_REQUIRED_STAGES if stage not in stages]
+    return stages, missing, ignored[:20]
+
+
+def _factor_universe_worker_batch_scope_ticket(payload_safe: dict[str, Any]) -> dict[str, Any]:
+    scope = {
+        "universe_mode": payload_safe.get("universe_mode"),
+        "symbol_count": payload_safe.get("symbol_count"),
+        "symbols": payload_safe.get("symbols"),
+        "required_datasets": payload_safe.get("required_datasets"),
+        "requested_stages": payload_safe.get("requested_stages"),
+        "required_stages": payload_safe.get("required_stages"),
+        "worker_backend": "future_celery_or_local_worker_batch",
+        "production_flags": {
+            "worker_execution_implemented": False,
+            "large_universe_pipeline_done": False,
+            "cross_sectional_rank_zscore_done": False,
+            "neutralization_done": False,
+            "factor_combination_research_done": False,
+            "production_factor_universe_complete": False,
+        },
+    }
+    digest = hashlib.sha256(json.dumps(scope, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+    return {
+        "schema_version": "factor_universe_worker_batch_scope_ticket.v1",
+        "scope_hash_algorithm": "sha256",
+        "scope_hash": digest,
+        "scope_hash_short": digest[:16],
+        "contains_secret": False,
+        "credential_value_exposed": False,
+        "env_key_name_exposed": False,
+        "scope": scope,
+    }
+
+
+def _factor_universe_worker_batch_dry_run_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    evidence: str,
+    next_action: str,
+    *,
+    required: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "required_for_real_worker_execution": required,
+        "blocks_worker_execution": required and not passed,
+        "evidence": evidence,
+        "next_action": next_action,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _factor_universe_worker_batch_dry_run_payload(payload: Any, now: str) -> dict[str, Any]:
+    mode = _factor_universe_mode_from_payload(payload)
+    symbols, ignored_symbols = _factor_universe_worker_batch_items_from_payload(payload)
+    stages, missing_stages, ignored_stages = _factor_universe_worker_batch_requested_stages(payload)
+    approved_by_user = bool(isinstance(payload, dict) and payload.get("approved_by_user") is True)
+    payload_safe: dict[str, Any] = {
+        "approved_by_user": approved_by_user,
+        "universe_mode": mode,
+        "symbols": symbols,
+        "ignored_symbols": ignored_symbols,
+        "symbol_count": len(symbols),
+        "symbol_limit": FACTOR_UNIVERSE_WORKER_BATCH_SYMBOL_LIMIT,
+        "minimum_symbol_count_for_watchlist_or_custom_pool": FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS,
+        "full_pool_uses_server_side_universe_resolver": mode == "full_pool",
+        "required_datasets": list(FACTOR_UNIVERSE_RESEARCH_PLAN_DATASETS),
+        "required_stages": list(FACTOR_UNIVERSE_WORKER_BATCH_REQUIRED_STAGES),
+        "requested_stages": stages,
+        "missing_required_stages": missing_stages,
+        "ignored_stages": ignored_stages,
+        "created_at": now,
+        "worker_batch_requires_explicit_post_task": True,
+        "worker_execution_implemented": False,
+        "large_universe_pipeline_done": False,
+        "full_pool_validation_done": False,
+        "cross_sectional_rank_zscore_done": False,
+        "neutralization_done": False,
+        "factor_combination_research_done": False,
+        "production_factor_universe_complete": False,
+    }
+    payload_safe["worker_batch_scope_ticket"] = _factor_universe_worker_batch_scope_ticket(payload_safe)
+    return payload_safe
+
+
+def _factor_universe_worker_batch_dry_run_receipt(payload_safe: dict[str, Any], now: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    mode = str(payload_safe.get("universe_mode") or "watchlist")
+    symbol_count = int(payload_safe.get("symbol_count") or 0)
+    approved_by_user = payload_safe.get("approved_by_user") is True
+    missing_stages = [str(item) for item in payload_safe.get("missing_required_stages") or []]
+    full_pool_scope = mode == "full_pool"
+    bounded_scope = full_pool_scope or symbol_count >= FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS
+    read_plan = _build_factor_universe_research_read_plan(
+        {"universe_mode": mode, "symbols": payload_safe.get("symbols") or []},
+        now,
+    )
+    read_plan_ready = read_plan.get("status") == "read_plan_ready"
+    preflight_ready = approved_by_user and bounded_scope and not missing_stages and read_plan_ready
+    rows = [
+        _factor_universe_worker_batch_dry_run_row(
+            "explicit_user_approval",
+            "passed_approved" if approved_by_user else "blocked_missing_approval",
+            approved_by_user,
+            f"approved_by_user={approved_by_user}",
+            "User must explicitly approve the future worker-batch research scope.",
+        ),
+        _factor_universe_worker_batch_dry_run_row(
+            "universe_scope_bounded",
+            "passed_full_pool_scope" if full_pool_scope else "passed_symbol_scope" if bounded_scope else "blocked_not_enough_symbols",
+            bounded_scope,
+            f"universe_mode={mode}; symbol_count={symbol_count}; minimum={FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS}; limit={FACTOR_UNIVERSE_WORKER_BATCH_SYMBOL_LIMIT}",
+            "Use full_pool with a server-side resolver or provide a bounded watchlist/custom_pool before worker execution.",
+        ),
+        _factor_universe_worker_batch_dry_run_row(
+            "required_stages_complete",
+            "passed_stage_scope" if not missing_stages else "blocked_missing_required_stages",
+            not missing_stages,
+            f"requested_stages={payload_safe.get('requested_stages')}; missing={missing_stages}; ignored={payload_safe.get('ignored_stages')}",
+            "Keep storage read plan, worker batch, rank, zscore, neutralization, combination, summary, and promotion review in scope.",
+        ),
+        _factor_universe_worker_batch_dry_run_row(
+            "storage_read_plan_visible",
+            "passed_read_plan_ready" if read_plan_ready else "blocked_read_plan_missing",
+            read_plan_ready,
+            f"read_plan_status={read_plan.get('status')}; dataset_count={read_plan.get('dataset_count')}; storage_query_contract_count={read_plan.get('storage_query_contract_count')}",
+            "Generate and keep a local storage read plan before worker-batch execution.",
+        ),
+        _factor_universe_worker_batch_dry_run_row(
+            "worker_execution_implementation_boundary",
+            "pending_worker_execution_not_implemented",
+            False,
+            "This dry-run creates a scope ticket only; it does not start Celery/local workers or execute batch research.",
+            "Implement a separate explicit worker-batch task bound to this scope ticket.",
+        ),
+        _factor_universe_worker_batch_dry_run_row(
+            "rank_zscore_neutralization_boundary",
+            "pending_production_metrics_not_computed",
+            False,
+            "No production rank, zscore, neutralization, factor combination, out-of-sample, or full-pool metrics are computed by this ticket.",
+            "Run the future worker-backed research task and attach audited research metrics before promotion review.",
+        ),
+        _factor_universe_worker_batch_dry_run_row(
+            "frontend_boundary",
+            "passed_frontend_display_only",
+            True,
+            "React only posts the gated task and renders cache receipts; it does not compute universe research.",
+            "Keep heavy universe research out of React render paths.",
+            required=False,
+        ),
+        _factor_universe_worker_batch_dry_run_row(
+            "external_call_boundary",
+            "passed_no_external_call",
+            True,
+            "Dry-run reads local storage contracts only and does not call Tushare, DeepSeek, GitHub, or browser APIs.",
+            "Only future explicit provider/model tasks may call external services under mode gates.",
+            required=False,
+        ),
+        _factor_universe_worker_batch_dry_run_row(
+            "trade_action_boundary",
+            "passed_no_trade_or_action",
+            True,
+            "Dry-run cannot execute trades, mutate strategy action, change price/position, or write operation zones.",
+            "Keep universe research outputs research-only until a separate promotion review.",
+            required=False,
+        ),
+    ]
+    blockers = [row["criterion"] for row in rows if row["blocks_worker_execution"]]
+    return {
+        "schema_version": "factor_universe_worker_batch_dry_run.v1",
+        "status": "worker_batch_dry_run_ready_real_execution_blocked" if preflight_ready else "worker_batch_dry_run_blocked_preflight",
+        "scope": "local_factor_universe_worker_batch_dry_run_no_worker_or_provider_execution",
+        "created_at": now,
+        "ltg": "LTG-04/LTG-11",
+        "local_dry_run_ready": True,
+        "preflight_ready_for_explicit_worker_batch_task": preflight_ready,
+        "ready_to_execute_worker_task": False,
+        "allowed_next_step": "implement_explicit_factor_universe_worker_batch_task_bound_to_scope_ticket" if preflight_ready else "complete_factor_universe_worker_batch_preflight_scope",
+        "not_allowed_next_steps": [
+            "GET /api/factor-quant/cache worker batch execution",
+            "React render full-pool execution",
+            "worker-batch dry-run as production Factor universe completion",
+            "local rank/zscore preview as production research",
+            "Tushare or DeepSeek call from this dry-run",
+            "strategy action mutation",
+            "real trade execution",
+        ],
+        "missing_evidence_items": [
+            "explicit worker task implementation",
+            "worker execution task_id and durable task logs",
+            "large-universe batch result rows",
+            "cross-sectional rank/zscore evidence",
+            "industry and market-cap neutralization evidence",
+            "factor combination research evidence",
+            "out-of-sample and decay evidence",
+            "production promotion review",
+        ],
+        "universe_mode": mode,
+        "symbols": payload_safe.get("symbols") or [],
+        "symbol_count": symbol_count,
+        "ignored_symbols": payload_safe.get("ignored_symbols") or [],
+        "symbol_limit": FACTOR_UNIVERSE_WORKER_BATCH_SYMBOL_LIMIT,
+        "minimum_symbol_count_for_watchlist_or_custom_pool": FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS,
+        "full_pool_uses_server_side_universe_resolver": full_pool_scope,
+        "required_datasets": payload_safe.get("required_datasets") or [],
+        "required_stages": payload_safe.get("required_stages") or [],
+        "requested_stages": payload_safe.get("requested_stages") or [],
+        "missing_required_stages": missing_stages,
+        "ignored_stages": payload_safe.get("ignored_stages") or [],
+        "storage_read_plan_status": read_plan.get("status"),
+        "storage_read_plan_dataset_count": read_plan.get("dataset_count"),
+        "storage_query_contract_count": read_plan.get("storage_query_contract_count"),
+        "worker_batch_scope_ticket": payload_safe.get("worker_batch_scope_ticket"),
+        "worker_batch_scope_hash": _dict(payload_safe.get("worker_batch_scope_ticket")).get("scope_hash"),
+        "worker_batch_scope_hash_short": _dict(payload_safe.get("worker_batch_scope_ticket")).get("scope_hash_short"),
+        "worker_execution_implemented": False,
+        "worker_batch_executed": False,
+        "large_universe_pipeline_done": False,
+        "watchlist_pipeline_done": False,
+        "custom_pool_pipeline_done": False,
+        "full_pool_validation_done": False,
+        "cross_sectional_rank_zscore_done": False,
+        "neutralization_done": False,
+        "factor_combination_research_done": False,
+        "production_factor_universe_complete": False,
+        "partial_pool_is_full_market_proof": False,
+        "page_render_starts_full_pool": False,
+        "frontend_computes_rank_zscore": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_core_action": True,
+        "does_not_enter_evidence_effects": True,
+        "does_not_enter_next_session_projection": True,
+        "contains_secret": False,
+        "credential_value_exposed": False,
+        "env_key_name_exposed": False,
+        "row_count": len(rows),
+        "blocking_criterion_count": len(blockers),
+        "blocking_criteria": blockers,
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_factor_universe_worker_batch_dry_run",
+                "request_params_safe": {
+                    "scope": "local_factor_universe_worker_batch_dry_run_no_worker_or_provider_execution",
+                    "universe_mode": mode,
+                    "symbol_count": symbol_count,
+                    "required_stage_count": len(FACTOR_UNIVERSE_WORKER_BATCH_REQUIRED_STAGES),
+                    "preflight_ready_for_explicit_worker_batch_task": preflight_ready,
+                    "worker_batch_scope_hash_short": _dict(payload_safe.get("worker_batch_scope_ticket")).get("scope_hash_short"),
+                    "worker_execution_implemented": False,
+                    "production_factor_universe_complete": False,
+                },
+                "row_count": len(rows),
+                "data_date": None,
+                "local_fetched_at": now,
+                "call_status": "local_dry_run_ready" if preflight_ready else "local_dry_run_blocked",
+                "error_message_safe": "",
+                **_local_ledger_boundary(),
+            }
+        ],
+        "note": "This is a local dry-run ticket for future LTG-04 worker-backed universe research. It does not start workers, call providers/models, compute production metrics, execute trades, or mutate strategy action.",
+    }, rows
+
+
+def run_factor_universe_worker_batch_dry_run_task(payload: Any = None) -> dict[str, Any]:
+    now = _now_iso()
+    payload_safe = _factor_universe_worker_batch_dry_run_payload(payload, now)
+    receipt, rows = _factor_universe_worker_batch_dry_run_receipt(payload_safe, now)
+    payload_safe["universe_worker_batch_dry_run_receipt"] = receipt
+    payload_safe["universe_worker_batch_dry_run_rows"] = rows
+    task = create_task_record(
+        "run_factor_universe_worker_batch_dry_run",
+        output_packet_key="command_center_factor_quant_hub_packet",
+        payload=payload_safe,
+        current_step="factor_universe_worker_batch_dry_run_queued",
+        warnings=[
+            "Factor Universe worker-batch dry-run 只生成本地 scope ticket，不启动 worker，不调用 Tushare、DeepSeek 或 GitHub。",
+            "dry-run 不计算生产 rank/zscore/neutralization，不修改 strategy action，不执行真实交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    update_task_status(task["task_id"], status="running", progress=0.25, current_step="building_factor_universe_worker_batch_scope_ticket")
+    try:
+        hub = dict(read_factor_quant_cache())
+        universe_contract = hub.get("universe_research_contract") if isinstance(hub.get("universe_research_contract"), dict) else {}
+        universe_contract = dict(universe_contract)
+        universe_contract.update(
+            {
+                "worker_batch_dry_run_ready": bool(receipt.get("local_dry_run_ready")),
+                "worker_batch_scope_ticket_ready": bool(receipt.get("worker_batch_scope_hash_short")),
+                "worker_batch_dry_run_is_not_execution": True,
+                "worker_execution_implemented": False,
+                "large_universe_pipeline_done": False,
+                "full_pool_validation_done": False,
+                "cross_sectional_rank_zscore_done": False,
+                "neutralization_done": False,
+                "factor_combination_research_done": False,
+                "production_factor_universe_complete": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+        hub["universe_research_contract"] = universe_contract
+        hub["universe_worker_batch_dry_run_receipt"] = receipt
+        hub["universe_worker_batch_dry_run_rows"] = rows
+        hub["universe_worker_batch_dry_run_call_ledger"] = list(receipt.get("call_ledger") or [])
+        hub["call_ledger"] = list(receipt.get("call_ledger") or []) + list(hub.get("call_ledger") if isinstance(hub.get("call_ledger"), list) else [])
+        warning = "Factor Universe worker-batch dry-run ticket 已生成：本地 preflight，不启动 worker，不代表全市场/大股票池生产研究完成。"
+        existing_warnings = hub.get("warnings") if isinstance(hub.get("warnings"), list) else []
+        hub["warnings"] = [warning] + [item for item in existing_warnings if item != warning]
+        hub["external_calls_triggered"] = False
+        hub["tushare_called"] = False
+        hub["deepseek_called"] = False
+        hub["github_called"] = False
+        hub["does_not_execute_trades"] = True
+        hub["does_not_modify_strategy_action"] = True
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet("command_center_factor_quant_hub_packet", hub)
+    except Exception as exc:
+        payload_safe["cache_write_error_safe"] = str(exc).splitlines()[0][:240]
+    updated = update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step=str(receipt.get("status") or "factor_universe_worker_batch_dry_run_ready"),
+        call_ledger=list(receipt.get("call_ledger") or []),
+    ) or task
+    updated["payload_safe"] = payload_safe
+    return updated
+
+
 def _snapshot_value(snapshot: dict[str, Any], key: str) -> Any:
     return snapshot.get(key)
 
@@ -3666,6 +4083,8 @@ def create_factor_task(task_type: str, payload: Any = None) -> dict[str, Any]:
         return run_factor_light_task(payload)
     if task_type == "run_factor_universe_research_plan":
         return run_factor_universe_research_plan_task(payload)
+    if task_type == "run_factor_universe_worker_batch_dry_run":
+        return run_factor_universe_worker_batch_dry_run_task(payload)
     if task_type == "run_factor_test_provider_small_pool_acceptance_dry_run":
         return run_factor_test_provider_small_pool_acceptance_dry_run_task(payload)
     if task_type == "run_deepseek_factor_explanation":

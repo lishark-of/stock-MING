@@ -75,6 +75,11 @@ def build_contract() -> dict[str, Any]:
     read_plan = factor_service._build_factor_universe_research_read_plan(payload, now)
     read_rows = _list(read_plan.get("storage_query_rows"))
     rank_zscore_dry_run = factor_service._factor_universe_local_rank_zscore_dry_run(now)
+    worker_batch_payload = factor_service._factor_universe_worker_batch_dry_run_payload(
+        {"approved_by_user": True, "universe_mode": "full_pool", "requested_stages": list(factor_service.FACTOR_UNIVERSE_WORKER_BATCH_REQUIRED_STAGES)},
+        now,
+    )
+    worker_batch_dry_run, worker_batch_rows = factor_service._factor_universe_worker_batch_dry_run_receipt(worker_batch_payload, now)
 
     plan_contract = dict(base_contract)
     plan_contract.update(
@@ -128,6 +133,7 @@ def build_contract() -> dict[str, Any]:
         if isinstance(row, dict)
     }
     universe_task = _dict(task_catalog.get("run_factor_universe_research_plan"))
+    worker_batch_task = _dict(task_catalog.get("run_factor_universe_worker_batch_dry_run"))
     light_task = _dict(task_catalog.get("run_factor_light"))
     factor_page = _read_script("desktop/src/routes/FactorQuantHub.tsx")
     api_client = _read_script("desktop/src/api/client.ts")
@@ -263,6 +269,31 @@ def build_contract() -> dict[str, Any]:
             "Universe execution activation receipt may fix the next explicit worker-batch gate, but it must not create tasks, execute workers, compute production metrics, call providers, or promote production flags.",
         ),
         _row(
+            "worker_batch_dry_run_ticket_is_local",
+            worker_batch_dry_run.get("schema_version") == "factor_universe_worker_batch_dry_run.v1"
+            and worker_batch_dry_run.get("scope") == "local_factor_universe_worker_batch_dry_run_no_worker_or_provider_execution"
+            and worker_batch_dry_run.get("local_dry_run_ready") is True
+            and worker_batch_dry_run.get("preflight_ready_for_explicit_worker_batch_task") is True
+            and worker_batch_dry_run.get("ready_to_execute_worker_task") is False
+            and worker_batch_dry_run.get("worker_batch_scope_hash_short")
+            and worker_batch_dry_run.get("worker_execution_implemented") is False
+            and worker_batch_dry_run.get("worker_batch_executed") is False
+            and worker_batch_dry_run.get("large_universe_pipeline_done") is False
+            and worker_batch_dry_run.get("cross_sectional_rank_zscore_done") is False
+            and worker_batch_dry_run.get("neutralization_done") is False
+            and worker_batch_dry_run.get("factor_combination_research_done") is False
+            and worker_batch_dry_run.get("full_pool_validation_done") is False
+            and worker_batch_dry_run.get("production_factor_universe_complete") is False
+            and worker_batch_dry_run.get("page_render_starts_full_pool") is False
+            and worker_batch_dry_run.get("frontend_computes_rank_zscore") is False
+            and worker_batch_dry_run.get("cache_get_external_calls") is False
+            and _flag_false(worker_batch_dry_run, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and worker_batch_dry_run.get("does_not_execute_trades") is True
+            and worker_batch_dry_run.get("does_not_modify_strategy_action") is True
+            and any(_dict(row).get("criterion") == "worker_execution_implementation_boundary" and _dict(row).get("status") == "pending_worker_execution_not_implemented" for row in worker_batch_rows),
+            "Worker-batch dry-run may create a local scope ticket only; it must not start workers, call providers/models, compute production metrics, or promote completion flags.",
+        ),
+        _row(
             "local_rank_zscore_dry_run_is_research_only",
             rank_zscore_dry_run.get("schema_version") == "factor_universe_local_rank_zscore_dry_run.v1"
             and rank_zscore_dry_run.get("scope") == "local_factor_values_rank_zscore_dry_run_not_full_pool_validation"
@@ -283,7 +314,7 @@ def build_contract() -> dict[str, Any]:
             "Local rank/zscore dry-run may only audit/preview local factor_values cross-sections and must not promote production universe flags.",
         ),
         _row(
-            "task_catalog_is_button_gated_read_plan_only",
+            "task_catalog_is_button_gated_read_plan_and_worker_dry_run_only",
             universe_task.get("route") == "POST /api/factor-quant/universe-research-plan"
             and universe_task.get("button_gated") is True
             and universe_task.get("current_backend") == "local_storage_query_read_plan_pipeline"
@@ -298,9 +329,26 @@ def build_contract() -> dict[str, Any]:
             and universe_task.get("partial_pool_is_full_market_proof") is False
             and universe_task.get("does_not_execute_trades") is True
             and universe_task.get("does_not_modify_strategy_action") is True
+            and worker_batch_task.get("route") == "POST /api/factor-quant/universe-worker-batch-dry-run"
+            and worker_batch_task.get("button_gated") is True
+            and worker_batch_task.get("current_backend") == "local_factor_universe_worker_batch_dry_run_pipeline"
+            and worker_batch_task.get("external_call_policy") == "local_worker_batch_dry_run_no_worker_provider_or_model_call"
+            and worker_batch_task.get("possible_external_sources") == []
+            and worker_batch_task.get("local_dry_run_only") is True
+            and worker_batch_task.get("scope_hash_ticket") is True
+            and worker_batch_task.get("worker_execution_implemented") is False
+            and worker_batch_task.get("worker_batch_executed") is False
+            and worker_batch_task.get("large_universe_pipeline_done") is False
+            and worker_batch_task.get("cross_sectional_rank_zscore_done") is False
+            and worker_batch_task.get("neutralization_done") is False
+            and worker_batch_task.get("production_factor_universe_complete") is False
+            and worker_batch_task.get("cache_get_external_calls") is False
+            and worker_batch_task.get("react_render_direct_worker_calls") is False
+            and worker_batch_task.get("does_not_execute_trades") is True
+            and worker_batch_task.get("does_not_modify_strategy_action") is True
             and light_task.get("universe_modes") == ["current_target"]
             and light_task.get("future_universe_modes") == ["watchlist", "custom_pool", "full_pool"],
-            "Task catalog must keep factor universe work button-gated and read-plan-only while light mode remains current_target-only.",
+            "Task catalog must keep factor universe work button-gated: read-plan-only and worker-batch dry-run ticket only while light mode remains current_target-only.",
         ),
         _row(
             "frontend_displays_plan_and_does_not_compute_universe",
@@ -308,6 +356,7 @@ def build_contract() -> dict[str, Any]:
             and "fetch(`${API_BASE}${path}`" in api_client
             and "import { getFactorQuantCache, postTask" in factor_page
             and "launchTask(\"/api/factor-quant/universe-research-plan\"" in factor_page
+            and "launchTask(\"/api/factor-quant/universe-worker-batch-dry-run\"" in factor_page
             and "universe_execution_readiness_audit" in factor_page
             and "universe_execution_readiness_receipt" in factor_page
             and "universe_execution_activation_receipt" in factor_page
@@ -315,6 +364,10 @@ def build_contract() -> dict[str, Any]:
             and "Factor Universe 执行准入回执" in factor_page
             and "Factor Universe execution activation receipt" in factor_page
             and "不创建任务、不启动 worker" in factor_page
+            and "Factor Universe worker-batch dry-run ticket" in factor_page
+            and "universe_worker_batch_dry_run_receipt" in factor_page
+            and "不代表 worker-backed batch execution" in factor_page
+            and "批量研究预检" in factor_page
             and "Factor Universe 本地 Rank/Zscore Dry-run" in factor_page
             and "前端不计算 rank/zscore" in factor_page
             and "显式 worker batch" in factor_page
@@ -357,6 +410,8 @@ def build_contract() -> dict[str, Any]:
             and "full_pool_validation_done" in this_script
             and "cross_sectional_rank_zscore_done" in this_script
             and "local_rank_zscore_dry_run_is_research_only" in this_script
+            and "worker_batch_dry_run_ticket_is_local" in this_script
+            and "run_factor_universe_worker_batch_dry_run" in this_script
             and "execution_readiness_receipt_is_local" in this_script
             and "execution_activation_receipt_is_local" in this_script
             and "does_not_execute_trades" in this_script
@@ -385,6 +440,9 @@ def build_contract() -> dict[str, Any]:
         "cross_sectional_rank_zscore_done": False,
         "ready_for_explicit_worker_batch_task": bool(execution_receipt.get("ready_for_explicit_worker_batch_task")),
         "execution_activation_receipt_ready": bool(execution_activation.get("local_activation_receipt_ready")),
+        "worker_batch_dry_run_ready": bool(worker_batch_dry_run.get("local_dry_run_ready")),
+        "worker_batch_scope_ticket_ready": bool(worker_batch_dry_run.get("worker_batch_scope_hash_short")),
+        "worker_execution_implemented": False,
         "local_rank_zscore_dry_run_executed": bool(rank_zscore_dry_run.get("rank_zscore_dry_run_executed")),
         "neutralization_done": False,
         "factor_combination_research_done": False,
@@ -416,10 +474,13 @@ def build_contract() -> dict[str, Any]:
             "execution_receipt_allowed_next_step": execution_receipt.get("allowed_next_step"),
             "execution_activation_status": execution_activation.get("status"),
             "execution_activation_production_blocker_count": execution_activation.get("production_blocker_count"),
+            "worker_batch_dry_run_status": worker_batch_dry_run.get("status"),
+            "worker_batch_scope_hash_short": worker_batch_dry_run.get("worker_batch_scope_hash_short"),
             "task_backend": universe_task.get("current_backend"),
+            "worker_batch_task_backend": worker_batch_task.get("current_backend"),
         },
         "rows": rows,
-        "note": "This is a local push-gate contract. Worker batch execution, rank/zscore, neutralization, provider-backed validation, and full-pool production research remain pending.",
+        "note": "This is a local push-gate contract. Worker batch dry-run is only a scope ticket; worker execution, rank/zscore, neutralization, provider-backed validation, and full-pool production research remain pending.",
     }
 
 
