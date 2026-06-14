@@ -63,6 +63,7 @@ def _worker_module_rows() -> list[dict[str, Any]]:
                 "run_candidate_radar_full_pool_plan",
                 "run_candidate_radar_full_pool_local_scan",
                 "run_candidate_radar_deep_scan_plan",
+                "run_candidate_radar_deep_scan_local_review",
             ],
         },
         {

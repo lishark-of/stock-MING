@@ -42,6 +42,12 @@ def plan_candidate_radar_deep_scan(payload: dict[str, Any] | None = None) -> dic
     return task_envelope(task)
 
 
+@router.post("/deep-scan-local-review")
+def review_candidate_radar_deep_scan_local(payload: dict[str, Any] | None = None) -> dict:
+    task = candidate_service.run_candidate_deep_scan_local_review_task(payload)
+    return task_envelope(task)
+
+
 @router.post("/browser-qa-review")
 def review_candidate_radar_browser_qa(payload: dict[str, Any] | None = None) -> dict:
     task = candidate_service.run_candidate_browser_qa_review_task(payload)

@@ -23,3 +23,12 @@ def run_candidate_radar_full_pool_local_scan(payload: dict[str, Any] | None = No
 @task("run_candidate_radar_deep_scan_plan")
 def run_candidate_radar_deep_scan_plan(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     return create_task_stub("run_candidate_radar_deep_scan_plan", output_packet_key="command_center_3_candidate_radar_cache", payload=payload)
+
+
+@task("run_candidate_radar_deep_scan_local_review")
+def run_candidate_radar_deep_scan_local_review(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    return create_task_stub(
+        "run_candidate_radar_deep_scan_local_review",
+        output_packet_key="command_center_3_candidate_radar_cache",
+        payload=payload,
+    )

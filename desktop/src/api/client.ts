@@ -302,6 +302,13 @@ export function postCandidateRadarDeepScanPlan(payload: Record<string, unknown> 
   });
 }
 
+export function postCandidateRadarDeepScanLocalReview(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/candidate-radar/deep-scan-local-review", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function postCandidateRadarBrowserQaReview(payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>("/api/candidate-radar/browser-qa-review", {
     method: "POST",

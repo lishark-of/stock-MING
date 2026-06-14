@@ -203,6 +203,13 @@ SCAN_MODE_STATUS_ROWS = [
         "notes": "Deep-scan plan is a local readiness checklist; it does not scan, refresh providers, score candidates, or call DeepSeek.",
     },
     {
+        "scan_mode": "deep_scan_local_review",
+        "status": "implemented_local_review_receipt",
+        "scope": "local candidate evidence/parity/provider/freshness review",
+        "external_calls": False,
+        "notes": "Reviews local candidate evidence and gaps without DeepSeek/provider calls; production deep_scan remains pending.",
+    },
+    {
         "scan_mode": "manual_deep_research",
         "status": "planned_manual_only",
         "scope": "DeepSeek explanation for selected candidate",
@@ -1611,6 +1618,8 @@ def _scan_execution_summary(
         if scan_mode == "full_pool_local_scan"
         else "deep_scan_plan"
         if scan_mode == "deep_scan_plan"
+        else "deep_scan_local_review"
+        if scan_mode == "deep_scan_local_review"
         else "local_pool_scan"
         if scan_mode in LOCAL_POOL_SCAN_MODES
         else "quick_cache_scan"
@@ -1696,7 +1705,8 @@ def _scan_acceptance_rows(
         {
             "check_key": "scan_mode_contract",
             "status": "passed"
-            if scan_mode in SUPPORTED_LOCAL_SCAN_MODES or scan_mode in {"cache_only", "full_pool_plan"}
+            if scan_mode in SUPPORTED_LOCAL_SCAN_MODES
+            or scan_mode in {"cache_only", "full_pool_plan", "deep_scan_local_review"}
             else "fallback_reported",
             "observed": scan_mode,
             "user_visible": True,
@@ -1739,8 +1749,16 @@ def _scan_acceptance_rows(
         },
         {
             "check_key": "deep_scan_boundary",
-            "status": "plan_only" if deep_scan_plan_ready else "not_executed",
-            "observed": "deep_scan_done=false; plan records no-feature-loss readiness and does not call providers or DeepSeek.",
+            "status": "local_review_receipt"
+            if scan_mode == "deep_scan_local_review"
+            else "plan_only"
+            if deep_scan_plan_ready
+            else "not_executed",
+            "observed": (
+                "local_deep_scan_review_done=true; deep_scan_done=false; deepseek_called=false; provider_refresh_executed=false."
+                if scan_mode == "deep_scan_local_review"
+                else "deep_scan_done=false; plan records no-feature-loss readiness and does not call providers or DeepSeek."
+            ),
             "user_visible": True,
         },
         {
@@ -4794,6 +4812,172 @@ def _build_deep_scan_plan(
     }
 
 
+def _deep_scan_local_review_row(
+    review_key: str,
+    status: str,
+    *,
+    passed: bool,
+    production_blocker: bool,
+    evidence: str,
+) -> dict[str, Any]:
+    return {
+        "review_key": review_key,
+        "status": status,
+        "passed": bool(passed),
+        "production_blocker": bool(production_blocker),
+        "evidence": evidence,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _deep_scan_local_review_receipt(
+    *,
+    scan_mode: str,
+    candidate_rows: list[dict[str, Any]],
+    deep_scan_plan: Mapping[str, Any],
+    legacy_parity_acceptance: Mapping[str, Any],
+    coverage: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    is_local_review = scan_mode == "deep_scan_local_review"
+    reviewed_count = len(candidate_rows[:PRIORITY_EXPLANATION_LIMIT]) if is_local_review else 0
+    missing_evidence_count = sum(1 for row in candidate_rows[:PRIORITY_EXPLANATION_LIMIT] if _candidate_data_gap_count(row))
+    missing_trigger_count = sum(
+        1
+        for row in candidate_rows[:PRIORITY_EXPLANATION_LIMIT]
+        if row.get("trigger_condition") in (None, "", [], {})
+        or row.get("invalidation_condition") in (None, "", [], {})
+    )
+    provider_gap_count = int(deep_scan_plan.get("provider_gap_count") or 0)
+    legacy_gap_count = int(legacy_parity_acceptance.get("production_blocker_count") or 0)
+    freshness = _as_dict(coverage.get("freshness_state"))
+    local_review_done = is_local_review and reviewed_count > 0
+    rows = [
+        _deep_scan_local_review_row(
+            "explicit_post_task_required",
+            "passed" if is_local_review else "not_applicable",
+            passed=is_local_review,
+            production_blocker=False,
+            evidence=f"scan_mode={scan_mode}; page_render_starts_deep_scan=false; cache_get_starts_deep_scan=false",
+        ),
+        _deep_scan_local_review_row(
+            "local_candidate_evidence_reviewed",
+            "passed" if reviewed_count else "blocked_empty_candidates",
+            passed=reviewed_count > 0,
+            production_blocker=not local_review_done,
+            evidence=f"reviewed_candidate_count={reviewed_count}; missing_evidence_count={missing_evidence_count}",
+        ),
+        _deep_scan_local_review_row(
+            "trigger_invalidation_reviewed",
+            "gaps_visible" if missing_trigger_count else "passed",
+            passed=True,
+            production_blocker=bool(missing_trigger_count),
+            evidence=f"missing_trigger_or_invalidation_count={missing_trigger_count}",
+        ),
+        _deep_scan_local_review_row(
+            "legacy_parity_gaps_visible",
+            "gaps_visible" if legacy_gap_count else "passed",
+            passed=True,
+            production_blocker=bool(legacy_gap_count),
+            evidence=f"legacy_parity_production_blocker_count={legacy_gap_count}",
+        ),
+        _deep_scan_local_review_row(
+            "provider_not_refreshed",
+            "provider_gaps_visible" if provider_gap_count else "passed",
+            passed=True,
+            production_blocker=True,
+            evidence=f"provider_gap_count={provider_gap_count}; provider_refresh_executed=false",
+        ),
+        _deep_scan_local_review_row(
+            "deepseek_not_called",
+            "passed",
+            passed=True,
+            production_blocker=True,
+            evidence="Deep-scan local review does not call DeepSeek; future model explanation stays manual/button-gated.",
+        ),
+        _deep_scan_local_review_row(
+            "freshness_boundary_visible",
+            "research_only_reported" if freshness.get("source") == "missing" else "visible",
+            passed=True,
+            production_blocker=True,
+            evidence=f"freshness={freshness.get('source') or 'missing'}:{freshness.get('state') or 'unknown'}",
+        ),
+        _deep_scan_local_review_row(
+            "production_deep_scan_acceptance_pending",
+            "pending_provider_model_worker_browser_acceptance",
+            passed=False,
+            production_blocker=True,
+            evidence=(
+                f"local_review_done={local_review_done}; deep_scan_plan_status={deep_scan_plan.get('status')}; "
+                "deep_scan_done=false; provider_backed_acceptance_done=false"
+            ),
+        ),
+        _deep_scan_local_review_row(
+            "trade_action_boundary",
+            "passed",
+            passed=True,
+            production_blocker=False,
+            evidence="Deep-scan local review is research-only and never mutates strategy action, holdings, or orders.",
+        ),
+    ]
+    local_blockers = [row["review_key"] for row in rows if not row.get("passed") and not row.get("production_blocker")]
+    production_blockers = [row["review_key"] for row in rows if row.get("production_blocker")]
+    receipt = {
+        "schema_version": "candidate_radar_deep_scan_local_review_receipt.v1",
+        "status": (
+            "deep_scan_local_review_ready_production_pending"
+            if local_review_done
+            else "deep_scan_local_review_blocked_empty_candidates"
+            if is_local_review
+            else "deep_scan_local_review_not_run"
+        ),
+        "scope": "explicit_local_candidate_deep_review_not_model_or_provider_execution",
+        "ltg": "LTG-13",
+        "scan_mode": scan_mode,
+        "local_deep_scan_review_done": local_review_done,
+        "deep_scan_done": False,
+        "deep_scan_validation_done": False,
+        "provider_backed_acceptance_done": False,
+        "deepseek_called": False,
+        "worker_backed_execution_done": False,
+        "browser_visual_qa_done": False,
+        "browser_performance_trace_done": False,
+        "legacy_retirement_ready": False,
+        "legacy_fallback_required": True,
+        "reviewed_candidate_count": reviewed_count,
+        "missing_evidence_count": missing_evidence_count,
+        "missing_trigger_or_invalidation_count": missing_trigger_count,
+        "provider_gap_count": provider_gap_count,
+        "legacy_parity_production_blocker_count": legacy_gap_count,
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "row_count": len(rows),
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+        "not_allowed_next_steps": [
+            "treat_local_deep_review_as_deep_scan_done",
+            "call_deepseek_from_local_review",
+            "refresh_provider_from_deep_scan_local_review",
+            "retire_legacy_radar_after_local_review_only",
+            "convert_review_rows_to_buy_instruction",
+        ],
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "rows": rows,
+        "note": "This receipt reviews local candidate evidence and feature/provider/freshness gaps only. It is not DeepSeek execution, provider-backed acceptance, or production deep_scan completion.",
+    }
+    return receipt, rows
+
+
 def _build_candidate_radar_packet(
     snapshot: Mapping[str, Any],
     *,
@@ -4882,9 +5066,21 @@ def _build_candidate_radar_packet(
         full_pool_scan_plan=plan,
         coverage=coverage,
     )
+    deep_scan_local_review_receipt, deep_scan_local_review_rows = _deep_scan_local_review_receipt(
+        scan_mode=scan_mode,
+        candidate_rows=candidate_rows,
+        deep_scan_plan=deep_plan,
+        legacy_parity_acceptance=legacy_parity_acceptance_receipt,
+        coverage=coverage,
+    )
     counts["full_pool_local_execution_row_count"] = full_pool_local_execution_receipt["row_count"]
     counts["full_pool_local_execution_candidate_count"] = full_pool_local_execution_receipt["normalized_candidate_count"]
     counts["full_pool_local_execution_production_blocker_count"] = full_pool_local_execution_receipt[
+        "production_blocker_count"
+    ]
+    counts["deep_scan_local_review_row_count"] = deep_scan_local_review_receipt["row_count"]
+    counts["deep_scan_local_review_candidate_count"] = deep_scan_local_review_receipt["reviewed_candidate_count"]
+    counts["deep_scan_local_review_production_blocker_count"] = deep_scan_local_review_receipt[
         "production_blocker_count"
     ]
     full_pool_blocker_rows = _as_list(plan.get("blocker_rows"))
@@ -5072,6 +5268,8 @@ def _build_candidate_radar_packet(
         "full_pool_required_signal_rows": _as_list(plan.get("required_signal_rows")),
         "full_pool_blocker_rows": full_pool_blocker_rows,
         "deep_scan_plan": deep_plan,
+        "deep_scan_local_review_receipt": deep_scan_local_review_receipt,
+        "deep_scan_local_review_rows": deep_scan_local_review_rows,
         "deep_scan_stage_rows": _as_list(deep_plan.get("stage_rows")),
         "deep_scan_parity_rows": _as_list(deep_plan.get("parity_rows")),
         "deep_scan_required_signal_rows": _as_list(deep_plan.get("required_signal_rows")),
@@ -5114,6 +5312,10 @@ def _build_candidate_radar_packet(
             "deep_scan_plan_provider_refresh_executed": False,
             "deep_scan_plan_deepseek_called": False,
             "deep_scan_feature_loss_gaps_visible": True,
+            "deep_scan_local_review_is_button_gated": scan_mode == "deep_scan_local_review",
+            "deep_scan_local_review_is_not_deep_scan_done": True,
+            "deep_scan_local_review_does_not_call_deepseek": True,
+            "deep_scan_local_review_does_not_refresh_provider": True,
             "does_not_run_backtest": True,
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
@@ -5243,6 +5445,19 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
         )
         view["full_pool_local_execution_receipt"] = full_pool_local_receipt
         view["full_pool_local_execution_rows"] = full_pool_local_rows
+    if not isinstance(view.get("deep_scan_local_review_receipt"), dict):
+        deep_scan_local_receipt, deep_scan_local_rows = _deep_scan_local_review_receipt(
+            scan_mode=persisted_scan_mode,
+            candidate_rows=[row for row in _as_list(view.get("candidate_rows")) if isinstance(row, dict)],
+            deep_scan_plan=_as_dict(view.get("deep_scan_plan")),
+            legacy_parity_acceptance=_as_dict(view.get("legacy_parity_acceptance_receipt")),
+            coverage={
+                "freshness_state": _as_dict(view.get("freshness_state")),
+                "coverage_detail_summary": _as_dict(view.get("coverage_detail_summary")),
+            },
+        )
+        view["deep_scan_local_review_receipt"] = deep_scan_local_receipt
+        view["deep_scan_local_review_rows"] = deep_scan_local_rows
     view["candidate_browser_qa_evidence_summary"] = candidate_browser_qa_evidence_summary
     view["candidate_browser_qa_evidence_rows"] = candidate_browser_qa_evidence_rows
     view["candidate_browser_qa_review_contract"] = candidate_browser_qa_review_contract
@@ -5271,6 +5486,10 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     counts["full_pool_local_execution_production_blocker_count"] = full_pool_local_receipt.get(
         "production_blocker_count"
     )
+    deep_scan_local_receipt = _as_dict(view.get("deep_scan_local_review_receipt"))
+    counts["deep_scan_local_review_row_count"] = deep_scan_local_receipt.get("row_count")
+    counts["deep_scan_local_review_candidate_count"] = deep_scan_local_receipt.get("reviewed_candidate_count")
+    counts["deep_scan_local_review_production_blocker_count"] = deep_scan_local_receipt.get("production_blocker_count")
     view["counts"] = counts
     policy = _as_dict(view.get("policy"))
     policy["candidate_browser_qa_evidence_reads_local_artifact_only"] = True
@@ -5287,6 +5506,10 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     policy["full_pool_local_execution_is_button_gated"] = persisted_scan_mode == "full_pool_local_scan"
     policy["full_pool_local_execution_is_not_provider_backed_acceptance"] = True
     policy["full_pool_local_execution_does_not_refresh_provider"] = True
+    policy["deep_scan_local_review_is_button_gated"] = persisted_scan_mode == "deep_scan_local_review"
+    policy["deep_scan_local_review_is_not_deep_scan_done"] = True
+    policy["deep_scan_local_review_does_not_call_deepseek"] = True
+    policy["deep_scan_local_review_does_not_refresh_provider"] = True
     view["policy"] = policy
     warnings = _as_list(view.get("warnings"))
     first_warning = "GET /api/candidate-radar/cache 只读展示已持久化的 local scan 结果；不会自动全市场扫描。"
@@ -5683,6 +5906,97 @@ def run_candidate_deep_scan_plan_task(payload: Any = None) -> dict[str, Any]:
         current_step="candidate_radar_deep_scan_plan_ready",
         call_ledger=[ledger],
         warning="candidate_radar_deep_scan_plan_ready_no_external_call",
+    ) or task
+
+
+def run_candidate_deep_scan_local_review_task(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        "run_candidate_radar_deep_scan_local_review",
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="candidate_radar_deep_scan_local_review_queued",
+        warnings=[
+            "下一票雷达 deep-scan local review 只审查本地候选证据、parity、provider 和 freshness 缺口；不会调用 Tushare、DeepSeek 或 GitHub。",
+            "本地 deep review 不是 deep_scan 完成，不生成买入候选，不修改 strategy action。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="reading_local_deep_scan_review_inputs",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    snapshot = packet_service.load_snapshot_cache()
+    previous_packet = _read_persisted_packet()
+    safe_snapshot = _safe_value(snapshot)
+    snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
+    now = _now_iso()
+    plan = _build_deep_scan_plan(snapshot_map, payload_safe, now=now)
+    request_params_safe = {
+        "scan_mode": "deep_scan_local_review",
+        "local_review_only": True,
+        "scan_depth": plan.get("requested_depth"),
+        "legacy_feature_gap_count": plan.get("legacy_feature_gap_count"),
+        "provider_gap_count": plan.get("provider_gap_count"),
+        "external_sources_allowed": False,
+        "deep_scan_done": False,
+        "deepseek_called": False,
+        "provider_refresh_executed": False,
+    }
+    packet = _build_candidate_radar_packet(
+        snapshot_map,
+        mode="deep_scan_local_review",
+        cache_source="deep_scan_local_review_task",
+        scan_mode="deep_scan_local_review",
+        request_params_safe=request_params_safe,
+        deep_scan_plan=plan,
+        previous_packet=previous_packet,
+    )
+    receipt = _as_dict(packet.get("deep_scan_local_review_receipt"))
+    ledger = _candidate_call_ledger_row(
+        api="local_candidate_radar_deep_scan_local_review",
+        source_snapshot="command_center_latest.json",
+        row_count=len(_as_list(packet.get("candidate_rows"))),
+        call_status=receipt.get("status") or "deep_scan_local_review_ready_production_pending",
+        request_params_safe=request_params_safe,
+    )
+    packet["task_id"] = task["task_id"]
+    packet["deep_scan_local_review_completed_at"] = now
+    packet["call_ledger"] = [ledger]
+    packet["warnings"] = [
+        "下一票雷达 deep-scan local review 已写入本地审查收据；不刷新 provider、不调用 DeepSeek、不代表 deep_scan 生产验收完成。"
+    ] + [warning for warning in _as_list(packet.get("warnings")) if "deep-scan local review" not in str(warning)]
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
+    except Exception:
+        ledger["call_status"] = "deep_scan_local_review_storage_write_failed"
+        ledger["error_message_safe"] = "candidate_radar_deep_scan_local_review_sqlite_write_failed"
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="candidate_radar_deep_scan_local_review_storage_write_failed",
+            error_message_safe="candidate_radar_deep_scan_local_review_sqlite_write_failed",
+            call_ledger=[ledger],
+            warning="candidate_radar_deep_scan_local_review_failed_no_external_call",
+        ) or task
+
+    final_step = "candidate_radar_deep_scan_local_review_completed"
+    final_warning = "candidate_radar_deep_scan_local_review_completed_no_external_call"
+    if not _as_list(packet.get("candidate_rows")):
+        final_step = "candidate_radar_deep_scan_local_review_empty_candidates"
+        final_warning = "candidate_radar_deep_scan_local_review_empty_candidates_no_external_call"
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step=final_step,
+        call_ledger=[ledger],
+        warning=final_warning,
     ) or task
 
 

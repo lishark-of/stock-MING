@@ -29,6 +29,7 @@ REQUIRED_TASK_TYPES = {
     "run_candidate_radar_full_pool_plan",
     "run_candidate_radar_full_pool_local_scan",
     "run_candidate_radar_deep_scan_plan",
+    "run_candidate_radar_deep_scan_local_review",
     "run_candidate_radar_browser_qa_review",
 }
 REQUIRED_NO_FEATURE_LOSS_GAPS = {
@@ -116,13 +117,41 @@ def _snapshot_map() -> dict[str, Any]:
     return safe_snapshot if isinstance(safe_snapshot, dict) else {}
 
 
+def _contract_snapshot_with_candidates(snapshot_map: dict[str, Any]) -> dict[str, Any]:
+    if _list(snapshot_map.get("next_ticket_candidates")):
+        return snapshot_map
+    fixture = dict(snapshot_map)
+    fixture["next_ticket_candidates"] = [
+        {
+            "symbol": "000001.SZ",
+            "name": "contract_candidate_a",
+            "score": 72,
+            "trigger_condition": "local evidence trigger present",
+            "invalidation_condition": "local invalidation present",
+            "data_gaps": ["provider_backed_acceptance_pending"],
+            "evidence": ["local cache row"],
+        },
+        {
+            "symbol": "000002.SZ",
+            "name": "contract_candidate_b",
+            "score": 68,
+            "trigger_condition": "local trigger present",
+            "invalidation_condition": "local invalidation present",
+            "data_gaps": ["deep_scan_acceptance_pending"],
+            "evidence": ["local cache row"],
+        },
+    ]
+    return fixture
+
+
 def build_contract() -> dict[str, Any]:
     now = "2026-06-13T10:00:00"
     snapshot_map = _snapshot_map()
+    contract_snapshot = _contract_snapshot_with_candidates(snapshot_map)
     cache_packet = candidate_service.read_candidate_radar_cache()
-    full_pool_plan = candidate_service._build_full_pool_scan_plan(snapshot_map, {}, now=now)
+    full_pool_plan = candidate_service._build_full_pool_scan_plan(contract_snapshot, {}, now=now)
     local_universe_packet = candidate_service._build_candidate_radar_packet(
-        snapshot_map,
+        contract_snapshot,
         mode="full_pool_local_scan",
         cache_source="local_contract",
         scan_mode="full_pool_local_scan",
@@ -137,13 +166,22 @@ def build_contract() -> dict[str, Any]:
         },
         full_pool_scan_plan=full_pool_plan,
     )
-    deep_scan_plan = candidate_service._build_deep_scan_plan(snapshot_map, {}, now=now)
+    deep_scan_plan = candidate_service._build_deep_scan_plan(contract_snapshot, {}, now=now)
     plan_packet = candidate_service._build_candidate_radar_packet(
-        snapshot_map,
+        contract_snapshot,
         mode="local_contract_plan",
         cache_source="local_contract",
         scan_mode="deep_scan_plan",
         request_params_safe={"plan_only": True, "external_sources_allowed": False},
+        full_pool_scan_plan=full_pool_plan,
+        deep_scan_plan=deep_scan_plan,
+    )
+    local_deep_review_packet = candidate_service._build_candidate_radar_packet(
+        contract_snapshot,
+        mode="deep_scan_local_review",
+        cache_source="local_contract",
+        scan_mode="deep_scan_local_review",
+        request_params_safe={"local_review_only": True, "external_sources_allowed": False},
         full_pool_scan_plan=full_pool_plan,
         deep_scan_plan=deep_scan_plan,
     )
@@ -193,6 +231,12 @@ def build_contract() -> dict[str, Any]:
         for row in _list(local_universe_packet.get("full_pool_local_execution_rows"))
         if isinstance(row, dict)
     }
+    deep_scan_local_receipt = _dict(local_deep_review_packet.get("deep_scan_local_review_receipt"))
+    deep_scan_local_rows = {
+        str(row.get("review_key") or ""): row
+        for row in _list(local_deep_review_packet.get("deep_scan_local_review_rows"))
+        if isinstance(row, dict)
+    }
     browser_qa_evidence = _dict(cache_packet.get("candidate_browser_qa_evidence_summary"))
     browser_qa_review = _dict(cache_packet.get("candidate_browser_qa_review_contract"))
     policy = _dict(cache_packet.get("policy"))
@@ -235,6 +279,12 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_candidate_radar_deep_scan_plan"].get("route") == "POST /api/candidate-radar/deep-scan-plan"
             and task_rows["run_candidate_radar_deep_scan_plan"].get("plan_only") is True
             and task_rows["run_candidate_radar_deep_scan_plan"].get("deep_scan_done") is False
+            and task_rows["run_candidate_radar_deep_scan_local_review"].get("route")
+            == "POST /api/candidate-radar/deep-scan-local-review"
+            and task_rows["run_candidate_radar_deep_scan_local_review"].get("local_review_only") is True
+            and task_rows["run_candidate_radar_deep_scan_local_review"].get("deep_scan_done") is False
+            and task_rows["run_candidate_radar_deep_scan_local_review"].get("provider_backed_acceptance_done") is False
+            and task_rows["run_candidate_radar_deep_scan_local_review"].get("deepseek_called") is False
             and task_rows["run_candidate_radar_browser_qa_review"].get("route")
             == "POST /api/candidate-radar/browser-qa-review"
             and task_rows["run_candidate_radar_browser_qa_review"].get("browser_qa_review_only") is True
@@ -273,6 +323,40 @@ def build_contract() -> dict[str, Any]:
             and "full_pool_local_execution_receipt" in candidate_frontend
             and "Full-pool 本地执行收据" in candidate_frontend,
             "Local full-pool execution must be visible as a receipt while provider-backed full-market acceptance stays pending.",
+        ),
+        _row(
+            "deep_scan_local_review_receipt_is_local_not_model_execution",
+            deep_scan_local_receipt.get("schema_version") == "candidate_radar_deep_scan_local_review_receipt.v1"
+            and deep_scan_local_receipt.get("status") == "deep_scan_local_review_ready_production_pending"
+            and deep_scan_local_receipt.get("scope") == "explicit_local_candidate_deep_review_not_model_or_provider_execution"
+            and deep_scan_local_receipt.get("local_deep_scan_review_done") is True
+            and deep_scan_local_receipt.get("deep_scan_done") is False
+            and deep_scan_local_receipt.get("deep_scan_validation_done") is False
+            and deep_scan_local_receipt.get("provider_backed_acceptance_done") is False
+            and deep_scan_local_receipt.get("deepseek_called") is False
+            and deep_scan_local_receipt.get("worker_backed_execution_done") is False
+            and deep_scan_local_receipt.get("legacy_retirement_ready") is False
+            and deep_scan_local_receipt.get("legacy_fallback_required") is True
+            and int(deep_scan_local_receipt.get("production_blocker_count") or 0) > 0
+            and _dict(deep_scan_local_rows.get("local_candidate_evidence_reviewed")).get("passed") is True
+            and _dict(deep_scan_local_rows.get("deepseek_not_called")).get("production_blocker") is True
+            and _dict(deep_scan_local_rows.get("production_deep_scan_acceptance_pending")).get("production_blocker") is True
+            and "treat_local_deep_review_as_deep_scan_done" in _list(deep_scan_local_receipt.get("not_allowed_next_steps"))
+            and "call_deepseek_from_local_review" in _list(deep_scan_local_receipt.get("not_allowed_next_steps"))
+            and _flag_false(
+                deep_scan_local_receipt,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and deep_scan_local_receipt.get("does_not_execute_trades") is True
+            and deep_scan_local_receipt.get("does_not_modify_strategy_action") is True
+            and deep_scan_local_receipt.get("candidate_is_not_buy_instruction") is True
+            and "postCandidateRadarDeepScanLocalReview" in candidate_frontend
+            and "deep_scan_local_review_receipt" in candidate_frontend
+            and "Deep-scan 本地审查收据" in candidate_frontend,
+            "Deep-scan local review must stay a local evidence review receipt; it must not call DeepSeek/providers or mark deep_scan production acceptance complete.",
         ),
         _row(
             "fast_scan_readiness_is_local_pending",
@@ -640,6 +724,7 @@ def build_contract() -> dict[str, Any]:
             and "legacy_retirement_ready" in this_script
             and "candidate_radar_quick_scan_receipt.v1" in this_script
             and "candidate_radar_full_pool_local_execution_receipt.v1" in this_script
+            and "candidate_radar_deep_scan_local_review_receipt.v1" in this_script
             and "candidate_radar_production_activation_receipt.v1" in this_script
             and "candidate_is_not_buy_instruction" in this_script
             and ("request" + "s") not in this_script
@@ -670,6 +755,7 @@ def build_contract() -> dict[str, Any]:
         "candidate_radar_activation_receipt_ready": activation_receipt.get("local_activation_receipt_ready") is True,
         "legacy_parity_acceptance_receipt_ready": legacy_parity_acceptance.get("local_acceptance_receipt_ready") is True,
         "full_pool_local_execution_receipt_ready": full_pool_local_receipt.get("local_full_pool_execution_done") is True,
+        "deep_scan_local_review_receipt_ready": deep_scan_local_receipt.get("local_deep_scan_review_done") is True,
         "cache_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -699,6 +785,9 @@ def build_contract() -> dict[str, Any]:
             "full_pool_local_execution_status": full_pool_local_receipt.get("status"),
             "full_pool_local_execution_candidate_count": full_pool_local_receipt.get("normalized_candidate_count"),
             "full_pool_local_execution_production_blocker_count": full_pool_local_receipt.get("production_blocker_count"),
+            "deep_scan_local_review_status": deep_scan_local_receipt.get("status"),
+            "deep_scan_local_review_candidate_count": deep_scan_local_receipt.get("reviewed_candidate_count"),
+            "deep_scan_local_review_production_blocker_count": deep_scan_local_receipt.get("production_blocker_count"),
             "activation_receipt_status": activation_receipt.get("status"),
             "activation_receipt_production_blocker_count": activation_receipt.get("production_blocker_count"),
             "activation_receipt_pending_evidence_count": activation_receipt.get("pending_evidence_count"),
