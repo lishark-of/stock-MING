@@ -77,6 +77,18 @@ COMMAND_CENTER_LIVE_ALLOW_FULL_POOL=false
 
 `live_light` target behavior is intentionally narrow: the page must render from cache first, create at most one background bootstrap task inside the rate limit, show the current mode and task status, and degrade safely when the task fails. The task may refresh current target / holdings / watchlist light data, refresh factor and next-session caches, and optionally enqueue a governed DeepSeek pro explanation after data is ready. It must not block UI, mutate `strategy action`, change prices or holdings, write `operation_zones`, execute trades, or expose token/key material.
 
+`live_light` therefore changes the old "startup never automates anything" rule into a mode-layered rule: startup automation is forbidden in `cache_only`, manual in `manual`, and allowed only as an auditable background POST task in `live_light`. React may request the task after the first cache render, but React still never calls Tushare, DeepSeek, GitHub, Python modules, or adapters directly.
+
+Target `live_light` bootstrap scope:
+
+| area | allowed in `live_light` | required boundary |
+|---|---|---|
+| Tushare light refresh | `trade_cal` if needed, `daily`, `daily_basic`, `moneyflow` for current target / holdings / watchlist, default capped at 20 symbols | POST task only, `call_ledger`, safe errors, no token exposure |
+| Staged market evidence | margin, limit/emotion, chip, dragon-tiger, disclosure, hard-risk groups | opt-in payload/config only; matrix or no-record rows are not negative evidence |
+| DeepSeek pro explanation | optional after Tushare / factor / next-session cache is ready | model ledger, input/output hash, sanitizer, parse-failed discard, no numeric/action overwrite |
+| Search / radar quant projection | a searched symbol or bounded watchlist subset can create a one-shot task for "生成 3.0 量化推演" / "一键生成量化投研图谱" | no full-pool or deep-scan on render; progress and gaps must stay visible |
+| Intraday or realtime evidence | allowed only through configured provider adapters when Tushare is insufficient | provider identity, freshness, call ledger, mode gate, and safe error are mandatory |
+
 This mode layering also applies to search-driven research. A future stock search or "生成 3.0 量化推演" action should create a POST task that validates the symbol, refreshes allowed light data, writes call ledger/model ledger, updates Factor Quant Hub and Next Session cache, and displays provenance, freshness, DeepSeek status, and chart results. It remains research-only and cannot turn DeepSeek text, factor scores, or radar candidates into buy/sell instructions.
 
 Current implementation checkpoint: `GET /api/bootstrap/status` now exposes the runtime mode cache, safe configuration rows, mode rows, and `live_light` policy. Settings / Config Health reads and displays that status. This is still cache-only/read-only: it does not create a bootstrap task, does not call Tushare/DeepSeek/GitHub, does not read token/key values, and keeps `bootstrap_task_implemented=false`.
@@ -259,14 +271,20 @@ Harden A-share trading-calendar freshness production gate
 3. Add per-interface request parameter contracts and safe error states.
 4. Persist only production-approved datasets; keep other results as validation records until storage contracts are ready.
 5. Add a future `live_light` bootstrap task that can refresh only current target / holdings / watchlist light data through POST task, with `daily`, `daily_basic`, `moneyflow`, and `trade_cal if needed` as the initial allowed interface set.
+6. Add staged `live_light` interface switches for margin, limit/emotion, chip, dragon-tiger, disclosure, and hard-risk evidence; keep them opt-in and separate from the default light set.
+7. Define an intraday-provider adapter contract before any realtime market-state panel uses non-Tushare data.
 
 ### Acceptance Criteria
 
 - Every selected interface runs through POST task pipeline only.
 - `cache_only` GET cache and React render never call Tushare directly.
 - Future `live_light` refresh can only be created by a POST bootstrap task after initial cache render, with rate limit, dedupe, symbol limit, and visible mode state.
+- Future `live_light` defaults to current target / current holdings / watchlist and defaults to at most 20 symbols.
+- `trade_cal if needed`, `daily`, `daily_basic`, and `moneyflow` are the only default light-refresh APIs; staged APIs require explicit payload/config.
 - Every interface records `call_ledger`, `row_count`, `data_date`, `local_fetched_at`, `call_status`, and `error_message_safe`.
 - Permission denied, no record, empty window, parse failure, missing parameter, and blocked state are distinguishable.
+- `no_record` is treated as an evidence state, not as negative market evidence or a failed validation by itself.
+- Any non-Tushare intraday adapter must expose provider identity, freshness, call ledger, mode gate, and safe-error status before UI display.
 - Unselected APIs never display as `verified`.
 - `api_acceptance_audit.status=acceptance_audit_passed` only means call-ledger semantics are safe; `full_interface_acceptance_done` must remain false until all declared APIs are selected and provider-validated.
 - `failure_mode_qa_contract` shows observed vs ready-not-observed failure modes without raw provider errors, stack traces, token, or key material.
@@ -701,6 +719,7 @@ Enable production-ready worker task orchestration
 4. Keep automatic explanation disabled unless explicitly enabled and bounded.
 5. Promote `deepseek_json_stability_audit` from local readiness to real benchmark evidence only after provider-backed samples meet the target.
 6. Add future `live_light` DeepSeek after-task behavior only after data tasks complete, with same-input hash dedupe and sanitizer-first writeback.
+7. Keep the automatic output schema narrow: `summary`, `support_notes`, `suppress_notes`, `conflict_notes`, `missing_data_notes`, and `discipline_notes` only.
 
 ### Acceptance Criteria
 
@@ -716,6 +735,8 @@ Enable production-ready worker task orchestration
 - `scripts/deepseek_governance_contract.py` passes in the local push gate while reporting `provider_benchmark_done=false`, `response_format_enforced=false`, `retry_repair_policy_ready=false`, `auto_after_task_production_ready=false`, `deepseek_production_activation_receipt_ready=true`, and `production_deepseek_explanation_complete=false`.
 - GET cache and React render must keep `model_call_status=not_called`.
 - Future `live_light` DeepSeek may only run through POST task / worker after data readiness, must record model used, status, token usage, parse status, cache hit/miss, input hash, and output hash, and must keep failed parse out of the packet.
+- Future `live_light` DeepSeek output must be sanitized to the six-field explanation schema: `summary`, `support_notes`, `suppress_notes`, `conflict_notes`, `missing_data_notes`, and `discipline_notes`.
+- Same `input_hash` should not trigger duplicate model calls inside the configured dedupe window.
 
 ### Forbidden
 
@@ -1149,6 +1170,7 @@ Keep real trading isolated from Command Center 3 automation
 6. Move slow provider refreshes behind explicit POST tasks instead of radar page render.
 7. Add future search-driven "生成 3.0 量化推演" / "一键生成量化投研图谱" task for a single symbol or bounded watchlist subset.
 8. Allow `live_light` radar/quant bootstrap only after cache render, with symbol limit, rate limit, task dedupe, and visible skipped state.
+9. Preserve the legacy next-ticket radar signal groups before retiring fallback: Top / Watch / Excluded split, evidence links, scoring dimensions, trigger / invalidation logic, holding comparison, candidate pool sources, scan filters, timeout fallback, manual deep research path, and output fields.
 
 ### Acceptance Criteria
 
@@ -1163,6 +1185,8 @@ Keep real trading isolated from Command Center 3 automation
 - Deep-scan plan lists no-feature-loss parity rows, required signal rows, freshness, worker blockers, and trade/model boundaries without executing deep scan or calling DeepSeek.
 - Deep-scan local review can be run only through explicit POST, reviews existing local candidate rows and gaps, writes `deep_scan_local_review_receipt`, and must keep `deep_scan_done=false`, `deepseek_called=false`, `provider_backed_acceptance_done=false`, `legacy_retirement_ready=false`, and `candidate_is_not_buy_instruction=true`.
 - `fast_scan_readiness_audit.local_fast_scan_ready=true` only when page-render, local task, legacy gap, provider gap, freshness, last-cache, full-pool, deep-scan and trade boundaries are all visible.
+- Search-to-quant projection validates the symbol, refreshes allowed light data, writes call ledger/model ledger, refreshes factor and next-session cache, builds ECharts payload, and shows task progress, provenance, freshness, factor support/suppress/neutral/missing, DeepSeek state, and chart results.
+- The 3.0 radar replacement cannot drop legacy radar functions silently; missing or degraded legacy signal coverage must appear as explicit coverage gaps.
 - `no_feature_loss_acceptance_contract.local_no_feature_loss_contract_ready=true` only means the local QA surface is visible; `production_radar_replacement_complete` remains false until browser performance, real full-pool/deep-scan execution, and provider-backed parity acceptance are complete.
 - `replacement_gap_triage_contract.local_triage_ready=true` only means blockers to retiring the legacy radar are classified and visible; `legacy_retirement_ready` must remain false while critical/provider/freshness/browser/performance/full-pool/deep-scan/provider-backed gaps remain.
 - `quick_scan_execution_receipt.local_quick_scan_receipt_ready=true` only means the local cache/quick/watchlist/custom execution receipt and its gaps are visible. It must keep `production_radar_replacement_complete=false`, `legacy_retirement_ready=false`, `full_pool_scan_done=false`, `deep_scan_done=false`, and `provider_backed_acceptance_done=false` until direct production evidence exists.
@@ -1337,10 +1361,11 @@ Add Command Center 3 motion clarity system
 - `live_light` 模式可以在初始 cache render 后创建一次限频后台 bootstrap task，用于轻量 Tushare 刷新和可选 DeepSeek pro 解释；这不是 render 直接外联。
 - `live_light` 默认关闭，必须可配置、可见、可审计、可跳过、可失败降级。
 - `live_full` 预留；全池/深扫不默认启用。
-- GitHub probe 不在页面启动时自动调用；如后续进入 `live_light`，仍需独立按钮或显式 task mode。
+- GitHub probe 不进入 `live_light` 默认启动链路；仍需独立按钮或显式 task mode。
 - DeepSeek 不作为数据源。
 - Factor 分数不直接改 `strategy action`。
 - 下一票雷达不在页面启动时做全市场扫描；`live_light` 只能覆盖当前标的/持仓/watchlist 的有界轻量任务。
+- 盘中实时信息若使用非 Tushare provider，必须显示 provider 标识、freshness、call ledger、模式门控和 safe error，不允许无标识混用数据源。
 - 雷达候选不作为买入指令。
 - 动效只增强可读性，不暗示交易确定性或紧迫性。
 - stale / expired / historical 数据不进当前 evidence。
