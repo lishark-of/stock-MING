@@ -1484,6 +1484,114 @@ def _build_trade_cal_provider_acceptance_dry_run(
     return receipt, rows
 
 
+def _latest_trade_cal_provider_acceptance_dry_run_from_tasks() -> tuple[
+    dict[str, Any],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    latest_task = next(
+        (
+            task
+            for task in task_service.list_task_statuses()
+            if str(task.get("task_type") or "") == TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_TASK_TYPE
+        ),
+        None,
+    )
+    if not latest_task:
+        return (
+            {
+                "schema_version": "data_health_latest_trade_cal_provider_acceptance_dry_run.v1",
+                "status": "no_trade_cal_provider_acceptance_dry_run_task_found",
+                "scope": "local_task_status_lookup_no_provider_execution",
+                "dry_run_status": "no_trade_cal_provider_acceptance_dry_run_task_found",
+                "latest_task_found": False,
+                "route": TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_ROUTE,
+                "task_type": TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_TASK_TYPE,
+                "latest_task_id": None,
+                "latest_task_status": None,
+                "latest_task_current_step": None,
+                "acceptance_scope_hash_short": "",
+                "receipt_visible": False,
+                "row_count": 0,
+                "credential_row_count": 0,
+                "blocking_row_count": 0,
+                "provider_execution_implemented": False,
+                "production_freshness_gate_complete": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+            [],
+            [],
+        )
+    payload_safe = latest_task.get("payload_safe") if isinstance(latest_task.get("payload_safe"), dict) else {}
+    receipt = payload_safe.get("trade_cal_provider_acceptance_dry_run_receipt")
+    rows = payload_safe.get("trade_cal_provider_acceptance_dry_run_rows")
+    credential_rows = payload_safe.get("credential_presence_rows")
+    receipt_safe = _safe_value(receipt) if isinstance(receipt, dict) else {}
+    row_safe = _safe_value(rows) if isinstance(rows, list) else []
+    credential_safe = _safe_value(credential_rows) if isinstance(credential_rows, list) else []
+    row_list = row_safe if isinstance(row_safe, list) else []
+    credential_list = credential_safe if isinstance(credential_safe, list) else []
+    receipt_map = receipt_safe if isinstance(receipt_safe, dict) else {}
+    task_summary = {
+        "task_id": latest_task.get("task_id"),
+        "task_type": latest_task.get("task_type"),
+        "task_status": latest_task.get("status"),
+        "current_step": latest_task.get("current_step"),
+        "created_at": latest_task.get("created_at"),
+        "updated_at": latest_task.get("updated_at"),
+        "finished_at": latest_task.get("finished_at"),
+        "storage_source": latest_task.get("storage_source"),
+        "call_ledger_count": len(latest_task.get("call_ledger") or []),
+        "task_log_count": len(latest_task.get("task_log") or []),
+    }
+    latest_receipt = {
+        "schema_version": "data_health_latest_trade_cal_provider_acceptance_dry_run.v1",
+        "status": "latest_trade_cal_provider_acceptance_dry_run_visible",
+        "scope": "local_task_status_lookup_no_provider_execution",
+        "latest_task_found": True,
+        "receipt_visible": bool(receipt_map),
+        "route": TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_ROUTE,
+        "task_type": TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_TASK_TYPE,
+        "latest_task": task_summary,
+        "latest_task_id": latest_task.get("task_id"),
+        "latest_task_status": latest_task.get("status"),
+        "latest_task_current_step": latest_task.get("current_step"),
+        "dry_run_status": receipt_map.get("status") or "missing_receipt",
+        "acceptance_scope_hash_short": receipt_map.get("acceptance_scope_hash_short") or "",
+        "acceptance_scope_hash_algorithm": receipt_map.get("acceptance_scope_hash_algorithm") or "",
+        "selected_apis": list(receipt_map.get("selected_apis") or []),
+        "ignored_apis": list(receipt_map.get("ignored_apis") or []),
+        "start_date": receipt_map.get("start_date"),
+        "end_date": receipt_map.get("end_date"),
+        "window_days": receipt_map.get("window_days"),
+        "credential_presence_summary": _safe_value(receipt_map.get("credential_presence_summary") or {}),
+        "allowed_next_step": receipt_map.get("allowed_next_step") or "",
+        "blocking_row_count": int(receipt_map.get("blocking_row_count") or 0),
+        "row_count": len(row_list),
+        "credential_row_count": len(credential_list),
+        "provider_execution_implemented": False,
+        "provider_backed_long_window_acceptance_done": False,
+        "production_freshness_gate_complete": False,
+        "cache_get_creates_task": False,
+        "cache_get_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "receipt": receipt_map,
+    }
+    return latest_receipt, row_list, credential_list
+
+
 def _first_value(snapshot: Mapping[str, Any], *keys: str) -> Any:
     for key in keys:
         value = snapshot.get(key)
@@ -2469,6 +2577,11 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             producer_coverage=current_evidence_producer_coverage_audit,
         )
     )
+    (
+        latest_trade_cal_provider_acceptance_dry_run,
+        latest_trade_cal_provider_acceptance_dry_run_rows,
+        latest_trade_cal_provider_acceptance_dry_run_credential_rows,
+    ) = _latest_trade_cal_provider_acceptance_dry_run_from_tasks()
 
     timeline_rows = _combined_rows(
         (timeline_value, "data_health_timeline", "event"),
@@ -2537,6 +2650,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "freshness_production_blocker_audit",
             "freshness_provider_acceptance_readiness_receipt",
             "freshness_provider_acceptance_activation_receipt",
+            "latest_trade_cal_provider_acceptance_dry_run",
             "current_evidence_freshness_qa_contract",
             "current_evidence_decision_surface_audit",
             "current_evidence_producer_coverage_audit",
@@ -2573,6 +2687,11 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         "freshness_provider_acceptance_readiness_rows": freshness_provider_acceptance_readiness_rows,
         "freshness_provider_acceptance_activation_receipt": freshness_provider_acceptance_activation_receipt,
         "freshness_provider_acceptance_activation_rows": freshness_provider_acceptance_activation_rows,
+        "latest_trade_cal_provider_acceptance_dry_run": latest_trade_cal_provider_acceptance_dry_run,
+        "latest_trade_cal_provider_acceptance_dry_run_rows": latest_trade_cal_provider_acceptance_dry_run_rows,
+        "latest_trade_cal_provider_acceptance_dry_run_credential_rows": (
+            latest_trade_cal_provider_acceptance_dry_run_credential_rows
+        ),
         "current_evidence_freshness_qa_contract": current_evidence_freshness_qa_contract,
         "current_evidence_freshness_qa_rows": current_evidence_freshness_qa_rows,
         "current_evidence_decision_surface_audit": current_evidence_decision_surface_audit,
@@ -2629,6 +2748,18 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             ),
             "freshness_provider_acceptance_activation_blocker_count": int(
                 freshness_provider_acceptance_activation_receipt.get("blocking_criterion_count") or 0
+            ),
+            "latest_trade_cal_provider_acceptance_dry_run_found": (
+                1 if latest_trade_cal_provider_acceptance_dry_run.get("latest_task_found") is True else 0
+            ),
+            "latest_trade_cal_provider_acceptance_dry_run_row_count": len(
+                latest_trade_cal_provider_acceptance_dry_run_rows
+            ),
+            "latest_trade_cal_provider_acceptance_dry_run_credential_row_count": len(
+                latest_trade_cal_provider_acceptance_dry_run_credential_rows
+            ),
+            "latest_trade_cal_provider_acceptance_dry_run_blocking_row_count": int(
+                latest_trade_cal_provider_acceptance_dry_run.get("blocking_row_count") or 0
             ),
             "current_evidence_freshness_qa_row_count": len(current_evidence_freshness_qa_rows),
             "current_evidence_freshness_qa_blocker_count": int(
@@ -2698,6 +2829,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "freshness_provider_acceptance_activation_receipt_is_local": True,
             "freshness_provider_acceptance_activation_receipt_calls_provider": False,
             "freshness_provider_acceptance_activation_receipt_is_not_completion": True,
+            "latest_trade_cal_provider_acceptance_dry_run_lookup_is_local": True,
+            "latest_trade_cal_provider_acceptance_dry_run_lookup_creates_task": False,
+            "latest_trade_cal_provider_acceptance_dry_run_lookup_calls_provider": False,
+            "latest_trade_cal_provider_acceptance_dry_run_is_not_acceptance": True,
             "current_evidence_freshness_qa_is_local_contract": True,
             "current_evidence_requires_expected_trade_date": True,
             "historical_samples_are_research_only": True,
@@ -2772,6 +2907,24 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 "freshness_provider_acceptance_activation_ready_for_explicit_task": bool(
                     freshness_provider_acceptance_activation_receipt.get("ready_for_explicit_provider_task")
                 ),
+                "latest_trade_cal_provider_acceptance_dry_run_status": (
+                    latest_trade_cal_provider_acceptance_dry_run.get("dry_run_status")
+                ),
+                "latest_trade_cal_provider_acceptance_dry_run_task_id": (
+                    latest_trade_cal_provider_acceptance_dry_run.get("latest_task_id")
+                ),
+                "latest_trade_cal_provider_acceptance_dry_run_found": bool(
+                    latest_trade_cal_provider_acceptance_dry_run.get("latest_task_found")
+                ),
+                "latest_trade_cal_provider_acceptance_dry_run_scope_hash_short": (
+                    latest_trade_cal_provider_acceptance_dry_run.get("acceptance_scope_hash_short")
+                ),
+                "latest_trade_cal_provider_acceptance_dry_run_row_count": len(
+                    latest_trade_cal_provider_acceptance_dry_run_rows
+                ),
+                "latest_trade_cal_provider_acceptance_dry_run_blocking_row_count": int(
+                    latest_trade_cal_provider_acceptance_dry_run.get("blocking_row_count") or 0
+                ),
                 "current_evidence_freshness_qa_status": current_evidence_freshness_qa_contract.get("status"),
                 "current_evidence_candidate_status": current_evidence_freshness_qa_contract.get(
                     "current_evidence_candidate_status"
@@ -2817,6 +2970,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "producer coverage audit 只检查本地 snapshot 可见 producer 是否带 expected_trade_date、data_date 和 freshness_state；不构建缺失 packet。",
             "freshness production blocker audit 只汇总本地阻断项；不会调用 provider、不会重算分数、不会宣称生产完成。",
             "freshness provider acceptance activation receipt 只是显式 provider 验收前的本地清单；不会调用 Tushare、不会创建任务、不会宣称生产完成。",
+            "latest trade_cal provider acceptance dry-run 只读取本地 task metadata；GET cache 不创建 dry-run、不调用 Tushare、不证明 provider-backed 验收。",
         ],
     }
     if status == "cache_missing":

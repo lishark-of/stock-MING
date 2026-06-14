@@ -66,13 +66,16 @@ export default function DataHealthTimeline() {
   const freshnessProductionBlockerAudit = (cache.freshness_production_blocker_audit as Record<string, unknown> | undefined) ?? {};
   const freshnessProviderReadinessReceipt = (cache.freshness_provider_acceptance_readiness_receipt as Record<string, unknown> | undefined) ?? {};
   const freshnessProviderActivationReceipt = (cache.freshness_provider_acceptance_activation_receipt as Record<string, unknown> | undefined) ?? {};
+  const latestTradeCalDryRun = (cache.latest_trade_cal_provider_acceptance_dry_run as Record<string, unknown> | undefined) ?? {};
+  const latestTradeCalDryRunReceipt = latestTradeCalDryRun.receipt as Record<string, unknown> | undefined;
   const currentEvidenceFreshness = (cache.current_evidence_freshness_qa_contract as Record<string, unknown> | undefined) ?? {};
   const decisionSurfaceAudit = (cache.current_evidence_decision_surface_audit as Record<string, unknown> | undefined) ?? {};
   const producerCoverageAudit = (cache.current_evidence_producer_coverage_audit as Record<string, unknown> | undefined) ?? {};
   const tradeCalDryRunPayload = (tradeCalDryRunReceipt?.data?.task?.payload_safe as Record<string, unknown> | undefined) ?? {};
-  const tradeCalDryRun = (tradeCalDryRunPayload.trade_cal_provider_acceptance_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
-  const tradeCalDryRunRows = rows(tradeCalDryRunPayload.trade_cal_provider_acceptance_dry_run_rows);
-  const tradeCalDryRunCredentialRows = rows(tradeCalDryRunPayload.credential_presence_rows);
+  const postTradeCalDryRunReceipt = tradeCalDryRunPayload.trade_cal_provider_acceptance_dry_run_receipt as Record<string, unknown> | undefined;
+  const tradeCalDryRun = postTradeCalDryRunReceipt ?? latestTradeCalDryRunReceipt ?? latestTradeCalDryRun;
+  const tradeCalDryRunRows = rows(tradeCalDryRunPayload.trade_cal_provider_acceptance_dry_run_rows ?? cache.latest_trade_cal_provider_acceptance_dry_run_rows);
+  const tradeCalDryRunCredentialRows = rows(tradeCalDryRunPayload.credential_presence_rows ?? cache.latest_trade_cal_provider_acceptance_dry_run_credential_rows);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
@@ -109,6 +112,9 @@ export default function DataHealthTimeline() {
           { label: "准入 blockers", value: counts.freshness_provider_acceptance_readiness_blocker_count as number | undefined, tone: Number(counts.freshness_provider_acceptance_readiness_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "provider 启用", value: freshnessProviderActivationReceipt.status as string | undefined, tone: freshnessProviderActivationReceipt.local_activation_receipt_ready === true ? "good" : "warn" },
           { label: "启用 blockers", value: counts.freshness_provider_acceptance_activation_blocker_count as number | undefined, tone: Number(counts.freshness_provider_acceptance_activation_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "latest dry-run", value: latestTradeCalDryRun.latest_task_found === true ? "可见" : "未运行", tone: latestTradeCalDryRun.latest_task_found === true ? "good" : "neutral" },
+          { label: "dry-run rows", value: counts.latest_trade_cal_provider_acceptance_dry_run_row_count as number | undefined },
+          { label: "dry-run blockers", value: counts.latest_trade_cal_provider_acceptance_dry_run_blocking_row_count as number | undefined, tone: Number(counts.latest_trade_cal_provider_acceptance_dry_run_blocking_row_count ?? 0) > 0 ? "warn" : "good" },
           { label: "当前证据 QA", value: currentEvidenceFreshness.status as string | undefined, tone: currentEvidenceFreshness.provider_backed_long_window_acceptance_done === true ? "good" : "warn" },
           { label: "当前证据准入", value: currentEvidenceFreshness.current_evidence_candidate_status as string | undefined, tone: currentEvidenceFreshness.current_evidence_candidate_status === "current_evidence_ready" ? "good" : "warn" },
           { label: "证据 blockers", value: counts.current_evidence_freshness_qa_blocker_count as number | undefined, tone: counts.current_evidence_freshness_qa_blocker_count === 0 ? "good" : "warn" },
@@ -208,12 +214,16 @@ export default function DataHealthTimeline() {
         <p>credential presence: {String((tradeCalDryRun.credential_presence_summary as Record<string, unknown> | undefined)?.status ?? "--")}</p>
         <p>provider_execution_implemented / production_freshness_gate_complete: {String(tradeCalDryRun.provider_execution_implemented ?? false)} / {String(tradeCalDryRun.production_freshness_gate_complete ?? false)}</p>
         <p>allowed_next_step: {String(tradeCalDryRun.allowed_next_step ?? "--")}</p>
+        <p>latest_task_found: {String(latestTradeCalDryRun.latest_task_found === true)}</p>
+        <p>latest task: {String(latestTradeCalDryRun.latest_task_id ?? "--")} / {String(latestTradeCalDryRun.latest_task_status ?? "--")} / {String(latestTradeCalDryRun.latest_task_current_step ?? "--")}</p>
+        <p>GET cache 只读取本地 task metadata，不创建 dry-run、不调用 Tushare。</p>
         <p>dry-run 只绑定未来真实验收的范围；真实 Tushare call ledger、freshness replay、failure modes、redaction review 和 production promotion 仍未执行。</p>
         {tradeCalDryRunError ? <p className="risk-note">{tradeCalDryRunError}</p> : null}
         <TaskLaunchReceipt receipt={tradeCalDryRunReceipt} />
         <DataLineageTable rows={objectRow(tradeCalDryRun)} />
         <DataLineageTable rows={tradeCalDryRunRows} />
         <DataLineageTable rows={tradeCalDryRunCredentialRows} />
+        <JsonDetails title="latest trade_cal provider acceptance dry-run raw" data={latestTradeCalDryRun} />
       </PacketCard>
 
       <PacketCard title="Trade_cal provider 验收提升审计" subtitle="trade_cal_provider_acceptance_promotion_audit；只读本地证据，不调用 Tushare" status={String(tradeCalPromotionAudit.status ?? "provider_acceptance_promotion")}>
