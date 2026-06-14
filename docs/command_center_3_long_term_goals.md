@@ -267,6 +267,7 @@ Validate extended Tushare refresh task pipeline
 - Factor Test Lab packets now expose `production_validation_qa_contract`: a local QA contract for future provider-backed small-pool validation, multi-horizon forward returns, rolling IC/ICIR, out-of-sample decay, production cost assumptions, neutralization stability, PIT/lookahead/survivorship controls, storage-query boundaries, research-only state transitions, and trade/action isolation. It does not run provider-backed samples, full-market research, external calls, or trade actions.
 - Factor Test Lab packets now expose `provider_validation_blocker_audit`: a local read-only blocker summary for storage-query boundaries, local dataset sufficiency, local light metrics, provider-backed small-pool samples, multi-window validation, cost/neutralization/bias controls, full-market validation, and trade/action isolation.
 - Factor Test Lab packets now expose `provider_sample_readiness_receipt`: a local read-only receipt that tells whether the next safe LTG-03 step is completing local dataset/forward-return evidence, running an explicit POST provider-backed small-pool acceptance task, or reviewing prior provider evidence. It does not call providers and keeps local light metrics, storage rows, QA rows, and blocker audits out of production validation promotion.
+- Factor Test Lab packets now expose `provider_sample_activation_receipt`: a local activation checklist for the future explicit provider-backed small-pool validation task. It keeps provider task creation, provider call-ledger evidence, multi-horizon/rolling/cost/neutralization/bias evidence, explicit promotion marker, and production completion pending while confirming GET cache and React render do not call providers or mutate action.
 - `scripts/factor_test_lab_contract.py` is now part of the local push gate. It uses synthetic local light observations and cache-only service contracts to keep Factor Test Lab metrics, small-pool readiness, storage-query consumption, and production QA clearly separated from provider-backed / full-market validation.
 
 ### Gaps
@@ -280,6 +281,7 @@ Validate extended Tushare refresh task pipeline
 - The small-pool acceptance audit is a local readiness contract; provider-backed small-pool samples are still pending.
 - The production validation QA contract is visible, but all provider-backed / full-market production validation remains pending.
 - The provider validation blocker audit is not provider execution; it only centralizes the remaining small-pool/full-market blockers and keeps production validation incomplete.
+- The provider sample activation receipt is not provider execution; it only makes the final local checklist visible before a future explicit POST task. It cannot create tasks, call providers, promote local metrics, or mark production Factor Test validation complete.
 - The local Factor Test Lab push-gate contract is not a provider run; it only blocks regressions where local light metrics, storage query rows, or QA checklist rows are mistaken for production validation.
 
 ### Implementation Phases
@@ -304,6 +306,7 @@ Validate extended Tushare refresh task pipeline
 - `production_validation_qa_contract.production_factor_test_validation_complete=false` until provider-backed small-pool samples, multi-horizon/rolling-window validation, cost assumptions, neutralization stability, bias controls, and trade/action isolation are all verified.
 - `provider_validation_blocker_audit.status=provider_validation_blockers_visible` keeps provider-backed sample, full-market, multi-window, cost/neutralization/bias, and sample-sufficiency blockers visible without calling providers or computing production metrics.
 - `provider_sample_readiness_receipt.status` may be `provider_small_pool_receipt_blocked_local_sample_or_contract`, `provider_small_pool_receipt_ready_execution_pending`, or `provider_small_pool_receipt_ready_for_promotion_review`. Only the middle state allows a future explicit POST small-pool provider acceptance task; no state calls a provider or proves production completion by itself.
+- `provider_sample_activation_receipt` shows readiness receipt visibility, explicit POST task requirement, provider execution evidence requirement, production QA visibility, provider blocker visibility, local-metrics-not-acceptance boundary, cache/render no-provider boundary, production-completion boundary, and trade/action isolation.
 - `scripts/factor_test_lab_contract.py` passes in the push gate while still reporting `provider_backed_small_pool_validation_done=false`, `full_market_validation_done=false`, and `production_factor_test_validation_complete=false`.
 
 ### Forbidden
@@ -317,6 +320,7 @@ Validate extended Tushare refresh task pipeline
 - Do not treat `production_validation_qa_contract` as execution evidence; it is a QA checklist until future button/task validation proves the rows.
 - Do not treat `provider_validation_blocker_audit.provider_validation_ready=true` as production completion; it only means local blocker rows are clear enough for promotion review.
 - Do not treat `provider_sample_readiness_receipt.ready_for_explicit_provider_small_pool_task=true` as provider-backed validation; it only means the next safe step is a user-triggered POST task. When it is blocked, complete local dataset sample depth and forward-return evidence first.
+- Do not treat `provider_sample_activation_receipt.local_activation_receipt_ready=true` as provider-backed validation, task execution, or production Factor Test completion.
 - Do not treat `scripts/factor_test_lab_contract.py` passing as real Factor Test Lab production validation; it is only a local research-boundary regression guard.
 
 ### Recommended Commit Message

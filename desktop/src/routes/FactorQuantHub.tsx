@@ -77,6 +77,7 @@ export default function FactorQuantHub() {
   const factorTestProductionValidation = factorTests.production_validation_qa_contract ?? {};
   const factorTestProviderValidationBlocker = factorTests.provider_validation_blocker_audit ?? {};
   const factorTestProviderSampleReadinessReceipt = factorTests.provider_sample_readiness_receipt ?? {};
+  const factorTestProviderSampleActivationReceipt = factorTests.provider_sample_activation_receipt ?? {};
   const tushareFailureModeQa = packet.failure_mode_qa_contract ?? {};
   const tushareRequestParameterQa = packet.request_parameter_qa_contract ?? {};
   const tushareProviderTargetSamplePlan = packet.provider_target_sample_plan_contract ?? {};
@@ -133,6 +134,8 @@ export default function FactorQuantHub() {
   const factorTestProviderValidationBlockerCriterionRows = toRows(factorTests.provider_validation_blocker_rows);
   const factorTestProviderSampleReadinessRows = objectRows(factorTestProviderSampleReadinessReceipt as Record<string, unknown>, "provider_sample_readiness");
   const factorTestProviderSampleReadinessCriterionRows = toRows(factorTests.provider_sample_readiness_rows);
+  const factorTestProviderSampleActivationRows = objectRows(factorTestProviderSampleActivationReceipt as Record<string, unknown>, "provider_sample_activation");
+  const factorTestProviderSampleActivationCriterionRows = toRows(factorTests.provider_sample_activation_rows);
   const tushareFailureModeQaRows = objectRows(tushareFailureModeQa as Record<string, unknown>, "failure_mode_contract");
   const tushareFailureModeCriterionRows = toRows(packet.failure_mode_qa_rows);
   const tushareRequestParameterQaRows = objectRows(tushareRequestParameterQa as Record<string, unknown>, "request_parameter_contract");
@@ -445,6 +448,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">provider_sample_readiness_receipt 只说明下一步是否可以进入显式 POST 小股票池 provider 验收；它不调用 provider，不把本地样本、light metrics、QA rows 或 blocker audit 提升为生产验收。</p>
       <DataLineageTable rows={factorTestProviderSampleReadinessCriterionRows} />
       <DataLineageTable rows={factorTestProviderSampleReadinessRows} />
+      <h3>Factor Test provider 小股票池 activation 回执</h3>
+      <p className="risk-note">provider_sample_activation_receipt 是真实小股票池 provider 验收前的本地清单：不调用 provider、不创建任务、不把本地样本/QA/blocker rows 当 production validation，也不进入 strategy action。</p>
+      <DataLineageTable rows={factorTestProviderSampleActivationCriterionRows} />
+      <DataLineageTable rows={factorTestProviderSampleActivationRows} />
       <h3>Factor Test 指标 schema</h3>
       <DataLineageTable rows={factorTestMetricRows} />
       <h3>Factor Test 阶段计划</h3>

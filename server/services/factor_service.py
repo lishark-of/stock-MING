@@ -63,6 +63,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet, production_validation_ledger = _attach_factor_test_production_validation_qa_contract(packet, now)
     packet, provider_validation_blocker_ledger = _attach_factor_test_provider_validation_blocker_audit(packet, now)
     packet, provider_sample_readiness_ledger = _attach_factor_test_provider_sample_readiness_receipt(packet, now)
+    packet, provider_sample_activation_ledger = _attach_factor_test_provider_sample_activation_receipt(packet, now)
     cache_ledger = _factor_quant_cache_call_ledger(packet, now)
     existing_ledger = packet.get("call_ledger") if isinstance(packet.get("call_ledger"), list) else []
     packet["cache_call_ledger"] = cache_ledger
@@ -76,6 +77,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         + production_validation_ledger
         + provider_validation_blocker_ledger
         + provider_sample_readiness_ledger
+        + provider_sample_activation_ledger
         + list(existing_ledger)
     )
     cache_warning = "GET /api/factor-quant/cache 只读取本地多因子图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
@@ -86,6 +88,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     local_dataset_warning = "Factor Test Lab 本地 Parquet 样本证据只做样本充分性审计；不足以证明真实小股票池或生产级因子验证。"
     provider_blocker_warning = "Factor Test provider validation blocker audit 只汇总真实小股票池/全市场验收缺口；不会调用 provider、不会计算交易信号。"
     provider_sample_receipt_warning = "Factor Test provider small-pool readiness receipt 只说明下一步显式 POST 验收是否可执行；不会调用 provider 或提升生产验收。"
+    provider_sample_activation_warning = "Factor Test provider small-pool activation receipt 只串联下一步真实小股票池验收清单；不会调用 provider、创建任务或标记生产完成。"
     existing_warnings = packet.get("warnings") if isinstance(packet.get("warnings"), list) else []
     owned_warnings = {
         cache_warning,
@@ -96,6 +99,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         local_dataset_warning,
         provider_blocker_warning,
         provider_sample_receipt_warning,
+        provider_sample_activation_warning,
     }
     packet["warnings"] = [
         cache_warning,
@@ -106,6 +110,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         local_dataset_warning,
         provider_blocker_warning,
         provider_sample_receipt_warning,
+        provider_sample_activation_warning,
     ] + [
         item
         for item in existing_warnings
@@ -1976,6 +1981,248 @@ def _attach_factor_test_provider_sample_readiness_receipt(packet: dict[str, Any]
         acceptance = dict(acceptance)
         acceptance["provider_sample_readiness_receipt_ready"] = True
         acceptance["ready_for_explicit_provider_small_pool_task"] = bool(receipt.get("ready_for_explicit_provider_small_pool_task"))
+        acceptance["provider_backed_small_pool_validation_done"] = bool(receipt.get("provider_backed_small_pool_validation_done"))
+        acceptance["production_factor_test_validation_complete"] = False
+        acceptance["full_market_validation_done"] = False
+        factor_tests["acceptance_contract"] = acceptance
+    packet["factor_tests"] = factor_tests
+    return packet, list(receipt.get("call_ledger") or [])
+
+
+def _factor_test_provider_sample_activation_receipt_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    evidence: str,
+    next_action: str,
+    *,
+    required_before_production: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "required_before_production": bool(required_before_production),
+        "blocks_production_validation": bool(required_before_production and not passed),
+        "evidence": evidence,
+        "next_action": next_action,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "receipt_external_calls_triggered": False,
+        "provider_task_created_by_receipt": False,
+        "tushare_called_by_receipt": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_core_action": True,
+        "does_not_enter_evidence_effects": True,
+        "does_not_enter_next_session_projection": True,
+    }
+
+
+def _factor_test_provider_sample_activation_receipt(factor_tests: dict[str, Any], now: str) -> dict[str, Any]:
+    readiness = factor_tests.get("provider_sample_readiness_receipt") if isinstance(factor_tests.get("provider_sample_readiness_receipt"), dict) else {}
+    production_qa = factor_tests.get("production_validation_qa_contract") if isinstance(factor_tests.get("production_validation_qa_contract"), dict) else {}
+    provider_blocker = factor_tests.get("provider_validation_blocker_audit") if isinstance(factor_tests.get("provider_validation_blocker_audit"), dict) else {}
+
+    readiness_visible = bool(
+        readiness.get("schema_version") == "factor_test_provider_sample_readiness_receipt.v1"
+        and readiness.get("scope") == "local_factor_test_provider_sample_readiness_receipt_no_provider_execution"
+        and readiness.get("cache_get_external_calls") is False
+        and readiness.get("receipt_external_calls_triggered") is False
+    )
+    production_qa_visible = bool(
+        production_qa.get("schema_version") == "factor_test_production_validation_qa_contract.v1"
+        and production_qa.get("production_factor_test_validation_complete") is False
+        and production_qa.get("external_calls_triggered") is False
+    )
+    blocker_visible = bool(
+        provider_blocker.get("schema_version") == "factor_test_provider_validation_blocker_audit.v1"
+        and provider_blocker.get("production_factor_test_validation_complete") is False
+        and provider_blocker.get("external_calls_triggered") is False
+    )
+    ready_for_explicit_task = bool(readiness.get("ready_for_explicit_provider_small_pool_task"))
+    provider_evidence_done = bool(readiness.get("provider_backed_small_pool_validation_done"))
+    provider_validation_ready = bool(readiness.get("provider_validation_ready"))
+    production_blocker_count = int(provider_blocker.get("production_blocker_count") or readiness.get("production_blocker_count") or 0)
+    missing_evidence_items = sorted(
+        {
+            "explicit provider-backed small-pool task execution",
+            "safe provider call ledger rows for target pool",
+            "multi-horizon forward-return evidence",
+            "rolling IC/Rank IC/ICIR evidence",
+            "transaction cost and turnover assumptions evidence",
+            "neutralization stability evidence",
+            "PIT/lookahead/survivorship evidence",
+            "explicit Factor Test production promotion marker",
+            *[str(item) for item in readiness.get("missing_evidence_items", []) if item],
+            *[str(item) for item in provider_blocker.get("production_blockers", []) if item],
+        }
+    )
+    local_activation_ready = bool(readiness_visible and production_qa_visible and blocker_visible)
+    allowed_next_step = (
+        "review_prior_factor_test_provider_evidence"
+        if provider_evidence_done or provider_validation_ready
+        else "explicit_post_task_factor_test_provider_small_pool_acceptance"
+        if ready_for_explicit_task
+        else "complete_local_dataset_sample_and_forward_returns"
+    )
+    rows = [
+        _factor_test_provider_sample_activation_receipt_row(
+            "readiness_receipt_visible",
+            "passed_local_receipt" if readiness_visible else "blocked_readiness_receipt_missing",
+            readiness_visible,
+            f"readiness_status={readiness.get('status')}; allowed_next_step={readiness.get('allowed_next_step')}",
+            "Expose provider_sample_readiness_receipt before any explicit provider-backed small-pool task.",
+            required_before_production=False,
+        ),
+        _factor_test_provider_sample_activation_receipt_row(
+            "explicit_post_task_required",
+            "ready_for_explicit_post" if ready_for_explicit_task else "blocked_or_not_ready_for_provider_task",
+            ready_for_explicit_task,
+            "Provider-backed small-pool validation must be started only by a future explicit POST task.",
+            "Complete local sample/forward-return evidence first when this row is blocked.",
+        ),
+        _factor_test_provider_sample_activation_receipt_row(
+            "provider_execution_evidence_required",
+            "ready_for_promotion_review" if provider_evidence_done else "pending_provider_execution_evidence",
+            provider_evidence_done,
+            "This receipt does not execute providers or create call-ledger evidence.",
+            "Run the explicit provider-backed acceptance task later and review safe call-ledger rows.",
+        ),
+        _factor_test_provider_sample_activation_receipt_row(
+            "production_qa_contract_visible",
+            "passed_local_qa_contract" if production_qa_visible else "blocked_qa_contract_missing",
+            production_qa_visible,
+            f"production_qa_status={production_qa.get('status')}; pending={production_qa.get('pending_criterion_count')}",
+            "Keep the production QA checklist visible until every production validation criterion is proven.",
+            required_before_production=False,
+        ),
+        _factor_test_provider_sample_activation_receipt_row(
+            "provider_blocker_audit_visible",
+            "passed_blockers_visible" if blocker_visible else "blocked_provider_blocker_missing",
+            blocker_visible,
+            f"provider_blocker_status={provider_blocker.get('status')}; blockers={production_blocker_count}",
+            "Use blocker rows as missing-evidence ledger, not as provider-backed validation.",
+            required_before_production=False,
+        ),
+        _factor_test_provider_sample_activation_receipt_row(
+            "local_metrics_not_acceptance",
+            "enforced_not_provider_acceptance",
+            True,
+            "Local light metrics, local dataset sufficiency, storage-query rows, QA rows, and blocker rows cannot become provider-backed acceptance.",
+            "Keep local metrics research-only until explicit provider evidence is present.",
+            required_before_production=False,
+        ),
+        _factor_test_provider_sample_activation_receipt_row(
+            "cache_render_provider_boundary",
+            "passed_no_provider_call",
+            True,
+            "GET factor cache and React render display this receipt only; they do not call providers or create tasks.",
+            "Keep provider/model calls behind explicit POST/task modes.",
+            required_before_production=False,
+        ),
+        _factor_test_provider_sample_activation_receipt_row(
+            "production_completion_boundary",
+            "enforced_not_complete",
+            False,
+            "production_factor_test_validation_complete remains false until provider-backed small-pool, multi-window, cost, neutralization, bias, and promotion evidence are all present.",
+            "Require a future explicit production promotion review before completion.",
+        ),
+        _factor_test_provider_sample_activation_receipt_row(
+            "trade_and_action_boundary",
+            "passed",
+            True,
+            "Activation receipt never executes trades, mutates strategy action, enters evidence effects, or changes next-session projection.",
+            "Preserve Factor Test Lab as research-only.",
+            required_before_production=False,
+        ),
+    ]
+    blocked_rows = [row["criterion"] for row in rows if row["blocks_production_validation"]]
+    return {
+        "schema_version": "factor_test_provider_sample_activation_receipt.v1",
+        "status": "provider_small_pool_activation_ready_execution_pending"
+        if local_activation_ready and ready_for_explicit_task
+        else "provider_small_pool_activation_ready_for_promotion_review"
+        if local_activation_ready and (provider_evidence_done or provider_validation_ready)
+        else "provider_small_pool_activation_blocked_local_sample_or_contract"
+        if local_activation_ready
+        else "provider_small_pool_activation_blocked_local_contract",
+        "scope": "local_factor_test_provider_sample_activation_receipt_no_provider_execution",
+        "created_at": now,
+        "ltg": "LTG-03/LTG-11",
+        "local_activation_receipt_ready": local_activation_ready,
+        "ready_for_explicit_provider_small_pool_task": ready_for_explicit_task,
+        "allowed_next_step": allowed_next_step,
+        "not_allowed_next_steps": [
+            "GET /api/factor-quant/cache provider refresh",
+            "React render provider refresh",
+            "activation receipt creates provider task",
+            "storage query rows as IC metrics",
+            "local light metrics as provider acceptance",
+            "blocker audit as production completion",
+            "activation receipt as production Factor Test completion",
+            "strategy action mutation",
+            "real trade execution",
+        ],
+        "missing_evidence_items": missing_evidence_items,
+        "provider_backed_small_pool_validation_done": provider_evidence_done,
+        "full_market_validation_done": False,
+        "production_factor_test_validation_complete": False,
+        "provider_task_created_by_receipt": False,
+        "provider_refresh_called_by_receipt": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "receipt_external_calls_triggered": False,
+        "tushare_called_by_receipt": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_core_action": True,
+        "does_not_enter_evidence_effects": True,
+        "does_not_enter_next_session_projection": True,
+        "production_blocker_count": production_blocker_count,
+        "blocking_criterion_count": len(blocked_rows),
+        "blocking_criteria": blocked_rows,
+        "row_count": len(rows),
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_factor_test_provider_sample_activation_receipt",
+                "request_params_safe": {
+                    "scope": "local_factor_test_provider_sample_activation_receipt_no_provider_execution",
+                    "ready_for_explicit_provider_small_pool_task": ready_for_explicit_task,
+                    "provider_backed_small_pool_validation_done": provider_evidence_done,
+                    "production_factor_test_validation_complete": False,
+                },
+                "row_count": len(rows),
+                "data_date": None,
+                "local_fetched_at": now,
+                "call_status": allowed_next_step,
+                "error_message_safe": "",
+                **_local_ledger_boundary(),
+            }
+        ],
+        "note": "This activation receipt is a local LTG-03 checklist before future provider-backed small-pool validation. It does not call providers, create tasks, compute production metrics, execute trades, mutate action, or prove production Factor Test completion.",
+    }
+
+
+def _attach_factor_test_provider_sample_activation_receipt(packet: dict[str, Any], now: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    factor_tests = packet.get("factor_tests") if isinstance(packet.get("factor_tests"), dict) else {}
+    factor_tests = dict(factor_tests)
+    receipt = _factor_test_provider_sample_activation_receipt(factor_tests, now)
+    factor_tests["provider_sample_activation_receipt"] = receipt
+    factor_tests["provider_sample_activation_rows"] = list(receipt.get("rows") or [])
+    existing_test_ledger = factor_tests.get("call_ledger") if isinstance(factor_tests.get("call_ledger"), list) else []
+    factor_tests["call_ledger"] = list(existing_test_ledger) + list(receipt.get("call_ledger") or [])
+    acceptance = factor_tests.get("acceptance_contract") if isinstance(factor_tests.get("acceptance_contract"), dict) else {}
+    if acceptance:
+        acceptance = dict(acceptance)
+        acceptance["provider_sample_activation_receipt_ready"] = bool(receipt.get("local_activation_receipt_ready"))
+        acceptance["provider_sample_activation_ready_for_explicit_task"] = bool(receipt.get("ready_for_explicit_provider_small_pool_task"))
+        acceptance["provider_sample_activation_is_not_production_completion"] = True
         acceptance["provider_backed_small_pool_validation_done"] = bool(receipt.get("provider_backed_small_pool_validation_done"))
         acceptance["production_factor_test_validation_complete"] = False
         acceptance["full_market_validation_done"] = False

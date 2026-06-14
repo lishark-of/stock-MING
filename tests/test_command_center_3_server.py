@@ -6293,6 +6293,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("local_dataset_sample_evidence_is_not_validation", script)
         self.assertIn("production_validation_qa_stays_pending", script)
         self.assertIn("provider_validation_blocker_audit_stays_pending", script)
+        self.assertIn("provider_sample_readiness_receipt_is_local", script)
+        self.assertIn("provider_sample_activation_receipt_is_local_pending", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -6328,6 +6330,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(payload["observed"]["provider_blocker_status"], "provider_validation_blockers_visible")
         self.assertGreater(payload["observed"]["provider_blocker_count"], 0)
+        self.assertEqual(
+            payload["observed"]["provider_sample_activation_status"],
+            "provider_small_pool_activation_blocked_local_sample_or_contract",
+        )
+        self.assertEqual(
+            payload["observed"]["provider_sample_activation_allowed_next_step"],
+            "complete_local_dataset_sample_and_forward_returns",
+        )
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("small_pool_acceptance_is_local_only", criteria)
         self.assertIn("research_states_stay_isolated", criteria)
@@ -6335,7 +6345,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("local_dataset_sample_evidence_is_not_validation", criteria)
         self.assertIn("production_validation_qa_stays_pending", criteria)
         self.assertIn("provider_validation_blocker_audit_stays_pending", criteria)
+        self.assertIn("provider_sample_readiness_receipt_is_local", criteria)
+        self.assertIn("provider_sample_activation_receipt_is_local_pending", criteria)
         self.assertIn("cache_get_factor_boundary", criteria)
+        self.assertIn("cache_get_exposes_provider_sample_activation_boundary", criteria)
         self.assertIn("cache_get_exposes_local_dataset_sample_boundary", criteria)
 
     def test_factor_universe_contract_script_is_local_push_gate_guard(self):
@@ -12910,6 +12923,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("local_factor_test_local_dataset_sample_evidence", {item.get("api") for item in factor["call_ledger"]})
         self.assertIn("local_factor_test_provider_validation_blocker_audit", {item.get("api") for item in factor["call_ledger"]})
         self.assertIn("local_factor_test_provider_sample_readiness_receipt", {item.get("api") for item in factor["call_ledger"]})
+        self.assertIn("local_factor_test_provider_sample_activation_receipt", {item.get("api") for item in factor["call_ledger"]})
         self.assertEqual(factor["data"]["factor_values_storage"]["dataset"], "factor_values")
         self.assertFalse(factor["data"]["governance"]["allow_core_action"])
         storage_query = factor["data"]["factor_tests"]["storage_query_consumption"]
@@ -13064,6 +13078,51 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("provider_backed_sample_evidence_ticket", receipt_criteria)
         self.assertEqual(provider_sample_receipt["call_ledger"][0]["api"], "local_factor_test_provider_sample_readiness_receipt")
         self.assert_local_ledger_boundary(provider_sample_receipt["call_ledger"][0])
+        provider_sample_activation = factor["data"]["factor_tests"]["provider_sample_activation_receipt"]
+        self.assertEqual(provider_sample_activation["schema_version"], "factor_test_provider_sample_activation_receipt.v1")
+        self.assertEqual(
+            provider_sample_activation["scope"],
+            "local_factor_test_provider_sample_activation_receipt_no_provider_execution",
+        )
+        self.assertTrue(provider_sample_activation["local_activation_receipt_ready"])
+        self.assertEqual(
+            provider_sample_activation["status"],
+            "provider_small_pool_activation_blocked_local_sample_or_contract",
+        )
+        self.assertEqual(
+            provider_sample_activation["allowed_next_step"],
+            "complete_local_dataset_sample_and_forward_returns",
+        )
+        self.assertIn("explicit provider-backed small-pool task execution", provider_sample_activation["missing_evidence_items"])
+        self.assertIn("safe provider call ledger rows for target pool", provider_sample_activation["missing_evidence_items"])
+        self.assertIn(
+            "activation receipt as production Factor Test completion",
+            provider_sample_activation["not_allowed_next_steps"],
+        )
+        self.assertFalse(provider_sample_activation["ready_for_explicit_provider_small_pool_task"])
+        self.assertFalse(provider_sample_activation["provider_backed_small_pool_validation_done"])
+        self.assertFalse(provider_sample_activation["production_factor_test_validation_complete"])
+        self.assertFalse(provider_sample_activation["provider_task_created_by_receipt"])
+        self.assertFalse(provider_sample_activation["provider_refresh_called_by_receipt"])
+        self.assertFalse(provider_sample_activation["cache_get_external_calls"])
+        self.assertFalse(provider_sample_activation["react_render_external_calls"])
+        self.assertFalse(provider_sample_activation["receipt_external_calls_triggered"])
+        self.assertFalse(provider_sample_activation["tushare_called_by_receipt"])
+        self.assertFalse(provider_sample_activation["deepseek_called"])
+        self.assertFalse(provider_sample_activation["github_called"])
+        self.assertTrue(provider_sample_activation["does_not_execute_trades"])
+        self.assertTrue(provider_sample_activation["does_not_modify_strategy_action"])
+        self.assertGreater(provider_sample_activation["blocking_criterion_count"], 0)
+        activation_criteria = {row["criterion"] for row in factor["data"]["factor_tests"]["provider_sample_activation_rows"]}
+        self.assertIn("readiness_receipt_visible", activation_criteria)
+        self.assertIn("explicit_post_task_required", activation_criteria)
+        self.assertIn("provider_execution_evidence_required", activation_criteria)
+        self.assertIn("production_completion_boundary", activation_criteria)
+        self.assertEqual(
+            provider_sample_activation["call_ledger"][0]["api"],
+            "local_factor_test_provider_sample_activation_receipt",
+        )
+        self.assert_local_ledger_boundary(provider_sample_activation["call_ledger"][0])
         self.assertEqual(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_contract_consumed"], True)
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_metrics_computed"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["storage_query_enters_strategy_action"])
@@ -13076,8 +13135,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(factor["data"]["factor_tests"]["acceptance_contract"]["production_validation_qa_contract_ready"])
         self.assertTrue(factor["data"]["factor_tests"]["acceptance_contract"]["provider_validation_blocker_audit_ready"])
         self.assertTrue(factor["data"]["factor_tests"]["acceptance_contract"]["provider_sample_readiness_receipt_ready"])
+        self.assertTrue(factor["data"]["factor_tests"]["acceptance_contract"]["provider_sample_activation_receipt_ready"])
+        self.assertTrue(factor["data"]["factor_tests"]["acceptance_contract"]["provider_sample_activation_is_not_production_completion"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["provider_validation_ready"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["ready_for_explicit_provider_small_pool_task"])
+        self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["provider_sample_activation_ready_for_explicit_task"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["production_factor_test_validation_complete"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["provider_backed_small_pool_validation_done"])
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["full_market_validation_done"])
