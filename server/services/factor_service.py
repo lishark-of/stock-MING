@@ -56,6 +56,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet, universe_rank_ledger = _attach_factor_universe_local_rank_zscore_dry_run(packet, now)
     packet = _attach_factor_universe_execution_readiness(packet)
     packet, universe_execution_receipt_ledger = _attach_factor_universe_execution_readiness_receipt(packet, now)
+    packet, universe_activation_receipt_ledger = _attach_factor_universe_execution_activation_receipt(packet, now)
     packet = _attach_deepseek_json_stability_audit(packet, governance=packet["deepseek_explain_governance"])
     packet, deepseek_activation_ledger = _attach_deepseek_production_activation_receipt(packet, now)
     packet, storage_query_ledger = _attach_factor_test_storage_query_consumption(packet, now)
@@ -71,6 +72,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         cache_ledger
         + universe_rank_ledger
         + universe_execution_receipt_ledger
+        + universe_activation_receipt_ledger
         + deepseek_activation_ledger
         + storage_query_ledger
         + local_dataset_ledger
@@ -83,6 +85,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     cache_warning = "GET /api/factor-quant/cache 只读取本地多因子图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
     universe_rank_warning = "Factor Universe rank/zscore dry-run 只读本地 factor_values 样本；样本不足时保持 blocked，不代表 full-pool 生产研究完成。"
     universe_execution_receipt_warning = "Factor Universe execution readiness receipt 只说明下一步显式 worker batch 是否可进入；不会运行 full-pool、rank/zscore、中性化或 provider 验收。"
+    universe_activation_receipt_warning = "Factor Universe execution activation receipt 只把下一步固定为显式 worker batch 生产验收；不会创建任务、启动 worker、计算 full-pool/rank/zscore/neutralization 或 provider 验收。"
     deepseek_activation_warning = "DeepSeek production activation receipt 只汇总下一步生产解释验收缺口；不会调用模型，不代表 provider benchmark、response_format 强约束或 auto_after_task 生产完成。"
     storage_query_warning = "Factor Test Lab 只消费本地 factor_values DuckDB 查询合同；不把查询样本当作生产 IC 验收或交易信号。"
     local_dataset_warning = "Factor Test Lab 本地 Parquet 样本证据只做样本充分性审计；不足以证明真实小股票池或生产级因子验证。"
@@ -94,6 +97,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         cache_warning,
         universe_rank_warning,
         universe_execution_receipt_warning,
+        universe_activation_receipt_warning,
         deepseek_activation_warning,
         storage_query_warning,
         local_dataset_warning,
@@ -105,6 +109,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         cache_warning,
         universe_rank_warning,
         universe_execution_receipt_warning,
+        universe_activation_receipt_warning,
         deepseek_activation_warning,
         storage_query_warning,
         local_dataset_warning,
@@ -564,6 +569,259 @@ def _attach_factor_universe_execution_readiness_receipt(packet: dict[str, Any], 
         contract = dict(contract)
         contract["universe_execution_readiness_receipt_ready"] = True
         contract["ready_for_explicit_worker_batch_task"] = bool(receipt.get("ready_for_explicit_worker_batch_task"))
+        contract["production_factor_universe_complete"] = False
+        contract["full_pool_validation_done"] = False
+        packet["universe_research_contract"] = contract
+    return packet, list(receipt.get("call_ledger") or [])
+
+
+def _factor_universe_execution_activation_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    evidence: str,
+    *,
+    blocks_production_completion: bool = False,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "blocks_production_completion": bool(blocks_production_completion),
+        "evidence": evidence,
+        "cache_get_external_calls": False,
+        "activation_receipt_external_calls_triggered": False,
+        "worker_batch_created_by_receipt": False,
+        "worker_batch_executed_by_receipt": False,
+        "provider_refresh_called_by_receipt": False,
+        "tushare_called_by_receipt": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_core_action": True,
+        "does_not_enter_evidence_effects": True,
+        "does_not_enter_next_session_projection": True,
+    }
+
+
+def _factor_universe_execution_activation_receipt(packet: dict[str, Any], now: str) -> dict[str, Any]:
+    readiness = packet.get("universe_execution_readiness_audit") if isinstance(packet.get("universe_execution_readiness_audit"), dict) else {}
+    readiness_receipt = packet.get("universe_execution_readiness_receipt") if isinstance(packet.get("universe_execution_readiness_receipt"), dict) else {}
+    rank_zscore = packet.get("universe_local_rank_zscore_dry_run") if isinstance(packet.get("universe_local_rank_zscore_dry_run"), dict) else {}
+    task_plan = packet.get("universe_research_task_plan") if isinstance(packet.get("universe_research_task_plan"), dict) else {}
+
+    ready_for_worker_batch = bool(readiness_receipt.get("ready_for_explicit_worker_batch_task"))
+    read_plan_ready = bool(readiness.get("read_plan_ready") and task_plan.get("status") == "read_plan_ready")
+    storage_ready = bool(readiness.get("storage_query_contract_consumed"))
+    worker_plan_ready = bool(readiness.get("worker_task_consumption_plan_ready"))
+    frontend_safe = bool(
+        readiness.get("page_render_starts_full_pool") is False
+        and readiness.get("frontend_computes_rank_zscore") is False
+        and readiness.get("partial_pool_is_full_market_proof") is False
+    )
+    trade_safe = bool(
+        readiness.get("does_not_execute_trades") is True
+        and readiness.get("does_not_modify_strategy_action") is True
+        and readiness_receipt.get("does_not_execute_trades") is True
+        and readiness_receipt.get("does_not_modify_strategy_action") is True
+    )
+    local_receipts_safe = bool(
+        readiness.get("schema_version") == "factor_universe_execution_readiness_audit.v1"
+        and readiness_receipt.get("schema_version") == "factor_universe_execution_readiness_receipt.v1"
+        and rank_zscore.get("schema_version") == "factor_universe_local_rank_zscore_dry_run.v1"
+        and readiness.get("external_calls_triggered") is False
+        and readiness_receipt.get("receipt_external_calls_triggered") is False
+        and rank_zscore.get("external_calls_triggered") is False
+    )
+    production_done = bool(
+        readiness.get("large_universe_pipeline_done")
+        and readiness.get("cross_sectional_rank_zscore_done")
+        and readiness.get("neutralization_done")
+        and readiness.get("full_pool_validation_done")
+        and readiness.get("production_factor_universe_complete")
+    )
+    missing_evidence_items = sorted(
+        {
+            "explicit_worker_batch_execution_evidence",
+            "cross_sectional_rank_zscore_production_evidence",
+            "neutralization_production_evidence",
+            "factor_combination_research_evidence",
+            "full_pool_validation_evidence",
+            "provider_backed_validation_evidence",
+            "production_promotion_marker",
+            *[str(item) for item in readiness_receipt.get("missing_evidence_items", []) if item],
+        }
+    )
+    rows = [
+        _factor_universe_execution_activation_row(
+            "readiness_receipt_visible",
+            "passed_ready_for_worker_batch" if ready_for_worker_batch else "blocked_readiness_receipt",
+            ready_for_worker_batch,
+            f"readiness_receipt_status={readiness_receipt.get('status')}; allowed_next_step={readiness_receipt.get('allowed_next_step')}",
+        ),
+        _factor_universe_execution_activation_row(
+            "read_plan_and_storage_contracts_ready",
+            "passed_local_read_plan" if read_plan_ready and storage_ready else "blocked_read_plan_or_storage",
+            read_plan_ready and storage_ready,
+            f"task_plan_status={task_plan.get('status')}; storage_query_contract_consumed={storage_ready}; storage_query_contract_count={task_plan.get('storage_query_contract_count')}",
+        ),
+        _factor_universe_execution_activation_row(
+            "explicit_worker_batch_task_required",
+            "passed_requires_explicit_post_task",
+            True,
+            "Activation receipt does not create a task. Full-pool research must enter through a future explicit POST worker-batch task.",
+        ),
+        _factor_universe_execution_activation_row(
+            "worker_batch_execution_evidence_required",
+            "pending_not_executed_by_receipt",
+            False,
+            "No worker batch has been executed by this receipt; production evidence must come from a separate task result and call ledger.",
+            blocks_production_completion=True,
+        ),
+        _factor_universe_execution_activation_row(
+            "rank_zscore_production_evidence_required",
+            "pending_local_dry_run_only",
+            False,
+            f"local_rank_zscore_status={rank_zscore.get('status')}; production rank/zscore remains false.",
+            blocks_production_completion=True,
+        ),
+        _factor_universe_execution_activation_row(
+            "neutralization_and_factor_combination_evidence_required",
+            "pending_not_computed",
+            False,
+            "Industry/market-cap neutralization and factor-combination research remain future worker-backed validation items.",
+            blocks_production_completion=True,
+        ),
+        _factor_universe_execution_activation_row(
+            "full_pool_provider_validation_required",
+            "pending_not_validated",
+            False,
+            "Full-pool/provider-backed validation is not complete and partial pools remain non-production evidence.",
+            blocks_production_completion=True,
+        ),
+        _factor_universe_execution_activation_row(
+            "frontend_cache_render_no_execution_boundary",
+            "passed_read_only_boundary" if frontend_safe else "blocked_frontend_boundary",
+            frontend_safe,
+            f"page_render_starts_full_pool={readiness.get('page_render_starts_full_pool')}; frontend_computes_rank_zscore={readiness.get('frontend_computes_rank_zscore')}; partial_pool_is_full_market_proof={readiness.get('partial_pool_is_full_market_proof')}",
+        ),
+        _factor_universe_execution_activation_row(
+            "local_no_provider_model_github_boundary",
+            "passed_local_only" if local_receipts_safe else "blocked_external_boundary",
+            local_receipts_safe,
+            "Activation receipt reads local contracts only and cannot call provider/model/GitHub clients.",
+        ),
+        _factor_universe_execution_activation_row(
+            "trade_and_action_boundary",
+            "passed_no_trade_no_action" if trade_safe else "blocked_trade_boundary",
+            trade_safe,
+            "Universe research activation remains outside trades, strategy action, core action, evidence effects, and next-session projection.",
+        ),
+        _factor_universe_execution_activation_row(
+            "production_completion_boundary",
+            "pending_missing_worker_rank_neutralization_full_pool_evidence",
+            production_done,
+            f"production_done={production_done}; missing_evidence_items={missing_evidence_items}",
+            blocks_production_completion=not production_done,
+        ),
+    ]
+    production_blockers = [str(row["criterion"]) for row in rows if row["blocks_production_completion"] and not row["passed"]]
+    activation_ready = bool(
+        ready_for_worker_batch
+        and read_plan_ready
+        and storage_ready
+        and worker_plan_ready
+        and frontend_safe
+        and trade_safe
+        and local_receipts_safe
+    )
+    status = (
+        "universe_execution_activation_ready_worker_batch_pending"
+        if activation_ready
+        else "universe_execution_activation_blocked_read_plan_or_boundary"
+    )
+    return {
+        "schema_version": "factor_universe_execution_activation_receipt.v1",
+        "status": status,
+        "scope": "local_factor_universe_execution_activation_receipt_no_worker_or_provider_execution",
+        "created_at": now,
+        "ltg": "LTG-04/LTG-11",
+        "local_activation_receipt_ready": activation_ready,
+        "ready_for_explicit_worker_batch_task": activation_ready,
+        "allowed_next_step": "explicit_post_task_factor_universe_worker_batch_research" if activation_ready else "repair_read_plan_storage_or_boundary_contracts",
+        "not_allowed_next_steps": [
+            "GET /api/factor-quant/cache worker batch execution",
+            "React render full-pool research",
+            "activation receipt creates worker task",
+            "activation receipt starts worker process",
+            "partial pool as full-market proof",
+            "local rank/zscore dry-run as production research",
+            "readiness receipt as production completion",
+            "strategy action mutation",
+            "real trade execution",
+        ],
+        "missing_evidence_items": missing_evidence_items,
+        "read_plan_ready": read_plan_ready,
+        "storage_query_contract_consumed": storage_ready,
+        "worker_task_consumption_plan_ready": worker_plan_ready,
+        "frontend_cache_render_no_execution_boundary": frontend_safe,
+        "worker_batch_created_by_receipt": False,
+        "worker_batch_executed_by_receipt": False,
+        "rank_zscore_computed_by_receipt": False,
+        "neutralization_computed_by_receipt": False,
+        "provider_refresh_called_by_receipt": False,
+        "large_universe_pipeline_done": False,
+        "cross_sectional_rank_zscore_done": False,
+        "neutralization_done": False,
+        "factor_combination_research_done": False,
+        "full_pool_validation_done": False,
+        "production_factor_universe_complete": False,
+        "cache_get_external_calls": False,
+        "activation_receipt_external_calls_triggered": False,
+        "tushare_called_by_receipt": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_core_action": True,
+        "does_not_enter_evidence_effects": True,
+        "does_not_enter_next_session_projection": True,
+        "row_count": len(rows),
+        "production_blocker_count": len(production_blockers),
+        "production_blockers": production_blockers,
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_factor_universe_execution_activation_receipt",
+                "request_params_safe": {
+                    "scope": "local_factor_universe_execution_activation_receipt_no_worker_or_provider_execution",
+                    "ready_for_explicit_worker_batch_task": activation_ready,
+                    "worker_batch_executed_by_receipt": False,
+                    "production_factor_universe_complete": False,
+                },
+                "row_count": len(rows),
+                "data_date": readiness_receipt.get("call_ledger", [{}])[0].get("data_date") if isinstance(readiness_receipt.get("call_ledger"), list) and readiness_receipt.get("call_ledger") else None,
+                "local_fetched_at": now,
+                "call_status": status,
+                "error_message_safe": "",
+                **_local_ledger_boundary(),
+            }
+        ],
+        "note": "This activation receipt fixes LTG-04's next safe execution gate. It does not create tasks, start workers, compute full-pool metrics, call providers/models/GitHub, or trade.",
+    }
+
+
+def _attach_factor_universe_execution_activation_receipt(packet: dict[str, Any], now: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    receipt = _factor_universe_execution_activation_receipt(packet, now)
+    packet["universe_execution_activation_receipt"] = receipt
+    packet["universe_execution_activation_rows"] = list(receipt.get("rows") or [])
+    contract = packet.get("universe_research_contract") if isinstance(packet.get("universe_research_contract"), dict) else {}
+    if contract:
+        contract = dict(contract)
+        contract["universe_execution_activation_receipt_ready"] = bool(receipt.get("local_activation_receipt_ready"))
+        contract["ready_for_explicit_worker_batch_task"] = bool(receipt.get("ready_for_explicit_worker_batch_task"))
+        contract["worker_batch_executed_by_activation_receipt"] = False
         contract["production_factor_universe_complete"] = False
         contract["full_pool_validation_done"] = False
         packet["universe_research_contract"] = contract

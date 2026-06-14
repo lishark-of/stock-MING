@@ -4,6 +4,8 @@
 [`docs/command_center_3_long_term_goals.md`](command_center_3_long_term_goals.md)。
 本文件只描述现有模块到 3.0 API/UI 的迁移映射，不把 scaffold / preflight / mock / sanitizer 误写为 production complete。
 
+当前 Factor universe 迁移还包含 `universe_execution_activation_receipt` 本地回执：它只把下一步固定为显式 worker-batch 生产验收，不创建任务、不启动 worker、不调用 provider/model/GitHub、不执行交易，也不把 read-plan、partial pool 或本地 rank/zscore dry-run 当作 full-pool production research。
+
 | Streamlit/现有模块 | 当前文件 | 3.0 API | 3.0 前端页面 | 是否重计算 | 是否任务化 |
 |---|---|---|---|---|---|
 | 调用审计 / 外部边界 | `server/services/*_service.py`, `server/services/task_service.py` | `GET /api/audit/cache` | `CallLedgerAudit.tsx` | cache GET 聚合本地 cache API 与任务 `call_ledger`；同时静态审计本地 push gate readiness、push readiness receipt 和 CI failure email triage；不刷新、不外联、不代表 CI 状态 | 否；只读审计 |

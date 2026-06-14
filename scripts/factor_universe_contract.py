@@ -114,6 +114,9 @@ def build_contract() -> dict[str, Any]:
         "universe_local_rank_zscore_dry_run": rank_zscore_dry_run,
     }
     execution_receipt = factor_service._factor_universe_execution_readiness_receipt(receipt_packet, now)
+    activation_packet = dict(receipt_packet)
+    activation_packet["universe_execution_readiness_receipt"] = execution_receipt
+    execution_activation = factor_service._factor_universe_execution_activation_receipt(activation_packet, now)
     readiness_rows = {
         str(row.get("criterion") or ""): row
         for row in _list(readiness.get("rows"))
@@ -229,6 +232,37 @@ def build_contract() -> dict[str, Any]:
             "Universe execution readiness receipt may allow the next explicit worker-batch task, but it must stay local and cannot execute batch research or promote production flags.",
         ),
         _row(
+            "execution_activation_receipt_is_local",
+            execution_activation.get("schema_version") == "factor_universe_execution_activation_receipt.v1"
+            and execution_activation.get("scope") == "local_factor_universe_execution_activation_receipt_no_worker_or_provider_execution"
+            and execution_activation.get("local_activation_receipt_ready") is True
+            and execution_activation.get("ready_for_explicit_worker_batch_task") is True
+            and execution_activation.get("allowed_next_step") == "explicit_post_task_factor_universe_worker_batch_research"
+            and execution_activation.get("worker_batch_created_by_receipt") is False
+            and execution_activation.get("worker_batch_executed_by_receipt") is False
+            and execution_activation.get("rank_zscore_computed_by_receipt") is False
+            and execution_activation.get("neutralization_computed_by_receipt") is False
+            and execution_activation.get("provider_refresh_called_by_receipt") is False
+            and execution_activation.get("large_universe_pipeline_done") is False
+            and execution_activation.get("cross_sectional_rank_zscore_done") is False
+            and execution_activation.get("neutralization_done") is False
+            and execution_activation.get("factor_combination_research_done") is False
+            and execution_activation.get("full_pool_validation_done") is False
+            and execution_activation.get("production_factor_universe_complete") is False
+            and execution_activation.get("cache_get_external_calls") is False
+            and execution_activation.get("activation_receipt_external_calls_triggered") is False
+            and execution_activation.get("tushare_called_by_receipt") is False
+            and execution_activation.get("deepseek_called") is False
+            and execution_activation.get("github_called") is False
+            and execution_activation.get("does_not_execute_trades") is True
+            and execution_activation.get("does_not_modify_strategy_action") is True
+            and int(execution_activation.get("production_blocker_count") or 0) >= 5
+            and "GET /api/factor-quant/cache worker batch execution" in execution_activation.get("not_allowed_next_steps", [])
+            and "activation receipt creates worker task" in execution_activation.get("not_allowed_next_steps", [])
+            and "local rank/zscore dry-run as production research" in execution_activation.get("not_allowed_next_steps", []),
+            "Universe execution activation receipt may fix the next explicit worker-batch gate, but it must not create tasks, execute workers, compute production metrics, call providers, or promote production flags.",
+        ),
+        _row(
             "local_rank_zscore_dry_run_is_research_only",
             rank_zscore_dry_run.get("schema_version") == "factor_universe_local_rank_zscore_dry_run.v1"
             and rank_zscore_dry_run.get("scope") == "local_factor_values_rank_zscore_dry_run_not_full_pool_validation"
@@ -276,8 +310,11 @@ def build_contract() -> dict[str, Any]:
             and "launchTask(\"/api/factor-quant/universe-research-plan\"" in factor_page
             and "universe_execution_readiness_audit" in factor_page
             and "universe_execution_readiness_receipt" in factor_page
+            and "universe_execution_activation_receipt" in factor_page
             and "universe_local_rank_zscore_dry_run" in factor_page
             and "Factor Universe 执行准入回执" in factor_page
+            and "Factor Universe execution activation receipt" in factor_page
+            and "不创建任务、不启动 worker" in factor_page
             and "Factor Universe 本地 Rank/Zscore Dry-run" in factor_page
             and "前端不计算 rank/zscore" in factor_page
             and "显式 worker batch" in factor_page
@@ -321,6 +358,7 @@ def build_contract() -> dict[str, Any]:
             and "cross_sectional_rank_zscore_done" in this_script
             and "local_rank_zscore_dry_run_is_research_only" in this_script
             and "execution_readiness_receipt_is_local" in this_script
+            and "execution_activation_receipt_is_local" in this_script
             and "does_not_execute_trades" in this_script
             and ("request" + "s") not in this_script
             and ("ht" + "tpx") not in this_script
@@ -346,6 +384,7 @@ def build_contract() -> dict[str, Any]:
         "full_pool_validation_done": False,
         "cross_sectional_rank_zscore_done": False,
         "ready_for_explicit_worker_batch_task": bool(execution_receipt.get("ready_for_explicit_worker_batch_task")),
+        "execution_activation_receipt_ready": bool(execution_activation.get("local_activation_receipt_ready")),
         "local_rank_zscore_dry_run_executed": bool(rank_zscore_dry_run.get("rank_zscore_dry_run_executed")),
         "neutralization_done": False,
         "factor_combination_research_done": False,
@@ -375,6 +414,8 @@ def build_contract() -> dict[str, Any]:
             "readiness_production_blocker_count": readiness.get("production_blocker_count"),
             "execution_receipt_status": execution_receipt.get("status"),
             "execution_receipt_allowed_next_step": execution_receipt.get("allowed_next_step"),
+            "execution_activation_status": execution_activation.get("status"),
+            "execution_activation_production_blocker_count": execution_activation.get("production_blocker_count"),
             "task_backend": universe_task.get("current_backend"),
         },
         "rows": rows,
