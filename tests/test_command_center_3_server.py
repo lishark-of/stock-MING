@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import datetime as _dt
+import hashlib
 import importlib.util
 import json
 import os
@@ -10597,6 +10598,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="true",
             COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="true",
             COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT="2",
+            COMMAND_CENTER_LIVE_DEEPSEEK_MODEL="unit-test-live-pro",
             TUSHARE_TOKEN="DROP_TS",
             DEEPSEEK_API_KEY="DROP_DS",
         )
@@ -10649,8 +10651,23 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(credential_rows["deepseek"]["values_exposed"])
         self.assertFalse(credential_rows["deepseek"]["value_lengths_exposed"])
         self.assertFalse(credential_rows["deepseek"]["streamlit_config_values_read"])
+        scope_ticket = payload["acceptance_scope_ticket"]
+        self.assertEqual(scope_ticket["scope_hash_algorithm"], "sha256")
+        self.assertEqual(len(scope_ticket["scope_hash"]), 64)
+        self.assertEqual(len(scope_ticket["scope_hash_short"]), 16)
+        self.assertEqual(scope_ticket["scope_hash"], hashlib.sha256(
+            json.dumps(scope_ticket["scope_hash_input"], ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        ).hexdigest())
+        self.assertEqual(scope_ticket["scope_hash_input"]["symbols"], ["000001.SZ", "000002.SZ"])
+        self.assertEqual(scope_ticket["scope_hash_input"]["selected_apis"], ["trade_cal", "daily", "moneyflow"])
+        self.assertEqual(scope_ticket["scope_hash_input"]["deepseek_model"], "unit-test-live-pro")
+        self.assertFalse(scope_ticket["credential_values_included"])
+        self.assertFalse(scope_ticket["env_key_names_included"])
         summary = payload["acceptance_dry_run_summary"]
         self.assertEqual(summary["status"], "acceptance_dry_run_ready_execution_pending")
+        self.assertEqual(summary["acceptance_scope_hash"], scope_ticket["scope_hash"])
+        self.assertEqual(summary["acceptance_scope_hash_short"], scope_ticket["scope_hash_short"])
+        self.assertEqual(summary["acceptance_scope_hash_algorithm"], "sha256")
         self.assertEqual(summary["phase_count"], 10)
         self.assertEqual(summary["selected_provider_phase_count"], 2)
         self.assertEqual(summary["selected_model_phase_count"], 1)
@@ -10695,6 +10712,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(task["call_ledger"][0]["request_params_safe"]["credential_required_provider_count"], 2)
         self.assertEqual(task["call_ledger"][0]["request_params_safe"]["credential_present_provider_count"], 2)
         self.assertEqual(task["call_ledger"][0]["request_params_safe"]["credential_missing_provider_count"], 0)
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["acceptance_scope_hash_short"], scope_ticket["scope_hash_short"])
         self.assertFalse(task["call_ledger"][0]["external"])
         self.assertFalse(task["call_ledger"][0]["external_calls_triggered"])
         self.assertFalse(task["call_ledger"][0]["tushare_called"])
@@ -10747,8 +10765,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(credential_rows["deepseek"]["present"])
         self.assertFalse(credential_rows["tushare"]["values_read"])
         self.assertFalse(credential_rows["deepseek"]["values_exposed"])
+        scope_ticket = payload["acceptance_scope_ticket"]
+        self.assertEqual(scope_ticket["scope_hash_algorithm"], "sha256")
+        self.assertEqual(len(scope_ticket["scope_hash"]), 64)
+        self.assertEqual(scope_ticket["scope_hash_input"]["credential_presence_status"], "required_env_key_missing_no_values_read")
+        self.assertFalse(scope_ticket["credential_values_included"])
+        self.assertFalse(scope_ticket["env_key_names_included"])
         summary = payload["acceptance_dry_run_summary"]
         self.assertEqual(summary["status"], "acceptance_dry_run_blocked_missing_credentials")
+        self.assertEqual(summary["acceptance_scope_hash"], scope_ticket["scope_hash"])
         self.assertEqual(summary["credential_presence_status"], "required_env_key_missing_no_values_read")
         self.assertEqual(summary["credential_required_provider_count"], 2)
         self.assertEqual(summary["credential_present_provider_count"], 0)

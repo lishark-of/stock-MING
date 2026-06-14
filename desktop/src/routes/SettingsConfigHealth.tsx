@@ -186,6 +186,7 @@ export default function SettingsConfigHealth() {
   const bootstrapModelLedgerRows = rows(bootstrapTaskPayload.bootstrap_model_ledger_preview_rows);
   const acceptanceDryRunPayload = (acceptanceDryRunTask.payload_safe as Record<string, unknown> | undefined) ?? {};
   const acceptanceDryRunSummary = (acceptanceDryRunPayload.acceptance_dry_run_summary as Record<string, unknown> | undefined) ?? {};
+  const acceptanceScopeTicket = (acceptanceDryRunPayload.acceptance_scope_ticket as Record<string, unknown> | undefined) ?? {};
   const acceptanceDryRunRows = rows(acceptanceDryRunPayload.acceptance_dry_run_rows);
   const credentialPresenceRows = rows(acceptanceDryRunPayload.credential_presence_rows);
   const hasBootstrapTask = Object.keys(bootstrapTask).length > 0;
@@ -306,6 +307,10 @@ export default function SettingsConfigHealth() {
           <p>ready for real acceptance: {String(acceptanceDryRunSummary.ready_for_user_approved_real_acceptance ?? false)}</p>
           <p>blocked by missing credentials: {String(acceptanceDryRunSummary.blocked_by_missing_credentials ?? false)}</p>
           <p>credential presence status: {String(acceptanceDryRunSummary.credential_presence_status ?? "--")}</p>
+          <p>acceptance scope hash: {String(acceptanceScopeTicket.scope_hash_short ?? acceptanceDryRunSummary.acceptance_scope_hash_short ?? "--")}</p>
+          <p>scope hash algorithm: {String(acceptanceScopeTicket.scope_hash_algorithm ?? acceptanceDryRunSummary.acceptance_scope_hash_algorithm ?? "--")}</p>
+          <p>scope input field count: {String(acceptanceScopeTicket.scope_hash_input_field_count ?? "--")}</p>
+          <p>scope includes env key names / credential values: {String(acceptanceScopeTicket.env_key_names_included ?? false)} / {String(acceptanceScopeTicket.credential_values_included ?? false)}</p>
           <p>allowed next step: {String(acceptanceDryRunSummary.allowed_next_step ?? "--")}</p>
           <p>real acceptance task implemented: {String(acceptanceDryRunSummary.real_acceptance_task_implemented ?? false)}</p>
           <p>missing evidence: {JSON.stringify(acceptanceDryRunSummary.missing_evidence_items ?? [])}</p>
@@ -317,6 +322,7 @@ export default function SettingsConfigHealth() {
           <p>external / Tushare / DeepSeek / GitHub: {String(acceptanceDryRunTask.external_calls_triggered ?? false)} / {String(acceptanceDryRunTask.tushare_called ?? false)} / {String(acceptanceDryRunTask.deepseek_called ?? false)} / {String(acceptanceDryRunTask.github_called ?? false)}</p>
           {credentialPresenceRows.length ? <DataLineageTable rows={credentialPresenceRows} /> : null}
           {acceptanceDryRunRows.length ? <DataLineageTable rows={acceptanceDryRunRows} /> : null}
+          <JsonDetails title="provider/model acceptance scope ticket" data={acceptanceScopeTicket} />
           <JsonDetails title="provider/model acceptance dry-run task" data={acceptanceDryRunTask} />
         </PacketCard>
 

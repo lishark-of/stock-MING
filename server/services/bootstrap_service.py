@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import json
 import os
 from typing import Any
@@ -311,6 +312,40 @@ def _env_key_presence_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "value_lengths_exposed": False,
         "streamlit_config_values_read": False,
         "contains_secret": False,
+    }
+
+
+def _acceptance_scope_ticket(*, payload_safe: dict[str, Any], status_packet: dict[str, Any]) -> dict[str, Any]:
+    runbook = _dict(status_packet.get("live_light_provider_model_acceptance_runbook"))
+    scope_input = {
+        "mode": status_packet.get("mode"),
+        "route": PLANNED_BOOTSTRAP_ACCEPTANCE_DRY_RUN_ROUTE,
+        "symbols": list(payload_safe.get("symbols") or []),
+        "selected_apis": list(payload_safe.get("selected_apis") or []),
+        "ignored_apis": list(payload_safe.get("ignored_apis") or []),
+        "include_tushare": payload_safe.get("include_tushare") is True,
+        "include_deepseek": payload_safe.get("include_deepseek") is True,
+        "deepseek_model": runbook.get("deepseek_model"),
+        "symbol_limit": payload_safe.get("symbol_limit"),
+        "user_approved": payload_safe.get("user_approved") is True,
+        "credential_presence_status": _dict(payload_safe.get("credential_presence_summary")).get("status"),
+    }
+    serialized = json.dumps(scope_input, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return {
+        "schema_version": BOOTSTRAP_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
+        "scope_hash_algorithm": "sha256",
+        "scope_hash": hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
+        "scope_hash_short": hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16],
+        "scope_hash_input": scope_input,
+        "scope_hash_input_field_count": len(scope_input),
+        "credential_values_included": False,
+        "env_key_names_included": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
     }
 
 
@@ -1101,6 +1136,10 @@ def _build_acceptance_dry_run(
         "scope": "local_provider_model_acceptance_dry_run_no_external_call",
         "mode": status_packet.get("mode"),
         "runbook_status": runbook.get("status"),
+        "acceptance_scope_ticket": payload_safe.get("acceptance_scope_ticket"),
+        "acceptance_scope_hash": _dict(payload_safe.get("acceptance_scope_ticket")).get("scope_hash"),
+        "acceptance_scope_hash_short": _dict(payload_safe.get("acceptance_scope_ticket")).get("scope_hash_short"),
+        "acceptance_scope_hash_algorithm": _dict(payload_safe.get("acceptance_scope_ticket")).get("scope_hash_algorithm"),
         "user_approved": user_approved,
         "selected_apis": payload_safe.get("selected_apis") or [],
         "ignored_apis": payload_safe.get("ignored_apis") or [],
@@ -1169,6 +1208,7 @@ def _acceptance_dry_run_call_ledger(
             "credential_required_provider_count": summary.get("credential_required_provider_count"),
             "credential_present_provider_count": summary.get("credential_present_provider_count"),
             "credential_missing_provider_count": summary.get("credential_missing_provider_count"),
+            "acceptance_scope_hash_short": summary.get("acceptance_scope_hash_short"),
         },
         "row_count": int(summary.get("phase_count") or 0),
         "selected_provider_phase_count": int(summary.get("selected_provider_phase_count") or 0),
@@ -1821,6 +1861,10 @@ def run_provider_model_acceptance_dry_run(payload: Any = None) -> dict[str, Any]
     credential_summary = _env_key_presence_summary(credential_rows)
     payload_safe["credential_presence_rows"] = credential_rows
     payload_safe["credential_presence_summary"] = credential_summary
+    payload_safe["acceptance_scope_ticket"] = _acceptance_scope_ticket(
+        payload_safe=payload_safe,
+        status_packet=status_packet,
+    )
     summary, rows = _build_acceptance_dry_run(status_packet=status_packet, payload_safe=payload_safe)
     payload_safe["acceptance_dry_run_summary"] = summary
     payload_safe["acceptance_dry_run_rows"] = rows

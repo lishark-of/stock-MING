@@ -380,6 +380,7 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
     last_repeated = repeated_ledger[-1] if repeated_ledger else {}
     dry_payload = _dict(dry_run.get("payload_safe"))
     dry_summary = _dict(dry_payload.get("acceptance_dry_run_summary"))
+    dry_scope_ticket = _dict(dry_payload.get("acceptance_scope_ticket"))
     credential_rows = {
         str(row.get("provider") or ""): row
         for row in _list(dry_payload.get("credential_presence_rows"))
@@ -395,6 +396,7 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
     dry_text = _serialized(dry_run)
     missing_payload = _dict(dry_run_missing_credentials.get("payload_safe"))
     missing_summary = _dict(missing_payload.get("acceptance_dry_run_summary"))
+    missing_scope_ticket = _dict(missing_payload.get("acceptance_scope_ticket"))
     missing_credential_rows = {
         str(row.get("provider") or ""): row
         for row in _list(missing_payload.get("credential_presence_rows"))
@@ -598,6 +600,16 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             and dry_summary.get("allowed_next_step")
             == "explicit_user_confirmed_real_provider_model_acceptance_task_pending_implementation"
             and dry_summary.get("real_acceptance_task_implemented") is False
+            and dry_summary.get("acceptance_scope_hash") == dry_scope_ticket.get("scope_hash")
+            and dry_summary.get("acceptance_scope_hash_short") == dry_scope_ticket.get("scope_hash_short")
+            and dry_scope_ticket.get("scope_hash_algorithm") == "sha256"
+            and len(str(dry_scope_ticket.get("scope_hash") or "")) == 64
+            and len(str(dry_scope_ticket.get("scope_hash_short") or "")) == 16
+            and dry_scope_ticket.get("credential_values_included") is False
+            and dry_scope_ticket.get("env_key_names_included") is False
+            and _dict(dry_scope_ticket.get("scope_hash_input")).get("symbols") == ["000001.SZ", "000002.SZ"]
+            and _dict(dry_scope_ticket.get("scope_hash_input")).get("selected_apis")
+            == ["trade_cal", "daily", "moneyflow"]
             and "real provider call ledger" in _list(dry_summary.get("missing_evidence_items"))
             and "skip credential presence gate" in _list(dry_summary.get("not_allowed_next_steps"))
             and dry_summary.get("credential_values_read") is False
@@ -635,6 +647,13 @@ def _live_light_enabled_rows() -> list[dict[str, Any]]:
             and missing_summary.get("ready_for_user_approved_real_acceptance") is False
             and missing_summary.get("allowed_next_step") == "configure_server_credentials_then_rerun_dry_run"
             and missing_summary.get("real_acceptance_task_implemented") is False
+            and missing_summary.get("acceptance_scope_hash") == missing_scope_ticket.get("scope_hash")
+            and missing_scope_ticket.get("scope_hash_algorithm") == "sha256"
+            and len(str(missing_scope_ticket.get("scope_hash") or "")) == 64
+            and missing_scope_ticket.get("credential_values_included") is False
+            and missing_scope_ticket.get("env_key_names_included") is False
+            and _dict(missing_scope_ticket.get("scope_hash_input")).get("credential_presence_status")
+            == "required_env_key_missing_no_values_read"
             and "server credential presence for selected providers" in _list(
                 missing_summary.get("missing_evidence_items")
             )
