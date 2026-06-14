@@ -68,6 +68,13 @@ REQUIRED_RESPONSE_FORMAT_ROWS = {
     "auto_after_task_default_off",
     "larger_benchmark_required",
 }
+REQUIRED_RETRY_REPAIR_PATHS = {
+    "direct_json",
+    "fenced_json_extraction",
+    "embedded_json_extraction",
+    "sanitize_illegal_fields",
+    "parse_failed_discard",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -157,6 +164,11 @@ def build_contract() -> dict[str, Any]:
     response_rows = _rows_by_criterion(
         cache_packet.get("deepseek_response_format_review_rows") or response_review.get("rows")
     )
+    retry_repair_dry_run = _dict(cache_packet.get("deepseek_retry_repair_dry_run_contract"))
+    retry_repair_rows = [
+        row for row in _list(cache_packet.get("deepseek_retry_repair_dry_run_rows") or retry_repair_dry_run.get("rows"))
+        if isinstance(row, dict)
+    ]
     activation_receipt = _dict(cache_packet.get("deepseek_production_activation_receipt"))
     activation_rows = _rows_by_criterion(
         cache_packet.get("deepseek_production_activation_rows") or activation_receipt.get("rows")
@@ -295,6 +307,33 @@ def build_contract() -> dict[str, Any]:
             "Response-format review is a local contract; provider response_format, bounded retry/repair, and larger benchmark remain production blockers.",
         ),
         _row(
+            "retry_repair_dry_run_is_local_and_production_blocked",
+            retry_repair_dry_run.get("schema_version") == "factor_deepseek_retry_repair_dry_run_contract.v1"
+            and retry_repair_dry_run.get("status") == "retry_repair_dry_run_ready_provider_execution_pending"
+            and retry_repair_dry_run.get("scope") == "local_retry_repair_dry_run_no_model_call"
+            and retry_repair_dry_run.get("local_retry_repair_dry_run_ready") is True
+            and retry_repair_dry_run.get("retry_repair_policy_ready") is False
+            and retry_repair_dry_run.get("bounded_retry_repair_ready") is False
+            and retry_repair_dry_run.get("provider_retry_repair_executed") is False
+            and retry_repair_dry_run.get("production_deepseek_explanation_complete") is False
+            and int(retry_repair_dry_run.get("case_count") or 0) >= 5
+            and int(retry_repair_dry_run.get("passed_case_count") or 0) == int(retry_repair_dry_run.get("case_count") or -1)
+            and int(retry_repair_dry_run.get("parse_failed_case_count") or 0) >= 1
+            and REQUIRED_RETRY_REPAIR_PATHS.issubset(set(_list(retry_repair_dry_run.get("repair_paths"))))
+            and {"provider_retry_repair_execution", "provider_response_format_enforced", "larger_benchmark_required"}.issubset(
+                set(_list(retry_repair_dry_run.get("production_blockers")))
+            )
+            and retry_repair_rows
+            and all(row.get("passed") is True for row in retry_repair_rows)
+            and all(row.get("model_call_status") == "not_called" for row in retry_repair_rows)
+            and all(row.get("does_not_override_numeric_values") is True for row in retry_repair_rows)
+            and all(row.get("does_not_output_strategy_action") is True for row in retry_repair_rows)
+            and _flag_false(retry_repair_dry_run, "external_calls_triggered", "deepseek_called", "tushare_called", "github_called", "contains_secret")
+            and retry_repair_dry_run.get("does_not_execute_trades") is True
+            and retry_repair_dry_run.get("does_not_modify_strategy_action") is True,
+            "Retry/repair dry-run may prove local extraction, discard, and sanitizer behavior, but provider retry execution and production automation must stay blocked.",
+        ),
+        _row(
             "local_builders_match_cache_governance_boundaries",
             local_json_audit.get("manual_explanation_ready") is True
             and local_json_audit.get("production_ready") is False
@@ -372,6 +411,7 @@ def build_contract() -> dict[str, Any]:
             "command_center_3_deepseek_governance_contract.v1" in this_script
             and "local_deepseek_governance_contract_no_model_call" in this_script
             and "deepseek_production_activation_receipt.v1" in this_script
+            and "factor_deepseek_retry_repair_dry_run_contract.v1" in this_script
             and "provider_benchmark_done" in this_script
             and "production_deepseek_explanation_complete" in this_script
             and "response_format_enforced" in this_script
@@ -398,6 +438,7 @@ def build_contract() -> dict[str, Any]:
         "larger_benchmark_done": False,
         "response_format_enforced": False,
         "retry_repair_policy_ready": False,
+        "retry_repair_dry_run_ready": retry_repair_dry_run.get("local_retry_repair_dry_run_ready") is True,
         "auto_after_task_production_ready": False,
         "deepseek_production_activation_receipt_ready": activation_receipt.get("local_activation_receipt_ready") is True,
         "production_deepseek_explanation_complete": False,
@@ -426,6 +467,9 @@ def build_contract() -> dict[str, Any]:
             "json_production_blockers": json_audit.get("production_blockers"),
             "response_format_status": response_review.get("status"),
             "response_format_production_blockers": response_review.get("production_blockers"),
+            "retry_repair_dry_run_status": retry_repair_dry_run.get("status"),
+            "retry_repair_case_count": retry_repair_dry_run.get("case_count"),
+            "retry_repair_paths": retry_repair_dry_run.get("repair_paths"),
             "activation_receipt_status": activation_receipt.get("status"),
             "activation_receipt_allowed_next_step": activation_receipt.get("allowed_next_step"),
             "activation_receipt_blockers": activation_receipt.get("blockers"),

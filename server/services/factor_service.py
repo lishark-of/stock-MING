@@ -888,6 +888,9 @@ def _attach_deepseek_json_stability_audit(
         governance=governance,
         json_stability_audit=audit,
     )
+    retry_repair_dry_run = factor_research.build_factor_deepseek_retry_repair_dry_run_contract(
+        model_used=str(model_strategy.get("model") or "")
+    )
     governance["json_stability_audit_status"] = audit["status"]
     governance["json_manual_explanation_ready"] = audit["manual_explanation_ready"]
     governance["json_production_ready"] = audit["production_ready"]
@@ -895,12 +898,17 @@ def _attach_deepseek_json_stability_audit(
     governance["response_format_review_status"] = response_format_review["status"]
     governance["response_format_production_ready"] = response_format_review["production_ready"]
     governance["response_format_retry_repair_ready"] = response_format_review["retry_repair_policy_ready"]
+    governance["retry_repair_dry_run_status"] = retry_repair_dry_run["status"]
+    governance["retry_repair_local_dry_run_ready"] = retry_repair_dry_run["local_retry_repair_dry_run_ready"]
+    governance["bounded_retry_repair_ready"] = retry_repair_dry_run["bounded_retry_repair_ready"]
     hub["deepseek_explain_governance"] = governance
     hub["deepseek_validation_summary"] = validation_summary
     hub["deepseek_json_stability_audit"] = audit
     hub["deepseek_json_stability_rows"] = audit["rows"]
     hub["deepseek_response_format_review_contract"] = response_format_review
     hub["deepseek_response_format_review_rows"] = response_format_review["rows"]
+    hub["deepseek_retry_repair_dry_run_contract"] = retry_repair_dry_run
+    hub["deepseek_retry_repair_dry_run_rows"] = retry_repair_dry_run["rows"]
     return hub
 
 

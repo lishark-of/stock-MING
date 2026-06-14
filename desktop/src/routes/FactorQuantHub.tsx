@@ -93,6 +93,7 @@ export default function FactorQuantHub() {
   const deepseekValidation = packet.deepseek_validation_summary ?? {};
   const deepseekJsonStability = packet.deepseek_json_stability_audit ?? {};
   const deepseekResponseFormatReview = packet.deepseek_response_format_review_contract ?? {};
+  const deepseekRetryRepairDryRun = packet.deepseek_retry_repair_dry_run_contract ?? {};
   const deepseekProductionActivationReceipt = packet.deepseek_production_activation_receipt ?? {};
   const scoreChart = packet.score_chart_payload ?? {};
   const scoreChartContract = scoreChart.chart_contract ?? {};
@@ -101,6 +102,7 @@ export default function FactorQuantHub() {
   const deepseekValidationRows = objectRows(deepseekValidation as Record<string, unknown>, "deepseek_validation");
   const deepseekJsonStabilityRows = toRows(packet.deepseek_json_stability_rows);
   const deepseekResponseFormatReviewRows = toRows(packet.deepseek_response_format_review_rows);
+  const deepseekRetryRepairDryRunRows = toRows(packet.deepseek_retry_repair_dry_run_rows);
   const deepseekProductionActivationRows = toRows(packet.deepseek_production_activation_rows);
   const deepseekProductionActivationReceiptRows = objectRows(deepseekProductionActivationReceipt as Record<string, unknown>, "deepseek_activation_receipt");
   const universeResearchRows = objectRows(universeResearch as Record<string, unknown>, "universe_contract");
@@ -296,6 +298,8 @@ export default function FactorQuantHub() {
           { label: "DS JSON last", value: deepseekJsonStability.last_known_mini_benchmark_success_rate ?? 0.75, tone: deepseekJsonStability.production_ready === true ? "good" : "warn" },
           { label: "DS benchmark", value: deepseekJsonStability.larger_benchmark_done === true ? "完成" : "未完成", tone: deepseekJsonStability.larger_benchmark_done === true ? "good" : "warn" },
           { label: "DS response_format", value: deepseekJsonStability.response_format_enforced === true ? "强约束" : "未强约束", tone: deepseekJsonStability.response_format_enforced === true ? "good" : "warn" },
+          { label: "DS retry dry-run", value: deepseekRetryRepairDryRun.status ?? "missing", tone: deepseekRetryRepairDryRun.local_retry_repair_dry_run_ready === true ? "good" : "warn" },
+          { label: "DS retry production", value: deepseekRetryRepairDryRun.bounded_retry_repair_ready === true ? "ready" : "blocked", tone: deepseekRetryRepairDryRun.bounded_retry_repair_ready === true ? "good" : "warn" },
           { label: "DS auto ready", value: deepseekJsonStability.auto_after_task_production_ready === true ? "ready" : "blocked", tone: deepseekJsonStability.auto_after_task_production_ready === true ? "good" : "warn" },
           { label: "DS activation", value: deepseekProductionActivationReceipt.status ?? "missing", tone: deepseekProductionActivationReceipt.local_activation_receipt_ready === true ? "good" : "warn" },
           { label: "DS provider benchmark", value: deepseekProductionActivationReceipt.provider_benchmark_done === true ? "完成" : "未完成", tone: deepseekProductionActivationReceipt.provider_benchmark_done === true ? "good" : "warn" },
@@ -385,6 +389,19 @@ export default function FactorQuantHub() {
       </PacketCard>
       <h3>DeepSeek response format review rows</h3>
       <DataLineageTable rows={deepseekResponseFormatReviewRows} />
+      <PacketCard title="DeepSeek retry/repair dry-run" subtitle="本地 JSON 提取/修复样本；不调用模型，不证明 provider retry/repair">
+        <p>status: {String(deepseekRetryRepairDryRun.status ?? "missing")}</p>
+        <p>scope: {String(deepseekRetryRepairDryRun.scope ?? "local_retry_repair_dry_run_no_model_call")}</p>
+        <p>local_retry_repair_dry_run_ready: {String(deepseekRetryRepairDryRun.local_retry_repair_dry_run_ready ?? false)}</p>
+        <p>case_count / passed_case_count: {String(deepseekRetryRepairDryRun.case_count ?? 0)} / {String(deepseekRetryRepairDryRun.passed_case_count ?? 0)}</p>
+        <p>parse_failed_case_count: {String(deepseekRetryRepairDryRun.parse_failed_case_count ?? 0)}</p>
+        <p>bounded_retry_repair_ready: {String(deepseekRetryRepairDryRun.bounded_retry_repair_ready ?? false)}</p>
+        <p>provider_retry_repair_executed: {String(deepseekRetryRepairDryRun.provider_retry_repair_executed ?? false)}</p>
+        <p>production_deepseek_explanation_complete: {String(deepseekRetryRepairDryRun.production_deepseek_explanation_complete ?? false)}</p>
+        <p className="risk-note">local retry/repair dry-run 只验证 fenced JSON、embedded JSON、非法字段清洗和 parse_failed discard；provider response_format、真实 retry/repair、benchmark 和 cost evidence 仍未完成。</p>
+      </PacketCard>
+      <h3>DeepSeek retry/repair dry-run rows</h3>
+      <DataLineageTable rows={deepseekRetryRepairDryRunRows} />
       <PacketCard title="DeepSeek production activation receipt" subtitle="下一步生产解释验收收据；不调用模型、不把 sanitizer 当 provider benchmark">
         <p>status: {String(deepseekProductionActivationReceipt.status ?? "missing")}</p>
         <p>local_activation_receipt_ready: {String(deepseekProductionActivationReceipt.local_activation_receipt_ready ?? false)}</p>

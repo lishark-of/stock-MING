@@ -7183,6 +7183,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("parse_failed_output_is_discarded_and_hashable", script)
         self.assertIn("json_stability_audit_blocks_production_auto", script)
         self.assertIn("response_format_review_is_local_not_provider_enforcement", script)
+        self.assertIn("retry_repair_dry_run_is_local_and_production_blocked", script)
+        self.assertIn("factor_deepseek_retry_repair_dry_run_contract.v1", script)
         self.assertIn("production_activation_receipt_guides_next_safe_step", script)
         self.assertIn("deepseek_production_activation_receipt.v1", script)
         self.assertIn("deepseek_task_is_button_gated_and_config_driven", script)
@@ -7211,6 +7213,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["larger_benchmark_done"])
         self.assertFalse(payload["response_format_enforced"])
         self.assertFalse(payload["retry_repair_policy_ready"])
+        self.assertTrue(payload["retry_repair_dry_run_ready"])
         self.assertFalse(payload["auto_after_task_production_ready"])
         self.assertTrue(payload["deepseek_production_activation_receipt_ready"])
         self.assertFalse(payload["production_deepseek_explanation_complete"])
@@ -7236,6 +7239,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "response_format_review_ready_provider_enforcement_pending",
         )
         self.assertEqual(
+            payload["observed"]["retry_repair_dry_run_status"],
+            "retry_repair_dry_run_ready_provider_execution_pending",
+        )
+        self.assertEqual(payload["observed"]["retry_repair_case_count"], 5)
+        self.assertIn("parse_failed_discard", payload["observed"]["retry_repair_paths"])
+        self.assertEqual(
             payload["observed"]["activation_receipt_status"],
             "deepseek_activation_receipt_ready_provider_benchmark_pending",
         )
@@ -7248,6 +7257,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("parse_failed_output_is_discarded_and_hashable", criteria)
         self.assertIn("json_stability_audit_blocks_production_auto", criteria)
         self.assertIn("response_format_review_is_local_not_provider_enforcement", criteria)
+        self.assertIn("retry_repair_dry_run_is_local_and_production_blocked", criteria)
         self.assertIn("production_activation_receipt_guides_next_safe_step", criteria)
         self.assertIn("local_builders_match_cache_governance_boundaries", criteria)
         self.assertIn("deepseek_task_is_button_gated_and_config_driven", criteria)
@@ -16169,6 +16179,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         json_audit_rows = {row["criterion"]: row for row in factor["data"]["deepseek_json_stability_rows"]}
         response_format_review = factor["data"]["deepseek_response_format_review_contract"]
         response_format_rows = {row["criterion"]: row for row in factor["data"]["deepseek_response_format_review_rows"]}
+        retry_repair_dry_run = factor["data"]["deepseek_retry_repair_dry_run_contract"]
+        retry_repair_rows = {row["case_key"]: row for row in factor["data"]["deepseek_retry_repair_dry_run_rows"]}
         activation_receipt = factor["data"]["deepseek_production_activation_receipt"]
         activation_rows = {row["criterion"]: row for row in factor["data"]["deepseek_production_activation_rows"]}
         self.assertFalse(factor["data"]["deepseek_called"])
@@ -16231,6 +16243,34 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(response_format_rows["provider_response_format_enforced"]["passed"])
         self.assertFalse(response_format_rows["retry_repair_policy_ready"]["passed"])
         self.assertTrue(response_format_rows["cache_render_no_model_call"]["passed"])
+        self.assertEqual(
+            retry_repair_dry_run["schema_version"],
+            "factor_deepseek_retry_repair_dry_run_contract.v1",
+        )
+        self.assertEqual(retry_repair_dry_run["status"], "retry_repair_dry_run_ready_provider_execution_pending")
+        self.assertEqual(retry_repair_dry_run["scope"], "local_retry_repair_dry_run_no_model_call")
+        self.assertTrue(retry_repair_dry_run["local_retry_repair_dry_run_ready"])
+        self.assertFalse(retry_repair_dry_run["retry_repair_policy_ready"])
+        self.assertFalse(retry_repair_dry_run["bounded_retry_repair_ready"])
+        self.assertFalse(retry_repair_dry_run["provider_retry_repair_executed"])
+        self.assertFalse(retry_repair_dry_run["production_deepseek_explanation_complete"])
+        self.assertEqual(retry_repair_dry_run["case_count"], 5)
+        self.assertEqual(retry_repair_dry_run["passed_case_count"], 5)
+        self.assertEqual(retry_repair_dry_run["parse_failed_case_count"], 1)
+        self.assertIn("provider_retry_repair_execution", retry_repair_dry_run["production_blockers"])
+        self.assertIn("provider_response_format_enforced", retry_repair_dry_run["production_blockers"])
+        self.assertIn("larger_benchmark_required", retry_repair_dry_run["production_blockers"])
+        self.assertFalse(retry_repair_dry_run["deepseek_called"])
+        self.assertFalse(retry_repair_dry_run["external_calls_triggered"])
+        self.assertTrue(retry_repair_dry_run["does_not_override_numeric_values"])
+        self.assertTrue(retry_repair_dry_run["does_not_output_strategy_action"])
+        self.assertTrue(retry_repair_rows["valid_json"]["passed"])
+        self.assertTrue(retry_repair_rows["fenced_json"]["passed"])
+        self.assertTrue(retry_repair_rows["prefixed_json"]["passed"])
+        self.assertTrue(retry_repair_rows["illegal_fields"]["passed"])
+        self.assertIn("strategy_action", retry_repair_rows["illegal_fields"]["ignored_keys"])
+        self.assertTrue(retry_repair_rows["malformed_text"]["passed"])
+        self.assertTrue(retry_repair_rows["malformed_text"]["parse_failed"])
         self.assertEqual(activation_receipt["schema_version"], "deepseek_production_activation_receipt.v1")
         self.assertEqual(activation_receipt["status"], "deepseek_activation_receipt_ready_provider_benchmark_pending")
         self.assertEqual(activation_receipt["scope"], "local_deepseek_production_activation_receipt_no_model_call")
@@ -16269,6 +16309,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             factor["data"]["deepseek_explain_governance"]["response_format_review_status"],
             "response_format_review_ready_provider_enforcement_pending",
         )
+        self.assertEqual(
+            factor["data"]["deepseek_explain_governance"]["retry_repair_dry_run_status"],
+            "retry_repair_dry_run_ready_provider_execution_pending",
+        )
+        self.assertTrue(factor["data"]["deepseek_explain_governance"]["retry_repair_local_dry_run_ready"])
+        self.assertFalse(factor["data"]["deepseek_explain_governance"]["bounded_retry_repair_ready"])
         self.assertFalse(factor["data"]["deepseek_explain_governance"]["response_format_production_ready"])
         self.assertFalse(factor["data"]["deepseek_explain_governance"]["response_format_retry_repair_ready"])
         self.assertFalse(factor["data"]["governance"]["allow_core_action"])

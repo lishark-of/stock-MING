@@ -3666,6 +3666,164 @@ def build_factor_deepseek_response_format_review_contract(
     }
 
 
+def build_factor_deepseek_retry_repair_dry_run_contract(*, model_used: str | None = None) -> dict:
+    cases = [
+        (
+            "valid_json",
+            json.dumps(
+                {
+                    "summary": "Valid local explanation.",
+                    "support_notes": ["support"],
+                    "suppress_notes": [],
+                    "conflict_notes": [],
+                    "missing_data_notes": [],
+                    "discipline_notes": ["research only"],
+                },
+                ensure_ascii=False,
+            ),
+            "direct_json",
+            False,
+        ),
+        (
+            "fenced_json",
+            "```json\n"
+            + json.dumps(
+                {
+                    "summary": "Fenced local explanation.",
+                    "support_notes": ["support"],
+                    "suppress_notes": [],
+                    "conflict_notes": [],
+                    "missing_data_notes": [],
+                    "discipline_notes": ["research only"],
+                },
+                ensure_ascii=False,
+            )
+            + "\n```",
+            "fenced_json_extraction",
+            False,
+        ),
+        (
+            "prefixed_json",
+            "Here is the object:\n"
+            + json.dumps(
+                {
+                    "summary": "Prefixed local explanation.",
+                    "support_notes": ["support"],
+                    "suppress_notes": [],
+                    "conflict_notes": [],
+                    "missing_data_notes": [],
+                    "discipline_notes": ["research only"],
+                },
+                ensure_ascii=False,
+            ),
+            "embedded_json_extraction",
+            False,
+        ),
+        (
+            "illegal_fields",
+            json.dumps(
+                {
+                    "summary": "Ignore unsafe fields.",
+                    "support_notes": ["support"],
+                    "price": 1.23,
+                    "strategy_action": "buy",
+                    "operation_zones": ["unsafe"],
+                    "factor_values": {"momentum": 1.0},
+                },
+                ensure_ascii=False,
+            ),
+            "sanitize_illegal_fields",
+            False,
+        ),
+        ("malformed_text", "not a json object", "parse_failed_discard", True),
+    ]
+    rows: list[dict[str, Any]] = []
+    for case_key, payload, repair_path, expected_parse_failed in cases:
+        sanitized = sanitize_factor_deepseek_explanation(
+            payload,
+            model_used=model_used or "",
+            input_hash=f"local-retry-repair-{case_key}",
+        )
+        allowed_keys_exact = set(_as_mapping(sanitized.get("payload")).keys()) == DEEPSEEK_EXPLANATION_ALLOWED_KEYS
+        parse_failed = bool(sanitized.get("parse_failed"))
+        ignored_keys = set(str(key) for key in _as_list(sanitized.get("ignored_keys")))
+        row_passed = (
+            sanitized.get("status") in {"success", "parse_failed"}
+            and parse_failed is expected_parse_failed
+            and allowed_keys_exact
+            and sanitized.get("does_not_override_numeric_values") is True
+            and sanitized.get("does_not_output_strategy_action") is True
+            and bool(sanitized.get("output_hash"))
+            and ("strategy_action" in ignored_keys if case_key == "illegal_fields" else True)
+        )
+        rows.append(
+            {
+                "case_key": case_key,
+                "repair_path": repair_path,
+                "status": "passed" if row_passed else "blocked",
+                "passed": row_passed,
+                "sanitizer_status": sanitized.get("status"),
+                "parse_failed": parse_failed,
+                "expected_parse_failed": bool(expected_parse_failed),
+                "allowed_top_level_keys_exact": allowed_keys_exact,
+                "ignored_keys": sorted(ignored_keys),
+                "output_hash": sanitized.get("output_hash"),
+                "output_token_estimate": sanitized.get("token_estimate"),
+                "model_call_status": "not_called",
+                "external_calls_triggered": False,
+                "deepseek_called": False,
+                "tushare_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_override_numeric_values": True,
+                "does_not_output_strategy_action": True,
+                "contains_secret": False,
+            }
+        )
+    blockers = [row["case_key"] for row in rows if not row["passed"]]
+    return {
+        "schema_version": "factor_deepseek_retry_repair_dry_run_contract.v1",
+        "status": "retry_repair_dry_run_ready_provider_execution_pending" if not blockers else "retry_repair_dry_run_blocked",
+        "scope": "local_retry_repair_dry_run_no_model_call",
+        "local_retry_repair_dry_run_ready": not blockers,
+        "retry_repair_policy_ready": False,
+        "bounded_retry_repair_ready": False,
+        "provider_retry_repair_executed": False,
+        "production_deepseek_explanation_complete": False,
+        "allowed_top_level_keys": sorted(DEEPSEEK_EXPLANATION_ALLOWED_KEYS),
+        "case_count": len(rows),
+        "passed_case_count": len(rows) - len(blockers),
+        "parse_failed_case_count": sum(1 for row in rows if row.get("parse_failed")),
+        "repair_paths": sorted({str(row.get("repair_path")) for row in rows}),
+        "production_blockers": [
+            "provider_retry_repair_execution",
+            "provider_response_format_enforced",
+            "larger_benchmark_required",
+            "token_budget_cost_evidence",
+        ],
+        "not_allowed_next_steps": [
+            "treat local retry/repair dry-run as provider retry evidence",
+            "enable auto_after_task by default",
+            "write parse_failed output into packet",
+            "use DeepSeek output as price/action data",
+        ],
+        "model_call_status": "not_called",
+        "deepseek_called": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_override_numeric_values": True,
+        "does_not_output_strategy_action": True,
+        "blocking_case_count": len(blockers),
+        "blockers": blockers,
+        "rows": rows,
+    }
+
+
 def _extract_json_object_text(value: str) -> str:
     text = value.strip()
     if text.startswith("```"):

@@ -761,8 +761,9 @@ Enable production-ready worker task orchestration
 - sanitizer is effective.
 - Factor Quant Hub now exposes a local `deepseek_json_stability_audit` that compares the 75% mini-benchmark baseline with the >90% production target, checks prompt/schema/token-budget/read-only boundaries, and marks automatic production explanation as blocked until larger benchmark and response-format enforcement are proven.
 - Factor Quant Hub now exposes `deepseek_response_format_review_contract`: a local response-format / retry-repair review contract that verifies JSON-object prompt instruction, six whitelisted top-level fields, parse-failure discard behavior, illegal-field sanitization, no numeric/action overwrite, token budget visibility, GET/render no-model-call boundaries, and default-off auto-after-task governance. It keeps provider-level response format enforcement, bounded retry/repair policy, larger benchmark, and production automation blocked.
+- Factor Quant Hub now exposes `deepseek_retry_repair_dry_run_contract`: a local no-model-call retry/repair dry-run that validates direct JSON, fenced JSON extraction, embedded JSON extraction, illegal-field sanitization, and parse-failed discard rows. It keeps provider retry execution, provider response-format enforcement, larger benchmark, token-cost evidence, and production DeepSeek automation blocked.
 - Factor Quant Hub now exposes `deepseek_production_activation_receipt` and rows: a local LTG-07 next-step receipt that ties manual/default-off governance, sanitizer whitelist, JSON stability audit, response-format review, provider benchmark blockers, provider response_format blockers, bounded retry/repair blockers, token/cost evidence, auto_after_task activation, no GET/render model call, and no numeric/action overwrite into one checklist. It keeps `production_deepseek_explanation_complete=false`.
-- `scripts/deepseek_governance_contract.py` is now part of the local push gate. It validates manual/default-off governance, sanitizer whitelist behavior, parse-failed discard, JSON stability blockers, response-format review blockers, button-gated task catalog, centralized model strategy, no-model-call, no-secret, no-trade, and no-action boundaries while production automatic explanation remains pending.
+- `scripts/deepseek_governance_contract.py` is now part of the local push gate. It validates manual/default-off governance, sanitizer whitelist behavior, parse-failed discard, JSON stability blockers, response-format review blockers, retry/repair dry-run rows, button-gated task catalog, centralized model strategy, no-model-call, no-secret, no-trade, and no-action boundaries while production automatic explanation remains pending.
 - Current state is suitable for manual explanation, not automatic production calling.
 - Runtime mode policy now separates default safety from future local automation: `cache_only` never calls DeepSeek, `manual` calls only by explicit button/task, and future `live_light` may enqueue at most one governed DeepSeek pro explanation after Tushare/factor/next-session cache is ready.
 
@@ -775,6 +776,7 @@ Enable production-ready worker task orchestration
 - `auto_after_task` needs conservative production governance.
 - `deepseek_json_stability_audit.status=manual_ready_production_blocked` is a local sanitizer/prompt contract, not a real model benchmark pass.
 - `deepseek_response_format_review_contract.status=response_format_review_ready_provider_enforcement_pending` is a local review contract; it does not prove provider-level response format enforcement, retry/repair execution, or larger benchmark success.
+- `deepseek_retry_repair_dry_run_contract.status=retry_repair_dry_run_ready_provider_execution_pending` is a local dry-run contract; it does not call DeepSeek, does not prove provider retry execution, does not prove bounded retry/repair readiness, and does not justify enabling automatic production explanation.
 - `deepseek_production_activation_receipt.status=deepseek_activation_receipt_ready_provider_benchmark_pending` is a local activation receipt; it does not call DeepSeek, does not prove provider benchmark, does not enforce provider response_format, does not prove bounded retry/repair, and does not make `auto_after_task` production-ready.
 - The DeepSeek governance push-gate contract is still a local guard only; provider-backed benchmark, provider response-format enforcement, bounded retry/repair execution, and production auto-after-task readiness remain pending.
 - `live_light` DeepSeek is not implemented yet. It needs explicit config, mode display, input hash dedupe, model ledger, token budget display, safe retry/parse fallback, and rate limits before it can run automatically.
@@ -788,6 +790,7 @@ Enable production-ready worker task orchestration
 5. Promote `deepseek_json_stability_audit` from local readiness to real benchmark evidence only after provider-backed samples meet the target.
 6. Add future `live_light` DeepSeek after-task behavior only after data tasks complete, with same-input hash dedupe and sanitizer-first writeback.
 7. Keep the automatic output schema narrow: `summary`, `support_notes`, `suppress_notes`, `conflict_notes`, `missing_data_notes`, and `discipline_notes` only.
+8. Promote retry/repair from local dry-run to provider-backed bounded execution only after a real model benchmark proves retries, repairs, parse-failed discard, ledger rows, and cost limits together.
 
 ### Acceptance Criteria
 
@@ -799,8 +802,9 @@ Enable production-ready worker task orchestration
 - Failure does not pollute local results.
 - `deepseek_json_stability_audit` must show `production_ready=true` only after JSON success rate exceeds 90%, larger benchmark is complete, and response format is enforced.
 - `deepseek_response_format_review_contract` must keep `production_ready=false` until provider-level response format enforcement, bounded retry/repair policy, and larger benchmark evidence are all proven.
+- `deepseek_retry_repair_dry_run_contract` may show `local_retry_repair_dry_run_ready=true` only for local extraction/sanitizer/parse-failed cases, while `retry_repair_policy_ready=false`, `bounded_retry_repair_ready=false`, `provider_retry_repair_executed=false`, and `production_deepseek_explanation_complete=false` stay visible until provider-backed evidence exists.
 - `deepseek_production_activation_receipt` must keep `provider_benchmark_done=false`, `provider_response_format_enforced=false`, `bounded_retry_repair_ready=false`, `token_budget_cost_evidence_complete=false`, `auto_after_task_production_ready=false`, and `production_deepseek_explanation_complete=false` until the explicit provider-backed acceptance sequence is complete.
-- `scripts/deepseek_governance_contract.py` passes in the local push gate while reporting `provider_benchmark_done=false`, `response_format_enforced=false`, `retry_repair_policy_ready=false`, `auto_after_task_production_ready=false`, `deepseek_production_activation_receipt_ready=true`, and `production_deepseek_explanation_complete=false`.
+- `scripts/deepseek_governance_contract.py` passes in the local push gate while reporting `provider_benchmark_done=false`, `response_format_enforced=false`, `retry_repair_policy_ready=false`, `retry_repair_dry_run_ready=true`, `auto_after_task_production_ready=false`, `deepseek_production_activation_receipt_ready=true`, and `production_deepseek_explanation_complete=false`.
 - GET cache and React render must keep `model_call_status=not_called`.
 - Future `live_light` DeepSeek may only run through POST task / worker after data readiness, must record model used, status, token usage, parse status, cache hit/miss, input hash, and output hash, and must keep failed parse out of the packet.
 - Future `live_light` DeepSeek output must be sanitized to the six-field explanation schema: `summary`, `support_notes`, `suppress_notes`, `conflict_notes`, `missing_data_notes`, and `discipline_notes`.
@@ -816,6 +820,7 @@ Enable production-ready worker task orchestration
 - Do not let model output overwrite prices, positions, factor values, operation zones, or action.
 - Do not treat local sanitizer/prompt audit as production automatic explanation readiness.
 - Do not treat response-format review as provider-level response format enforcement or production benchmark completion.
+- Do not treat retry/repair dry-run rows as provider retry execution, bounded retry/repair readiness, DeepSeek JSON stability proof, or production automation permission.
 - Do not treat `deepseek_production_activation_receipt` as provider benchmark success, provider response_format enforcement, bounded retry/repair readiness, token-cost production proof, `auto_after_task` production readiness, or production DeepSeek explanation completion.
 - Do not treat `scripts/deepseek_governance_contract.py` passing as real provider benchmark success, provider response-format enforcement, bounded retry/repair readiness, auto-after-task production readiness, or production DeepSeek explanation completion.
 
