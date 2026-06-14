@@ -408,6 +408,90 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(qa_rows["startup_external_call_boundary"]["passed"])
         self.assertTrue(qa_rows["secret_bundle_boundary"]["passed"])
         self.assertIn("production_package_readiness_receipt", desktop)
+        self.assertIn("tauri_release_manifest_contract", desktop)
+        release_manifest = desktop["tauri_release_manifest_contract"]
+        release_manifest_rows = {row["criterion"]: row for row in desktop["tauri_release_manifest_rows"]}
+        self.assertEqual(release_manifest["schema_version"], "tauri_release_manifest_contract.v1")
+        self.assertEqual(
+            release_manifest["status"],
+            "release_manifest_contract_ready_packaged_execution_pending",
+        )
+        self.assertEqual(
+            release_manifest["scope"],
+            "local_tauri_release_manifest_contract_no_build_or_runtime_execution",
+        )
+        self.assertTrue(release_manifest["local_release_manifest_ready"])
+        self.assertTrue(release_manifest["ready_for_explicit_tauri_build_review"])
+        self.assertFalse(release_manifest["ready_for_production_package_promotion"])
+        self.assertFalse(release_manifest["production_package_complete"])
+        self.assertEqual(release_manifest["product_name"], "stock-MING Command Center")
+        self.assertEqual(release_manifest["app_version"], "3.0.0")
+        self.assertEqual(release_manifest["bundle_identifier"], "com.stockming.commandcenter")
+        self.assertEqual(release_manifest["frontend_dist"], "../dist")
+        self.assertEqual(release_manifest["before_build_command"], "npm run build")
+        self.assertTrue(release_manifest["dev_url_is_localhost"])
+        self.assertTrue(release_manifest["icon_asset_present"])
+        self.assertTrue(release_manifest["desktop_dist_gitignored"])
+        self.assertTrue(release_manifest["tauri_target_gitignored"])
+        self.assertEqual(
+            release_manifest["backend_startup_strategy"],
+            "manual_fastapi_process_current_sidecar_pending",
+        )
+        self.assertTrue(release_manifest["manual_backend_launch_required"])
+        self.assertFalse(release_manifest["backend_sidecar_autostart_enabled"])
+        self.assertEqual(release_manifest["config_file_policy"], runtime_contract["config_file_policy"])
+        self.assertEqual(release_manifest["log_file_policy"], runtime_contract["log_file_policy"])
+        self.assertEqual(release_manifest["release_artifact_status"], build_artifact["status"])
+        self.assertEqual(release_manifest["packaged_runtime_qa_status"], qa_contract["status"])
+        self.assertEqual(release_manifest["packaged_runtime_pending_qa_count"], qa_contract["pending_qa_count"])
+        self.assertFalse(release_manifest["tauri_build_executed"])
+        self.assertFalse(release_manifest["npm_or_cargo_executed"])
+        self.assertFalse(release_manifest["tauri_runtime_started"])
+        self.assertFalse(release_manifest["packaged_app_opened"])
+        self.assertFalse(release_manifest["fastapi_started"])
+        self.assertFalse(release_manifest["config_values_read"])
+        self.assertFalse(release_manifest["log_files_written"])
+        self.assertFalse(release_manifest["signing_notarization_done"])
+        self.assertFalse(release_manifest["external_calls_triggered"])
+        self.assertFalse(release_manifest["tushare_called"])
+        self.assertFalse(release_manifest["deepseek_called"])
+        self.assertFalse(release_manifest["github_called"])
+        self.assertFalse(release_manifest["contains_secret"])
+        self.assertTrue(release_manifest["does_not_execute_trades"])
+        self.assertTrue(release_manifest["does_not_modify_strategy_action"])
+        self.assertEqual(release_manifest["local_blocker_count"], 0)
+        self.assertGreater(release_manifest["production_blocker_count"], 0)
+        self.assertTrue(release_manifest_rows["app_identity_manifest_declared"]["passed"])
+        self.assertTrue(release_manifest_rows["frontend_dist_manifest_declared"]["passed"])
+        self.assertTrue(release_manifest_rows["local_dev_url_manifest_declared"]["passed"])
+        self.assertTrue(release_manifest_rows["icon_asset_present"]["passed"])
+        self.assertTrue(release_manifest_rows["generated_artifacts_gitignored"]["passed"])
+        self.assertTrue(release_manifest_rows["backend_startup_policy_manifest_declared"]["passed"])
+        self.assertTrue(release_manifest_rows["config_log_path_manifest_declared"]["passed"])
+        self.assertFalse(release_manifest_rows["packaged_runtime_qa_manifest_pending"]["passed"])
+        self.assertFalse(release_manifest_rows["signing_notarization_manifest_pending"]["passed"])
+        self.assertEqual(release_manifest["call_ledger"][0]["api"], "local_tauri_release_manifest_contract")
+        self.assertFalse(release_manifest["call_ledger"][0]["external"])
+        self.assertIn("local_tauri_release_manifest_contract", {row["api"] for row in desktop["call_ledger"]})
+        self.assertTrue(desktop["policy"]["tauri_release_manifest_contract_is_local"])
+        self.assertTrue(desktop["policy"]["tauri_release_manifest_contract_is_not_build"])
+        self.assertTrue(desktop["policy"]["tauri_release_manifest_contract_is_not_runtime_execution"])
+        self.assertTrue(desktop["policy"]["tauri_release_manifest_contract_is_not_production_completion"])
+        self.assertEqual(desktop["counts"]["tauri_release_manifest_row_count"], release_manifest["row_count"])
+        self.assertEqual(
+            desktop["counts"]["tauri_release_manifest_local_blocker_count"],
+            release_manifest["local_blocker_count"],
+        )
+        self.assertEqual(
+            desktop["counts"]["tauri_release_manifest_production_blocker_count"],
+            release_manifest["production_blocker_count"],
+        )
+        self.assertTrue(desktop["runtime"]["tauri_release_manifest_ready"])
+        self.assertEqual(desktop["runtime"]["tauri_release_manifest_status"], release_manifest["status"])
+        self.assertEqual(
+            desktop["runtime"]["tauri_release_manifest_production_blocker_count"],
+            release_manifest["production_blocker_count"],
+        )
         readiness_receipt = desktop["production_package_readiness_receipt"]
         readiness_rows = {row["criterion"]: row for row in desktop["production_package_readiness_receipt_rows"]}
         self.assertEqual(readiness_receipt["schema_version"], "tauri_production_package_readiness_receipt.v1")
@@ -6934,6 +7018,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("backend_offline_ux_is_source_contract_only", script)
         self.assertIn("packaged_runtime_qa_stays_pending", script)
         self.assertIn("production_blocker_audit_blocks_completion", script)
+        self.assertIn("release_manifest_contract_is_local_package_manifest_only", script)
         self.assertIn("production_readiness_receipt_allows_only_explicit_package_qa", script)
         self.assertIn("tauri_task_policy_does_not_run_build_or_runtime", script)
         self.assertIn("frontend_does_not_expose_secrets", script)
@@ -6960,6 +7045,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["runtime_contract_visible"])
         self.assertTrue(payload["backend_offline_ux_contract_visible"])
         self.assertTrue(payload["packaged_runtime_qa_visible"])
+        self.assertTrue(payload["release_manifest_visible"])
         self.assertTrue(payload["cache_only"])
         self.assertTrue(payload["does_not_run_tauri"])
         self.assertTrue(payload["does_not_run_npm"])
@@ -6973,6 +7059,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["packaged_runtime_qa_done"])
         self.assertFalse(payload["signing_notarization_done"])
         self.assertTrue(payload["production_package_readiness_receipt_ready"])
+        self.assertTrue(payload["tauri_release_manifest_ready"])
+        self.assertEqual(
+            payload["tauri_release_manifest_status"],
+            "release_manifest_contract_ready_packaged_execution_pending",
+        )
         self.assertIn(
             payload["production_package_readiness_receipt_status"],
             {
@@ -6995,6 +7086,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["packaged_runtime_qa_status"],
             "packaged_runtime_qa_contract_ready_validation_pending",
         )
+        self.assertEqual(
+            payload["observed"]["tauri_release_manifest_status"],
+            "release_manifest_contract_ready_packaged_execution_pending",
+        )
+        self.assertEqual(payload["observed"]["tauri_release_manifest_local_blocker_count"], 0)
+        self.assertGreater(payload["observed"]["tauri_release_manifest_production_blocker_count"], 0)
         self.assertEqual(
             payload["observed"]["backend_offline_ux_status"],
             "frontend_offline_notice_ready_packaged_runtime_validation_pending",
@@ -7024,6 +7121,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("backend_offline_ux_is_source_contract_only", criteria)
         self.assertIn("packaged_runtime_qa_stays_pending", criteria)
         self.assertIn("production_blocker_audit_blocks_completion", criteria)
+        self.assertIn("release_manifest_contract_is_local_package_manifest_only", criteria)
         self.assertIn("production_readiness_receipt_allows_only_explicit_package_qa", criteria)
         self.assertIn("tauri_task_policy_does_not_run_build_or_runtime", criteria)
         self.assertIn("frontend_does_not_expose_secrets", criteria)

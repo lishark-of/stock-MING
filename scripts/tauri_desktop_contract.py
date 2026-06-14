@@ -37,6 +37,19 @@ REQUIRED_PACKAGED_QA_CRITERIA = {
     "startup_external_call_boundary",
     "secret_bundle_boundary",
 }
+REQUIRED_RELEASE_MANIFEST_CRITERIA = {
+    "app_identity_manifest_declared",
+    "frontend_dist_manifest_declared",
+    "local_dev_url_manifest_declared",
+    "icon_asset_present",
+    "generated_artifacts_gitignored",
+    "backend_startup_policy_manifest_declared",
+    "config_log_path_manifest_declared",
+    "release_artifact_manifest_observed",
+    "packaged_runtime_qa_manifest_pending",
+    "signing_notarization_manifest_pending",
+    "startup_safety_boundary_declared",
+}
 REQUIRED_PACKAGE_READINESS_RECEIPT_CRITERIA = {
     "local_tauri_contracts_visible",
     "explicit_build_task_boundary",
@@ -93,6 +106,9 @@ def build_contract() -> dict[str, Any]:
     blocker_criteria = {str(row.get("criterion") or "") for row in blocker_rows}
     qa_rows = [row for row in _list(packet.get("packaged_runtime_qa_rows")) if isinstance(row, dict)]
     qa_criteria = {str(row.get("criterion") or "") for row in qa_rows}
+    release_manifest = _dict(packet.get("tauri_release_manifest_contract"))
+    release_manifest_rows = [row for row in _list(packet.get("tauri_release_manifest_rows")) if isinstance(row, dict)]
+    release_manifest_criteria = {str(row.get("criterion") or "") for row in release_manifest_rows}
     readiness_receipt = _dict(packet.get("production_package_readiness_receipt"))
     readiness_receipt_rows = [row for row in _list(packet.get("production_package_readiness_receipt_rows")) if isinstance(row, dict)]
     readiness_receipt_criteria = {str(row.get("criterion") or "") for row in readiness_receipt_rows}
@@ -198,6 +214,50 @@ def build_contract() -> dict[str, Any]:
             "Production blocker audit must keep sidecar/manual backend, offline UX, package QA, and signing/notarization blockers visible.",
         ),
         _row(
+            "release_manifest_contract_is_local_package_manifest_only",
+            release_manifest.get("schema_version") == "tauri_release_manifest_contract.v1"
+            and release_manifest.get("status") == "release_manifest_contract_ready_packaged_execution_pending"
+            and release_manifest.get("scope") == "local_tauri_release_manifest_contract_no_build_or_runtime_execution"
+            and release_manifest.get("local_release_manifest_ready") is True
+            and release_manifest.get("ready_for_explicit_tauri_build_review") is True
+            and release_manifest.get("ready_for_production_package_promotion") is False
+            and release_manifest.get("production_package_complete") is False
+            and release_manifest.get("product_name") == "stock-MING Command Center"
+            and release_manifest.get("app_version") == "3.0.0"
+            and release_manifest.get("bundle_identifier") == "com.stockming.commandcenter"
+            and release_manifest.get("frontend_dist") == "../dist"
+            and release_manifest.get("before_build_command") == "npm run build"
+            and release_manifest.get("dev_url_is_localhost") is True
+            and release_manifest.get("icon_asset_present") is True
+            and release_manifest.get("desktop_dist_gitignored") is True
+            and release_manifest.get("tauri_target_gitignored") is True
+            and release_manifest.get("manual_backend_launch_required") is True
+            and release_manifest.get("backend_sidecar_autostart_enabled") is False
+            and release_manifest.get("config_values_read") is False
+            and release_manifest.get("log_files_written") is False
+            and release_manifest.get("tauri_build_executed") is False
+            and release_manifest.get("npm_or_cargo_executed") is False
+            and release_manifest.get("tauri_runtime_started") is False
+            and release_manifest.get("packaged_app_opened") is False
+            and release_manifest.get("fastapi_started") is False
+            and release_manifest.get("signing_notarization_done") is False
+            and int(release_manifest.get("local_blocker_count") or 0) == 0
+            and int(release_manifest.get("production_blocker_count") or 0) > 0
+            and REQUIRED_RELEASE_MANIFEST_CRITERIA.issubset(release_manifest_criteria)
+            and _flag_false(release_manifest, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and release_manifest.get("does_not_execute_trades") is True
+            and release_manifest.get("does_not_modify_strategy_action") is True
+            and release_manifest.get("contains_secret") is False
+            and _list(release_manifest.get("call_ledger"))
+            and _dict(_list(release_manifest.get("call_ledger"))[0]).get("api") == "local_tauri_release_manifest_contract"
+            and _dict(_list(release_manifest.get("call_ledger"))[0]).get("external") is False
+            and policy.get("tauri_release_manifest_contract_is_local") is True
+            and policy.get("tauri_release_manifest_contract_is_not_build") is True
+            and policy.get("tauri_release_manifest_contract_is_not_runtime_execution") is True
+            and policy.get("tauri_release_manifest_contract_is_not_production_completion") is True,
+            "Release manifest may expose app identity, dist, artifact ignore policy, backend startup policy, config/log policy, QA gaps, and signing gaps only; it must not run build/runtime commands or claim production package completion.",
+        ),
+        _row(
             "production_readiness_receipt_allows_only_explicit_package_qa",
             readiness_receipt.get("schema_version") == "tauri_production_package_readiness_receipt.v1"
             and readiness_receipt.get("status")
@@ -279,6 +339,7 @@ def build_contract() -> dict[str, Any]:
             "script_is_local_no_build_or_provider_execution",
             "command_center_3_tauri_desktop_contract.v1" in this_script
             and "local_tauri_desktop_contract_no_build_or_runtime_execution" in this_script
+            and "release_manifest_contract_is_local_package_manifest_only" in this_script
             and "production_package_complete" in this_script
             and "packaged_runtime_qa_done" in this_script
             and "tauri_build_executed" in this_script
@@ -305,12 +366,15 @@ def build_contract() -> dict[str, Any]:
         "runtime_contract_visible": runtime_contract.get("schema_version") == "tauri_production_runtime_contract.v1",
         "backend_offline_ux_contract_visible": offline_ux.get("schema_version") == "tauri_backend_offline_ux_contract.v1",
         "packaged_runtime_qa_visible": packaged_qa.get("schema_version") == "tauri_packaged_runtime_qa_contract.v1",
+        "release_manifest_visible": release_manifest.get("schema_version") == "tauri_release_manifest_contract.v1",
         "production_package_complete": False,
         "tauri_build_executed": False,
         "packaged_runtime_qa_done": False,
         "signing_notarization_done": False,
         "production_package_readiness_receipt_ready": readiness_receipt.get("local_receipt_ready") is True,
         "production_package_readiness_receipt_status": readiness_receipt.get("status"),
+        "tauri_release_manifest_ready": release_manifest.get("local_release_manifest_ready") is True,
+        "tauri_release_manifest_status": release_manifest.get("status"),
         "cache_only": True,
         "does_not_run_tauri": True,
         "does_not_run_npm": True,
@@ -334,6 +398,9 @@ def build_contract() -> dict[str, Any]:
             "production_blocker_count": blocker_audit.get("blocker_count"),
             "packaged_runtime_qa_status": packaged_qa.get("status"),
             "packaged_runtime_pending_qa_count": packaged_qa.get("pending_qa_count"),
+            "tauri_release_manifest_status": release_manifest.get("status"),
+            "tauri_release_manifest_local_blocker_count": release_manifest.get("local_blocker_count"),
+            "tauri_release_manifest_production_blocker_count": release_manifest.get("production_blocker_count"),
             "backend_offline_ux_status": offline_ux.get("status"),
             "production_runtime_status": runtime_contract.get("status"),
             "tauri_build_artifact_status": build_artifact.get("status"),

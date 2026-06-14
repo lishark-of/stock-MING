@@ -33,6 +33,7 @@ export default function DesktopShellPreflight() {
   const backendOfflineUxContract = (cache.backend_offline_ux_contract as Record<string, unknown> | undefined) ?? {};
   const productionBlockerAudit = (cache.production_blocker_audit as Record<string, unknown> | undefined) ?? {};
   const packagedRuntimeQaContract = (cache.packaged_runtime_qa_contract as Record<string, unknown> | undefined) ?? {};
+  const tauriReleaseManifestContract = (cache.tauri_release_manifest_contract as Record<string, unknown> | undefined) ?? {};
   const productionPackageReadinessReceipt = (cache.production_package_readiness_receipt as Record<string, unknown> | undefined) ?? {};
   const devLaunchPlan = rows(cache.dev_launch_plan);
   const productionLaunchPlan = rows(cache.production_launch_plan);
@@ -40,6 +41,7 @@ export default function DesktopShellPreflight() {
   const backendOfflineUxRows = rows(cache.backend_offline_ux_rows);
   const productionBlockerRows = rows(cache.production_blocker_rows);
   const packagedRuntimeQaRows = rows(cache.packaged_runtime_qa_rows);
+  const tauriReleaseManifestRows = rows(cache.tauri_release_manifest_rows);
   const productionPackageReadinessReceiptRows = rows(cache.production_package_readiness_receipt_rows);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
@@ -74,6 +76,8 @@ export default function DesktopShellPreflight() {
           { label: "packaged offline UX", value: productionRuntimeContract.backend_offline_ui_packaged_runtime_verified === true ? "verified" : "pending", tone: productionRuntimeContract.backend_offline_ui_packaged_runtime_verified === true ? "good" : "warn" },
           { label: "packaged QA", value: packagedRuntimeQaContract.status as string | undefined, tone: packagedRuntimeQaContract.packaged_runtime_validated === true ? "good" : "warn" },
           { label: "pending QA", value: packagedRuntimeQaContract.pending_qa_count as number | undefined, tone: Number(packagedRuntimeQaContract.pending_qa_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "release manifest", value: tauriReleaseManifestContract.local_release_manifest_ready === true ? "ready" : "review", tone: tauriReleaseManifestContract.local_release_manifest_ready === true ? "good" : "warn" },
+          { label: "manifest blockers", value: tauriReleaseManifestContract.production_blocker_count as number | undefined, tone: Number(tauriReleaseManifestContract.production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "receipt ready", value: productionPackageReadinessReceipt.local_receipt_ready === true ? "yes" : "review", tone: productionPackageReadinessReceipt.local_receipt_ready === true ? "good" : "warn" },
           { label: "receipt blockers", value: productionPackageReadinessReceipt.blocking_criterion_count ?? counts.production_package_readiness_receipt_blocker_count, tone: Number(productionPackageReadinessReceipt.blocking_criterion_count ?? counts.production_package_readiness_receipt_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "package blockers", value: productionBlockerAudit.blocker_count as number | undefined, tone: Number(productionBlockerAudit.blocker_count ?? 0) > 0 ? "warn" : "good" },
@@ -165,6 +169,22 @@ export default function DesktopShellPreflight() {
         <DataLineageTable rows={packagedRuntimeQaRows} />
       </PacketCard>
 
+      <PacketCard title="Tauri release manifest contract" subtitle="发布清单合同；只读检查身份、dist、artifact ignore、后端策略、配置/日志路径和签名缺口" status={String(tauriReleaseManifestContract.status ?? "release_manifest_contract_missing")}>
+        <p>schema_version: {String(tauriReleaseManifestContract.schema_version ?? "tauri_release_manifest_contract.v1")}</p>
+        <p>scope: {String(tauriReleaseManifestContract.scope ?? "local_tauri_release_manifest_contract_no_build_or_runtime_execution")}</p>
+        <p>product / version / identifier: {String(tauriReleaseManifestContract.product_name ?? "stock-MING Command Center")} / {String(tauriReleaseManifestContract.app_version ?? "3.0.0")} / {String(tauriReleaseManifestContract.bundle_identifier ?? "com.stockming.commandcenter")}</p>
+        <p>frontend_dist / before_build_command / dev_url: {String(tauriReleaseManifestContract.frontend_dist ?? "../dist")} / {String(tauriReleaseManifestContract.before_build_command ?? "npm run build")} / {String(tauriReleaseManifestContract.dev_url ?? "http://127.0.0.1:5173")}</p>
+        <p>icon_asset_present / desktop_dist_gitignored / tauri_target_gitignored: {String(tauriReleaseManifestContract.icon_asset_present ?? false)} / {String(tauriReleaseManifestContract.desktop_dist_gitignored ?? false)} / {String(tauriReleaseManifestContract.tauri_target_gitignored ?? false)}</p>
+        <p>backend_startup_strategy: {String(tauriReleaseManifestContract.backend_startup_strategy ?? "manual_fastapi_process_current_sidecar_pending")}</p>
+        <p>config_file_policy / log_file_policy: {String(tauriReleaseManifestContract.config_file_policy ?? "~/.stock_ming_3/desktop.local.json")} / {String(tauriReleaseManifestContract.log_file_policy ?? "~/.stock_ming_3/logs/command_center_3.log")}</p>
+        <p>local_release_manifest_ready / ready_for_production_package_promotion: {String(tauriReleaseManifestContract.local_release_manifest_ready ?? false)} / {String(tauriReleaseManifestContract.ready_for_production_package_promotion ?? false)}</p>
+        <p>tauri_build_executed / packaged_app_opened / fastapi_started: {String(tauriReleaseManifestContract.tauri_build_executed ?? false)} / {String(tauriReleaseManifestContract.packaged_app_opened ?? false)} / {String(tauriReleaseManifestContract.fastapi_started ?? false)}</p>
+        <p>config_values_read / log_files_written / signing_notarization_done: {String(tauriReleaseManifestContract.config_values_read ?? false)} / {String(tauriReleaseManifestContract.log_files_written ?? false)} / {String(tauriReleaseManifestContract.signing_notarization_done ?? false)}</p>
+        <p>external_calls_triggered / tushare_called / deepseek_called / github_called: {String(tauriReleaseManifestContract.external_calls_triggered ?? false)} / {String(tauriReleaseManifestContract.tushare_called ?? false)} / {String(tauriReleaseManifestContract.deepseek_called ?? false)} / {String(tauriReleaseManifestContract.github_called ?? false)}</p>
+        <DataLineageTable rows={tauriReleaseManifestRows} />
+        <DataLineageTable rows={rows(tauriReleaseManifestContract.call_ledger)} />
+      </PacketCard>
+
       <PacketCard title="Tauri production package readiness receipt" subtitle="LTG-09 下一步收据；只允许显式 build / packaged runtime QA review" status={String(productionPackageReadinessReceipt.status ?? "tauri_package_readiness_receipt_ready_build_pending")}>
         <p>schema_version: {String(productionPackageReadinessReceipt.schema_version ?? "tauri_production_package_readiness_receipt.v1")}</p>
         <p>scope: {String(productionPackageReadinessReceipt.scope ?? "local_tauri_production_package_readiness_receipt_no_build_or_runtime_execution")}</p>
@@ -207,6 +227,7 @@ export default function DesktopShellPreflight() {
 
       <PacketCard title="原始 desktop preflight cache payload" subtitle="调试用 JSON；不含 token/key" status="safe">
         <JsonDetails title="desktop shell preflight raw" data={cache} />
+        <JsonDetails title="tauri release manifest raw" data={tauriReleaseManifestContract} />
         <JsonDetails title="tauri production package readiness receipt raw" data={productionPackageReadinessReceipt} />
       </PacketCard>
     </>

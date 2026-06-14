@@ -17,6 +17,7 @@ FRONTEND_API_CLIENT = DESKTOP_ROOT / "src" / "api" / "client.ts"
 FRONTEND_PAGE_STATE_BANNER = DESKTOP_ROOT / "src" / "components" / "PageStateBanner.tsx"
 FRONTEND_BACKEND_OFFLINE_NOTICE = DESKTOP_ROOT / "src" / "components" / "BackendOfflineNotice.tsx"
 FRONTEND_STYLES = DESKTOP_ROOT / "src" / "styles.css"
+ROOT_GITIGNORE = PROJECT_ROOT / ".gitignore"
 
 
 def _now_iso() -> str:
@@ -80,6 +81,213 @@ def _tauri_build_artifact_summary() -> dict[str, Any]:
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "note": "GET desktop preflight only detects a local Tauri release artifact; it does not run npm, cargo, Tauri, backend sidecars, signing, providers, models, GitHub, or trades.",
+    }
+
+
+def _gitignore_contains(pattern: str) -> bool:
+    return pattern in _read_source_safe(ROOT_GITIGNORE)
+
+
+def _release_manifest_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    *,
+    evidence: str,
+    local_contract_required: bool = True,
+    production_blocker: bool = False,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "local_contract_required": bool(local_contract_required),
+        "production_blocker": bool(production_blocker),
+        "evidence": evidence,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "loads_token_or_key": False,
+        "reads_config_values": False,
+        "writes_log_files": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _tauri_release_manifest_contract(
+    *,
+    tauri_config: dict[str, Any],
+    production_runtime_contract: dict[str, Any],
+    tauri_build_artifact: dict[str, Any],
+    packaged_runtime_qa_contract: dict[str, Any],
+) -> dict[str, Any]:
+    product_name = str(tauri_config.get("product_name") or "")
+    app_version = str(tauri_config.get("version") or "")
+    bundle_identifier = str(tauri_config.get("identifier") or "")
+    frontend_dist = str(tauri_config.get("frontend_dist") or "")
+    dev_url = str(tauri_config.get("dev_url") or "")
+    before_build_command = str(tauri_config.get("before_build_command") or "")
+    icon_path = DESKTOP_ROOT / "src-tauri" / "icons" / "icon.png"
+    dist_gitignored = _gitignore_contains("desktop/dist/")
+    target_gitignored = _gitignore_contains("desktop/src-tauri/target/")
+    local_manifest_ready = all(
+        (
+            bool(product_name),
+            bool(app_version),
+            bool(bundle_identifier),
+            frontend_dist == "../dist",
+            bool(tauri_config.get("dev_url_is_localhost")),
+            production_runtime_contract.get("config_paths_declared") is True,
+            production_runtime_contract.get("log_paths_declared") is True,
+            packaged_runtime_qa_contract.get("schema_version") == "tauri_packaged_runtime_qa_contract.v1",
+        )
+    )
+    rows = [
+        _release_manifest_row(
+            "app_identity_manifest_declared",
+            "passed" if product_name and app_version and bundle_identifier else "blocked",
+            bool(product_name and app_version and bundle_identifier),
+            evidence=f"productName={product_name or 'missing'}; version={app_version or 'missing'}; identifier={bundle_identifier or 'missing'}",
+        ),
+        _release_manifest_row(
+            "frontend_dist_manifest_declared",
+            "passed" if frontend_dist == "../dist" and before_build_command == "npm run build" else "blocked",
+            frontend_dist == "../dist" and before_build_command == "npm run build",
+            evidence=f"frontendDist={frontend_dist or 'missing'}; beforeBuildCommand={before_build_command or 'missing'}",
+        ),
+        _release_manifest_row(
+            "local_dev_url_manifest_declared",
+            "passed" if tauri_config.get("dev_url_is_localhost") else "blocked",
+            bool(tauri_config.get("dev_url_is_localhost")),
+            evidence=f"devUrl={dev_url or 'missing'}",
+        ),
+        _release_manifest_row(
+            "icon_asset_present",
+            "passed" if icon_path.exists() else "blocked",
+            icon_path.exists(),
+            evidence=f"icon={_path_label(icon_path)}; exists={icon_path.exists()}",
+        ),
+        _release_manifest_row(
+            "generated_artifacts_gitignored",
+            "passed" if dist_gitignored and target_gitignored else "blocked",
+            dist_gitignored and target_gitignored,
+            evidence=f"desktop/dist/ ignored={dist_gitignored}; desktop/src-tauri/target/ ignored={target_gitignored}",
+        ),
+        _release_manifest_row(
+            "backend_startup_policy_manifest_declared",
+            "passed",
+            True,
+            evidence=f"strategy={production_runtime_contract.get('backend_startup_strategy')}; manual_backend_launch_required={production_runtime_contract.get('manual_backend_launch_required')}",
+        ),
+        _release_manifest_row(
+            "config_log_path_manifest_declared",
+            "passed"
+            if production_runtime_contract.get("config_paths_declared") and production_runtime_contract.get("log_paths_declared")
+            else "blocked",
+            bool(production_runtime_contract.get("config_paths_declared") and production_runtime_contract.get("log_paths_declared")),
+            evidence=f"config={production_runtime_contract.get('config_file_policy')}; log={production_runtime_contract.get('log_file_policy')}",
+        ),
+        _release_manifest_row(
+            "release_artifact_manifest_observed",
+            "passed" if tauri_build_artifact.get("binary_exists") else "pending",
+            bool(tauri_build_artifact.get("binary_exists")),
+            evidence=f"artifact_status={tauri_build_artifact.get('status')}; path={tauri_build_artifact.get('binary_path')}",
+            local_contract_required=False,
+            production_blocker=not bool(tauri_build_artifact.get("binary_exists")),
+        ),
+        _release_manifest_row(
+            "packaged_runtime_qa_manifest_pending",
+            "pending",
+            False,
+            evidence=f"qa_status={packaged_runtime_qa_contract.get('status')}; pending_qa_count={packaged_runtime_qa_contract.get('pending_qa_count')}",
+            local_contract_required=False,
+            production_blocker=True,
+        ),
+        _release_manifest_row(
+            "signing_notarization_manifest_pending",
+            "pending",
+            False,
+            evidence="macOS signing, notarization, and distribution review remain future explicit production-package acceptance steps",
+            local_contract_required=False,
+            production_blocker=True,
+        ),
+        _release_manifest_row(
+            "startup_safety_boundary_declared",
+            "passed",
+            True,
+            evidence="release manifest contract does not start Tushare, DeepSeek, GitHub probes, FastAPI, Tauri, packaged app, or trade paths",
+        ),
+    ]
+    local_blockers = [row["criterion"] for row in rows if row.get("local_contract_required") and not row.get("passed")]
+    production_blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
+    return {
+        "schema_version": "tauri_release_manifest_contract.v1",
+        "status": "release_manifest_contract_ready_packaged_execution_pending" if not local_blockers else "release_manifest_contract_blocked",
+        "scope": "local_tauri_release_manifest_contract_no_build_or_runtime_execution",
+        "ltg": "LTG-09",
+        "local_release_manifest_ready": not local_blockers,
+        "ready_for_explicit_tauri_build_review": not local_blockers,
+        "ready_for_production_package_promotion": False,
+        "production_package_complete": False,
+        "product_name": product_name,
+        "app_version": app_version,
+        "bundle_identifier": bundle_identifier,
+        "frontend_dist": frontend_dist,
+        "before_build_command": before_build_command,
+        "dev_url": dev_url,
+        "dev_url_is_localhost": bool(tauri_config.get("dev_url_is_localhost")),
+        "icon_asset_path": _path_label(icon_path),
+        "icon_asset_present": icon_path.exists(),
+        "desktop_dist_gitignored": dist_gitignored,
+        "tauri_target_gitignored": target_gitignored,
+        "backend_startup_strategy": production_runtime_contract.get("backend_startup_strategy"),
+        "manual_backend_launch_required": True,
+        "backend_sidecar_autostart_enabled": False,
+        "config_file_policy": production_runtime_contract.get("config_file_policy"),
+        "log_file_policy": production_runtime_contract.get("log_file_policy"),
+        "release_artifact_status": tauri_build_artifact.get("status"),
+        "release_artifact_path": tauri_build_artifact.get("binary_path"),
+        "packaged_runtime_qa_status": packaged_runtime_qa_contract.get("status"),
+        "packaged_runtime_pending_qa_count": packaged_runtime_qa_contract.get("pending_qa_count"),
+        "tauri_build_executed": False,
+        "npm_or_cargo_executed": False,
+        "tauri_runtime_started": False,
+        "packaged_app_opened": False,
+        "fastapi_started": False,
+        "config_values_read": False,
+        "log_files_written": False,
+        "signing_notarization_done": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+        "row_count": len(rows),
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_tauri_release_manifest_contract",
+                "source": "tauri config, gitignore, desktop runtime contract, packaged QA contract",
+                "row_count": len(rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_release_manifest_contract",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This release manifest contract makes package identity, dist, artifact ignore policy, backend startup policy, config/log path policy, packaged QA gaps, and signing/notarization gaps visible. It does not run npm, cargo, Tauri, packaged app, FastAPI, providers, models, GitHub probes, config reads, log writes, trades, or production package promotion.",
     }
 
 
@@ -1026,6 +1234,12 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         backend_offline_ux_contract=backend_offline_ux_contract,
         production_blocker_audit=production_blocker_audit,
     )
+    tauri_release_manifest_contract = _tauri_release_manifest_contract(
+        tauri_config=tauri_config,
+        production_runtime_contract=production_runtime_contract,
+        tauri_build_artifact=tauri_build_artifact,
+        packaged_runtime_qa_contract=packaged_runtime_qa_contract,
+    )
     production_package_readiness_receipt = _tauri_production_readiness_receipt(
         production_readiness=production_readiness,
         production_runtime_contract=production_runtime_contract,
@@ -1059,6 +1273,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "production_blocker_rows": production_blocker_audit["rows"],
         "packaged_runtime_qa_contract": packaged_runtime_qa_contract,
         "packaged_runtime_qa_rows": packaged_runtime_qa_contract["rows"],
+        "tauri_release_manifest_contract": tauri_release_manifest_contract,
+        "tauri_release_manifest_rows": tauri_release_manifest_contract["rows"],
         "production_package_readiness_receipt": production_package_readiness_receipt,
         "production_package_readiness_receipt_rows": production_package_readiness_receipt["rows"],
         "file_rows": file_rows,
@@ -1070,6 +1286,9 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "command_ready_count": sum(1 for row in command_rows if row["available"]),
             "packaged_runtime_qa_matrix_count": packaged_runtime_qa_contract["qa_matrix_count"],
             "packaged_runtime_pending_qa_count": packaged_runtime_qa_contract["pending_qa_count"],
+            "tauri_release_manifest_row_count": tauri_release_manifest_contract["row_count"],
+            "tauri_release_manifest_local_blocker_count": tauri_release_manifest_contract["local_blocker_count"],
+            "tauri_release_manifest_production_blocker_count": tauri_release_manifest_contract["production_blocker_count"],
             "production_package_readiness_receipt_ready": 1 if production_package_readiness_receipt["local_receipt_ready"] else 0,
             "production_package_readiness_receipt_blocker_count": production_package_readiness_receipt["blocking_criterion_count"],
         },
@@ -1108,6 +1327,9 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "macos_signing_notarization_ready": production_blocker_audit["macos_signing_notarization_ready"],
             "packaged_runtime_qa_contract_ready": packaged_runtime_qa_contract["qa_contract_ready"],
             "packaged_runtime_pending_qa_count": packaged_runtime_qa_contract["pending_qa_count"],
+            "tauri_release_manifest_ready": tauri_release_manifest_contract["local_release_manifest_ready"],
+            "tauri_release_manifest_status": tauri_release_manifest_contract["status"],
+            "tauri_release_manifest_production_blocker_count": tauri_release_manifest_contract["production_blocker_count"],
             "production_package_readiness_receipt_ready": production_package_readiness_receipt["local_receipt_ready"],
             "production_package_readiness_receipt_status": production_package_readiness_receipt["status"],
             "production_package_readiness_receipt_blocker_count": production_package_readiness_receipt["blocking_criterion_count"],
@@ -1124,6 +1346,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "api_base_must_be_localhost": True,
             "production_runtime_contract_is_path_only": True,
             "packaged_runtime_qa_contract_is_static": True,
+            "tauri_release_manifest_contract_is_local": True,
+            "tauri_release_manifest_contract_is_not_build": True,
+            "tauri_release_manifest_contract_is_not_runtime_execution": True,
+            "tauri_release_manifest_contract_is_not_production_completion": True,
             "production_package_readiness_receipt_is_local": True,
             "production_package_readiness_receipt_is_not_build": True,
             "production_package_readiness_receipt_is_not_runtime_execution": True,
@@ -1147,6 +1373,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
                 "external": False,
             }
         ]
+        + tauri_release_manifest_contract["call_ledger"]
         + production_package_readiness_receipt["call_ledger"],
         "external_calls_triggered": False,
         "tushare_called": False,
