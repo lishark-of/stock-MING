@@ -52,6 +52,33 @@ The local branch may contain roadmap or LTG implementation commits that are not 
 
 Current local LTG work must not be treated as shared baseline until tests, build, smoke, safety scans, and user confirmation pass. Do not push without confirmation.
 
+## Runtime Mode Layering Baseline
+
+The long-term boundary is not a permanent ban on all startup-side automation. It is a default-deny, mode-based runtime model. `cache_only` remains the safe default for smoke, CI, quick reads, and disconnected review. Future local-investment-client workflows may opt into `live_light`, but only through auditable FastAPI `POST` tasks, never direct React provider calls or cache GET side effects.
+
+| mode | behavior | external_calls | use_case | default |
+|---|---|---|---|---|
+| `cache_only` | Read existing cache only. GET cache and React render never call providers or models. | none | smoke / CI / quick view / offline review | yes |
+| `manual` | User clicks an explicit button or submits an explicit task. | only the selected task may call Tushare, DeepSeek, or GitHub probe |稳健投研与验收 | no |
+| `live_light` | After initial cache render, React may create one rate-limited background bootstrap task. | light Tushare refresh and optional DeepSeek pro explanation through POST task / worker / local fallback | 本地日常投研客户端 | no |
+| `live_full` | Reserved for full-pool or deep-scan production work. | future explicit worker mode only | 全池/深扫，不默认启用 | no |
+
+Recommended future configuration keys:
+
+```text
+COMMAND_CENTER_BOOTSTRAP_MODE=cache_only | manual | live_light | live_full
+COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN=false
+COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN=false
+COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT=20
+COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS=600
+COMMAND_CENTER_LIVE_DEEPSEEK_MODEL=deepseek-v4-pro
+COMMAND_CENTER_LIVE_ALLOW_FULL_POOL=false
+```
+
+`live_light` target behavior is intentionally narrow: the page must render from cache first, create at most one background bootstrap task inside the rate limit, show the current mode and task status, and degrade safely when the task fails. The task may refresh current target / holdings / watchlist light data, refresh factor and next-session caches, and optionally enqueue a governed DeepSeek pro explanation after data is ready. It must not block UI, mutate `strategy action`, change prices or holdings, write `operation_zones`, execute trades, or expose token/key material.
+
+This mode layering also applies to search-driven research. A future stock search or "生成 3.0 量化推演" action should create a POST task that validates the symbol, refreshes allowed light data, writes call ledger/model ledger, updates Factor Quant Hub and Next Session cache, and displays provenance, freshness, DeepSeek status, and chart results. It remains research-only and cannot turn DeepSeek text, factor scores, or radar candidates into buy/sell instructions.
+
 ## Remaining Goals Snapshot
 
 Current snapshot date: 2026-06-14.
@@ -75,18 +102,18 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 | id | long_term_goal | current_status | target_state | priority | success_criteria |
 |---|---|---|---|---|---|
 | LTG-01 | A 股交易日历级 freshness 生产化 | `done_real` MVP, still needs production validation | All current evidence is gated by expected trade date | P1 | stale / expired / historical / unknown data cannot enter score, support, evidence preview, or action. |
-| LTG-02 | Tushare 全接口生产流水线 | core light path `done_real`; extended APIs `matrix` / `mock` | All selected interfaces run through task pipeline with call ledger | P2 | Each interface has real target samples, safe failure states, and no false verified claims. |
+| LTG-02 | Tushare 全接口生产流水线 | core light path `done_real`; extended APIs `matrix` / `mock`; `live_light` bootstrap remains future work | All selected interfaces run through task pipeline with call ledger and mode-gated refresh rules | P2 | Each interface has real target samples, safe failure states, no false verified claims, and no cache/render direct provider calls. |
 | LTG-03 | Factor Test Lab 完整生产化 | light research metrics `done_real`; production QA contract visible; production research incomplete | Research-grade factor validation for single factors | P3 | IC, Rank IC, ICIR, groups, cost, drawdown, sample split, decay, and neutral IC are auditable and research-only. |
 | LTG-04 | Factor 全市场 / 股票池研究 | light mode plus local read-plan and execution readiness audit; batch execution pending | watchlist / custom pool / full pool research pipeline | P3 | Large universe runs in task pipeline without blocking UI or entering strategy action. |
 | LTG-05 | Storage / DuckDB / Parquet 生产化 | dataset scaffold, dry-runs, query policy, and push-gate contract exist | Versioned, queryable local data layer | P4 | schema/version/TTL/compaction/query services are auditable; data artifacts stay out of git. |
 | LTG-06 | Worker / Celery / Redis 生产化 | local task fallback, preflight, blocker audit, healthcheck QA contract, readiness/activation receipts, and push-gate contract exist | Production-capable worker orchestration with local fallback | P4 | POST returns task_id, worker runs heavy jobs, Redis absence falls back gracefully, scheduler stays off by default. |
-| LTG-07 | DeepSeek pro 稳定解释生产化 | manual governance, sanitizer, local JSON stability audit, response-format review, activation receipt, and push-gate contract exist; mini-benchmark below production target | Stable manual explanation, optional background auto-after-task | P5 | JSON success rate > 90%, no action leakage, no numeric overwrite, cost predictable. |
+| LTG-07 | DeepSeek pro 稳定解释生产化 | manual governance, sanitizer, local JSON stability audit, response-format review, activation receipt, and push-gate contract exist; mini-benchmark below production target; `live_light` auto explanation remains future work | Stable manual explanation, optional mode-gated background explanation after data tasks | P5 | JSON success rate > 90%, no action leakage, no numeric overwrite, cost predictable, and failed parse never contaminates packets. |
 | LTG-08 | ECharts 次日操作图谱成熟版 | maturing chart contract with interaction readiness audit; legacy parity pending | React/ECharts replaces Streamlit main next-session visual | P5 | Complete cache display, evidence interactions, no frontend action/price/position mutation. |
 | LTG-09 | Tauri desktop production package | dev/preflight with runtime contract and local executable release binary QA; `.app`/DMG packaged runtime QA pending | Production desktop shell for ordinary users | P6 | tauri dev/build pass; backend-offline state is friendly; config/log policy is validated; token/key never enters frontend. |
 | LTG-10 | Streamlit 完全退出普通主流程 | `legacy/admin/debug` marked, fallback dependency contract visible, still used for fallback | Streamlit only for debug/admin/fallback | P7 | Ordinary research workflow runs through Command Center 3 desktop. |
 | LTG-11 | 测试 / CI / smoke / 安全扫描标准化 | local tests, smoke, and local contract guards exist | Repeatable gate for every release candidate | P0/P4 | unittest, frontend build, smoke, diff check, secret scan, artifact scan, and local LTG contracts are documented and enforced. |
 | LTG-12 | 真实交易链路继续保持隔离 | auto trading not connected | Trading remains explicitly out of automatic chains | Always | No automatic order path; strategy action cannot be mutated by research/cache/model/frontend paths. |
-| LTG-13 | 下一票雷达快扫生产化 | local fast-scan readiness, no-feature-loss QA, legacy parity acceptance receipt, local full-pool execution receipt, local deep-scan review receipt, and push-gate contract exist; provider-backed full-pool/deep-scan acceptance pending | Fast radar scan in Command Center 3 without feature loss or degraded signal coverage | P3 | Radar runs through task pipeline, preserves legacy signal groups, avoids UI stalls, and reports coverage gaps instead of hiding them. |
+| LTG-13 | 下一票雷达快扫生产化 | local fast-scan readiness, no-feature-loss QA, legacy parity acceptance receipt, local full-pool execution receipt, local deep-scan review receipt, and push-gate contract exist; provider-backed full-pool/deep-scan acceptance pending; search-to-quant projection remains future mode-gated work | Fast radar scan and search-driven quant projection in Command Center 3 without feature loss or degraded signal coverage | P3 | Radar and search tasks run through task pipeline, preserve legacy signal groups, avoid UI stalls, and report coverage gaps instead of hiding them. |
 | LTG-14 | Command Center 3 动效与可视化清晰度优化 | first motion clarity layer, static readiness audit, and production QA contract exist; browser visual/performance QA pending | Apple keynote-grade clarity and restrained motion that makes state changes easier to see | P8 | Motion is purposeful, performant, accessible, respects reduced-motion, and never obscures data or decisions. |
 
 ## LTG-01: A 股交易日历级 Freshness 生产化
@@ -194,6 +221,7 @@ Harden A-share trading-calendar freshness production gate
 - Tushare refresh packets now expose `provider_sample_activation_receipt`: a local activation checklist for future explicit target-sample provider acceptance. It keeps provider task execution, safe provider call ledger rows for every target domain, explicit full-interface acceptance marker, and production completion pending while confirming GET cache and React render do not call Tushare/DeepSeek/GitHub or mutate action.
 - Tushare refresh packets now expose `provider_target_sample_acceptance_contract`: an explicit `provider_target_sample_acceptance` payload review layer that can mark one or more target domains as review-ready from button-task call ledger evidence, while keeping full-interface acceptance, production completion, GET/render provider calls, and strategy action mutation false.
 - The local LTG-02 contract and service tests now cover multi-target review-ready evidence for dragon-tiger, limit/emotion, chip distribution, financial disclosure, and hard-risk domains in one explicit target-sample acceptance pass. This is still local/fake evidence plumbing only: it does not call real Tushare, does not promote provider-backed acceptance, and does not complete the production Tushare pipeline.
+- Tushare refresh packets now expose `provider_target_sample_runbook_contract`: a local provider-sample review checklist that pins the explicit POST route, required `provider_target_sample_acceptance` mode, required APIs, payload context fields, call-ledger evidence checklist, gap-ledger blockers, and promotion-review boundary for every requested target domain. It does not call Tushare, create tasks, promote local/fake samples, or complete production acceptance.
 - `scripts/tushare_acceptance_contract.py` is now part of the local push gate. It exercises only local matrix/readiness contract helpers and prevents matrix-only rows, failure-mode QA, request-parameter QA, target-sample plans, or provider-readiness audits from being mistaken for provider-backed production acceptance.
 - `POST /api/tasks/refresh-tushare-facts` now exposes an explicit `provider_backed_trade_cal_long_window` call-ledger evidence mode for future `trade_cal` provider acceptance. It does not run by default, does not make `trade_cal` full-interface acceptance, and still requires replay/failure-mode evidence before provider-backed long-window acceptance can be marked on the ledger row.
 
@@ -217,8 +245,10 @@ Harden A-share trading-calendar freshness production gate
 - `provider_sample_activation_receipt.status=provider_sample_activation_ready_execution_pending` or `provider_sample_activation_blocked_local_readiness` only describes the local activation checklist; it does not execute provider samples, create tasks, or prove production completion.
 - `provider_target_sample_acceptance_contract.status=target_sample_acceptance_ready_for_review` only means explicit target-domain sample evidence is reviewable for the selected target groups. It is not full-interface provider-backed acceptance, not production Tushare completion, and not evidence that GET cache or React render called a provider.
 - Multi-target review-ready evidence is still not full-interface evidence: even when dragon-tiger, limit/emotion, chip distribution, financial disclosure, and hard-risk rows all reach `target_sample_acceptance_ready_for_review`, `provider_backed_acceptance_done=false`, `full_interface_acceptance_done=false`, and `production_tushare_pipeline_complete=false` must remain visible.
+- `provider_target_sample_runbook_contract.status=target_sample_runbook_ready_provider_review_pending` only means the explicit provider-sample review checklist is complete for the requested target domains. It is not provider execution, provider-backed acceptance, full-interface acceptance, or production Tushare completion.
 - The local Tushare acceptance push-gate contract is not a provider run; it only blocks regressions in button gating, matrix semantics, call-ledger requirements, pending provider acceptance flags, and no-trade/no-action boundaries.
 - The `provider_backed_trade_cal_long_window` task mode is a controlled evidence marker for the `trade_cal` target only. It is not Tushare full-interface acceptance, not production pipeline completion, and not automatic provider execution.
+- `live_light` bootstrap is not implemented yet. It still needs configuration, mode display, rate limiting, one-task-per-window dedupe, task status polling, safe failure display, and token-safe call ledger before it can be enabled.
 
 ### Implementation Phases
 
@@ -226,10 +256,13 @@ Harden A-share trading-calendar freshness production gate
 2. Validate market evidence groups one at a time: margin, dragon-tiger, limit/emotion, chip, disclosure, hard risk.
 3. Add per-interface request parameter contracts and safe error states.
 4. Persist only production-approved datasets; keep other results as validation records until storage contracts are ready.
+5. Add a future `live_light` bootstrap task that can refresh only current target / holdings / watchlist light data through POST task, with `daily`, `daily_basic`, `moneyflow`, and `trade_cal if needed` as the initial allowed interface set.
 
 ### Acceptance Criteria
 
 - Every selected interface runs through POST task pipeline only.
+- `cache_only` GET cache and React render never call Tushare directly.
+- Future `live_light` refresh can only be created by a POST bootstrap task after initial cache render, with rate limit, dedupe, symbol limit, and visible mode state.
 - Every interface records `call_ledger`, `row_count`, `data_date`, `local_fetched_at`, `call_status`, and `error_message_safe`.
 - Permission denied, no record, empty window, parse failure, missing parameter, and blocked state are distinguishable.
 - Unselected APIs never display as `verified`.
@@ -243,14 +276,18 @@ Harden A-share trading-calendar freshness production gate
 - `provider_sample_activation_receipt` shows readiness receipt visibility, explicit POST task requirement, provider execution evidence required, promotion review required, target gap ledger visibility, matrix/local QA not acceptance, cache/render no-provider boundary, production-completion boundary, and no-trade/no-action boundary.
 - `provider_target_sample_acceptance_contract` shows explicit acceptance mode, requested target groups, target rows, sample sufficiency, failure-mode evidence, source-task call state, no contract-side provider calls, and full-interface/production-completion false flags.
 - Local push-gate coverage includes a multi-target sample acceptance fixture where dragon-tiger, limit/emotion, chip distribution, financial disclosure, and hard-risk target groups can feed the gap ledger and readiness receipt as review-ready evidence only; every such row must still be blocked from provider promotion by `provider_promotion_not_ready`.
+- `provider_target_sample_runbook_contract` shows target-domain POST route, required acceptance mode, required API selection, payload context, evidence checklist, promotion blockers, allowed next step, forbidden shortcuts, no-provider-call flags, and no-trade/no-action flags for single-target and multi-target sample review.
 - `provider_acceptance_readiness_audit.provider_backed_acceptance_done=false` and `production_tushare_pipeline_complete=false` until real provider-backed full-interface acceptance is explicitly proven.
 - `scripts/tushare_acceptance_contract.py` passes in the push gate while still reporting `provider_backed_acceptance_done=false`, `production_tushare_pipeline_complete=false`, and `full_interface_acceptance_done=false`.
 - Tokens are never printed, stored in packets, or exposed to frontend.
 - `trade_cal` provider-backed long-window evidence requires explicit payload, long-window schema evidence, freshness replay, and failure-mode validation; a plain successful `trade_cal` refresh remains a normal selected API result.
+- Future live startup UI shows current mode, Tushare auto-refresh on/off, latest bootstrap task status, skipped-by-rate-limit state, and safe errors without exposing token/key.
 
 ### Forbidden
 
 - Do not call Tushare from GET cache or page render.
+- Do not treat a future React mounted POST bootstrap task as a direct render/provider call; keep the distinction explicit in tests and docs.
+- Do not enable `live_light` by default; local users must opt in through config or an explicit UI mode.
 - Do not mark matrix-only rows as real validation.
 - Do not treat `api_acceptance_audit` as proof that provider coverage or production refresh is complete.
 - Do not treat `failure_mode_qa_contract` as proof that permission-denied, empty-window, or parse-failure cases have all been observed against real Tushare.
@@ -262,6 +299,7 @@ Harden A-share trading-calendar freshness production gate
 - Do not treat `provider_sample_activation_receipt.local_activation_receipt_ready=true` as provider-backed acceptance, provider task execution, or production Tushare completion.
 - Do not treat `provider_target_sample_acceptance_contract.target_sample_acceptance_ready_for_review=true` as full-interface acceptance, production Tushare completion, or evidence that cache/render paths called Tushare.
 - Do not treat multi-target local review-ready evidence as full-interface provider-backed acceptance, production Tushare completion, or permission to retire matrix/gap/promotion blockers.
+- Do not treat `provider_target_sample_runbook_contract.runbook_ready=true` as provider execution, provider-backed acceptance, full-interface acceptance, production Tushare completion, or permission to bypass explicit promotion audit.
 - Do not treat `scripts/tushare_acceptance_contract.py` passing as real Tushare provider acceptance; it is only a local push-gate regression guard.
 - Do not commit fetched data artifacts.
 
@@ -597,16 +635,16 @@ Productionize Command Center 3 storage datasets
 - Worker task-log persistence rows are visible in UI, and `task_log_persistence_verified=false`, `append_only_worker_log_verified=false`, `cross_process_log_round_trip_verified=false`, and `production_worker_complete=false` until a future explicit live worker healthcheck proves append-only/cross-process log persistence.
 - Worker queue routing rows are visible in UI, queue names include `provider_refresh`, `model_explain`, `external_probe`, `local_maintenance`, and `local_compute`, provider/model/probe-capable tasks do not enter local queues, all queues remain button-gated, scheduler auto task count is zero, and `production_worker_complete=false`.
 - Worker activation review rows are visible in UI, and `activation_ready=false` until production blockers are resolved and an explicit synthetic/local worker healthcheck proves readiness.
-- Worker readiness receipt rows are visible in UI, `allowed_next_step=explicit_post_worker_synthetic_healthcheck_then_manual_activation_review`, and `not_allowed_next_steps` explicitly blocks GET cache process start, Redis ping, scheduler start, task dispatch, automatic Tushare/DeepSeek/GitHub scheduling, and treating the receipt or synthetic healthcheck as production completion.
-- Worker production activation receipt rows are visible in UI, `allowed_next_step=explicit_synthetic_healthcheck_then_manual_celery_redis_activation_review`, and `not_allowed_next_steps` explicitly blocks GET cache process start, Redis ping, scheduler start, task dispatch, automatic Tushare/DeepSeek/GitHub scheduling, and treating the activation receipt as production worker completion.
+- Worker readiness receipt rows are visible in UI, `allowed_next_step=explicit_post_worker_synthetic_healthcheck_then_manual_activation_review`, and `not_allowed_next_steps` explicitly blocks GET cache process start, Redis ping, scheduler start, task dispatch, unconfigured provider/model scheduling, and treating the receipt or synthetic healthcheck as production completion.
+- Worker production activation receipt rows are visible in UI, `allowed_next_step=explicit_synthetic_healthcheck_then_manual_celery_redis_activation_review`, and `not_allowed_next_steps` explicitly blocks GET cache process start, Redis ping, scheduler start, task dispatch, unconfigured provider/model scheduling, and treating the activation receipt as production worker completion.
 - `scripts/worker_contract.py` passes in the local push gate while reporting `production_worker_complete=false`, `healthcheck_executed=false`, `task_log_persistence_verified=false`, `append_only_worker_log_verified=false`, `activation_ready=false`, `worker_started=false`, `redis_pinged=false`, `scheduler_started=false`, `worker_queue_routing_contract_ready=true`, `worker_production_readiness_receipt_ready=true`, and `worker_production_activation_receipt_ready=true`.
-- Real Tushare/DeepSeek scheduling is never automatic.
+- Production scheduler-based Tushare/DeepSeek scheduling is never automatic by default; future `live_light` may create only an opt-in, rate-limited POST bootstrap task.
 - Failures include `error_message_safe`.
 
 ### Forbidden
 
 - Do not start Celery, Redis, or scheduler from GET cache.
-- Do not auto-schedule real provider/model tasks.
+- Do not auto-schedule real provider/model tasks from GET cache, worker readiness receipts, or production scheduler defaults.
 - Do not report preflight as production worker completion.
 - Do not report blocker audit as production worker completion.
 - Do not report local task-log persistence audit as append-only Celery/Redis worker log proof, cross-process worker round-trip proof, or production worker completion.
@@ -637,6 +675,7 @@ Enable production-ready worker task orchestration
 - Factor Quant Hub now exposes `deepseek_production_activation_receipt` and rows: a local LTG-07 next-step receipt that ties manual/default-off governance, sanitizer whitelist, JSON stability audit, response-format review, provider benchmark blockers, provider response_format blockers, bounded retry/repair blockers, token/cost evidence, auto_after_task activation, no GET/render model call, and no numeric/action overwrite into one checklist. It keeps `production_deepseek_explanation_complete=false`.
 - `scripts/deepseek_governance_contract.py` is now part of the local push gate. It validates manual/default-off governance, sanitizer whitelist behavior, parse-failed discard, JSON stability blockers, response-format review blockers, button-gated task catalog, centralized model strategy, no-model-call, no-secret, no-trade, and no-action boundaries while production automatic explanation remains pending.
 - Current state is suitable for manual explanation, not automatic production calling.
+- Runtime mode policy now separates default safety from future local automation: `cache_only` never calls DeepSeek, `manual` calls only by explicit button/task, and future `live_light` may enqueue at most one governed DeepSeek pro explanation after Tushare/factor/next-session cache is ready.
 
 ### Gaps
 
@@ -649,6 +688,7 @@ Enable production-ready worker task orchestration
 - `deepseek_response_format_review_contract.status=response_format_review_ready_provider_enforcement_pending` is a local review contract; it does not prove provider-level response format enforcement, retry/repair execution, or larger benchmark success.
 - `deepseek_production_activation_receipt.status=deepseek_activation_receipt_ready_provider_benchmark_pending` is a local activation receipt; it does not call DeepSeek, does not prove provider benchmark, does not enforce provider response_format, does not prove bounded retry/repair, and does not make `auto_after_task` production-ready.
 - The DeepSeek governance push-gate contract is still a local guard only; provider-backed benchmark, provider response-format enforcement, bounded retry/repair execution, and production auto-after-task readiness remain pending.
+- `live_light` DeepSeek is not implemented yet. It needs explicit config, mode display, input hash dedupe, model ledger, token budget display, safe retry/parse fallback, and rate limits before it can run automatically.
 
 ### Implementation Phases
 
@@ -657,6 +697,7 @@ Enable production-ready worker task orchestration
 3. Track token budget and model choice per purpose.
 4. Keep automatic explanation disabled unless explicitly enabled and bounded.
 5. Promote `deepseek_json_stability_audit` from local readiness to real benchmark evidence only after provider-backed samples meet the target.
+6. Add future `live_light` DeepSeek after-task behavior only after data tasks complete, with same-input hash dedupe and sanitizer-first writeback.
 
 ### Acceptance Criteria
 
@@ -671,10 +712,13 @@ Enable production-ready worker task orchestration
 - `deepseek_production_activation_receipt` must keep `provider_benchmark_done=false`, `provider_response_format_enforced=false`, `bounded_retry_repair_ready=false`, `token_budget_cost_evidence_complete=false`, `auto_after_task_production_ready=false`, and `production_deepseek_explanation_complete=false` until the explicit provider-backed acceptance sequence is complete.
 - `scripts/deepseek_governance_contract.py` passes in the local push gate while reporting `provider_benchmark_done=false`, `response_format_enforced=false`, `retry_repair_policy_ready=false`, `auto_after_task_production_ready=false`, `deepseek_production_activation_receipt_ready=true`, and `production_deepseek_explanation_complete=false`.
 - GET cache and React render must keep `model_call_status=not_called`.
+- Future `live_light` DeepSeek may only run through POST task / worker after data readiness, must record model used, status, token usage, parse status, cache hit/miss, input hash, and output hash, and must keep failed parse out of the packet.
 
 ### Forbidden
 
 - Do not call DeepSeek on page render or GET cache.
+- Do not treat future `live_light` after-task DeepSeek as a render call; it must remain a task with dedupe, mode gating, and audit fields.
+- Do not enable DeepSeek `live_light` by default before benchmark, response-format, retry/repair, and token budget gates are accepted.
 - Do not use DeepSeek as a data source.
 - Do not let model output overwrite prices, positions, factor values, operation zones, or action.
 - Do not treat local sanitizer/prompt audit as production automatic explanation readiness.
@@ -822,7 +866,7 @@ Mature ECharts next-session operation map interactions
 - Do not claim `production_blocker_audit` as production package completion while status remains `production_package_blocked`.
 - Do not claim `production_package_readiness_receipt` as build execution, packaged app launch, FastAPI startup, config/log runtime validation, signing/notarization, packaged runtime QA, or production package completion.
 - Do not claim `scripts/tauri_desktop_contract.py` passing as Tauri build execution, packaged runtime QA, signing/notarization, or production package completion.
-- Do not auto-call providers/models during app startup.
+- Do not auto-call providers/models during `cache_only` app startup or initial render; future desktop `live_light` must still use the same opt-in POST bootstrap task, mode display, and rate-limit boundary as the web client.
 
 ### Recommended Commit Message
 
@@ -1061,6 +1105,7 @@ Keep real trading isolated from Command Center 3 automation
 - `scripts/candidate_radar_contract.py` is now part of the local push gate. It reads only local cache/service contracts and keeps cache GET, quick-scan task gating, full-pool plan, full-pool local receipt, deep-scan plan, deep-scan local review receipt, no-feature-loss QA, replacement-gap triage, promotion-blocker audit, result-delta clarity, candidate-priority explanation, no-provider, no-model, no-trade, and no-action boundaries auditable while `production_radar_replacement_complete=false` and `legacy_retirement_ready=false`.
 - `scripts/candidate_radar_browser_qa_runbook.py` is now part of the local push gate after the LTG-13 contract and before generic motion QA. It is a static execution runbook only; it keeps `visual_qa_complete=false`, `browser_performance_trace_done=false`, `production_radar_replacement_complete=false`, and `legacy_retirement_ready=false`.
 - Current 3.0 radar path is still not a full replacement for the legacy radar workflow.
+- Runtime mode policy turns search-driven radar/quant projection into future mode-gated work: `cache_only` shows existing radar cache only, `manual` uses explicit scan/plan/review buttons, and future `live_light` may create a one-shot background task for a searched symbol or watchlist subset without starting full-market/deep scans on render.
 
 ### Gaps
 
@@ -1088,6 +1133,8 @@ Keep real trading isolated from Command Center 3 automation
 - The local Candidate Radar push-gate contract is not a production radar run; it only blocks regressions where local quick scans, plan-only rows, no-feature-loss QA, replacement triage, promotion-blocker audit, result-delta clarity, or candidate-priority explanation could be mistaken for full replacement.
 - `fast_scan_local_ready_full_pool_pending` is not production replacement; it only proves local readiness and visible gaps.
 - Need parity acceptance before removing any Streamlit fallback.
+- Need a search-to-quant projection workflow that validates the symbol, refreshes allowed light data, writes call ledger/model ledger, updates factor and next-session cache, and renders chart/provenance without reducing legacy radar signal coverage.
+- Need explicit intraday-provider strategy before adding any realtime market state: every non-Tushare source must have provider identity, call ledger, freshness, mode gating, and safe-error status.
 
 ### Implementation Phases
 
@@ -1097,6 +1144,8 @@ Keep real trading isolated from Command Center 3 automation
 4. Add coverage metrics so the UI shows what was scanned, skipped, stale, or blocked.
 5. Preserve signal parity before removing any legacy fallback.
 6. Move slow provider refreshes behind explicit POST tasks instead of radar page render.
+7. Add future search-driven "生成 3.0 量化推演" / "一键生成量化投研图谱" task for a single symbol or bounded watchlist subset.
+8. Allow `live_light` radar/quant bootstrap only after cache render, with symbol limit, rate limit, task dedupe, and visible skipped state.
 
 ### Acceptance Criteria
 
@@ -1126,10 +1175,14 @@ Keep real trading isolated from Command Center 3 automation
 - A passing local Candidate Radar browser QA review must include both default-motion and reduced-motion `#candidates` evidence across desktop/laptop/tablet/mobile, zero review-required rows, no external/model/provider calls, no trade execution, and no mutation of `strategy action`.
 - `scripts/candidate_radar_contract.py` passes in the push gate while still reporting `production_radar_replacement_complete=false`, `legacy_retirement_ready=false`, `full_pool_scan_done=false`, `deep_scan_done=false`, `provider_backed_acceptance_done=false`, `browser_performance_trace_done=false`, and `browser_visual_delta_qa_done=false`.
 - Radar output does not become a buy instruction and does not modify `strategy action`.
+- Future search-to-quant projection returns task progress, data source provenance, call ledger, factor support/suppress/neutral/missing rows, freshness status, DeepSeek status, and chart payload without calculating trade action in React.
+- Future `live_light` radar/quant bootstrap is bounded to current target / current holdings / watchlist subset; full-pool and deep-scan execution remain explicit worker tasks and never page-render side effects.
 
 ### Forbidden
 
 - Do not scan the full market on page load.
+- Do not start full-pool or deep-scan execution from `live_light` page open; only bounded light bootstrap may be considered after opt-in.
+- Do not treat a search-to-quant projection result as a buy/sell recommendation.
 - Do not treat `full_pool_scan_plan` as full-pool scan completion.
 - Do not treat `full_pool_local_execution_receipt` as provider-backed full-market acceptance, production worker completion, browser QA completion, or permission to remove the legacy fallback.
 - Do not treat `deep_scan_plan` as deep scan completion or legacy radar replacement.
@@ -1146,6 +1199,7 @@ Keep real trading isolated from Command Center 3 automation
 - Do not treat `candidate_browser_qa_review_contract` as browser execution, CI evidence, provider-backed parity, legacy retirement readiness, or production radar replacement.
 - Do not treat `scripts/candidate_radar_contract.py` passing as full-pool scan, deep scan, provider-backed parity acceptance, browser performance proof, visual QA, legacy retirement readiness, or production radar replacement.
 - Do not call Tushare/DeepSeek/GitHub from GET cache or render.
+- Do not call unlabelled intraday providers; every source must be identified, mode-gated, and logged with safe request/response metadata.
 - Do not treat candidates as trade instructions.
 
 ### Recommended Commit Message
@@ -1261,6 +1315,7 @@ Add Command Center 3 motion clarity system
 | P0 | Current unpushed commit push gate | Use `git log origin/main..HEAD` as the authoritative unpushed list; run `scripts/push_gate_3_0.sh`, review results, wait for user confirmation, then push. |
 | P1 | A 股交易日历 freshness 生产验收 | This blocks trustworthy current evidence. |
 | P2 | Tushare 全接口真实流水线 | Validate provider data groups one by one through button-gated tasks. |
+| P2a | 运行模式分层与 `live_light` bootstrap | Keep `cache_only` safe while designing opt-in light startup tasks for local daily research. |
 | P3 | Factor Test Lab 真实小股票池研究 | Promote from light research metrics to research-grade validation. |
 | P3a | 下一票雷达快扫生产化 | Restore radar scan capability in 3.0 without UI stalls or signal loss. |
 | P4 | Storage / Worker 生产化 | Make heavy work reliable and auditable. |
@@ -1271,14 +1326,18 @@ Add Command Center 3 motion clarity system
 
 ## Risk Boundaries
 
-- cache API 不自动外联。
-- POST task 才可能外部调用。
-- Tushare 不在页面启动时自动调用。
-- DeepSeek 不在页面启动时自动调用。
-- GitHub probe 不在页面启动时自动调用。
+- `cache_only` 是默认安全模式；cache API、FastAPI 启动、React 初始 render 不自动外联。
+- GET cache API 不直接调用 Tushare / DeepSeek / GitHub。
+- React render 不直接调用 Tushare / DeepSeek / GitHub。
+- POST task / worker / local fallback 才可能外部调用，且必须有模式、按钮或显式 payload 门控。
+- `manual` 模式只允许用户点击按钮或提交显式任务后外联。
+- `live_light` 模式可以在初始 cache render 后创建一次限频后台 bootstrap task，用于轻量 Tushare 刷新和可选 DeepSeek pro 解释；这不是 render 直接外联。
+- `live_light` 默认关闭，必须可配置、可见、可审计、可跳过、可失败降级。
+- `live_full` 预留；全池/深扫不默认启用。
+- GitHub probe 不在页面启动时自动调用；如后续进入 `live_light`，仍需独立按钮或显式 task mode。
 - DeepSeek 不作为数据源。
 - Factor 分数不直接改 `strategy action`。
-- 下一票雷达不在页面启动时做全市场扫描。
+- 下一票雷达不在页面启动时做全市场扫描；`live_light` 只能覆盖当前标的/持仓/watchlist 的有界轻量任务。
 - 雷达候选不作为买入指令。
 - 动效只增强可读性，不暗示交易确定性或紧迫性。
 - stale / expired / historical 数据不进当前 evidence。

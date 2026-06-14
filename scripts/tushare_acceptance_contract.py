@@ -35,6 +35,7 @@ CONTRACT_KEYS = [
     "provider_evidence_gap_audit",
     "provider_sample_readiness_receipt",
     "provider_sample_activation_receipt",
+    "provider_target_sample_runbook_contract",
 ]
 
 
@@ -142,6 +143,14 @@ def build_contract() -> dict[str, Any]:
         provider_sample_readiness_receipt=provider_sample_receipt,
         provider_acceptance_promotion_audit=provider_promotion,
         provider_evidence_gap_audit=provider_evidence_gap,
+    )
+    provider_target_sample_runbook = tushare_task_service._provider_target_sample_runbook_contract(
+        selected_apis=selected_apis,
+        payload={},
+        provider_target_sample_plan_contract=target_sample_plan,
+        provider_target_sample_acceptance_contract=target_sample_acceptance,
+        provider_evidence_gap_audit=provider_evidence_gap,
+        provider_sample_activation_receipt=provider_sample_activation,
     )
 
     refresh_catalog = _catalog_by_type("refresh_tushare_facts")
@@ -292,8 +301,23 @@ def build_contract() -> dict[str, Any]:
         provider_acceptance_promotion_audit=target_sample_promotion,
         provider_evidence_gap_audit=target_sample_gap,
     )
+    target_sample_activation = tushare_task_service._provider_sample_activation_receipt(
+        provider_target_sample_plan_contract=target_sample_plan_ready,
+        provider_sample_readiness_receipt=target_sample_receipt,
+        provider_acceptance_promotion_audit=target_sample_promotion,
+        provider_evidence_gap_audit=target_sample_gap,
+    )
+    target_sample_runbook = tushare_task_service._provider_target_sample_runbook_contract(
+        selected_apis=target_sample_selected_apis,
+        payload=target_sample_payload,
+        provider_target_sample_plan_contract=target_sample_plan_ready,
+        provider_target_sample_acceptance_contract=target_sample_acceptance_ready,
+        provider_evidence_gap_audit=target_sample_gap,
+        provider_sample_activation_receipt=target_sample_activation,
+    )
     target_sample_gap_rows = {row.get("target"): row for row in target_sample_gap.get("rows", [])}
     target_sample_receipt_rows = {row.get("criterion"): row for row in target_sample_receipt.get("rows", [])}
+    target_sample_runbook_rows = {row.get("target"): row for row in target_sample_runbook.get("rows", [])}
     multi_target_groups = [
         "dragon_tiger",
         "limit_emotion",
@@ -395,9 +419,24 @@ def build_contract() -> dict[str, Any]:
         provider_acceptance_promotion_audit=multi_target_promotion,
         provider_evidence_gap_audit=multi_target_gap,
     )
+    multi_target_activation = tushare_task_service._provider_sample_activation_receipt(
+        provider_target_sample_plan_contract=multi_target_plan,
+        provider_sample_readiness_receipt=multi_target_receipt,
+        provider_acceptance_promotion_audit=multi_target_promotion,
+        provider_evidence_gap_audit=multi_target_gap,
+    )
+    multi_target_runbook = tushare_task_service._provider_target_sample_runbook_contract(
+        selected_apis=multi_target_selected_apis,
+        payload=multi_target_payload,
+        provider_target_sample_plan_contract=multi_target_plan,
+        provider_target_sample_acceptance_contract=multi_target_acceptance,
+        provider_evidence_gap_audit=multi_target_gap,
+        provider_sample_activation_receipt=multi_target_activation,
+    )
     multi_target_rows = {row.get("target"): row for row in multi_target_acceptance.get("rows", [])}
     multi_target_gap_rows = {row.get("target"): row for row in multi_target_gap.get("rows", [])}
     multi_target_receipt_rows = {row.get("criterion"): row for row in multi_target_receipt.get("rows", [])}
+    multi_target_runbook_rows = {row.get("target"): row for row in multi_target_runbook.get("rows", [])}
 
     rows = [
         _row(
@@ -784,6 +823,97 @@ def build_contract() -> dict[str, Any]:
             "Provider sample activation receipt must stay a local checklist: explicit POST or local blockers remain the next step, provider evidence remains missing, and cache/render paths must not call providers or claim production completion.",
         ),
         _row(
+            "provider_target_sample_runbook_is_local_not_acceptance",
+            provider_target_sample_runbook.get("schema_version")
+            == "tushare_provider_target_sample_runbook_contract.v1"
+            and provider_target_sample_runbook.get("scope")
+            == "local_target_sample_provider_runbook_no_provider_execution"
+            and provider_target_sample_runbook.get("status") == "target_sample_runbook_blocked_or_not_requested"
+            and provider_target_sample_runbook.get("runbook_ready") is False
+            and provider_target_sample_runbook.get("requested_target_count") == 0
+            and provider_target_sample_runbook.get("provider_backed_acceptance_done") is False
+            and provider_target_sample_runbook.get("production_tushare_pipeline_complete") is False
+            and provider_target_sample_runbook.get("full_interface_acceptance_done") is False
+            and "runbook as provider-backed acceptance"
+            in provider_target_sample_runbook.get("not_allowed_next_steps", [])
+            and _flag_false(
+                provider_target_sample_runbook,
+                "cache_get_external_calls",
+                "react_render_external_calls",
+                "runbook_external_calls_triggered",
+                "tushare_called_by_runbook",
+                "deepseek_called",
+                "github_called",
+            )
+            and provider_target_sample_runbook.get("does_not_execute_trades") is True
+            and provider_target_sample_runbook.get("does_not_modify_strategy_action") is True,
+            "Target-sample runbook must stay local/no-provider and cannot be treated as provider-backed acceptance.",
+        ),
+        _row(
+            "target_sample_runbook_ready_review_pending_without_promotion",
+            target_sample_runbook.get("status") == "target_sample_runbook_ready_provider_review_pending"
+            and target_sample_runbook.get("runbook_ready") is True
+            and target_sample_runbook.get("requested_targets") == ["margin_financing"]
+            and target_sample_runbook.get("runbook_ready_target_count") == 1
+            and target_sample_runbook_rows["margin_financing"].get("runbook_status")
+            == "target_sample_runbook_ready_provider_review_pending"
+            and target_sample_runbook_rows["margin_financing"].get("post_task_route")
+            == "POST /api/tasks/refresh-tushare-facts"
+            and target_sample_runbook_rows["margin_financing"].get("required_acceptance_mode")
+            == "provider_target_sample_acceptance"
+            and target_sample_runbook_rows["margin_financing"].get("provider_promotion_blockers")
+            == ["provider_promotion_not_ready"]
+            and target_sample_runbook.get("provider_backed_acceptance_done") is False
+            and target_sample_runbook.get("production_tushare_pipeline_complete") is False
+            and target_sample_runbook.get("full_interface_acceptance_done") is False
+            and _flag_false(
+                target_sample_runbook,
+                "cache_get_external_calls",
+                "react_render_external_calls",
+                "runbook_external_calls_triggered",
+                "tushare_called_by_runbook",
+                "deepseek_called",
+                "github_called",
+            ),
+            "A ready target-sample runbook only prepares review/promotion evidence; it must not call providers or promote acceptance.",
+        ),
+        _row(
+            "multi_target_sample_runbook_ready_review_pending_without_promotion",
+            multi_target_runbook.get("status") == "target_sample_runbook_ready_provider_review_pending"
+            and multi_target_runbook.get("runbook_ready") is True
+            and multi_target_runbook.get("requested_targets") == multi_target_groups
+            and multi_target_runbook.get("runbook_ready_target_count") == len(multi_target_groups)
+            and multi_target_runbook.get("blocked_runbook_target_count") == 0
+            and all(
+                multi_target_runbook_rows[target].get("runbook_status")
+                == "target_sample_runbook_ready_provider_review_pending"
+                and multi_target_runbook_rows[target].get("post_task_route")
+                == "POST /api/tasks/refresh-tushare-facts"
+                and multi_target_runbook_rows[target].get("required_acceptance_mode")
+                == "provider_target_sample_acceptance"
+                and multi_target_runbook_rows[target].get("provider_promotion_blockers")
+                == ["provider_promotion_not_ready"]
+                and multi_target_runbook_rows[target].get("provider_backed_acceptance_done") is False
+                and multi_target_runbook_rows[target].get("production_tushare_pipeline_complete") is False
+                for target in multi_target_groups
+            )
+            and multi_target_runbook.get("provider_backed_acceptance_done") is False
+            and multi_target_runbook.get("production_tushare_pipeline_complete") is False
+            and multi_target_runbook.get("full_interface_acceptance_done") is False
+            and _flag_false(
+                multi_target_runbook,
+                "cache_get_external_calls",
+                "react_render_external_calls",
+                "runbook_external_calls_triggered",
+                "tushare_called_by_runbook",
+                "deepseek_called",
+                "github_called",
+            )
+            and multi_target_runbook.get("does_not_execute_trades") is True
+            and multi_target_runbook.get("does_not_modify_strategy_action") is True,
+            "Multi-target runbook readiness is a local review checklist only; provider promotion and production completion remain false.",
+        ),
+        _row(
             "target_groups_matrix_only",
             len(target_matrix_only_rows) == len(tushare_task_service.VALIDATION_TARGET_GROUPS)
             and all(row.get("does_not_claim_unselected_apis_verified") is True for row in target_matrix_only_rows)
@@ -866,6 +996,10 @@ def build_contract() -> dict[str, Any]:
                 "ready_for_explicit_provider_sample_task"
             ),
             "provider_sample_activation_blocker_count": provider_sample_activation.get("blocking_criterion_count"),
+            "provider_target_sample_runbook_status": provider_target_sample_runbook.get("status"),
+            "provider_target_sample_runbook_ready": provider_target_sample_runbook.get("runbook_ready"),
+            "multi_target_sample_runbook_status": multi_target_runbook.get("status"),
+            "multi_target_sample_runbook_ready_count": multi_target_runbook.get("runbook_ready_target_count"),
             "target_sample_plan_ready_count": target_sample_plan.get("ready_to_execute_target_count"),
             "target_sample_plan_pending_count": target_sample_plan.get("pending_or_blocked_target_count"),
             "trade_cal_acceptance_mode": trade_cal_full_acceptance.get("acceptance_mode"),

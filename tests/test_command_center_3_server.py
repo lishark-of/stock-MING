@@ -6089,6 +6089,47 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(sample_receipt["provider_backed_acceptance_done"])
         self.assertFalse(sample_receipt["production_tushare_pipeline_complete"])
 
+        runbook = persisted["provider_target_sample_runbook_contract"]
+        runbook_rows = {row["target"]: row for row in persisted["provider_target_sample_runbook_rows"]}
+        self.assertEqual(runbook["schema_version"], "tushare_provider_target_sample_runbook_contract.v1")
+        self.assertEqual(runbook["status"], "target_sample_runbook_ready_provider_review_pending")
+        self.assertEqual(runbook["scope"], "local_target_sample_provider_runbook_no_provider_execution")
+        self.assertEqual(runbook["post_task_route"], "POST /api/tasks/refresh-tushare-facts")
+        self.assertEqual(runbook["required_acceptance_mode"], "provider_target_sample_acceptance")
+        self.assertEqual(runbook["requested_targets"], ["margin_financing"])
+        self.assertEqual(runbook["requested_target_count"], 1)
+        self.assertEqual(runbook["runbook_ready_target_count"], 1)
+        self.assertEqual(runbook["blocked_runbook_target_count"], 0)
+        self.assertTrue(runbook["runbook_ready"])
+        self.assertFalse(runbook["provider_backed_acceptance_done"])
+        self.assertFalse(runbook["provider_backed_target_sample_acceptance_done"])
+        self.assertFalse(runbook["full_interface_acceptance_done"])
+        self.assertFalse(runbook["production_tushare_pipeline_complete"])
+        self.assertFalse(runbook["cache_get_external_calls"])
+        self.assertFalse(runbook["react_render_external_calls"])
+        self.assertFalse(runbook["runbook_external_calls_triggered"])
+        self.assertFalse(runbook["tushare_called_by_runbook"])
+        self.assertFalse(runbook["deepseek_called"])
+        self.assertFalse(runbook["github_called"])
+        self.assertTrue(runbook["does_not_execute_trades"])
+        self.assertTrue(runbook["does_not_modify_strategy_action"])
+        self.assertIn("runbook as provider-backed acceptance", runbook["not_allowed_next_steps"])
+        self.assertEqual(
+            runbook_rows["margin_financing"]["runbook_status"],
+            "target_sample_runbook_ready_provider_review_pending",
+        )
+        self.assertEqual(
+            runbook_rows["margin_financing"]["provider_promotion_blockers"],
+            ["provider_promotion_not_ready"],
+        )
+        self.assertEqual(
+            persisted["provider_target_sample_runbook_status"],
+            "target_sample_runbook_ready_provider_review_pending",
+        )
+        self.assertTrue(persisted["provider_target_sample_runbook_ready"])
+        self.assertEqual(persisted["provider_target_sample_runbook_ready_count"], 1)
+        self.assertEqual(persisted["provider_target_sample_runbook_blocker_count"], 0)
+
     def test_tushare_target_sample_acceptance_supports_multiple_review_ready_domains_without_promotion(self):
         db_path = self._with_meta_store()
         self._with_parquet_root()
@@ -6267,6 +6308,65 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(
             persisted["api_validation_matrix_policy"]["provider_target_sample_acceptance_is_full_interface_acceptance"]
         )
+
+        runbook = persisted["provider_target_sample_runbook_contract"]
+        runbook_rows = {row["target"]: row for row in persisted["provider_target_sample_runbook_rows"]}
+        self.assertEqual(runbook["schema_version"], "tushare_provider_target_sample_runbook_contract.v1")
+        self.assertEqual(runbook["status"], "target_sample_runbook_ready_provider_review_pending")
+        self.assertEqual(runbook["requested_targets"], requested_targets)
+        self.assertEqual(runbook["requested_target_count"], len(requested_targets))
+        self.assertEqual(runbook["runbook_ready_target_count"], len(requested_targets))
+        self.assertEqual(runbook["blocked_runbook_target_count"], 0)
+        self.assertTrue(runbook["runbook_ready"])
+        self.assertEqual(
+            runbook["allowed_next_step"],
+            "explicit_provider_sample_evidence_review_then_promotion_audit",
+        )
+        self.assertIn("runbook as provider-backed acceptance", runbook["not_allowed_next_steps"])
+        self.assertFalse(runbook["provider_backed_acceptance_done"])
+        self.assertFalse(runbook["provider_backed_target_sample_acceptance_done"])
+        self.assertFalse(runbook["full_interface_acceptance_done"])
+        self.assertFalse(runbook["production_tushare_pipeline_complete"])
+        self.assertFalse(runbook["cache_get_external_calls"])
+        self.assertFalse(runbook["react_render_external_calls"])
+        self.assertFalse(runbook["runbook_external_calls_triggered"])
+        self.assertFalse(runbook["tushare_called_by_runbook"])
+        self.assertFalse(runbook["deepseek_called"])
+        self.assertFalse(runbook["github_called"])
+        self.assertTrue(runbook["does_not_execute_trades"])
+        self.assertTrue(runbook["does_not_modify_strategy_action"])
+        for target in requested_targets:
+            self.assertTrue(runbook_rows[target]["requested_for_runbook"], target)
+            self.assertEqual(
+                runbook_rows[target]["runbook_status"],
+                "target_sample_runbook_ready_provider_review_pending",
+                target,
+            )
+            self.assertEqual(
+                runbook_rows[target]["post_task_route"],
+                "POST /api/tasks/refresh-tushare-facts",
+                target,
+            )
+            self.assertEqual(
+                runbook_rows[target]["required_acceptance_mode"],
+                "provider_target_sample_acceptance",
+                target,
+            )
+            self.assertIn("call_ledger_required_fields_present", runbook_rows[target]["evidence_checklist"])
+            self.assertEqual(runbook_rows[target]["provider_promotion_blockers"], ["provider_promotion_not_ready"], target)
+            self.assertFalse(runbook_rows[target]["provider_backed_acceptance_done"], target)
+            self.assertFalse(runbook_rows[target]["production_tushare_pipeline_complete"], target)
+            self.assertFalse(runbook_rows[target]["runbook_external_calls_triggered"], target)
+
+        self.assertEqual(
+            persisted["provider_target_sample_runbook_status"],
+            "target_sample_runbook_ready_provider_review_pending",
+        )
+        self.assertTrue(persisted["provider_target_sample_runbook_ready"])
+        self.assertEqual(persisted["provider_target_sample_runbook_ready_count"], len(requested_targets))
+        self.assertEqual(persisted["provider_target_sample_runbook_blocker_count"], 0)
+        self.assertFalse(persisted["api_validation_matrix_policy"]["provider_target_sample_runbook_calls_provider"])
+        self.assertTrue(persisted["api_validation_matrix_policy"]["provider_target_sample_runbook_is_not_acceptance"])
 
     def test_tushare_refresh_task_exposes_failure_mode_qa_contract(self):
         db_path = self._with_meta_store()
@@ -6813,6 +6913,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_promotion_audit_stays_local_pending", script)
         self.assertIn("provider_sample_readiness_receipt_is_local", script)
         self.assertIn("provider_sample_activation_receipt_is_local_pending", script)
+        self.assertIn("provider_target_sample_runbook_is_local_not_acceptance", script)
+        self.assertIn("target_sample_runbook_ready_review_pending_without_promotion", script)
+        self.assertIn("multi_target_sample_runbook_ready_review_pending_without_promotion", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -6866,10 +6969,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["multi_target_sample_acceptance_status"],
             "target_sample_acceptance_ready_for_review",
         )
+        self.assertEqual(
+            payload["observed"]["provider_target_sample_runbook_status"],
+            "target_sample_runbook_blocked_or_not_requested",
+        )
+        self.assertFalse(payload["observed"]["provider_target_sample_runbook_ready"])
+        self.assertEqual(
+            payload["observed"]["multi_target_sample_runbook_status"],
+            "target_sample_runbook_ready_provider_review_pending",
+        )
+        self.assertEqual(payload["observed"]["multi_target_sample_runbook_ready_count"], 5)
         self.assertIn("provider_evidence_gap_audit", payload["contract_keys"])
         self.assertIn("provider_target_sample_acceptance_contract", payload["contract_keys"])
         self.assertIn("provider_sample_readiness_receipt", payload["contract_keys"])
         self.assertIn("provider_sample_activation_receipt", payload["contract_keys"])
+        self.assertIn("provider_target_sample_runbook_contract", payload["contract_keys"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("post_task_catalog_button_gate", criteria)
         self.assertIn("api_acceptance_audit_is_semantic_only", criteria)
@@ -6882,6 +6996,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_evidence_gap_audit_is_local_pending", criteria)
         self.assertIn("provider_sample_readiness_receipt_is_local", criteria)
         self.assertIn("provider_sample_activation_receipt_is_local_pending", criteria)
+        self.assertIn("provider_target_sample_runbook_is_local_not_acceptance", criteria)
+        self.assertIn("target_sample_runbook_ready_review_pending_without_promotion", criteria)
+        self.assertIn("multi_target_sample_runbook_ready_review_pending_without_promotion", criteria)
 
     def test_factor_test_lab_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/factor_test_lab_contract.py")
