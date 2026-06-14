@@ -208,6 +208,9 @@ export default function CommandCenterHome() {
     cache_read_external_call: row.external_call_on_cache_read === true
   }));
   const migrationProgress = migration.progress_baseline as Array<Record<string, unknown>> | undefined;
+  const migrationLongTermGoals = migration.long_term_goal_rows as Array<Record<string, unknown>> | undefined;
+  const migrationLongTermSummary = migration.long_term_goal_summary as Record<string, unknown> | undefined;
+  const migrationTushareDeepseekLinkage = migration.tushare_deepseek_linkage_review as Record<string, unknown> | undefined;
   const migrationPolicy = migration.api_policy as Record<string, unknown> | undefined;
   const dataHealthCounts = dataHealth.counts as Record<string, unknown> | undefined;
   const desktopRuntime = desktopPreflight.runtime as Record<string, unknown> | undefined;
@@ -404,9 +407,13 @@ export default function CommandCenterHome() {
         </PacketCard>
         <PacketCard title="Command Center 3.0 迁移基线" subtitle="用户给定长期进度表；只读展示，不重新估算" status={String(migration.status ?? "baseline")}>
           <p>progress items: {String(migrationProgress?.length ?? 0)}</p>
+          <p>long-term goals: {String(migrationLongTermSummary?.strict_closeout ?? "0/14")} closed, {String(migrationLongTermGoals?.length ?? 0)} tracked</p>
+          <p>foundation / production acceptance: {String(migrationLongTermSummary?.foundation_progress_estimate ?? "--")} / {String(migrationLongTermSummary?.production_acceptance_estimate ?? "--")}</p>
+          <p>Tushare / DeepSeek linkage: {String(migrationTushareDeepseekLinkage?.status ?? "pending")}</p>
           <p>cache only: {String(migrationPolicy?.cache_only ?? true)}</p>
           <p>external calls: {String(migrationPolicy?.external_calls_triggered ?? false)}</p>
           <JsonDetails title="迁移进度基线" data={migrationProgress ?? []} />
+          <JsonDetails title="14 个长期目标" data={migrationLongTermGoals ?? []} />
         </PacketCard>
         <PacketCard title="调用审计 cache" subtitle="GET cache，聚合本地 call_ledger，不触发外部请求" status={String(audit.status ?? "cache")}>
           <p>endpoint / task: {String(auditCounts?.cache_endpoint_count ?? 0)} / {String(auditCounts?.task_count ?? 0)}</p>

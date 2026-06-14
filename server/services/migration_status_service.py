@@ -18,6 +18,157 @@ MIGRATION_PROGRESS_BASELINE = [
     {"module": "完全替代 Streamlit 主流程", "current_degree": "20%-30%"},
 ]
 
+LONG_TERM_GOAL_PROGRESS = [
+    {
+        "id": "LTG-01",
+        "goal": "A 股交易日历级 freshness 生产化",
+        "completion_bucket": "real_validation_required",
+        "completion_estimate": "45%-55%",
+        "current_state": "freshness gate MVP, local matrix, synthetic long-window replay, local trade_cal artifact audit, and provider-acceptance runbook exist.",
+        "not_complete_because": "provider-backed long-window trade_cal acceptance and promotion evidence are still pending.",
+        "next_step": "Run an explicit provider-backed trade_cal acceptance task when approved, then promote only with safe call-ledger and freshness replay evidence.",
+        "production_complete": False,
+    },
+    {
+        "id": "LTG-02",
+        "goal": "Tushare 全接口生产流水线",
+        "completion_bucket": "real_validation_required",
+        "completion_estimate": "35%-45%",
+        "current_state": "daily / daily_basic / moneyflow light path has real evidence; extended interfaces have matrix, local QA, runbook, and dry-run contracts.",
+        "not_complete_because": "full-interface provider-backed samples and promotion evidence are incomplete.",
+        "next_step": "Validate target sample groups through explicit POST task runs, starting with trade_cal and then staged market-evidence domains.",
+        "production_complete": False,
+    },
+    {
+        "id": "LTG-03",
+        "goal": "Factor Test Lab 完整生产化",
+        "completion_bucket": "real_validation_required",
+        "completion_estimate": "40%-50%",
+        "current_state": "IC, Rank IC, ICIR, groups, drawdown, neutralization, split, decay, and cost-model scaffolds are research-only.",
+        "not_complete_because": "provider-backed small-pool validation, larger sample coverage, and production research acceptance are pending.",
+        "next_step": "Run a user-approved small-stock-pool validation and keep every metric outside strategy action.",
+        "production_complete": False,
+    },
+    {
+        "id": "LTG-04",
+        "goal": "Factor 全市场 / 股票池研究",
+        "completion_bucket": "real_validation_required",
+        "completion_estimate": "25%-35%",
+        "current_state": "watchlist/custom/full-pool contracts and local read-plan receipts exist.",
+        "not_complete_because": "worker-backed batch execution, cross-sectional rank/zscore, neutralization, and full-pool validation are pending.",
+        "next_step": "Implement an explicit worker-batch research task after storage/worker readiness is stronger.",
+        "production_complete": False,
+    },
+    {
+        "id": "LTG-05",
+        "goal": "Storage / DuckDB / Parquet 生产化",
+        "completion_bucket": "productionization_required",
+        "completion_estimate": "50%-60%",
+        "current_state": "schema/version preflight, manifest writer/validator, DuckDB read API, filters, cursor pagination, and dry-runs exist.",
+        "not_complete_because": "physical schema migration, partition migration, compaction, TTL refresh execution, and cleanup execution remain pending.",
+        "next_step": "Promote physical migration tasks one at a time with explicit review and no data artifacts in git.",
+        "production_complete": False,
+    },
+    {
+        "id": "LTG-06",
+        "goal": "Worker / Celery / Redis 生产化",
+        "completion_bucket": "productionization_required",
+        "completion_estimate": "35%-45%",
+        "current_state": "local fallback, task lifecycle, readiness receipts, scheduler default-off policy, and worker contracts exist.",
+        "not_complete_because": "real Celery/Redis process orchestration, broker healthcheck, and production scheduler activation are pending.",
+        "next_step": "Add explicit worker healthcheck and activation review without starting processes from cache reads.",
+        "production_complete": False,
+    },
+    {
+        "id": "LTG-07",
+        "goal": "DeepSeek pro 稳定解释生产化",
+        "completion_bucket": "productionization_required",
+        "completion_estimate": "35%-45%",
+        "current_state": "manual governance, sanitizer, model strategy, JSON stability audit, response-format review, and linkage contract exist.",
+        "not_complete_because": "JSON stability target, provider-backed benchmark, bounded retry/repair, and live_light model execution are pending.",
+        "next_step": "Run a larger explicit DeepSeek pro benchmark and promote only if sanitizer, parse fallback, cost, and model ledger pass.",
+        "production_complete": False,
+    },
+    {
+        "id": "LTG-08",
+        "goal": "ECharts 次日操作图谱成熟版",
+        "completion_bucket": "productionization_required",
+        "completion_estimate": "45%-55%",
+        "current_state": "payload contract, cache envelope, read-only React rendering, reference/zone/position/DeepSeek status, and interaction readiness exist.",
+        "not_complete_because": "browser visual QA, performance trace, legacy parity, and production replacement evidence are pending.",
+        "next_step": "Run browser QA and close interaction/legacy-parity gaps before retiring the Streamlit visual path.",
+        "production_complete": False,
+    },
+    {
+        "id": "LTG-09",
+        "goal": "Tauri desktop production package",
+        "completion_bucket": "productionization_required",
+        "completion_estimate": "30%-40%",
+        "current_state": "desktop preflight, runtime contract, backend-offline UX source contract, package QA matrix, and blocker audit exist.",
+        "not_complete_because": "tauri build/package, packaged runtime QA, signing/notarization, and release evidence are pending.",
+        "next_step": "Run explicit Tauri dev/build and packaged runtime QA when desktop packaging is the active focus.",
+        "production_complete": False,
+    },
+    {
+        "id": "LTG-10",
+        "goal": "Streamlit 完全退出普通主流程",
+        "completion_bucket": "dependent_retirement_goal",
+        "completion_estimate": "40%-50%",
+        "current_state": "Streamlit is marked legacy/admin/debug; retirement readiness and fallback dependency receipts exist.",
+        "not_complete_because": "React/Tauri parity, no-feature-cut acceptance, and fallback retirement review are not complete.",
+        "next_step": "Retire ordinary Streamlit entry points only after React/Tauri covers daily workflow and fallback blockers are clear.",
+        "production_complete": False,
+    },
+    {
+        "id": "LTG-11",
+        "goal": "测试 / CI / smoke / 安全扫描标准化",
+        "completion_bucket": "mostly_stable_guardrail",
+        "completion_estimate": "75%-85%",
+        "current_state": "local push gate, contract scripts, unit tests, frontend build, smoke, diff check, secret scan, artifact scan, and CI mirror checks exist.",
+        "not_complete_because": "this is an ongoing release boundary; every push candidate still needs a fresh gate run and remote CI evidence.",
+        "next_step": "Keep push gate green before every push and inspect remote CI failures without calling GitHub API from cache paths.",
+        "production_complete": False,
+    },
+    {
+        "id": "LTG-12",
+        "goal": "真实交易链路继续保持隔离",
+        "completion_bucket": "mostly_stable_guardrail",
+        "completion_estimate": "80%-90%",
+        "current_state": "research/cache/task/frontend paths keep no-order, no-broker, no-action-mutation, and no-real-trade boundaries visible.",
+        "not_complete_because": "trade isolation is a permanent release invariant, not a one-time feature that can be closed.",
+        "next_step": "Continue proving no real trading and no strategy-action mutation in every new task, provider, model, radar, and UI path.",
+        "production_complete": False,
+    },
+    {
+        "id": "LTG-13",
+        "goal": "下一票雷达快扫生产化",
+        "completion_bucket": "real_validation_required",
+        "completion_estimate": "35%-45%",
+        "current_state": "local quick-scan readiness, no-feature-loss QA, legacy parity receipt, full/deep plan receipts, search-to-quant projection receipt, and result-delta clarity exist.",
+        "not_complete_because": "provider-backed radar parity, full-pool/deep-scan execution, browser performance proof, and production replacement evidence are pending.",
+        "next_step": "Implement fast task-pipeline radar scanning for current target/watchlist/search without losing legacy signal groups or blocking UI.",
+        "production_complete": False,
+    },
+    {
+        "id": "LTG-14",
+        "goal": "Command Center 3 动效与可视化清晰度优化",
+        "completion_bucket": "later_polish_goal",
+        "completion_estimate": "30%-40%",
+        "current_state": "motion clarity layer, route/status cues, reduced-motion support, local runner, static QA, and activation receipt exist.",
+        "not_complete_because": "durable browser visual QA, performance traces, CI/release evidence, and final visual promotion are pending.",
+        "next_step": "Use Apple-keynote-like clarity only where it improves state comprehension; verify reduced-motion, mobile, and performance budgets.",
+        "production_complete": False,
+    },
+]
+
+LONG_TERM_GOAL_BUCKETS = {
+    "mostly_stable_guardrail": "Local guardrail is useful but remains an ongoing release invariant.",
+    "real_validation_required": "Local contracts or scaffolds exist, but real provider/pool/browser acceptance is still required.",
+    "productionization_required": "Implementation is useful but needs production runtime, packaging, worker, storage, or visual QA promotion.",
+    "dependent_retirement_goal": "Can only finish after replacement paths are accepted.",
+    "later_polish_goal": "Should continue after core data, worker, desktop, and radar paths are stable.",
+}
+
 TARGET_STACK = [
     "React / Vite / TypeScript / Tauri",
     "FastAPI",
@@ -27,6 +178,69 @@ TARGET_STACK = [
     "Streamlit legacy / admin / debug",
     "Existing Python quant core reused, not rewritten",
 ]
+
+
+def _build_long_term_goal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    bucket_counts: dict[str, int] = {}
+    for row in rows:
+        bucket = str(row["completion_bucket"])
+        bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
+    return {
+        "goal_count": len(rows),
+        "closed_count": sum(1 for row in rows if row.get("production_complete") is True),
+        "production_complete_count": sum(1 for row in rows if row.get("production_complete") is True),
+        "strict_closeout": "0/14",
+        "foundation_progress_estimate": "about_70_percent",
+        "production_acceptance_estimate": "about_25_to_35_percent",
+        "bucket_counts": bucket_counts,
+        "bucket_meanings": dict(LONG_TERM_GOAL_BUCKETS),
+        "next_priority_order": [
+            "P0 push gate / local status honesty",
+            "P1 LTG-01 trade_cal freshness provider acceptance",
+            "P2 LTG-02 Tushare staged provider samples",
+            "P3 LTG-03/LTG-13 small-pool factor and radar validation",
+            "P4 LTG-05/LTG-06 storage and worker productionization",
+            "P5 LTG-07/LTG-08 DeepSeek and ECharts promotion",
+            "P6 LTG-09 Tauri package",
+            "P7 LTG-10 Streamlit retirement",
+            "P8 LTG-14 motion clarity promotion",
+        ],
+        "no_goal_may_close_from": ["scaffold", "preflight", "mock", "matrix", "sanitizer", "dry_run", "local_receipt"],
+    }
+
+
+def _build_tushare_deepseek_linkage_review() -> dict[str, Any]:
+    return {
+        "status": "linkage_contract_visible_provider_model_execution_pending",
+        "cache_get_calls_tushare": False,
+        "cache_get_calls_deepseek": False,
+        "react_render_calls_tushare": False,
+        "react_render_calls_deepseek": False,
+        "live_light_post_task_allowed": True,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "production_promotion_complete": False,
+        "allowed_tushare_light_scope": ["trade_cal_if_needed", "daily", "daily_basic", "moneyflow"],
+        "deepseek_allowed_after_data_ready": True,
+        "deepseek_sanitizer_schema": [
+            "summary",
+            "support_notes",
+            "suppress_notes",
+            "conflict_notes",
+            "missing_data_notes",
+            "discipline_notes",
+        ],
+        "blocked_boundaries": [
+            "no GET/cache provider call",
+            "no React direct provider/model call",
+            "no GitHub probe in live_light default chain",
+            "no strategy action mutation",
+            "no real trading",
+            "no token/key exposure",
+            "no full-pool/deep-scan on render",
+        ],
+        "next_review": "Before real live_light promotion, require explicit provider call ledger, DeepSeek model ledger, redaction review, UI non-blocking evidence, and production promotion evidence.",
+    }
 
 MIGRATION_PRINCIPLES = [
     "不砍功能。",
@@ -49,19 +263,27 @@ def _now_iso() -> str:
 
 def build_migration_status() -> dict[str, Any]:
     loaded_at = _now_iso()
+    long_term_goal_rows = [dict(item) for item in LONG_TERM_GOAL_PROGRESS]
+    long_term_goal_summary = _build_long_term_goal_summary(long_term_goal_rows)
+    tushare_deepseek_linkage_review = _build_tushare_deepseek_linkage_review()
     return {
         "packet_key": "command_center_3_migration_status",
-        "schema_version": "command_center_3_migration_status.v1",
+        "schema_version": "command_center_3_migration_status.v2",
         "status": "active_migration",
         "mode": "cache_only",
         "loaded_at": loaded_at,
         "progress_baseline": [dict(item) for item in MIGRATION_PROGRESS_BASELINE],
+        "long_term_goal_summary": long_term_goal_summary,
+        "long_term_goal_rows": long_term_goal_rows,
+        "tushare_deepseek_linkage_review": tushare_deepseek_linkage_review,
         "target_stack": list(TARGET_STACK),
         "principles": list(MIGRATION_PRINCIPLES),
         "baseline_policy": {
             "use_as_planning_baseline": True,
             "do_not_reestimate_every_turn": True,
             "source": "user_provided_long_term_reference_baseline",
+            "long_term_goal_source": "docs/command_center_3_long_term_goals.md",
+            "strict_closeout_requires_production_evidence": True,
         },
         "api_policy": {
             "cache_only": True,
@@ -78,7 +300,7 @@ def build_migration_status() -> dict[str, Any]:
                 "api": "local_migration_status_cache",
                 "endpoint": "GET /api/migration/status",
                 "source_type": "user_provided_long_term_reference_baseline",
-                "row_count": len(MIGRATION_PROGRESS_BASELINE),
+                "row_count": len(MIGRATION_PROGRESS_BASELINE) + len(long_term_goal_rows),
                 "local_fetched_at": loaded_at,
                 "call_status": "cache_read",
                 "external": False,
@@ -92,6 +314,8 @@ def build_migration_status() -> dict[str, Any]:
         ],
         "warnings": [
             "GET /api/migration/status 只读展示用户提供的长期迁移基线；不会重新估算、外联或触发任务。",
+            "14 个长期目标严格关闭数仍为 0/14；scaffold / preflight / mock / matrix / sanitizer / dry-run / local receipt 不能作为生产完成证据。",
+            "Tushare / DeepSeek 联动目前展示为本地合同和 preflight；真实 provider/model execution 与 production promotion 仍需后续显式验收。",
             "进度表用于规划判断，不代表自动完成迁移；后续阶段仍需逐项实现和测试。",
         ],
     }

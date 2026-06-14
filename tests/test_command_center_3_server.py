@@ -197,6 +197,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(len(migration["progress_baseline"]), 11)
         self.assertEqual(migration["progress_baseline"][0]["module"], "Streamlit 保留为 legacy")
         self.assertEqual(migration["progress_baseline"][-1]["current_degree"], "20%-30%")
+        self.assertEqual(migration["long_term_goal_summary"]["goal_count"], 14)
+        self.assertEqual(migration["long_term_goal_summary"]["strict_closeout"], "0/14")
+        self.assertEqual(migration["long_term_goal_summary"]["closed_count"], 0)
+        self.assertEqual(len(migration["long_term_goal_rows"]), 14)
+        self.assertTrue(all(row["production_complete"] is False for row in migration["long_term_goal_rows"]))
+        self.assertIn("LTG-13", {row["id"] for row in migration["long_term_goal_rows"]})
+        self.assertIn("LTG-14", {row["id"] for row in migration["long_term_goal_rows"]})
+        self.assertEqual(
+            migration["tushare_deepseek_linkage_review"]["status"],
+            "linkage_contract_visible_provider_model_execution_pending",
+        )
+        self.assertFalse(migration["tushare_deepseek_linkage_review"]["cache_get_calls_tushare"])
+        self.assertFalse(migration["tushare_deepseek_linkage_review"]["react_render_calls_deepseek"])
+        self.assertFalse(migration["tushare_deepseek_linkage_review"]["provider_execution_implemented"])
+        self.assertFalse(migration["tushare_deepseek_linkage_review"]["model_execution_implemented"])
         self.assertEqual(migration["call_ledger"][0]["api"], "local_migration_status_cache")
         self.assertFalse(migration["call_ledger"][0]["external"])
         self.assertIn("GET /api/migration/status", migration["warnings"][0])
@@ -11310,6 +11325,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(migration["ok"])
         self.assertEqual(migration["data"]["status"], "active_migration")
         self.assertEqual(len(migration["data"]["progress_baseline"]), 11)
+        self.assertEqual(migration["data"]["long_term_goal_summary"]["goal_count"], 14)
+        self.assertEqual(migration["data"]["long_term_goal_summary"]["strict_closeout"], "0/14")
+        self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
+        self.assertTrue(all(row["production_complete"] is False for row in migration["data"]["long_term_goal_rows"]))
+        self.assertEqual(
+            migration["data"]["tushare_deepseek_linkage_review"]["status"],
+            "linkage_contract_visible_provider_model_execution_pending",
+        )
+        self.assertFalse(migration["data"]["tushare_deepseek_linkage_review"]["cache_get_calls_tushare"])
+        self.assertFalse(migration["data"]["tushare_deepseek_linkage_review"]["cache_get_calls_deepseek"])
+        self.assertFalse(migration["data"]["tushare_deepseek_linkage_review"]["provider_execution_implemented"])
+        self.assertFalse(migration["data"]["tushare_deepseek_linkage_review"]["model_execution_implemented"])
         self.assertTrue(migration["data"]["baseline_policy"]["do_not_reestimate_every_turn"])
         self.assertIn("不使用 git add .。", migration["data"]["principles"])
         self.assertIn("不 push，等待用户确认。", migration["data"]["principles"])
