@@ -197,6 +197,9 @@ export default function CandidateRadar() {
           { label: "visual QA done", value: browserQaRunbook.visual_qa_complete === true ? "done" : "pending", tone: browserQaRunbook.visual_qa_complete === true ? "bad" : "good" },
           { label: "radar QA evidence", value: String(browserQaEvidence.status ?? "missing"), tone: browserQaEvidence.local_browser_qa_evidence_found === true ? "good" : "warn" },
           { label: "radar QA rows", value: counts.candidate_browser_qa_evidence_row_count as number | undefined },
+          { label: "motion coverage", value: browserQaEvidence.motion_viewport_coverage_complete === true ? "complete" : "missing", tone: browserQaEvidence.motion_viewport_coverage_complete === true ? "good" : "warn" },
+          { label: "default viewports", value: browserQaEvidence.default_motion_viewport_count as number | undefined },
+          { label: "reduced viewports", value: browserQaEvidence.reduced_motion_viewport_count as number | undefined },
           { label: "QA review rows", value: counts.candidate_browser_qa_evidence_review_required_count as number | undefined, tone: Number(counts.candidate_browser_qa_evidence_review_required_count ?? 0) ? "warn" : "good" },
           { label: "QA review", value: String(browserQaReview.status ?? "missing"), tone: browserQaReview.local_browser_qa_review_ready === true ? "good" : "warn" },
           { label: "review blockers", value: counts.candidate_browser_qa_review_blocking_count as number | undefined, tone: Number(counts.candidate_browser_qa_review_blocking_count ?? 0) ? "warn" : "good" },
@@ -433,6 +436,10 @@ export default function CandidateRadar() {
         <p>local_browser_qa_evidence_found: {String(browserQaEvidence.local_browser_qa_evidence_found === true)}</p>
         <p>candidate_visual_qa_evidence_passed: {String(browserQaEvidence.candidate_visual_qa_evidence_passed === true)}</p>
         <p>candidate_browser_performance_evidence_passed: {String(browserQaEvidence.candidate_browser_performance_evidence_passed === true)}</p>
+        <p>motion_viewport_coverage_complete: {String(browserQaEvidence.motion_viewport_coverage_complete === true)}</p>
+        <p>default_motion_viewports: {Array.isArray(browserQaEvidence.default_motion_viewports) ? browserQaEvidence.default_motion_viewports.join(" / ") : "--"}</p>
+        <p>reduced_motion_viewports: {Array.isArray(browserQaEvidence.reduced_motion_viewports) ? browserQaEvidence.reduced_motion_viewports.join(" / ") : "--"}</p>
+        <p>missing_default_motion_viewports / missing_reduced_motion_viewports: {Array.isArray(browserQaEvidence.missing_default_motion_viewports) ? browserQaEvidence.missing_default_motion_viewports.join(" / ") : "--"} / {Array.isArray(browserQaEvidence.missing_reduced_motion_viewports) ? browserQaEvidence.missing_reduced_motion_viewports.join(" / ") : "--"}</p>
         <p>review_required_count: {String(browserQaEvidence.review_required_count ?? 0)}</p>
         <p>latest_report_path: {String(browserQaEvidence.latest_report_path ?? "--")}</p>
         <p>production_radar_replacement_complete: {String(browserQaEvidence.production_radar_replacement_complete === true)}</p>
@@ -447,6 +454,8 @@ export default function CandidateRadar() {
         <p>local_browser_qa_review_ready: {String(browserQaReview.local_browser_qa_review_ready === true)}</p>
         <p>blocking_review_count: {String(browserQaReview.blocking_review_count ?? 0)}</p>
         <p>default_motion_passed: {String(browserQaReview.default_motion_passed === true)}；reduced_motion_passed: {String(browserQaReview.reduced_motion_passed === true)}</p>
+        <p>motion_viewport_coverage_complete: {String(browserQaReview.motion_viewport_coverage_complete === true)}</p>
+        <p>missing_default_motion_viewports / missing_reduced_motion_viewports: {Array.isArray(browserQaReview.missing_default_motion_viewports) ? browserQaReview.missing_default_motion_viewports.join(" / ") : "--"} / {Array.isArray(browserQaReview.missing_reduced_motion_viewports) ? browserQaReview.missing_reduced_motion_viewports.join(" / ") : "--"}</p>
         <p>production_radar_replacement_complete: {String(browserQaReview.production_radar_replacement_complete === true)}；legacy_retirement_ready: {String(browserQaReview.legacy_retirement_ready === true)}</p>
         <p>browser QA review 不运行浏览器、不写 artifact、不提交截图；即使本地审查 ready，也不能解除 full-pool/deep-scan/provider-backed 阻断项。</p>
         <DataLineageTable rows={objectRow(browserQaReview)} />

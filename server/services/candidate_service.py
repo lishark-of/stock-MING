@@ -2432,14 +2432,29 @@ def _candidate_browser_qa_evidence_summary() -> tuple[dict[str, Any], list[dict[
     review_required_count = sum(1 for row in candidate_rows if row.get("review_required") is True)
     visual_passed_count = sum(1 for row in candidate_rows if row.get("visual_qa_complete") is True)
     performance_passed_count = sum(1 for row in candidate_rows if row.get("performance_passed") is True)
-    default_motion_passed = any(row.get("reduced_motion") is False and row.get("review_required") is False for row in candidate_rows)
-    reduced_motion_passed = any(row.get("reduced_motion") is True and row.get("review_required") is False for row in candidate_rows)
+    required_viewports = {"desktop", "laptop", "tablet", "mobile"}
+    default_motion_viewports = {
+        str(row.get("viewport") or "")
+        for row in candidate_rows
+        if row.get("reduced_motion") is False and row.get("review_required") is False
+    }
+    reduced_motion_viewports = {
+        str(row.get("viewport") or "")
+        for row in candidate_rows
+        if row.get("reduced_motion") is True and row.get("review_required") is False
+    }
+    default_motion_passed = required_viewports.issubset(default_motion_viewports)
+    reduced_motion_passed = required_viewports.issubset(reduced_motion_viewports)
+    missing_default_motion_viewports = sorted(required_viewports - default_motion_viewports)
+    missing_reduced_motion_viewports = sorted(required_viewports - reduced_motion_viewports)
+    motion_viewport_coverage_complete = default_motion_passed and reduced_motion_passed
     local_evidence_found = row_count > 0
     visual_passed = local_evidence_found and visual_passed_count == row_count and review_required_count == 0
     performance_passed = local_evidence_found and performance_passed_count == row_count and review_required_count == 0
+    candidate_browser_qa_evidence_ready = visual_passed and performance_passed and motion_viewport_coverage_complete
     status = (
         "candidate_browser_qa_evidence_passed_local_artifact"
-        if visual_passed and performance_passed
+        if candidate_browser_qa_evidence_ready
         else "candidate_browser_qa_evidence_review_required_local_artifact"
         if local_evidence_found
         else "candidate_browser_qa_evidence_pending"
@@ -2461,6 +2476,15 @@ def _candidate_browser_qa_evidence_summary() -> tuple[dict[str, Any], list[dict[
         "performance_passed_count": performance_passed_count,
         "default_motion_passed": default_motion_passed,
         "reduced_motion_passed": reduced_motion_passed,
+        "required_viewports": sorted(required_viewports),
+        "default_motion_viewports": sorted(viewport for viewport in default_motion_viewports if viewport),
+        "reduced_motion_viewports": sorted(viewport for viewport in reduced_motion_viewports if viewport),
+        "default_motion_viewport_count": len(default_motion_viewports),
+        "reduced_motion_viewport_count": len(reduced_motion_viewports),
+        "missing_default_motion_viewports": missing_default_motion_viewports,
+        "missing_reduced_motion_viewports": missing_reduced_motion_viewports,
+        "motion_viewport_coverage_complete": motion_viewport_coverage_complete,
+        "candidate_browser_qa_evidence_ready": candidate_browser_qa_evidence_ready,
         "candidate_visual_qa_evidence_passed": visual_passed,
         "candidate_browser_performance_evidence_passed": performance_passed,
         "visual_qa_complete": visual_passed,
@@ -2616,6 +2640,11 @@ def _candidate_browser_qa_review_contract(
         "blocking_review_keys": [str(row.get("criterion")) for row in blocking_review_rows],
         "default_motion_passed": evidence_summary.get("default_motion_passed") is True,
         "reduced_motion_passed": evidence_summary.get("reduced_motion_passed") is True,
+        "motion_viewport_coverage_complete": evidence_summary.get("motion_viewport_coverage_complete") is True,
+        "default_motion_viewports": evidence_summary.get("default_motion_viewports", []),
+        "reduced_motion_viewports": evidence_summary.get("reduced_motion_viewports", []),
+        "missing_default_motion_viewports": evidence_summary.get("missing_default_motion_viewports", []),
+        "missing_reduced_motion_viewports": evidence_summary.get("missing_reduced_motion_viewports", []),
         "candidate_visual_qa_evidence_passed": evidence_summary.get("candidate_visual_qa_evidence_passed") is True,
         "candidate_browser_performance_evidence_passed": evidence_summary.get(
             "candidate_browser_performance_evidence_passed"
