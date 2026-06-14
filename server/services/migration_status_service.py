@@ -84,7 +84,7 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "DeepSeek pro 稳定解释生产化",
         "completion_bucket": "productionization_required",
         "completion_estimate": "35%-45%",
-        "current_state": "manual governance, sanitizer, model strategy, JSON stability audit, response-format review, retry/repair dry-run, and linkage contract exist.",
+        "current_state": "manual governance, sanitizer, model strategy, JSON stability audit, response-format review, retry/repair dry-run, provider benchmark execution recipe, and linkage contract exist.",
         "not_complete_because": "JSON stability target, provider-backed benchmark, provider response-format enforcement, bounded retry/repair execution, and live_light model execution are pending.",
         "next_step": "Run a larger explicit DeepSeek pro benchmark and promote only if sanitizer, parse fallback, retry/repair execution, cost, and model ledger pass.",
         "production_complete": False,

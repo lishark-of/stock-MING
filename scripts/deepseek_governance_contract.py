@@ -85,6 +85,18 @@ REQUIRED_DEEPSEEK_PRODUCTION_STAGES = {
     "sanitizer_parse_failed_discard",
     "production_promotion_review",
 }
+REQUIRED_BENCHMARK_RECIPE_PHASES = {
+    "explicit_user_approval",
+    "server_secret_preflight",
+    "benchmark_sample_set",
+    "provider_response_format",
+    "bounded_retry_repair",
+    "model_call_ledger",
+    "sanitizer_parse_review",
+    "token_budget_cost_review",
+    "auto_after_task_mode_gate",
+    "production_promotion_review",
+}
 DEEPSEEK_PRODUCTION_STAGE_LABELS = {
     "larger_provider_benchmark": "larger provider-backed JSON stability benchmark",
     "provider_response_format_enforcement": "provider response_format enforcement",
@@ -232,6 +244,12 @@ def build_contract() -> dict[str, Any]:
     activation_rows = _rows_by_criterion(
         cache_packet.get("deepseek_production_activation_rows") or activation_receipt.get("rows")
     )
+    benchmark_recipe = _dict(cache_packet.get("deepseek_provider_benchmark_execution_recipe"))
+    benchmark_recipe_rows = {
+        str(row.get("phase_key") or ""): row
+        for row in _list(cache_packet.get("deepseek_provider_benchmark_execution_rows") or benchmark_recipe.get("rows"))
+        if isinstance(row, dict)
+    }
     catalog = task_service.build_task_catalog()
     task = _deepseek_task(catalog)
     task_strategy = _dict(task.get("deepseek_model_strategy"))
@@ -458,6 +476,43 @@ def build_contract() -> dict[str, Any]:
             "DeepSeek production activation receipt must point to explicit provider benchmark/response-format/retry/cost review while keeping production completion false.",
         ),
         _row(
+            "provider_benchmark_execution_recipe_is_local_pending",
+            benchmark_recipe.get("schema_version") == "factor_deepseek_provider_benchmark_execution_recipe.v1"
+            and benchmark_recipe.get("status") == "deepseek_provider_benchmark_recipe_ready_model_execution_pending"
+            and benchmark_recipe.get("scope") == "local_deepseek_provider_benchmark_recipe_no_model_call"
+            and benchmark_recipe.get("local_recipe_ready") is True
+            and benchmark_recipe.get("allowed_next_step") == "explicit_deepseek_provider_benchmark_task_with_user_approval"
+            and int(benchmark_recipe.get("required_sample_count") or 0) >= 40
+            and float(benchmark_recipe.get("required_json_success_rate") or 0) >= 0.9
+            and int(benchmark_recipe.get("max_retry_per_sample") or 0) <= 2
+            and set(_list(benchmark_recipe.get("phase_keys"))) == REQUIRED_BENCHMARK_RECIPE_PHASES
+            and set(benchmark_recipe_rows) == REQUIRED_BENCHMARK_RECIPE_PHASES
+            and set(_list(benchmark_recipe.get("allowed_output_fields"))) == REQUIRED_ALLOWED_KEYS
+            and {"model_used", "status", "token_usage", "parse_status", "cache_hit_or_miss", "input_hash", "output_hash"}.issubset(
+                set(_list(benchmark_recipe.get("required_model_ledger_fields")))
+            )
+            and "provider benchmark report with at least 40 samples" in _list(benchmark_recipe.get("missing_evidence"))
+            and "local retry/repair dry-run as provider benchmark" in _list(benchmark_recipe.get("not_allowed_next_steps"))
+            and "benchmark recipe as production completion" in _list(benchmark_recipe.get("not_allowed_next_steps"))
+            and benchmark_recipe.get("provider_benchmark_done") is False
+            and benchmark_recipe.get("larger_benchmark_done") is False
+            and benchmark_recipe.get("provider_response_format_enforced") is False
+            and benchmark_recipe.get("bounded_retry_repair_ready") is False
+            and benchmark_recipe.get("token_budget_cost_evidence_complete") is False
+            and benchmark_recipe.get("auto_after_task_production_ready") is False
+            and benchmark_recipe.get("production_deepseek_explanation_complete") is False
+            and benchmark_recipe.get("provider_model_called_by_recipe") is False
+            and all(row.get("recipe_step_ready") is True for row in benchmark_recipe_rows.values())
+            and all(row.get("model_call_status") == "not_called" for row in benchmark_recipe_rows.values())
+            and all(row.get("contains_secret") is False for row in benchmark_recipe_rows.values())
+            and _flag_false(benchmark_recipe, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called", "contains_secret")
+            and benchmark_recipe.get("does_not_execute_trades") is True
+            and benchmark_recipe.get("does_not_modify_strategy_action") is True
+            and benchmark_recipe.get("does_not_override_numeric_values") is True
+            and benchmark_recipe.get("does_not_output_strategy_action") is True,
+            "Provider benchmark execution recipe must fix the next real benchmark scope while staying local, model-silent, secret-safe, and production-pending.",
+        ),
+        _row(
             "deepseek_production_stage_scope_manifest_is_complete_and_pending",
             {row.get("stage_key") for row in deepseek_production_stage_scope_rows}
             == REQUIRED_DEEPSEEK_PRODUCTION_STAGES
@@ -502,6 +557,7 @@ def build_contract() -> dict[str, Any]:
             and "local_deepseek_governance_contract_no_model_call" in this_script
             and "deepseek_production_activation_receipt.v1" in this_script
             and "factor_deepseek_retry_repair_dry_run_contract.v1" in this_script
+            and "factor_deepseek_provider_benchmark_execution_recipe.v1" in this_script
             and "provider_benchmark_done" in this_script
             and "production_deepseek_explanation_complete" in this_script
             and "deepseek_production_stage_scope_manifest" in this_script
@@ -532,6 +588,7 @@ def build_contract() -> dict[str, Any]:
         "retry_repair_dry_run_ready": retry_repair_dry_run.get("local_retry_repair_dry_run_ready") is True,
         "auto_after_task_production_ready": False,
         "deepseek_production_activation_receipt_ready": activation_receipt.get("local_activation_receipt_ready") is True,
+        "provider_benchmark_execution_recipe_ready": benchmark_recipe.get("local_recipe_ready") is True,
         "production_deepseek_explanation_complete": False,
         "sanitizer_only": True,
         "cache_only": True,
@@ -564,6 +621,10 @@ def build_contract() -> dict[str, Any]:
             "activation_receipt_status": activation_receipt.get("status"),
             "activation_receipt_allowed_next_step": activation_receipt.get("allowed_next_step"),
             "activation_receipt_blockers": activation_receipt.get("blockers"),
+            "benchmark_recipe_status": benchmark_recipe.get("status"),
+            "benchmark_recipe_required_sample_count": benchmark_recipe.get("required_sample_count"),
+            "benchmark_recipe_phase_count": benchmark_recipe.get("phase_count"),
+            "benchmark_recipe_allowed_next_step": benchmark_recipe.get("allowed_next_step"),
             "task_backend": task.get("current_backend"),
             "task_button_gated": task.get("button_gated"),
             "deepseek_production_stage_scope_count": len(deepseek_production_stage_scope_rows),

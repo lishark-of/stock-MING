@@ -7643,7 +7643,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("response_format_review_is_local_not_provider_enforcement", script)
         self.assertIn("retry_repair_dry_run_is_local_and_production_blocked", script)
         self.assertIn("factor_deepseek_retry_repair_dry_run_contract.v1", script)
+        self.assertIn("factor_deepseek_provider_benchmark_execution_recipe.v1", script)
         self.assertIn("production_activation_receipt_guides_next_safe_step", script)
+        self.assertIn("provider_benchmark_execution_recipe_is_local_pending", script)
         self.assertIn("deepseek_production_activation_receipt.v1", script)
         self.assertIn("deepseek_production_stage_scope_manifest", script)
         self.assertIn("deepseek_production_stage_scope_manifest_is_complete_and_pending", script)
@@ -7676,6 +7678,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["retry_repair_dry_run_ready"])
         self.assertFalse(payload["auto_after_task_production_ready"])
         self.assertTrue(payload["deepseek_production_activation_receipt_ready"])
+        self.assertTrue(payload["provider_benchmark_execution_recipe_ready"])
         self.assertFalse(payload["production_deepseek_explanation_complete"])
         self.assertTrue(payload["sanitizer_only"])
         self.assertTrue(payload["cache_only"])
@@ -7709,6 +7712,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "deepseek_activation_receipt_ready_provider_benchmark_pending",
         )
         self.assertIn("explicit_provider_benchmark", payload["observed"]["activation_receipt_allowed_next_step"])
+        self.assertEqual(
+            payload["observed"]["benchmark_recipe_status"],
+            "deepseek_provider_benchmark_recipe_ready_model_execution_pending",
+        )
+        self.assertGreaterEqual(payload["observed"]["benchmark_recipe_required_sample_count"], 40)
+        self.assertEqual(payload["observed"]["benchmark_recipe_phase_count"], 10)
+        self.assertEqual(
+            payload["observed"]["benchmark_recipe_allowed_next_step"],
+            "explicit_deepseek_provider_benchmark_task_with_user_approval",
+        )
         self.assertEqual(payload["observed"]["task_backend"], "guarded_prompt_or_payload_sanitizer")
         self.assertTrue(payload["observed"]["task_button_gated"])
         required_production_stages = {
@@ -7755,6 +7768,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("response_format_review_is_local_not_provider_enforcement", criteria)
         self.assertIn("retry_repair_dry_run_is_local_and_production_blocked", criteria)
         self.assertIn("production_activation_receipt_guides_next_safe_step", criteria)
+        self.assertIn("provider_benchmark_execution_recipe_is_local_pending", criteria)
         self.assertIn("deepseek_production_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("local_builders_match_cache_governance_boundaries", criteria)
         self.assertIn("deepseek_task_is_button_gated_and_config_driven", criteria)
@@ -18589,6 +18603,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         retry_repair_rows = {row["case_key"]: row for row in factor["data"]["deepseek_retry_repair_dry_run_rows"]}
         activation_receipt = factor["data"]["deepseek_production_activation_receipt"]
         activation_rows = {row["criterion"]: row for row in factor["data"]["deepseek_production_activation_rows"]}
+        benchmark_recipe = factor["data"]["deepseek_provider_benchmark_execution_recipe"]
+        benchmark_recipe_rows = {row["phase_key"]: row for row in factor["data"]["deepseek_provider_benchmark_execution_rows"]}
         self.assertFalse(factor["data"]["deepseek_called"])
         self.assertEqual(explanation["payload"]["summary"], "整理摘要")
         self.assertIn("price", explanation["ignored_keys"])
@@ -18708,6 +18724,46 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(activation_receipt["call_ledger"][0]["api"], "local_deepseek_production_activation_receipt")
         self.assertIn("local_deepseek_production_activation_receipt", {item.get("api") for item in factor["data"]["call_ledger"]})
         self.assertEqual(
+            benchmark_recipe["schema_version"],
+            "factor_deepseek_provider_benchmark_execution_recipe.v1",
+        )
+        self.assertEqual(benchmark_recipe["status"], "deepseek_provider_benchmark_recipe_ready_model_execution_pending")
+        self.assertEqual(benchmark_recipe["scope"], "local_deepseek_provider_benchmark_recipe_no_model_call")
+        self.assertTrue(benchmark_recipe["local_recipe_ready"])
+        self.assertEqual(benchmark_recipe["allowed_next_step"], "explicit_deepseek_provider_benchmark_task_with_user_approval")
+        self.assertGreaterEqual(benchmark_recipe["required_sample_count"], 40)
+        self.assertEqual(benchmark_recipe["required_json_success_rate"], 0.9)
+        self.assertLessEqual(benchmark_recipe["max_retry_per_sample"], 2)
+        self.assertEqual(
+            set(benchmark_recipe["allowed_output_fields"]),
+            {"summary", "support_notes", "suppress_notes", "conflict_notes", "missing_data_notes", "discipline_notes"},
+        )
+        self.assertIn("provider benchmark report with at least 40 samples", benchmark_recipe["missing_evidence"])
+        self.assertIn("local retry/repair dry-run as provider benchmark", benchmark_recipe["not_allowed_next_steps"])
+        self.assertIn("benchmark recipe as production completion", benchmark_recipe["not_allowed_next_steps"])
+        self.assertFalse(benchmark_recipe["provider_benchmark_done"])
+        self.assertFalse(benchmark_recipe["provider_response_format_enforced"])
+        self.assertFalse(benchmark_recipe["bounded_retry_repair_ready"])
+        self.assertFalse(benchmark_recipe["token_budget_cost_evidence_complete"])
+        self.assertFalse(benchmark_recipe["auto_after_task_production_ready"])
+        self.assertFalse(benchmark_recipe["production_deepseek_explanation_complete"])
+        self.assertFalse(benchmark_recipe["provider_model_called_by_recipe"])
+        self.assertFalse(benchmark_recipe["external_calls_triggered"])
+        self.assertFalse(benchmark_recipe["deepseek_called"])
+        self.assertTrue(benchmark_recipe["does_not_execute_trades"])
+        self.assertTrue(benchmark_recipe["does_not_modify_strategy_action"])
+        self.assertIn("explicit_user_approval", benchmark_recipe_rows)
+        self.assertIn("benchmark_sample_set", benchmark_recipe_rows)
+        self.assertIn("provider_response_format", benchmark_recipe_rows)
+        self.assertIn("model_call_ledger", benchmark_recipe_rows)
+        self.assertIn("production_promotion_review", benchmark_recipe_rows)
+        self.assertTrue(all(row["recipe_step_ready"] for row in benchmark_recipe_rows.values()))
+        self.assertTrue(all(row["model_call_status"] == "not_called" for row in benchmark_recipe_rows.values()))
+        self.assertIn(
+            "local_deepseek_provider_benchmark_execution_recipe",
+            {item.get("api") for item in factor["data"]["call_ledger"]},
+        )
+        self.assertEqual(
             factor["data"]["deepseek_explain_governance"]["json_stability_audit_status"],
             "manual_ready_production_blocked",
         )
@@ -18720,6 +18776,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "retry_repair_dry_run_ready_provider_execution_pending",
         )
         self.assertTrue(factor["data"]["deepseek_explain_governance"]["retry_repair_local_dry_run_ready"])
+        self.assertTrue(factor["data"]["deepseek_explain_governance"]["provider_benchmark_execution_recipe_ready"])
+        self.assertEqual(
+            factor["data"]["deepseek_explain_governance"]["provider_benchmark_execution_recipe_status"],
+            "deepseek_provider_benchmark_recipe_ready_model_execution_pending",
+        )
         self.assertFalse(factor["data"]["deepseek_explain_governance"]["bounded_retry_repair_ready"])
         self.assertFalse(factor["data"]["deepseek_explain_governance"]["response_format_production_ready"])
         self.assertFalse(factor["data"]["deepseek_explain_governance"]["response_format_retry_repair_ready"])

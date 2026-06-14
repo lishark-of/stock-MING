@@ -93,6 +93,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet, universe_activation_receipt_ledger = _attach_factor_universe_execution_activation_receipt(packet, now)
     packet = _attach_deepseek_json_stability_audit(packet, governance=packet["deepseek_explain_governance"])
     packet, deepseek_activation_ledger = _attach_deepseek_production_activation_receipt(packet, now)
+    packet, deepseek_benchmark_recipe_ledger = _attach_deepseek_provider_benchmark_execution_recipe(packet, now)
     packet, storage_query_ledger = _attach_factor_test_storage_query_consumption(packet, now)
     packet, local_dataset_ledger = _attach_factor_test_local_dataset_sample_evidence(packet, now)
     packet, production_validation_ledger = _attach_factor_test_production_validation_qa_contract(packet, now)
@@ -108,6 +109,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         + universe_execution_receipt_ledger
         + universe_activation_receipt_ledger
         + deepseek_activation_ledger
+        + deepseek_benchmark_recipe_ledger
         + storage_query_ledger
         + local_dataset_ledger
         + production_validation_ledger
@@ -121,6 +123,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     universe_execution_receipt_warning = "Factor Universe execution readiness receipt 只说明下一步显式 worker batch 是否可进入；不会运行 full-pool、rank/zscore、中性化或 provider 验收。"
     universe_activation_receipt_warning = "Factor Universe execution activation receipt 只把下一步固定为显式 worker batch 生产验收；不会创建任务、启动 worker、计算 full-pool/rank/zscore/neutralization 或 provider 验收。"
     deepseek_activation_warning = "DeepSeek production activation receipt 只汇总下一步生产解释验收缺口；不会调用模型，不代表 provider benchmark、response_format 强约束或 auto_after_task 生产完成。"
+    deepseek_benchmark_recipe_warning = "DeepSeek provider benchmark execution recipe 只固定未来显式 benchmark 的样本、ledger、retry、成本和 promotion 标准；不会调用 DeepSeek 或完成生产解释。"
     storage_query_warning = "Factor Test Lab 只消费本地 factor_values DuckDB 查询合同；不把查询样本当作生产 IC 验收或交易信号。"
     local_dataset_warning = "Factor Test Lab 本地 Parquet 样本证据只做样本充分性审计；不足以证明真实小股票池或生产级因子验证。"
     provider_blocker_warning = "Factor Test provider validation blocker audit 只汇总真实小股票池/全市场验收缺口；不会调用 provider、不会计算交易信号。"
@@ -133,6 +136,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         universe_execution_receipt_warning,
         universe_activation_receipt_warning,
         deepseek_activation_warning,
+        deepseek_benchmark_recipe_warning,
         storage_query_warning,
         local_dataset_warning,
         provider_blocker_warning,
@@ -145,6 +149,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         universe_execution_receipt_warning,
         universe_activation_receipt_warning,
         deepseek_activation_warning,
+        deepseek_benchmark_recipe_warning,
         storage_query_warning,
         local_dataset_warning,
         provider_blocker_warning,
@@ -977,6 +982,225 @@ def _deepseek_production_activation_call_ledger(receipt: dict[str, Any], now: st
             **_local_ledger_boundary(),
         }
     ]
+
+
+def _deepseek_benchmark_recipe_row(
+    phase_key: str,
+    status: str,
+    required_evidence: list[str],
+    next_action: str,
+    *,
+    provider_model_execution_required: bool = True,
+    promotion_gate: bool = False,
+) -> dict[str, Any]:
+    return {
+        "phase_key": phase_key,
+        "status": status,
+        "recipe_step_ready": True,
+        "provider_model_execution_required": bool(provider_model_execution_required),
+        "promotion_gate": bool(promotion_gate),
+        "required_evidence": required_evidence,
+        "next_action": next_action,
+        "model_call_status": "not_called",
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_override_numeric_values": True,
+        "does_not_output_strategy_action": True,
+    }
+
+
+def _deepseek_provider_benchmark_execution_recipe(
+    hub: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    governance = hub.get("deepseek_explain_governance") if isinstance(hub.get("deepseek_explain_governance"), dict) else {}
+    activation_receipt = (
+        hub.get("deepseek_production_activation_receipt")
+        if isinstance(hub.get("deepseek_production_activation_receipt"), dict)
+        else {}
+    )
+    model_name = str(governance.get("model") or _deepseek_model_strategy("factor_explain").get("model") or "")
+    required_sample_count = 40
+    required_json_success_rate = 0.9
+    max_retry_per_sample = 2
+    rows = [
+        _deepseek_benchmark_recipe_row(
+            "explicit_user_approval",
+            "recipe_ready_user_approval_required",
+            ["user approval record", "benchmark scope ticket"],
+            "Create an explicit benchmark task only after user approval binds model, sample count, prompt version, and response-format scope.",
+            provider_model_execution_required=False,
+        ),
+        _deepseek_benchmark_recipe_row(
+            "server_secret_preflight",
+            "recipe_ready_secret_presence_check_required",
+            ["server-side credential presence boolean", "no raw key name or value exposure"],
+            "Check only credential presence before execution; never return token/key names, values, hashes, or lengths.",
+            provider_model_execution_required=False,
+        ),
+        _deepseek_benchmark_recipe_row(
+            "benchmark_sample_set",
+            "recipe_ready_sample_set_required",
+            [f">={required_sample_count} factor explanation samples", "mixed normal/missing/conflict/stale-like research contexts"],
+            "Freeze a larger sample set that covers support, suppress, conflict, missing-data, and discipline-heavy packets.",
+        ),
+        _deepseek_benchmark_recipe_row(
+            "provider_response_format",
+            "recipe_ready_response_format_required",
+            ["provider-level response_format/json_schema request", "six allowed top-level fields only"],
+            "Execute with provider response-format enforcement, not prompt-only JSON wording.",
+        ),
+        _deepseek_benchmark_recipe_row(
+            "bounded_retry_repair",
+            "recipe_ready_retry_repair_required",
+            [f"<= {max_retry_per_sample} bounded retries per sample", "repair/discard path recorded per failed parse"],
+            "Use bounded repair only for parse failures; discard unsafe or illegal-field responses after the retry budget.",
+        ),
+        _deepseek_benchmark_recipe_row(
+            "model_call_ledger",
+            "recipe_ready_model_ledger_required",
+            ["model_used", "status", "token_usage", "parse_status", "input_hash", "output_hash", "cache_hit_or_miss"],
+            "Write a redacted model ledger for every sample and every retry without raw prompt secrets or token/key material.",
+        ),
+        _deepseek_benchmark_recipe_row(
+            "sanitizer_parse_review",
+            "recipe_ready_sanitizer_review_required",
+            ["illegal fields ignored", "parse_failed payload discarded", "no numeric/action overwrite"],
+            "Review sanitizer output after real responses and keep parse failures from contaminating packets.",
+        ),
+        _deepseek_benchmark_recipe_row(
+            "token_budget_cost_review",
+            "recipe_ready_cost_review_required",
+            ["token totals", "per-sample average", "retry overhead", "cost estimate"],
+            "Record token/cost evidence before any auto_after_task promotion.",
+        ),
+        _deepseek_benchmark_recipe_row(
+            "auto_after_task_mode_gate",
+            "recipe_ready_mode_gate_required",
+            ["manual default-off preserved", "live_light opt-in only after benchmark promotion"],
+            "Keep auto_after_task off until benchmark, response-format, retry/repair, cost, and promotion review pass.",
+            promotion_gate=True,
+        ),
+        _deepseek_benchmark_recipe_row(
+            "production_promotion_review",
+            "recipe_ready_promotion_required",
+            [f"JSON success rate > {required_json_success_rate:.0%}", "redaction review", "no action/numeric overwrite", "no trade execution"],
+            "Promote only after direct provider benchmark evidence is reviewed; local recipe/dry-run evidence is not enough.",
+            promotion_gate=True,
+        ),
+    ]
+    phase_keys = [str(row["phase_key"]) for row in rows]
+    recipe = {
+        "schema_version": "factor_deepseek_provider_benchmark_execution_recipe.v1",
+        "status": "deepseek_provider_benchmark_recipe_ready_model_execution_pending",
+        "scope": "local_deepseek_provider_benchmark_recipe_no_model_call",
+        "ltg": "LTG-07",
+        "local_recipe_ready": activation_receipt.get("local_activation_receipt_ready") is True,
+        "activation_receipt_status": activation_receipt.get("status"),
+        "allowed_next_step": "explicit_deepseek_provider_benchmark_task_with_user_approval",
+        "required_sample_count": required_sample_count,
+        "required_json_success_rate": required_json_success_rate,
+        "max_retry_per_sample": max_retry_per_sample,
+        "model": model_name,
+        "prompt_version": DEEPSEEK_FACTOR_PROMPT_VERSION,
+        "phase_count": len(rows),
+        "phase_keys": phase_keys,
+        "required_model_ledger_fields": [
+            "model_used",
+            "status",
+            "token_usage",
+            "parse_status",
+            "cache_hit_or_miss",
+            "input_hash",
+            "output_hash",
+        ],
+        "allowed_output_fields": [
+            "summary",
+            "support_notes",
+            "suppress_notes",
+            "conflict_notes",
+            "missing_data_notes",
+            "discipline_notes",
+        ],
+        "not_allowed_next_steps": [
+            "GET cache model call",
+            "React render model call",
+            "local retry/repair dry-run as provider benchmark",
+            "provider benchmark without response_format",
+            "benchmark recipe as production completion",
+            "auto_after_task default-on promotion",
+            "raw token/key in prompt, ledger, packet, cache, or log",
+            "DeepSeek numeric/action overwrite",
+        ],
+        "missing_evidence": [
+            f"provider benchmark report with at least {required_sample_count} samples",
+            "provider response_format/json_schema execution evidence",
+            "per-sample model ledger with token usage and hashes",
+            "bounded retry/repair execution ledger",
+            "sanitizer and parse-failed discard review",
+            "token budget and cost evidence",
+            "redaction review",
+            "manual production promotion review",
+        ],
+        "provider_benchmark_done": False,
+        "larger_benchmark_done": False,
+        "provider_response_format_enforced": False,
+        "bounded_retry_repair_ready": False,
+        "token_budget_cost_evidence_complete": False,
+        "auto_after_task_production_ready": False,
+        "production_deepseek_explanation_complete": False,
+        "provider_model_called_by_recipe": False,
+        "cache_get_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_override_numeric_values": True,
+        "does_not_output_strategy_action": True,
+        "rows": rows,
+    }
+    ledger = [
+        {
+            "api": "local_deepseek_provider_benchmark_execution_recipe",
+            "request_params_safe": {
+                "status": recipe["status"],
+                "allowed_next_step": recipe["allowed_next_step"],
+                "required_sample_count": required_sample_count,
+                "required_json_success_rate": required_json_success_rate,
+                "provider_benchmark_done": False,
+            },
+            "row_count": len(rows),
+            "data_date": None,
+            "local_fetched_at": now,
+            "call_status": "benchmark_recipe_ready_model_execution_pending",
+            "error_message_safe": "",
+            **_local_ledger_boundary(),
+        }
+    ]
+    return recipe, rows, ledger
+
+
+def _attach_deepseek_provider_benchmark_execution_recipe(
+    hub: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    recipe, rows, ledger = _deepseek_provider_benchmark_execution_recipe(hub, now)
+    hub["deepseek_provider_benchmark_execution_recipe"] = recipe
+    hub["deepseek_provider_benchmark_execution_rows"] = rows
+    governance = hub.get("deepseek_explain_governance")
+    if isinstance(governance, dict):
+        governance["provider_benchmark_execution_recipe_status"] = recipe["status"]
+        governance["provider_benchmark_execution_recipe_ready"] = recipe["local_recipe_ready"]
+        governance["provider_benchmark_required_sample_count"] = recipe["required_sample_count"]
+    return hub, ledger
 
 
 def _attach_deepseek_production_activation_receipt(
