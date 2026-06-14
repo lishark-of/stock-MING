@@ -34,7 +34,7 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "Tushare 全接口生产流水线",
         "completion_bucket": "real_validation_required",
         "completion_estimate": "35%-45%",
-        "current_state": "daily / daily_basic / moneyflow light path has real evidence; extended interfaces have matrix, local QA, runbook, and dry-run contracts.",
+        "current_state": "daily / daily_basic / moneyflow light path has real evidence; extended interfaces have matrix, local QA, runbook, dry-run contracts, and a production stage-scope manifest.",
         "not_complete_because": "full-interface provider-backed samples and promotion evidence are incomplete.",
         "next_step": "Validate target sample groups through explicit POST task runs, starting with trade_cal and then staged market-evidence domains.",
         "production_complete": False,
@@ -44,7 +44,7 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "Factor Test Lab 完整生产化",
         "completion_bucket": "real_validation_required",
         "completion_estimate": "45%-55%",
-        "current_state": "IC, Rank IC, ICIR, groups, drawdown, neutralization, split, decay, cost-model scaffolds, local provider blocker receipts, and provider small-pool dry-run scope ticket exist as research-only/preflight evidence.",
+        "current_state": "IC, Rank IC, ICIR, groups, drawdown, neutralization, split, decay, cost-model scaffolds, local provider blocker receipts, provider small-pool dry-run scope ticket, and production stage-scope manifest exist as research-only/preflight evidence.",
         "not_complete_because": "real provider-backed small-pool validation, larger sample coverage, and production research acceptance are still pending.",
         "next_step": "Run a separate user-approved provider-backed small-stock-pool validation bound to the safe scope ticket, then keep every metric outside strategy action.",
         "production_complete": False,
@@ -124,7 +124,7 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "测试 / CI / smoke / 安全扫描标准化",
         "completion_bucket": "mostly_stable_guardrail",
         "completion_estimate": "75%-85%",
-        "current_state": "local push gate, contract scripts, unit tests, frontend build, smoke, diff check, secret scan, artifact scan, and CI mirror checks exist.",
+        "current_state": "local push gate, contract scripts, unit tests, frontend build, smoke, diff check, secret scan, artifact scan, CI mirror checks, release gate stage-scope manifest, and LTG stage-manifest audit visibility exist.",
         "not_complete_because": "this is an ongoing release boundary; every push candidate still needs a fresh gate run and remote CI evidence.",
         "next_step": "Keep push gate green before every push and inspect remote CI failures without calling GitHub API from cache paths.",
         "production_complete": False,
@@ -169,6 +169,40 @@ LONG_TERM_GOAL_BUCKETS = {
     "later_polish_goal": "Should continue after core data, worker, desktop, and radar paths are stable.",
 }
 
+LTG_STAGE_SCOPE_MANIFESTS = {
+    "LTG-01": "freshness_production_stage_scope_manifest",
+    "LTG-02": "tushare_production_stage_scope_manifest",
+    "LTG-03": "factor_test_production_stage_scope_manifest",
+    "LTG-04": "factor_universe_worker_batch_stage_scope_manifest",
+    "LTG-05": "storage_physical_migration_stage_scope_manifest",
+    "LTG-06": "worker_runtime_evidence_stage_scope_manifest",
+    "LTG-07": "deepseek_production_stage_scope_manifest",
+    "LTG-08": "next_session_production_replacement_stage_scope_manifest",
+    "LTG-09": "tauri_production_package_stage_scope_manifest",
+    "LTG-10": "streamlit_retirement_stage_scope_manifest",
+    "LTG-11": "release_gate_stage_scope_manifest",
+    "LTG-12": "trade_isolation_stage_scope_manifest",
+    "LTG-13": "candidate_radar_production_stage_scope_manifest",
+    "LTG-14": "motion_production_stage_scope_manifest",
+}
+
+LTG_NEXT_EVIDENCE_REQUIRED = {
+    "LTG-01": ["provider trade_cal task", "safe call ledger", "freshness replay", "promotion review"],
+    "LTG-02": ["provider target samples", "full-interface selection", "failure-mode evidence", "storage promotion"],
+    "LTG-03": ["provider small-pool samples", "rolling metrics", "cost/neutralization validation", "promotion review"],
+    "LTG-04": ["worker batch execution", "rank/zscore", "neutralization", "full-pool validation"],
+    "LTG-05": ["physical schema validation", "partition migration", "compaction", "TTL cleanup evidence"],
+    "LTG-06": ["Celery/Redis process evidence", "broker healthcheck", "cross-process control", "durable task logs"],
+    "LTG-07": ["larger provider benchmark", "response_format enforcement", "retry/repair evidence", "cost budget"],
+    "LTG-08": ["browser visual QA", "performance trace", "Streamlit parity", "replacement promotion"],
+    "LTG-09": ["tauri dev/build", "packaged runtime QA", "signing/notarization review", "release evidence"],
+    "LTG-10": ["React/Tauri workflow parity", "no-feature-cut acceptance", "fallback retirement review"],
+    "LTG-11": ["fresh local gate run", "remote CI status", "failure email triage", "allowlist review"],
+    "LTG-12": ["continued no-broker proof", "continued no-order proof", "continued no-action mutation proof"],
+    "LTG-13": ["provider parity execution", "worker full-pool scan", "worker deep-scan", "browser performance proof"],
+    "LTG-14": ["browser visual QA", "performance trace", "reduced-motion proof", "durable release evidence"],
+}
+
 TARGET_STACK = [
     "React / Vite / TypeScript / Tauri",
     "FastAPI",
@@ -180,16 +214,45 @@ TARGET_STACK = [
 ]
 
 
+def _enrich_long_term_goal_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    enriched_rows: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        goal_id = str(item.get("id") or "")
+        next_evidence = list(LTG_NEXT_EVIDENCE_REQUIRED.get(goal_id, []))
+        item["stage_scope_manifest"] = LTG_STAGE_SCOPE_MANIFESTS.get(goal_id, "")
+        item["has_stage_scope_manifest"] = bool(item["stage_scope_manifest"])
+        item["stage_scope_manifest_status"] = (
+            "present_pending_production_evidence" if item["has_stage_scope_manifest"] else "missing"
+        )
+        item["next_evidence_required"] = next_evidence
+        item["next_evidence_required_count"] = len(next_evidence)
+        item["can_close_from_local_contracts"] = False
+        item["local_contracts_are_production_evidence"] = False
+        item["evidence_boundary"] = "stage_scope_manifest_is_local_guard_not_production_completion"
+        enriched_rows.append(item)
+    return enriched_rows
+
+
 def _build_long_term_goal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     bucket_counts: dict[str, int] = {}
     for row in rows:
         bucket = str(row["completion_bucket"])
         bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
+    stage_scope_manifest_count = sum(1 for row in rows if row.get("has_stage_scope_manifest") is True)
     return {
         "goal_count": len(rows),
         "closed_count": sum(1 for row in rows if row.get("production_complete") is True),
         "production_complete_count": sum(1 for row in rows if row.get("production_complete") is True),
         "strict_closeout": "0/14",
+        "stage_scope_manifest_count": stage_scope_manifest_count,
+        "stage_scope_manifest_pending_count": sum(
+            1 for row in rows if row.get("stage_scope_manifest_status") == "present_pending_production_evidence"
+        ),
+        "goals_with_next_evidence_count": sum(1 for row in rows if int(row.get("next_evidence_required_count") or 0) > 0),
+        "can_close_from_local_contracts_count": sum(
+            1 for row in rows if row.get("can_close_from_local_contracts") is True
+        ),
         "foundation_progress_estimate": "about_70_percent",
         "production_acceptance_estimate": "about_25_to_35_percent",
         "bucket_counts": bucket_counts,
@@ -498,7 +561,7 @@ def _now_iso() -> str:
 
 def build_migration_status() -> dict[str, Any]:
     loaded_at = _now_iso()
-    long_term_goal_rows = [dict(item) for item in LONG_TERM_GOAL_PROGRESS]
+    long_term_goal_rows = _enrich_long_term_goal_rows([dict(item) for item in LONG_TERM_GOAL_PROGRESS])
     long_term_goal_summary = _build_long_term_goal_summary(long_term_goal_rows)
     tushare_deepseek_linkage_rows = _build_tushare_deepseek_linkage_rows()
     tushare_deepseek_mode_layer_rows = _build_tushare_deepseek_mode_layer_rows()

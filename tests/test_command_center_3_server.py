@@ -200,13 +200,31 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(migration["long_term_goal_summary"]["goal_count"], 14)
         self.assertEqual(migration["long_term_goal_summary"]["strict_closeout"], "0/14")
         self.assertEqual(migration["long_term_goal_summary"]["closed_count"], 0)
+        self.assertEqual(migration["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
+        self.assertEqual(migration["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
+        self.assertEqual(migration["long_term_goal_summary"]["goals_with_next_evidence_count"], 14)
+        self.assertEqual(migration["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
         self.assertTrue(all(row["production_complete"] is False for row in migration["long_term_goal_rows"]))
+        self.assertTrue(all(row["has_stage_scope_manifest"] is True for row in migration["long_term_goal_rows"]))
+        self.assertTrue(
+            all(row["stage_scope_manifest_status"] == "present_pending_production_evidence" for row in migration["long_term_goal_rows"])
+        )
+        self.assertTrue(all(row["can_close_from_local_contracts"] is False for row in migration["long_term_goal_rows"]))
         self.assertIn("LTG-13", {row["id"] for row in migration["long_term_goal_rows"]})
         self.assertIn("LTG-14", {row["id"] for row in migration["long_term_goal_rows"]})
         migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
+        self.assertEqual(migration_goals["LTG-02"]["stage_scope_manifest"], "tushare_production_stage_scope_manifest")
+        self.assertIn("production stage-scope manifest", migration_goals["LTG-02"]["current_state"])
+        self.assertIn("provider target samples", migration_goals["LTG-02"]["next_evidence_required"])
         self.assertEqual(migration_goals["LTG-03"]["completion_estimate"], "45%-55%")
+        self.assertEqual(
+            migration_goals["LTG-03"]["stage_scope_manifest"],
+            "factor_test_production_stage_scope_manifest",
+        )
         self.assertIn("provider small-pool dry-run scope ticket", migration_goals["LTG-03"]["current_state"])
+        self.assertIn("production stage-scope manifest", migration_goals["LTG-03"]["current_state"])
+        self.assertIn("provider small-pool samples", migration_goals["LTG-03"]["next_evidence_required"])
         self.assertIn("safe scope ticket", migration_goals["LTG-03"]["next_step"])
         self.assertFalse(migration_goals["LTG-03"]["production_complete"])
         self.assertEqual(
@@ -12676,11 +12694,30 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(len(migration["data"]["progress_baseline"]), 11)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["goal_count"], 14)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["strict_closeout"], "0/14")
+        self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
+        self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
+        self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertTrue(all(row["production_complete"] is False for row in migration["data"]["long_term_goal_rows"]))
+        self.assertTrue(all(row["has_stage_scope_manifest"] is True for row in migration["data"]["long_term_goal_rows"]))
+        self.assertTrue(
+            all(
+                row["stage_scope_manifest_status"] == "present_pending_production_evidence"
+                for row in migration["data"]["long_term_goal_rows"]
+            )
+        )
         migration_goals = {row["id"]: row for row in migration["data"]["long_term_goal_rows"]}
+        self.assertEqual(migration_goals["LTG-02"]["stage_scope_manifest"], "tushare_production_stage_scope_manifest")
+        self.assertIn("production stage-scope manifest", migration_goals["LTG-02"]["current_state"])
+        self.assertIn("provider target samples", migration_goals["LTG-02"]["next_evidence_required"])
         self.assertEqual(migration_goals["LTG-03"]["completion_estimate"], "45%-55%")
+        self.assertEqual(
+            migration_goals["LTG-03"]["stage_scope_manifest"],
+            "factor_test_production_stage_scope_manifest",
+        )
         self.assertIn("provider small-pool dry-run scope ticket", migration_goals["LTG-03"]["current_state"])
+        self.assertIn("production stage-scope manifest", migration_goals["LTG-03"]["current_state"])
+        self.assertIn("provider small-pool samples", migration_goals["LTG-03"]["next_evidence_required"])
         self.assertIn("provider-backed small-stock-pool validation", migration_goals["LTG-03"]["next_step"])
         self.assertFalse(migration_goals["LTG-03"]["production_complete"])
         self.assertEqual(
