@@ -40,6 +40,37 @@ CONTRACT_KEYS = [
     "current_evidence_decision_surface_audit",
     "current_evidence_producer_coverage_audit",
 ]
+REQUIRED_FRESHNESS_PRODUCTION_STAGE_KEYS = {
+    "acceptance_matrix_boundary",
+    "synthetic_long_window_replay",
+    "local_trade_cal_artifact_validation",
+    "provider_trade_cal_long_window_task",
+    "provider_call_ledger_safe_fields",
+    "provider_freshness_replay_evidence",
+    "provider_failure_mode_evidence",
+    "current_evidence_producer_expected_dates",
+    "decision_surface_isolation_review",
+    "promotion_and_release_review",
+}
+FRESHNESS_PRODUCTION_STAGE_LABELS = {
+    "acceptance_matrix_boundary": "local acceptance matrix stays separate from provider evidence",
+    "synthetic_long_window_replay": "synthetic long-window replay stays fixture evidence",
+    "local_trade_cal_artifact_validation": "local trade_cal artifact validation stays physical evidence",
+    "provider_trade_cal_long_window_task": "explicit provider trade_cal long-window task is required",
+    "provider_call_ledger_safe_fields": "provider call ledger safe fields are required",
+    "provider_freshness_replay_evidence": "provider-backed freshness replay evidence is required",
+    "provider_failure_mode_evidence": "provider-backed failure-mode evidence is required",
+    "current_evidence_producer_expected_dates": "current evidence producers need expected-date coverage",
+    "decision_surface_isolation_review": "decision surfaces must stay isolated from stale evidence",
+    "promotion_and_release_review": "promotion and release review is required",
+}
+LOCAL_FRESHNESS_STAGE_EVIDENCE_KEYS = {
+    "acceptance_matrix_boundary",
+    "synthetic_long_window_replay",
+    "local_trade_cal_artifact_validation",
+    "current_evidence_producer_expected_dates",
+    "decision_surface_isolation_review",
+}
 
 
 def _get(mapping: dict[str, Any], key: str) -> dict[str, Any]:
@@ -70,6 +101,56 @@ def _as_list(value: Any) -> list[Any]:
 
 def _serialized(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _freshness_production_stage_scope_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    missing_evidence = [
+        "explicit provider trade_cal long-window task",
+        "provider call ledger with safe fields",
+        "730-day schema and window evidence",
+        "provider-backed freshness replay evidence",
+        "provider-backed failure-mode evidence",
+        "current evidence producer coverage review",
+        "promotion and release review",
+    ]
+    for stage_key in sorted(REQUIRED_FRESHNESS_PRODUCTION_STAGE_KEYS):
+        rows.append(
+            {
+                "stage_key": stage_key,
+                "stage_label": FRESHNESS_PRODUCTION_STAGE_LABELS[stage_key],
+                "scope": "freshness_production_stage_scope_manifest",
+                "current_status": (
+                    "local_evidence_ready_provider_acceptance_pending"
+                    if stage_key in LOCAL_FRESHNESS_STAGE_EVIDENCE_KEYS
+                    else "provider_direct_evidence_pending"
+                ),
+                "target_status": "provider_backed_freshness_direct_evidence_required",
+                "local_stage_evidence_present": stage_key in LOCAL_FRESHNESS_STAGE_EVIDENCE_KEYS,
+                "required_before_production_freshness": True,
+                "provider_backed_trade_cal_acceptance_done": False,
+                "production_freshness_gate_complete": False,
+                "real_trade_cal_long_window_validation_done": False,
+                "provider_refresh_called_by_contract": False,
+                "provider_execution_implemented": False,
+                "provider_call_ledger_evidence_done": False,
+                "freshness_replay_provider_evidence_done": False,
+                "failure_mode_provider_evidence_done": False,
+                "current_evidence_producer_coverage_complete": False,
+                "decision_surface_mutated_by_contract": False,
+                "cache_get_external_calls": False,
+                "react_render_external_calls": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "missing_evidence": missing_evidence,
+            }
+        )
+    return rows
 
 
 def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
@@ -198,6 +279,37 @@ def build_contract() -> dict[str, Any]:
     producers = _get(packet, "current_evidence_producer_coverage_audit")
     policy = _get(packet, "policy")
     counts = _get(packet, "counts")
+    production_stage_scope_rows = _freshness_production_stage_scope_rows()
+    production_stage_scope_keys = {str(row.get("stage_key") or "") for row in production_stage_scope_rows}
+    production_stage_scope_ready = (
+        production_stage_scope_keys == REQUIRED_FRESHNESS_PRODUCTION_STAGE_KEYS
+        and all(
+            row.get("scope") == "freshness_production_stage_scope_manifest"
+            and row.get("target_status") == "provider_backed_freshness_direct_evidence_required"
+            and row.get("required_before_production_freshness") is True
+            and row.get("provider_backed_trade_cal_acceptance_done") is False
+            and row.get("production_freshness_gate_complete") is False
+            and row.get("real_trade_cal_long_window_validation_done") is False
+            and row.get("provider_refresh_called_by_contract") is False
+            and row.get("provider_execution_implemented") is False
+            and row.get("provider_call_ledger_evidence_done") is False
+            and row.get("freshness_replay_provider_evidence_done") is False
+            and row.get("failure_mode_provider_evidence_done") is False
+            and row.get("current_evidence_producer_coverage_complete") is False
+            and row.get("decision_surface_mutated_by_contract") is False
+            and row.get("cache_get_external_calls") is False
+            and row.get("react_render_external_calls") is False
+            and row.get("external_calls_triggered") is False
+            and row.get("tushare_called") is False
+            and row.get("deepseek_called") is False
+            and row.get("github_called") is False
+            and row.get("does_not_execute_trades") is True
+            and row.get("does_not_modify_strategy_action") is True
+            and row.get("contains_secret") is False
+            and len(_as_list(row.get("missing_evidence"))) >= 7
+            for row in production_stage_scope_rows
+        )
+    )
 
     rows = [
         _row(
@@ -510,6 +622,11 @@ def build_contract() -> dict[str, Any]:
             "Producer coverage audit checks visible fields only; not_observed cannot be production proof.",
         ),
         _row(
+            "freshness_production_stage_scope_manifest_is_complete_and_pending",
+            production_stage_scope_ready,
+            "Freshness production stages are listed as pending direct evidence while provider trade_cal acceptance, provider replay/failure evidence, producer coverage completion, decision-surface mutation, cache/render external calls, trades, action mutation, and secrets stay disabled.",
+        ),
+        _row(
             "policy_flags_remain_conservative",
             policy.get("freshness_acceptance_matrix_is_local_contract") is True
             and policy.get("freshness_acceptance_matrix_calls_trade_cal") is False
@@ -551,9 +668,11 @@ def build_contract() -> dict[str, Any]:
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "row_count": len(rows),
+        "freshness_production_stage_scope_count": len(production_stage_scope_rows),
         "blocking_criterion_count": len(blockers),
         "blockers": blockers,
         "rows": rows,
+        "freshness_production_stage_scope_rows": production_stage_scope_rows,
         "observed_counts": {
             "freshness_acceptance_scenario_count": counts.get("freshness_acceptance_scenario_count"),
             "current_evidence_freshness_qa_row_count": counts.get("current_evidence_freshness_qa_row_count"),
@@ -582,6 +701,14 @@ def build_contract() -> dict[str, Any]:
             ),
             "latest_trade_cal_dry_run_cache_row_count": latest_after_ready_counts.get(
                 "latest_trade_cal_provider_acceptance_dry_run_row_count"
+            ),
+            "freshness_production_stage_scope_count": len(production_stage_scope_rows),
+            "freshness_production_stage_scope_keys": sorted(production_stage_scope_keys),
+            "freshness_production_stage_scope_pending_count": sum(
+                1
+                for row in production_stage_scope_rows
+                if row.get("target_status") == "provider_backed_freshness_direct_evidence_required"
+                and row.get("production_freshness_gate_complete") is False
             ),
         },
         "note": "This is a local push-gate contract. Pending/provider-backed blockers are expected until explicit provider acceptance is run later.",

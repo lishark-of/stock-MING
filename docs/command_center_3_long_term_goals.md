@@ -181,7 +181,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 
 | id | long_term_goal | current_status | target_state | priority | success_criteria |
 |---|---|---|---|---|---|
-| LTG-01 | A 股交易日历级 freshness 生产化 | `done_real` MVP; provider acceptance runbook/receipts, local `trade_cal` scope ticket dry-run, and latest dry-run cache visibility exist; provider-backed validation still pending | All current evidence is gated by expected trade date | P1 | stale / expired / historical / unknown data cannot enter score, support, evidence preview, or action. |
+| LTG-01 | A 股交易日历级 freshness 生产化 | `done_real` MVP; provider acceptance runbook/receipts, local `trade_cal` scope ticket dry-run, latest dry-run cache visibility, and production stage-scope manifest exist; provider-backed validation still pending | All current evidence is gated by expected trade date | P1 | stale / expired / historical / unknown data cannot enter score, support, evidence preview, or action; real `trade_cal` promotion requires direct provider-backed evidence. |
 | LTG-02 | Tushare 全接口生产流水线 | core light path `done_real`; extended APIs `matrix` / `mock`; interface-group acceptance scope, `live_light` status contract, local bootstrap skeleton, staged run plan, model-ledger preview, provider/model runbook, and local acceptance dry-run exist; provider execution remains pending | All selected interfaces run through task pipeline with call ledger and mode-gated refresh rules | P2 | Each interface has real target samples, safe failure states, no false verified claims, and no cache/render direct provider calls. |
 | LTG-03 | Factor Test Lab 完整生产化 | light research metrics `done_real`; production QA / provider blocker receipts, required metric-scope manifest, and provider small-pool dry-run scope ticket exist; provider-backed production research incomplete | Research-grade factor validation for single factors | P3 | IC, Rank IC, ICIR, groups, cost, drawdown, sample split, decay, and neutral IC are auditable and research-only until a separate real provider-backed small-pool validation passes. |
 | LTG-04 | Factor 全市场 / 股票池研究 | light mode plus local read-plan, readiness/activation receipts, local rank/zscore sufficiency audit, worker-batch dry-run scope ticket, and worker stage-scope manifest; real worker execution pending | watchlist / custom pool / full pool research pipeline | P3 | Large universe runs in task pipeline without blocking UI or entering strategy action. |
@@ -219,6 +219,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - Data Health cache now surfaces the latest local `trade_cal` provider acceptance dry-run task receipt from task metadata after reload. This is a read-only local lookup that creates no task, calls no provider/model/GitHub service, and still keeps provider-backed acceptance and production freshness completion pending.
 - Tushare refresh task call-ledger rows can now record explicit `acceptance_mode=provider_backed_trade_cal_long_window` evidence for future provider-backed `trade_cal` acceptance: 730-day window, `cal_date/is_open` schema, open/closed row counts, latest completed trading day, freshness replay evidence, failure-mode evidence, and no-trade/no-action boundaries. This is still button-gated POST evidence, not GET cache execution.
 - Data Health can now read the persisted local `command_center_tushare_refresh_packet` from SQLite as prior `trade_cal` acceptance evidence. The lookup is cache-only/read-only, does not create tasks, does not call Tushare, and still requires the promotion audit plus local artifact/current-evidence checks before readiness can clear.
+- `scripts/data_health_freshness_contract.py` now exposes `freshness_production_stage_scope_manifest`: a local push-gate manifest for the remaining freshness production stages. It tracks acceptance-matrix boundary, synthetic replay, local `trade_cal` artifact validation, explicit provider `trade_cal` long-window task, safe provider call ledger, provider-backed freshness replay, provider-backed failure modes, producer expected-date coverage, decision-surface isolation, and promotion/release review while keeping `production_freshness_gate_complete=false`.
 
 ### Gaps
 
@@ -236,6 +237,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - The latest dry-run receipt visible in GET cache is not a new dry-run and not a provider run. It is only local task metadata replay for audit continuity after refresh.
 - A `trade_cal` call-ledger row with `acceptance_mode=provider_backed_trade_cal_long_window` is not enough by itself. It only becomes provider-backed long-window evidence when the explicit task also records successful provider rows, 730-day schema/window checks, freshness replay evidence, and failure-mode evidence.
 - Reading the persisted Tushare refresh packet in Data Health is not provider execution. It only lets the cache audit discover prior POST task evidence from SQLite; stale, partial, matrix-only, or non-`trade_cal` rows cannot be promoted by the lookup alone.
+- The production stage-scope manifest is a local pending checklist. It does not execute provider `trade_cal`, prove call-ledger rows, prove 730-day provider freshness replay, validate provider failure modes, complete producer coverage, mutate decision surfaces, or promote the release.
 
 ### Implementation Phases
 
@@ -243,6 +245,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 2. Add expected trade date checks to all current evidence producers.
 3. Treat historical sample rows as research-only unless they explicitly match current evidence requirements.
 4. Extend tests for holiday clusters, long weekends, missing calendar rows, and provider delay windows.
+5. Keep `freshness_production_stage_scope_manifest` current whenever provider acceptance, producer coverage, decision-surface isolation, or promotion evidence changes.
 
 ### Acceptance Criteria
 
@@ -266,6 +269,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - Data Health shows `freshness_provider_acceptance_activation_receipt` and rows: readiness receipt visibility, explicit POST task requirement, provider execution evidence required, promotion review required, current-evidence boundary, decision-surface isolation, producer expected-date coverage, fixture/artifact not acceptance, cache/render no-provider boundary, production-completion boundary, and no-trade/no-action boundary.
 - Data Health can create a local `trade_cal` provider acceptance dry-run ticket through button-gated `POST /api/data-health/trade-cal-provider-acceptance-dry-run`: selected APIs stay limited to `trade_cal`, ignored APIs remain visible, the scope hash excludes credential material, credential presence is exposed only as booleans/safe labels, and the receipt keeps real provider execution and production promotion blocked.
 - Local `trade_cal` Parquet validation can pass without setting provider-backed acceptance to done.
+- `freshness_production_stage_scope_manifest` contains every required production stage and each row keeps `provider_backed_trade_cal_acceptance_done=false`, `production_freshness_gate_complete=false`, `real_trade_cal_long_window_validation_done=false`, `provider_refresh_called_by_contract=false`, `provider_execution_implemented=false`, `provider_call_ledger_evidence_done=false`, `freshness_replay_provider_evidence_done=false`, `failure_mode_provider_evidence_done=false`, `current_evidence_producer_coverage_complete=false`, `decision_surface_mutated_by_contract=false`, no cache/render external calls, no provider/model/GitHub calls, no trades, no `strategy action` mutation, and no secrets.
 
 ### Forbidden
 
@@ -282,6 +286,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - Do not treat `current_evidence_decision_surface_audit` as runtime rescore, packet filtering, or provider-backed freshness proof.
 - Do not treat `current_evidence_producer_coverage_audit` as building missing packets, refreshing providers, or proving full producer coverage when rows are `not_observed`.
 - Do not treat `scripts/data_health_freshness_contract.py` passing as real `trade_cal` provider acceptance; it only blocks local contract regressions.
+- Do not treat `freshness_production_stage_scope_manifest` as provider execution, provider call-ledger evidence, freshness replay evidence, failure-mode evidence, producer coverage completion, decision-surface mutation, promotion approval, or production freshness completion.
 
 ### Recommended Commit Message
 

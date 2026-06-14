@@ -6982,6 +6982,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("latest_trade_cal_dry_run_cache_lookup_is_local_read_only", script)
         self.assertIn("freshness_production_blocker_audit", script)
         self.assertIn("current_evidence_producer_coverage_audit", script)
+        self.assertIn("freshness_production_stage_scope_manifest", script)
+        self.assertIn("freshness_production_stage_scope_manifest_is_complete_and_pending", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -7009,6 +7011,57 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["does_not_modify_strategy_action"])
         self.assertEqual(payload["blocking_criterion_count"], 0)
         self.assertGreater(payload["observed_counts"]["freshness_production_blocker_count"], 0)
+        required_freshness_stages = {
+            "acceptance_matrix_boundary",
+            "synthetic_long_window_replay",
+            "local_trade_cal_artifact_validation",
+            "provider_trade_cal_long_window_task",
+            "provider_call_ledger_safe_fields",
+            "provider_freshness_replay_evidence",
+            "provider_failure_mode_evidence",
+            "current_evidence_producer_expected_dates",
+            "decision_surface_isolation_review",
+            "promotion_and_release_review",
+        }
+        self.assertEqual(payload["freshness_production_stage_scope_count"], len(required_freshness_stages))
+        stage_rows = payload["freshness_production_stage_scope_rows"]
+        self.assertEqual({row["stage_key"] for row in stage_rows}, required_freshness_stages)
+        for row in stage_rows:
+            self.assertEqual(row["scope"], "freshness_production_stage_scope_manifest")
+            self.assertEqual(row["target_status"], "provider_backed_freshness_direct_evidence_required")
+            self.assertTrue(row["required_before_production_freshness"])
+            self.assertFalse(row["provider_backed_trade_cal_acceptance_done"])
+            self.assertFalse(row["production_freshness_gate_complete"])
+            self.assertFalse(row["real_trade_cal_long_window_validation_done"])
+            self.assertFalse(row["provider_refresh_called_by_contract"])
+            self.assertFalse(row["provider_execution_implemented"])
+            self.assertFalse(row["provider_call_ledger_evidence_done"])
+            self.assertFalse(row["freshness_replay_provider_evidence_done"])
+            self.assertFalse(row["failure_mode_provider_evidence_done"])
+            self.assertFalse(row["current_evidence_producer_coverage_complete"])
+            self.assertFalse(row["decision_surface_mutated_by_contract"])
+            self.assertFalse(row["cache_get_external_calls"])
+            self.assertFalse(row["react_render_external_calls"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
+            self.assertGreaterEqual(len(row["missing_evidence"]), 7)
+        self.assertEqual(
+            payload["observed_counts"]["freshness_production_stage_scope_count"],
+            len(required_freshness_stages),
+        )
+        self.assertEqual(
+            payload["observed_counts"]["freshness_production_stage_scope_keys"],
+            sorted(required_freshness_stages),
+        )
+        self.assertEqual(
+            payload["observed_counts"]["freshness_production_stage_scope_pending_count"],
+            len(required_freshness_stages),
+        )
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("acceptance_matrix_is_not_provider_acceptance", criteria)
         self.assertIn("provider_runbook_execution_pending", criteria)
@@ -7016,6 +7069,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("latest_trade_cal_dry_run_cache_lookup_is_local_read_only", criteria)
         self.assertIn("freshness_production_blocker_audit_is_local_pending", criteria)
         self.assertIn("producer_coverage_audit_is_read_only", criteria)
+        self.assertIn("freshness_production_stage_scope_manifest_is_complete_and_pending", criteria)
 
     def test_tushare_acceptance_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/tushare_acceptance_contract.py")
