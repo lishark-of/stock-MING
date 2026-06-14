@@ -154,9 +154,9 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "Command Center 3 动效与可视化清晰度优化",
         "completion_bucket": "later_polish_goal",
         "completion_estimate": "30%-40%",
-        "current_state": "motion clarity layer, route/status cues, reduced-motion support, local runner, static QA, and activation receipt exist.",
+        "current_state": "motion clarity layer, route/status cues, reduced-motion support, local runner, static QA, activation receipt, and promotion dry-run ticket exist.",
         "not_complete_because": "durable browser visual QA, performance traces, CI/release evidence, and final visual promotion are pending.",
-        "next_step": "Use Apple-keynote-like clarity only where it improves state comprehension; verify reduced-motion, mobile, and performance budgets.",
+        "next_step": "Use the promotion dry-run to bind reviewed visual/performance scope, then add durable CI/release evidence before any production motion completion claim.",
         "production_complete": False,
     },
 ]

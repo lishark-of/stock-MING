@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import json
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -2733,6 +2734,258 @@ def _motion_production_activation_receipt(
     return receipt, rows
 
 
+def _motion_promotion_dry_run_row(
+    criterion: str,
+    passed: bool,
+    *,
+    status: str | None = None,
+    evidence: str,
+    next_action: str,
+    local_required: bool = True,
+    production_required: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status or ("passed" if passed else "blocked"),
+        "passed": bool(passed),
+        "blocks_local_promotion_review": bool(local_required and not passed),
+        "production_blocker": bool(production_required and not passed),
+        "evidence": evidence,
+        "next_action": next_action,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "production_motion_complete": False,
+    }
+
+
+def _motion_promotion_bool(payload_safe: Mapping[str, Any], *keys: str) -> bool:
+    return any(payload_safe.get(key) is True for key in keys)
+
+
+def _motion_promotion_scope_ticket(
+    payload_safe: Mapping[str, Any],
+    motion_browser_qa_evidence_contract: Mapping[str, Any],
+    motion_browser_qa_review_contract: Mapping[str, Any],
+) -> dict[str, Any]:
+    ci_ref = str(payload_safe.get("ci_evidence_ref") or payload_safe.get("release_evidence_ref") or "")[:160]
+    ticket = {
+        "schema_version": "command_center_3_motion_promotion_scope_ticket.v1",
+        "user_approved": _motion_promotion_bool(payload_safe, "user_approved", "approved"),
+        "promote_visual": _motion_promotion_bool(payload_safe, "promote_visual", "visual_promotion_requested"),
+        "promote_performance": _motion_promotion_bool(payload_safe, "promote_performance", "performance_promotion_requested"),
+        "ci_evidence_reference_provided": bool(ci_ref),
+        "ci_evidence_ref_safe": ci_ref,
+        "review_report_count": int(motion_browser_qa_evidence_contract.get("report_count") or 0),
+        "passing_report_count": int(motion_browser_qa_evidence_contract.get("passing_report_count") or 0),
+        "default_motion_passed": motion_browser_qa_evidence_contract.get("default_motion_passed") is True,
+        "reduced_motion_passed": motion_browser_qa_evidence_contract.get("reduced_motion_passed") is True,
+        "visual_qa_complete": motion_browser_qa_evidence_contract.get("visual_qa_complete") is True,
+        "browser_performance_verified": motion_browser_qa_evidence_contract.get("browser_performance_verified") is True,
+        "local_browser_qa_review_ready": motion_browser_qa_review_contract.get("local_browser_qa_review_ready") is True,
+        "review_task_id": str(motion_browser_qa_review_contract.get("review_task_id") or ""),
+        "production_motion_complete": False,
+    }
+    digest = hashlib.sha256(json.dumps(ticket, ensure_ascii=True, sort_keys=True).encode("utf-8")).hexdigest()
+    ticket["scope_hash"] = digest
+    ticket["scope_hash_short"] = digest[:12]
+    return ticket
+
+
+def _motion_production_promotion_dry_run_contract(
+    motion_browser_qa_evidence_contract: Mapping[str, Any],
+    motion_browser_qa_review_contract: Mapping[str, Any],
+    motion_production_activation_receipt: Mapping[str, Any],
+    *,
+    payload_safe: Mapping[str, Any] | None = None,
+    explicit_dry_run: bool = False,
+    task_id: str | None = None,
+    dry_run_at: str | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    safe_payload = payload_safe if isinstance(payload_safe, Mapping) else {}
+    scope_ticket = _motion_promotion_scope_ticket(
+        safe_payload,
+        motion_browser_qa_evidence_contract,
+        motion_browser_qa_review_contract,
+    )
+    user_approved = scope_ticket["user_approved"] is True
+    promote_visual = scope_ticket["promote_visual"] is True
+    promote_performance = scope_ticket["promote_performance"] is True
+    evidence_ready = bool(scope_ticket["visual_qa_complete"] and scope_ticket["browser_performance_verified"])
+    review_ready = motion_browser_qa_review_contract.get("local_browser_qa_review_ready") is True
+    activation_ready = motion_production_activation_receipt.get("local_activation_receipt_ready") is True
+    rows = [
+        _motion_promotion_dry_run_row(
+            "explicit_promotion_dry_run_task_done",
+            explicit_dry_run,
+            evidence="Promotion dry-run must be created through POST /api/audit/motion-production-promotion-dry-run.",
+            next_action="Use the button-gated dry-run before any visual/performance promotion claim.",
+        ),
+        _motion_promotion_dry_run_row(
+            "explicit_user_approval_recorded",
+            user_approved,
+            evidence="Payload must include user_approved=true or approved=true for local promotion review scoping.",
+            next_action="Record explicit human approval for the dry-run scope; do not infer approval from local artifact presence.",
+        ),
+        _motion_promotion_dry_run_row(
+            "local_browser_qa_evidence_ready",
+            evidence_ready,
+            evidence=(
+                f"visual_qa_complete={motion_browser_qa_evidence_contract.get('visual_qa_complete')}; "
+                f"browser_performance_verified={motion_browser_qa_evidence_contract.get('browser_performance_verified')}"
+            ),
+            next_action="Keep default and reduced-motion local browser reports reviewed before promotion scoping.",
+        ),
+        _motion_promotion_dry_run_row(
+            "explicit_browser_review_ready",
+            review_ready,
+            evidence=(
+                f"local_browser_qa_review_ready={review_ready}; "
+                f"blocking_review_count={motion_browser_qa_review_contract.get('blocking_review_count')}"
+            ),
+            next_action="Run the button-gated motion browser QA review first if review is not ready.",
+        ),
+        _motion_promotion_dry_run_row(
+            "activation_receipt_ready",
+            activation_ready,
+            evidence=str(motion_production_activation_receipt.get("status") or "missing"),
+            next_action="Use the activation receipt as the local checklist before promotion scoping.",
+        ),
+        _motion_promotion_dry_run_row(
+            "default_and_reduced_motion_coverage",
+            scope_ticket["default_motion_passed"] is True and scope_ticket["reduced_motion_passed"] is True,
+            evidence=(
+                f"default={scope_ticket['default_motion_passed']}; "
+                f"reduced={scope_ticket['reduced_motion_passed']}"
+            ),
+            next_action="Refresh local browser QA reports if either motion mode is missing.",
+        ),
+        _motion_promotion_dry_run_row(
+            "visual_promotion_scope_bound",
+            promote_visual and review_ready and motion_browser_qa_evidence_contract.get("visual_qa_complete") is True,
+            status="visual_promotion_scope_ready" if promote_visual and review_ready else "visual_promotion_scope_pending",
+            evidence=f"promote_visual={promote_visual}; local_browser_qa_review_ready={review_ready}",
+            next_action="Promote visual QA only in a later explicit review with durable evidence; this dry-run only binds scope.",
+        ),
+        _motion_promotion_dry_run_row(
+            "performance_promotion_scope_bound",
+            promote_performance and review_ready and motion_browser_qa_evidence_contract.get("browser_performance_verified") is True,
+            status="performance_promotion_scope_ready" if promote_performance and review_ready else "performance_promotion_scope_pending",
+            evidence=f"promote_performance={promote_performance}; local_browser_qa_review_ready={review_ready}",
+            next_action="Promote performance only in a later explicit review with trace/budget evidence; this dry-run only binds scope.",
+        ),
+        _motion_promotion_dry_run_row(
+            "durable_ci_or_release_evidence_required",
+            False,
+            status="pending_durable_ci_or_release_evidence",
+            evidence=f"ci_evidence_reference_provided={scope_ticket['ci_evidence_reference_provided']}; dry_run_does_not_verify_remote_ci=true",
+            next_action="Attach durable CI or release evidence in a separate promotion step; do not call GitHub API from this dry-run.",
+            local_required=False,
+            production_required=True,
+        ),
+        _motion_promotion_dry_run_row(
+            "production_completion_stays_blocked",
+            True,
+            evidence="Dry-run must keep production_motion_complete=false and promoted flags false.",
+            next_action="Only a later explicit promotion with durable visual, performance, and CI/release evidence can change production state.",
+            local_required=False,
+            production_required=False,
+        ),
+        _motion_promotion_dry_run_row(
+            "no_provider_trade_or_action_side_effects",
+            True,
+            evidence="Promotion dry-run reads local audit cache and ignored summaries only; it does not call providers/models/GitHub or execute trades.",
+            next_action="Keep motion as visual clarity, never trade urgency or strategy-action mutation.",
+            local_required=False,
+            production_required=False,
+        ),
+    ]
+    local_blockers = [str(row["criterion"]) for row in rows if row.get("blocks_local_promotion_review")]
+    production_blockers = [str(row["criterion"]) for row in rows if row.get("production_blocker")]
+    ready_for_local_promotion_review = not local_blockers
+    status = (
+        "motion_promotion_dry_run_blocked_user_approval_required"
+        if explicit_dry_run and not user_approved
+        else "motion_promotion_dry_run_ready_production_still_blocked"
+        if ready_for_local_promotion_review
+        else "motion_promotion_dry_run_blocked_local_evidence_or_scope_missing"
+    )
+    request_params_safe = {
+        "promotion_scope": "motion_visual_performance_local_promotion_dry_run",
+        "user_approved": user_approved,
+        "promote_visual": promote_visual,
+        "promote_performance": promote_performance,
+        "ci_evidence_ref_provided": scope_ticket["ci_evidence_reference_provided"],
+        "scope_hash_short": scope_ticket["scope_hash_short"],
+        "external_sources_allowed": False,
+        "opens_no_browser": True,
+        "starts_no_servers": True,
+        "writes_no_artifacts": True,
+        "production_motion_complete": False,
+    }
+    receipt = {
+        "schema_version": "command_center_3_motion_production_promotion_dry_run.v1",
+        "status": status,
+        "scope": "button_gated_local_motion_promotion_dry_run_no_browser_no_external_call",
+        "ltg": "LTG-14",
+        "design_target": "apple_keynote_grade_clarity_restrained_motion",
+        "explicit_promotion_dry_run_task_done": bool(explicit_dry_run),
+        "promotion_task_id": task_id,
+        "dry_run_at": dry_run_at,
+        "button_gated": True,
+        "local_dry_run_only": True,
+        "ready_for_local_promotion_review": ready_for_local_promotion_review,
+        "ready_to_mark_production_motion_complete": False,
+        "production_motion_complete": False,
+        "browser_visual_qa_promoted": False,
+        "browser_performance_promoted": False,
+        "ci_evidence_complete": False,
+        "browser_visual_qa_promotion_requested": promote_visual,
+        "browser_performance_promotion_requested": promote_performance,
+        "durable_ci_or_release_evidence_required": True,
+        "dry_run_verifies_remote_ci": False,
+        "local_browser_evidence_available": evidence_ready,
+        "local_browser_qa_review_ready": review_ready,
+        "activation_receipt_ready": activation_ready,
+        "scope_ticket": scope_ticket,
+        "scope_hash": scope_ticket["scope_hash"],
+        "scope_hash_short": scope_ticket["scope_hash_short"],
+        "request_params_safe": request_params_safe,
+        "row_count": len(rows),
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "promotion_row_count": len(rows),
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+        "allowed_next_step": "review_motion_visual_and_performance_promotion_then_attach_durable_ci_or_release_evidence",
+        "not_allowed_next_steps": [
+            "mark_production_motion_complete_from_dry_run",
+            "treat_local_ignored_artifacts_as_durable_ci_evidence",
+            "promote_visual_without_reviewed_scope",
+            "promote_performance_without_trace_or_budget_review",
+            "call_github_api_or_browser_from_promotion_dry_run",
+            "use_motion_to_imply_trade_urgency_or_strategy_action",
+        ],
+        "opens_no_browser": True,
+        "starts_no_servers": True,
+        "writes_no_artifacts": True,
+        "reads_ignored_local_reports_only": True,
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "rows": rows,
+        "note": "This dry-run binds the LTG-14 promotion scope after local evidence review. It does not run browsers, verify remote CI, promote artifacts, or complete production motion.",
+    }
+    return receipt, rows
+
+
 def _read_persisted_audit_packet() -> dict[str, Any]:
     try:
         packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(PACKET_KEY)
@@ -2796,6 +3049,17 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         motion_browser_qa_evidence_contract,
         motion_browser_qa_review_contract,
     )
+    persisted_promotion = _as_dict(persisted_packet.get("motion_promotion_dry_run_receipt"))
+    promotion_was_explicit = persisted_promotion.get("explicit_promotion_dry_run_task_done") is True
+    motion_promotion_dry_run_receipt, motion_promotion_dry_run_rows = _motion_production_promotion_dry_run_contract(
+        motion_browser_qa_evidence_contract,
+        motion_browser_qa_review_contract,
+        motion_production_activation_receipt,
+        payload_safe=_as_dict(persisted_promotion.get("request_params_safe")),
+        explicit_dry_run=promotion_was_explicit,
+        task_id=str(persisted_promotion.get("promotion_task_id") or "") or None,
+        dry_run_at=str(persisted_promotion.get("dry_run_at") or "") or None,
+    )
     all_ledger_rows = (endpoint_ledger_rows + task_ledger_rows)[:240]
     external_rows = [row for row in endpoint_rows + task_rows if row.get("external_calls_triggered")]
     action_risk_rows = [
@@ -2847,6 +3111,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "motion_keynote_roadmap_rows": motion_keynote_roadmap_rows,
         "motion_production_activation_receipt": motion_production_activation_receipt,
         "motion_production_activation_rows": motion_production_activation_rows,
+        "motion_promotion_dry_run_receipt": motion_promotion_dry_run_receipt,
+        "motion_promotion_dry_run_rows": motion_promotion_dry_run_rows,
         "external_call_rows": external_rows,
         "action_risk_rows": action_risk_rows,
         "missing_call_ledger_rows": missing_ledger_rows,
@@ -2926,6 +3192,10 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_activation_production_blocker_count": motion_production_activation_receipt.get("production_blocker_count", 0),
             "motion_activation_missing_evidence_count": motion_production_activation_receipt.get("missing_evidence_count", 0),
             "motion_activation_row_count": motion_production_activation_receipt.get("row_count", 0),
+            "motion_promotion_dry_run_ready": motion_promotion_dry_run_receipt.get("ready_for_local_promotion_review") is True,
+            "motion_promotion_dry_run_local_blocker_count": motion_promotion_dry_run_receipt.get("local_blocker_count", 0),
+            "motion_promotion_dry_run_production_blocker_count": motion_promotion_dry_run_receipt.get("production_blocker_count", 0),
+            "motion_promotion_dry_run_row_count": motion_promotion_dry_run_receipt.get("row_count", 0),
             "external_call_count": len(external_rows),
             "action_risk_count": len(action_risk_rows),
             "missing_call_ledger_count": len(missing_ledger_rows),
@@ -2977,6 +3247,10 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_activation_receipt_runs_no_commands": True,
             "motion_activation_receipt_is_not_browser_execution": True,
             "motion_activation_receipt_is_not_production_completion": True,
+            "motion_promotion_dry_run_is_button_gated": True,
+            "motion_promotion_dry_run_does_not_open_browser": True,
+            "motion_promotion_dry_run_calls_no_github_api": True,
+            "motion_promotion_dry_run_is_not_production_completion": True,
             "contains_secret": False,
         },
         "call_ledger": [
@@ -3020,6 +3294,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "motion_activation_receipt_status": motion_production_activation_receipt.get("status"),
                 "motion_activation_receipt_allowed_next_step": motion_production_activation_receipt.get("allowed_next_step"),
                 "motion_activation_production_blocker_count": motion_production_activation_receipt.get("production_blocker_count"),
+                "motion_promotion_dry_run_status": motion_promotion_dry_run_receipt.get("status"),
+                "motion_promotion_ready_for_local_review": motion_promotion_dry_run_receipt.get("ready_for_local_promotion_review"),
+                "motion_promotion_production_blocker_count": motion_promotion_dry_run_receipt.get("production_blocker_count"),
                 "memory_task_count": task_persistence.get("memory_task_count", 0),
                 "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
                 "deduplicated_task_count": task_persistence.get("deduplicated_task_count", len(task_rows)),
@@ -3049,6 +3326,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_keynote_roadmap_audit 只是高级动效路线图审计；不运行浏览器、不推广本地 artifact、不完成 production motion。",
             "motion_production_activation_receipt 只串联 LTG-14 下一步验收路径；不运行浏览器、不创建 CI 证据、不完成 production motion。",
             "motion_browser_qa_review_contract 只记录显式本地 artifact 审查；不运行浏览器、不创建 CI 证据、不完成生产动效。",
+            "motion_promotion_dry_run_receipt 只做 LTG-14 本地推广预检；不打开浏览器、不调用 GitHub、不推广 artifact、不完成 production motion。",
         ],
     }
     return _json_safe(packet)
@@ -3154,4 +3432,99 @@ def run_motion_browser_qa_review_task(payload: Any = None) -> dict[str, Any]:
         current_step="motion_browser_qa_review_ready",
         call_ledger=[ledger],
         warning="motion_browser_qa_review_ready_no_external_call",
+    ) or task
+
+
+def run_motion_production_promotion_dry_run_task(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        "run_motion_production_promotion_dry_run",
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="motion_production_promotion_dry_run_queued",
+        warnings=[
+            "Motion promotion dry-run 只读取本地 audit cache 与 ignored runner 摘要；不会打开浏览器、不会启动服务、不会调用 Tushare/DeepSeek/GitHub。",
+            "promotion dry-run 只是生产推广预检；不代表 CI evidence、visual/performance promotion 或 production motion complete。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="reading_motion_promotion_inputs",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = read_call_ledger_audit_cache()
+    evidence_contract = _as_dict(packet.get("motion_browser_qa_evidence_contract"))
+    review_contract = _as_dict(packet.get("motion_browser_qa_review_contract"))
+    activation_receipt = _as_dict(packet.get("motion_production_activation_receipt"))
+    dry_run_at = _now_iso()
+    promotion_receipt, promotion_rows = _motion_production_promotion_dry_run_contract(
+        evidence_contract,
+        review_contract,
+        activation_receipt,
+        payload_safe=payload_safe,
+        explicit_dry_run=True,
+        task_id=str(task["task_id"]),
+        dry_run_at=dry_run_at,
+    )
+    ledger = {
+        "api": "local_motion_production_promotion_dry_run",
+        "source": "command_center_3_call_ledger_audit_cache + .stock_ming_3/motion_qa summary",
+        "row_count": len(promotion_rows),
+        "call_status": promotion_receipt["status"],
+        "request_params_safe": promotion_receipt["request_params_safe"],
+        "scope_hash_short": promotion_receipt["scope_hash_short"],
+        "local_fetched_at": dry_run_at,
+        "external": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    packet["motion_promotion_dry_run_completed_at"] = dry_run_at
+    packet["motion_promotion_dry_run_receipt"] = promotion_receipt
+    packet["motion_promotion_dry_run_rows"] = promotion_rows
+    counts = _as_dict(packet.get("counts"))
+    counts["motion_promotion_dry_run_ready"] = promotion_receipt["ready_for_local_promotion_review"]
+    counts["motion_promotion_dry_run_local_blocker_count"] = promotion_receipt["local_blocker_count"]
+    counts["motion_promotion_dry_run_production_blocker_count"] = promotion_receipt["production_blocker_count"]
+    counts["motion_promotion_dry_run_row_count"] = promotion_receipt["row_count"]
+    packet["counts"] = counts
+    policy = _as_dict(packet.get("policy"))
+    policy["motion_promotion_dry_run_is_button_gated"] = True
+    policy["motion_promotion_dry_run_does_not_open_browser"] = True
+    policy["motion_promotion_dry_run_calls_no_github_api"] = True
+    policy["motion_promotion_dry_run_is_not_production_completion"] = True
+    packet["policy"] = policy
+    packet["call_ledger"] = [ledger]
+    packet["warnings"] = [
+        "Motion promotion dry-run 只做本地推广预检；不打开浏览器、不调用 provider/model/GitHub、不推广 artifact、不完成 production motion。"
+    ] + [warning for warning in _as_list(packet.get("warnings")) if "promotion dry-run" not in str(warning)]
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
+    except Exception:
+        ledger["call_status"] = "motion_production_promotion_dry_run_storage_write_failed"
+        ledger["error_message_safe"] = "motion_production_promotion_dry_run_sqlite_write_failed"
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="motion_production_promotion_dry_run_storage_write_failed",
+            error_message_safe="motion_production_promotion_dry_run_sqlite_write_failed",
+            call_ledger=[ledger],
+            warning="motion_production_promotion_dry_run_failed_no_external_call",
+        ) or task
+
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="motion_production_promotion_dry_run_ready",
+        call_ledger=[ledger],
+        warning="motion_production_promotion_dry_run_ready_no_external_call",
     ) or task

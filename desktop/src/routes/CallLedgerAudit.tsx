@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getAuditCache, postMotionBrowserQaReview } from "../api/client";
+import { getAuditCache, postMotionBrowserQaReview, postMotionProductionPromotionDryRun } from "../api/client";
 import type { TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
@@ -17,6 +17,7 @@ export default function CallLedgerAudit() {
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [reviewReceipt, setReviewReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [promotionReceipt, setPromotionReceipt] = useState<TaskCreationEnvelope | null>(null);
 
   useEffect(() => {
     void getAuditCache().then((res) => {
@@ -53,6 +54,8 @@ export default function CallLedgerAudit() {
   const motionBrowserQaReviewRows = rows(cache.motion_browser_qa_review_rows);
   const motionProductionActivation = (cache.motion_production_activation_receipt as Record<string, unknown> | undefined) ?? {};
   const motionProductionActivationRows = rows(cache.motion_production_activation_rows);
+  const motionPromotionDryRun = (cache.motion_promotion_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
+  const motionPromotionDryRunRows = rows(cache.motion_promotion_dry_run_rows);
   const parameterizedRoutes = rows(getRouteCoverage.parameterized_local_routes);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const callLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
@@ -71,6 +74,20 @@ export default function CallLedgerAudit() {
       review_note: "button_gated_local_review_only"
     });
     setReviewReceipt(response);
+    const refreshed = await getAuditCache();
+    setCacheEnvelopeLedger(refreshed.call_ledger ?? []);
+    setCacheEnvelopeWarnings(refreshed.warnings ?? []);
+    setCache(refreshed.data);
+  }
+
+  async function launchMotionProductionPromotionDryRun() {
+    const response = await postMotionProductionPromotionDryRun({
+      user_approved: true,
+      promote_visual: true,
+      promote_performance: true,
+      promotion_scope: "motion_visual_performance_local_promotion_dry_run"
+    });
+    setPromotionReceipt(response);
     const refreshed = await getAuditCache();
     setCacheEnvelopeLedger(refreshed.call_ledger ?? []);
     setCacheEnvelopeWarnings(refreshed.warnings ?? []);
@@ -138,6 +155,9 @@ export default function CallLedgerAudit() {
           { label: "motion activation", value: motionProductionActivation.status as string | undefined, tone: motionProductionActivation.local_activation_receipt_ready === true ? "good" : "warn" },
           { label: "activation blockers", value: counts.motion_activation_production_blocker_count as number | undefined, tone: Number(counts.motion_activation_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "activation evidence", value: counts.motion_activation_missing_evidence_count as number | undefined, tone: Number(counts.motion_activation_missing_evidence_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "motion promotion", value: motionPromotionDryRun.status as string | undefined, tone: motionPromotionDryRun.ready_for_local_promotion_review === true ? "good" : "warn" },
+          { label: "promotion blockers", value: counts.motion_promotion_dry_run_production_blocker_count as number | undefined, tone: Number(counts.motion_promotion_dry_run_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "promotion ready", value: counts.motion_promotion_dry_run_ready === true ? "yes" : "pending", tone: counts.motion_promotion_dry_run_ready === true ? "good" : "warn" },
           { label: "audit envelope ledger", value: callLedger.length },
           { label: "audit warnings", value: cacheWarnings.length },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
@@ -338,6 +358,21 @@ export default function CallLedgerAudit() {
         <p>该收据只把本地 runner、按钮 review、视觉推广、性能推广和 durable CI evidence 排成下一步；不能把静态合同、本地 ignored 报告或审查按钮误称为生产动效完成。</p>
         <DataLineageTable rows={[motionProductionActivation]} />
         <DataLineageTable rows={motionProductionActivationRows} />
+      </PacketCard>
+
+      <PacketCard title="Motion production promotion dry-run" subtitle="motion_promotion_dry_run_receipt：按钮门控的 LTG-14 本地推广预检，不打开浏览器、不调用 GitHub" status={String(motionPromotionDryRun.status ?? "missing")}>
+        <p>scope: {String(motionPromotionDryRun.scope ?? "button_gated_local_motion_promotion_dry_run_no_browser_no_external_call")}</p>
+        <p>explicit_promotion_dry_run_task_done: {String(motionPromotionDryRun.explicit_promotion_dry_run_task_done === true)}</p>
+        <p>ready_for_local_promotion_review: {String(motionPromotionDryRun.ready_for_local_promotion_review === true)}</p>
+        <p>ready_to_mark_production_motion_complete: {String(motionPromotionDryRun.ready_to_mark_production_motion_complete === true)}</p>
+        <p>production_motion_complete: {String(motionPromotionDryRun.production_motion_complete === true)}</p>
+        <p>browser_visual_qa_promoted: {String(motionPromotionDryRun.browser_visual_qa_promoted === true)}；browser_performance_promoted: {String(motionPromotionDryRun.browser_performance_promoted === true)}；ci_evidence_complete: {String(motionPromotionDryRun.ci_evidence_complete === true)}</p>
+        <p>production_blocker_count: {String(motionPromotionDryRun.production_blocker_count ?? 0)}；scope_hash_short: {String(motionPromotionDryRun.scope_hash_short ?? "pending")}</p>
+        <p>该 dry-run 只把本地 reviewed artifact、视觉推广范围、性能推广范围和 durable CI/release evidence 缺口绑定成票据；不能把它当成 production motion complete。</p>
+        <button type="button" onClick={launchMotionProductionPromotionDryRun}>生成 motion promotion dry-run</button>
+        {promotionReceipt ? <TaskLaunchReceipt receipt={promotionReceipt} /> : null}
+        <DataLineageTable rows={[motionPromotionDryRun]} />
+        <DataLineageTable rows={motionPromotionDryRunRows} />
       </PacketCard>
 
       <div className="grid">

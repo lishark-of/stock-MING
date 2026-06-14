@@ -195,6 +195,13 @@ export function postMotionBrowserQaReview(payload: Record<string, unknown> = {})
   });
 }
 
+export function postMotionProductionPromotionDryRun(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/audit/motion-production-promotion-dry-run", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getLegacyBridgeCache() {
   return request<Record<string, unknown>>("/api/legacy/cache");
 }

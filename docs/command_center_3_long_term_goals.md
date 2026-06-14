@@ -1370,6 +1370,7 @@ Productionize non-blocking next-ticket radar scans
 - Call Ledger Audit now exposes `motion_browser_qa_evidence_contract` and rows. It summarizes ignored local runner reports under `.stock_ming_3/motion_qa`, including default-motion and reduced-motion pass state, matrix counts, console errors, and performance verification flags, without committing screenshots or report artifacts.
 - `POST /api/audit/motion-browser-qa-review` now creates a button-gated local review task for ignored motion browser QA reports. It records `motion_browser_qa_review_contract` and rows, requires explicit POST before `explicit_review_task_done=true`, and still keeps CI evidence, browser visual QA promotion, performance promotion, and `production_motion_complete` blocked.
 - Call Ledger Audit now exposes `motion_production_activation_receipt` and `motion_production_activation_rows`: this local activation receipt converts the static motion audit, production QA checklist, keynote roadmap, browser QA runbook, ignored local evidence, explicit review task, visual promotion, performance promotion, durable CI evidence, and no-trade/no-action boundary into one next-step checklist. It keeps `production_motion_complete=false`, `visual_qa_complete=false`, `browser_performance_verified=false`, and `durable_ci_evidence_complete=false` until direct promotion evidence exists.
+- `POST /api/audit/motion-production-promotion-dry-run` now creates a button-gated LTG-14 promotion dry-run. It reads the local audit cache plus ignored motion QA summaries, binds the reviewed local artifact, visual promotion scope, performance promotion scope, and durable CI/release evidence gap into `motion_promotion_dry_run_receipt` and rows, and still keeps `production_motion_complete=false`, `browser_visual_qa_promoted=false`, `browser_performance_promoted=false`, and `ci_evidence_complete=false`.
 - On 2026-06-14, the explicit local browser runner completed two local passes after manual FastAPI/Vite startup: default motion passed 20/20 route-viewport rows with zero console errors, and reduced-motion passed 20/20 route-viewport rows with zero console errors. The button-gated Motion browser QA review reached `motion_browser_qa_review_ready_local_artifact` with zero blocking review rows in the same local app session. These reports are local ignored artifacts and still require durable review/promotion before production completion claims.
 - Mobile layout now has a responsive breakpoint so navigation no longer squeezes Command Center content or state clarity rails on narrow screens. Local default-motion and reduced-motion browser runner reports can prove a specific run, but ignored local artifacts are not durable CI or production motion completion.
 - Further polish should improve clarity without distracting from risk, freshness, and decision boundaries.
@@ -1392,6 +1393,7 @@ Productionize non-blocking next-ticket radar scans
 - `motion_production_qa_local_ready_visual_perf_pending` is also local QA only; it does not prove browser visual quality or runtime performance.
 - `motion_keynote_roadmap_local_ready_promotion_pending` means the high-polish motion roadmap is visible and auditable; it does not run browser QA, promote ignored local artifacts, prove performance, or complete production motion.
 - `motion_activation_receipt_ready_production_blocked` means LTG-14 has a clear next safe path; it still does not run the browser runner, perform button-gated review, promote visual/performance evidence, create durable CI proof, or complete production motion.
+- `motion_promotion_dry_run_ready_production_still_blocked` means local reviewed evidence and promotion scope are bound for human review; it still does not promote visual/performance evidence, verify remote CI, call GitHub, or complete production motion.
 
 ### Implementation Phases
 
@@ -1422,6 +1424,7 @@ Productionize non-blocking next-ticket radar scans
 - `motion_keynote_roadmap_audit.roadmap_ready=true` only means the Apple-keynote-grade polish roadmap is locally organized. `production_motion_complete`, `browser_visual_qa_promoted`, `browser_performance_promoted`, and `durable_ci_evidence_complete` remain false until explicit promotion evidence exists.
 - `motion_browser_qa_runbook_contract.local_runbook_ready=true` only means the execution checklist is ready; it is not screenshot evidence, performance trace evidence, or production motion completion.
 - `motion_production_activation_receipt.local_activation_receipt_ready=true` only means the next safe sequence is explicit local browser runner, button-gated local review, durable visual/performance promotion, and CI/release evidence. It is not browser execution, CI evidence, visual promotion, performance promotion, or production motion completion.
+- `motion_promotion_dry_run_receipt.ready_for_local_promotion_review=true` only means the local promotion scope is bound after explicit approval and reviewed local evidence; `ready_to_mark_production_motion_complete`, `browser_visual_qa_promoted`, `browser_performance_promoted`, `ci_evidence_complete`, and `production_motion_complete` must remain false until a separate durable promotion step exists.
 - `motion_clarity_audit.static_ready=true` is allowed only when static source checks pass.
 - `production_motion_complete` remains false until browser viewport and performance QA are complete.
 
@@ -1438,6 +1441,7 @@ Productionize non-blocking next-ticket radar scans
 - Do not treat local ignored QA reports as CI evidence or production motion completion without explicit review and promotion.
 - Do not treat `motion_browser_qa_review_contract` as browser execution, CI evidence, visual QA promotion, performance promotion, or production motion completion.
 - Do not treat `motion_production_activation_receipt` as browser execution, durable CI evidence, visual QA promotion, performance promotion, or production motion completion.
+- Do not treat `motion_promotion_dry_run_receipt` as browser execution, GitHub Actions proof, durable CI evidence, visual QA promotion, performance promotion, or production motion completion.
 
 ### Recommended Commit Message
 
