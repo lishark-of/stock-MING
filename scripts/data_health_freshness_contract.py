@@ -36,6 +36,7 @@ CONTRACT_KEYS = [
     "freshness_provider_acceptance_readiness_receipt",
     "freshness_provider_acceptance_activation_receipt",
     "latest_trade_cal_provider_acceptance_dry_run",
+    "trade_cal_provider_acceptance_next_execution_recipe",
     "current_evidence_freshness_qa_contract",
     "current_evidence_decision_surface_audit",
     "current_evidence_producer_coverage_audit",
@@ -239,9 +240,15 @@ def build_contract() -> dict[str, Any]:
     dry_ready_ledger = [_as_dict(row) for row in _as_list(dry_ready.get("call_ledger"))]
     latest_after_ready_cache = _as_dict(dry_run_cases.get("latest_after_ready_cache"))
     latest_after_ready = _get(latest_after_ready_cache, "latest_trade_cal_provider_acceptance_dry_run")
+    latest_after_ready_recipe = _get(
+        latest_after_ready_cache, "trade_cal_provider_acceptance_next_execution_recipe"
+    )
     latest_after_ready_counts = _get(latest_after_ready_cache, "counts")
     latest_after_ready_policy = _get(latest_after_ready_cache, "policy")
     latest_after_ready_rows = _as_list(latest_after_ready_cache.get("latest_trade_cal_provider_acceptance_dry_run_rows"))
+    latest_after_ready_recipe_rows = _as_list(
+        latest_after_ready_cache.get("trade_cal_provider_acceptance_next_execution_rows")
+    )
     latest_after_ready_credential_rows = [
         _as_dict(row)
         for row in _as_list(latest_after_ready_cache.get("latest_trade_cal_provider_acceptance_dry_run_credential_rows"))
@@ -274,6 +281,8 @@ def build_contract() -> dict[str, Any]:
     blockers_audit = _get(packet, "freshness_production_blocker_audit")
     readiness_receipt = _get(packet, "freshness_provider_acceptance_readiness_receipt")
     activation_receipt = _get(packet, "freshness_provider_acceptance_activation_receipt")
+    next_execution_recipe = _get(packet, "trade_cal_provider_acceptance_next_execution_recipe")
+    next_execution_recipe_rows = _as_list(packet.get("trade_cal_provider_acceptance_next_execution_rows"))
     current = _get(packet, "current_evidence_freshness_qa_contract")
     surfaces = _get(packet, "current_evidence_decision_surface_audit")
     producers = _get(packet, "current_evidence_producer_coverage_audit")
@@ -465,6 +474,52 @@ def build_contract() -> dict[str, Any]:
             "Provider acceptance activation receipt must stay a local checklist: either explicit POST is the next step or local blockers remain visible, provider evidence remains missing, and cache/render paths must not call providers or claim production completion.",
         ),
         _row(
+            "trade_cal_next_execution_recipe_is_local_and_not_execution",
+            next_execution_recipe.get("schema_version")
+            == "data_health_trade_cal_provider_acceptance_next_execution_recipe.v1"
+            and next_execution_recipe.get("scope") == "local_next_execution_recipe_no_provider_execution"
+            and next_execution_recipe.get("status")
+            in {
+                "trade_cal_provider_acceptance_recipe_ready_user_confirmation_required",
+                "trade_cal_provider_acceptance_recipe_waiting_for_dry_run_scope_ticket",
+                "trade_cal_provider_acceptance_recipe_blocked_local_readiness",
+            }
+            and next_execution_recipe.get("ready_to_execute_from_cache") is False
+            and next_execution_recipe.get("requires_explicit_user_confirmation") is True
+            and next_execution_recipe.get("requires_prior_dry_run_scope_ticket") is True
+            and next_execution_recipe.get("dry_run_route") == "POST /api/data-health/trade-cal-provider-acceptance-dry-run"
+            and next_execution_recipe.get("target_post_task_route") == "POST /api/tasks/refresh-tushare-facts"
+            and next_execution_recipe.get("target_task_type") == "refresh_tushare_facts"
+            and next_execution_recipe.get("target_acceptance_mode") == "provider_backed_trade_cal_long_window"
+            and _as_dict(next_execution_recipe.get("target_payload_safe")).get("apis") == ["trade_cal"]
+            and "skip dry-run scope ticket" in next_execution_recipe.get("not_allowed_next_steps", [])
+            and "skip user confirmation" in next_execution_recipe.get("not_allowed_next_steps", [])
+            and "promote recipe to provider-backed acceptance"
+            in next_execution_recipe.get("not_allowed_next_steps", [])
+            and next_execution_recipe.get("provider_refresh_called_by_recipe") is False
+            and next_execution_recipe.get("cache_get_external_calls") is False
+            and next_execution_recipe.get("react_render_external_calls") is False
+            and next_execution_recipe.get("provider_backed_long_window_acceptance_done") is False
+            and next_execution_recipe.get("production_freshness_gate_complete") is False
+            and _flag_false(
+                next_execution_recipe,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and next_execution_recipe.get("does_not_execute_trades") is True
+            and next_execution_recipe.get("does_not_modify_strategy_action") is True
+            and int(next_execution_recipe.get("row_count") or 0) == len(next_execution_recipe_rows)
+            and len(next_execution_recipe_rows) >= 10
+            and policy.get("trade_cal_provider_acceptance_next_execution_recipe_is_local") is True
+            and policy.get("trade_cal_provider_acceptance_next_execution_recipe_calls_provider") is False
+            and policy.get("trade_cal_provider_acceptance_next_execution_recipe_requires_dry_run") is True
+            and policy.get("trade_cal_provider_acceptance_next_execution_recipe_is_not_acceptance") is True,
+            "The next-execution recipe may describe the explicit future POST task, but it must stay local, require a dry-run scope ticket plus user confirmation, and never run provider calls itself.",
+        ),
+        _row(
             "trade_cal_dry_run_scope_ticket_is_local_no_provider",
             dry_ready.get("status") == "success"
             and dry_ready.get("task_type") == "run_trade_cal_provider_acceptance_dry_run"
@@ -536,6 +591,54 @@ def build_contract() -> dict[str, Any]:
             and "SHOULD_DROP" not in dry_run_serialized
             and "TUSHARE_TOKEN" not in dry_run_serialized,
             "GET Data Health cache may replay the latest local trade_cal dry-run task metadata, but it must not create a task, call providers, leak credentials, or claim provider-backed acceptance.",
+        ),
+        _row(
+            "trade_cal_next_execution_recipe_binds_dry_run_scope_without_execution",
+            latest_after_ready_recipe.get("schema_version")
+            == "data_health_trade_cal_provider_acceptance_next_execution_recipe.v1"
+            and latest_after_ready_recipe.get("status")
+            in {
+                "trade_cal_provider_acceptance_recipe_ready_user_confirmation_required",
+                "trade_cal_provider_acceptance_recipe_blocked_local_readiness",
+            }
+            and latest_after_ready_recipe.get("recipe_ready_for_user_confirmation")
+            is (
+                latest_after_ready_recipe.get("status")
+                == "trade_cal_provider_acceptance_recipe_ready_user_confirmation_required"
+            )
+            and latest_after_ready_recipe.get("latest_dry_run_scope_ticket_visible") is True
+            and latest_after_ready_recipe.get("latest_dry_run_scope_hash_short")
+            == dry_ready_receipt.get("acceptance_scope_hash_short")
+            and _as_dict(latest_after_ready_recipe.get("target_payload_safe")).get("acceptance_scope_hash_short")
+            == dry_ready_receipt.get("acceptance_scope_hash_short")
+            and latest_after_ready_recipe.get("allowed_next_step")
+            in {
+                "user_confirmed_post_refresh_tushare_facts_with_bound_scope_ticket",
+                "resolve_local_freshness_acceptance_blockers_before_provider_task",
+            }
+            and latest_after_ready_recipe.get("ready_to_execute_from_cache") is False
+            and latest_after_ready_recipe.get("provider_refresh_called_by_recipe") is False
+            and latest_after_ready_recipe.get("provider_backed_long_window_acceptance_done") is False
+            and latest_after_ready_recipe.get("production_freshness_gate_complete") is False
+            and _flag_false(
+                latest_after_ready_recipe,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and any(
+                _as_dict(row).get("phase") == "dry_run_scope_ticket_required"
+                and _as_dict(row).get("status") == "passed_scope_ticket_visible"
+                for row in latest_after_ready_recipe_rows
+            )
+            and int(latest_after_ready_recipe.get("blocking_row_count") or 0)
+            == int(latest_after_ready_counts.get("trade_cal_provider_acceptance_next_execution_blocker_count") or 0)
+            and int(latest_after_ready_counts.get("trade_cal_provider_acceptance_next_execution_row_count") or 0)
+            == len(latest_after_ready_recipe_rows)
+            and len(latest_after_ready_recipe_rows) >= 10,
+            "After a local dry-run scope ticket is visible, the recipe must bind that scope and remain local; it may still require local freshness blockers to be resolved before user-confirmed provider execution.",
         ),
         _row(
             "trade_cal_dry_run_blocks_missing_approval",
@@ -645,6 +748,7 @@ def build_contract() -> dict[str, Any]:
             and int(counts.get("freshness_provider_acceptance_readiness_row_count") or 0) >= 7
             and int(counts.get("freshness_provider_acceptance_activation_row_count") or 0) >= 11
             and int(counts.get("latest_trade_cal_provider_acceptance_dry_run_found") or 0) >= 0
+            and int(counts.get("trade_cal_provider_acceptance_next_execution_row_count") or 0) >= 10
             and int(counts.get("current_evidence_freshness_qa_row_count") or 0) >= 8
             and int(counts.get("current_evidence_decision_surface_row_count") or 0) >= 5
             and int(counts.get("current_evidence_producer_coverage_row_count") or 0) >= 6,
@@ -701,6 +805,16 @@ def build_contract() -> dict[str, Any]:
             ),
             "latest_trade_cal_dry_run_cache_row_count": latest_after_ready_counts.get(
                 "latest_trade_cal_provider_acceptance_dry_run_row_count"
+            ),
+            "trade_cal_provider_acceptance_next_execution_blocker_count": counts.get(
+                "trade_cal_provider_acceptance_next_execution_blocker_count"
+            ),
+            "latest_trade_cal_next_execution_recipe_status": latest_after_ready_recipe.get("status"),
+            "latest_trade_cal_next_execution_recipe_ready_for_user_confirmation": latest_after_ready_recipe.get(
+                "recipe_ready_for_user_confirmation"
+            ),
+            "latest_trade_cal_next_execution_recipe_blocker_count": latest_after_ready_counts.get(
+                "trade_cal_provider_acceptance_next_execution_blocker_count"
             ),
             "freshness_production_stage_scope_count": len(production_stage_scope_rows),
             "freshness_production_stage_scope_keys": sorted(production_stage_scope_keys),

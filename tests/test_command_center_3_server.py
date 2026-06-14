@@ -6998,6 +6998,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("trade_cal_provider_acceptance_promotion_audit", script)
         self.assertIn("latest_trade_cal_provider_acceptance_dry_run", script)
         self.assertIn("latest_trade_cal_dry_run_cache_lookup_is_local_read_only", script)
+        self.assertIn("trade_cal_provider_acceptance_next_execution_recipe", script)
+        self.assertIn("trade_cal_next_execution_recipe_is_local_and_not_execution", script)
+        self.assertIn("trade_cal_next_execution_recipe_binds_dry_run_scope_without_execution", script)
         self.assertIn("freshness_production_blocker_audit", script)
         self.assertIn("current_evidence_producer_coverage_audit", script)
         self.assertIn("freshness_production_stage_scope_manifest", script)
@@ -7029,6 +7032,25 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["does_not_modify_strategy_action"])
         self.assertEqual(payload["blocking_criterion_count"], 0)
         self.assertGreater(payload["observed_counts"]["freshness_production_blocker_count"], 0)
+        self.assertGreater(
+            payload["observed_counts"]["trade_cal_provider_acceptance_next_execution_blocker_count"],
+            -1,
+        )
+        self.assertIn(
+            payload["observed_counts"]["latest_trade_cal_next_execution_recipe_status"],
+            {
+                "trade_cal_provider_acceptance_recipe_ready_user_confirmation_required",
+                "trade_cal_provider_acceptance_recipe_blocked_local_readiness",
+            },
+        )
+        self.assertIsInstance(
+            payload["observed_counts"]["latest_trade_cal_next_execution_recipe_ready_for_user_confirmation"],
+            bool,
+        )
+        self.assertGreaterEqual(payload["observed_counts"]["latest_trade_cal_next_execution_recipe_blocker_count"], 0)
+        row_map = {row["criterion"]: row for row in payload["rows"]}
+        self.assertTrue(row_map["trade_cal_next_execution_recipe_is_local_and_not_execution"]["passed"])
+        self.assertTrue(row_map["trade_cal_next_execution_recipe_binds_dry_run_scope_without_execution"]["passed"])
         required_freshness_stages = {
             "acceptance_matrix_boundary",
             "synthetic_long_window_replay",
@@ -11693,6 +11715,50 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["policy"]["latest_trade_cal_provider_acceptance_dry_run_lookup_creates_task"])
         self.assertFalse(packet["policy"]["latest_trade_cal_provider_acceptance_dry_run_lookup_calls_provider"])
         self.assertTrue(packet["policy"]["latest_trade_cal_provider_acceptance_dry_run_is_not_acceptance"])
+        next_recipe = packet["trade_cal_provider_acceptance_next_execution_recipe"]
+        next_recipe_rows = {row["phase"]: row for row in packet["trade_cal_provider_acceptance_next_execution_rows"]}
+        self.assertEqual(
+            next_recipe["schema_version"],
+            "data_health_trade_cal_provider_acceptance_next_execution_recipe.v1",
+        )
+        self.assertEqual(
+            next_recipe["status"],
+            "trade_cal_provider_acceptance_recipe_blocked_local_readiness",
+        )
+        self.assertFalse(next_recipe["recipe_ready_for_user_confirmation"])
+        self.assertFalse(next_recipe["ready_to_execute_from_cache"])
+        self.assertTrue(next_recipe["requires_explicit_user_confirmation"])
+        self.assertTrue(next_recipe["requires_prior_dry_run_scope_ticket"])
+        self.assertTrue(next_recipe["latest_dry_run_scope_ticket_visible"])
+        self.assertEqual(next_recipe["latest_dry_run_scope_hash_short"], dry_run_receipt["acceptance_scope_hash_short"])
+        self.assertEqual(next_recipe["target_payload_safe"]["apis"], ["trade_cal"])
+        self.assertEqual(
+            next_recipe["target_payload_safe"]["acceptance_scope_hash_short"],
+            dry_run_receipt["acceptance_scope_hash_short"],
+        )
+        self.assertEqual(
+            next_recipe["allowed_next_step"],
+            "resolve_local_freshness_acceptance_blockers_before_provider_task",
+        )
+        self.assertFalse(next_recipe["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(next_recipe["production_freshness_gate_complete"])
+        self.assertFalse(next_recipe["provider_refresh_called_by_recipe"])
+        self.assertFalse(next_recipe["external_calls_triggered"])
+        self.assertFalse(next_recipe["tushare_called"])
+        self.assertFalse(next_recipe["deepseek_called"])
+        self.assertFalse(next_recipe["github_called"])
+        self.assertFalse(next_recipe["contains_secret"])
+        self.assertTrue(next_recipe["does_not_execute_trades"])
+        self.assertTrue(next_recipe["does_not_modify_strategy_action"])
+        self.assertGreater(next_recipe["blocking_row_count"], 0)
+        self.assertEqual(next_recipe_rows["dry_run_scope_ticket_required"]["status"], "passed_scope_ticket_visible")
+        self.assertEqual(next_recipe_rows["provider_call_ledger_required_after_execution"]["status"], "pending_future_provider_task")
+        self.assertEqual(packet["counts"]["trade_cal_provider_acceptance_next_execution_row_count"], 10)
+        self.assertGreater(packet["counts"]["trade_cal_provider_acceptance_next_execution_blocker_count"], 0)
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_next_execution_recipe_is_local"])
+        self.assertFalse(packet["policy"]["trade_cal_provider_acceptance_next_execution_recipe_calls_provider"])
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_next_execution_recipe_requires_dry_run"])
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_next_execution_recipe_is_not_acceptance"])
         self.assertTrue(cache_response["call_ledger"][0]["latest_trade_cal_provider_acceptance_dry_run_found"])
         self.assertEqual(
             cache_response["call_ledger"][0]["latest_trade_cal_provider_acceptance_dry_run_task_id"],
@@ -11709,6 +11775,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(
             cache_response["call_ledger"][0]["latest_trade_cal_provider_acceptance_dry_run_row_count"],
             len(dry_run_rows),
+        )
+        self.assertEqual(
+            cache_response["call_ledger"][0]["trade_cal_provider_acceptance_next_execution_recipe_status"],
+            "trade_cal_provider_acceptance_recipe_blocked_local_readiness",
+        )
+        self.assertGreater(
+            cache_response["call_ledger"][0]["trade_cal_provider_acceptance_next_execution_blocker_count"],
+            0,
+        )
+        self.assertFalse(
+            cache_response["call_ledger"][0]["trade_cal_provider_acceptance_next_execution_ready_for_user_confirmation"]
         )
         self.assertFalse(cache_response["call_ledger"][0]["external"])
         self.assertNotIn("SHOULD_DROP", json.dumps(cache_response, ensure_ascii=False))
@@ -14997,6 +15074,51 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["latest_trade_cal_provider_acceptance_dry_run_found"], 0)
         self.assertEqual(packet["counts"]["latest_trade_cal_provider_acceptance_dry_run_row_count"], 0)
         self.assertEqual(packet["counts"]["latest_trade_cal_provider_acceptance_dry_run_blocking_row_count"], 0)
+        next_recipe = packet["trade_cal_provider_acceptance_next_execution_recipe"]
+        next_recipe_rows = {row["phase"]: row for row in packet["trade_cal_provider_acceptance_next_execution_rows"]}
+        self.assertEqual(
+            next_recipe["schema_version"],
+            "data_health_trade_cal_provider_acceptance_next_execution_recipe.v1",
+        )
+        self.assertEqual(next_recipe["status"], "trade_cal_provider_acceptance_recipe_waiting_for_dry_run_scope_ticket")
+        self.assertEqual(next_recipe["scope"], "local_next_execution_recipe_no_provider_execution")
+        self.assertFalse(next_recipe["recipe_ready_for_user_confirmation"])
+        self.assertFalse(next_recipe["ready_to_execute_from_cache"])
+        self.assertTrue(next_recipe["requires_explicit_user_confirmation"])
+        self.assertTrue(next_recipe["requires_prior_dry_run_scope_ticket"])
+        self.assertFalse(next_recipe["latest_dry_run_scope_ticket_visible"])
+        self.assertEqual(next_recipe["dry_run_route"], "POST /api/data-health/trade-cal-provider-acceptance-dry-run")
+        self.assertEqual(next_recipe["target_post_task_route"], "POST /api/tasks/refresh-tushare-facts")
+        self.assertEqual(next_recipe["target_task_type"], "refresh_tushare_facts")
+        self.assertEqual(next_recipe["target_acceptance_mode"], "provider_backed_trade_cal_long_window")
+        self.assertEqual(next_recipe["target_payload_safe"]["apis"], ["trade_cal"])
+        self.assertEqual(next_recipe["target_payload_safe"]["acceptance_scope_hash_short"], "<required_from_dry_run>")
+        self.assertEqual(next_recipe["allowed_next_step"], "run_trade_cal_provider_acceptance_dry_run_scope_ticket")
+        self.assertIn("skip dry-run scope ticket", next_recipe["not_allowed_next_steps"])
+        self.assertIn("skip user confirmation", next_recipe["not_allowed_next_steps"])
+        self.assertIn("promote recipe to provider-backed acceptance", next_recipe["not_allowed_next_steps"])
+        self.assertFalse(next_recipe["provider_refresh_called_by_recipe"])
+        self.assertFalse(next_recipe["cache_get_external_calls"])
+        self.assertFalse(next_recipe["react_render_external_calls"])
+        self.assertFalse(next_recipe["external_calls_triggered"])
+        self.assertFalse(next_recipe["tushare_called"])
+        self.assertFalse(next_recipe["deepseek_called"])
+        self.assertFalse(next_recipe["github_called"])
+        self.assertFalse(next_recipe["contains_secret"])
+        self.assertTrue(next_recipe["does_not_execute_trades"])
+        self.assertTrue(next_recipe["does_not_modify_strategy_action"])
+        self.assertEqual(next_recipe["row_count"], 10)
+        self.assertGreater(next_recipe["blocking_row_count"], 0)
+        self.assertIn("dry_run_scope_ticket_required", next_recipe["blocking_phases"])
+        self.assertEqual(next_recipe_rows["dry_run_scope_ticket_required"]["status"], "blocked_missing_scope_ticket")
+        self.assertEqual(next_recipe_rows["target_post_task_route_declared"]["status"], "passed_static_route")
+        self.assertEqual(next_recipe_rows["provider_call_ledger_required_after_execution"]["status"], "pending_future_provider_task")
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_next_execution_recipe_is_local"])
+        self.assertFalse(packet["policy"]["trade_cal_provider_acceptance_next_execution_recipe_calls_provider"])
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_next_execution_recipe_requires_dry_run"])
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_next_execution_recipe_is_not_acceptance"])
+        self.assertEqual(packet["counts"]["trade_cal_provider_acceptance_next_execution_row_count"], 10)
+        self.assertGreater(packet["counts"]["trade_cal_provider_acceptance_next_execution_blocker_count"], 0)
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertEqual(response["call_ledger"][0]["api"], "local_data_health_timeline_cache")
@@ -15012,6 +15134,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "no_trade_cal_provider_acceptance_dry_run_task_found",
         )
         self.assertEqual(response["call_ledger"][0]["latest_trade_cal_provider_acceptance_dry_run_row_count"], 0)
+        self.assertEqual(
+            response["call_ledger"][0]["trade_cal_provider_acceptance_next_execution_recipe_status"],
+            "trade_cal_provider_acceptance_recipe_waiting_for_dry_run_scope_ticket",
+        )
+        self.assertGreater(
+            response["call_ledger"][0]["trade_cal_provider_acceptance_next_execution_blocker_count"],
+            0,
+        )
+        self.assertFalse(
+            response["call_ledger"][0]["trade_cal_provider_acceptance_next_execution_ready_for_user_confirmation"]
+        )
         self.assertFalse(response["call_ledger"][0]["external"])
         self.assertIn("GET /api/data-health/cache", response["warnings"][0])
 
@@ -15046,9 +15179,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         freshness_blocker_audit = packet["freshness_production_blocker_audit"]
         readiness_receipt = packet["freshness_provider_acceptance_readiness_receipt"]
         activation_receipt = packet["freshness_provider_acceptance_activation_receipt"]
+        next_execution_recipe = packet["trade_cal_provider_acceptance_next_execution_recipe"]
         freshness_blocker_rows = {row["phase"]: row for row in packet["freshness_production_blocker_rows"]}
         readiness_rows = {row["criterion"]: row for row in packet["freshness_provider_acceptance_readiness_rows"]}
         activation_rows = {row["criterion"]: row for row in packet["freshness_provider_acceptance_activation_rows"]}
+        next_execution_rows = {
+            row["phase"]: row for row in packet["trade_cal_provider_acceptance_next_execution_rows"]
+        }
         provider_runbook_rows = {row["criterion"]: row for row in packet["trade_cal_provider_acceptance_runbook_rows"]}
         provider_promotion_rows = {
             row["criterion"]: row for row in packet["trade_cal_provider_acceptance_promotion_rows"]
@@ -15101,6 +15238,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["latest_trade_cal_provider_acceptance_dry_run_found"], 0)
         self.assertEqual(packet["counts"]["latest_trade_cal_provider_acceptance_dry_run_row_count"], 0)
         self.assertEqual(packet["counts"]["latest_trade_cal_provider_acceptance_dry_run_blocking_row_count"], 0)
+        self.assertEqual(packet["counts"]["trade_cal_provider_acceptance_next_execution_row_count"], 10)
+        self.assertGreater(packet["counts"]["trade_cal_provider_acceptance_next_execution_blocker_count"], 0)
         self.assertEqual(packet["counts"]["current_evidence_freshness_qa_row_count"], 8)
         self.assertEqual(packet["counts"]["current_evidence_freshness_qa_blocker_count"], 3)
         self.assertEqual(packet["counts"]["current_evidence_decision_surface_row_count"], 5)
@@ -15163,6 +15302,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["policy"]["latest_trade_cal_provider_acceptance_dry_run_lookup_creates_task"])
         self.assertFalse(packet["policy"]["latest_trade_cal_provider_acceptance_dry_run_lookup_calls_provider"])
         self.assertTrue(packet["policy"]["latest_trade_cal_provider_acceptance_dry_run_is_not_acceptance"])
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_next_execution_recipe_is_local"])
+        self.assertFalse(packet["policy"]["trade_cal_provider_acceptance_next_execution_recipe_calls_provider"])
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_next_execution_recipe_requires_dry_run"])
+        self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_next_execution_recipe_is_not_acceptance"])
         latest_dry_run = packet["latest_trade_cal_provider_acceptance_dry_run"]
         self.assertEqual(
             latest_dry_run["schema_version"],
@@ -15257,6 +15400,68 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "local_freshness_provider_acceptance_activation_receipt",
         )
         self.assertFalse(activation_receipt["call_ledger"][0]["external"])
+        self.assertEqual(
+            next_execution_recipe["schema_version"],
+            "data_health_trade_cal_provider_acceptance_next_execution_recipe.v1",
+        )
+        self.assertEqual(
+            next_execution_recipe["status"],
+            "trade_cal_provider_acceptance_recipe_waiting_for_dry_run_scope_ticket",
+        )
+        self.assertEqual(next_execution_recipe["scope"], "local_next_execution_recipe_no_provider_execution")
+        self.assertFalse(next_execution_recipe["recipe_ready_for_user_confirmation"])
+        self.assertFalse(next_execution_recipe["ready_to_execute_from_cache"])
+        self.assertTrue(next_execution_recipe["requires_explicit_user_confirmation"])
+        self.assertTrue(next_execution_recipe["requires_prior_dry_run_scope_ticket"])
+        self.assertFalse(next_execution_recipe["latest_dry_run_scope_ticket_visible"])
+        self.assertEqual(
+            next_execution_recipe["dry_run_route"],
+            "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
+        )
+        self.assertEqual(next_execution_recipe["target_post_task_route"], "POST /api/tasks/refresh-tushare-facts")
+        self.assertEqual(next_execution_recipe["target_task_type"], "refresh_tushare_facts")
+        self.assertEqual(
+            next_execution_recipe["target_acceptance_mode"],
+            "provider_backed_trade_cal_long_window",
+        )
+        self.assertEqual(next_execution_recipe["target_payload_safe"]["apis"], ["trade_cal"])
+        self.assertEqual(
+            next_execution_recipe["target_payload_safe"]["acceptance_scope_hash_short"],
+            "<required_from_dry_run>",
+        )
+        self.assertIn("real Tushare trade_cal provider call ledger", next_execution_recipe["required_evidence_after_execution"])
+        self.assertEqual(
+            next_execution_recipe["allowed_next_step"],
+            "run_trade_cal_provider_acceptance_dry_run_scope_ticket",
+        )
+        self.assertIn("skip dry-run scope ticket", next_execution_recipe["not_allowed_next_steps"])
+        self.assertIn("skip user confirmation", next_execution_recipe["not_allowed_next_steps"])
+        self.assertIn("promote recipe to provider-backed acceptance", next_execution_recipe["not_allowed_next_steps"])
+        self.assertFalse(next_execution_recipe["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(next_execution_recipe["production_freshness_gate_complete"])
+        self.assertFalse(next_execution_recipe["provider_refresh_called_by_recipe"])
+        self.assertFalse(next_execution_recipe["cache_get_external_calls"])
+        self.assertFalse(next_execution_recipe["react_render_external_calls"])
+        self.assertFalse(next_execution_recipe["external_calls_triggered"])
+        self.assertFalse(next_execution_recipe["tushare_called"])
+        self.assertFalse(next_execution_recipe["deepseek_called"])
+        self.assertFalse(next_execution_recipe["github_called"])
+        self.assertFalse(next_execution_recipe["contains_secret"])
+        self.assertTrue(next_execution_recipe["does_not_execute_trades"])
+        self.assertTrue(next_execution_recipe["does_not_modify_strategy_action"])
+        self.assertEqual(next_execution_recipe["row_count"], 10)
+        self.assertGreater(next_execution_recipe["blocking_row_count"], 0)
+        self.assertIn("dry_run_scope_ticket_required", next_execution_recipe["blocking_phases"])
+        self.assertEqual(next_execution_rows["runbook_ready"]["status"], "passed_local_runbook")
+        self.assertEqual(next_execution_rows["readiness_receipt_ready"]["status"], "passed_local_receipt")
+        self.assertEqual(next_execution_rows["activation_receipt_ready"]["status"], "passed_local_activation")
+        self.assertEqual(next_execution_rows["dry_run_scope_ticket_required"]["status"], "blocked_missing_scope_ticket")
+        self.assertEqual(next_execution_rows["target_post_task_route_declared"]["status"], "passed_static_route")
+        self.assertEqual(
+            next_execution_rows["provider_call_ledger_required_after_execution"]["status"],
+            "pending_future_provider_task",
+        )
+        self.assertEqual(next_execution_rows["cache_render_trade_boundary"]["status"], "passed_no_side_effects")
         self.assertEqual(current_evidence["schema_version"], "data_health_current_evidence_freshness_qa.v1")
         self.assertEqual(
             current_evidence["status"],
@@ -15401,6 +15606,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "no_trade_cal_provider_acceptance_dry_run_task_found",
         )
         self.assertEqual(response["call_ledger"][0]["latest_trade_cal_provider_acceptance_dry_run_row_count"], 0)
+        self.assertEqual(
+            response["call_ledger"][0]["trade_cal_provider_acceptance_next_execution_recipe_status"],
+            "trade_cal_provider_acceptance_recipe_waiting_for_dry_run_scope_ticket",
+        )
+        self.assertGreater(
+            response["call_ledger"][0]["trade_cal_provider_acceptance_next_execution_blocker_count"],
+            0,
+        )
+        self.assertFalse(
+            response["call_ledger"][0]["trade_cal_provider_acceptance_next_execution_ready_for_user_confirmation"]
+        )
         self.assertEqual(
             response["call_ledger"][0]["current_evidence_decision_surface_audit_status"],
             "decision_surface_audit_ready_no_observed_blockers",

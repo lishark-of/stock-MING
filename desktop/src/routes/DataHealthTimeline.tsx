@@ -67,6 +67,7 @@ export default function DataHealthTimeline() {
   const freshnessProviderReadinessReceipt = (cache.freshness_provider_acceptance_readiness_receipt as Record<string, unknown> | undefined) ?? {};
   const freshnessProviderActivationReceipt = (cache.freshness_provider_acceptance_activation_receipt as Record<string, unknown> | undefined) ?? {};
   const latestTradeCalDryRun = (cache.latest_trade_cal_provider_acceptance_dry_run as Record<string, unknown> | undefined) ?? {};
+  const tradeCalNextExecutionRecipe = (cache.trade_cal_provider_acceptance_next_execution_recipe as Record<string, unknown> | undefined) ?? {};
   const latestTradeCalDryRunReceipt = latestTradeCalDryRun.receipt as Record<string, unknown> | undefined;
   const currentEvidenceFreshness = (cache.current_evidence_freshness_qa_contract as Record<string, unknown> | undefined) ?? {};
   const decisionSurfaceAudit = (cache.current_evidence_decision_surface_audit as Record<string, unknown> | undefined) ?? {};
@@ -115,6 +116,8 @@ export default function DataHealthTimeline() {
           { label: "latest dry-run", value: latestTradeCalDryRun.latest_task_found === true ? "可见" : "未运行", tone: latestTradeCalDryRun.latest_task_found === true ? "good" : "neutral" },
           { label: "dry-run rows", value: counts.latest_trade_cal_provider_acceptance_dry_run_row_count as number | undefined },
           { label: "dry-run blockers", value: counts.latest_trade_cal_provider_acceptance_dry_run_blocking_row_count as number | undefined, tone: Number(counts.latest_trade_cal_provider_acceptance_dry_run_blocking_row_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "下一步配方", value: tradeCalNextExecutionRecipe.status as string | undefined, tone: tradeCalNextExecutionRecipe.recipe_ready_for_user_confirmation === true ? "good" : "warn" },
+          { label: "配方 blockers", value: counts.trade_cal_provider_acceptance_next_execution_blocker_count as number | undefined, tone: Number(counts.trade_cal_provider_acceptance_next_execution_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "当前证据 QA", value: currentEvidenceFreshness.status as string | undefined, tone: currentEvidenceFreshness.provider_backed_long_window_acceptance_done === true ? "good" : "warn" },
           { label: "当前证据准入", value: currentEvidenceFreshness.current_evidence_candidate_status as string | undefined, tone: currentEvidenceFreshness.current_evidence_candidate_status === "current_evidence_ready" ? "good" : "warn" },
           { label: "证据 blockers", value: counts.current_evidence_freshness_qa_blocker_count as number | undefined, tone: counts.current_evidence_freshness_qa_blocker_count === 0 ? "good" : "warn" },
@@ -268,6 +271,19 @@ export default function DataHealthTimeline() {
         <DataLineageTable rows={objectRow(freshnessProviderActivationReceipt)} />
         <DataLineageTable rows={rows(cache.freshness_provider_acceptance_activation_rows)} />
         <DataLineageTable rows={rows(freshnessProviderActivationReceipt.call_ledger)} />
+      </PacketCard>
+
+      <PacketCard title="Trade_cal 下一次 provider 验收配方" subtitle="trade_cal_provider_acceptance_next_execution_recipe；只读说明下一次 POST 验收，不调用 Tushare" status={String(tradeCalNextExecutionRecipe.status ?? "provider_acceptance_next_execution_recipe")}>
+        <p>recipe_ready_for_user_confirmation: {String(tradeCalNextExecutionRecipe.recipe_ready_for_user_confirmation === true)}</p>
+        <p>requires_prior_dry_run_scope_ticket: {String(tradeCalNextExecutionRecipe.requires_prior_dry_run_scope_ticket !== false)}</p>
+        <p>latest_dry_run_scope_ticket_visible: {String(tradeCalNextExecutionRecipe.latest_dry_run_scope_ticket_visible === true)}</p>
+        <p>allowed_next_step: {String(tradeCalNextExecutionRecipe.allowed_next_step ?? "run_trade_cal_provider_acceptance_dry_run_scope_ticket")}</p>
+        <p>target: {String(tradeCalNextExecutionRecipe.target_post_task_route ?? "POST /api/tasks/refresh-tushare-facts")} / {String(tradeCalNextExecutionRecipe.target_acceptance_mode ?? "provider_backed_trade_cal_long_window")}</p>
+        <p>provider_refresh_called_by_recipe / ready_to_execute_from_cache: {String(tradeCalNextExecutionRecipe.provider_refresh_called_by_recipe ?? false)} / {String(tradeCalNextExecutionRecipe.ready_to_execute_from_cache ?? false)}</p>
+        <p>tushare_called / deepseek_called / github_called: {String(tradeCalNextExecutionRecipe.tushare_called ?? false)} / {String(tradeCalNextExecutionRecipe.deepseek_called ?? false)} / {String(tradeCalNextExecutionRecipe.github_called ?? false)}</p>
+        <p>not_allowed_next_steps: {Array.isArray(tradeCalNextExecutionRecipe.not_allowed_next_steps) ? tradeCalNextExecutionRecipe.not_allowed_next_steps.join(" / ") : "GET cache provider refresh / React render provider refresh / skip dry-run scope ticket / skip user confirmation / promote recipe to provider-backed acceptance"}</p>
+        <DataLineageTable rows={objectRow(tradeCalNextExecutionRecipe)} />
+        <DataLineageTable rows={rows(cache.trade_cal_provider_acceptance_next_execution_rows)} />
       </PacketCard>
 
       <PacketCard title="Freshness 长窗口样本验收" subtitle="local synthetic trade_cal fixture；使用实际 freshness gate，不调用 Tushare" status={String(freshnessSample.status ?? "sample_validation")}>
