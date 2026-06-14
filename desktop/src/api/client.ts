@@ -518,3 +518,10 @@ export function runWorkerActivationReview(payload: Record<string, unknown> = {})
     body: JSON.stringify(payload)
   });
 }
+
+export function runWorkerProductionEvidencePlan(payload: Record<string, unknown> = {}) {
+  return request<Record<string, unknown>>("/api/worker/production-evidence-plan", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}

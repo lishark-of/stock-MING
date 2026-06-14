@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getWorkerRuntimeCache, runWorkerActivationReview, runWorkerSyntheticHealthcheck } from "../api/client";
+import { getWorkerRuntimeCache, runWorkerActivationReview, runWorkerProductionEvidencePlan, runWorkerSyntheticHealthcheck } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -20,6 +20,9 @@ export default function WorkerRuntime() {
   const [activationReviewResult, setActivationReviewResult] = useState<Record<string, unknown>>({});
   const [activationReviewRunning, setActivationReviewRunning] = useState(false);
   const [activationReviewError, setActivationReviewError] = useState("");
+  const [productionEvidencePlanResult, setProductionEvidencePlanResult] = useState<Record<string, unknown>>({});
+  const [productionEvidencePlanRunning, setProductionEvidencePlanRunning] = useState(false);
+  const [productionEvidencePlanError, setProductionEvidencePlanError] = useState("");
 
   const refreshCache = () => {
     return getWorkerRuntimeCache().then((res) => {
@@ -61,6 +64,22 @@ export default function WorkerRuntime() {
       .finally(() => setActivationReviewRunning(false));
   };
 
+  const launchProductionEvidencePlan = () => {
+    setProductionEvidencePlanRunning(true);
+    setProductionEvidencePlanError("");
+    void runWorkerProductionEvidencePlan({
+      requested_from: "worker_runtime_page",
+      operator_approved: true,
+      plan_scope: "worker_production_runtime_evidence_plan_no_process_start"
+    })
+      .then((res) => {
+        setProductionEvidencePlanResult(res.data);
+        return refreshCache();
+      })
+      .catch((err: unknown) => setProductionEvidencePlanError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setProductionEvidencePlanRunning(false));
+  };
+
   const runtime = (cache.runtime as Record<string, unknown> | undefined) ?? {};
   const summary = (cache.task_catalog_summary as Record<string, unknown> | undefined) ?? {};
   const taskImplementation = (cache.task_implementation_status as Record<string, unknown> | undefined) ?? {};
@@ -90,10 +109,16 @@ export default function WorkerRuntime() {
   const workerActivationReviewTaskReceipt =
     (productionReadiness.worker_activation_review_task_receipt as Record<string, unknown> | undefined) ??
     ((cache.worker_activation_review_task_receipt as Record<string, unknown> | undefined) ?? {});
+  const workerProductionEvidencePlanReceipt =
+    (productionReadiness.worker_production_evidence_plan_receipt as Record<string, unknown> | undefined) ??
+    ((cache.worker_production_evidence_plan_receipt as Record<string, unknown> | undefined) ?? {});
   const visibleHealthcheck = Object.keys(healthcheckResult).length ? healthcheckResult : workerSyntheticHealthcheck;
   const visibleActivationReview = Object.keys(activationReviewResult).length
     ? ((activationReviewResult.worker_activation_review_task_receipt as Record<string, unknown> | undefined) ?? activationReviewResult)
     : workerActivationReviewTaskReceipt;
+  const visibleProductionEvidencePlan = Object.keys(productionEvidencePlanResult).length
+    ? ((productionEvidencePlanResult.worker_production_evidence_plan_receipt as Record<string, unknown> | undefined) ?? productionEvidencePlanResult)
+    : workerProductionEvidencePlanReceipt;
   const dispatchPlanSummary = (cache.dispatch_plan_summary as Record<string, unknown> | undefined) ?? {};
   const dispatchPlanStatusCounts = dispatchPlanSummary.status_counts as Record<string, unknown> | undefined;
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
@@ -149,6 +174,8 @@ export default function WorkerRuntime() {
           { label: "activation ready", value: workerActivationReview.activation_ready === true ? "是" : "否", tone: workerActivationReview.activation_ready === true ? "bad" : "good" },
           { label: "review task", value: visibleActivationReview.activation_review_ready === true ? "ready" : "pending", tone: visibleActivationReview.activation_review_ready === true ? "good" : "warn" },
           { label: "review task blockers", value: visibleActivationReview.production_blocker_count ?? counts.worker_activation_review_task_production_blocker_count, tone: Number(visibleActivationReview.production_blocker_count ?? counts.worker_activation_review_task_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "evidence plan", value: visibleProductionEvidencePlan.evidence_plan_ready === true ? "ready" : "pending", tone: visibleProductionEvidencePlan.evidence_plan_ready === true ? "good" : "warn" },
+          { label: "runtime QA gaps", value: visibleProductionEvidencePlan.production_blocker_count ?? counts.worker_production_evidence_plan_production_blocker_count, tone: Number(visibleProductionEvidencePlan.production_blocker_count ?? counts.worker_production_evidence_plan_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "worker complete", value: productionBlockerAudit.production_worker_complete === true ? "是" : "否", tone: productionBlockerAudit.production_worker_complete === true ? "bad" : "good" },
           { label: "local fallback", value: runtime.local_fallback_enabled, tone: runtime.local_fallback_enabled === false ? "bad" : "good" },
           { label: "Celery", value: runtime.celery_available, tone: runtime.celery_available === true ? "good" : "warn" },
@@ -323,6 +350,29 @@ export default function WorkerRuntime() {
         <DataLineageTable rows={rows(productionReadiness.worker_activation_review_task_rows ?? cache.worker_activation_review_task_rows ?? visibleActivationReview.rows)} />
       </PacketCard>
 
+
+      <PacketCard title="Worker production evidence plan" subtitle="POST /api/worker/production-evidence-plan：生成后续 Celery/Redis runtime QA scope ticket，不启动进程" status={String(visibleProductionEvidencePlan.status ?? "worker_production_evidence_plan_pending_activation_review")}>
+        <div className="actions">
+          <button onClick={launchProductionEvidencePlan} disabled={productionEvidencePlanRunning || activationReviewRunning || healthcheckRunning}>
+            {productionEvidencePlanRunning ? "生成中" : "生成 runtime QA 证据计划"}
+          </button>
+        </div>
+        {productionEvidencePlanError ? <p className="risk-note">production_evidence_plan_error: {productionEvidencePlanError}</p> : null}
+        <p>schema_version: {String(visibleProductionEvidencePlan.schema_version ?? "worker_production_evidence_plan_receipt.v1")}</p>
+        <p>scope: {String(visibleProductionEvidencePlan.scope ?? "button_gated_worker_production_evidence_plan_no_process_start")}</p>
+        <p>explicit_evidence_plan_done / operator_approved: {String(visibleProductionEvidencePlan.explicit_evidence_plan_done === true)} / {String(visibleProductionEvidencePlan.operator_approved === true)}</p>
+        <p>evidence_plan_ready / ready_for_manual_runtime_qa: {String(visibleProductionEvidencePlan.evidence_plan_ready === true)} / {String(visibleProductionEvidencePlan.ready_for_manual_runtime_qa === true)}</p>
+        <p>activation_review_task_ready / synthetic_healthcheck_executed: {String(visibleProductionEvidencePlan.activation_review_task_ready === true)} / {String(visibleProductionEvidencePlan.synthetic_healthcheck_executed === true)}</p>
+        <p>scope_ticket_sha256: {String(visibleProductionEvidencePlan.scope_ticket_sha256 ?? "")}</p>
+        <p>production_worker_complete / activation_ready: {String(visibleProductionEvidencePlan.production_worker_complete === true)} / {String(visibleProductionEvidencePlan.activation_ready === true)}</p>
+        <p>starts_celery_worker / pings_redis / starts_scheduler / task_dispatched: {String(visibleProductionEvidencePlan.starts_celery_worker === true)} / {String(visibleProductionEvidencePlan.pings_redis === true)} / {String(visibleProductionEvidencePlan.starts_scheduler === true)} / {String(visibleProductionEvidencePlan.task_dispatched === true)}</p>
+        <p>external_calls_triggered / tushare_called / deepseek_called / github_called: {String(visibleProductionEvidencePlan.external_calls_triggered === true)} / {String(visibleProductionEvidencePlan.tushare_called === true)} / {String(visibleProductionEvidencePlan.deepseek_called === true)} / {String(visibleProductionEvidencePlan.github_called === true)}</p>
+        <p>missing_evidence_items: {Array.isArray(visibleProductionEvidencePlan.missing_evidence_items) ? visibleProductionEvidencePlan.missing_evidence_items.join(" / ") : "celery worker process evidence / redis broker reachability evidence / cross-process controls / append-only worker logs / scheduler runtime evidence"}</p>
+        <p>not_allowed_next_steps: {Array.isArray(visibleProductionEvidencePlan.not_allowed_next_steps) ? visibleProductionEvidencePlan.not_allowed_next_steps.join(" / ") : "start Celery from evidence plan / ping Redis from evidence plan / evidence plan as production worker completion"}</p>
+        <p>该计划只生成后续 runtime QA 的安全 scope ticket；不能当作 Celery/Redis process proof 或 production worker complete。</p>
+        <DataLineageTable rows={rows(productionReadiness.worker_production_evidence_plan_rows ?? cache.worker_production_evidence_plan_rows ?? visibleProductionEvidencePlan.rows)} />
+      </PacketCard>
+
       <PacketCard title="Worker production readiness receipt" subtitle="LTG-06 下一步收据；只允许显式 POST healthcheck 和人工 activation review" status={String(workerProductionReadinessReceipt.status ?? "worker_readiness_receipt_ready_synthetic_healthcheck_pending")}>
         <p>schema_version: {String(workerProductionReadinessReceipt.schema_version ?? "worker_production_readiness_receipt.v1")}</p>
         <p>scope: {String(workerProductionReadinessReceipt.scope ?? "local_worker_production_readiness_receipt_no_process_start")}</p>
@@ -386,6 +436,7 @@ export default function WorkerRuntime() {
         <JsonDetails title="worker production readiness receipt raw" data={workerProductionReadinessReceipt} />
         <JsonDetails title="worker production activation receipt raw" data={workerProductionActivationReceipt} />
         <JsonDetails title="worker activation review task raw" data={visibleActivationReview} />
+        <JsonDetails title="worker production evidence plan raw" data={visibleProductionEvidencePlan} />
       </PacketCard>
     </>
   );

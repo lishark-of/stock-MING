@@ -89,6 +89,20 @@ REQUIRED_ACTIVATION_REVIEW_TASK_CRITERIA = {
     "production_worker_completion_stays_blocked",
     "production_evidence_required",
 }
+REQUIRED_PRODUCTION_EVIDENCE_PLAN_CRITERIA = {
+    "explicit_post_evidence_plan_done",
+    "operator_approval_recorded",
+    "activation_review_task_ready",
+    "production_activation_receipt_visible",
+    "celery_process_evidence_required",
+    "redis_broker_evidence_required",
+    "cross_process_controls_evidence_required",
+    "append_only_worker_log_evidence_required",
+    "scheduler_default_off_runtime_evidence_required",
+    "provider_model_no_autoschedule_boundary",
+    "no_trade_no_action_boundary",
+    "production_worker_completion_stays_blocked",
+}
 
 REQUIRED_READINESS_RECEIPT_CRITERIA = {
     "local_worker_contracts_visible",
@@ -186,6 +200,13 @@ def build_contract() -> dict[str, Any]:
     activation_review_task = _dict(packet.get("worker_activation_review_task_receipt"))
     activation_review_task_rows = [row for row in _list(packet.get("worker_activation_review_task_rows")) if isinstance(row, dict)]
     activation_review_task_criteria = {str(row.get("criterion") or "") for row in activation_review_task_rows}
+    production_evidence_plan = _dict(packet.get("worker_production_evidence_plan_receipt"))
+    production_evidence_plan_rows = [
+        row for row in _list(packet.get("worker_production_evidence_plan_rows")) if isinstance(row, dict)
+    ]
+    production_evidence_plan_criteria = {
+        str(row.get("criterion") or "") for row in production_evidence_plan_rows
+    }
     task_persistence = _dict(packet.get("task_persistence"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/worker_contract.py")
@@ -479,6 +500,58 @@ def build_contract() -> dict[str, Any]:
             "Worker activation review task may bind local synthetic-healthcheck evidence, but must not start processes, ping Redis, dispatch tasks, call providers/models, or claim production completion.",
         ),
         _row(
+            "production_evidence_plan_is_scope_ticket_only",
+            "POST /api/worker/production-evidence-plan"
+            in _dict(catalog.get("route_coverage")).get("known_post_routes", [])
+            and production_evidence_plan.get("schema_version") == "worker_production_evidence_plan_receipt.v1"
+            and production_evidence_plan.get("status")
+            in {
+                "worker_production_evidence_plan_pending_activation_review",
+                "worker_production_evidence_plan_ready_runtime_qa_pending",
+                "worker_production_evidence_plan_blocked_operator_approval_required",
+            }
+            and production_evidence_plan.get("scope")
+            == "button_gated_worker_production_evidence_plan_no_process_start"
+            and production_evidence_plan.get("button_gated") is True
+            and production_evidence_plan.get("local_plan_only") is True
+            and production_evidence_plan.get("ready_to_mark_production_worker_complete") is False
+            and production_evidence_plan.get("production_worker_complete") is False
+            and production_evidence_plan.get("activation_ready") is False
+            and int(production_evidence_plan.get("production_blocker_count") or 0) > 0
+            and REQUIRED_PRODUCTION_EVIDENCE_PLAN_CRITERIA.issubset(production_evidence_plan_criteria)
+            and "evidence plan as production worker completion" in _list(
+                production_evidence_plan.get("not_allowed_next_steps")
+            )
+            and "scope ticket as runtime evidence" in _list(production_evidence_plan.get("not_allowed_next_steps"))
+            and "celery worker process identity and queue registration evidence"
+            in _list(production_evidence_plan.get("missing_evidence_items"))
+            and _is_sha256(production_evidence_plan.get("scope_ticket_sha256"))
+            and production_evidence_plan.get("starts_celery_worker") is False
+            and production_evidence_plan.get("pings_redis") is False
+            and production_evidence_plan.get("starts_scheduler") is False
+            and production_evidence_plan.get("task_dispatched") is False
+            and production_evidence_plan.get("provider_model_task_dispatched") is False
+            and production_evidence_plan.get("cache_get_external_calls") is False
+            and _flag_false(
+                production_evidence_plan,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and production_evidence_plan.get("does_not_execute_trades") is True
+            and production_evidence_plan.get("does_not_modify_strategy_action") is True
+            and production_evidence_plan.get("contains_secret") is False
+            and all(row.get("worker_started") is False for row in production_evidence_plan_rows)
+            and all(row.get("redis_pinged") is False for row in production_evidence_plan_rows)
+            and all(row.get("scheduler_started") is False for row in production_evidence_plan_rows)
+            and all(row.get("task_dispatched") is False for row in production_evidence_plan_rows)
+            and policy.get("worker_production_evidence_plan_is_button_gated") is True
+            and policy.get("worker_production_evidence_plan_is_not_process_start") is True
+            and policy.get("worker_production_evidence_plan_is_not_production_completion") is True,
+            "Worker production evidence plan may create a later runtime-QA scope ticket, but it must not start processes, ping Redis, dispatch tasks, call providers/models, execute trades, or claim production worker completion.",
+        ),
+        _row(
             "production_activation_receipt_keeps_worker_blocked",
             activation_receipt.get("schema_version") == "worker_production_activation_receipt.v1"
             and activation_receipt.get("status") == "worker_activation_receipt_ready_production_blocked"
@@ -546,11 +619,13 @@ def build_contract() -> dict[str, Any]:
             and "local_worker_contract_no_process_start" in this_script
             and "worker_production_activation_receipt.v1" in this_script
             and "worker_activation_review_task_receipt.v1" in this_script
+            and "worker_production_evidence_plan_receipt.v1" in this_script
             and "worker_queue_routing_contract.v1" in this_script
             and "task_readback_fingerprint_matches" in this_script
             and "queue_routing_contract_is_local_and_button_gated" in this_script
             and "production_activation_receipt_keeps_worker_blocked" in this_script
             and "activation_review_task_is_button_gated_no_process_start" in this_script
+            and "production_evidence_plan_is_scope_ticket_only" in this_script
             and "production_worker_complete" in this_script
             and "healthcheck_executed" in this_script
             and "activation_ready" in this_script
@@ -585,6 +660,8 @@ def build_contract() -> dict[str, Any]:
         "worker_production_activation_receipt_status": activation_receipt.get("status"),
         "worker_activation_review_task_ready": activation_review_task.get("activation_review_ready") is True,
         "worker_activation_review_task_status": activation_review_task.get("status"),
+        "worker_production_evidence_plan_ready": production_evidence_plan.get("evidence_plan_ready") is True,
+        "worker_production_evidence_plan_status": production_evidence_plan.get("status"),
         "worker_queue_routing_contract_ready": queue_routing.get("queue_routing_contract_ready") is True,
         "worker_queue_routing_contract_status": queue_routing.get("status"),
         "local_fallback_available": True,
@@ -632,6 +709,11 @@ def build_contract() -> dict[str, Any]:
             "worker_activation_review_task_status": activation_review_task.get("status"),
             "worker_activation_review_task_local_blocker_count": activation_review_task.get("local_blocker_count"),
             "worker_activation_review_task_production_blocker_count": activation_review_task.get("production_blocker_count"),
+            "worker_production_evidence_plan_status": production_evidence_plan.get("status"),
+            "worker_production_evidence_plan_local_blocker_count": production_evidence_plan.get("local_blocker_count"),
+            "worker_production_evidence_plan_production_blocker_count": production_evidence_plan.get(
+                "production_blocker_count"
+            ),
             "scheduler_auto_task_count": dispatch_summary.get("scheduler_auto_task_count"),
             "cache_get_external_call_count": dispatch_summary.get("cache_get_external_call_count"),
         },

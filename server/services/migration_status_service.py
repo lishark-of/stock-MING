@@ -74,9 +74,9 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "Worker / Celery / Redis 生产化",
         "completion_bucket": "productionization_required",
         "completion_estimate": "35%-45%",
-        "current_state": "local fallback, task lifecycle, explicit synthetic healthcheck, button-gated activation review task receipts, readiness/activation receipts, scheduler default-off policy, and worker contracts exist.",
-        "not_complete_because": "real Celery/Redis process orchestration, broker healthcheck, and production scheduler activation are pending.",
-        "next_step": "Use the activation review task receipt to plan separate Celery/Redis process evidence, cross-process controls, append-only logs, and scheduler runtime QA without starting processes from cache reads.",
+        "current_state": "local fallback, task lifecycle, explicit synthetic healthcheck, button-gated activation review task receipts, production evidence plan scope tickets, readiness/activation receipts, scheduler default-off policy, and worker contracts exist.",
+        "not_complete_because": "real Celery/Redis process orchestration, broker healthcheck, cross-process control proof, append-only worker log proof, and production scheduler activation are pending.",
+        "next_step": "Run a separate manually approved runtime QA from the production evidence plan scope ticket to collect Celery process, Redis broker, cross-process controls, append-only logs, and scheduler default-off evidence without starting processes from cache reads.",
         "production_complete": False,
     },
     {

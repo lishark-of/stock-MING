@@ -18,6 +18,8 @@ SYNTHETIC_HEALTHCHECK_PACKET_KEY = "command_center_3_worker_synthetic_healthchec
 SYNTHETIC_HEALTHCHECK_SCHEMA_VERSION = "worker_synthetic_healthcheck.v1"
 ACTIVATION_REVIEW_PACKET_KEY = "command_center_3_worker_activation_review_packet"
 ACTIVATION_REVIEW_SCHEMA_VERSION = "worker_activation_review_task_receipt.v1"
+PRODUCTION_EVIDENCE_PLAN_PACKET_KEY = "command_center_3_worker_production_evidence_plan_packet"
+PRODUCTION_EVIDENCE_PLAN_SCHEMA_VERSION = "worker_production_evidence_plan_receipt.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 
@@ -1436,6 +1438,316 @@ def _read_worker_activation_review_packet(
     )
     return rebuilt
 
+def _production_evidence_plan_row(
+    criterion: str,
+    passed: bool,
+    *,
+    status: str | None = None,
+    evidence: str,
+    next_action: str,
+    local_required: bool = True,
+    production_required: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status or ("passed" if passed else "blocked"),
+        "passed": bool(passed),
+        "blocks_evidence_plan": bool(local_required and not passed),
+        "production_blocker": bool(production_required and not passed),
+        "evidence": evidence,
+        "next_action": next_action,
+        "worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "task_dispatched": False,
+        "provider_model_task_dispatched": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "production_worker_complete": False,
+    }
+
+
+def _worker_production_evidence_plan_receipt(
+    *,
+    synthetic_healthcheck: dict[str, Any],
+    activation_review_task: dict[str, Any],
+    production_activation_receipt: dict[str, Any],
+    explicit_plan: bool = False,
+    task_id: str | None = None,
+    planned_at: str | None = None,
+    payload_safe: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    safe_payload = payload_safe if isinstance(payload_safe, dict) else {}
+    approved = safe_payload.get("operator_approved") is True or safe_payload.get("approved") is True
+    activation_review_visible = activation_review_task.get("schema_version") == ACTIVATION_REVIEW_SCHEMA_VERSION
+    activation_review_ready = activation_review_task.get("activation_review_ready") is True
+    synthetic_ready = synthetic_healthcheck.get("synthetic_healthcheck_executed") is True
+    activation_receipt_visible = production_activation_receipt.get("schema_version") == "worker_production_activation_receipt.v1"
+    provider_boundary_ok = (
+        activation_review_task.get("external_calls_triggered") is False
+        and activation_review_task.get("tushare_called") is False
+        and activation_review_task.get("deepseek_called") is False
+        and activation_review_task.get("github_called") is False
+        and production_activation_receipt.get("provider_model_task_dispatched_by_receipt") is False
+    )
+    rows = [
+        _production_evidence_plan_row(
+            "explicit_post_evidence_plan_done",
+            explicit_plan,
+            evidence="Production evidence plan must be created through POST /api/worker/production-evidence-plan.",
+            next_action="Use the button-gated POST route to bind the exact local plan scope.",
+        ),
+        _production_evidence_plan_row(
+            "operator_approval_recorded",
+            approved,
+            evidence="Payload must include operator_approved=true or approved=true for the local evidence-plan scope.",
+            next_action="Record explicit operator approval for this plan; do not infer approval from cache reads.",
+        ),
+        _production_evidence_plan_row(
+            "activation_review_task_ready",
+            activation_review_visible and activation_review_ready,
+            evidence=str(activation_review_task.get("status") or "missing"),
+            next_action="Run synthetic healthcheck and activation review before treating the production evidence plan as runtime-QA ready.",
+        ),
+        _production_evidence_plan_row(
+            "production_activation_receipt_visible",
+            activation_receipt_visible,
+            evidence=str(production_activation_receipt.get("status") or "missing"),
+            next_action="Keep worker_production_activation_receipt visible as the production-start blocker checklist.",
+        ),
+        _production_evidence_plan_row(
+            "celery_process_evidence_required",
+            False,
+            status="pending_manual_runtime_evidence",
+            evidence="No Celery process evidence is collected by this plan.",
+            next_action="In a later approved runtime QA, capture process identity, queue registration, and safe worker startup proof.",
+            local_required=False,
+            production_required=True,
+        ),
+        _production_evidence_plan_row(
+            "redis_broker_evidence_required",
+            False,
+            status="pending_manual_runtime_evidence",
+            evidence="No Redis broker reachability is checked or pinged by this plan.",
+            next_action="In a later approved runtime QA, capture broker reachability without exposing Redis URL or credentials.",
+            local_required=False,
+            production_required=True,
+        ),
+        _production_evidence_plan_row(
+            "cross_process_controls_evidence_required",
+            False,
+            status="pending_manual_runtime_evidence",
+            evidence="Retry/cancel/lock/dedupe are visible locally, but cross-process proof is not collected here.",
+            next_action="In a later approved runtime QA, prove retry/cancel/lock/dedupe across worker process boundaries.",
+            local_required=False,
+            production_required=True,
+        ),
+        _production_evidence_plan_row(
+            "append_only_worker_log_evidence_required",
+            False,
+            status="pending_manual_runtime_evidence",
+            evidence="Local safe task_log metadata exists, but append-only worker log storage is not verified here.",
+            next_action="In a later approved runtime QA, prove append-only worker logs without raw payload or secret leakage.",
+            local_required=False,
+            production_required=True,
+        ),
+        _production_evidence_plan_row(
+            "scheduler_default_off_runtime_evidence_required",
+            False,
+            status="pending_manual_runtime_evidence",
+            evidence="Scheduler stays off in cache/review paths; runtime default-off evidence is not collected here.",
+            next_action="In a later approved runtime QA, prove scheduler remains disabled unless separately approved.",
+            local_required=False,
+            production_required=True,
+        ),
+        _production_evidence_plan_row(
+            "provider_model_no_autoschedule_boundary",
+            provider_boundary_ok,
+            evidence="Tushare, DeepSeek and GitHub-capable queues remain button-gated and are not scheduled by this plan.",
+            next_action="Keep provider/model/probe tasks behind explicit POST routes with call ledger in runtime QA.",
+        ),
+        _production_evidence_plan_row(
+            "no_trade_no_action_boundary",
+            True,
+            evidence="Production evidence planning does not execute trades or mutate strategy action.",
+            next_action="Keep broker/order integration out of LTG-06 worker runtime QA.",
+            local_required=False,
+            production_required=False,
+        ),
+        _production_evidence_plan_row(
+            "production_worker_completion_stays_blocked",
+            True,
+            evidence="This plan keeps production_worker_complete=false until runtime evidence is collected and reviewed.",
+            next_action="Treat this plan as a scope ticket only, not as production worker completion.",
+            local_required=False,
+            production_required=False,
+        ),
+    ]
+    local_blockers = [str(row["criterion"]) for row in rows if row.get("blocks_evidence_plan")]
+    production_blockers = [str(row["criterion"]) for row in rows if row.get("production_blocker")]
+    plan_ready = not local_blockers
+    status = (
+        "worker_production_evidence_plan_blocked_operator_approval_required"
+        if explicit_plan and not approved
+        else "worker_production_evidence_plan_ready_runtime_qa_pending"
+        if plan_ready
+        else "worker_production_evidence_plan_pending_activation_review"
+    )
+    scope_ticket_payload = {
+        "schema_version": PRODUCTION_EVIDENCE_PLAN_SCHEMA_VERSION,
+        "scope": "button_gated_worker_production_evidence_plan_no_process_start",
+        "operator_approved": approved,
+        "activation_review_status": activation_review_task.get("status") or "missing",
+        "activation_review_task_id": activation_review_task.get("review_task_id") or "",
+        "synthetic_healthcheck_task_id": synthetic_healthcheck.get("task_id") or "",
+        "evidence_scope": [
+            "celery_process",
+            "redis_broker",
+            "cross_process_retry_cancel_lock_dedupe",
+            "append_only_worker_logs",
+            "scheduler_default_off_runtime",
+            "provider_model_no_autoschedule_boundary",
+            "no_trade_no_action_boundary",
+        ],
+        "external_sources_allowed": False,
+        "starts_celery_worker": False,
+        "pings_redis": False,
+        "starts_scheduler": False,
+        "task_dispatched": False,
+        "production_worker_complete": False,
+    }
+    request_params_safe = {
+        "plan_scope": "worker_production_runtime_evidence_plan_no_process_start",
+        "operator_approved": approved,
+        "activation_review_task_id": activation_review_task.get("review_task_id") or "",
+        "synthetic_healthcheck_task_id": synthetic_healthcheck.get("task_id") or "",
+        "external_sources_allowed": False,
+        "starts_celery_worker": False,
+        "pings_redis": False,
+        "starts_scheduler": False,
+        "task_dispatched": False,
+        "production_worker_complete": False,
+    }
+    return {
+        "packet_key": PRODUCTION_EVIDENCE_PLAN_PACKET_KEY,
+        "schema_version": PRODUCTION_EVIDENCE_PLAN_SCHEMA_VERSION,
+        "status": status,
+        "scope": "button_gated_worker_production_evidence_plan_no_process_start",
+        "ltg": "LTG-06",
+        "mode": "button_gated_local_production_evidence_plan",
+        "explicit_evidence_plan_done": bool(explicit_plan),
+        "plan_task_id": task_id,
+        "planned_at": planned_at,
+        "button_gated": True,
+        "local_plan_only": True,
+        "operator_approved": approved,
+        "evidence_plan_ready": plan_ready,
+        "ready_for_manual_runtime_qa": plan_ready,
+        "ready_to_mark_production_worker_complete": False,
+        "production_worker_complete": False,
+        "activation_ready": False,
+        "synthetic_healthcheck_executed": synthetic_ready,
+        "synthetic_healthcheck_task_id": synthetic_healthcheck.get("task_id") or "",
+        "activation_review_task_ready": activation_review_ready,
+        "activation_review_task_id": activation_review_task.get("review_task_id") or "",
+        "activation_review_status": activation_review_task.get("status") or "missing",
+        "activation_receipt_visible": activation_receipt_visible,
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "row_count": len(rows),
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+        "scope_ticket_payload": scope_ticket_payload,
+        "scope_ticket_sha256": _json_sha256(scope_ticket_payload),
+        "request_params_safe": request_params_safe,
+        "allowed_next_step": "separate_manual_worker_runtime_qa_no_provider_no_trade" if plan_ready else "run_synthetic_healthcheck_then_activation_review_then_evidence_plan",
+        "not_allowed_next_steps": [
+            "start Celery from evidence plan",
+            "ping Redis from evidence plan",
+            "start scheduler from evidence plan",
+            "dispatch worker task from evidence plan",
+            "automatic Tushare/DeepSeek/GitHub scheduling",
+            "evidence plan as production worker completion",
+            "scope ticket as runtime evidence",
+        ],
+        "missing_evidence_items": [
+            "celery worker process identity and queue registration evidence",
+            "redis broker reachability evidence without URL/credential exposure",
+            "cross-process retry/cancel/lock/dedupe evidence",
+            "append-only worker task log evidence",
+            "scheduler default-off runtime evidence",
+            "runtime QA reviewer approval evidence",
+            "production worker promotion evidence",
+        ],
+        "starts_celery_worker": False,
+        "pings_redis": False,
+        "starts_scheduler": False,
+        "task_dispatched": False,
+        "provider_model_task_dispatched": False,
+        "cache_get_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": rows,
+        "note": "This receipt is a local LTG-06 production evidence plan. It creates a safe scope ticket for later manual runtime QA; it does not start Celery, ping Redis, start scheduler, dispatch tasks, call providers/models/probes, execute trades, or prove production worker completion.",
+    }
+
+
+def _missing_worker_production_evidence_plan_packet(
+    synthetic_healthcheck: dict[str, Any],
+    activation_review_task: dict[str, Any],
+    production_activation_receipt: dict[str, Any],
+) -> dict[str, Any]:
+    return _worker_production_evidence_plan_receipt(
+        synthetic_healthcheck=synthetic_healthcheck,
+        activation_review_task=activation_review_task,
+        production_activation_receipt=production_activation_receipt,
+        explicit_plan=False,
+    )
+
+
+def _read_worker_production_evidence_plan_packet(
+    synthetic_healthcheck: dict[str, Any],
+    activation_review_task: dict[str, Any],
+    production_activation_receipt: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(PRODUCTION_EVIDENCE_PLAN_PACKET_KEY)
+    except Exception:
+        packet = None
+    if not isinstance(packet, dict):
+        return _missing_worker_production_evidence_plan_packet(
+            synthetic_healthcheck,
+            activation_review_task,
+            production_activation_receipt,
+        )
+    receipt = _json_safe(packet.get("worker_production_evidence_plan_receipt") or packet)
+    if not isinstance(receipt, dict) or receipt.get("schema_version") != PRODUCTION_EVIDENCE_PLAN_SCHEMA_VERSION:
+        return _missing_worker_production_evidence_plan_packet(
+            synthetic_healthcheck,
+            activation_review_task,
+            production_activation_receipt,
+        )
+    rebuilt = _worker_production_evidence_plan_receipt(
+        synthetic_healthcheck=synthetic_healthcheck,
+        activation_review_task=activation_review_task,
+        production_activation_receipt=production_activation_receipt,
+        explicit_plan=receipt.get("explicit_evidence_plan_done") is True,
+        task_id=str(receipt.get("plan_task_id") or "") or None,
+        planned_at=str(receipt.get("planned_at") or "") or None,
+        payload_safe=receipt.get("request_params_safe") if isinstance(receipt.get("request_params_safe"), dict) else {},
+    )
+    return rebuilt
+
+
 
 def _synthetic_healthcheck_rows(task: dict[str, Any], readback: dict[str, Any] | None) -> list[dict[str, Any]]:
     task_log = task.get("task_log") if isinstance(task.get("task_log"), list) else []
@@ -2348,6 +2660,113 @@ def run_worker_activation_review(payload: Any = None) -> dict[str, Any]:
     return packet
 
 
+def run_worker_production_evidence_plan(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        "run_worker_production_evidence_plan",
+        output_packet_key=PRODUCTION_EVIDENCE_PLAN_PACKET_KEY,
+        payload=payload,
+        current_step="worker_production_evidence_plan_queued_no_process_start",
+        warnings=[
+            "Worker production evidence plan 只生成后续 Celery/Redis runtime QA 证据清单和 scope ticket；不会启动 Celery、ping Redis、启动 scheduler、派发任务或调用 provider/model/probe。"
+        ],
+    )
+    task = task_service.update_task_status(
+        str(task["task_id"]),
+        status="running",
+        progress=0.5,
+        current_step="worker_production_evidence_plan_reading_local_cache_only",
+    ) or task
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    runtime_packet = read_worker_runtime_cache()
+    synthetic_healthcheck = runtime_packet.get("worker_synthetic_healthcheck") if isinstance(runtime_packet.get("worker_synthetic_healthcheck"), dict) else {}
+    activation_review_task = runtime_packet.get("worker_activation_review_task_receipt") if isinstance(runtime_packet.get("worker_activation_review_task_receipt"), dict) else {}
+    production_activation_receipt = runtime_packet.get("worker_production_activation_receipt") if isinstance(runtime_packet.get("worker_production_activation_receipt"), dict) else {}
+    planned_at = _now_iso()
+    receipt = _worker_production_evidence_plan_receipt(
+        synthetic_healthcheck=synthetic_healthcheck,
+        activation_review_task=activation_review_task,
+        production_activation_receipt=production_activation_receipt,
+        explicit_plan=True,
+        task_id=str(task.get("task_id") or ""),
+        planned_at=planned_at,
+        payload_safe=payload_safe,
+    )
+    rows = receipt.get("rows") if isinstance(receipt.get("rows"), list) else []
+    ledger = [
+        {
+            "api": "local_worker_production_evidence_plan",
+            "source": "worker_runtime_cache + activation_review_task_receipt",
+            "row_count": len(rows),
+            "task_id": task.get("task_id"),
+            "local_fetched_at": planned_at,
+            "call_status": receipt["status"],
+            "request_params_safe": receipt["request_params_safe"],
+            "scope_ticket_sha256": receipt["scope_ticket_sha256"],
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "redis_pinged": False,
+            "celery_started": False,
+            "scheduler_started": False,
+            "task_dispatched": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "error_message_safe": "",
+        }
+    ]
+    task = task_service.update_task_status(
+        str(task["task_id"]),
+        status="success",
+        progress=1.0,
+        current_step="worker_production_evidence_plan_completed_local_only",
+        call_ledger=ledger,
+        warning="worker_production_evidence_plan_completed_no_process_start",
+    ) or task
+    packet = {
+        "packet_key": PRODUCTION_EVIDENCE_PLAN_PACKET_KEY,
+        "schema_version": PRODUCTION_EVIDENCE_PLAN_SCHEMA_VERSION,
+        "status": receipt["status"],
+        "scope": receipt["scope"],
+        "mode": receipt["mode"],
+        "executed_at": planned_at,
+        "task_id": task.get("task_id"),
+        "task_status": task.get("status"),
+        "task_type": task.get("task_type"),
+        "output_packet_key": PRODUCTION_EVIDENCE_PLAN_PACKET_KEY,
+        "worker_production_evidence_plan_receipt": receipt,
+        "worker_production_evidence_plan_rows": rows,
+        "evidence_plan_ready": receipt["evidence_plan_ready"],
+        "ready_for_manual_runtime_qa": receipt["ready_for_manual_runtime_qa"],
+        "scope_ticket_sha256": receipt["scope_ticket_sha256"],
+        "production_worker_complete": False,
+        "activation_ready": False,
+        "starts_celery_worker": False,
+        "pings_redis": False,
+        "starts_scheduler": False,
+        "task_dispatched": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": ledger,
+        "warnings": [
+            "这是显式 POST 的本地 Worker production evidence plan，只生成后续 runtime QA 的安全 scope ticket。",
+            "它不启动 Celery、不 ping Redis、不启动 scheduler、不派发任务、不调用 Tushare/DeepSeek/GitHub、不执行真实交易，也不代表 production worker 完成。",
+        ],
+    }
+    packet = _json_safe(packet)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PRODUCTION_EVIDENCE_PLAN_PACKET_KEY, packet)
+    except Exception:
+        packet.setdefault("warnings", []).append("worker_production_evidence_plan_packet_persist_failed_safe")
+    return packet
+
+
 def read_worker_runtime_cache() -> dict[str, Any]:
     celery_available = _module_available("celery")
     redis_available = _module_available("redis")
@@ -2460,6 +2879,14 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     activation_review_task_rows = activation_review_task_receipt.get("rows") or []
     production_readiness["worker_activation_review_task_receipt"] = activation_review_task_receipt
     production_readiness["worker_activation_review_task_rows"] = activation_review_task_rows
+    production_evidence_plan_receipt = _read_worker_production_evidence_plan_packet(
+        synthetic_healthcheck,
+        activation_review_task_receipt,
+        production_activation_receipt,
+    )
+    production_evidence_plan_rows = production_evidence_plan_receipt.get("rows") or []
+    production_readiness["worker_production_evidence_plan_receipt"] = production_evidence_plan_receipt
+    production_readiness["worker_production_evidence_plan_rows"] = production_evidence_plan_rows
     module_ready_count = sum(1 for row in worker_module_rows if row["module_available"] and row["file_exists"])
     manual_preflight_steps = production_readiness.get("manual_preflight_steps") or []
     status = "ready" if module_ready_count == len(worker_module_rows) else "partial"
@@ -2546,6 +2973,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         "worker_production_activation_rows": production_activation_receipt["rows"],
         "worker_activation_review_task_receipt": activation_review_task_receipt,
         "worker_activation_review_task_rows": activation_review_task_rows,
+        "worker_production_evidence_plan_receipt": production_evidence_plan_receipt,
+        "worker_production_evidence_plan_rows": production_evidence_plan_rows,
         "dispatch_plan_status": "contract_ready_local_fallback",
         "dispatch_plan_rows": dispatch_plan_rows,
         "dispatch_plan_summary": {
@@ -2606,6 +3035,10 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_activation_review_task_local_blocker_count": activation_review_task_receipt.get("local_blocker_count", 0),
             "worker_activation_review_task_production_blocker_count": activation_review_task_receipt.get("production_blocker_count", 0),
             "worker_activation_review_task_row_count": activation_review_task_receipt.get("row_count", 0),
+            "worker_production_evidence_plan_ready": 1 if production_evidence_plan_receipt.get("evidence_plan_ready") else 0,
+            "worker_production_evidence_plan_local_blocker_count": production_evidence_plan_receipt.get("local_blocker_count", 0),
+            "worker_production_evidence_plan_production_blocker_count": production_evidence_plan_receipt.get("production_blocker_count", 0),
+            "worker_production_evidence_plan_row_count": production_evidence_plan_receipt.get("row_count", 0),
             "manual_preflight_step_count": len(manual_preflight_steps),
             "manual_preflight_operator_action_count": sum(1 for row in manual_preflight_steps if row.get("operator_action_required")),
             "dispatch_plan_task_count": len(dispatch_plan_rows),
@@ -2642,6 +3075,9 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_activation_review_task_is_button_gated": True,
             "worker_activation_review_task_is_not_process_start": True,
             "worker_activation_review_task_is_not_production_completion": True,
+            "worker_production_evidence_plan_is_button_gated": True,
+            "worker_production_evidence_plan_is_not_process_start": True,
+            "worker_production_evidence_plan_is_not_production_completion": True,
             "task_implementation_status_is_read_only": True,
             "stub_tasks_must_not_be_reported_as_complete": True,
             "contains_secret": False,
@@ -2672,6 +3108,7 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "GET /api/worker/cache 只读检查本地 worker scaffold 和依赖可见性；不会连接 Redis。",
             "本页不会启动 Celery worker 或 APScheduler，不会调度真实 Tushare、DeepSeek 或 GitHub 任务。",
             "Worker activation review task 只审查本地 synthetic healthcheck 和 activation receipt；不会启动 Celery、ping Redis、启动 scheduler 或完成 production worker。",
+            "Worker production evidence plan 只生成后续 runtime QA 的本地 scope ticket；不会启动 Celery、ping Redis、启动 scheduler、派发任务或完成 production worker。",
             "Worker runtime 只做诊断说明，不执行真实交易，不修改 strategy action。",
         ],
     }

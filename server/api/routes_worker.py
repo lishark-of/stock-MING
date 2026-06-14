@@ -22,7 +22,14 @@ def run_worker_synthetic_healthcheck(payload: dict[str, Any] | None = None) -> d
     packet = worker_service.run_worker_synthetic_healthcheck(payload or {})
     return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
 
+
 @router.post("/activation-review")
 def run_worker_activation_review(payload: dict[str, Any] | None = None) -> dict:
     packet = worker_service.run_worker_activation_review(payload or {})
+    return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
+
+
+@router.post("/production-evidence-plan")
+def run_worker_production_evidence_plan(payload: dict[str, Any] | None = None) -> dict:
+    packet = worker_service.run_worker_production_evidence_plan(payload or {})
     return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))

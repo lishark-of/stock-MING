@@ -691,7 +691,8 @@ Productionize Command Center 3 storage datasets
 - Worker runtime now exposes `worker_production_readiness_receipt`: a local next-step receipt that ties blocker audit, healthcheck QA, task-log audit, synthetic healthcheck state, activation review, and route coverage into one explicit LTG-06 checkpoint. It can mark `ready_for_explicit_synthetic_healthcheck=true`, but keeps `ready_for_manual_activation_review=false` while production blockers remain and keeps `production_worker_complete=false`, `worker_started_by_receipt=false`, `redis_pinged_by_receipt=false`, `scheduler_started_by_receipt=false`, and `task_dispatched_by_receipt=false`.
 - Worker runtime now exposes `worker_production_activation_receipt`: a local production-start checklist that ties readiness receipt, synthetic healthcheck state, Celery manual start, Redis broker reachability, cross-process controls, append-only logs, scheduler default-off, provider/model isolation, manual activation approval, and production promotion evidence into one activation layer. It keeps `worker_activation_receipt_ready_production_blocked`, `activation_ready=false`, `production_worker_complete=false`, `worker_started_by_receipt=false`, `redis_pinged_by_receipt=false`, `scheduler_started_by_receipt=false`, and `task_dispatched_by_receipt=false`.
 - `POST /api/worker/activation-review` now creates a button-gated local `worker_activation_review_task_receipt` after the synthetic healthcheck. It records explicit operator approval, local task/status/log evidence, activation receipt visibility, production blockers, and safe call ledger while keeping `starts_celery_worker=false`, `pings_redis=false`, `starts_scheduler=false`, `task_dispatched=false`, `production_worker_complete=false`, and all Tushare/DeepSeek/GitHub flags false.
-- `scripts/worker_contract.py` is now part of the local push gate. It validates worker cache, dispatch plan, production blocker audit, healthcheck QA, task-log persistence audit, synthetic healthcheck explicit-POST boundary, activation review, readiness receipt, scheduler default-off, no-external-call, no-provider-call, no-trade, and no-action boundaries while `production_worker_complete=false`.
+- `POST /api/worker/production-evidence-plan` now creates a button-gated local `worker_production_evidence_plan_receipt` after activation review. It records an operator-approved runtime-QA scope ticket for Celery process evidence, Redis broker evidence, cross-process controls, append-only worker logs, scheduler default-off runtime evidence, provider/model no-autoschedule, and no-trade/no-action boundaries while keeping `starts_celery_worker=false`, `pings_redis=false`, `starts_scheduler=false`, `task_dispatched=false`, `production_worker_complete=false`, and all Tushare/DeepSeek/GitHub flags false.
+- `scripts/worker_contract.py` is now part of the local push gate. It validates worker cache, dispatch plan, production blocker audit, healthcheck QA, task-log persistence audit, synthetic healthcheck explicit-POST boundary, activation review, production evidence plan scope ticket, readiness receipt, scheduler default-off, no-external-call, no-provider-call, no-trade, and no-action boundaries while `production_worker_complete=false`.
 - Celery/Redis are not production enabled.
 
 ### Gaps
@@ -708,6 +709,7 @@ Productionize Command Center 3 storage datasets
 - The explicit synthetic healthcheck proves only local fallback task/status/log round trip. Its SHA-256 fingerprints prove safe local task identity/readback consistency only. It is useful evidence for the local control plane, but it is not Celery/Redis process proof and not production worker activation.
 - The worker production readiness receipt is still a local next-step receipt. It does not start Celery, ping Redis, run healthcheck, start scheduler, dispatch tasks, or prove production worker completion.
 - The worker production activation receipt is still a local checklist. It does not start Celery, ping Redis, run healthcheck, start scheduler, dispatch tasks, prove manual activation approval, or prove production worker completion.
+- The worker production evidence plan is still a local scope ticket for later runtime QA. It does not collect Celery process proof, Redis broker proof, cross-process control proof, append-only worker log proof, scheduler runtime proof, or production promotion approval.
 
 ### Implementation Phases
 
@@ -719,10 +721,11 @@ Productionize Command Center 3 storage datasets
 6. Keep `POST /api/worker/synthetic-healthcheck` button-gated and local-only so task/status/log round-trip evidence remains visible before Celery/Redis activation.
 7. Keep `worker_production_readiness_receipt` current so the next safe step is visible without converting local contracts into production completion evidence.
 8. Keep `worker_production_activation_receipt` current so production-start blockers remain visible without starting processes.
-9. Add Celery worker execution behind explicit configuration.
-10. Add Redis broker configuration and health reporting without cache API pinging Redis.
-11. Add retry/cancel/lock behavior for real worker tasks.
-12. Keep scheduler default off.
+9. Keep `worker_production_evidence_plan_receipt` current so later runtime QA has a scoped evidence ticket without converting the ticket into runtime evidence or production completion.
+10. Add Celery worker execution behind explicit configuration.
+11. Add Redis broker configuration and health reporting without cache API pinging Redis.
+12. Add retry/cancel/lock behavior for real worker tasks.
+13. Keep scheduler default off.
 
 ### Acceptance Criteria
 
@@ -738,9 +741,10 @@ Productionize Command Center 3 storage datasets
 - Worker queue routing rows are visible in UI, queue names include `provider_refresh`, `model_explain`, `external_probe`, `local_maintenance`, and `local_compute`, provider/model/probe-capable tasks do not enter local queues, all queues remain button-gated, scheduler auto task count is zero, and `production_worker_complete=false`.
 - Worker activation review rows are visible in UI, and `activation_ready=false` until production blockers are resolved and an explicit synthetic/local worker healthcheck proves readiness.
 - Worker activation review task rows are visible in UI; before POST they remain `worker_activation_review_task_pending`, and after approved local review they may become `worker_activation_review_task_ready_production_blocked` while still requiring Celery/Redis process evidence, cross-process controls, append-only logs, scheduler runtime QA, and production promotion evidence.
+- Worker production evidence plan rows are visible in UI; before approved activation review they remain `worker_production_evidence_plan_pending_activation_review`, and after approved evidence planning they may become `worker_production_evidence_plan_ready_runtime_qa_pending` with a 64-character `scope_ticket_sha256` while still requiring Celery process evidence, Redis broker evidence, cross-process controls, append-only logs, scheduler runtime QA, runtime reviewer approval, and production promotion evidence.
 - Worker readiness receipt rows are visible in UI, `allowed_next_step=explicit_post_worker_synthetic_healthcheck_then_manual_activation_review`, and `not_allowed_next_steps` explicitly blocks GET cache process start, Redis ping, scheduler start, task dispatch, unconfigured provider/model scheduling, and treating the receipt or synthetic healthcheck as production completion.
 - Worker production activation receipt rows are visible in UI, `allowed_next_step=explicit_synthetic_healthcheck_then_manual_celery_redis_activation_review`, and `not_allowed_next_steps` explicitly blocks GET cache process start, Redis ping, scheduler start, task dispatch, unconfigured provider/model scheduling, and treating the activation receipt as production worker completion.
-- `scripts/worker_contract.py` passes in the local push gate while reporting `production_worker_complete=false`, `healthcheck_executed=false`, `task_log_persistence_verified=false`, `append_only_worker_log_verified=false`, `activation_ready=false`, `worker_started=false`, `redis_pinged=false`, `scheduler_started=false`, `worker_queue_routing_contract_ready=true`, `worker_production_readiness_receipt_ready=true`, and `worker_production_activation_receipt_ready=true`.
+- `scripts/worker_contract.py` passes in the local push gate while reporting `production_worker_complete=false`, `healthcheck_executed=false`, `task_log_persistence_verified=false`, `append_only_worker_log_verified=false`, `activation_ready=false`, `worker_started=false`, `redis_pinged=false`, `scheduler_started=false`, `worker_queue_routing_contract_ready=true`, `worker_production_readiness_receipt_ready=true`, `worker_production_activation_receipt_ready=true`, and `worker_production_evidence_plan_status` visible.
 - Production scheduler-based Tushare/DeepSeek scheduling is never automatic by default; future `live_light` may create only an opt-in, rate-limited POST bootstrap task.
 - Failures include `error_message_safe`.
 
@@ -758,6 +762,7 @@ Productionize Command Center 3 storage datasets
 - Do not report `worker_activation_review_task_receipt` as Celery/Redis process proof, Redis broker reachability, scheduler startup, task dispatch, provider/model execution, or production worker completion.
 - Do not report `worker_production_readiness_receipt` as worker startup, Redis reachability, scheduler startup, task dispatch, healthcheck execution, activation approval, or production worker completion.
 - Do not report `worker_production_activation_receipt` as synthetic healthcheck execution, Celery worker startup, Redis reachability, scheduler startup, task dispatch, manual activation approval, provider/model scheduling evidence, or production worker completion.
+- Do not report `worker_production_evidence_plan_receipt` or its `scope_ticket_sha256` as Celery/Redis process proof, Redis broker reachability, cross-process control proof, append-only worker log proof, scheduler runtime proof, runtime QA completion, provider/model execution, or production worker completion.
 - Do not report `scripts/worker_contract.py` passing as Celery/Redis worker startup, broker health, synthetic healthcheck execution, cross-process task controls, scheduler production config, or production worker completion.
 
 ### Recommended Commit Message
