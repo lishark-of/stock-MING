@@ -36,6 +36,7 @@ CONTRACT_KEYS = [
     "provider_sample_readiness_receipt",
     "provider_sample_activation_receipt",
     "provider_target_sample_runbook_contract",
+    "provider_target_sample_execution_recipe",
 ]
 REQUIRED_TUSHARE_PRODUCTION_STAGE_KEYS = {
     "post_task_route_and_mode_gate",
@@ -394,9 +395,14 @@ def build_contract() -> dict[str, Any]:
         provider_evidence_gap_audit=target_sample_gap,
         provider_sample_activation_receipt=target_sample_activation,
     )
+    target_sample_execution_recipe = tushare_task_service._provider_target_sample_execution_recipe(
+        provider_target_sample_runbook_contract=target_sample_runbook,
+        provider_sample_activation_receipt=target_sample_activation,
+    )
     target_sample_gap_rows = {row.get("target"): row for row in target_sample_gap.get("rows", [])}
     target_sample_receipt_rows = {row.get("criterion"): row for row in target_sample_receipt.get("rows", [])}
     target_sample_runbook_rows = {row.get("target"): row for row in target_sample_runbook.get("rows", [])}
+    target_sample_execution_rows = {row.get("target"): row for row in target_sample_execution_recipe.get("rows", [])}
     target_sample_rows = {row.get("target"): row for row in target_sample_acceptance_ready.get("rows", [])}
     multi_target_groups = [
         "dragon_tiger",
@@ -513,10 +519,15 @@ def build_contract() -> dict[str, Any]:
         provider_evidence_gap_audit=multi_target_gap,
         provider_sample_activation_receipt=multi_target_activation,
     )
+    multi_target_execution_recipe = tushare_task_service._provider_target_sample_execution_recipe(
+        provider_target_sample_runbook_contract=multi_target_runbook,
+        provider_sample_activation_receipt=multi_target_activation,
+    )
     multi_target_rows = {row.get("target"): row for row in multi_target_acceptance.get("rows", [])}
     multi_target_gap_rows = {row.get("target"): row for row in multi_target_gap.get("rows", [])}
     multi_target_receipt_rows = {row.get("criterion"): row for row in multi_target_receipt.get("rows", [])}
     multi_target_runbook_rows = {row.get("target"): row for row in multi_target_runbook.get("rows", [])}
+    multi_target_execution_rows = {row.get("target"): row for row in multi_target_execution_recipe.get("rows", [])}
     validation_target_group_keys = [target for target, _label, _apis in tushare_task_service.VALIDATION_TARGET_GROUPS]
     extended_target_group_keys = [target for target in validation_target_group_keys if target != "trade_calendar"]
     interface_group_scope_rows: list[dict[str, Any]] = []
@@ -1072,6 +1083,46 @@ def build_contract() -> dict[str, Any]:
             "A ready target-sample runbook only prepares review/promotion evidence; it must not call providers or promote acceptance.",
         ),
         _row(
+            "target_sample_execution_recipe_is_local_not_execution",
+            target_sample_execution_recipe.get("schema_version")
+            == "tushare_provider_target_sample_execution_recipe.v1"
+            and target_sample_execution_recipe.get("scope")
+            == "local_target_sample_execution_recipe_no_provider_execution"
+            and target_sample_execution_recipe.get("status")
+            == "target_sample_execution_recipe_ready_user_confirmation_required"
+            and target_sample_execution_recipe.get("requested_targets") == ["margin_financing"]
+            and target_sample_execution_recipe.get("recipe_ready_for_user_confirmation") is True
+            and target_sample_execution_recipe.get("recipe_ready_target_count") == 1
+            and target_sample_execution_recipe.get("blocked_recipe_target_count") == 0
+            and target_sample_execution_recipe.get("provider_task_created_by_recipe") is False
+            and target_sample_execution_recipe.get("provider_execution_implemented_by_recipe") is False
+            and target_sample_execution_recipe.get("provider_call_ledger_evidence_done_by_recipe") is False
+            and target_sample_execution_recipe.get("provider_backed_target_sample_acceptance_done") is False
+            and target_sample_execution_recipe.get("production_tushare_pipeline_complete") is False
+            and target_sample_execution_recipe.get("full_interface_acceptance_done") is False
+            and "call Tushare from this recipe"
+            in target_sample_execution_recipe.get("not_allowed_next_steps", [])
+            and "target sample as full-interface acceptance"
+            in target_sample_execution_rows["margin_financing"].get("not_allowed_next_steps", [])
+            and target_sample_execution_rows["margin_financing"].get("execution_recipe_status")
+            == "target_sample_execution_recipe_ready_user_confirmation_required"
+            and target_sample_execution_rows["margin_financing"].get("recipe_ready_for_user_confirmation") is True
+            and target_sample_execution_rows["margin_financing"].get("provider_task_created_by_recipe") is False
+            and _flag_false(
+                target_sample_execution_recipe,
+                "cache_get_external_calls",
+                "react_render_external_calls",
+                "recipe_external_calls_triggered",
+                "tushare_called_by_recipe",
+                "deepseek_called",
+                "github_called",
+            )
+            and target_sample_execution_recipe.get("does_not_execute_trades") is True
+            and target_sample_execution_recipe.get("does_not_modify_strategy_action") is True
+            and target_sample_execution_recipe.get("contains_secret") is False,
+            "Target-sample execution recipe is only an ordered local recipe for the next explicit provider review; it must not call Tushare, create tasks, or complete production acceptance.",
+        ),
+        _row(
             "multi_target_sample_runbook_ready_review_pending_without_promotion",
             multi_target_runbook.get("status") == "target_sample_runbook_ready_provider_review_pending"
             and multi_target_runbook.get("runbook_ready") is True
@@ -1106,6 +1157,51 @@ def build_contract() -> dict[str, Any]:
             and multi_target_runbook.get("does_not_execute_trades") is True
             and multi_target_runbook.get("does_not_modify_strategy_action") is True,
             "Multi-target runbook readiness is a local review checklist only; provider promotion and production completion remain false.",
+        ),
+        _row(
+            "multi_target_sample_execution_recipe_ready_review_pending_without_promotion",
+            multi_target_execution_recipe.get("schema_version")
+            == "tushare_provider_target_sample_execution_recipe.v1"
+            and multi_target_execution_recipe.get("status")
+            == "target_sample_execution_recipe_ready_user_confirmation_required"
+            and multi_target_execution_recipe.get("requested_targets") == multi_target_groups
+            and multi_target_execution_recipe.get("requested_target_count") == len(multi_target_groups)
+            and multi_target_execution_recipe.get("recipe_ready_target_count") == len(multi_target_groups)
+            and multi_target_execution_recipe.get("blocked_recipe_target_count") == 0
+            and multi_target_execution_recipe.get("recipe_ready_for_user_confirmation") is True
+            and all(
+                multi_target_execution_rows[target].get("execution_recipe_status")
+                == "target_sample_execution_recipe_ready_user_confirmation_required"
+                and multi_target_execution_rows[target].get("recipe_ready_for_user_confirmation") is True
+                and multi_target_execution_rows[target].get("post_task_route")
+                == "POST /api/tasks/refresh-tushare-facts"
+                and multi_target_execution_rows[target].get("required_acceptance_mode")
+                == "provider_target_sample_acceptance"
+                and multi_target_execution_rows[target].get("provider_task_created_by_recipe") is False
+                and multi_target_execution_rows[target].get("provider_execution_implemented_by_recipe") is False
+                and multi_target_execution_rows[target].get("provider_backed_target_sample_acceptance_done") is False
+                and multi_target_execution_rows[target].get("production_tushare_pipeline_complete") is False
+                for target in multi_target_groups
+            )
+            and multi_target_execution_recipe.get("provider_task_created_by_recipe") is False
+            and multi_target_execution_recipe.get("provider_execution_implemented_by_recipe") is False
+            and multi_target_execution_recipe.get("provider_call_ledger_evidence_done_by_recipe") is False
+            and multi_target_execution_recipe.get("provider_backed_target_sample_acceptance_done") is False
+            and multi_target_execution_recipe.get("production_tushare_pipeline_complete") is False
+            and multi_target_execution_recipe.get("full_interface_acceptance_done") is False
+            and _flag_false(
+                multi_target_execution_recipe,
+                "cache_get_external_calls",
+                "react_render_external_calls",
+                "recipe_external_calls_triggered",
+                "tushare_called_by_recipe",
+                "deepseek_called",
+                "github_called",
+            )
+            and multi_target_execution_recipe.get("does_not_execute_trades") is True
+            and multi_target_execution_recipe.get("does_not_modify_strategy_action") is True
+            and multi_target_execution_recipe.get("contains_secret") is False,
+            "Multi-target execution recipe can be review-ready, but it still does not execute provider calls, create tasks, promote full-interface acceptance, or mutate trading decisions.",
         ),
         _row(
             "target_groups_matrix_only",
@@ -1201,8 +1297,19 @@ def build_contract() -> dict[str, Any]:
             "provider_sample_activation_blocker_count": provider_sample_activation.get("blocking_criterion_count"),
             "provider_target_sample_runbook_status": provider_target_sample_runbook.get("status"),
             "provider_target_sample_runbook_ready": provider_target_sample_runbook.get("runbook_ready"),
+            "provider_target_sample_execution_status": target_sample_execution_recipe.get("status"),
+            "provider_target_sample_execution_ready": target_sample_execution_recipe.get(
+                "recipe_ready_for_user_confirmation"
+            ),
+            "provider_target_sample_execution_ready_count": target_sample_execution_recipe.get(
+                "recipe_ready_target_count"
+            ),
             "multi_target_sample_runbook_status": multi_target_runbook.get("status"),
             "multi_target_sample_runbook_ready_count": multi_target_runbook.get("runbook_ready_target_count"),
+            "multi_target_sample_execution_status": multi_target_execution_recipe.get("status"),
+            "multi_target_sample_execution_ready_count": multi_target_execution_recipe.get(
+                "recipe_ready_target_count"
+            ),
             "target_sample_plan_ready_count": target_sample_plan.get("ready_to_execute_target_count"),
             "target_sample_plan_pending_count": target_sample_plan.get("pending_or_blocked_target_count"),
             "trade_cal_acceptance_mode": trade_cal_full_acceptance.get("acceptance_mode"),

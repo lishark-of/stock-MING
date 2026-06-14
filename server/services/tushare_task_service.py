@@ -1710,6 +1710,7 @@ def _provider_sample_activation_receipt(
         "provider_evidence_gap_blocker_count": gap_blocker_count,
         "provider_acceptance_task_executed_by_receipt": False,
         "provider_refresh_called_by_receipt": False,
+        "provider_task_created_by_receipt": False,
         "cache_get_external_calls": False,
         "react_render_external_calls": False,
         "receipt_external_calls_triggered": False,
@@ -1939,6 +1940,189 @@ def _provider_target_sample_runbook_contract(
             }
         ],
         "note": "This runbook is a local checklist for explicit target-domain Tushare provider sample review. It does not call Tushare, create tasks, promote fake/local evidence, execute trades, mutate action, or prove production completion.",
+    }
+
+
+def _provider_target_sample_execution_recipe(
+    *,
+    provider_target_sample_runbook_contract: dict[str, Any],
+    provider_sample_activation_receipt: dict[str, Any],
+) -> dict[str, Any]:
+    runbook_rows = [
+        row
+        for row in provider_target_sample_runbook_contract.get("rows", [])
+        if isinstance(row, Mapping)
+    ]
+    requested_rows = [row for row in runbook_rows if row.get("requested_for_runbook") is True]
+    ready_rows = [
+        row
+        for row in requested_rows
+        if row.get("runbook_status") == "target_sample_runbook_ready_provider_review_pending"
+    ]
+    activation_local_safe = bool(
+        provider_sample_activation_receipt.get("schema_version") == "tushare_provider_sample_activation_receipt.v1"
+        and provider_sample_activation_receipt.get("receipt_external_calls_triggered") is False
+        and provider_sample_activation_receipt.get("provider_refresh_called_by_receipt") is False
+        and provider_sample_activation_receipt.get("provider_task_created_by_receipt") is False
+        and provider_sample_activation_receipt.get("production_tushare_pipeline_complete") is False
+    )
+    runbook_ready = bool(provider_target_sample_runbook_contract.get("runbook_ready"))
+    recipe_ready = bool(requested_rows and len(ready_rows) == len(requested_rows) and runbook_ready and activation_local_safe)
+    phase_keys = [
+        "manual_operator_confirmation",
+        "scope_ticket_and_payload_review",
+        "explicit_post_task_execution",
+        "safe_provider_call_ledger_capture",
+        "target_sample_row_review",
+        "failure_mode_review",
+        "provider_promotion_audit",
+        "storage_and_cache_promotion_review",
+    ]
+    rows: list[dict[str, Any]] = []
+    for row in runbook_rows:
+        requested = row.get("requested_for_runbook") is True
+        row_ready = bool(
+            requested
+            and row.get("runbook_status") == "target_sample_runbook_ready_provider_review_pending"
+            and activation_local_safe
+        )
+        if not requested:
+            recipe_status = "target_sample_execution_recipe_not_requested"
+            next_step = "select_target_group_with_provider_target_sample_acceptance_mode"
+        elif not activation_local_safe:
+            recipe_status = "target_sample_execution_recipe_blocked_activation_receipt"
+            next_step = "repair_local_activation_receipt_before_execution"
+        elif not row_ready:
+            recipe_status = "target_sample_execution_recipe_blocked_runbook"
+            next_step = str(row.get("next_step") or "complete_runbook_review_evidence")
+        else:
+            recipe_status = "target_sample_execution_recipe_ready_user_confirmation_required"
+            next_step = "manual_confirm_then_execute_post_task_and_review_promotion"
+        rows.append(
+            {
+                "target": row.get("target"),
+                "label": row.get("label"),
+                "requested_for_execution_recipe": requested,
+                "post_task_route": "POST /api/tasks/refresh-tushare-facts",
+                "required_acceptance_mode": PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE,
+                "selected_apis": list(row.get("selected_apis") or []),
+                "missing_required_apis": list(row.get("missing_required_apis") or []),
+                "phase_keys": phase_keys,
+                "pending_phase_keys": phase_keys,
+                "required_evidence": [
+                    "manual approval for the selected target domain",
+                    "safe request payload without token or key values",
+                    "call_ledger api/provider/request_params_safe/row_count/data_date/local_fetched_at/call_status/error_message_safe",
+                    "non-empty sample rows or explicitly classified valid-empty evidence",
+                    "failure-mode evidence for empty, permission, parse, provider, and missing-param cases",
+                    "promotion audit that still keeps production_tushare_pipeline_complete=false until full-interface evidence exists",
+                    "storage promotion review before Parquet/cache promotion",
+                ],
+                "not_allowed_next_steps": [
+                    "call Tushare from this recipe",
+                    "create provider task from this recipe",
+                    "GET cache provider refresh",
+                    "React render provider refresh",
+                    "runbook as provider-backed acceptance",
+                    "target sample as full-interface acceptance",
+                    "fake/local adapter promotion",
+                    "strategy action mutation",
+                    "real trade execution",
+                ],
+                "runbook_status": row.get("runbook_status"),
+                "execution_recipe_status": recipe_status,
+                "next_step": next_step,
+                "provider_promotion_blockers": list(row.get("provider_promotion_blockers") or []),
+                "recipe_ready_for_user_confirmation": row_ready,
+                "provider_task_created_by_recipe": False,
+                "provider_execution_implemented_by_recipe": False,
+                "provider_call_ledger_evidence_done_by_recipe": False,
+                "provider_backed_target_sample_acceptance_done": False,
+                "full_interface_acceptance_done": False,
+                "production_tushare_pipeline_complete": False,
+                "cache_get_external_calls": False,
+                "react_render_external_calls": False,
+                "recipe_external_calls_triggered": False,
+                "tushare_called_by_recipe": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            }
+        )
+    ready_count = sum(1 for row in rows if row.get("recipe_ready_for_user_confirmation") is True)
+    blocked_count = sum(
+        1
+        for row in rows
+        if row.get("requested_for_execution_recipe") is True
+        and row.get("recipe_ready_for_user_confirmation") is not True
+    )
+    return {
+        "schema_version": "tushare_provider_target_sample_execution_recipe.v1",
+        "status": "target_sample_execution_recipe_ready_user_confirmation_required"
+        if recipe_ready
+        else "target_sample_execution_recipe_blocked_or_not_requested",
+        "scope": "local_target_sample_execution_recipe_no_provider_execution",
+        "post_task_route": "POST /api/tasks/refresh-tushare-facts",
+        "required_acceptance_mode": PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE,
+        "runbook_ready": runbook_ready,
+        "activation_receipt_ready": activation_local_safe,
+        "requested_targets": list(provider_target_sample_runbook_contract.get("requested_targets") or []),
+        "requested_target_count": len(requested_rows),
+        "recipe_ready_target_count": ready_count,
+        "blocked_recipe_target_count": blocked_count,
+        "recipe_ready_for_user_confirmation": recipe_ready,
+        "allowed_next_step": "manual_confirm_then_execute_post_task_and_review_promotion"
+        if recipe_ready
+        else "complete_target_sample_runbook_and_activation_receipt",
+        "phase_keys": phase_keys,
+        "pending_phase_keys": phase_keys,
+        "not_allowed_next_steps": [
+            "call Tushare from this recipe",
+            "create provider task from this recipe",
+            "GET cache provider refresh",
+            "React render provider refresh",
+            "recipe as provider-backed acceptance",
+            "recipe as full-interface acceptance",
+            "strategy action mutation",
+            "real trade execution",
+        ],
+        "provider_task_created_by_recipe": False,
+        "provider_execution_implemented_by_recipe": False,
+        "provider_call_ledger_evidence_done_by_recipe": False,
+        "provider_backed_acceptance_done": False,
+        "provider_backed_target_sample_acceptance_done": False,
+        "full_interface_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "recipe_external_calls_triggered": False,
+        "tushare_called_by_recipe": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "row_count": len(rows),
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_tushare_provider_target_sample_execution_recipe",
+                "source": "tushare provider target sample runbook and activation receipt",
+                "row_count": len(rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_execution_recipe_provider_execution_pending",
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This recipe fixes the operator-confirmed order for a future explicit Tushare target-sample acceptance run. It does not call Tushare, create tasks, promote local/fake evidence, execute trades, mutate action, or prove production completion.",
     }
 
 
@@ -2923,6 +3107,10 @@ def run_tushare_refresh_task(
         provider_evidence_gap_audit=provider_evidence_gap_audit,
         provider_sample_activation_receipt=provider_sample_activation_receipt,
     )
+    provider_target_sample_execution_recipe = _provider_target_sample_execution_recipe(
+        provider_target_sample_runbook_contract=provider_target_sample_runbook_contract,
+        provider_sample_activation_receipt=provider_sample_activation_receipt,
+    )
     refresh_packet = {
         "packet_key": output_packet_key,
         "schema_version": "command_center_tushare_refresh_task.v1",
@@ -2980,6 +3168,9 @@ def run_tushare_refresh_task(
         "provider_target_sample_runbook_contract": provider_target_sample_runbook_contract,
         "provider_target_sample_runbook_rows": provider_target_sample_runbook_contract["rows"],
         "provider_target_sample_runbook_status": provider_target_sample_runbook_contract["status"],
+        "provider_target_sample_execution_recipe": provider_target_sample_execution_recipe,
+        "provider_target_sample_execution_rows": provider_target_sample_execution_recipe["rows"],
+        "provider_target_sample_execution_status": provider_target_sample_execution_recipe["status"],
         "api_validation_matrix_policy": {
             "scope": "selected APIs use real task call_ledger; unselected APIs are capability matrix only.",
             "selected_apis": list(selected_apis),
@@ -3019,6 +3210,10 @@ def run_tushare_refresh_task(
             "provider_target_sample_runbook_scope": "provider_target_sample_runbook_contract 只固定显式目标域 provider 样本验收清单和 promotion blocker；不调用 provider，不证明生产完成。",
             "provider_target_sample_runbook_calls_provider": False,
             "provider_target_sample_runbook_is_not_acceptance": True,
+            "provider_target_sample_execution_recipe_scope": "provider_target_sample_execution_recipe 只固定下一次显式 provider target-sample 执行顺序和证据清单；不调用 provider、不创建任务、不证明生产完成。",
+            "provider_target_sample_execution_recipe_calls_provider": False,
+            "provider_target_sample_execution_recipe_creates_task": False,
+            "provider_target_sample_execution_recipe_is_not_acceptance": True,
             "production_tushare_pipeline_complete": provider_acceptance_readiness_audit["production_tushare_pipeline_complete"],
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
@@ -3077,6 +3272,16 @@ def run_tushare_refresh_task(
         ],
         "provider_target_sample_runbook_blocker_count": provider_target_sample_runbook_contract[
             "blocked_runbook_target_count"
+        ],
+        "provider_target_sample_execution_status": provider_target_sample_execution_recipe["status"],
+        "provider_target_sample_execution_ready": provider_target_sample_execution_recipe[
+            "recipe_ready_for_user_confirmation"
+        ],
+        "provider_target_sample_execution_ready_count": provider_target_sample_execution_recipe[
+            "recipe_ready_target_count"
+        ],
+        "provider_target_sample_execution_blocker_count": provider_target_sample_execution_recipe[
+            "blocked_recipe_target_count"
         ],
         "provider_backed_acceptance_done": provider_acceptance_readiness_audit["provider_backed_acceptance_done"],
         "production_tushare_pipeline_complete": provider_acceptance_readiness_audit["production_tushare_pipeline_complete"],

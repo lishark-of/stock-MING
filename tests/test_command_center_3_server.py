@@ -6442,6 +6442,49 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(persisted["provider_target_sample_runbook_ready"])
         self.assertEqual(persisted["provider_target_sample_runbook_ready_count"], 1)
         self.assertEqual(persisted["provider_target_sample_runbook_blocker_count"], 0)
+        execution_recipe = persisted["provider_target_sample_execution_recipe"]
+        execution_rows = {row["target"]: row for row in persisted["provider_target_sample_execution_rows"]}
+        self.assertEqual(execution_recipe["schema_version"], "tushare_provider_target_sample_execution_recipe.v1")
+        self.assertEqual(execution_recipe["status"], "target_sample_execution_recipe_ready_user_confirmation_required")
+        self.assertEqual(execution_recipe["scope"], "local_target_sample_execution_recipe_no_provider_execution")
+        self.assertEqual(execution_recipe["requested_targets"], ["margin_financing"])
+        self.assertTrue(execution_recipe["recipe_ready_for_user_confirmation"])
+        self.assertEqual(execution_recipe["recipe_ready_target_count"], 1)
+        self.assertEqual(execution_recipe["blocked_recipe_target_count"], 0)
+        self.assertFalse(execution_recipe["provider_task_created_by_recipe"])
+        self.assertFalse(execution_recipe["provider_execution_implemented_by_recipe"])
+        self.assertFalse(execution_recipe["provider_call_ledger_evidence_done_by_recipe"])
+        self.assertFalse(execution_recipe["provider_backed_target_sample_acceptance_done"])
+        self.assertFalse(execution_recipe["full_interface_acceptance_done"])
+        self.assertFalse(execution_recipe["production_tushare_pipeline_complete"])
+        self.assertFalse(execution_recipe["cache_get_external_calls"])
+        self.assertFalse(execution_recipe["react_render_external_calls"])
+        self.assertFalse(execution_recipe["recipe_external_calls_triggered"])
+        self.assertFalse(execution_recipe["tushare_called_by_recipe"])
+        self.assertFalse(execution_recipe["deepseek_called"])
+        self.assertFalse(execution_recipe["github_called"])
+        self.assertTrue(execution_recipe["does_not_execute_trades"])
+        self.assertTrue(execution_recipe["does_not_modify_strategy_action"])
+        self.assertFalse(execution_recipe["contains_secret"])
+        self.assertIn("call Tushare from this recipe", execution_recipe["not_allowed_next_steps"])
+        self.assertIn("target sample as full-interface acceptance", execution_rows["margin_financing"]["not_allowed_next_steps"])
+        self.assertEqual(
+            execution_rows["margin_financing"]["execution_recipe_status"],
+            "target_sample_execution_recipe_ready_user_confirmation_required",
+        )
+        self.assertTrue(execution_rows["margin_financing"]["recipe_ready_for_user_confirmation"])
+        self.assertEqual(
+            execution_recipe["call_ledger"][0]["api"],
+            "local_tushare_provider_target_sample_execution_recipe",
+        )
+        self.assert_local_ledger_boundary(execution_recipe["call_ledger"][0])
+        self.assertEqual(
+            persisted["provider_target_sample_execution_status"],
+            "target_sample_execution_recipe_ready_user_confirmation_required",
+        )
+        self.assertTrue(persisted["provider_target_sample_execution_ready"])
+        self.assertEqual(persisted["provider_target_sample_execution_ready_count"], 1)
+        self.assertEqual(persisted["provider_target_sample_execution_blocker_count"], 0)
 
     def test_tushare_target_sample_acceptance_supports_multiple_review_ready_domains_without_promotion(self):
         db_path = self._with_meta_store()
@@ -6680,6 +6723,44 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(persisted["provider_target_sample_runbook_blocker_count"], 0)
         self.assertFalse(persisted["api_validation_matrix_policy"]["provider_target_sample_runbook_calls_provider"])
         self.assertTrue(persisted["api_validation_matrix_policy"]["provider_target_sample_runbook_is_not_acceptance"])
+        execution_recipe = persisted["provider_target_sample_execution_recipe"]
+        execution_rows = {row["target"]: row for row in persisted["provider_target_sample_execution_rows"]}
+        self.assertEqual(execution_recipe["schema_version"], "tushare_provider_target_sample_execution_recipe.v1")
+        self.assertEqual(execution_recipe["status"], "target_sample_execution_recipe_ready_user_confirmation_required")
+        self.assertEqual(execution_recipe["requested_targets"], requested_targets)
+        self.assertEqual(execution_recipe["requested_target_count"], len(requested_targets))
+        self.assertEqual(execution_recipe["recipe_ready_target_count"], len(requested_targets))
+        self.assertEqual(execution_recipe["blocked_recipe_target_count"], 0)
+        self.assertTrue(execution_recipe["recipe_ready_for_user_confirmation"])
+        self.assertFalse(execution_recipe["provider_task_created_by_recipe"])
+        self.assertFalse(execution_recipe["provider_execution_implemented_by_recipe"])
+        self.assertFalse(execution_recipe["provider_call_ledger_evidence_done_by_recipe"])
+        self.assertFalse(execution_recipe["provider_backed_target_sample_acceptance_done"])
+        self.assertFalse(execution_recipe["full_interface_acceptance_done"])
+        self.assertFalse(execution_recipe["production_tushare_pipeline_complete"])
+        self.assertFalse(execution_recipe["recipe_external_calls_triggered"])
+        self.assertFalse(execution_recipe["tushare_called_by_recipe"])
+        self.assertFalse(execution_recipe["deepseek_called"])
+        self.assertFalse(execution_recipe["github_called"])
+        self.assertTrue(execution_recipe["does_not_execute_trades"])
+        self.assertTrue(execution_recipe["does_not_modify_strategy_action"])
+        for target in requested_targets:
+            self.assertEqual(
+                execution_rows[target]["execution_recipe_status"],
+                "target_sample_execution_recipe_ready_user_confirmation_required",
+                target,
+            )
+            self.assertTrue(execution_rows[target]["recipe_ready_for_user_confirmation"], target)
+            self.assertFalse(execution_rows[target]["provider_task_created_by_recipe"], target)
+            self.assertFalse(execution_rows[target]["provider_execution_implemented_by_recipe"], target)
+            self.assertFalse(execution_rows[target]["production_tushare_pipeline_complete"], target)
+        self.assertEqual(
+            persisted["provider_target_sample_execution_status"],
+            "target_sample_execution_recipe_ready_user_confirmation_required",
+        )
+        self.assertTrue(persisted["provider_target_sample_execution_ready"])
+        self.assertEqual(persisted["provider_target_sample_execution_ready_count"], len(requested_targets))
+        self.assertEqual(persisted["provider_target_sample_execution_blocker_count"], 0)
 
     def test_tushare_refresh_task_exposes_failure_mode_qa_contract(self):
         db_path = self._with_meta_store()
@@ -7309,6 +7390,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_target_sample_runbook_is_local_not_acceptance", script)
         self.assertIn("target_sample_runbook_ready_review_pending_without_promotion", script)
         self.assertIn("multi_target_sample_runbook_ready_review_pending_without_promotion", script)
+        self.assertIn("target_sample_execution_recipe_is_local_not_execution", script)
+        self.assertIn("multi_target_sample_execution_recipe_ready_review_pending_without_promotion", script)
         self.assertIn("interface_group_scope_complete_but_provider_acceptance_pending", script)
         self.assertIn("tushare_production_stage_scope_manifest", script)
         self.assertIn("tushare_production_stage_scope_manifest_is_complete_and_pending", script)
@@ -7375,6 +7458,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "target_sample_runbook_ready_provider_review_pending",
         )
         self.assertEqual(payload["observed"]["multi_target_sample_runbook_ready_count"], 5)
+        self.assertEqual(
+            payload["observed"]["provider_target_sample_execution_status"],
+            "target_sample_execution_recipe_ready_user_confirmation_required",
+        )
+        self.assertTrue(payload["observed"]["provider_target_sample_execution_ready"])
+        self.assertEqual(payload["observed"]["provider_target_sample_execution_ready_count"], 1)
+        self.assertEqual(
+            payload["observed"]["multi_target_sample_execution_status"],
+            "target_sample_execution_recipe_ready_user_confirmation_required",
+        )
+        self.assertEqual(payload["observed"]["multi_target_sample_execution_ready_count"], 5)
         self.assertEqual(payload["observed"]["interface_group_scope_count"], payload["target_group_count"])
         self.assertEqual(
             payload["observed"]["interface_group_review_fixture_ready_count"],
@@ -7451,6 +7545,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_sample_readiness_receipt", payload["contract_keys"])
         self.assertIn("provider_sample_activation_receipt", payload["contract_keys"])
         self.assertIn("provider_target_sample_runbook_contract", payload["contract_keys"])
+        self.assertIn("provider_target_sample_execution_recipe", payload["contract_keys"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("post_task_catalog_button_gate", criteria)
         self.assertIn("api_acceptance_audit_is_semantic_only", criteria)
@@ -7466,6 +7561,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_target_sample_runbook_is_local_not_acceptance", criteria)
         self.assertIn("target_sample_runbook_ready_review_pending_without_promotion", criteria)
         self.assertIn("multi_target_sample_runbook_ready_review_pending_without_promotion", criteria)
+        self.assertIn("target_sample_execution_recipe_is_local_not_execution", criteria)
+        self.assertIn("multi_target_sample_execution_recipe_ready_review_pending_without_promotion", criteria)
         self.assertIn("interface_group_scope_complete_but_provider_acceptance_pending", criteria)
         self.assertIn("tushare_production_stage_scope_manifest_is_complete_and_pending", criteria)
 
@@ -9841,6 +9938,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("fina_indicator", by_type["refresh_tushare_facts"]["optional_extended_apis"])
         self.assertIn("stk_surv", by_type["refresh_tushare_facts"]["optional_extended_apis"])
         self.assertEqual(by_type["refresh_tushare_facts"]["parquet_enabled_apis"], ["daily", "daily_basic", "moneyflow", "trade_cal"])
+        self.assertIn("provider_target_sample_execution_recipe", by_type["refresh_tushare_facts"])
+        self.assertFalse(by_type["refresh_tushare_facts"]["provider_target_sample_execution_recipe_is_provider_acceptance"])
+        self.assertFalse(by_type["refresh_tushare_facts"]["provider_target_sample_execution_recipe_creates_task"])
         self.assertEqual(by_type["command_center_live_bootstrap"]["route"], "POST /api/bootstrap/live-startup")
         self.assertEqual(by_type["command_center_live_bootstrap"]["current_backend"], "local_bootstrap_pipeline_skeleton")
         self.assertEqual(by_type["command_center_live_bootstrap"]["external_call_policy"], "mode_gated_live_light_bootstrap_current_no_provider_execution")
