@@ -3103,6 +3103,202 @@ def _motion_production_promotion_dry_run_contract(
     return receipt, rows
 
 
+def _motion_durable_evidence_recipe_row(
+    evidence_key: str,
+    passed: bool,
+    *,
+    status: str | None = None,
+    evidence: str,
+    next_action: str,
+    local_required: bool = False,
+    production_required: bool = True,
+) -> dict[str, Any]:
+    return {
+        "evidence_key": evidence_key,
+        "status": status or ("passed" if passed else "pending"),
+        "passed": bool(passed),
+        "blocks_local_recipe": bool(local_required and not passed),
+        "production_blocker": bool(production_required and not passed),
+        "evidence": evidence,
+        "next_action": next_action,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "production_motion_complete": False,
+    }
+
+
+def _motion_durable_evidence_recipe(
+    motion_browser_qa_evidence_contract: Mapping[str, Any],
+    motion_browser_qa_review_contract: Mapping[str, Any],
+    motion_production_activation_receipt: Mapping[str, Any],
+    motion_promotion_dry_run_receipt: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    local_reports_ready = motion_browser_qa_evidence_contract.get("visual_qa_complete") is True and (
+        motion_browser_qa_evidence_contract.get("browser_performance_verified") is True
+    )
+    default_and_reduced_ready = motion_browser_qa_evidence_contract.get("default_motion_passed") is True and (
+        motion_browser_qa_evidence_contract.get("reduced_motion_passed") is True
+    )
+    review_ready = motion_browser_qa_review_contract.get("local_browser_qa_review_ready") is True
+    promotion_scope_bound = motion_promotion_dry_run_receipt.get("ready_for_local_promotion_review") is True
+    activation_ready = motion_production_activation_receipt.get("local_activation_receipt_ready") is True
+    rows = [
+        _motion_durable_evidence_recipe_row(
+            "local_activation_sequence_visible",
+            activation_ready,
+            status="passed" if activation_ready else "blocked_local_activation_receipt",
+            evidence=str(motion_production_activation_receipt.get("status") or "missing"),
+            next_action="Keep the activation receipt as the local source of truth before durable promotion.",
+            local_required=True,
+            production_required=False,
+        ),
+        _motion_durable_evidence_recipe_row(
+            "local_browser_reports_available",
+            local_reports_ready,
+            status="local_report_available" if local_reports_ready else "pending_local_runner_report",
+            evidence=(
+                f"report_count={motion_browser_qa_evidence_contract.get('report_count')}; "
+                f"passing_report_count={motion_browser_qa_evidence_contract.get('passing_report_count')}; "
+                f"visual={motion_browser_qa_evidence_contract.get('visual_qa_complete')}; "
+                f"performance={motion_browser_qa_evidence_contract.get('browser_performance_verified')}"
+            ),
+            next_action="Use the explicit local runner to create default and reduced-motion ignored reports.",
+            production_required=False,
+        ),
+        _motion_durable_evidence_recipe_row(
+            "default_and_reduced_motion_covered",
+            default_and_reduced_ready,
+            status="local_motion_modes_covered" if default_and_reduced_ready else "pending_default_or_reduced_motion_report",
+            evidence=(
+                f"default={motion_browser_qa_evidence_contract.get('default_motion_passed')}; "
+                f"reduced={motion_browser_qa_evidence_contract.get('reduced_motion_passed')}"
+            ),
+            next_action="Require both default and reduced-motion reports before any durable visual promotion.",
+            production_required=False,
+        ),
+        _motion_durable_evidence_recipe_row(
+            "button_gated_local_review_ready",
+            review_ready,
+            status="local_review_ready" if review_ready else "pending_button_gated_review",
+            evidence=(
+                f"explicit_review_task_done={motion_browser_qa_review_contract.get('explicit_review_task_done')}; "
+                f"blocking_review_count={motion_browser_qa_review_contract.get('blocking_review_count')}"
+            ),
+            next_action="Run POST /api/audit/motion-browser-qa-review before binding durable evidence.",
+            production_required=False,
+        ),
+        _motion_durable_evidence_recipe_row(
+            "promotion_scope_bound_by_dry_run",
+            promotion_scope_bound,
+            status="promotion_scope_bound" if promotion_scope_bound else "pending_promotion_dry_run",
+            evidence=str(motion_promotion_dry_run_receipt.get("status") or "missing"),
+            next_action="Use POST /api/audit/motion-production-promotion-dry-run to bind the human-reviewed scope.",
+            production_required=False,
+        ),
+        _motion_durable_evidence_recipe_row(
+            "browser_visual_promotion_evidence_required",
+            False,
+            status="pending_durable_visual_promotion",
+            evidence="Local ignored reports and review are not durable visual promotion evidence.",
+            next_action="Attach reviewed release/CI visual evidence across home, next, candidates, tasks, and audit routes.",
+        ),
+        _motion_durable_evidence_recipe_row(
+            "browser_performance_trace_required",
+            False,
+            status="pending_browser_performance_trace",
+            evidence="No durable route transition, long-task, layout-shift, or radar stability trace is promoted.",
+            next_action="Attach performance traces that prove motion does not reintroduce stalls.",
+        ),
+        _motion_durable_evidence_recipe_row(
+            "reduced_motion_durable_evidence_required",
+            False,
+            status="pending_reduced_motion_durable_evidence",
+            evidence="Reduced-motion local reports must be promoted with durable review evidence before production.",
+            next_action="Promote reduced-motion route/viewport evidence alongside default-motion visual evidence.",
+        ),
+        _motion_durable_evidence_recipe_row(
+            "durable_ci_or_release_evidence_required",
+            False,
+            status="pending_durable_ci_or_release_evidence",
+            evidence="This recipe does not inspect GitHub Actions or release artifacts.",
+            next_action="Attach durable CI/release evidence in a separate explicit promotion step.",
+        ),
+        _motion_durable_evidence_recipe_row(
+            "artifact_retention_and_redaction_policy",
+            True,
+            evidence=".stock_ming_3/motion_qa remains ignored; screenshots/videos/reports are not committed as proof.",
+            next_action="Keep raw artifacts local or release-scoped, and expose only safe summaries in packets.",
+            production_required=False,
+        ),
+        _motion_durable_evidence_recipe_row(
+            "no_provider_model_github_trade_boundary",
+            True,
+            evidence="Recipe is cache-only and visual-only; it calls no providers, models, GitHub API, or trading path.",
+            next_action="Keep motion evidence separate from Tushare, DeepSeek, GitHub probes, and strategy action.",
+            production_required=False,
+        ),
+    ]
+    local_blockers = [str(row["evidence_key"]) for row in rows if row.get("blocks_local_recipe")]
+    production_blockers = [str(row["evidence_key"]) for row in rows if row.get("production_blocker")]
+    local_recipe_ready = not local_blockers
+    durable_evidence_ready = not production_blockers
+    receipt = {
+        "schema_version": "command_center_3_motion_durable_evidence_recipe.v1",
+        "status": "motion_durable_evidence_recipe_ready_production_pending"
+        if local_recipe_ready
+        else "motion_durable_evidence_recipe_blocked_local_activation",
+        "scope": "local_motion_durable_evidence_recipe_no_browser_no_ci_no_github",
+        "ltg": "LTG-14",
+        "design_target": "apple_keynote_grade_clarity_restrained_motion",
+        "local_recipe_ready": local_recipe_ready,
+        "durable_evidence_ready": durable_evidence_ready,
+        "ready_to_mark_production_motion_complete": False,
+        "production_motion_complete": False,
+        "browser_visual_qa_promoted": False,
+        "browser_performance_promoted": False,
+        "ci_evidence_complete": False,
+        "durable_ci_evidence_complete": False,
+        "local_browser_reports_available": local_reports_ready,
+        "default_and_reduced_motion_covered": default_and_reduced_ready,
+        "local_browser_qa_review_ready": review_ready,
+        "promotion_scope_bound": promotion_scope_bound,
+        "row_count": len(rows),
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+        "allowed_next_step": "attach_durable_visual_performance_reduced_motion_and_ci_release_evidence_in_explicit_promotion",
+        "not_allowed_next_steps": [
+            "treat_local_ignored_reports_as_durable_evidence",
+            "treat_button_review_as_browser_execution",
+            "treat_promotion_dry_run_as_visual_or_performance_promotion",
+            "inspect_github_actions_from_recipe",
+            "mark_production_motion_complete_from_recipe",
+            "use_motion_to_imply_trade_urgency_or_strategy_action",
+        ],
+        "cache_only": True,
+        "runs_no_commands": True,
+        "opens_no_browser": True,
+        "starts_no_servers": True,
+        "writes_no_artifacts": True,
+        "reads_ignored_local_reports_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_packets": True,
+        "rows": rows,
+        "note": "This recipe maps reviewed local LTG-14 motion evidence to the durable promotion evidence still required. It does not run browser QA, inspect CI, promote artifacts, call providers/models/GitHub, or complete production motion.",
+    }
+    return receipt, rows
+
+
 def _read_persisted_audit_packet() -> dict[str, Any]:
     try:
         packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(PACKET_KEY)
@@ -3182,6 +3378,12 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         task_id=str(persisted_promotion.get("promotion_task_id") or "") or None,
         dry_run_at=str(persisted_promotion.get("dry_run_at") or "") or None,
     )
+    motion_durable_evidence_recipe, motion_durable_evidence_rows = _motion_durable_evidence_recipe(
+        motion_browser_qa_evidence_contract,
+        motion_browser_qa_review_contract,
+        motion_production_activation_receipt,
+        motion_promotion_dry_run_receipt,
+    )
     all_ledger_rows = (endpoint_ledger_rows + task_ledger_rows)[:240]
     external_rows = [row for row in endpoint_rows + task_rows if row.get("external_calls_triggered")]
     action_risk_rows = [
@@ -3236,6 +3438,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "motion_production_activation_rows": motion_production_activation_rows,
         "motion_promotion_dry_run_receipt": motion_promotion_dry_run_receipt,
         "motion_promotion_dry_run_rows": motion_promotion_dry_run_rows,
+        "motion_durable_evidence_recipe": motion_durable_evidence_recipe,
+        "motion_durable_evidence_rows": motion_durable_evidence_rows,
         "external_call_rows": external_rows,
         "action_risk_rows": action_risk_rows,
         "missing_call_ledger_rows": missing_ledger_rows,
@@ -3323,6 +3527,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_promotion_dry_run_local_blocker_count": motion_promotion_dry_run_receipt.get("local_blocker_count", 0),
             "motion_promotion_dry_run_production_blocker_count": motion_promotion_dry_run_receipt.get("production_blocker_count", 0),
             "motion_promotion_dry_run_row_count": motion_promotion_dry_run_receipt.get("row_count", 0),
+            "motion_durable_evidence_recipe_ready": motion_durable_evidence_recipe.get("local_recipe_ready") is True,
+            "motion_durable_evidence_production_blocker_count": motion_durable_evidence_recipe.get("production_blocker_count", 0),
+            "motion_durable_evidence_row_count": motion_durable_evidence_recipe.get("row_count", 0),
             "external_call_count": len(external_rows),
             "action_risk_count": len(action_risk_rows),
             "missing_call_ledger_count": len(missing_ledger_rows),
@@ -3380,6 +3587,10 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_promotion_dry_run_does_not_open_browser": True,
             "motion_promotion_dry_run_calls_no_github_api": True,
             "motion_promotion_dry_run_is_not_production_completion": True,
+            "motion_durable_evidence_recipe_is_local": True,
+            "motion_durable_evidence_recipe_runs_no_commands": True,
+            "motion_durable_evidence_recipe_calls_no_github_api": True,
+            "motion_durable_evidence_recipe_is_not_production_completion": True,
             "contains_secret": False,
         },
         "call_ledger": [
@@ -3426,6 +3637,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "motion_promotion_dry_run_status": motion_promotion_dry_run_receipt.get("status"),
                 "motion_promotion_ready_for_local_review": motion_promotion_dry_run_receipt.get("ready_for_local_promotion_review"),
                 "motion_promotion_production_blocker_count": motion_promotion_dry_run_receipt.get("production_blocker_count"),
+                "motion_durable_evidence_recipe_status": motion_durable_evidence_recipe.get("status"),
+                "motion_durable_evidence_recipe_ready": motion_durable_evidence_recipe.get("local_recipe_ready"),
+                "motion_durable_evidence_production_blocker_count": motion_durable_evidence_recipe.get("production_blocker_count"),
                 "memory_task_count": task_persistence.get("memory_task_count", 0),
                 "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
                 "deduplicated_task_count": task_persistence.get("deduplicated_task_count", len(task_rows)),
@@ -3456,6 +3670,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_production_activation_receipt 只串联 LTG-14 下一步验收路径；不运行浏览器、不创建 CI 证据、不完成 production motion。",
             "motion_browser_qa_review_contract 只记录显式本地 artifact 审查；不运行浏览器、不创建 CI 证据、不完成生产动效。",
             "motion_promotion_dry_run_receipt 只做 LTG-14 本地推广预检；不打开浏览器、不调用 GitHub、不推广 artifact、不完成 production motion。",
+            "motion_durable_evidence_recipe 只列出本地动效证据到 durable promotion 的缺口；不运行浏览器、不读取 GitHub、不完成 production motion。",
         ],
     }
     return _json_safe(packet)

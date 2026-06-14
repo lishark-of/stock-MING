@@ -1485,6 +1485,7 @@ Productionize non-blocking next-ticket radar scans
 - On 2026-06-14, the explicit local browser runner completed two local passes after manual FastAPI/Vite startup: default motion passed 20/20 route-viewport rows with zero console errors, and reduced-motion passed 20/20 route-viewport rows with zero console errors. The button-gated Motion browser QA review reached `motion_browser_qa_review_ready_local_artifact` with zero blocking review rows in the same local app session. These reports are local ignored artifacts and still require durable review/promotion before production completion claims.
 - Mobile layout now has a responsive breakpoint so navigation no longer squeezes Command Center content or state clarity rails on narrow screens. Local default-motion and reduced-motion browser runner reports can prove a specific run, but ignored local artifacts are not durable CI or production motion completion.
 - `scripts/motion_viewport_qa_contract.py` now exposes `motion_production_stage_scope_manifest`: a local static manifest for the remaining production-motion path. It tracks motion source guardrails, state-change confirmation cues, chart/radar delta choreography, reduced-motion review, viewport visual QA, browser performance trace, local artifact review, durable CI/release evidence, production promotion review, and no-trade/no-action boundaries while keeping `production_motion_complete=false`.
+- Call Ledger Audit now exposes `motion_durable_evidence_recipe` and `motion_durable_evidence_rows`: this LTG-14 recipe maps local ignored browser reports, button-gated review, promotion dry-run scope, default/reduced-motion coverage, durable visual evidence, browser performance trace, durable CI/release evidence, artifact redaction, and no-provider/no-model/no-trade boundaries into one checklist. It keeps `production_motion_complete=false`, `browser_visual_qa_promoted=false`, `browser_performance_promoted=false`, `ci_evidence_complete=false`, and `durable_ci_evidence_complete=false`.
 - Further polish should improve clarity without distracting from risk, freshness, and decision boundaries.
 
 ### Gaps
@@ -1507,6 +1508,7 @@ Productionize non-blocking next-ticket radar scans
 - `motion_activation_receipt_ready_production_blocked` means LTG-14 has a clear next safe path; it still does not run the browser runner, perform button-gated review, promote visual/performance evidence, create durable CI proof, or complete production motion.
 - `motion_promotion_dry_run_ready_production_still_blocked` means local reviewed evidence and promotion scope are bound for human review; it still does not promote visual/performance evidence, verify remote CI, call GitHub, or complete production motion.
 - The production stage-scope manifest is a local pending checklist. It does not execute browser QA, promote local ignored artifacts, prove reduced-motion browser behavior, create durable release evidence, or mark production motion complete.
+- The durable evidence recipe is a local gap map, not execution evidence. It does not inspect GitHub Actions, run browser QA, promote visual/performance artifacts, or make local ignored reports durable.
 
 ### Implementation Phases
 
@@ -1539,6 +1541,7 @@ Productionize non-blocking next-ticket radar scans
 - `motion_browser_qa_runbook_contract.local_runbook_ready=true` only means the execution checklist is ready; it is not screenshot evidence, performance trace evidence, or production motion completion.
 - `motion_production_activation_receipt.local_activation_receipt_ready=true` only means the next safe sequence is explicit local browser runner, button-gated local review, durable visual/performance promotion, and CI/release evidence. It is not browser execution, CI evidence, visual promotion, performance promotion, or production motion completion.
 - `motion_promotion_dry_run_receipt.ready_for_local_promotion_review=true` only means the local promotion scope is bound after explicit approval and reviewed local evidence; `ready_to_mark_production_motion_complete`, `browser_visual_qa_promoted`, `browser_performance_promoted`, `ci_evidence_complete`, and `production_motion_complete` must remain false until a separate durable promotion step exists.
+- `motion_durable_evidence_recipe.local_recipe_ready=true` only means the durable evidence path is explicit. It must still keep `ready_to_mark_production_motion_complete=false`, `browser_visual_qa_promoted=false`, `browser_performance_promoted=false`, `ci_evidence_complete=false`, `durable_ci_evidence_complete=false`, and `production_motion_complete=false` until a separate promotion step attaches durable visual, performance, reduced-motion, and CI/release evidence.
 - `motion_clarity_audit.static_ready=true` is allowed only when static source checks pass.
 - `motion_production_stage_scope_manifest` contains every required production-motion stage and each row keeps `production_motion_complete=false`, `visual_qa_complete=false`, `browser_performance_verified=false`, `browser_visual_qa_promoted=false`, `browser_performance_promoted=false`, `durable_ci_evidence_complete=false`, `browser_runner_executed_by_contract=false`, `local_artifact_reviewed_for_production=false`, `changes_packet_values=false`, `changes_strategy_action=false`, `changes_price_or_position=false`, no external/model/provider/GitHub calls, and no trade execution.
 - `production_motion_complete` remains false until browser viewport and performance QA are complete.
@@ -1558,6 +1561,7 @@ Productionize non-blocking next-ticket radar scans
 - Do not treat `motion_production_activation_receipt` as browser execution, durable CI evidence, visual QA promotion, performance promotion, or production motion completion.
 - Do not treat `motion_promotion_dry_run_receipt` as browser execution, GitHub Actions proof, durable CI evidence, visual QA promotion, performance promotion, or production motion completion.
 - Do not treat `motion_production_stage_scope_manifest` as browser execution, reduced-motion browser proof, visual/performance promotion, durable release evidence, or production motion completion.
+- Do not treat `motion_durable_evidence_recipe` as browser execution, GitHub Actions proof, durable visual/performance evidence, reduced-motion proof, promotion approval, or production motion completion.
 
 ### Recommended Commit Message
 

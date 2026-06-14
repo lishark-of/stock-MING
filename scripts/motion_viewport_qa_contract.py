@@ -138,6 +138,8 @@ def build_contract() -> dict[str, Any]:
     task_receipt = read_text(DESKTOP_SRC / "components" / "TaskLaunchReceipt.tsx")
     next_chart = read_text(DESKTOP_SRC / "components" / "NextSessionChart.tsx")
     candidate_radar = read_text(DESKTOP_SRC / "routes" / "CandidateRadar.tsx")
+    audit_service = read_text(ROOT / "server" / "services" / "audit_service.py")
+    audit_page = read_text(DESKTOP_SRC / "routes" / "CallLedgerAudit.tsx")
     package_json = read_text(ROOT / "desktop" / "package.json")
     runner_source = read_text(ROOT / "scripts" / "motion_browser_qa_runner.mjs")
     audited_text = "\n".join([styles, app, packet_card, metric_grid, page_state, task_panel, task_receipt, next_chart, candidate_radar])
@@ -290,6 +292,16 @@ def build_contract() -> dict[str, Any]:
             production_stage_scope_ready,
             "Motion production stages are listed as pending direct evidence while browser execution, visual QA promotion, performance promotion, durable evidence, packet/action mutation, external calls, and trade execution stay disabled.",
         ),
+        row(
+            "motion_durable_evidence_recipe_available",
+            "command_center_3_motion_durable_evidence_recipe.v1" in audit_service
+            and "local_motion_durable_evidence_recipe_no_browser_no_ci_no_github" in audit_service
+            and "motion_durable_evidence_recipe" in audit_page
+            and "motion_durable_evidence_rows" in audit_page
+            and "mark_production_motion_complete_from_recipe" in audit_service
+            and "inspect_github_actions_from_recipe" in audit_service,
+            "Call Ledger Audit exposes the LTG-14 durable evidence recipe while keeping browser execution, GitHub inspection, and production completion blocked.",
+        ),
     ]
     blockers = [item["criterion"] for item in static_rows if item["status"] == "blocked"]
     qa_matrix = [
@@ -340,6 +352,9 @@ def build_contract() -> dict[str, Any]:
             for item in production_stage_rows
             if item.get("target_status") == "production_motion_direct_evidence_required"
             and item.get("production_motion_complete") is False
+        ),
+        "motion_durable_evidence_recipe_available": any(
+            item["criterion"] == "motion_durable_evidence_recipe_available" and item["passed"] for item in static_rows
         ),
         "motion_production_stage_scope_keys": sorted(production_stage_keys),
         "blocking_criterion_count": len(blockers),

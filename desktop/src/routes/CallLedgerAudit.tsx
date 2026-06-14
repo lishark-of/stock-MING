@@ -56,6 +56,8 @@ export default function CallLedgerAudit() {
   const motionProductionActivationRows = rows(cache.motion_production_activation_rows);
   const motionPromotionDryRun = (cache.motion_promotion_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
   const motionPromotionDryRunRows = rows(cache.motion_promotion_dry_run_rows);
+  const motionDurableEvidenceRecipe = (cache.motion_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
+  const motionDurableEvidenceRows = rows(cache.motion_durable_evidence_rows);
   const parameterizedRoutes = rows(getRouteCoverage.parameterized_local_routes);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const callLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
@@ -158,6 +160,8 @@ export default function CallLedgerAudit() {
           { label: "motion promotion", value: motionPromotionDryRun.status as string | undefined, tone: motionPromotionDryRun.ready_for_local_promotion_review === true ? "good" : "warn" },
           { label: "promotion blockers", value: counts.motion_promotion_dry_run_production_blocker_count as number | undefined, tone: Number(counts.motion_promotion_dry_run_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "promotion ready", value: counts.motion_promotion_dry_run_ready === true ? "yes" : "pending", tone: counts.motion_promotion_dry_run_ready === true ? "good" : "warn" },
+          { label: "motion durable", value: motionDurableEvidenceRecipe.status as string | undefined, tone: motionDurableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
+          { label: "durable blockers", value: counts.motion_durable_evidence_production_blocker_count as number | undefined, tone: Number(counts.motion_durable_evidence_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "audit envelope ledger", value: callLedger.length },
           { label: "audit warnings", value: cacheWarnings.length },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
@@ -373,6 +377,19 @@ export default function CallLedgerAudit() {
         {promotionReceipt ? <TaskLaunchReceipt receipt={promotionReceipt} /> : null}
         <DataLineageTable rows={[motionPromotionDryRun]} />
         <DataLineageTable rows={motionPromotionDryRunRows} />
+      </PacketCard>
+
+      <PacketCard title="Motion durable evidence recipe" subtitle="motion_durable_evidence_recipe：LTG-14 本地证据到 durable promotion 的缺口清单，不打开浏览器、不读取 GitHub" status={String(motionDurableEvidenceRecipe.status ?? "missing")}>
+        <p>scope: {String(motionDurableEvidenceRecipe.scope ?? "local_motion_durable_evidence_recipe_no_browser_no_ci_no_github")}</p>
+        <p>local_recipe_ready: {String(motionDurableEvidenceRecipe.local_recipe_ready === true)}</p>
+        <p>ready_to_mark_production_motion_complete: {String(motionDurableEvidenceRecipe.ready_to_mark_production_motion_complete === true)}</p>
+        <p>production_motion_complete: {String(motionDurableEvidenceRecipe.production_motion_complete === true)}</p>
+        <p>browser_visual_qa_promoted: {String(motionDurableEvidenceRecipe.browser_visual_qa_promoted === true)}；browser_performance_promoted: {String(motionDurableEvidenceRecipe.browser_performance_promoted === true)}；durable_ci_evidence_complete: {String(motionDurableEvidenceRecipe.durable_ci_evidence_complete === true)}</p>
+        <p>local_browser_reports_available: {String(motionDurableEvidenceRecipe.local_browser_reports_available === true)}；local_browser_qa_review_ready: {String(motionDurableEvidenceRecipe.local_browser_qa_review_ready === true)}；promotion_scope_bound: {String(motionDurableEvidenceRecipe.promotion_scope_bound === true)}</p>
+        <p>production_blocker_count: {String(motionDurableEvidenceRecipe.production_blocker_count ?? 0)}；allowed_next_step: {String(motionDurableEvidenceRecipe.allowed_next_step ?? "attach_durable_visual_performance_reduced_motion_and_ci_release_evidence_in_explicit_promotion")}</p>
+        <p>该 recipe 只列出 durable visual、performance trace、reduced-motion 和 CI/release evidence 的剩余验收路径；不能把本地 ignored 报告、按钮 review 或 dry-run 当成生产动效完成。</p>
+        <DataLineageTable rows={[motionDurableEvidenceRecipe]} />
+        <DataLineageTable rows={motionDurableEvidenceRows} />
       </PacketCard>
 
       <div className="grid">
