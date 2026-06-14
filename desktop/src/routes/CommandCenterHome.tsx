@@ -211,6 +211,7 @@ export default function CommandCenterHome() {
   const migrationLongTermGoals = migration.long_term_goal_rows as Array<Record<string, unknown>> | undefined;
   const migrationLongTermSummary = migration.long_term_goal_summary as Record<string, unknown> | undefined;
   const migrationTushareDeepseekLinkage = migration.tushare_deepseek_linkage_review as Record<string, unknown> | undefined;
+  const migrationTushareDeepseekLinkageRows = migration.tushare_deepseek_linkage_rows as Array<Record<string, unknown>> | undefined;
   const migrationPolicy = migration.api_policy as Record<string, unknown> | undefined;
   const dataHealthCounts = dataHealth.counts as Record<string, unknown> | undefined;
   const desktopRuntime = desktopPreflight.runtime as Record<string, unknown> | undefined;
@@ -410,6 +411,7 @@ export default function CommandCenterHome() {
           <p>long-term goals: {String(migrationLongTermSummary?.strict_closeout ?? "0/14")} closed, {String(migrationLongTermGoals?.length ?? 0)} tracked</p>
           <p>foundation / production acceptance: {String(migrationLongTermSummary?.foundation_progress_estimate ?? "--")} / {String(migrationLongTermSummary?.production_acceptance_estimate ?? "--")}</p>
           <p>Tushare / DeepSeek linkage: {String(migrationTushareDeepseekLinkage?.status ?? "pending")}</p>
+          <p>linkage layers / blockers: {String(migrationTushareDeepseekLinkageRows?.length ?? 0)} / {String(migrationTushareDeepseekLinkage?.blocking_row_count ?? 0)}</p>
           <p>cache only: {String(migrationPolicy?.cache_only ?? true)}</p>
           <p>external calls: {String(migrationPolicy?.external_calls_triggered ?? false)}</p>
           <JsonDetails title="迁移进度基线" data={migrationProgress ?? []} />

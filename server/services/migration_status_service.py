@@ -209,9 +209,119 @@ def _build_long_term_goal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _build_tushare_deepseek_linkage_review() -> dict[str, Any]:
+def _linkage_row(
+    *,
+    linkage_key: str,
+    layer: str,
+    status: str,
+    allowed_in_mode: str,
+    next_allowed_action: str,
+    required_evidence: list[str],
+    external_calls_triggered: bool = False,
+    tushare_called: bool = False,
+    deepseek_called: bool = False,
+    github_called: bool = False,
+    provider_execution_implemented: bool = False,
+    model_execution_implemented: bool = False,
+    production_promotion_complete: bool = False,
+    real_trading_connected: bool = False,
+) -> dict[str, Any]:
+    return {
+        "linkage_key": linkage_key,
+        "layer": layer,
+        "status": status,
+        "allowed_in_mode": allowed_in_mode,
+        "next_allowed_action": next_allowed_action,
+        "required_evidence": required_evidence,
+        "external_calls_triggered": external_calls_triggered,
+        "tushare_called": tushare_called,
+        "deepseek_called": deepseek_called,
+        "github_called": github_called,
+        "provider_execution_implemented": provider_execution_implemented,
+        "model_execution_implemented": model_execution_implemented,
+        "production_promotion_complete": production_promotion_complete,
+        "real_trading_connected": real_trading_connected,
+        "does_not_execute_trades": not real_trading_connected,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def _build_tushare_deepseek_linkage_rows() -> list[dict[str, Any]]:
+    return [
+        _linkage_row(
+            linkage_key="cache_startup_render_boundary",
+            layer="GET cache / FastAPI startup / initial React render",
+            status="offline_enforced",
+            allowed_in_mode="cache_only/manual/live_light/live_full",
+            next_allowed_action="keep initial render provider/model silent",
+            required_evidence=["cache_get_no_provider_call", "react_render_no_provider_call"],
+        ),
+        _linkage_row(
+            linkage_key="live_light_post_task_creation",
+            layer="React mounted behavior after first cache render",
+            status="allowed_only_after_opt_in_rate_limited_post_task",
+            allowed_in_mode="live_light",
+            next_allowed_action="POST /api/bootstrap/live-startup after cache render and rate-limit check",
+            required_evidence=["visible_runtime_mode", "task_id", "rate_limit_or_session_dedupe", "safe_failure"],
+        ),
+        _linkage_row(
+            linkage_key="tushare_light_provider_execution",
+            layer="provider execution inside task",
+            status="pending_real_call_ledger",
+            allowed_in_mode="manual/live_light",
+            next_allowed_action="run user-approved task for trade_cal/daily/daily_basic/moneyflow only",
+            required_evidence=["api", "provider", "request_params_safe", "row_count", "data_date", "local_fetched_at", "call_status", "error_message_safe"],
+        ),
+        _linkage_row(
+            linkage_key="deepseek_pro_after_task_execution",
+            layer="model execution after data readiness",
+            status="pending_model_ledger_and_benchmark",
+            allowed_in_mode="manual/live_light_optional",
+            next_allowed_action="run user-approved DeepSeek pro explanation after Tushare/factor/next-session cache is ready",
+            required_evidence=["model_used", "status", "token_usage", "parse_status", "cache_hit_or_miss", "input_hash", "output_hash", "six_field_sanitizer"],
+        ),
+        _linkage_row(
+            linkage_key="github_probe_boundary",
+            layer="GitHub probe",
+            status="manual_only_excluded_from_live_light_default_chain",
+            allowed_in_mode="manual",
+            next_allowed_action="keep GitHub probe button-gated and out of live_light startup",
+            required_evidence=["explicit_user_action", "no_live_light_default_probe"],
+        ),
+        _linkage_row(
+            linkage_key="production_promotion_boundary",
+            layer="production acceptance promotion",
+            status="blocked_until_provider_model_browser_and_redaction_evidence",
+            allowed_in_mode="manual_review",
+            next_allowed_action="promote only after real call ledger, model ledger, UI non-blocking evidence, redaction review, and production review",
+            required_evidence=["real_tushare_call_ledger", "deepseek_model_ledger_if_enabled", "browser_nonblocking_evidence", "ledger_redaction_review", "production_promotion_review"],
+        ),
+        _linkage_row(
+            linkage_key="real_trading_boundary",
+            layer="broker/order/trade execution",
+            status="disconnected",
+            allowed_in_mode="none",
+            next_allowed_action="keep real trading isolated in a separate future project",
+            required_evidence=["no_broker_adapter", "no_order_endpoint", "no_strategy_action_mutation"],
+        ),
+    ]
+
+
+def _build_tushare_deepseek_linkage_review(linkage_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    blocking_rows = [
+        row
+        for row in linkage_rows
+        if row.get("provider_execution_implemented") is True
+        or row.get("model_execution_implemented") is True
+        or row.get("production_promotion_complete") is True
+        or row.get("real_trading_connected") is True
+    ]
     return {
         "status": "linkage_contract_visible_provider_model_execution_pending",
+        "schema_version": "command_center_3_tushare_deepseek_linkage_review.v1",
+        "row_count": len(linkage_rows),
+        "blocking_row_count": len(blocking_rows),
         "cache_get_calls_tushare": False,
         "cache_get_calls_deepseek": False,
         "react_render_calls_tushare": False,
@@ -265,7 +375,8 @@ def build_migration_status() -> dict[str, Any]:
     loaded_at = _now_iso()
     long_term_goal_rows = [dict(item) for item in LONG_TERM_GOAL_PROGRESS]
     long_term_goal_summary = _build_long_term_goal_summary(long_term_goal_rows)
-    tushare_deepseek_linkage_review = _build_tushare_deepseek_linkage_review()
+    tushare_deepseek_linkage_rows = _build_tushare_deepseek_linkage_rows()
+    tushare_deepseek_linkage_review = _build_tushare_deepseek_linkage_review(tushare_deepseek_linkage_rows)
     return {
         "packet_key": "command_center_3_migration_status",
         "schema_version": "command_center_3_migration_status.v2",
@@ -276,6 +387,7 @@ def build_migration_status() -> dict[str, Any]:
         "long_term_goal_summary": long_term_goal_summary,
         "long_term_goal_rows": long_term_goal_rows,
         "tushare_deepseek_linkage_review": tushare_deepseek_linkage_review,
+        "tushare_deepseek_linkage_rows": tushare_deepseek_linkage_rows,
         "target_stack": list(TARGET_STACK),
         "principles": list(MIGRATION_PRINCIPLES),
         "baseline_policy": {
@@ -300,7 +412,8 @@ def build_migration_status() -> dict[str, Any]:
                 "api": "local_migration_status_cache",
                 "endpoint": "GET /api/migration/status",
                 "source_type": "user_provided_long_term_reference_baseline",
-                "row_count": len(MIGRATION_PROGRESS_BASELINE) + len(long_term_goal_rows),
+                "row_count": len(MIGRATION_PROGRESS_BASELINE) + len(long_term_goal_rows) + len(tushare_deepseek_linkage_rows),
+                "tushare_deepseek_linkage_row_count": len(tushare_deepseek_linkage_rows),
                 "local_fetched_at": loaded_at,
                 "call_status": "cache_read",
                 "external": False,

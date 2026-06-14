@@ -212,7 +212,32 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(migration["tushare_deepseek_linkage_review"]["react_render_calls_deepseek"])
         self.assertFalse(migration["tushare_deepseek_linkage_review"]["provider_execution_implemented"])
         self.assertFalse(migration["tushare_deepseek_linkage_review"]["model_execution_implemented"])
+        self.assertEqual(migration["tushare_deepseek_linkage_review"]["row_count"], 7)
+        self.assertEqual(migration["tushare_deepseek_linkage_review"]["blocking_row_count"], 0)
+        linkage_rows = {row["linkage_key"]: row for row in migration["tushare_deepseek_linkage_rows"]}
+        self.assertEqual(
+            set(linkage_rows),
+            {
+                "cache_startup_render_boundary",
+                "live_light_post_task_creation",
+                "tushare_light_provider_execution",
+                "deepseek_pro_after_task_execution",
+                "github_probe_boundary",
+                "production_promotion_boundary",
+                "real_trading_boundary",
+            },
+        )
+        self.assertEqual(linkage_rows["cache_startup_render_boundary"]["status"], "offline_enforced")
+        self.assertEqual(linkage_rows["live_light_post_task_creation"]["allowed_in_mode"], "live_light")
+        self.assertEqual(linkage_rows["tushare_light_provider_execution"]["status"], "pending_real_call_ledger")
+        self.assertEqual(linkage_rows["deepseek_pro_after_task_execution"]["status"], "pending_model_ledger_and_benchmark")
+        self.assertFalse(any(row["external_calls_triggered"] for row in linkage_rows.values()))
+        self.assertFalse(any(row["tushare_called"] for row in linkage_rows.values()))
+        self.assertFalse(any(row["deepseek_called"] for row in linkage_rows.values()))
+        self.assertFalse(any(row["github_called"] for row in linkage_rows.values()))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in linkage_rows.values()))
         self.assertEqual(migration["call_ledger"][0]["api"], "local_migration_status_cache")
+        self.assertEqual(migration["call_ledger"][0]["tushare_deepseek_linkage_row_count"], 7)
         self.assertFalse(migration["call_ledger"][0]["external"])
         self.assertIn("GET /api/migration/status", migration["warnings"][0])
         self.assertTrue(migration["baseline_policy"]["use_as_planning_baseline"])
@@ -11506,6 +11531,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(migration["data"]["tushare_deepseek_linkage_review"]["cache_get_calls_deepseek"])
         self.assertFalse(migration["data"]["tushare_deepseek_linkage_review"]["provider_execution_implemented"])
         self.assertFalse(migration["data"]["tushare_deepseek_linkage_review"]["model_execution_implemented"])
+        self.assertEqual(migration["data"]["tushare_deepseek_linkage_review"]["row_count"], 7)
+        self.assertEqual(migration["data"]["tushare_deepseek_linkage_review"]["blocking_row_count"], 0)
+        linkage_rows = {row["linkage_key"]: row for row in migration["data"]["tushare_deepseek_linkage_rows"]}
+        self.assertEqual(linkage_rows["cache_startup_render_boundary"]["status"], "offline_enforced")
+        self.assertEqual(linkage_rows["live_light_post_task_creation"]["allowed_in_mode"], "live_light")
+        self.assertEqual(linkage_rows["tushare_light_provider_execution"]["status"], "pending_real_call_ledger")
+        self.assertEqual(linkage_rows["deepseek_pro_after_task_execution"]["status"], "pending_model_ledger_and_benchmark")
+        self.assertFalse(any(row["external_calls_triggered"] for row in linkage_rows.values()))
+        self.assertFalse(any(row["tushare_called"] for row in linkage_rows.values()))
+        self.assertFalse(any(row["deepseek_called"] for row in linkage_rows.values()))
+        self.assertFalse(any(row["github_called"] for row in linkage_rows.values()))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in linkage_rows.values()))
         self.assertTrue(migration["data"]["baseline_policy"]["do_not_reestimate_every_turn"])
         self.assertIn("不使用 git add .。", migration["data"]["principles"])
         self.assertIn("不 push，等待用户确认。", migration["data"]["principles"])
@@ -11513,6 +11550,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(migration["data"]["api_policy"]["external_calls_triggered"])
         self.assertTrue(migration["data"]["api_policy"]["does_not_execute_trades"])
         self.assertEqual(migration["call_ledger"][0]["api"], "local_migration_status_cache")
+        self.assertEqual(migration["call_ledger"][0]["tushare_deepseek_linkage_row_count"], 7)
         self.assertFalse(migration["call_ledger"][0]["external"])
         self.assertIn("GET /api/migration/status", migration["warnings"][0])
 
