@@ -7161,6 +7161,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_validation_blocker_audit_stays_pending", script)
         self.assertIn("provider_sample_readiness_receipt_is_local", script)
         self.assertIn("provider_sample_activation_receipt_is_local_pending", script)
+        self.assertIn("factor_metric_scope_manifest_is_complete_and_research_only", script)
+        self.assertIn("factor_metric_scope_rows", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -7204,6 +7206,41 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["provider_sample_activation_allowed_next_step"],
             "complete_local_dataset_sample_and_forward_returns",
         )
+        required_metrics = [
+            "ic",
+            "rank_ic",
+            "icir",
+            "group_return",
+            "top_bottom",
+            "max_drawdown",
+            "neutral_ic",
+            "out_of_sample_decay",
+            "cost_model",
+        ]
+        self.assertEqual(payload["observed"]["factor_metric_scope_count"], len(required_metrics))
+        self.assertEqual(payload["observed"]["factor_metric_scope_keys"], required_metrics)
+        self.assertEqual(payload["observed"]["factor_metric_scope_provider_pending_count"], len(required_metrics))
+        metric_scope_rows = {row["metric_key"]: row for row in payload["factor_metric_scope_rows"]}
+        self.assertEqual(set(metric_scope_rows), set(required_metrics))
+        for row in metric_scope_rows.values():
+            self.assertEqual(row["scope"], "factor_test_provider_small_pool_metric_scope_manifest")
+            self.assertTrue(row["selected_by_dry_run_scope"])
+            self.assertTrue(row["required_before_production"])
+            self.assertFalse(row["provider_backed_small_pool_validation_done"])
+            self.assertFalse(row["full_market_validation_done"])
+            self.assertFalse(row["production_factor_test_validation_complete"])
+            self.assertFalse(row["enters_strategy_action"])
+            self.assertFalse(row["enters_core_action"])
+            self.assertFalse(row["enters_evidence_effects"])
+            self.assertFalse(row["enters_next_session_projection"])
+            self.assertFalse(row["frontend_computes_action"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called_by_contract"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("small_pool_acceptance_is_local_only", criteria)
         self.assertIn("research_states_stay_isolated", criteria)
@@ -7213,6 +7250,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_validation_blocker_audit_stays_pending", criteria)
         self.assertIn("provider_sample_readiness_receipt_is_local", criteria)
         self.assertIn("provider_sample_activation_receipt_is_local_pending", criteria)
+        self.assertIn("factor_metric_scope_manifest_is_complete_and_research_only", criteria)
         self.assertIn("cache_get_factor_boundary", criteria)
         self.assertIn("cache_get_exposes_provider_sample_activation_boundary", criteria)
         self.assertIn("cache_get_exposes_local_dataset_sample_boundary", criteria)

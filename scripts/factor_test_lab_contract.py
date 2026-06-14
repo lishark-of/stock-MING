@@ -49,6 +49,17 @@ PRODUCTION_PENDING_CRITERIA = {
     "neutralization_stability",
     "pit_lookahead_survivorship_controls",
 }
+FACTOR_METRIC_SCOPE_LABELS = {
+    "ic": "IC",
+    "rank_ic": "Rank IC",
+    "icir": "ICIR",
+    "group_return": "Grouped return",
+    "top_bottom": "Top-Bottom",
+    "max_drawdown": "Maximum drawdown",
+    "neutral_ic": "Neutral IC",
+    "out_of_sample_decay": "Out-of-sample decay",
+    "cost_model": "Cost model",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -105,6 +116,43 @@ def _list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
 
+def _factor_metric_scope_rows(required_metrics: list[str], selected_metrics: list[str]) -> list[dict[str, Any]]:
+    selected = set(selected_metrics)
+    return [
+        {
+            "metric_key": metric_key,
+            "metric_label": FACTOR_METRIC_SCOPE_LABELS.get(metric_key, metric_key),
+            "scope": "factor_test_provider_small_pool_metric_scope_manifest",
+            "current_status": "light_research_metric_or_local_scope_only",
+            "target_status": "provider_backed_small_pool_validation_required",
+            "selected_by_dry_run_scope": metric_key in selected,
+            "required_before_production": True,
+            "provider_backed_small_pool_validation_done": False,
+            "full_market_validation_done": False,
+            "production_factor_test_validation_complete": False,
+            "enters_strategy_action": False,
+            "enters_core_action": False,
+            "enters_evidence_effects": False,
+            "enters_next_session_projection": False,
+            "frontend_computes_action": False,
+            "external_calls_triggered": False,
+            "tushare_called_by_contract": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "required_real_evidence": [
+                "provider-backed small-pool sample rows",
+                "safe call ledger rows",
+                "multi-horizon forward-return labels",
+                "promotion review before production completion",
+            ],
+        }
+        for metric_key in required_metrics
+    ]
+
+
 def build_contract() -> dict[str, Any]:
     now = "2026-06-09T11:09:00"
     research_packet = factor_research.compute_light_mode_factor_ic_metrics(
@@ -156,6 +204,9 @@ def build_contract() -> dict[str, Any]:
         for row in dry_run_rows
         if isinstance(row, dict)
     }
+    required_metric_scope = list(factor_service.FACTOR_TEST_PROVIDER_SMALL_POOL_REQUIRED_METRICS)
+    selected_metric_scope = [str(item) for item in _list(dry_run_receipt.get("metrics"))]
+    factor_metric_scope_rows = _factor_metric_scope_rows(required_metric_scope, selected_metric_scope)
     task_catalog_by_type = {
         str(item.get("task_type") or ""): item
         for item in task_service.build_task_catalog().get("tasks", [])
@@ -388,6 +439,35 @@ def build_contract() -> dict[str, Any]:
             "Provider small-pool dry-run may issue a local scope ticket only; it must not call providers, expose credentials, or prove production validation.",
         ),
         _row(
+            "factor_metric_scope_manifest_is_complete_and_research_only",
+            [row.get("metric_key") for row in factor_metric_scope_rows] == required_metric_scope
+            and set(selected_metric_scope) == set(required_metric_scope)
+            and dry_run_receipt.get("missing_metrics") == []
+            and all(
+                isinstance(row, dict)
+                and row.get("scope") == "factor_test_provider_small_pool_metric_scope_manifest"
+                and row.get("selected_by_dry_run_scope") is True
+                and row.get("required_before_production") is True
+                and row.get("provider_backed_small_pool_validation_done") is False
+                and row.get("full_market_validation_done") is False
+                and row.get("production_factor_test_validation_complete") is False
+                and row.get("enters_strategy_action") is False
+                and row.get("enters_core_action") is False
+                and row.get("enters_evidence_effects") is False
+                and row.get("enters_next_session_projection") is False
+                and row.get("frontend_computes_action") is False
+                and row.get("external_calls_triggered") is False
+                and row.get("tushare_called_by_contract") is False
+                and row.get("deepseek_called") is False
+                and row.get("github_called") is False
+                and row.get("does_not_execute_trades") is True
+                and row.get("does_not_modify_strategy_action") is True
+                and row.get("contains_secret") is False
+                for row in factor_metric_scope_rows
+            ),
+            "Required Factor Test Lab metrics must be machine-readable as research-only scope rows while provider-backed small-pool production validation remains pending.",
+        ),
+        _row(
             "cache_get_factor_boundary",
             cache_packet.get("mode") == "light"
             and cache_production_qa.get("schema_version") == "factor_test_production_validation_qa_contract.v1"
@@ -463,6 +543,7 @@ def build_contract() -> dict[str, Any]:
             and "provider_sample_readiness_receipt_is_local" in this_script
             and "provider_sample_activation_receipt_is_local_pending" in this_script
             and "provider_small_pool_dry_run_scope_ticket_is_local" in this_script
+            and "factor_metric_scope_manifest_is_complete_and_research_only" in this_script
             and "local_dataset_sample_evidence_is_not_validation" in this_script
             and "production_factor_test_validation_complete" in this_script
             and "does_not_execute_trades" in this_script
@@ -515,8 +596,14 @@ def build_contract() -> dict[str, Any]:
             "storage_query_status": storage_query.get("status"),
             "local_dataset_sample_status": local_dataset_sample.get("status"),
             "cache_local_dataset_sample_status": cache_local_dataset_sample.get("status"),
+            "factor_metric_scope_count": len(factor_metric_scope_rows),
+            "factor_metric_scope_keys": [row.get("metric_key") for row in factor_metric_scope_rows],
+            "factor_metric_scope_provider_pending_count": sum(
+                1 for row in factor_metric_scope_rows if row.get("provider_backed_small_pool_validation_done") is False
+            ),
             "cache_call_ledger_count": len(cache_call_ledger),
         },
+        "factor_metric_scope_rows": factor_metric_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Real provider-backed small-pool and full-market Factor Test Lab validation remain pending.",
     }
