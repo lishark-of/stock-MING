@@ -254,6 +254,10 @@ export default function WorkerRuntime() {
         <p>route: POST /api/worker/synthetic-healthcheck</p>
         <p>synthetic_healthcheck_executed / healthcheck_task_dispatched: {String(visibleHealthcheck.synthetic_healthcheck_executed ?? false)} / {String(visibleHealthcheck.healthcheck_task_dispatched ?? false)}</p>
         <p>local_task_round_trip_verified / task_log_round_trip_verified: {String(visibleHealthcheck.local_task_round_trip_verified ?? false)} / {String(visibleHealthcheck.task_log_round_trip_verified ?? false)}</p>
+        <p>healthcheck_hash_algorithm: {String(visibleHealthcheck.healthcheck_hash_algorithm ?? "")}</p>
+        <p>task_identity_sha256: {String(visibleHealthcheck.task_identity_sha256 ?? "")}</p>
+        <p>readback_task_identity_sha256: {String(visibleHealthcheck.readback_task_identity_sha256 ?? "")}</p>
+        <p>task_readback_hash_matches: {String(visibleHealthcheck.task_readback_hash_matches ?? false)}</p>
         <p>celery_worker_started / redis_pinged / scheduler_started: {String(visibleHealthcheck.celery_worker_started ?? false)} / {String(visibleHealthcheck.redis_pinged ?? false)} / {String(visibleHealthcheck.scheduler_started ?? false)}</p>
         <p>production_worker_complete / activation_ready: {String(visibleHealthcheck.production_worker_complete ?? false)} / {String(visibleHealthcheck.activation_ready ?? false)}</p>
         <p>不调用 Tushare、DeepSeek 或 GitHub，不执行真实交易，不修改 strategy action；GET cache 不会自动执行 healthcheck。</p>

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import importlib.util
 import json
 import os
@@ -28,6 +29,14 @@ def _json_safe(value: Any) -> Any:
         return json.loads(json.dumps(value, ensure_ascii=False, default=str))
     except Exception:
         return {"serialization_error_safe": "worker_runtime_cache_not_json_serializable"}
+
+
+def _stable_json_text(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _json_sha256(payload: dict[str, Any]) -> str:
+    return hashlib.sha256(_stable_json_text(payload).encode("utf-8")).hexdigest()
 
 
 def _module_available(module_name: str) -> bool:
@@ -1100,6 +1109,11 @@ def _missing_worker_synthetic_healthcheck_packet() -> dict[str, Any]:
         "local_task_round_trip_verified": False,
         "task_log_round_trip_verified": False,
         "task_status_readback_verified": False,
+        "healthcheck_hash_algorithm": "",
+        "task_identity_sha256": "",
+        "readback_task_identity_sha256": "",
+        "task_readback_hash_matches": False,
+        "safe_hash_payload_fields": [],
         "sqlite_task_metadata_visible": False,
         "celery_worker_started": False,
         "celery_process_visible": False,
@@ -1150,7 +1164,13 @@ def _read_worker_synthetic_healthcheck_packet() -> dict[str, Any]:
         packet = None
     if not isinstance(packet, dict):
         return _missing_worker_synthetic_healthcheck_packet()
-    return _json_safe(packet)
+    safe_packet = _json_safe(packet)
+    safe_packet.setdefault("healthcheck_hash_algorithm", "")
+    safe_packet.setdefault("task_identity_sha256", "")
+    safe_packet.setdefault("readback_task_identity_sha256", "")
+    safe_packet.setdefault("task_readback_hash_matches", False)
+    safe_packet.setdefault("safe_hash_payload_fields", [])
+    return safe_packet
 
 
 def _synthetic_healthcheck_rows(task: dict[str, Any], readback: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -1248,6 +1268,24 @@ def _synthetic_healthcheck_rows(task: dict[str, Any], readback: dict[str, Any] |
     ]
 
 
+def _synthetic_task_identity_payload(task: dict[str, Any], *, task_log_count: int) -> dict[str, Any]:
+    return {
+        "task_id": task.get("task_id"),
+        "task_type": task.get("task_type"),
+        "status": task.get("status"),
+        "progress": task.get("progress"),
+        "current_step": task.get("current_step"),
+        "output_packet_key": task.get("output_packet_key"),
+        "task_log_count": task_log_count,
+        "external_calls_triggered": task.get("external_calls_triggered") is True,
+        "tushare_called": task.get("tushare_called") is True,
+        "deepseek_called": task.get("deepseek_called") is True,
+        "github_called": task.get("github_called") is True,
+        "does_not_execute_trades": task.get("does_not_execute_trades") is not False,
+        "does_not_modify_strategy_action": task.get("does_not_modify_strategy_action") is not False,
+    }
+
+
 def run_worker_synthetic_healthcheck(payload: Any = None) -> dict[str, Any]:
     task = task_service.create_task_record(
         "run_worker_synthetic_healthcheck",
@@ -1294,10 +1332,39 @@ def run_worker_synthetic_healthcheck(payload: Any = None) -> dict[str, Any]:
         warning="worker_synthetic_healthcheck_completed_no_external_call",
     ) or task
     readback = task_service.read_task_status(str(task.get("task_id") or ""))
-    rows = _synthetic_healthcheck_rows(task, readback)
-    blocker_rows = [row for row in rows if row.get("production_blocker")]
     task_log = task.get("task_log") if isinstance(task.get("task_log"), list) else []
     readback_log = readback.get("task_log") if isinstance(readback, dict) and isinstance(readback.get("task_log"), list) else []
+    task_identity_payload = _synthetic_task_identity_payload(task, task_log_count=len(task_log))
+    readback_identity_payload = _synthetic_task_identity_payload(readback, task_log_count=len(readback_log)) if isinstance(readback, dict) else {}
+    task_identity_sha256 = _json_sha256(task_identity_payload)
+    readback_task_identity_sha256 = _json_sha256(readback_identity_payload) if readback_identity_payload else ""
+    task_readback_hash_matches = bool(
+        readback_task_identity_sha256 and task_identity_sha256 == readback_task_identity_sha256
+    )
+    rows = _synthetic_healthcheck_rows(task, readback)
+    rows.append(
+        {
+            "criterion": "task_readback_fingerprint_matches",
+            "component": "task_runtime",
+            "status": "passed" if task_readback_hash_matches else "blocked",
+            "passed": task_readback_hash_matches,
+            "evidence": f"hash_algorithm=sha256; hash_matches={str(task_readback_hash_matches).lower()}",
+            "production_blocker": False,
+            "cache_api_can_execute": False,
+            "explicit_post_executed": True,
+            "worker_started": False,
+            "redis_pinged": False,
+            "scheduler_started": False,
+            "task_dispatched": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    )
+    blocker_rows = [row for row in rows if row.get("production_blocker")]
     packet = {
         "packet_key": SYNTHETIC_HEALTHCHECK_PACKET_KEY,
         "schema_version": SYNTHETIC_HEALTHCHECK_SCHEMA_VERSION,
@@ -1316,6 +1383,21 @@ def run_worker_synthetic_healthcheck(payload: Any = None) -> dict[str, Any]:
         "local_task_round_trip_verified": isinstance(readback, dict) and readback.get("status") == "success",
         "task_log_round_trip_verified": len(task_log) > 0 and len(readback_log) > 0,
         "task_status_readback_verified": isinstance(readback, dict),
+        "healthcheck_hash_algorithm": "sha256",
+        "task_identity_sha256": task_identity_sha256,
+        "readback_task_identity_sha256": readback_task_identity_sha256,
+        "task_readback_hash_matches": task_readback_hash_matches,
+        "safe_hash_payload_fields": [
+            "task_id",
+            "task_type",
+            "status",
+            "progress",
+            "current_step",
+            "output_packet_key",
+            "task_log_count",
+            "external/tushare/deepseek/github boundary flags",
+            "trade/action boundary flags",
+        ],
         "sqlite_task_metadata_visible": bool(readback and readback.get("storage_source") in {"memory_and_sqlite", "sqlite_meta"}),
         "task_log_count": len(task_log),
         "readback_task_log_count": len(readback_log),

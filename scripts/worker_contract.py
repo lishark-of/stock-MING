@@ -111,6 +111,27 @@ def _flag_false(contract: dict[str, Any], *keys: str) -> bool:
     return all(contract.get(key) is False for key in keys)
 
 
+def _is_sha256(value: Any) -> bool:
+    text = str(value or "")
+    return len(text) == 64 and all(char in "0123456789abcdef" for char in text.lower())
+
+
+def _synthetic_healthcheck_hash_consistent(packet: dict[str, Any]) -> bool:
+    if packet.get("synthetic_healthcheck_executed") is True:
+        return (
+            packet.get("healthcheck_hash_algorithm") == "sha256"
+            and _is_sha256(packet.get("task_identity_sha256"))
+            and _is_sha256(packet.get("readback_task_identity_sha256"))
+            and packet.get("task_readback_hash_matches") is True
+        )
+    return (
+        packet.get("healthcheck_hash_algorithm") == ""
+        and packet.get("task_identity_sha256") == ""
+        and packet.get("readback_task_identity_sha256") == ""
+        and packet.get("task_readback_hash_matches") is False
+    )
+
+
 def _read_script(path: str) -> str:
     try:
         return (PROJECT_ROOT / path).read_text(encoding="utf-8")
@@ -345,6 +366,7 @@ def build_contract() -> dict[str, Any]:
             and synthetic_healthcheck.get("schema_version") == "worker_synthetic_healthcheck.v1"
             and synthetic_healthcheck.get("scope") == "explicit_post_worker_synthetic_healthcheck_no_process_start"
             and synthetic_healthcheck.get("cache_get_external_calls") is False
+            and _synthetic_healthcheck_hash_consistent(synthetic_healthcheck)
             and synthetic_healthcheck.get("celery_worker_started") is False
             and synthetic_healthcheck.get("redis_pinged") is False
             and synthetic_healthcheck.get("scheduler_started") is False
@@ -467,6 +489,7 @@ def build_contract() -> dict[str, Any]:
             and "local_worker_contract_no_process_start" in this_script
             and "worker_production_activation_receipt.v1" in this_script
             and "worker_queue_routing_contract.v1" in this_script
+            and "task_readback_fingerprint_matches" in this_script
             and "queue_routing_contract_is_local_and_button_gated" in this_script
             and "production_activation_receipt_keeps_worker_blocked" in this_script
             and "production_worker_complete" in this_script
@@ -531,6 +554,12 @@ def build_contract() -> dict[str, Any]:
             "queue_routing_external_capable_task_count": queue_routing.get("external_capable_task_count"),
             "synthetic_healthcheck_status": synthetic_healthcheck.get("status"),
             "synthetic_healthcheck_executed": synthetic_healthcheck.get("synthetic_healthcheck_executed"),
+            "synthetic_healthcheck_hash_algorithm": synthetic_healthcheck.get("healthcheck_hash_algorithm"),
+            "synthetic_healthcheck_task_hash_present": _is_sha256(synthetic_healthcheck.get("task_identity_sha256")),
+            "synthetic_healthcheck_readback_hash_present": _is_sha256(
+                synthetic_healthcheck.get("readback_task_identity_sha256")
+            ),
+            "synthetic_healthcheck_hash_matches": synthetic_healthcheck.get("task_readback_hash_matches"),
             "activation_review_status": activation.get("status"),
             "activation_blocker_count": activation.get("activation_blocker_count"),
             "worker_production_readiness_receipt_status": readiness_receipt.get("status"),
