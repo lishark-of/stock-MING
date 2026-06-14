@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as _dt
 import hashlib
 import json
+import os
 import re
 from collections.abc import Mapping
 from pathlib import Path
@@ -25,6 +26,12 @@ LOCAL_POOL_SCAN_MODES = {"watchlist_scan", "custom_pool_scan", "full_pool_local_
 QUANT_PROJECTION_SCAN_MODE = "search_quant_projection"
 QUANT_PROJECTION_SCHEMA_VERSION = "candidate_radar_search_quant_projection_receipt.v1"
 QUANT_PROJECTION_ACTIVATION_SCHEMA_VERSION = "candidate_radar_search_quant_projection_activation_receipt.v1"
+QUANT_PROJECTION_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION = "candidate_radar_search_quant_projection_acceptance_dry_run.v1"
+QUANT_PROJECTION_ACCEPTANCE_DRY_RUN_TASK_TYPE = "run_candidate_radar_quant_projection_acceptance_dry_run"
+QUANT_PROJECTION_ACCEPTANCE_DRY_RUN_ROUTE = "POST /api/candidate-radar/quant-projection-acceptance-dry-run"
+QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS = ("trade_cal", "daily", "daily_basic", "moneyflow")
+CANDIDATE_TUSHARE_ACCEPTANCE_ENV_KEYS = ("TUSHARE_TOKEN",)
+CANDIDATE_DEEPSEEK_ACCEPTANCE_ENV_KEYS = ("DEEPSEEK_API_KEY", "DEEPSEEK_TOKEN_1", "DEEPSEEK_TOKEN_2")
 PERSISTED_TASK_SCAN_MODES = LOCAL_POOL_SCAN_MODES | {QUANT_PROJECTION_SCAN_MODE}
 FAST_SCAN_DISPLAY_CANDIDATE_LIMIT = 120
 FAST_SCAN_LOCAL_POOL_INPUT_LIMIT = 50
@@ -991,6 +998,374 @@ def _quant_projection_activation_receipt(
         "note": "This activation receipt organizes the next real search-quant projection acceptance path. It does not call providers/models and is not production completion.",
     }
     return activation_receipt, rows
+
+
+def _coerce_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on", "enabled", "approved"}:
+        return True
+    if text in {"0", "false", "no", "off", "disabled", "blocked"}:
+        return False
+    return bool(default)
+
+
+def _selected_quant_acceptance_apis(payload_safe: Mapping[str, Any], *, include_tushare: bool) -> tuple[list[str], list[str]]:
+    raw_apis = _as_list(payload_safe.get("selected_apis") or payload_safe.get("apis"))
+    if not raw_apis:
+        raw_apis = list(QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS)
+    selected: list[str] = []
+    ignored: list[str] = []
+    for item in raw_apis[:SAFE_LIST_LIMIT]:
+        api = _safe_text(item, limit=40).strip().lower()
+        if api == "trade_cal_if_needed":
+            api = "trade_cal"
+        if api in QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS and include_tushare:
+            if api not in selected:
+                selected.append(api)
+        elif api:
+            ignored.append(api)
+    if include_tushare and "trade_cal" not in selected:
+        selected = ["trade_cal"] + selected
+    return selected, ignored
+
+
+def _quant_acceptance_credential_presence_rows(
+    *,
+    include_tushare: bool,
+    include_deepseek: bool,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    specs = [
+        {
+            "provider": "tushare",
+            "required": include_tushare,
+            "env_keys": CANDIDATE_TUSHARE_ACCEPTANCE_ENV_KEYS,
+            "credential_refs": ["tushare_primary_credential"],
+        },
+        {
+            "provider": "deepseek",
+            "required": include_deepseek,
+            "env_keys": CANDIDATE_DEEPSEEK_ACCEPTANCE_ENV_KEYS,
+            "credential_refs": [
+                "deepseek_primary_credential",
+                "deepseek_secondary_credential_1",
+                "deepseek_secondary_credential_2",
+            ],
+        },
+    ]
+    rows: list[dict[str, Any]] = []
+    for spec in specs:
+        required = bool(spec["required"])
+        present = any(key in os.environ for key in spec["env_keys"])
+        status = "present_no_value_read" if present else "missing_no_value_read"
+        if not required:
+            status = "not_required_by_payload"
+        rows.append(
+            {
+                "schema_version": QUANT_PROJECTION_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
+                "provider": spec["provider"],
+                "required": required,
+                "present": bool(present and required),
+                "status": status,
+                "credential_refs": list(spec["credential_refs"]),
+                "credential_ref_count": len(spec["credential_refs"]),
+                "env_key_name_count": len(spec["env_keys"]),
+                "env_key_names_included": False,
+                "presence_check_method": "environment_key_membership_only_no_value_read",
+                "values_read": False,
+                "values_exposed": False,
+                "value_lengths_exposed": False,
+                "contains_secret": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    required_rows = [row for row in rows if row["required"]]
+    missing_rows = [row for row in required_rows if not row["present"]]
+    summary = {
+        "schema_version": QUANT_PROJECTION_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
+        "status": "all_required_env_keys_present_no_values_read"
+        if not missing_rows
+        else "required_env_key_missing_no_values_read",
+        "required_provider_count": len(required_rows),
+        "present_provider_count": len(required_rows) - len(missing_rows),
+        "missing_provider_count": len(missing_rows),
+        "presence_check_method": "environment_key_membership_only_no_value_read",
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "contains_secret": False,
+    }
+    return rows, summary
+
+
+def _quant_acceptance_scope_ticket(
+    *,
+    symbol: str,
+    selected_apis: list[str],
+    ignored_apis: list[str],
+    include_tushare: bool,
+    include_deepseek: bool,
+    user_approved: bool,
+    credential_status: str,
+) -> dict[str, Any]:
+    scope_input = {
+        "route": QUANT_PROJECTION_ACCEPTANCE_DRY_RUN_ROUTE,
+        "task_type": QUANT_PROJECTION_ACCEPTANCE_DRY_RUN_TASK_TYPE,
+        "symbol": symbol,
+        "selected_apis": selected_apis,
+        "ignored_apis": ignored_apis,
+        "include_tushare": include_tushare,
+        "include_deepseek": include_deepseek,
+        "user_approved": user_approved,
+        "credential_presence_status": credential_status,
+    }
+    serialized = json.dumps(scope_input, ensure_ascii=False, sort_keys=True, default=str)
+    scope_hash = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    return {
+        "schema_version": QUANT_PROJECTION_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
+        "scope_hash": scope_hash,
+        "scope_hash_short": scope_hash[:16],
+        "scope_hash_algorithm": "sha256",
+        "scope_hash_input": scope_input,
+        "credential_values_included": False,
+        "env_key_names_included": False,
+        "contains_secret": False,
+    }
+
+
+def _quant_projection_acceptance_row(
+    criterion: str,
+    status: str,
+    evidence: str,
+    next_action: str,
+    *,
+    passed: bool,
+    blocks_real_execution: bool,
+) -> dict[str, Any]:
+    return {
+        "schema_version": QUANT_PROJECTION_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "blocks_real_execution": bool(blocks_real_execution),
+        "evidence": evidence,
+        "next_action": next_action,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _build_quant_projection_acceptance_dry_run(
+    *,
+    quant_receipt: Mapping[str, Any],
+    activation_receipt: Mapping[str, Any],
+    payload_safe: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    receipt = _as_dict(quant_receipt)
+    activation = _as_dict(activation_receipt)
+    symbol = str(receipt.get("symbol") or "")
+    symbol_valid = receipt.get("symbol_valid") is True
+    include_tushare = _coerce_bool(payload_safe.get("include_tushare"), True)
+    include_deepseek = _coerce_bool(payload_safe.get("include_deepseek"), True)
+    user_approved = _coerce_bool(payload_safe.get("user_approved") or payload_safe.get("approved"), False)
+    selected_apis, ignored_apis = _selected_quant_acceptance_apis(payload_safe, include_tushare=include_tushare)
+    credential_rows, credential_summary = _quant_acceptance_credential_presence_rows(
+        include_tushare=include_tushare,
+        include_deepseek=include_deepseek,
+    )
+    missing_credentials = int(credential_summary.get("missing_provider_count") or 0)
+    scope_ticket = _quant_acceptance_scope_ticket(
+        symbol=symbol,
+        selected_apis=selected_apis,
+        ignored_apis=ignored_apis,
+        include_tushare=include_tushare,
+        include_deepseek=include_deepseek,
+        user_approved=user_approved,
+        credential_status=str(credential_summary.get("status") or "unknown"),
+    )
+    rows = [
+        _quant_projection_acceptance_row(
+            "activation_receipt_visible",
+            "passed" if activation.get("local_activation_receipt_ready") is True else "blocked_missing_activation_receipt",
+            f"activation_status={activation.get('status') or 'missing'}",
+            "Run local quant projection first so activation receipt is visible.",
+            passed=activation.get("local_activation_receipt_ready") is True,
+            blocks_real_execution=activation.get("local_activation_receipt_ready") is not True,
+        ),
+        _quant_projection_acceptance_row(
+            "explicit_user_approval_recorded",
+            "passed_user_approved_dry_run" if user_approved else "blocked_user_approval_required",
+            f"user_approved={user_approved}",
+            "Require explicit user approval before any provider/model acceptance dry-run can become review-ready.",
+            passed=user_approved,
+            blocks_real_execution=not user_approved,
+        ),
+        _quant_projection_acceptance_row(
+            "symbol_scope_bound",
+            "passed" if symbol_valid else "blocked_invalid_symbol",
+            f"symbol={symbol or '--'}; symbol_status={receipt.get('symbol_status') or 'unknown'}",
+            "Bind the future provider/model run to one validated A-share symbol.",
+            passed=symbol_valid,
+            blocks_real_execution=not symbol_valid,
+        ),
+        _quant_projection_acceptance_row(
+            "allowed_light_apis_only",
+            "passed_allowed_scope" if not ignored_apis else "passed_ignored_disallowed_apis",
+            f"selected_apis={selected_apis}; ignored_apis={ignored_apis}",
+            "Keep real Tushare scope limited to trade_cal, daily, daily_basic, and moneyflow.",
+            passed=True,
+            blocks_real_execution=False,
+        ),
+        _quant_projection_acceptance_row(
+            "server_credential_presence_checked",
+            "passed_no_values_read" if not missing_credentials else "blocked_missing_server_credentials",
+            f"credential_presence_status={credential_summary.get('status')}; missing={missing_credentials}",
+            "Configure missing server-side credentials, then rerun dry-run; never expose credential values.",
+            passed=not missing_credentials,
+            blocks_real_execution=bool(missing_credentials),
+        ),
+        _quant_projection_acceptance_row(
+            "tushare_call_ledger_required",
+            "pending_real_provider_ledger",
+            "Dry-run did not call Tushare; future real task must record safe call_ledger rows.",
+            "Record provider, api, request_params_safe, row_count, data_date, local_fetched_at, call_status, and safe errors.",
+            passed=False,
+            blocks_real_execution=True,
+        ),
+        _quant_projection_acceptance_row(
+            "deepseek_model_ledger_required",
+            "pending_optional_model_ledger" if include_deepseek else "skipped_not_requested",
+            "Dry-run did not call DeepSeek; optional model execution needs model ledger and sanitizer evidence.",
+            "Record model_used, token usage, parse status, input/output hash, sanitizer result, and parse_failed discard.",
+            passed=not include_deepseek,
+            blocks_real_execution=include_deepseek,
+        ),
+        _quant_projection_acceptance_row(
+            "factor_next_echarts_refresh_required",
+            "pending_local_pipeline_after_provider",
+            "Factor Quant Hub, Next Session cache, and ECharts payload were not refreshed by this dry-run.",
+            "Refresh local research caches only after provider evidence is available.",
+            passed=False,
+            blocks_real_execution=True,
+        ),
+        _quant_projection_acceptance_row(
+            "browser_nonblocking_evidence_required",
+            "pending_browser_evidence",
+            "Need evidence that React renders cache first and tracks the task without blocking or duplication.",
+            "Run browser/runtime review after real task implementation exists.",
+            passed=False,
+            blocks_real_execution=True,
+        ),
+        _quant_projection_acceptance_row(
+            "trade_action_isolation_preserved",
+            "passed_research_only",
+            "Dry-run cannot execute trades, mutate holdings, or modify strategy action.",
+            "Keep search quant projection research-only.",
+            passed=True,
+            blocks_real_execution=False,
+        ),
+        _quant_projection_acceptance_row(
+            "production_promotion_review_required",
+            "pending_promotion_review",
+            "Provider/model/cache/browser evidence still needs redaction and production promotion review.",
+            "Promote only after direct evidence exists and push gate remains green.",
+            passed=False,
+            blocks_real_execution=True,
+        ),
+    ]
+    blocking_rows = [row for row in rows if row.get("blocks_real_execution")]
+    if not symbol_valid:
+        status = "quant_projection_acceptance_dry_run_blocked_invalid_symbol"
+        allowed_next_step = "enter_valid_a_share_symbol_then_rerun_projection"
+    elif not user_approved:
+        status = "quant_projection_acceptance_dry_run_blocked_user_approval_required"
+        allowed_next_step = "rerun_dry_run_with_explicit_user_approval"
+    elif missing_credentials:
+        status = "quant_projection_acceptance_dry_run_blocked_missing_credentials"
+        allowed_next_step = "configure_server_credentials_then_rerun_dry_run"
+    else:
+        status = "quant_projection_acceptance_dry_run_ready_real_execution_still_blocked"
+        allowed_next_step = "implement_explicit_real_provider_model_quant_projection_task_bound_to_scope_ticket"
+    dry_run = {
+        "schema_version": QUANT_PROJECTION_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_search_quant_projection_provider_model_acceptance_dry_run_no_provider_or_model_call",
+        "task_type": QUANT_PROJECTION_ACCEPTANCE_DRY_RUN_TASK_TYPE,
+        "route": QUANT_PROJECTION_ACCEPTANCE_DRY_RUN_ROUTE,
+        "symbol": symbol,
+        "symbol_valid": symbol_valid,
+        "user_approved": user_approved,
+        "include_tushare": include_tushare,
+        "include_deepseek": include_deepseek,
+        "selected_apis": selected_apis,
+        "ignored_apis": ignored_apis,
+        "credential_presence_summary": credential_summary,
+        "credential_presence_rows": credential_rows,
+        "acceptance_scope_ticket": scope_ticket,
+        "acceptance_scope_hash": scope_ticket["scope_hash"],
+        "acceptance_scope_hash_short": scope_ticket["scope_hash_short"],
+        "local_dry_run_ready": symbol_valid,
+        "ready_for_user_approved_real_acceptance": bool(symbol_valid and user_approved and not missing_credentials),
+        "ready_to_execute_real_provider_model_task": False,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "factor_refresh_executed": False,
+        "next_session_refresh_executed": False,
+        "echarts_payload_refreshed": False,
+        "browser_nonblocking_evidence_complete": False,
+        "production_quant_projection_complete": False,
+        "allowed_next_step": allowed_next_step,
+        "missing_evidence_items": [
+            "explicit real provider/model quant projection task implementation",
+            "real Tushare light call ledger",
+            "optional DeepSeek pro model ledger",
+            "Factor Quant Hub refresh evidence",
+            "Next Session/ECharts refresh evidence",
+            "browser non-blocking task evidence",
+            "redaction and production promotion review",
+        ],
+        "not_allowed_next_steps": [
+            "treat dry-run as real provider/model execution",
+            "skip credential presence gate",
+            "return env key names or credential values",
+            "call Tushare or DeepSeek from React render",
+            "promote dry-run to production quant projection",
+            "turn projection into buy/sell instruction",
+            "mutate strategy action, price, holdings, or operation zones",
+        ],
+        "row_count": len(rows),
+        "blocking_phase_count": len(blocking_rows),
+        "credential_missing_provider_count": missing_credentials,
+        "credential_present_provider_count": credential_summary.get("present_provider_count", 0),
+        "credential_required_provider_count": credential_summary.get("required_provider_count", 0),
+        "rows": rows,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+    return dry_run, rows, credential_rows
 
 
 def _snapshot_with_quant_projection(
@@ -5582,6 +5957,19 @@ def _build_candidate_radar_packet(
     search_quant_projection_activation_receipt, search_quant_projection_activation_rows = (
         _quant_projection_activation_receipt(search_quant_projection_receipt)
     )
+    search_quant_projection_acceptance_dry_run_receipt = _as_dict(
+        snapshot_map.get("search_quant_projection_acceptance_dry_run_receipt")
+    )
+    search_quant_projection_acceptance_dry_run_rows = [
+        row
+        for row in _as_list(snapshot_map.get("search_quant_projection_acceptance_dry_run_rows"))
+        if isinstance(row, dict)
+    ]
+    search_quant_projection_credential_presence_rows = [
+        row
+        for row in _as_list(snapshot_map.get("search_quant_projection_credential_presence_rows"))
+        if isinstance(row, dict)
+    ]
     counts["full_pool_local_execution_row_count"] = full_pool_local_execution_receipt["row_count"]
     counts["full_pool_local_execution_candidate_count"] = full_pool_local_execution_receipt["normalized_candidate_count"]
     counts["full_pool_local_execution_production_blocker_count"] = full_pool_local_execution_receipt[
@@ -5599,6 +5987,15 @@ def _build_candidate_radar_packet(
     counts["search_quant_projection_activation_row_count"] = search_quant_projection_activation_receipt.get("row_count", 0)
     counts["search_quant_projection_activation_blocker_count"] = search_quant_projection_activation_receipt.get(
         "production_blocker_count", 0
+    )
+    counts["search_quant_projection_acceptance_dry_run_row_count"] = (
+        search_quant_projection_acceptance_dry_run_receipt.get("row_count", 0)
+    )
+    counts["search_quant_projection_acceptance_dry_run_blocking_count"] = (
+        search_quant_projection_acceptance_dry_run_receipt.get("blocking_phase_count", 0)
+    )
+    counts["search_quant_projection_acceptance_credential_missing_count"] = (
+        search_quant_projection_acceptance_dry_run_receipt.get("credential_missing_provider_count", 0)
     )
     full_pool_blocker_rows = _as_list(plan.get("blocker_rows"))
     deep_scan_blocker_rows = _as_list(deep_plan.get("blocker_rows"))
@@ -5791,6 +6188,9 @@ def _build_candidate_radar_packet(
         "search_quant_projection_rows": search_quant_projection_rows,
         "search_quant_projection_activation_receipt": search_quant_projection_activation_receipt,
         "search_quant_projection_activation_rows": search_quant_projection_activation_rows,
+        "search_quant_projection_acceptance_dry_run_receipt": search_quant_projection_acceptance_dry_run_receipt,
+        "search_quant_projection_acceptance_dry_run_rows": search_quant_projection_acceptance_dry_run_rows,
+        "search_quant_projection_credential_presence_rows": search_quant_projection_credential_presence_rows,
         "deep_scan_stage_rows": _as_list(deep_plan.get("stage_rows")),
         "deep_scan_parity_rows": _as_list(deep_plan.get("parity_rows")),
         "deep_scan_required_signal_rows": _as_list(deep_plan.get("required_signal_rows")),
@@ -5844,6 +6244,14 @@ def _build_candidate_radar_packet(
             "search_quant_projection_activation_receipt_is_local": bool(search_quant_projection_activation_receipt),
             "search_quant_projection_activation_blocks_production": bool(search_quant_projection_activation_receipt),
             "search_quant_projection_requires_tushare_deepseek_ledgers": bool(search_quant_projection_activation_receipt),
+            "search_quant_projection_acceptance_dry_run_is_button_gated": bool(
+                search_quant_projection_acceptance_dry_run_receipt
+            ),
+            "search_quant_projection_acceptance_dry_run_is_local": bool(
+                search_quant_projection_acceptance_dry_run_receipt
+            ),
+            "search_quant_projection_acceptance_dry_run_does_not_call_provider_or_model": True,
+            "search_quant_projection_acceptance_dry_run_is_not_production_completion": True,
             "does_not_run_backtest": True,
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
@@ -6033,6 +6441,18 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     counts["search_quant_projection_activation_blocker_count"] = search_quant_projection_activation_receipt.get(
         "production_blocker_count", 0
     )
+    search_quant_projection_acceptance_dry_run_receipt = _as_dict(
+        view.get("search_quant_projection_acceptance_dry_run_receipt")
+    )
+    counts["search_quant_projection_acceptance_dry_run_row_count"] = (
+        search_quant_projection_acceptance_dry_run_receipt.get("row_count", 0)
+    )
+    counts["search_quant_projection_acceptance_dry_run_blocking_count"] = (
+        search_quant_projection_acceptance_dry_run_receipt.get("blocking_phase_count", 0)
+    )
+    counts["search_quant_projection_acceptance_credential_missing_count"] = (
+        search_quant_projection_acceptance_dry_run_receipt.get("credential_missing_provider_count", 0)
+    )
     view["counts"] = counts
     policy = _as_dict(view.get("policy"))
     policy["candidate_browser_qa_evidence_reads_local_artifact_only"] = True
@@ -6060,6 +6480,14 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     policy["search_quant_projection_activation_receipt_is_local"] = bool(search_quant_projection_activation_receipt)
     policy["search_quant_projection_activation_blocks_production"] = bool(search_quant_projection_activation_receipt)
     policy["search_quant_projection_requires_tushare_deepseek_ledgers"] = bool(search_quant_projection_activation_receipt)
+    policy["search_quant_projection_acceptance_dry_run_is_button_gated"] = bool(
+        search_quant_projection_acceptance_dry_run_receipt
+    )
+    policy["search_quant_projection_acceptance_dry_run_is_local"] = bool(
+        search_quant_projection_acceptance_dry_run_receipt
+    )
+    policy["search_quant_projection_acceptance_dry_run_does_not_call_provider_or_model"] = True
+    policy["search_quant_projection_acceptance_dry_run_is_not_production_completion"] = True
     view["policy"] = policy
     warnings = _as_list(view.get("warnings"))
     first_warning = "GET /api/candidate-radar/cache 只读展示已持久化的 local scan 结果；不会自动全市场扫描。"
@@ -6286,6 +6714,130 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
         current_step=final_step,
         call_ledger=[ledger],
         warning=final_warning,
+    ) or task
+
+
+def run_candidate_quant_projection_acceptance_dry_run_task(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        QUANT_PROJECTION_ACCEPTANCE_DRY_RUN_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="candidate_radar_quant_projection_acceptance_dry_run_queued",
+        warnings=[
+            "搜票量化推演联动验收 dry-run 只做本地预检；不会调用 Tushare、DeepSeek 或 GitHub。",
+            "dry-run 只检查服务端凭据存在性，不读取、不返回 token/key 值或 env key 名。",
+            "dry-run 不执行真实交易，不修改 strategy action，不刷新 Factor/Next/ECharts。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.2,
+        current_step="building_local_quant_projection_acceptance_dry_run",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    snapshot = packet_service.load_snapshot_cache()
+    previous_packet = _read_persisted_packet()
+    safe_snapshot = _safe_value(snapshot)
+    snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
+    projection_snapshot, projection_receipt, projection_rows = _snapshot_with_quant_projection(snapshot_map, payload_safe)
+    activation_receipt, activation_rows = _quant_projection_activation_receipt(projection_receipt)
+    dry_run_receipt, dry_run_rows, credential_rows = _build_quant_projection_acceptance_dry_run(
+        quant_receipt=projection_receipt,
+        activation_receipt=activation_receipt,
+        payload_safe=payload_safe,
+    )
+    projection_snapshot["search_quant_projection_acceptance_dry_run_receipt"] = dry_run_receipt
+    projection_snapshot["search_quant_projection_acceptance_dry_run_rows"] = dry_run_rows
+    projection_snapshot["search_quant_projection_credential_presence_rows"] = credential_rows
+    request_params_safe = {
+        "scan_mode": QUANT_PROJECTION_SCAN_MODE,
+        "symbol": projection_receipt.get("symbol"),
+        "symbol_valid": projection_receipt.get("symbol_valid") is True,
+        "user_approved": dry_run_receipt.get("user_approved") is True,
+        "include_tushare": dry_run_receipt.get("include_tushare") is True,
+        "include_deepseek": dry_run_receipt.get("include_deepseek") is True,
+        "selected_apis": dry_run_receipt.get("selected_apis") or [],
+        "ignored_apis": dry_run_receipt.get("ignored_apis") or [],
+        "credential_required_provider_count": dry_run_receipt.get("credential_required_provider_count", 0),
+        "credential_present_provider_count": dry_run_receipt.get("credential_present_provider_count", 0),
+        "credential_missing_provider_count": dry_run_receipt.get("credential_missing_provider_count", 0),
+        "acceptance_scope_hash_short": dry_run_receipt.get("acceptance_scope_hash_short"),
+        "external_sources_allowed": False,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "production_quant_projection_complete": False,
+    }
+    packet = _build_candidate_radar_packet(
+        projection_snapshot,
+        mode=QUANT_PROJECTION_SCAN_MODE,
+        cache_source="search_quant_projection_acceptance_dry_run_task",
+        scan_mode=QUANT_PROJECTION_SCAN_MODE,
+        request_params_safe=request_params_safe,
+        previous_packet=previous_packet,
+    )
+    ledger = _candidate_call_ledger_row(
+        api="local_candidate_radar_quant_projection_acceptance_dry_run",
+        source_snapshot="local_search_payload",
+        row_count=len(dry_run_rows),
+        call_status=str(dry_run_receipt.get("status") or "quant_projection_acceptance_dry_run_recorded_no_external_call"),
+        request_params_safe=request_params_safe,
+    )
+    packet["task_id"] = task["task_id"]
+    packet["search_quant_projection_acceptance_dry_run_completed_at"] = _now_iso()
+    packet["search_quant_projection_receipt"] = projection_receipt
+    packet["search_quant_projection_rows"] = projection_rows
+    packet["search_quant_projection_activation_receipt"] = activation_receipt
+    packet["search_quant_projection_activation_rows"] = activation_rows
+    packet["search_quant_projection_acceptance_dry_run_receipt"] = dry_run_receipt
+    packet["search_quant_projection_acceptance_dry_run_rows"] = dry_run_rows
+    packet["search_quant_projection_credential_presence_rows"] = credential_rows
+    packet_counts = _as_dict(packet.get("counts"))
+    packet_counts["search_quant_projection_acceptance_dry_run_row_count"] = dry_run_receipt.get("row_count", 0)
+    packet_counts["search_quant_projection_acceptance_dry_run_blocking_count"] = dry_run_receipt.get(
+        "blocking_phase_count", 0
+    )
+    packet_counts["search_quant_projection_acceptance_credential_missing_count"] = dry_run_receipt.get(
+        "credential_missing_provider_count", 0
+    )
+    packet["counts"] = packet_counts
+    packet_policy = _as_dict(packet.get("policy"))
+    packet_policy["search_quant_projection_acceptance_dry_run_is_button_gated"] = True
+    packet_policy["search_quant_projection_acceptance_dry_run_is_local"] = True
+    packet_policy["search_quant_projection_acceptance_dry_run_does_not_call_provider_or_model"] = True
+    packet_policy["search_quant_projection_acceptance_dry_run_is_not_production_completion"] = True
+    packet["policy"] = packet_policy
+    packet["call_ledger"] = [ledger] + [
+        row for row in _as_list(projection_receipt.get("call_ledger")) if isinstance(row, dict)
+    ]
+    packet["warnings"] = [
+        "搜票量化推演联动验收 dry-run 已写入本地预检；真实 Tushare / DeepSeek / Factor / Next / ECharts 仍未执行。"
+    ] + [warning for warning in _as_list(packet.get("warnings")) if "搜票量化推演联动验收" not in str(warning)]
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
+    except Exception:
+        ledger["call_status"] = "quant_projection_acceptance_dry_run_storage_write_failed"
+        ledger["error_message_safe"] = "candidate_radar_quant_projection_acceptance_dry_run_sqlite_write_failed"
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="candidate_radar_quant_projection_acceptance_dry_run_storage_write_failed",
+            error_message_safe="candidate_radar_quant_projection_acceptance_dry_run_sqlite_write_failed",
+            call_ledger=[ledger],
+            warning="candidate_radar_quant_projection_acceptance_dry_run_failed_no_external_call",
+        ) or task
+
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="candidate_radar_quant_projection_acceptance_dry_run_ready",
+        call_ledger=[ledger],
+        warning="candidate_radar_quant_projection_acceptance_dry_run_ready_no_external_call",
     ) or task
 
 

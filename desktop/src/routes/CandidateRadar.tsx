@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarQuantProjection, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
+import { getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -44,6 +44,18 @@ export default function CandidateRadar() {
       symbol: searchSymbol,
       include_tushare: true,
       include_deepseek: true,
+      requested_by: "candidate_radar_page"
+    }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
+  const launchQuantProjectionAcceptanceDryRun = () =>
+    void postCandidateRadarQuantProjectionAcceptanceDryRun({
+      scan_mode: "search_quant_projection",
+      symbol: searchSymbol || String(searchQuantProjectionReceipt.symbol ?? ""),
+      include_tushare: true,
+      include_deepseek: true,
+      user_approved: true,
       requested_by: "candidate_radar_page"
     }).then((res) => {
       setTaskReceipt(res);
@@ -101,6 +113,7 @@ export default function CandidateRadar() {
   const quickScanReceipt = (cache.quick_scan_execution_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionReceipt = (cache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionActivation = (cache.search_quant_projection_activation_receipt as Record<string, unknown> | undefined) ?? {};
+  const searchQuantProjectionAcceptanceDryRun = (cache.search_quant_projection_acceptance_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
   const fastScanRuntimeBudget = (cache.fast_scan_runtime_budget_contract as Record<string, unknown> | undefined) ?? {};
   const fastScanReadinessAudit = (cache.fast_scan_readiness_audit as Record<string, unknown> | undefined) ?? {};
   const noFeatureLossAcceptance = (cache.no_feature_loss_acceptance_contract as Record<string, unknown> | undefined) ?? {};
@@ -135,6 +148,8 @@ export default function CandidateRadar() {
   const quickScanReceiptRows = rows(cache.quick_scan_execution_receipt_rows);
   const searchQuantProjectionRows = rows(cache.search_quant_projection_rows);
   const searchQuantProjectionActivationRows = rows(cache.search_quant_projection_activation_rows);
+  const searchQuantProjectionAcceptanceDryRunRows = rows(cache.search_quant_projection_acceptance_dry_run_rows);
+  const searchQuantProjectionCredentialRows = rows(cache.search_quant_projection_credential_presence_rows);
   const fastScanRuntimeBudgetRows = rows(cache.fast_scan_runtime_budget_rows);
   const fastScanReadinessRows = rows(cache.fast_scan_readiness_rows);
   const noFeatureLossAcceptanceRows = rows(cache.no_feature_loss_acceptance_rows);
@@ -195,6 +210,9 @@ export default function CandidateRadar() {
           { label: "quant rows", value: counts.search_quant_projection_row_count as number | undefined },
           { label: "quant activation", value: String(searchQuantProjectionActivation.status ?? "missing"), tone: searchQuantProjectionActivation.local_activation_receipt_ready === true ? "good" : "warn" },
           { label: "quant activation blockers", value: counts.search_quant_projection_activation_blocker_count as number | undefined, tone: Number(counts.search_quant_projection_activation_blocker_count ?? 0) ? "warn" : "good" },
+          { label: "quant dry-run", value: String(searchQuantProjectionAcceptanceDryRun.status ?? "missing"), tone: searchQuantProjectionAcceptanceDryRun.ready_for_user_approved_real_acceptance === true ? "good" : "warn" },
+          { label: "dry-run blockers", value: counts.search_quant_projection_acceptance_dry_run_blocking_count as number | undefined, tone: Number(counts.search_quant_projection_acceptance_dry_run_blocking_count ?? 0) ? "warn" : "good" },
+          { label: "credential missing", value: counts.search_quant_projection_acceptance_credential_missing_count as number | undefined, tone: Number(counts.search_quant_projection_acceptance_credential_missing_count ?? 0) ? "warn" : "good" },
           { label: "fast readiness", value: String(fastScanReadinessAudit.status ?? "missing"), tone: fastScanReadinessAudit.local_fast_scan_ready === true ? "good" : "warn" },
           { label: "fast blockers", value: counts.fast_scan_readiness_blocker_count as number | undefined, tone: Number(counts.fast_scan_readiness_blocker_count ?? 0) ? "bad" : "good" },
           { label: "no-loss QA", value: String(noFeatureLossAcceptance.status ?? "missing"), tone: noFeatureLossAcceptance.local_no_feature_loss_contract_ready === true ? "good" : "warn" },
@@ -312,6 +330,9 @@ export default function CandidateRadar() {
         </PacketCard>
 
         <PacketCard title="Tushare/DeepSeek 联动审查" subtitle="search_quant_projection_activation_receipt / rows；只组织下一步验收，不代表真实外联完成" status={String(searchQuantProjectionActivation.status ?? "missing")}>
+          <div className="actions">
+            <button onClick={launchQuantProjectionAcceptanceDryRun}>运行联动 dry-run</button>
+          </div>
           <p>local_activation_receipt_ready: {String(searchQuantProjectionActivation.local_activation_receipt_ready === true)}</p>
           <p>allowed_next_step: {String(searchQuantProjectionActivation.allowed_next_step ?? "--")}</p>
           <p>ready_for_real_provider_model_projection: {String(searchQuantProjectionActivation.ready_for_real_provider_model_projection === true)}；production_quant_projection_complete: {String(searchQuantProjectionActivation.production_quant_projection_complete === true)}</p>
@@ -321,6 +342,12 @@ export default function CandidateRadar() {
           <p>这个收据把真实 Tushare light call_ledger、可选 DeepSeek pro model_ledger、Factor/Next/ECharts 刷新、浏览器非阻塞证据和 promotion review 分层列出；它不会从 render 调 provider，也不会生成交易指令。</p>
           <DataLineageTable rows={objectRow(searchQuantProjectionActivation)} />
           <DataLineageTable rows={searchQuantProjectionActivationRows} />
+          <p>search_quant_projection_acceptance_dry_run_receipt: {String(searchQuantProjectionAcceptanceDryRun.status ?? "missing")}；ready_for_user_approved_real_acceptance: {String(searchQuantProjectionAcceptanceDryRun.ready_for_user_approved_real_acceptance === true)}</p>
+          <p>acceptance_scope_hash_short: {String(searchQuantProjectionAcceptanceDryRun.acceptance_scope_hash_short ?? "--")}；credential_missing_provider_count: {String(searchQuantProjectionAcceptanceDryRun.credential_missing_provider_count ?? "--")}</p>
+          <p>credential_values_read: {String(searchQuantProjectionAcceptanceDryRun.credential_values_read === true)}；credential_values_exposed: {String(searchQuantProjectionAcceptanceDryRun.credential_values_exposed === true)}；env_key_names_included: {String(searchQuantProjectionAcceptanceDryRun.env_key_names_included === true)}</p>
+          <DataLineageTable rows={objectRow(searchQuantProjectionAcceptanceDryRun)} />
+          <DataLineageTable rows={searchQuantProjectionAcceptanceDryRunRows} />
+          <DataLineageTable rows={searchQuantProjectionCredentialRows} />
         </PacketCard>
 
         <PacketCard title="快速雷达扫描" subtitle="POST /api/candidate-radar/scan-quick 只读取本地 snapshot/cache" status={String(scanCoverage.coverage_status ?? "cache")}>

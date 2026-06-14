@@ -30,6 +30,12 @@ def project_candidate_radar_quant(payload: dict[str, Any] | None = None) -> dict
     return task_envelope(task)
 
 
+@router.post("/quant-projection-acceptance-dry-run")
+def dry_run_candidate_radar_quant_acceptance(payload: dict[str, Any] | None = None) -> dict:
+    task = candidate_service.run_candidate_quant_projection_acceptance_dry_run_task(payload)
+    return task_envelope(task)
+
+
 @router.post("/full-pool-plan")
 def plan_candidate_radar_full_pool(payload: dict[str, Any] | None = None) -> dict:
     task = candidate_service.run_candidate_full_pool_plan_task(payload)

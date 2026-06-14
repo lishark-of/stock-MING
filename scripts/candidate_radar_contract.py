@@ -28,6 +28,7 @@ from server.services import candidate_service, packet_service, task_service  # n
 REQUIRED_TASK_TYPES = {
     "run_candidate_radar_quick_scan",
     "run_candidate_radar_quant_projection",
+    "run_candidate_radar_quant_projection_acceptance_dry_run",
     "run_candidate_radar_full_pool_plan",
     "run_candidate_radar_full_pool_local_scan",
     "run_candidate_radar_deep_scan_plan",
@@ -203,6 +204,20 @@ def build_contract() -> dict[str, Any]:
             "external_sources_allowed": False,
         },
     )
+    dry_run_receipt, dry_run_rows, credential_rows = candidate_service._build_quant_projection_acceptance_dry_run(
+        quant_receipt=_dict(quant_packet.get("search_quant_projection_receipt")),
+        activation_receipt=_dict(quant_packet.get("search_quant_projection_activation_receipt")),
+        payload_safe={
+            "symbol": "000001",
+            "include_tushare": True,
+            "include_deepseek": True,
+            "user_approved": True,
+            "selected_apis": ["trade_cal", "daily", "daily_basic", "moneyflow", "top_inst"],
+        },
+    )
+    quant_packet["search_quant_projection_acceptance_dry_run_receipt"] = dry_run_receipt
+    quant_packet["search_quant_projection_acceptance_dry_run_rows"] = dry_run_rows
+    quant_packet["search_quant_projection_credential_presence_rows"] = credential_rows
     readiness = _dict(cache_packet.get("fast_scan_readiness_audit"))
     runtime_budget = _dict(cache_packet.get("fast_scan_runtime_budget_contract"))
     no_loss = _dict(cache_packet.get("no_feature_loss_acceptance_contract"))
@@ -267,6 +282,19 @@ def build_contract() -> dict[str, Any]:
         for row in _list(quant_packet.get("search_quant_projection_activation_rows"))
         if isinstance(row, dict)
     }
+    search_quant_projection_acceptance_dry_run = _dict(
+        quant_packet.get("search_quant_projection_acceptance_dry_run_receipt")
+    )
+    search_quant_projection_acceptance_dry_run_rows = {
+        str(row.get("criterion") or ""): row
+        for row in _list(quant_packet.get("search_quant_projection_acceptance_dry_run_rows"))
+        if isinstance(row, dict)
+    }
+    search_quant_projection_credential_rows = {
+        str(row.get("provider") or ""): row
+        for row in _list(quant_packet.get("search_quant_projection_credential_presence_rows"))
+        if isinstance(row, dict)
+    }
     browser_qa_evidence = _dict(cache_packet.get("candidate_browser_qa_evidence_summary"))
     browser_qa_review = _dict(cache_packet.get("candidate_browser_qa_review_contract"))
     policy = _dict(cache_packet.get("policy"))
@@ -304,6 +332,29 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_candidate_radar_quant_projection"].get("provider_execution_implemented") is False
             and task_rows["run_candidate_radar_quant_projection"].get("model_execution_implemented") is False
             and task_rows["run_candidate_radar_quant_projection"].get("production_quant_projection_complete") is False
+            and task_rows["run_candidate_radar_quant_projection_acceptance_dry_run"].get("route")
+            == "POST /api/candidate-radar/quant-projection-acceptance-dry-run"
+            and task_rows["run_candidate_radar_quant_projection_acceptance_dry_run"].get("local_dry_run_only") is True
+            and task_rows["run_candidate_radar_quant_projection_acceptance_dry_run"].get("user_approval_required")
+            is True
+            and task_rows["run_candidate_radar_quant_projection_acceptance_dry_run"].get("server_secret_values_read")
+            is False
+            and task_rows["run_candidate_radar_quant_projection_acceptance_dry_run"].get("env_key_names_exposed")
+            is False
+            and task_rows["run_candidate_radar_quant_projection_acceptance_dry_run"].get("credential_values_exposed")
+            is False
+            and task_rows["run_candidate_radar_quant_projection_acceptance_dry_run"].get("tushare_called") is False
+            and task_rows["run_candidate_radar_quant_projection_acceptance_dry_run"].get("deepseek_called") is False
+            and task_rows["run_candidate_radar_quant_projection_acceptance_dry_run"].get(
+                "provider_execution_implemented"
+            )
+            is False
+            and task_rows["run_candidate_radar_quant_projection_acceptance_dry_run"].get("model_execution_implemented")
+            is False
+            and task_rows["run_candidate_radar_quant_projection_acceptance_dry_run"].get(
+                "production_quant_projection_complete"
+            )
+            is False
             and task_rows["run_candidate_radar_full_pool_plan"].get("route") == "POST /api/candidate-radar/full-pool-plan"
             and task_rows["run_candidate_radar_full_pool_plan"].get("plan_only") is True
             and task_rows["run_candidate_radar_full_pool_plan"].get("full_pool_scan_done") is False
@@ -481,6 +532,70 @@ def build_contract() -> dict[str, Any]:
             and "Tushare/DeepSeek 联动审查" in candidate_frontend
             and "allowed_next_step" in candidate_frontend,
             "Search quant projection activation must keep Tushare/DeepSeek linkage as a visible acceptance checklist, not provider/model execution or production promotion.",
+        ),
+        _row(
+            "search_quant_projection_acceptance_dry_run_is_local_preflight",
+            search_quant_projection_acceptance_dry_run.get("schema_version")
+            == "candidate_radar_search_quant_projection_acceptance_dry_run.v1"
+            and search_quant_projection_acceptance_dry_run.get("status")
+            in {
+                "quant_projection_acceptance_dry_run_ready_real_execution_still_blocked",
+                "quant_projection_acceptance_dry_run_blocked_missing_credentials",
+            }
+            and search_quant_projection_acceptance_dry_run.get("route")
+            == "POST /api/candidate-radar/quant-projection-acceptance-dry-run"
+            and search_quant_projection_acceptance_dry_run.get("symbol") == "000001.SZ"
+            and search_quant_projection_acceptance_dry_run.get("user_approved") is True
+            and search_quant_projection_acceptance_dry_run.get("include_tushare") is True
+            and search_quant_projection_acceptance_dry_run.get("include_deepseek") is True
+            and search_quant_projection_acceptance_dry_run.get("selected_apis")
+            == ["trade_cal", "daily", "daily_basic", "moneyflow"]
+            and search_quant_projection_acceptance_dry_run.get("ignored_apis") == ["top_inst"]
+            and search_quant_projection_acceptance_dry_run.get("ready_to_execute_real_provider_model_task") is False
+            and search_quant_projection_acceptance_dry_run.get("provider_execution_implemented") is False
+            and search_quant_projection_acceptance_dry_run.get("model_execution_implemented") is False
+            and search_quant_projection_acceptance_dry_run.get("production_quant_projection_complete") is False
+            and search_quant_projection_acceptance_dry_run.get("credential_values_read") is False
+            and search_quant_projection_acceptance_dry_run.get("credential_values_exposed") is False
+            and search_quant_projection_acceptance_dry_run.get("env_key_names_included") is False
+            and _dict(search_quant_projection_acceptance_dry_run.get("acceptance_scope_ticket")).get(
+                "credential_values_included"
+            )
+            is False
+            and _dict(search_quant_projection_acceptance_dry_run.get("acceptance_scope_ticket")).get(
+                "env_key_names_included"
+            )
+            is False
+            and _dict(search_quant_projection_acceptance_dry_run_rows.get("activation_receipt_visible")).get("passed")
+            is True
+            and _dict(search_quant_projection_acceptance_dry_run_rows.get("explicit_user_approval_recorded")).get(
+                "passed"
+            )
+            is True
+            and _dict(search_quant_projection_acceptance_dry_run_rows.get("tushare_call_ledger_required")).get(
+                "blocks_real_execution"
+            )
+            is True
+            and _dict(search_quant_projection_acceptance_dry_run_rows.get("deepseek_model_ledger_required")).get(
+                "blocks_real_execution"
+            )
+            is True
+            and _dict(search_quant_projection_credential_rows.get("tushare")).get("values_read") is False
+            and _dict(search_quant_projection_credential_rows.get("deepseek")).get("values_exposed") is False
+            and _flag_false(
+                search_quant_projection_acceptance_dry_run,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and search_quant_projection_acceptance_dry_run.get("does_not_execute_trades") is True
+            and search_quant_projection_acceptance_dry_run.get("does_not_modify_strategy_action") is True
+            and search_quant_projection_acceptance_dry_run.get("candidate_is_not_buy_instruction") is True
+            and "postCandidateRadarQuantProjectionAcceptanceDryRun" in candidate_frontend
+            and "search_quant_projection_acceptance_dry_run_receipt" in candidate_frontend
+            and "search_quant_projection_credential_presence_rows" in candidate_frontend,
+            "Search quant projection acceptance dry-run must be explicit, local, secret-safe, and blocked from being treated as provider/model execution.",
         ),
         _row(
             "fast_scan_readiness_is_local_pending",
@@ -859,6 +974,7 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_deep_scan_local_review_receipt.v1" in this_script
             and "candidate_radar_search_quant_projection_receipt.v1" in this_script
             and "candidate_radar_search_quant_projection_activation_receipt.v1" in this_script
+            and "candidate_radar_search_quant_projection_acceptance_dry_run.v1" in this_script
             and "candidate_radar_production_activation_receipt.v1" in this_script
             and "candidate_is_not_buy_instruction" in this_script
             and ("request" + "s") not in this_script
@@ -893,6 +1009,10 @@ def build_contract() -> dict[str, Any]:
         "search_quant_projection_receipt_ready": search_quant_projection_receipt.get("local_receipt_ready") is True,
         "search_quant_projection_activation_receipt_ready": search_quant_projection_activation.get(
             "local_activation_receipt_ready"
+        )
+        is True,
+        "search_quant_projection_acceptance_dry_run_ready": search_quant_projection_acceptance_dry_run.get(
+            "local_dry_run_ready"
         )
         is True,
         "cache_only": True,

@@ -8224,7 +8224,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 30)
+        self.assertEqual(catalog["task_count"], 31)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -8243,7 +8243,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 30)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 31)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -8254,8 +8254,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 32)
-        self.assertEqual(route_coverage["task_creation_route_count"], 30)
+        self.assertEqual(route_coverage["known_post_route_count"], 33)
+        self.assertEqual(route_coverage["task_creation_route_count"], 31)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -8264,11 +8264,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 30)
+        self.assertEqual(implementation_status["task_count"], 31)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 27)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 28)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 28)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 29)
         self.assertEqual(implementation_status["external_capable_task_count"], 6)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -8287,6 +8287,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_next_session_browser_qa_review",
                 "run_candidate_radar_quick_scan",
                 "run_candidate_radar_quant_projection",
+                "run_candidate_radar_quant_projection_acceptance_dry_run",
                 "run_candidate_radar_full_pool_plan",
                 "run_candidate_radar_full_pool_local_scan",
                 "run_candidate_radar_deep_scan_plan",
@@ -8320,6 +8321,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_next_session_browser_qa_review",
                 "run_candidate_radar_quick_scan",
                 "run_candidate_radar_quant_projection",
+                "run_candidate_radar_quant_projection_acceptance_dry_run",
                 "run_candidate_radar_full_pool_plan",
                 "run_candidate_radar_full_pool_local_scan",
                 "run_candidate_radar_deep_scan_plan",
@@ -8595,6 +8597,47 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(by_type["run_candidate_radar_quant_projection"]["page_render_starts_deep_scan"])
         self.assertTrue(by_type["run_candidate_radar_quant_projection"]["candidate_is_not_buy_instruction"])
         self.assertTrue(by_type["run_candidate_radar_quant_projection"]["call_ledger_required"])
+        self.assertEqual(
+            by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["route"],
+            "POST /api/candidate-radar/quant-projection-acceptance-dry-run",
+        )
+        self.assertEqual(
+            by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["current_backend"],
+            "local_preflight_pipeline",
+        )
+        self.assertEqual(by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["possible_external_sources"], [])
+        self.assertEqual(
+            by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["future_external_sources"],
+            ["tushare", "deepseek"],
+        )
+        self.assertEqual(
+            by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["external_call_policy"],
+            "local_quant_projection_acceptance_dry_run_no_external_call",
+        )
+        self.assertTrue(by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["local_dry_run_only"])
+        self.assertTrue(by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["user_approval_required"])
+        self.assertEqual(
+            by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["server_secret_presence_check"],
+            "environment_key_membership_only_no_value_read",
+        )
+        self.assertFalse(by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["server_secret_values_read"])
+        self.assertFalse(by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["env_key_names_exposed"])
+        self.assertFalse(by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["credential_values_exposed"])
+        self.assertEqual(
+            by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["allowed_tushare_apis"],
+            ["trade_cal", "daily", "daily_basic", "moneyflow"],
+        )
+        self.assertFalse(by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["tushare_called"])
+        self.assertFalse(by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["deepseek_called"])
+        self.assertFalse(by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["provider_execution_implemented"])
+        self.assertFalse(by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["model_execution_implemented"])
+        self.assertFalse(by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["production_quant_projection_complete"])
+        self.assertTrue(by_type["run_candidate_radar_quant_projection_acceptance_dry_run"]["call_ledger_required"])
+        self.assertTrue(
+            by_type["run_candidate_radar_quant_projection_acceptance_dry_run"][
+                "model_ledger_required_when_deepseek_enabled"
+            ]
+        )
         self.assertEqual(by_type["run_candidate_radar_full_pool_plan"]["route"], "POST /api/candidate-radar/full-pool-plan")
         self.assertEqual(by_type["run_candidate_radar_full_pool_plan"]["current_backend"], "local_cache_pipeline")
         self.assertEqual(by_type["run_candidate_radar_full_pool_plan"]["possible_external_sources"], [])
@@ -8955,6 +8998,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/factor-quant/deepseek-explain", discovered_routes)
         self.assertIn("POST /api/candidate-radar/scan-quick", discovered_routes)
         self.assertIn("POST /api/candidate-radar/quant-projection", discovered_routes)
+        self.assertIn("POST /api/candidate-radar/quant-projection-acceptance-dry-run", discovered_routes)
         self.assertIn("POST /api/candidate-radar/full-pool-plan", discovered_routes)
         self.assertIn("POST /api/candidate-radar/full-pool-local-scan", discovered_routes)
         self.assertIn("POST /api/candidate-radar/deep-scan-plan", discovered_routes)
@@ -8989,16 +9033,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 27)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 28)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 28)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 29)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 27)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 28)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 28)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 29)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("refresh_factor_data", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("command_center_live_bootstrap", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -9006,6 +9050,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("run_factor_light", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_universe_research_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_candidate_radar_full_pool_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
+        self.assertIn(
+            "run_candidate_radar_quant_projection_acceptance_dry_run",
+            packet["task_implementation_status"]["local_pipeline_task_types"],
+        )
         self.assertIn("run_candidate_radar_full_pool_local_scan", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_candidate_radar_quant_projection", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_candidate_radar_deep_scan_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -9352,9 +9400,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 27)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 28)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 28)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 29)
         self.assertTrue(packet["policy"]["does_not_ping_redis"])
         self.assertTrue(packet["policy"]["does_not_start_celery_worker"])
         self.assertTrue(packet["policy"]["does_not_start_scheduler"])
@@ -9498,9 +9546,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 27)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 28)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 28)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 29)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -9531,9 +9579,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 27)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 28)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 28)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 29)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("refresh_factor_data", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("command_center_live_bootstrap", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -9541,6 +9589,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("run_factor_light", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_universe_research_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_candidate_radar_full_pool_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
+        self.assertIn(
+            "run_candidate_radar_quant_projection_acceptance_dry_run",
+            packet["task_implementation_status"]["local_pipeline_task_types"],
+        )
         self.assertIn("run_candidate_radar_quant_projection", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_candidate_radar_deep_scan_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_candidate_radar_deep_scan_local_review", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -11343,13 +11395,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 30)
+        self.assertEqual(task_catalog["data"]["task_count"], 31)
         self.assertIn("POST /api/bootstrap/live-startup", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-research-plan", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/next-session/browser-qa-review", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/tasks/refresh-tushare-facts", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/candidate-radar/scan-quick", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/candidate-radar/quant-projection", task_catalog["data"]["route_coverage"]["known_post_routes"])
+        self.assertIn(
+            "POST /api/candidate-radar/quant-projection-acceptance-dry-run",
+            task_catalog["data"]["route_coverage"]["known_post_routes"],
+        )
         self.assertIn("POST /api/candidate-radar/full-pool-plan", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn(
             "POST /api/candidate-radar/full-pool-local-scan",
@@ -12740,6 +12796,106 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["does_not_modify_holdings"])
         self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
         self.assertIn("GET /api/candidate-radar/cache", cache["warnings"][0])
+
+    def test_candidate_radar_quant_projection_acceptance_dry_run_is_button_gated_local_preflight(self):
+        self._with_meta_store()
+        self._with_bootstrap_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE", DEEPSEEK_API_KEY="REAL_DEEPSEEK_SECRET_VALUE")
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "候选缓存"},
+                "data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"},
+            }
+        )
+
+        response = self.client.post(
+            "/api/candidate-radar/quant-projection-acceptance-dry-run",
+            json={
+                "symbol": "002008",
+                "include_tushare": True,
+                "include_deepseek": True,
+                "user_approved": True,
+                "selected_apis": ["trade_cal", "daily", "daily_basic", "moneyflow", "top_inst"],
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["task_type"], "run_candidate_radar_quant_projection_acceptance_dry_run")
+        self.assertEqual(task["current_step"], "candidate_radar_quant_projection_acceptance_dry_run_ready")
+        self.assertEqual(task["call_ledger"][0]["api"], "local_candidate_radar_quant_projection_acceptance_dry_run")
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["symbol"], "002008.SZ")
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["credential_missing_provider_count"], 0)
+        self.assertIn("acceptance_scope_hash_short", task["call_ledger"][0]["request_params_safe"])
+        self.assert_local_ledger_boundary(task["call_ledger"][0])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+        cache = self.client.get("/api/candidate-radar/cache").json()
+        self.assertTrue(cache["ok"])
+        packet = cache["data"]
+        dry_run = packet["search_quant_projection_acceptance_dry_run_receipt"]
+        dry_run_rows = {row["criterion"]: row for row in packet["search_quant_projection_acceptance_dry_run_rows"]}
+        credential_rows = {row["provider"]: row for row in packet["search_quant_projection_credential_presence_rows"]}
+        self.assertEqual(dry_run["schema_version"], "candidate_radar_search_quant_projection_acceptance_dry_run.v1")
+        self.assertEqual(dry_run["status"], "quant_projection_acceptance_dry_run_ready_real_execution_still_blocked")
+        self.assertEqual(dry_run["route"], "POST /api/candidate-radar/quant-projection-acceptance-dry-run")
+        self.assertEqual(dry_run["symbol"], "002008.SZ")
+        self.assertTrue(dry_run["user_approved"])
+        self.assertTrue(dry_run["include_tushare"])
+        self.assertTrue(dry_run["include_deepseek"])
+        self.assertEqual(dry_run["selected_apis"], ["trade_cal", "daily", "daily_basic", "moneyflow"])
+        self.assertEqual(dry_run["ignored_apis"], ["top_inst"])
+        self.assertTrue(dry_run["ready_for_user_approved_real_acceptance"])
+        self.assertFalse(dry_run["ready_to_execute_real_provider_model_task"])
+        self.assertFalse(dry_run["provider_execution_implemented"])
+        self.assertFalse(dry_run["model_execution_implemented"])
+        self.assertFalse(dry_run["production_quant_projection_complete"])
+        self.assertFalse(dry_run["credential_values_read"])
+        self.assertFalse(dry_run["credential_values_exposed"])
+        self.assertFalse(dry_run["env_key_names_included"])
+        self.assertEqual(dry_run["credential_presence_summary"]["status"], "all_required_env_keys_present_no_values_read")
+        self.assertEqual(dry_run["credential_missing_provider_count"], 0)
+        self.assertEqual(credential_rows["tushare"]["status"], "present_no_value_read")
+        self.assertEqual(credential_rows["deepseek"]["status"], "present_no_value_read")
+        self.assertFalse(credential_rows["tushare"]["values_read"])
+        self.assertFalse(credential_rows["deepseek"]["values_exposed"])
+        self.assertFalse(credential_rows["tushare"]["env_key_names_included"])
+        scope_ticket = dry_run["acceptance_scope_ticket"]
+        self.assertEqual(scope_ticket["scope_hash_algorithm"], "sha256")
+        self.assertFalse(scope_ticket["credential_values_included"])
+        self.assertFalse(scope_ticket["env_key_names_included"])
+        self.assertEqual(scope_ticket["scope_hash_input"]["symbol"], "002008.SZ")
+        self.assertEqual(scope_ticket["scope_hash_input"]["credential_presence_status"], "all_required_env_keys_present_no_values_read")
+        self.assertEqual(dry_run_rows["activation_receipt_visible"]["status"], "passed")
+        self.assertEqual(dry_run_rows["explicit_user_approval_recorded"]["status"], "passed_user_approved_dry_run")
+        self.assertEqual(dry_run_rows["server_credential_presence_checked"]["status"], "passed_no_values_read")
+        self.assertEqual(dry_run_rows["tushare_call_ledger_required"]["status"], "pending_real_provider_ledger")
+        self.assertEqual(dry_run_rows["deepseek_model_ledger_required"]["status"], "pending_optional_model_ledger")
+        self.assertTrue(packet["policy"]["search_quant_projection_acceptance_dry_run_is_button_gated"])
+        self.assertTrue(packet["policy"]["search_quant_projection_acceptance_dry_run_is_local"])
+        self.assertTrue(packet["policy"]["search_quant_projection_acceptance_dry_run_does_not_call_provider_or_model"])
+        self.assertTrue(packet["policy"]["search_quant_projection_acceptance_dry_run_is_not_production_completion"])
+        self.assertEqual(packet["counts"]["search_quant_projection_acceptance_dry_run_row_count"], dry_run["row_count"])
+        self.assertGreater(packet["counts"]["search_quant_projection_acceptance_dry_run_blocking_count"], 0)
+        self.assertEqual(packet["counts"]["search_quant_projection_acceptance_credential_missing_count"], 0)
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertTrue(packet["does_not_modify_holdings"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
+        self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
+        self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache, ensure_ascii=False))
+        self.assertNotIn("DEEPSEEK_API_KEY", json.dumps(cache, ensure_ascii=False))
 
     def test_candidate_radar_full_pool_plan_endpoint_is_button_gated_plan_only(self):
         self._with_meta_store()
