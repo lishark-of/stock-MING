@@ -48,6 +48,7 @@ SMOKE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "smoke_3_0.sh"
 DATA_HEALTH_FRESHNESS_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "data_health_freshness_contract.py"
 TUSHARE_ACCEPTANCE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "tushare_acceptance_contract.py"
 BOOTSTRAP_RUNTIME_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "bootstrap_runtime_contract.py"
+TUSHARE_DEEPSEEK_LINKAGE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "tushare_deepseek_linkage_contract.py"
 FACTOR_TEST_LAB_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "factor_test_lab_contract.py"
 FACTOR_UNIVERSE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "factor_universe_contract.py"
 DEEPSEEK_GOVERNANCE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "deepseek_governance_contract.py"
@@ -449,6 +450,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
     data_health_freshness_script = _read_local_text(DATA_HEALTH_FRESHNESS_CONTRACT_PATH)
     tushare_acceptance_script = _read_local_text(TUSHARE_ACCEPTANCE_CONTRACT_PATH)
     bootstrap_runtime_script = _read_local_text(BOOTSTRAP_RUNTIME_CONTRACT_PATH)
+    tushare_deepseek_linkage_script = _read_local_text(TUSHARE_DEEPSEEK_LINKAGE_CONTRACT_PATH)
     factor_test_lab_script = _read_local_text(FACTOR_TEST_LAB_CONTRACT_PATH)
     factor_universe_script = _read_local_text(FACTOR_UNIVERSE_CONTRACT_PATH)
     deepseek_governance_script = _read_local_text(DEEPSEEK_GOVERNANCE_CONTRACT_PATH)
@@ -499,6 +501,8 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and bool(tushare_acceptance_script),
         "bootstrap_runtime_contract_exists": BOOTSTRAP_RUNTIME_CONTRACT_PATH.exists()
         and bool(bootstrap_runtime_script),
+        "tushare_deepseek_linkage_contract_exists": TUSHARE_DEEPSEEK_LINKAGE_CONTRACT_PATH.exists()
+        and bool(tushare_deepseek_linkage_script),
         "factor_test_lab_contract_exists": FACTOR_TEST_LAB_CONTRACT_PATH.exists()
         and bool(factor_test_lab_script),
         "factor_universe_contract_exists": FACTOR_UNIVERSE_CONTRACT_PATH.exists()
@@ -529,6 +533,8 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "Tushare acceptance contract" in script,
         "bootstrap_runtime_contract_step": "scripts/bootstrap_runtime_contract.py" in script
         and "Bootstrap runtime contract" in script,
+        "tushare_deepseek_linkage_contract_step": "scripts/tushare_deepseek_linkage_contract.py" in script
+        and "Tushare DeepSeek linkage contract" in script,
         "factor_test_lab_contract_step": "scripts/factor_test_lab_contract.py" in script
         and "Factor Test Lab contract" in script,
         "factor_universe_contract_step": "scripts/factor_universe_contract.py" in script
@@ -586,6 +592,21 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "tushare_adapter" not in bootstrap_runtime_script
         and "deepseek_adapter" not in bootstrap_runtime_script
         and "api.github.com" not in bootstrap_runtime_script,
+        "tushare_deepseek_linkage_contract_is_local": (
+            "command_center_3_tushare_deepseek_linkage_contract.v1" in tushare_deepseek_linkage_script
+            and "local_tushare_deepseek_linkage_contract_no_provider_or_model_execution"
+            in tushare_deepseek_linkage_script
+            and "live_light_plans_tushare_deepseek_without_calling" in tushare_deepseek_linkage_script
+            and "candidate_quant_acceptance_dry_run_limits_apis_and_hides_credentials"
+            in tushare_deepseek_linkage_script
+            and "provider_execution_implemented" in tushare_deepseek_linkage_script
+            and "model_execution_implemented" in tushare_deepseek_linkage_script
+            and "production_quant_projection_complete" in tushare_deepseek_linkage_script
+            and "does_not_execute_trades" in tushare_deepseek_linkage_script
+            and "tushare_adapter" not in tushare_deepseek_linkage_script
+            and "deepseek_adapter" not in tushare_deepseek_linkage_script
+            and "api.github.com" not in tushare_deepseek_linkage_script
+        ),
         "factor_test_lab_contract_is_local": "command_center_3_factor_test_lab_contract.v1" in factor_test_lab_script
         and "local_factor_test_lab_contract_no_provider_execution" in factor_test_lab_script
         and "provider_backed_small_pool_validation_done" in factor_test_lab_script
@@ -737,6 +758,9 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "bootstrap_runtime_contract_exists",
             "bootstrap_runtime_contract_step",
             "bootstrap_runtime_contract_is_local",
+            "tushare_deepseek_linkage_contract_exists",
+            "tushare_deepseek_linkage_contract_step",
+            "tushare_deepseek_linkage_contract_is_local",
             "factor_test_lab_contract_exists",
             "factor_test_lab_contract_step",
             "factor_test_lab_contract_is_local",
@@ -852,6 +876,21 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "bootstrap_runtime_contract_is_local",
             checks["bootstrap_runtime_contract_is_local"],
             evidence="contract keeps cache_only offline and live_light bootstrap as a local plan/model-ledger skeleton with no provider/model execution",
+        ),
+        _release_gate_row(
+            "tushare_deepseek_linkage_contract_exists",
+            checks["tushare_deepseek_linkage_contract_exists"],
+            evidence=_relative_path(TUSHARE_DEEPSEEK_LINKAGE_CONTRACT_PATH),
+        ),
+        _release_gate_row(
+            "tushare_deepseek_linkage_contract_step",
+            checks["tushare_deepseek_linkage_contract_step"],
+            evidence="push gate runs scripts/tushare_deepseek_linkage_contract.py after Bootstrap runtime and before Factor Test Lab",
+        ),
+        _release_gate_row(
+            "tushare_deepseek_linkage_contract_is_local",
+            checks["tushare_deepseek_linkage_contract_is_local"],
+            evidence="contract ties live_light and search quant projection to safe Tushare/DeepSeek ledger boundaries without provider/model execution",
         ),
         _release_gate_row(
             "factor_test_lab_contract_exists",
