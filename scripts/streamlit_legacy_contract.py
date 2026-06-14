@@ -56,6 +56,26 @@ REQUIRED_RETIREMENT_RECEIPT_CRITERIA = {
     "full_streamlit_retirement_boundary",
     "trade_action_isolation_boundary",
 }
+REQUIRED_STREAMLIT_RETIREMENT_STAGES = {
+    "route_inventory_primary_entry",
+    "ordinary_workflow_replacement_parity",
+    "candidate_radar_replacement_parity",
+    "provider_backed_parity_acceptance",
+    "browser_performance_qa",
+    "admin_debug_retention_decision",
+    "fallback_retirement_review",
+    "app_py_removal_or_retention_review",
+}
+STREAMLIT_RETIREMENT_STAGE_LABELS = {
+    "route_inventory_primary_entry": "route inventory and primary-entry contract",
+    "ordinary_workflow_replacement_parity": "ordinary workflow replacement parity",
+    "candidate_radar_replacement_parity": "Candidate Radar replacement parity",
+    "provider_backed_parity_acceptance": "provider-backed parity acceptance",
+    "browser_performance_qa": "browser and performance QA",
+    "admin_debug_retention_decision": "admin/debug retention or replacement decision",
+    "fallback_retirement_review": "Streamlit fallback retirement review",
+    "app_py_removal_or_retention_review": "app.py removal or retention review",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -86,6 +106,55 @@ def _read_script(path: str) -> str:
         return ""
 
 
+def _streamlit_retirement_stage_scope_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for stage_key in sorted(REQUIRED_STREAMLIT_RETIREMENT_STAGES):
+        rows.append(
+            {
+                "stage_key": stage_key,
+                "stage_label": STREAMLIT_RETIREMENT_STAGE_LABELS[stage_key],
+                "scope": "streamlit_retirement_stage_scope_manifest",
+                "current_status": "local_exit_audit_or_dependency_contract_only",
+                "target_status": "replacement_parity_or_retirement_evidence_required",
+                "required_before_full_retirement": True,
+                "route_inventory_visible": stage_key == "route_inventory_primary_entry",
+                "ordinary_workflow_exit_complete": False,
+                "streamlit_fallback_removal_ready": False,
+                "full_streamlit_removal_ready": False,
+                "streamlit_fallback_retained": True,
+                "replacement_parity_complete": False,
+                "candidate_radar_parity_complete": False,
+                "provider_backed_parity_done": False,
+                "browser_performance_qa_done": False,
+                "admin_debug_retention_decision_done": False,
+                "fallback_removed_by_contract": False,
+                "app_py_deleted_by_contract": False,
+                "streamlit_opened_by_contract": False,
+                "legacy_tools_run_by_contract": False,
+                "tasks_created_by_contract": False,
+                "provider_model_task_dispatched_by_contract": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_modify_holdings": True,
+                "contains_secret": False,
+                "missing_evidence": [
+                    "replacement parity review for ordinary workflows",
+                    "Candidate Radar no-feature-loss acceptance",
+                    "provider-backed parity acceptance",
+                    "browser/performance QA evidence",
+                    "admin/debug replacement or retention decision",
+                    "explicit fallback retirement approval",
+                    "app.py removal or retention decision",
+                ],
+            }
+        )
+    return rows
+
+
 def build_contract() -> dict[str, Any]:
     packet = legacy_service.read_legacy_bridge_cache()
     policy = _dict(packet.get("policy"))
@@ -109,6 +178,7 @@ def build_contract() -> dict[str, Any]:
     route_source = _read_script("desktop/src/routes/LegacyTools.tsx")
     app_source = _read_script("app.py")
     this_script = _read_script("scripts/streamlit_legacy_contract.py")
+    streamlit_retirement_stage_scope_rows = _streamlit_retirement_stage_scope_rows()
 
     rows = [
         _row(
@@ -241,6 +311,49 @@ def build_contract() -> dict[str, Any]:
             "Streamlit retirement readiness receipt may select the next explicit parity/retirement review, but it must not open Streamlit, run legacy tools, create tasks, remove fallback, delete app.py, call providers, trade, or claim completion.",
         ),
         _row(
+            "streamlit_retirement_stage_scope_manifest_is_complete_and_pending",
+            {row.get("stage_key") for row in streamlit_retirement_stage_scope_rows}
+            == REQUIRED_STREAMLIT_RETIREMENT_STAGES
+            and len(streamlit_retirement_stage_scope_rows) == len(REQUIRED_STREAMLIT_RETIREMENT_STAGES)
+            and all(
+                row.get("scope") == "streamlit_retirement_stage_scope_manifest"
+                for row in streamlit_retirement_stage_scope_rows
+            )
+            and all(row.get("required_before_full_retirement") is True for row in streamlit_retirement_stage_scope_rows)
+            and all(
+                row.get("current_status") == "local_exit_audit_or_dependency_contract_only"
+                for row in streamlit_retirement_stage_scope_rows
+            )
+            and all(
+                row.get("target_status") == "replacement_parity_or_retirement_evidence_required"
+                for row in streamlit_retirement_stage_scope_rows
+            )
+            and all(row.get("ordinary_workflow_exit_complete") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("streamlit_fallback_removal_ready") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("full_streamlit_removal_ready") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("streamlit_fallback_retained") is True for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("replacement_parity_complete") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("candidate_radar_parity_complete") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("provider_backed_parity_done") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("browser_performance_qa_done") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("admin_debug_retention_decision_done") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("fallback_removed_by_contract") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("app_py_deleted_by_contract") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("streamlit_opened_by_contract") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("legacy_tools_run_by_contract") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("tasks_created_by_contract") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("provider_model_task_dispatched_by_contract") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("external_calls_triggered") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("tushare_called") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("deepseek_called") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("github_called") is False for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("does_not_execute_trades") is True for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("does_not_modify_strategy_action") is True for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("does_not_modify_holdings") is True for row in streamlit_retirement_stage_scope_rows)
+            and all(row.get("contains_secret") is False for row in streamlit_retirement_stage_scope_rows),
+            "Streamlit retirement stage rows must enumerate every replacement/parity/retirement evidence stage without opening Streamlit, running legacy tools, creating tasks, removing fallback, deleting app.py, calling providers, trading, or claiming retirement completion.",
+        ),
+        _row(
             "react_legacy_page_displays_boundaries",
             "Legacy / Admin / Debug" in route_source
             and "Streamlit 2.0 保留为 legacy" in route_source
@@ -284,6 +397,7 @@ def build_contract() -> dict[str, Any]:
             and "full_streamlit_removal_ready" in this_script
             and "streamlit_fallback_retained" in this_script
             and "streamlit_retirement_readiness_receipt.v1" in this_script
+            and "streamlit_retirement_stage_scope_manifest" in this_script
             and "does_not_open_streamlit" in this_script
             and "does_not_execute_trades" in this_script
             and ("import " + "streamlit") not in this_script
@@ -349,7 +463,17 @@ def build_contract() -> dict[str, Any]:
             "retirement_receipt_allowed_next_step": retirement_receipt.get("allowed_next_step"),
             "checklist_pending_count": exit_audit.get("checklist_pending_count"),
             "checklist_done_count": exit_audit.get("checklist_done_count"),
+            "streamlit_retirement_stage_scope_count": len(streamlit_retirement_stage_scope_rows),
+            "streamlit_retirement_stage_scope_keys": sorted(
+                row.get("stage_key") for row in streamlit_retirement_stage_scope_rows
+            ),
+            "streamlit_retirement_stage_scope_pending_count": sum(
+                1
+                for row in streamlit_retirement_stage_scope_rows
+                if row.get("full_streamlit_removal_ready") is False
+            ),
         },
+        "streamlit_retirement_stage_scope_rows": streamlit_retirement_stage_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Streamlit fallback removal, full ordinary-workflow exit, replacement parity, and admin/debug retirement remain pending.",
     }

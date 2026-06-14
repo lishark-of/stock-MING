@@ -8277,6 +8277,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("primary_exit_audit_keeps_fallback_required", script)
         self.assertIn("fallback_dependency_contract_keeps_retirement_pending", script)
         self.assertIn("retirement_readiness_receipt_allows_only_explicit_review", script)
+        self.assertIn("streamlit_retirement_stage_scope_manifest", script)
+        self.assertIn("streamlit_retirement_stage_scope_manifest_is_complete_and_pending", script)
         self.assertIn("react_legacy_page_displays_boundaries", script)
         self.assertIn("legacy_startup_does_not_autocreate_or_autoexternal", script)
         self.assertIn("push_gate_runs_streamlit_contract_after_tauri", script)
@@ -8348,12 +8350,56 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["retirement_receipt_allowed_next_step"],
             "explicit_replacement_parity_review_then_streamlit_fallback_retirement_review",
         )
+        required_retirement_stages = {
+            "route_inventory_primary_entry",
+            "ordinary_workflow_replacement_parity",
+            "candidate_radar_replacement_parity",
+            "provider_backed_parity_acceptance",
+            "browser_performance_qa",
+            "admin_debug_retention_decision",
+            "fallback_retirement_review",
+            "app_py_removal_or_retention_review",
+        }
+        self.assertEqual(payload["observed"]["streamlit_retirement_stage_scope_count"], 8)
+        self.assertEqual(set(payload["observed"]["streamlit_retirement_stage_scope_keys"]), required_retirement_stages)
+        self.assertEqual(payload["observed"]["streamlit_retirement_stage_scope_pending_count"], 8)
+        stage_rows = payload["streamlit_retirement_stage_scope_rows"]
+        self.assertEqual({row["stage_key"] for row in stage_rows}, required_retirement_stages)
+        for row in stage_rows:
+            self.assertEqual(row["scope"], "streamlit_retirement_stage_scope_manifest")
+            self.assertEqual(row["current_status"], "local_exit_audit_or_dependency_contract_only")
+            self.assertEqual(row["target_status"], "replacement_parity_or_retirement_evidence_required")
+            self.assertTrue(row["required_before_full_retirement"])
+            self.assertFalse(row["ordinary_workflow_exit_complete"])
+            self.assertFalse(row["streamlit_fallback_removal_ready"])
+            self.assertFalse(row["full_streamlit_removal_ready"])
+            self.assertTrue(row["streamlit_fallback_retained"])
+            self.assertFalse(row["replacement_parity_complete"])
+            self.assertFalse(row["candidate_radar_parity_complete"])
+            self.assertFalse(row["provider_backed_parity_done"])
+            self.assertFalse(row["browser_performance_qa_done"])
+            self.assertFalse(row["admin_debug_retention_decision_done"])
+            self.assertFalse(row["fallback_removed_by_contract"])
+            self.assertFalse(row["app_py_deleted_by_contract"])
+            self.assertFalse(row["streamlit_opened_by_contract"])
+            self.assertFalse(row["legacy_tools_run_by_contract"])
+            self.assertFalse(row["tasks_created_by_contract"])
+            self.assertFalse(row["provider_model_task_dispatched_by_contract"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_modify_holdings"])
+            self.assertFalse(row["contains_secret"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("legacy_cache_is_read_only", criteria)
         self.assertIn("streamlit_marked_legacy_not_primary", criteria)
         self.assertIn("primary_exit_audit_keeps_fallback_required", criteria)
         self.assertIn("fallback_dependency_contract_keeps_retirement_pending", criteria)
         self.assertIn("retirement_readiness_receipt_allows_only_explicit_review", criteria)
+        self.assertIn("streamlit_retirement_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("react_legacy_page_displays_boundaries", criteria)
         self.assertIn("legacy_startup_does_not_autocreate_or_autoexternal", criteria)
         self.assertIn("push_gate_runs_streamlit_contract_after_tauri", criteria)
