@@ -214,6 +214,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("LTG-13", {row["id"] for row in migration["long_term_goal_rows"]})
         self.assertIn("LTG-14", {row["id"] for row in migration["long_term_goal_rows"]})
         migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
+        self.assertEqual(migration_goals["LTG-01"]["stage_scope_manifest"], "freshness_production_stage_scope_manifest")
+        self.assertIn("dry-run scope ticket path", migration_goals["LTG-01"]["current_state"])
+        self.assertIn("next execution recipe", migration_goals["LTG-01"]["current_state"])
+        self.assertIn("dry-run scope ticket", migration_goals["LTG-01"]["next_evidence_required"])
         self.assertEqual(migration_goals["LTG-02"]["stage_scope_manifest"], "tushare_production_stage_scope_manifest")
         self.assertIn("production stage-scope manifest", migration_goals["LTG-02"]["current_state"])
         self.assertIn("provider target samples", migration_goals["LTG-02"]["next_evidence_required"])
@@ -13492,6 +13496,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             )
         )
         migration_goals = {row["id"]: row for row in migration["data"]["long_term_goal_rows"]}
+        self.assertEqual(migration_goals["LTG-01"]["stage_scope_manifest"], "freshness_production_stage_scope_manifest")
+        self.assertIn("dry-run scope ticket path", migration_goals["LTG-01"]["current_state"])
+        self.assertIn("next execution recipe", migration_goals["LTG-01"]["current_state"])
+        self.assertIn("dry-run scope ticket", migration_goals["LTG-01"]["next_evidence_required"])
         self.assertEqual(migration_goals["LTG-02"]["stage_scope_manifest"], "tushare_production_stage_scope_manifest")
         self.assertIn("production stage-scope manifest", migration_goals["LTG-02"]["current_state"])
         self.assertIn("provider target samples", migration_goals["LTG-02"]["next_evidence_required"])
