@@ -37,6 +37,7 @@ CONTRACT_KEYS = [
     "freshness_provider_acceptance_activation_receipt",
     "latest_trade_cal_provider_acceptance_dry_run",
     "trade_cal_provider_acceptance_next_execution_recipe",
+    "latest_trade_cal_provider_acceptance_execution_request",
     "current_evidence_freshness_qa_contract",
     "current_evidence_decision_surface_audit",
     "current_evidence_producer_coverage_audit",
@@ -187,6 +188,31 @@ def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
                 }
             )
             latest_after_ready_cache = data_health_service.read_data_health_timeline_cache()
+            ready_payload = _as_dict(ready.get("payload_safe"))
+            ready_receipt = _as_dict(ready_payload.get("trade_cal_provider_acceptance_dry_run_receipt"))
+            execution_request = data_health_service.run_trade_cal_provider_acceptance_execution_request(
+                {
+                    "approved_by_user": True,
+                    "acceptance_scope_hash_short": ready_receipt.get("acceptance_scope_hash_short"),
+                    "apis": ["trade_cal"],
+                    "exchange": ["SSE", "SZSE"],
+                    "start_date": "20240614",
+                    "end_date": "20260614",
+                    "requested_by": "contract",
+                    "token": "SHOULD_DROP",
+                }
+            )
+            latest_after_execution_request_cache = data_health_service.read_data_health_timeline_cache()
+            execution_request_mismatch = data_health_service.run_trade_cal_provider_acceptance_execution_request(
+                {
+                    "approved_by_user": True,
+                    "acceptance_scope_hash_short": "deadbeefdeadbeef",
+                    "apis": ["trade_cal"],
+                    "exchange": ["SSE", "SZSE"],
+                    "start_date": "20240614",
+                    "end_date": "20260614",
+                }
+            )
 
             missing_approval = data_health_service.run_trade_cal_provider_acceptance_dry_run(
                 {
@@ -224,6 +250,9 @@ def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
                 "short_window": short_window,
                 "missing_credentials": missing_credentials,
                 "latest_after_ready_cache": latest_after_ready_cache,
+                "execution_request": execution_request,
+                "latest_after_execution_request_cache": latest_after_execution_request_cache,
+                "execution_request_mismatch": execution_request_mismatch,
                 "_fake_token": {"value": fake_token},
             }
     finally:
@@ -242,6 +271,8 @@ def build_contract() -> dict[str, Any]:
     dry_missing_approval = dry_run_cases["missing_approval"]
     dry_short_window = dry_run_cases["short_window"]
     dry_missing_credentials = dry_run_cases["missing_credentials"]
+    execution_request = dry_run_cases["execution_request"]
+    execution_request_mismatch = dry_run_cases["execution_request_mismatch"]
     dry_ready_payload = _as_dict(dry_ready.get("payload_safe"))
     dry_ready_receipt = _as_dict(dry_ready_payload.get("trade_cal_provider_acceptance_dry_run_receipt"))
     dry_ready_rows = {
@@ -260,6 +291,31 @@ def build_contract() -> dict[str, Any]:
     latest_after_ready_rows = _as_list(latest_after_ready_cache.get("latest_trade_cal_provider_acceptance_dry_run_rows"))
     latest_after_ready_recipe_rows = _as_list(
         latest_after_ready_cache.get("trade_cal_provider_acceptance_next_execution_rows")
+    )
+    execution_request_payload = _as_dict(execution_request.get("payload_safe"))
+    execution_request_receipt = _as_dict(
+        execution_request_payload.get("trade_cal_provider_acceptance_execution_request_receipt")
+    )
+    execution_request_rows = {
+        str(row.get("phase") or ""): row
+        for row in _as_list(execution_request_payload.get("trade_cal_provider_acceptance_execution_request_rows"))
+        if isinstance(row, dict)
+    }
+    execution_request_ledger = [_as_dict(row) for row in _as_list(execution_request.get("call_ledger"))]
+    latest_after_execution_request_cache = _as_dict(dry_run_cases.get("latest_after_execution_request_cache"))
+    latest_after_execution_request = _get(
+        latest_after_execution_request_cache,
+        "latest_trade_cal_provider_acceptance_execution_request",
+    )
+    latest_after_execution_request_rows = _as_list(
+        latest_after_execution_request_cache.get("latest_trade_cal_provider_acceptance_execution_request_rows")
+    )
+    latest_after_execution_request_counts = _get(latest_after_execution_request_cache, "counts")
+    latest_after_execution_request_policy = _get(latest_after_execution_request_cache, "policy")
+    execution_request_mismatch_receipt = _as_dict(
+        _as_dict(execution_request_mismatch.get("payload_safe")).get(
+            "trade_cal_provider_acceptance_execution_request_receipt"
+        )
     )
     latest_after_ready_credential_rows = [
         _as_dict(row)
@@ -281,6 +337,9 @@ def build_contract() -> dict[str, Any]:
             "short_window": dry_short_window,
             "missing_credentials": dry_missing_credentials,
             "latest_after_ready_cache": latest_after_ready_cache,
+            "execution_request": execution_request,
+            "latest_after_execution_request_cache": latest_after_execution_request_cache,
+            "execution_request_mismatch": execution_request_mismatch,
         }
     )
     fake_token = str(_as_dict(dry_run_cases.get("_fake_token")).get("value") or "")
@@ -295,6 +354,7 @@ def build_contract() -> dict[str, Any]:
     activation_receipt = _get(packet, "freshness_provider_acceptance_activation_receipt")
     next_execution_recipe = _get(packet, "trade_cal_provider_acceptance_next_execution_recipe")
     next_execution_recipe_rows = _as_list(packet.get("trade_cal_provider_acceptance_next_execution_rows"))
+    latest_execution_request = _get(packet, "latest_trade_cal_provider_acceptance_execution_request")
     durable_evidence_recipe = _get(packet, "freshness_durable_evidence_recipe")
     durable_evidence_rows = [
         row for row in _as_list(packet.get("freshness_durable_evidence_rows")) if isinstance(row, dict)
@@ -724,6 +784,157 @@ def build_contract() -> dict[str, Any]:
             "After a local dry-run scope ticket is visible, the recipe must bind that scope and remain local; it may still require local freshness blockers to be resolved before user-confirmed provider execution.",
         ),
         _row(
+            "trade_cal_execution_request_binds_scope_without_provider_call",
+            execution_request.get("status") == "success"
+            and execution_request.get("task_type") == "run_trade_cal_provider_acceptance_execution_request"
+            and execution_request.get("current_step")
+            in {
+                "trade_cal_execution_request_ready_manual_provider_task_pending_no_provider_call",
+                "trade_cal_execution_request_blocked_local_readiness_no_provider_call",
+            }
+            and execution_request_receipt.get("schema_version")
+            == "data_health_trade_cal_provider_acceptance_execution_request.v1"
+            and execution_request_receipt.get("route")
+            == "POST /api/data-health/trade-cal-provider-acceptance-execution-request"
+            and execution_request_receipt.get("dry_run_route")
+            == "POST /api/data-health/trade-cal-provider-acceptance-dry-run"
+            and execution_request_receipt.get("target_post_task_route") == "POST /api/tasks/refresh-tushare-facts"
+            and execution_request_receipt.get("target_task_type") == "refresh_tushare_facts"
+            and execution_request_receipt.get("selected_apis") == ["trade_cal"]
+            and execution_request_receipt.get("latest_dry_run_scope_hash_short")
+            == dry_ready_receipt.get("acceptance_scope_hash_short")
+            and execution_request_receipt.get("requested_scope_hash_short")
+            == dry_ready_receipt.get("acceptance_scope_hash_short")
+            and execution_request_receipt.get("scope_hash_matches_latest_dry_run") is True
+            and execution_request_receipt.get("ready_for_manual_provider_task_submission")
+            is (
+                execution_request_receipt.get("status")
+                == "trade_cal_provider_acceptance_execution_request_ready_manual_provider_task_pending"
+            )
+            and execution_request_receipt.get("ready_to_execute_from_cache") is False
+            and execution_request_receipt.get("creates_provider_task") is False
+            and execution_request_receipt.get("provider_task_executed_by_request") is False
+            and execution_request_receipt.get("provider_execution_implemented") is False
+            and execution_request_receipt.get("provider_backed_long_window_acceptance_done") is False
+            and execution_request_receipt.get("production_freshness_gate_complete") is False
+            and "execute provider from execution request ticket"
+            in execution_request_receipt.get("not_allowed_next_steps", [])
+            and "promote execution request to provider-backed acceptance"
+            in execution_request_receipt.get("not_allowed_next_steps", [])
+            and execution_request_rows.get("scope_hash_matches_latest_dry_run", {}).get("status")
+            == "passed_scope_hash_match"
+            and execution_request_rows.get("safe_payload_fields_only", {}).get("status") == "passed_safe_payload"
+            and execution_request_ledger
+            and execution_request_ledger[0].get("api") == "local_trade_cal_provider_acceptance_execution_request"
+            and execution_request_ledger[0].get("external") is False
+            and _flag_false(
+                execution_request,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and execution_request.get("does_not_execute_trades") is True
+            and execution_request.get("does_not_modify_strategy_action") is True,
+            "The execution request ticket must bind the latest dry-run scope hash and remain a local request artifact; it cannot create provider tasks, call Tushare, or promote production freshness.",
+        ),
+        _row(
+            "latest_trade_cal_execution_request_cache_lookup_is_local_read_only",
+            latest_after_execution_request_cache.get("mode") == "cache_only"
+            and latest_after_execution_request_cache.get("read_only") is True
+            and latest_after_execution_request.get("schema_version")
+            == "data_health_latest_trade_cal_provider_acceptance_execution_request.v1"
+            and latest_after_execution_request.get("status")
+            == "latest_trade_cal_provider_acceptance_execution_request_visible"
+            and latest_after_execution_request.get("scope") == "local_task_status_lookup_no_provider_execution"
+            and latest_after_execution_request.get("latest_task_found") is True
+            and latest_after_execution_request.get("receipt_visible") is True
+            and latest_after_execution_request.get("latest_task_id") == execution_request.get("task_id")
+            and latest_after_execution_request.get("execution_request_status") == execution_request_receipt.get("status")
+            and latest_after_execution_request.get("scope_hash_matches_latest_dry_run") is True
+            and latest_after_execution_request.get("creates_provider_task") is False
+            and latest_after_execution_request.get("provider_task_executed_by_request") is False
+            and latest_after_execution_request.get("provider_execution_implemented") is False
+            and latest_after_execution_request.get("provider_backed_long_window_acceptance_done") is False
+            and latest_after_execution_request.get("production_freshness_gate_complete") is False
+            and latest_after_execution_request.get("cache_get_creates_task") is False
+            and latest_after_execution_request.get("cache_get_external_calls") is False
+            and _flag_false(
+                latest_after_execution_request,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and int(
+                latest_after_execution_request_counts.get(
+                    "latest_trade_cal_provider_acceptance_execution_request_found"
+                )
+                or 0
+            )
+            == 1
+            and int(
+                latest_after_execution_request_counts.get(
+                    "latest_trade_cal_provider_acceptance_execution_request_row_count"
+                )
+                or 0
+            )
+            == len(latest_after_execution_request_rows)
+            and latest_after_execution_request_policy.get(
+                "latest_trade_cal_provider_acceptance_execution_request_lookup_is_local"
+            )
+            is True
+            and latest_after_execution_request_policy.get(
+                "latest_trade_cal_provider_acceptance_execution_request_lookup_creates_task"
+            )
+            is False
+            and latest_after_execution_request_policy.get(
+                "latest_trade_cal_provider_acceptance_execution_request_lookup_calls_provider"
+            )
+            is False
+            and latest_after_execution_request_policy.get(
+                "latest_trade_cal_provider_acceptance_execution_request_is_not_acceptance"
+            )
+            is True
+            and latest_after_execution_request_policy.get(
+                "latest_trade_cal_provider_acceptance_execution_request_creates_provider_task"
+            )
+            is False
+            and latest_after_execution_request_policy.get(
+                "trade_cal_provider_acceptance_execution_request_requires_bound_scope_hash"
+            )
+            is True
+            and fake_token not in dry_run_serialized
+            and "SHOULD_DROP" not in dry_run_serialized
+            and "TUSHARE_TOKEN" not in dry_run_serialized,
+            "GET Data Health cache may replay the latest local execution request metadata, but it must not create a task, call providers, leak credentials, or claim provider-backed acceptance.",
+        ),
+        _row(
+            "trade_cal_execution_request_blocks_scope_mismatch",
+            execution_request_mismatch.get("current_step")
+            == "trade_cal_execution_request_blocked_scope_hash_mismatch_no_provider_call"
+            and execution_request_mismatch_receipt.get("status")
+            == "trade_cal_provider_acceptance_execution_request_blocked_scope_hash_mismatch"
+            and execution_request_mismatch_receipt.get("allowed_next_step")
+            == "rerun_execution_request_with_latest_dry_run_scope_hash"
+            and execution_request_mismatch_receipt.get("scope_hash_matches_latest_dry_run") is False
+            and execution_request_mismatch_receipt.get("creates_provider_task") is False
+            and execution_request_mismatch_receipt.get("provider_execution_implemented") is False
+            and execution_request_mismatch_receipt.get("production_freshness_gate_complete") is False
+            and _flag_false(
+                execution_request_mismatch,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and fake_token not in dry_run_serialized
+            and "SHOULD_DROP" not in dry_run_serialized
+            and "TUSHARE_TOKEN" not in dry_run_serialized,
+            "Execution request must reject a stale or mismatched dry-run scope hash and still avoid provider/model/GitHub calls or secret leakage.",
+        ),
+        _row(
             "trade_cal_dry_run_blocks_missing_approval",
             dry_missing_approval.get("current_step")
             == "trade_cal_acceptance_dry_run_blocked_user_approval_required_no_provider_call"
@@ -819,7 +1030,10 @@ def build_contract() -> dict[str, Any]:
             and policy.get("freshness_long_window_sample_calls_trade_cal") is False
             and policy.get("trade_cal_physical_validation_calls_trade_cal_provider") is False
             and policy.get("real_trade_cal_long_window_validation_done") is False
-            and policy.get("provider_backed_trade_cal_acceptance_still_pending") is True,
+            and policy.get("provider_backed_trade_cal_acceptance_still_pending") is True
+            and policy.get("latest_trade_cal_provider_acceptance_execution_request_lookup_is_local") is True
+            and policy.get("latest_trade_cal_provider_acceptance_execution_request_lookup_calls_provider") is False
+            and policy.get("latest_trade_cal_provider_acceptance_execution_request_creates_provider_task") is False,
             "Policy flags must keep local contracts separate from provider-backed production acceptance.",
         ),
         _row(
@@ -832,6 +1046,7 @@ def build_contract() -> dict[str, Any]:
             and int(counts.get("freshness_provider_acceptance_activation_row_count") or 0) >= 11
             and int(counts.get("latest_trade_cal_provider_acceptance_dry_run_found") or 0) >= 0
             and int(counts.get("trade_cal_provider_acceptance_next_execution_row_count") or 0) >= 10
+            and int(counts.get("latest_trade_cal_provider_acceptance_execution_request_found") or 0) >= 0
             and int(counts.get("current_evidence_freshness_qa_row_count") or 0) >= 8
             and int(counts.get("current_evidence_decision_surface_row_count") or 0) >= 5
             and int(counts.get("current_evidence_producer_coverage_row_count") or 0) >= 6,
@@ -898,6 +1113,21 @@ def build_contract() -> dict[str, Any]:
             ),
             "trade_cal_provider_acceptance_next_execution_blocker_count": counts.get(
                 "trade_cal_provider_acceptance_next_execution_blocker_count"
+            ),
+            "latest_trade_cal_execution_request_cache_found_count": latest_after_execution_request_counts.get(
+                "latest_trade_cal_provider_acceptance_execution_request_found"
+            ),
+            "latest_trade_cal_execution_request_cache_row_count": latest_after_execution_request_counts.get(
+                "latest_trade_cal_provider_acceptance_execution_request_row_count"
+            ),
+            "latest_trade_cal_execution_request_status": latest_after_execution_request.get(
+                "execution_request_status"
+            ),
+            "latest_trade_cal_execution_request_scope_hash_matches": latest_after_execution_request.get(
+                "scope_hash_matches_latest_dry_run"
+            ),
+            "current_cache_latest_trade_cal_execution_request_status": latest_execution_request.get(
+                "execution_request_status"
             ),
             "latest_trade_cal_next_execution_recipe_status": latest_after_ready_recipe.get("status"),
             "latest_trade_cal_next_execution_recipe_ready_for_user_confirmation": latest_after_ready_recipe.get(

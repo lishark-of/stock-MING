@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { getDataHealthCache, postTradeCalProviderAcceptanceDryRun, type TaskCreationEnvelope } from "../api/client";
+import {
+  getDataHealthCache,
+  postTradeCalProviderAcceptanceDryRun,
+  postTradeCalProviderAcceptanceExecutionRequest,
+  type TaskCreationEnvelope
+} from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -21,6 +26,8 @@ export default function DataHealthTimeline() {
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
   const [tradeCalDryRunReceipt, setTradeCalDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [tradeCalDryRunError, setTradeCalDryRunError] = useState("");
+  const [tradeCalExecutionRequestReceipt, setTradeCalExecutionRequestReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [tradeCalExecutionRequestError, setTradeCalExecutionRequestError] = useState("");
 
   useEffect(() => {
     void getDataHealthCache().then((res) => {
@@ -54,6 +61,28 @@ export default function DataHealthTimeline() {
     });
   }
 
+  function launchTradeCalExecutionRequest() {
+    const scopeHash = String(tradeCalDryRun.acceptance_scope_hash_short ?? tradeCalDryRun.latest_dry_run_scope_hash_short ?? "");
+    setTradeCalExecutionRequestError("");
+    void postTradeCalProviderAcceptanceExecutionRequest({
+      approved_by_user: true,
+      acceptance_scope_hash_short: scopeHash,
+      apis: ["trade_cal"],
+      exchange: tradeCalDryRun.exchange ?? ["SSE", "SZSE"],
+      start_date: tradeCalDryRun.start_date,
+      end_date: tradeCalDryRun.end_date,
+      requested_by: "command_center_3_data_health",
+      source: "data_health_page"
+    }).then((res) => {
+      setTradeCalExecutionRequestReceipt(res);
+      if (!res.ok) {
+        setTradeCalExecutionRequestError(String(res.error ?? "trade_cal_provider_acceptance_execution_request_failed"));
+      }
+    }).catch((err: unknown) => {
+      setTradeCalExecutionRequestError(err instanceof Error ? err.message : String(err));
+    });
+  }
+
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const visibility = (cache.data_health_visibility_summary as Record<string, unknown> | undefined) ?? {};
@@ -68,6 +97,7 @@ export default function DataHealthTimeline() {
   const freshnessProviderActivationReceipt = (cache.freshness_provider_acceptance_activation_receipt as Record<string, unknown> | undefined) ?? {};
   const latestTradeCalDryRun = (cache.latest_trade_cal_provider_acceptance_dry_run as Record<string, unknown> | undefined) ?? {};
   const tradeCalNextExecutionRecipe = (cache.trade_cal_provider_acceptance_next_execution_recipe as Record<string, unknown> | undefined) ?? {};
+  const latestTradeCalExecutionRequest = (cache.latest_trade_cal_provider_acceptance_execution_request as Record<string, unknown> | undefined) ?? {};
   const freshnessDurableEvidenceRecipe = (cache.freshness_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
   const freshnessDurableEvidenceRows = rows(cache.freshness_durable_evidence_rows);
   const latestTradeCalDryRunReceipt = latestTradeCalDryRun.receipt as Record<string, unknown> | undefined;
@@ -79,6 +109,11 @@ export default function DataHealthTimeline() {
   const tradeCalDryRun = postTradeCalDryRunReceipt ?? latestTradeCalDryRunReceipt ?? latestTradeCalDryRun;
   const tradeCalDryRunRows = rows(tradeCalDryRunPayload.trade_cal_provider_acceptance_dry_run_rows ?? cache.latest_trade_cal_provider_acceptance_dry_run_rows);
   const tradeCalDryRunCredentialRows = rows(tradeCalDryRunPayload.credential_presence_rows ?? cache.latest_trade_cal_provider_acceptance_dry_run_credential_rows);
+  const latestTradeCalExecutionRequestReceipt = latestTradeCalExecutionRequest.receipt as Record<string, unknown> | undefined;
+  const tradeCalExecutionRequestPayload = (tradeCalExecutionRequestReceipt?.data?.task?.payload_safe as Record<string, unknown> | undefined) ?? {};
+  const postTradeCalExecutionRequestReceipt = tradeCalExecutionRequestPayload.trade_cal_provider_acceptance_execution_request_receipt as Record<string, unknown> | undefined;
+  const tradeCalExecutionRequest = postTradeCalExecutionRequestReceipt ?? latestTradeCalExecutionRequestReceipt ?? latestTradeCalExecutionRequest;
+  const tradeCalExecutionRequestRows = rows(tradeCalExecutionRequestPayload.trade_cal_provider_acceptance_execution_request_rows ?? cache.latest_trade_cal_provider_acceptance_execution_request_rows);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
@@ -120,6 +155,8 @@ export default function DataHealthTimeline() {
           { label: "dry-run blockers", value: counts.latest_trade_cal_provider_acceptance_dry_run_blocking_row_count as number | undefined, tone: Number(counts.latest_trade_cal_provider_acceptance_dry_run_blocking_row_count ?? 0) > 0 ? "warn" : "good" },
           { label: "下一步配方", value: tradeCalNextExecutionRecipe.status as string | undefined, tone: tradeCalNextExecutionRecipe.recipe_ready_for_user_confirmation === true ? "good" : "warn" },
           { label: "配方 blockers", value: counts.trade_cal_provider_acceptance_next_execution_blocker_count as number | undefined, tone: Number(counts.trade_cal_provider_acceptance_next_execution_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "执行请求", value: latestTradeCalExecutionRequest.latest_task_found === true ? "可见" : "未运行", tone: latestTradeCalExecutionRequest.latest_task_found === true ? "good" : "neutral" },
+          { label: "请求 blockers", value: counts.latest_trade_cal_provider_acceptance_execution_request_blocking_row_count as number | undefined, tone: Number(counts.latest_trade_cal_provider_acceptance_execution_request_blocking_row_count ?? 0) > 0 ? "warn" : "good" },
           { label: "durable recipe", value: freshnessDurableEvidenceRecipe.status as string | undefined, tone: freshnessDurableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
           { label: "durable blockers", value: freshnessDurableEvidenceRecipe.durable_evidence_blocker_count ?? counts.freshness_durable_evidence_blocker_count, tone: Number(freshnessDurableEvidenceRecipe.durable_evidence_blocker_count ?? counts.freshness_durable_evidence_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "当前证据 QA", value: currentEvidenceFreshness.status as string | undefined, tone: currentEvidenceFreshness.provider_backed_long_window_acceptance_done === true ? "good" : "warn" },
@@ -288,6 +325,28 @@ export default function DataHealthTimeline() {
         <p>not_allowed_next_steps: {Array.isArray(tradeCalNextExecutionRecipe.not_allowed_next_steps) ? tradeCalNextExecutionRecipe.not_allowed_next_steps.join(" / ") : "GET cache provider refresh / React render provider refresh / skip dry-run scope ticket / skip user confirmation / promote recipe to provider-backed acceptance"}</p>
         <DataLineageTable rows={objectRow(tradeCalNextExecutionRecipe)} />
         <DataLineageTable rows={rows(cache.trade_cal_provider_acceptance_next_execution_rows)} />
+      </PacketCard>
+
+      <PacketCard title="Trade_cal provider 执行请求 ticket" subtitle="按钮生成本地 request；绑定 dry-run scope hash，不调用 Tushare、不创建 provider task" status={String(tradeCalExecutionRequest.status ?? "not_run")}>
+        <div className="actions">
+          <button onClick={launchTradeCalExecutionRequest}>生成执行请求 ticket</button>
+        </div>
+        <p>status: {String(tradeCalExecutionRequest.status ?? tradeCalExecutionRequest.execution_request_status ?? "not_run")}</p>
+        <p>latest dry-run scope hash: {String(tradeCalExecutionRequest.latest_dry_run_scope_hash_short ?? "--")}</p>
+        <p>requested scope hash: {String(tradeCalExecutionRequest.requested_scope_hash_short ?? "--")}</p>
+        <p>scope_hash_matches_latest_dry_run: {String(tradeCalExecutionRequest.scope_hash_matches_latest_dry_run === true)}</p>
+        <p>ready_for_manual_provider_task_submission: {String(tradeCalExecutionRequest.ready_for_manual_provider_task_submission === true)}</p>
+        <p>ready_to_execute_from_cache / creates_provider_task: {String(tradeCalExecutionRequest.ready_to_execute_from_cache ?? false)} / {String(tradeCalExecutionRequest.creates_provider_task ?? false)}</p>
+        <p>provider_task_executed_by_request / provider_execution_implemented: {String(tradeCalExecutionRequest.provider_task_executed_by_request ?? false)} / {String(tradeCalExecutionRequest.provider_execution_implemented ?? false)}</p>
+        <p>provider_backed_long_window_acceptance_done / production_freshness_gate_complete: {String(tradeCalExecutionRequest.provider_backed_long_window_acceptance_done ?? false)} / {String(tradeCalExecutionRequest.production_freshness_gate_complete ?? false)}</p>
+        <p>allowed_next_step: {String(tradeCalExecutionRequest.allowed_next_step ?? "--")}</p>
+        <p>not_allowed_next_steps: {Array.isArray(tradeCalExecutionRequest.not_allowed_next_steps) ? tradeCalExecutionRequest.not_allowed_next_steps.join(" / ") : "GET cache provider refresh / React render provider refresh / execute provider from execution request ticket / promote execution request to provider-backed acceptance"}</p>
+        <p>GET cache 只读取 latest execution request metadata；它不是 provider call ledger，也不是 LTG-01/02 生产验收完成。</p>
+        {tradeCalExecutionRequestError ? <p className="risk-note">{tradeCalExecutionRequestError}</p> : null}
+        <TaskLaunchReceipt receipt={tradeCalExecutionRequestReceipt} />
+        <DataLineageTable rows={objectRow(tradeCalExecutionRequest)} />
+        <DataLineageTable rows={tradeCalExecutionRequestRows} />
+        <JsonDetails title="latest trade_cal provider acceptance execution request raw" data={latestTradeCalExecutionRequest} />
       </PacketCard>
 
       <PacketCard title="Freshness durable evidence recipe" subtitle="LTG-01 生产验收证据配方；固定 provider trade_cal 直接证据清单，不调用 Tushare" status={String(freshnessDurableEvidenceRecipe.status ?? "freshness_durable_evidence_recipe_not_loaded")}>

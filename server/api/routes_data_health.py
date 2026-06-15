@@ -22,3 +22,9 @@ def get_data_health_timeline_cache() -> dict:
 def post_trade_cal_provider_acceptance_dry_run(payload: dict[str, Any] | None = None) -> dict:
     task = data_health_service.run_trade_cal_provider_acceptance_dry_run(payload)
     return task_envelope(task)
+
+
+@router.post("/trade-cal-provider-acceptance-execution-request")
+def post_trade_cal_provider_acceptance_execution_request(payload: dict[str, Any] | None = None) -> dict:
+    task = data_health_service.run_trade_cal_provider_acceptance_execution_request(payload)
+    return task_envelope(task)

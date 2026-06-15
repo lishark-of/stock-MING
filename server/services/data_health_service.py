@@ -21,6 +21,15 @@ REAL_TRADE_CAL_REQUIRED_COLUMNS = ("exchange", "cal_date", "is_open")
 TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION = "data_health_trade_cal_provider_acceptance_dry_run.v1"
 TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_TASK_TYPE = "run_trade_cal_provider_acceptance_dry_run"
 TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_ROUTE = "POST /api/data-health/trade-cal-provider-acceptance-dry-run"
+TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_SCHEMA_VERSION = (
+    "data_health_trade_cal_provider_acceptance_execution_request.v1"
+)
+TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_TASK_TYPE = (
+    "run_trade_cal_provider_acceptance_execution_request"
+)
+TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_ROUTE = (
+    "POST /api/data-health/trade-cal-provider-acceptance-execution-request"
+)
 TRADE_CAL_PROVIDER_ACCEPTANCE_MODE = "provider_backed_trade_cal_long_window"
 TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS = 730
 TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS = 8
@@ -1617,6 +1626,425 @@ def _latest_trade_cal_provider_acceptance_dry_run_from_tasks() -> tuple[
     return latest_receipt, row_list, credential_list
 
 
+def _scope_hash_short_text(value: Any) -> str:
+    text = "".join(ch for ch in str(value or "").strip().lower() if ch in "0123456789abcdef")
+    return text[:16]
+
+
+def _trade_cal_acceptance_execution_payload_safe(
+    payload: Any,
+    *,
+    latest_dry_run: Mapping[str, Any],
+    next_execution_recipe: Mapping[str, Any],
+) -> dict[str, Any]:
+    raw = payload if isinstance(payload, Mapping) else {}
+    latest_scope_hash_short = _scope_hash_short_text(latest_dry_run.get("acceptance_scope_hash_short"))
+    requested_scope_hash_short = _scope_hash_short_text(
+        raw.get("acceptance_scope_hash_short")
+        or raw.get("scope_hash_short")
+        or raw.get("dry_run_scope_hash_short")
+        or latest_scope_hash_short
+    )
+    user_confirmed = _safe_bool(
+        raw.get(
+            "approved_by_user",
+            raw.get("user_confirmation", raw.get("confirm_provider_task_request", raw.get("approved"))),
+        ),
+        False,
+    )
+    exchange = _safe_exchange_list(raw.get("exchange") or latest_dry_run.get("exchange") or ["SSE", "SZSE"])
+    start_date = _safe_text(raw.get("start_date") or latest_dry_run.get("start_date") or "YYYYMMDD", limit=40)
+    end_date = _safe_text(raw.get("end_date") or latest_dry_run.get("end_date") or "YYYYMMDD", limit=40)
+    return {
+        "schema_version": TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_SCHEMA_VERSION,
+        "route": TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_ROUTE,
+        "task_type": TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_TASK_TYPE,
+        "request_mode": "manual_provider_task_request_preflight",
+        "user_confirmed": user_confirmed,
+        "confirmation_mode": "explicit_payload_true" if user_confirmed else "missing_or_false",
+        "selected_apis": ["trade_cal"],
+        "acceptance_mode": TRADE_CAL_PROVIDER_ACCEPTANCE_MODE,
+        "exchange": exchange,
+        "start_date": start_date,
+        "end_date": end_date,
+        "latest_dry_run_scope_hash_short": latest_scope_hash_short,
+        "requested_scope_hash_short": requested_scope_hash_short,
+        "target_post_task_route": str(
+            next_execution_recipe.get("target_post_task_route") or "POST /api/tasks/refresh-tushare-facts"
+        ),
+        "target_task_type": str(next_execution_recipe.get("target_task_type") or "refresh_tushare_facts"),
+        "requested_by": _safe_text(raw.get("requested_by") or "local_user", limit=80),
+        "source": _safe_text(raw.get("source") or "data_health", limit=80),
+        "contains_secret": False,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _trade_cal_acceptance_execution_request_row(
+    phase: str,
+    status: str,
+    *,
+    passed: bool,
+    blocks_provider_task_submission: bool,
+    evidence: str,
+) -> dict[str, Any]:
+    return {
+        "phase": phase,
+        "status": status,
+        "passed": bool(passed),
+        "blocks_provider_task_submission": bool(blocks_provider_task_submission),
+        "evidence": evidence,
+        "request_ticket_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _build_trade_cal_provider_acceptance_execution_request(
+    payload_safe: Mapping[str, Any],
+    *,
+    latest_dry_run: Mapping[str, Any],
+    next_execution_recipe: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    latest_scope_hash_short = _scope_hash_short_text(latest_dry_run.get("acceptance_scope_hash_short"))
+    requested_scope_hash_short = _scope_hash_short_text(payload_safe.get("requested_scope_hash_short"))
+    latest_scope_visible = bool(latest_dry_run.get("latest_task_found")) and bool(latest_scope_hash_short)
+    scope_hash_matches = bool(
+        latest_scope_visible and requested_scope_hash_short and requested_scope_hash_short == latest_scope_hash_short
+    )
+    user_confirmed = payload_safe.get("user_confirmed") is True
+    recipe_visible = (
+        next_execution_recipe.get("schema_version")
+        == "data_health_trade_cal_provider_acceptance_next_execution_recipe.v1"
+    )
+    recipe_ready = next_execution_recipe.get("recipe_ready_for_user_confirmation") is True
+    target_route_ok = payload_safe.get("target_post_task_route") == "POST /api/tasks/refresh-tushare-facts"
+    target_task_ok = payload_safe.get("target_task_type") == "refresh_tushare_facts"
+    safe_payload_ready = bool(
+        payload_safe.get("selected_apis") == ["trade_cal"]
+        and payload_safe.get("acceptance_mode") == TRADE_CAL_PROVIDER_ACCEPTANCE_MODE
+        and payload_safe.get("contains_secret") is False
+        and payload_safe.get("credential_values_read") is False
+        and payload_safe.get("credential_values_exposed") is False
+        and payload_safe.get("env_key_names_included") is False
+    )
+    rows = [
+        _trade_cal_acceptance_execution_request_row(
+            "dry_run_scope_ticket_visible",
+            "passed_scope_ticket_visible" if latest_scope_visible else "blocked_missing_scope_ticket",
+            passed=latest_scope_visible,
+            blocks_provider_task_submission=not latest_scope_visible,
+            evidence=(
+                f"latest_task_found={latest_dry_run.get('latest_task_found')}; "
+                f"latest_scope_hash_short={latest_scope_hash_short or 'missing'}"
+            ),
+        ),
+        _trade_cal_acceptance_execution_request_row(
+            "scope_hash_matches_latest_dry_run",
+            "passed_scope_hash_match" if scope_hash_matches else "blocked_scope_hash_mismatch",
+            passed=scope_hash_matches,
+            blocks_provider_task_submission=not scope_hash_matches,
+            evidence=(
+                f"requested_scope_hash_short={requested_scope_hash_short or 'missing'}; "
+                f"latest_scope_hash_short={latest_scope_hash_short or 'missing'}"
+            ),
+        ),
+        _trade_cal_acceptance_execution_request_row(
+            "explicit_user_confirmation_recorded",
+            "passed_user_confirmed" if user_confirmed else "blocked_user_confirmation_required",
+            passed=user_confirmed,
+            blocks_provider_task_submission=not user_confirmed,
+            evidence=f"confirmation_mode={payload_safe.get('confirmation_mode')}",
+        ),
+        _trade_cal_acceptance_execution_request_row(
+            "next_execution_recipe_visible",
+            "passed_recipe_visible" if recipe_visible else "blocked_missing_next_execution_recipe",
+            passed=recipe_visible,
+            blocks_provider_task_submission=not recipe_visible,
+            evidence=f"recipe_status={next_execution_recipe.get('status') or 'missing'}",
+        ),
+        _trade_cal_acceptance_execution_request_row(
+            "next_execution_recipe_ready",
+            "passed_recipe_ready" if recipe_ready else "blocked_local_readiness",
+            passed=recipe_ready,
+            blocks_provider_task_submission=not recipe_ready,
+            evidence=(
+                f"recipe_ready_for_user_confirmation={next_execution_recipe.get('recipe_ready_for_user_confirmation')}; "
+                f"blocking_row_count={next_execution_recipe.get('blocking_row_count')}"
+            ),
+        ),
+        _trade_cal_acceptance_execution_request_row(
+            "target_post_task_route_declared",
+            "passed_static_route" if target_route_ok and target_task_ok else "blocked_target_route",
+            passed=target_route_ok and target_task_ok,
+            blocks_provider_task_submission=not (target_route_ok and target_task_ok),
+            evidence=(
+                f"target_route={payload_safe.get('target_post_task_route')}; "
+                f"target_task_type={payload_safe.get('target_task_type')}"
+            ),
+        ),
+        _trade_cal_acceptance_execution_request_row(
+            "safe_payload_fields_only",
+            "passed_safe_payload" if safe_payload_ready else "blocked_unsafe_payload",
+            passed=safe_payload_ready,
+            blocks_provider_task_submission=not safe_payload_ready,
+            evidence="Execution request payload contains only trade_cal scope, dates, scope hash, requester, and no credential values.",
+        ),
+        _trade_cal_acceptance_execution_request_row(
+            "provider_call_ledger_required_after_execution",
+            "pending_future_provider_task",
+            passed=False,
+            blocks_provider_task_submission=False,
+            evidence="Future provider task must emit safe call ledger rows before any promotion.",
+        ),
+        _trade_cal_acceptance_execution_request_row(
+            "production_promotion_blocked",
+            "blocked_until_real_provider_evidence",
+            passed=False,
+            blocks_provider_task_submission=False,
+            evidence="Execution request ticket cannot mark provider-backed acceptance or production freshness complete.",
+        ),
+        _trade_cal_acceptance_execution_request_row(
+            "cache_render_trade_boundary",
+            "passed_no_side_effects",
+            passed=True,
+            blocks_provider_task_submission=False,
+            evidence="This request ticket does not run providers, models, GitHub, trades, or strategy action mutation.",
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["blocks_provider_task_submission"]]
+    if not latest_scope_visible:
+        status = "trade_cal_provider_acceptance_execution_request_blocked_missing_dry_run_scope_ticket"
+        allowed_next_step = "run_trade_cal_provider_acceptance_dry_run_scope_ticket"
+    elif not scope_hash_matches:
+        status = "trade_cal_provider_acceptance_execution_request_blocked_scope_hash_mismatch"
+        allowed_next_step = "rerun_execution_request_with_latest_dry_run_scope_hash"
+    elif not user_confirmed:
+        status = "trade_cal_provider_acceptance_execution_request_blocked_user_confirmation_required"
+        allowed_next_step = "rerun_execution_request_with_explicit_user_confirmation"
+    elif not recipe_visible:
+        status = "trade_cal_provider_acceptance_execution_request_blocked_missing_next_execution_recipe"
+        allowed_next_step = "reload_data_health_cache_then_rerun_execution_request"
+    elif not recipe_ready:
+        status = "trade_cal_provider_acceptance_execution_request_blocked_local_readiness"
+        allowed_next_step = "resolve_local_freshness_acceptance_blockers_before_provider_task"
+    else:
+        status = "trade_cal_provider_acceptance_execution_request_ready_manual_provider_task_pending"
+        allowed_next_step = "manual_submit_post_refresh_tushare_facts_with_bound_scope_ticket"
+    ready_for_manual_provider_task_submission = not blocking_rows
+    target_payload_safe = {
+        "apis": ["trade_cal"],
+        "acceptance_mode": TRADE_CAL_PROVIDER_ACCEPTANCE_MODE,
+        "exchange": list(payload_safe.get("exchange") or []),
+        "start_date": payload_safe.get("start_date"),
+        "end_date": payload_safe.get("end_date"),
+        "acceptance_scope_hash_short": requested_scope_hash_short or "<required_from_dry_run>",
+        "requested_by": payload_safe.get("requested_by"),
+        "provider_execution_requires_separate_post": True,
+    }
+    receipt = {
+        "schema_version": TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_trade_cal_provider_acceptance_execution_request_no_provider_execution",
+        "route": TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_ROUTE,
+        "dry_run_route": TRADE_CAL_PROVIDER_ACCEPTANCE_DRY_RUN_ROUTE,
+        "target_post_task_route": payload_safe.get("target_post_task_route"),
+        "target_task_type": payload_safe.get("target_task_type"),
+        "task_type": TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_TASK_TYPE,
+        "ltg": "LTG-01/LTG-02/LTG-11",
+        "user_confirmed": user_confirmed,
+        "selected_apis": ["trade_cal"],
+        "acceptance_mode": TRADE_CAL_PROVIDER_ACCEPTANCE_MODE,
+        "exchange": list(payload_safe.get("exchange") or []),
+        "start_date": payload_safe.get("start_date"),
+        "end_date": payload_safe.get("end_date"),
+        "latest_dry_run_task_id": latest_dry_run.get("latest_task_id"),
+        "latest_dry_run_scope_ticket_visible": latest_scope_visible,
+        "latest_dry_run_scope_hash_short": latest_scope_hash_short,
+        "requested_scope_hash_short": requested_scope_hash_short,
+        "scope_hash_matches_latest_dry_run": scope_hash_matches,
+        "next_execution_recipe_status": next_execution_recipe.get("status"),
+        "next_execution_recipe_ready_for_user_confirmation": recipe_ready,
+        "next_execution_recipe_blocking_row_count": int(next_execution_recipe.get("blocking_row_count") or 0),
+        "target_payload_safe": target_payload_safe,
+        "ready_for_manual_provider_task_submission": ready_for_manual_provider_task_submission,
+        "ready_to_execute_from_cache": False,
+        "creates_provider_task": False,
+        "provider_execution_implemented": False,
+        "provider_task_executed_by_request": False,
+        "provider_backed_long_window_acceptance_done": False,
+        "production_freshness_gate_complete": False,
+        "allowed_next_step": allowed_next_step,
+        "required_evidence_after_execution": [
+            "real Tushare trade_cal provider call ledger",
+            "730-day schema/window/open/closed/latest-completed evidence",
+            "freshness replay evidence",
+            "failure-mode evidence",
+            "ledger redaction review",
+            "explicit production promotion review",
+        ],
+        "missing_evidence_items": [
+            "separate POST /api/tasks/refresh-tushare-facts execution",
+            "real Tushare trade_cal provider call ledger",
+            "freshness replay evidence",
+            "failure-mode evidence",
+            "explicit production promotion review",
+        ],
+        "not_allowed_next_steps": [
+            "GET /api/data-health/cache provider refresh",
+            "React render provider refresh",
+            "skip dry-run scope ticket",
+            "skip user confirmation",
+            "execute provider from execution request ticket",
+            "promote execution request to provider-backed acceptance",
+            "write token/key material to frontend/log/packet/cache",
+            "execute real trades or mutate strategy action",
+        ],
+        "row_count": len(rows),
+        "blocking_row_count": len(blocking_rows),
+        "blocking_phases": [row["phase"] for row in blocking_rows],
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    return receipt, rows
+
+
+def _latest_trade_cal_provider_acceptance_execution_request_from_tasks() -> tuple[
+    dict[str, Any],
+    list[dict[str, Any]],
+]:
+    latest_task = next(
+        (
+            task
+            for task in task_service.list_task_statuses()
+            if str(task.get("task_type") or "") == TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_TASK_TYPE
+        ),
+        None,
+    )
+    if not latest_task:
+        return (
+            {
+                "schema_version": "data_health_latest_trade_cal_provider_acceptance_execution_request.v1",
+                "status": "no_trade_cal_provider_acceptance_execution_request_task_found",
+                "scope": "local_task_status_lookup_no_provider_execution",
+                "execution_request_status": "no_trade_cal_provider_acceptance_execution_request_task_found",
+                "latest_task_found": False,
+                "route": TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_ROUTE,
+                "task_type": TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_TASK_TYPE,
+                "latest_task_id": None,
+                "latest_task_status": None,
+                "latest_task_current_step": None,
+                "latest_dry_run_scope_hash_short": "",
+                "requested_scope_hash_short": "",
+                "receipt_visible": False,
+                "row_count": 0,
+                "blocking_row_count": 0,
+                "ready_for_manual_provider_task_submission": False,
+                "ready_to_execute_from_cache": False,
+                "creates_provider_task": False,
+                "provider_execution_implemented": False,
+                "provider_task_executed_by_request": False,
+                "provider_backed_long_window_acceptance_done": False,
+                "production_freshness_gate_complete": False,
+                "cache_get_creates_task": False,
+                "cache_get_external_calls": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+            [],
+        )
+    payload_safe = latest_task.get("payload_safe") if isinstance(latest_task.get("payload_safe"), dict) else {}
+    receipt = payload_safe.get("trade_cal_provider_acceptance_execution_request_receipt")
+    rows = payload_safe.get("trade_cal_provider_acceptance_execution_request_rows")
+    receipt_safe = _safe_value(receipt) if isinstance(receipt, dict) else {}
+    row_safe = _safe_value(rows) if isinstance(rows, list) else []
+    receipt_map = receipt_safe if isinstance(receipt_safe, dict) else {}
+    row_list = row_safe if isinstance(row_safe, list) else []
+    task_summary = {
+        "task_id": latest_task.get("task_id"),
+        "task_type": latest_task.get("task_type"),
+        "task_status": latest_task.get("status"),
+        "current_step": latest_task.get("current_step"),
+        "created_at": latest_task.get("created_at"),
+        "updated_at": latest_task.get("updated_at"),
+        "finished_at": latest_task.get("finished_at"),
+        "storage_source": latest_task.get("storage_source"),
+        "call_ledger_count": len(latest_task.get("call_ledger") or []),
+        "task_log_count": len(latest_task.get("task_log") or []),
+    }
+    latest_receipt = {
+        "schema_version": "data_health_latest_trade_cal_provider_acceptance_execution_request.v1",
+        "status": "latest_trade_cal_provider_acceptance_execution_request_visible",
+        "scope": "local_task_status_lookup_no_provider_execution",
+        "latest_task_found": True,
+        "receipt_visible": bool(receipt_map),
+        "route": TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_ROUTE,
+        "task_type": TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_TASK_TYPE,
+        "latest_task": task_summary,
+        "latest_task_id": latest_task.get("task_id"),
+        "latest_task_status": latest_task.get("status"),
+        "latest_task_current_step": latest_task.get("current_step"),
+        "execution_request_status": receipt_map.get("status") or "missing_receipt",
+        "latest_dry_run_task_id": receipt_map.get("latest_dry_run_task_id"),
+        "latest_dry_run_scope_hash_short": receipt_map.get("latest_dry_run_scope_hash_short") or "",
+        "requested_scope_hash_short": receipt_map.get("requested_scope_hash_short") or "",
+        "scope_hash_matches_latest_dry_run": receipt_map.get("scope_hash_matches_latest_dry_run") is True,
+        "next_execution_recipe_status": receipt_map.get("next_execution_recipe_status") or "",
+        "next_execution_recipe_ready_for_user_confirmation": (
+            receipt_map.get("next_execution_recipe_ready_for_user_confirmation") is True
+        ),
+        "ready_for_manual_provider_task_submission": (
+            receipt_map.get("ready_for_manual_provider_task_submission") is True
+        ),
+        "ready_to_execute_from_cache": False,
+        "creates_provider_task": False,
+        "provider_execution_implemented": False,
+        "provider_task_executed_by_request": False,
+        "provider_backed_long_window_acceptance_done": False,
+        "production_freshness_gate_complete": False,
+        "allowed_next_step": receipt_map.get("allowed_next_step") or "",
+        "blocking_row_count": int(receipt_map.get("blocking_row_count") or 0),
+        "row_count": len(row_list),
+        "cache_get_creates_task": False,
+        "cache_get_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "receipt": receipt_map,
+    }
+    return latest_receipt, row_list
+
+
 def _first_value(snapshot: Mapping[str, Any], *keys: str) -> Any:
     for key in keys:
         value = snapshot.get(key)
@@ -3055,6 +3483,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             latest_dry_run=latest_trade_cal_provider_acceptance_dry_run,
         )
     )
+    (
+        latest_trade_cal_provider_acceptance_execution_request,
+        latest_trade_cal_provider_acceptance_execution_request_rows,
+    ) = _latest_trade_cal_provider_acceptance_execution_request_from_tasks()
     freshness_durable_evidence_recipe = _freshness_durable_evidence_recipe(
         freshness_acceptance_summary=freshness_acceptance_summary,
         trade_cal_physical=trade_cal_physical_validation,
@@ -3138,6 +3570,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "freshness_provider_acceptance_activation_receipt",
             "latest_trade_cal_provider_acceptance_dry_run",
             "trade_cal_provider_acceptance_next_execution_recipe",
+            "latest_trade_cal_provider_acceptance_execution_request",
             "freshness_durable_evidence_recipe",
             "current_evidence_freshness_qa_contract",
             "current_evidence_decision_surface_audit",
@@ -3184,6 +3617,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             trade_cal_provider_acceptance_next_execution_recipe
         ),
         "trade_cal_provider_acceptance_next_execution_rows": trade_cal_provider_acceptance_next_execution_rows,
+        "latest_trade_cal_provider_acceptance_execution_request": (
+            latest_trade_cal_provider_acceptance_execution_request
+        ),
+        "latest_trade_cal_provider_acceptance_execution_request_rows": (
+            latest_trade_cal_provider_acceptance_execution_request_rows
+        ),
         "freshness_durable_evidence_recipe": freshness_durable_evidence_recipe,
         "freshness_durable_evidence_rows": freshness_durable_evidence_rows,
         "current_evidence_freshness_qa_contract": current_evidence_freshness_qa_contract,
@@ -3260,6 +3699,17 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             ),
             "trade_cal_provider_acceptance_next_execution_blocker_count": int(
                 trade_cal_provider_acceptance_next_execution_recipe.get("blocking_row_count") or 0
+            ),
+            "latest_trade_cal_provider_acceptance_execution_request_found": (
+                1
+                if latest_trade_cal_provider_acceptance_execution_request.get("latest_task_found") is True
+                else 0
+            ),
+            "latest_trade_cal_provider_acceptance_execution_request_row_count": len(
+                latest_trade_cal_provider_acceptance_execution_request_rows
+            ),
+            "latest_trade_cal_provider_acceptance_execution_request_blocking_row_count": int(
+                latest_trade_cal_provider_acceptance_execution_request.get("blocking_row_count") or 0
             ),
             "freshness_durable_evidence_row_count": len(freshness_durable_evidence_rows),
             "freshness_durable_evidence_blocker_count": int(
@@ -3341,6 +3791,13 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal_provider_acceptance_next_execution_recipe_calls_provider": False,
             "trade_cal_provider_acceptance_next_execution_recipe_requires_dry_run": True,
             "trade_cal_provider_acceptance_next_execution_recipe_is_not_acceptance": True,
+            "latest_trade_cal_provider_acceptance_execution_request_lookup_is_local": True,
+            "latest_trade_cal_provider_acceptance_execution_request_lookup_creates_task": False,
+            "latest_trade_cal_provider_acceptance_execution_request_lookup_calls_provider": False,
+            "latest_trade_cal_provider_acceptance_execution_request_is_not_acceptance": True,
+            "latest_trade_cal_provider_acceptance_execution_request_creates_provider_task": False,
+            "trade_cal_provider_acceptance_execution_request_route_calls_provider": False,
+            "trade_cal_provider_acceptance_execution_request_requires_bound_scope_hash": True,
             "freshness_durable_evidence_recipe_is_local": True,
             "freshness_durable_evidence_recipe_calls_provider": False,
             "freshness_durable_evidence_recipe_creates_task": False,
@@ -3450,6 +3907,29 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                         "recipe_ready_for_user_confirmation"
                     )
                 ),
+                "latest_trade_cal_provider_acceptance_execution_request_status": (
+                    latest_trade_cal_provider_acceptance_execution_request.get("execution_request_status")
+                ),
+                "latest_trade_cal_provider_acceptance_execution_request_task_id": (
+                    latest_trade_cal_provider_acceptance_execution_request.get("latest_task_id")
+                ),
+                "latest_trade_cal_provider_acceptance_execution_request_found": bool(
+                    latest_trade_cal_provider_acceptance_execution_request.get("latest_task_found")
+                ),
+                "latest_trade_cal_provider_acceptance_execution_request_ready_for_manual_provider_task_submission": bool(
+                    latest_trade_cal_provider_acceptance_execution_request.get(
+                        "ready_for_manual_provider_task_submission"
+                    )
+                ),
+                "latest_trade_cal_provider_acceptance_execution_request_scope_hash_matches": bool(
+                    latest_trade_cal_provider_acceptance_execution_request.get("scope_hash_matches_latest_dry_run")
+                ),
+                "latest_trade_cal_provider_acceptance_execution_request_row_count": len(
+                    latest_trade_cal_provider_acceptance_execution_request_rows
+                ),
+                "latest_trade_cal_provider_acceptance_execution_request_blocking_row_count": int(
+                    latest_trade_cal_provider_acceptance_execution_request.get("blocking_row_count") or 0
+                ),
                 "freshness_durable_evidence_recipe_status": freshness_durable_evidence_recipe.get("status"),
                 "freshness_durable_evidence_blocker_count": int(
                     freshness_durable_evidence_recipe.get("durable_evidence_blocker_count") or 0
@@ -3502,6 +3982,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "freshness provider acceptance activation receipt 只是显式 provider 验收前的本地清单；不会调用 Tushare、不会创建任务、不会宣称生产完成。",
             "latest trade_cal provider acceptance dry-run 只读取本地 task metadata；GET cache 不创建 dry-run、不调用 Tushare、不证明 provider-backed 验收。",
             "trade_cal provider acceptance next execution recipe 只给出下一次 POST 验收配方；不会调用 Tushare、不会创建任务、不会证明生产完成。",
+            "trade_cal provider execution request ticket 只绑定 dry-run scope hash 和后续手工 provider task 请求；不会调用 Tushare、不会创建 provider task、不会证明生产完成。",
             "freshness durable evidence recipe 只固定 LTG-01 生产验收证据清单；不会调用 Tushare、不会创建任务、不会把 dry-run/fixture/local artifact 提升成 provider-backed 验收。",
         ],
     }
@@ -3596,4 +4077,111 @@ def run_trade_cal_provider_acceptance_dry_run(payload: Any = None) -> dict[str, 
         output_packet_key=PACKET_KEY,
         call_ledger=ledger,
         warning="trade_cal_provider_acceptance_dry_run_completed_no_external_call",
+    ) or task
+
+
+def run_trade_cal_provider_acceptance_execution_request(payload: Any = None) -> dict[str, Any]:
+    cache = read_data_health_timeline_cache()
+    latest_dry_run = _as_dict(cache.get("latest_trade_cal_provider_acceptance_dry_run"))
+    next_execution_recipe = _as_dict(cache.get("trade_cal_provider_acceptance_next_execution_recipe"))
+    payload_safe = _trade_cal_acceptance_execution_payload_safe(
+        payload,
+        latest_dry_run=latest_dry_run,
+        next_execution_recipe=next_execution_recipe,
+    )
+    receipt, rows = _build_trade_cal_provider_acceptance_execution_request(
+        payload_safe,
+        latest_dry_run=latest_dry_run,
+        next_execution_recipe=next_execution_recipe,
+    )
+    payload_safe.update(
+        {
+            "trade_cal_provider_acceptance_execution_request_receipt": receipt,
+            "trade_cal_provider_acceptance_execution_request_rows": rows,
+            "execution_request_only": True,
+            "creates_provider_task": False,
+            "provider_execution_implemented": False,
+            "provider_task_executed_by_request": False,
+            "production_freshness_gate_complete": False,
+        }
+    )
+    task = task_service.create_task_record(
+        TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload_safe,
+        current_step="trade_cal_provider_acceptance_execution_request_local_only",
+        warnings=[
+            "trade_cal provider execution request 只生成本地执行请求 ticket，不调用 Tushare。",
+            "execution request 必须绑定 latest dry-run scope hash；不会创建 provider task。",
+            "execution request 不写 Parquet、不执行真实交易、不修改 strategy action。",
+        ],
+    )
+    now = _now_iso()
+    ledger = [
+        {
+            "api": "local_trade_cal_provider_acceptance_execution_request",
+            "endpoint": TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_ROUTE,
+            "request_params_safe": {
+                "selected_apis": receipt["selected_apis"],
+                "acceptance_mode": receipt["acceptance_mode"],
+                "target_post_task_route": receipt["target_post_task_route"],
+                "target_task_type": receipt["target_task_type"],
+                "latest_dry_run_scope_hash_short": receipt["latest_dry_run_scope_hash_short"],
+                "requested_scope_hash_short": receipt["requested_scope_hash_short"],
+                "scope_hash_matches_latest_dry_run": receipt["scope_hash_matches_latest_dry_run"],
+                "next_execution_recipe_ready_for_user_confirmation": receipt[
+                    "next_execution_recipe_ready_for_user_confirmation"
+                ],
+                "ready_for_manual_provider_task_submission": receipt[
+                    "ready_for_manual_provider_task_submission"
+                ],
+                "creates_provider_task": False,
+                "provider_execution_implemented": False,
+                "production_freshness_gate_complete": False,
+            },
+            "row_count": len(rows),
+            "data_date": receipt["end_date"],
+            "local_fetched_at": now,
+            "call_status": str(
+                receipt.get("status") or "trade_cal_provider_acceptance_execution_request_recorded_no_provider_call"
+            ),
+            "error_message_safe": "",
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+    status_to_step = {
+        "trade_cal_provider_acceptance_execution_request_blocked_missing_dry_run_scope_ticket": (
+            "trade_cal_execution_request_blocked_missing_dry_run_scope_ticket_no_provider_call"
+        ),
+        "trade_cal_provider_acceptance_execution_request_blocked_scope_hash_mismatch": (
+            "trade_cal_execution_request_blocked_scope_hash_mismatch_no_provider_call"
+        ),
+        "trade_cal_provider_acceptance_execution_request_blocked_user_confirmation_required": (
+            "trade_cal_execution_request_blocked_user_confirmation_required_no_provider_call"
+        ),
+        "trade_cal_provider_acceptance_execution_request_blocked_missing_next_execution_recipe": (
+            "trade_cal_execution_request_blocked_missing_next_execution_recipe_no_provider_call"
+        ),
+        "trade_cal_provider_acceptance_execution_request_blocked_local_readiness": (
+            "trade_cal_execution_request_blocked_local_readiness_no_provider_call"
+        ),
+        "trade_cal_provider_acceptance_execution_request_ready_manual_provider_task_pending": (
+            "trade_cal_execution_request_ready_manual_provider_task_pending_no_provider_call"
+        ),
+    }
+    current_step = status_to_step.get(str(receipt.get("status") or ""), "trade_cal_execution_request_recorded_no_provider_call")
+    return task_service.update_task_status(
+        str(task.get("task_id") or ""),
+        status="success",
+        progress=1.0,
+        current_step=current_step,
+        output_packet_key=PACKET_KEY,
+        call_ledger=ledger,
+        warning="trade_cal_provider_acceptance_execution_request_completed_no_external_call",
     ) or task

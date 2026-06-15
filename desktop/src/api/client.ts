@@ -267,6 +267,13 @@ export function postTradeCalProviderAcceptanceDryRun(payload: Record<string, unk
   });
 }
 
+export function postTradeCalProviderAcceptanceExecutionRequest(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/data-health/trade-cal-provider-acceptance-execution-request", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getDesktopPreflightCache() {
   return request<Record<string, unknown>>("/api/desktop/preflight-cache");
 }
