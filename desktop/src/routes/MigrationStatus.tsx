@@ -1,9 +1,135 @@
 import { useEffect, useState } from "react";
-import { getMigrationStatus, postTushareDeepseekLinkageReview } from "../api/client";
+import { getMigrationStatus, postLtgNextAcceptanceLocalStep, postTushareDeepseekLinkageReview, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
+import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
+import TaskStatusPanel from "../components/TaskStatusPanel";
+
+const DEFAULT_LTG_QUEUE_SYMBOL = "002008.SZ";
+
+function dateToYyyymmdd(date: Date): string {
+  return date.toISOString().slice(0, 10).replace(/-/g, "");
+}
+
+function tradeCalWindow() {
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - 730);
+  return { start_date: dateToYyyymmdd(start), end_date: dateToYyyymmdd(end) };
+}
+
+function localStep(row: Record<string, unknown>, phaseKey: string): Record<string, unknown> {
+  const steps = (row.local_step_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  return steps.find((step) => step.phase_key === phaseKey) ?? {};
+}
+
+function scopeHash(row: Record<string, unknown>, phaseKey: string): string {
+  const step = localStep(row, phaseKey);
+  return String(step.receipt_scope_hash ?? step.receipt_scope_hash_short ?? "");
+}
+
+function scopeHashShort(row: Record<string, unknown>, phaseKey: string): string {
+  const step = localStep(row, phaseKey);
+  return String(step.receipt_scope_hash_short ?? step.receipt_scope_hash ?? "");
+}
+
+function taskId(row: Record<string, unknown>, phaseKey: string): string {
+  return String(localStep(row, phaseKey).latest_task_id ?? "");
+}
+
+function ltgNextStepPayload(row: Record<string, unknown>): Record<string, unknown> {
+  const route = String(row.next_local_step ?? "");
+  if (route === "POST /api/data-health/trade-cal-provider-acceptance-dry-run") {
+    return {
+      approved_by_user: true,
+      apis: ["trade_cal"],
+      exchange: ["SSE", "SZSE"],
+      ...tradeCalWindow(),
+      requested_by: "migration_status_ltg_queue",
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/data-health/trade-cal-provider-acceptance-execution-request") {
+    return {
+      approved_by_user: true,
+      acceptance_scope_hash_short: scopeHashShort(row, "trade_cal_dry_run_scope_ticket"),
+      apis: ["trade_cal"],
+      exchange: ["SSE", "SZSE"],
+      ...tradeCalWindow(),
+      requested_by: "migration_status_ltg_queue",
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/data-health/trade-cal-provider-acceptance-promotion-review") {
+    return {
+      approved_by_user: true,
+      latest_execution_request_task_id: taskId(row, "trade_cal_execution_request_ticket"),
+      requested_by: "migration_status_ltg_queue",
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/tasks/tushare-provider-target-sample-execution-request") {
+    return {
+      operator_approved: true,
+      execution_recipe_scope_hash: "",
+      target_sample_acceptance_groups: ["margin_financing"],
+      apis: ["margin_detail"],
+      ts_code: DEFAULT_LTG_QUEUE_SYMBOL,
+      requested_by: "migration_status_ltg_queue",
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/factor-quant/provider-small-pool-dry-run") {
+    return {
+      approved_by_user: true,
+      symbols: [DEFAULT_LTG_QUEUE_SYMBOL, "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"],
+      metrics: ["ic", "rank_ic", "icir", "group_return", "top_bottom", "max_drawdown", "neutral_ic", "out_of_sample_decay", "cost_model"],
+      forward_return_horizons: ["1d", "5d"],
+      requested_by: "migration_status_ltg_queue",
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/factor-quant/provider-small-pool-execution-request") {
+    return {
+      approved_by_user: true,
+      acceptance_scope_hash: scopeHash(row, "factor_small_pool_dry_run_scope_ticket"),
+      requested_by: "migration_status_ltg_queue",
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/candidate-radar/quant-projection-acceptance-dry-run") {
+    return {
+      symbol: DEFAULT_LTG_QUEUE_SYMBOL,
+      include_tushare: true,
+      include_deepseek: true,
+      user_approved: true,
+      selected_apis: ["trade_cal", "daily", "daily_basic", "moneyflow"],
+      requested_by: "migration_status_ltg_queue",
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/candidate-radar/quant-projection-execution-request") {
+    return {
+      scan_mode: "quant_projection_execution_request",
+      operator_approved: true,
+      acceptance_scope_hash: scopeHash(row, "radar_quant_projection_dry_run_scope_ticket"),
+      requested_by: "migration_status_ltg_queue",
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/candidate-radar/production-promotion-dry-run") {
+    return {
+      promotion_scope: "candidate_radar_production_promotion_local_dry_run",
+      operator_approved: true,
+      review_scope_hash: "",
+      requested_by: "migration_status_ltg_queue",
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  return { requested_by: "migration_status_ltg_queue", source: "migration_status_ltg_next_action" };
+}
 
 export default function MigrationStatus() {
   const [packet, setPacket] = useState<Record<string, unknown>>({});
@@ -11,6 +137,9 @@ export default function MigrationStatus() {
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
   const [linkageReviewTask, setLinkageReviewTask] = useState<Record<string, unknown>>({});
   const [linkageReviewError, setLinkageReviewError] = useState<string>("");
+  const [ltgNextActionReceipt, setLtgNextActionReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [ltgNextActionTaskId, setLtgNextActionTaskId] = useState("");
+  const [ltgNextActionError, setLtgNextActionError] = useState("");
 
   useEffect(() => {
     void getMigrationStatus().then((res) => {
@@ -130,6 +259,19 @@ export default function MigrationStatus() {
       refreshMigrationStatus();
     });
   };
+  const launchLtgNextAction = (row: Record<string, unknown>) => {
+    const route = String(row.next_local_step ?? "");
+    setLtgNextActionError("");
+    void postLtgNextAcceptanceLocalStep(route, ltgNextStepPayload(row)).then((res) => {
+      setLtgNextActionReceipt(res);
+      if (res.ok) {
+        setLtgNextActionTaskId(res.data.task_id);
+        refreshMigrationStatus();
+      } else {
+        setLtgNextActionError(String(res.error ?? "ltg_next_acceptance_local_step_failed"));
+      }
+    });
+  };
 
   return (
     <PacketCard title="Command Center 3.0 迁移状态" subtitle="固定长期参考基线；只读、不重新估算、不外联" status={String(packet.status ?? "loading")}>
@@ -184,6 +326,24 @@ export default function MigrationStatus() {
       <DataLineageTable rows={ltgAcceptanceRunwayRows} />
       <h3>LTG next acceptance action queue</h3>
       <p className="risk-note">这里集中显示 P1/P2/P3 的下一步显式验收路径：只读展示允许的 POST 路由、未来 provider/worker 证据和禁止事项；GET cache 和页面渲染不会创建任务或调用外部服务。</p>
+      <div className="actions">
+        {ltgNextAcceptanceActionRows.map((row) => {
+          const nextLocalStep = String(row.next_local_step ?? "");
+          const disabled = !nextLocalStep.startsWith("POST /api/");
+          return (
+            <button
+              disabled={disabled}
+              key={String(row.queue_id ?? row.action_label)}
+              onClick={() => launchLtgNextAction(row)}
+            >
+              {String(row.priority ?? "LTG")} {String(row.action_label ?? row.queue_id ?? "next action")}
+            </button>
+          );
+        })}
+      </div>
+      {ltgNextActionError && <p className="risk-note">{ltgNextActionError}</p>}
+      <TaskLaunchReceipt receipt={ltgNextActionReceipt} />
+      <TaskStatusPanel taskId={ltgNextActionTaskId} onSuccess={refreshMigrationStatus} />
       <MetricGrid
         items={[
           { label: "near-term actions", value: ltgNextAcceptanceActionRows.length },

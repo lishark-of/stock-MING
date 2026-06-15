@@ -6,7 +6,7 @@
 
 当前 Factor universe 迁移还包含 `universe_execution_activation_receipt` 与 `universe_worker_batch_dry_run_receipt` 本地回执：前者只把下一步固定为显式 worker-batch 生产验收，后者只生成未来 worker-backed batch research 的 scope ticket；它们都不创建任务、不启动 worker、不调用 provider/model/GitHub、不执行交易，也不把 read-plan、partial pool、本地 rank/zscore dry-run 或 worker-batch dry-run 当作 full-pool production research。
 
-迁移状态页现在把 `ltg_next_acceptance_action_rows` 拆成 observed/missing 本地回执摘要和 local step rows 展示，帮助 P1/P2/P3 验收按下一条安全 POST 路由推进；这些只读视图不创建任务、不调用 provider/model/GitHub、不执行交易，也不能关闭任何 LTG。
+迁移状态页现在把 `ltg_next_acceptance_action_rows` 拆成 observed/missing 本地回执摘要和 local step rows 展示，帮助 P1/P2/P3 验收按下一条安全 POST 路由推进；页面按钮只允许执行白名单内的本地 dry-run / execution-request / promotion-review 路由，并通过本地 TaskLaunchReceipt 展示审计边界。这些视图和按钮不调用 provider/model/GitHub、不执行交易，也不能关闭任何 LTG。
 
 | Streamlit/现有模块 | 当前文件 | 3.0 API | 3.0 前端页面 | 是否重计算 | 是否任务化 |
 |---|---|---|---|---|---|

@@ -320,6 +320,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(action_rows["p2_tushare_target_sample_acceptance"]["local_receipt_step_count"], 1)
         self.assertEqual(action_rows["p3_factor_small_pool_provider_validation"]["local_receipt_step_count"], 2)
         self.assertEqual(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_step_count"], 3)
+        self.assertTrue(
+            all(
+                "receipt_scope_hash" in step and "receipt_scope_hash_short" in step
+                for row in migration["ltg_next_acceptance_action_rows"]
+                for step in row["local_step_rows"]
+            )
+        )
         self.assertTrue(all(row["local_receipt_lookup_creates_task"] is False for row in migration["ltg_next_acceptance_action_rows"]))
         self.assertTrue(all(row["local_receipt_lookup_calls_provider"] is False for row in migration["ltg_next_acceptance_action_rows"]))
         self.assertTrue(all(row["local_receipt_status"] for row in migration["ltg_next_acceptance_action_rows"]))

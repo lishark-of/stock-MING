@@ -447,6 +447,59 @@ export function postCandidateRadarProductionReplacementReview(payload: Record<st
   });
 }
 
+const LTG_NEXT_ACCEPTANCE_LOCAL_ROUTES = new Set([
+  "/api/data-health/trade-cal-provider-acceptance-dry-run",
+  "/api/data-health/trade-cal-provider-acceptance-execution-request",
+  "/api/data-health/trade-cal-provider-acceptance-promotion-review",
+  "/api/tasks/tushare-provider-target-sample-execution-request",
+  "/api/factor-quant/provider-small-pool-dry-run",
+  "/api/factor-quant/provider-small-pool-execution-request",
+  "/api/candidate-radar/quant-projection-acceptance-dry-run",
+  "/api/candidate-radar/quant-projection-execution-request",
+  "/api/candidate-radar/production-promotion-dry-run",
+]);
+
+export function postLtgNextAcceptanceLocalStep(route: string, payload: Record<string, unknown> = {}) {
+  const path = route.replace(/^POST\s+/, "");
+  if (!LTG_NEXT_ACCEPTANCE_LOCAL_ROUTES.has(path)) {
+    return Promise.resolve({
+      ok: false,
+      data: {
+        task_id: "",
+        task: {
+          task_id: "",
+          task_type: "ltg_next_acceptance_route_rejected",
+          status: "failed",
+          progress: 0,
+          current_step: "ltg_next_acceptance_route_not_in_local_allowlist",
+          output_packet_key: "command_center_3_migration_status",
+          warnings: ["route_not_in_ltg_next_acceptance_local_allowlist"],
+        } as TaskRecord,
+      },
+      error: "ltg_next_acceptance_route_not_in_local_allowlist",
+      call_ledger: [
+        {
+          api: "frontend_ltg_next_acceptance_local_route_guard",
+          endpoint: route,
+          call_status: "blocked_before_request",
+          external: false,
+          external_calls_triggered: false,
+          tushare_called: false,
+          deepseek_called: false,
+          github_called: false,
+          does_not_execute_trades: true,
+          does_not_modify_strategy_action: true,
+        }
+      ],
+      warnings: ["只允许 LTG next-action queue 的本地 dry-run / execution-request / review 路由。"],
+    } satisfies TaskCreationEnvelope);
+  }
+  return request<TaskCreationData>(path, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getRiskGuardrailsCache() {
   return request<Record<string, unknown>>("/api/risk/cache");
 }

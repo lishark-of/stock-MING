@@ -588,6 +588,18 @@ def _build_ltg_next_action_local_step_rows(
         payload_safe = latest_task.get("payload_safe") if isinstance(latest_task.get("payload_safe"), dict) else {}
         receipt = payload_safe.get(str(step["receipt_key"])) if isinstance(payload_safe, dict) else {}
         receipt_map = receipt if isinstance(receipt, dict) else {}
+        receipt_scope_hash = str(
+            receipt_map.get("acceptance_scope_hash")
+            or receipt_map.get("review_scope_hash")
+            or receipt_map.get("production_replacement_review_scope_hash")
+            or ""
+        )
+        receipt_scope_hash_short = str(
+            receipt_map.get("acceptance_scope_hash_short")
+            or receipt_map.get("review_scope_hash_short")
+            or receipt_map.get("production_replacement_review_scope_hash_short")
+            or (receipt_scope_hash[:16] if receipt_scope_hash else "")
+        )
         task_found = bool(latest_task)
         receipt_visible = bool(receipt_map)
         step_rows.append(
@@ -602,6 +614,8 @@ def _build_ltg_next_action_local_step_rows(
                 "latest_task_current_step": latest_task.get("current_step") if task_found else "",
                 "latest_task_storage_source": latest_task.get("storage_source") if task_found else "",
                 "receipt_status": receipt_map.get("status") or "",
+                "receipt_scope_hash": receipt_scope_hash,
+                "receipt_scope_hash_short": receipt_scope_hash_short,
                 "receipt_blocker_count": _receipt_blocker_count(receipt_map) if receipt_visible else 0,
                 "local_ready": any(
                     receipt_map.get(key) is True
