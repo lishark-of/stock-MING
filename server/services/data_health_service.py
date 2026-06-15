@@ -30,6 +30,15 @@ TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_TASK_TYPE = (
 TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_ROUTE = (
     "POST /api/data-health/trade-cal-provider-acceptance-execution-request"
 )
+PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_SCHEMA_VERSION = (
+    "data_health_current_evidence_producer_cache_refresh_execution_request.v1"
+)
+PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_TASK_TYPE = (
+    "run_current_evidence_producer_cache_refresh_execution_request"
+)
+PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_ROUTE = (
+    "POST /api/data-health/producer-cache-refresh-execution-request"
+)
 TRADE_CAL_PROVIDER_ACCEPTANCE_MODE = "provider_backed_trade_cal_long_window"
 TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS = 730
 TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS = 8
@@ -1274,6 +1283,32 @@ def _current_evidence_producer_cache_refresh_readiness(
     refresh_rows = [row for row in rows if row.get("current_cache_refresh_required")]
     blocked_rows = [row for row in rows if str(row.get("status", "")).startswith("blocked_")]
     ready = not blocked_rows and bool(generation_contract.get("local_generation_contract_ready"))
+    scope_hash_input = {
+        "schema_version": "data_health_current_evidence_producer_cache_refresh_readiness.v1",
+        "producer_keys": list(producer_keys),
+        "row_statuses": [
+            {
+                "producer": row.get("producer"),
+                "status": row.get("status"),
+                "current_cache_status": row.get("current_cache_status"),
+                "generation_contract_status": row.get("generation_contract_status"),
+                "current_cache_refresh_required": row.get("current_cache_refresh_required"),
+            }
+            for row in rows
+        ],
+        "local_builder_ready_count": sum(1 for row in rows if row.get("local_builder_ready")),
+        "current_cache_ready_count": sum(1 for row in rows if row.get("current_cache_ready")),
+        "current_cache_refresh_required_count": len(refresh_rows),
+        "blocked_producer_keys": [row["producer"] for row in blocked_rows],
+    }
+    serialized_scope = json.dumps(
+        scope_hash_input,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    scope_hash = hashlib.sha256(serialized_scope.encode("utf-8")).hexdigest()
     contract = {
         "schema_version": "data_health_current_evidence_producer_cache_refresh_readiness.v1",
         "status": "producer_cache_refresh_readiness_ready_manual_refresh_pending"
@@ -1283,11 +1318,16 @@ def _current_evidence_producer_cache_refresh_readiness(
         else "producer_cache_refresh_readiness_blocked_generation_contract",
         "scope": "local_current_cache_refresh_readiness_no_write_no_provider_execution",
         "producer_count": len(rows),
+        "producer_keys": list(producer_keys),
         "local_builder_ready_count": sum(1 for row in rows if row.get("local_builder_ready")),
         "current_cache_ready_count": sum(1 for row in rows if row.get("current_cache_ready")),
         "current_cache_refresh_required_count": len(refresh_rows),
         "blocked_producer_count": len(blocked_rows),
         "blocked_producer_keys": [row["producer"] for row in blocked_rows],
+        "readiness_scope_hash": scope_hash,
+        "readiness_scope_hash_short": scope_hash[:16],
+        "readiness_scope_hash_algorithm": "sha256",
+        "readiness_scope_hash_input_field_count": len(scope_hash_input),
         "local_cache_refresh_ready": ready,
         "current_cache_refresh_pending": bool(refresh_rows),
         "writes_snapshot_cache": False,
@@ -2342,6 +2382,396 @@ def _latest_trade_cal_provider_acceptance_execution_request_from_tasks() -> tupl
         "row_count": len(row_list),
         "cache_get_creates_task": False,
         "cache_get_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "receipt": receipt_map,
+    }
+    return latest_receipt, row_list
+
+
+def _producer_cache_refresh_execution_payload_safe(
+    payload: Any,
+    *,
+    readiness: Mapping[str, Any],
+) -> dict[str, Any]:
+    raw = payload if isinstance(payload, Mapping) else {}
+    latest_scope_hash_short = _scope_hash_short_text(readiness.get("readiness_scope_hash_short"))
+    requested_scope_hash_short = _scope_hash_short_text(
+        raw.get("readiness_scope_hash_short")
+        or raw.get("scope_hash_short")
+        or raw.get("producer_cache_refresh_scope_hash_short")
+        or latest_scope_hash_short
+    )
+    user_confirmed = _safe_bool(
+        raw.get(
+            "approved_by_user",
+            raw.get("user_confirmation", raw.get("confirm_local_cache_refresh_request", raw.get("approved"))),
+        ),
+        False,
+    )
+    requested_producers = raw.get("producer_keys") or raw.get("producers") or readiness.get("producer_keys")
+    producer_keys = [
+        _safe_text(value, limit=80)
+        for value in _as_list(requested_producers)
+        if _safe_text(value, limit=80)
+    ]
+    if not producer_keys:
+        producer_keys = ["candidate_radar", "a_share_evidence_radar", "market_context"]
+    return {
+        "schema_version": PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_SCHEMA_VERSION,
+        "route": PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_ROUTE,
+        "task_type": PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_TASK_TYPE,
+        "request_mode": "manual_local_cache_refresh_request_preflight",
+        "user_confirmed": user_confirmed,
+        "confirmation_mode": "explicit_payload_true" if user_confirmed else "missing_or_false",
+        "producer_keys": producer_keys,
+        "readiness_status": _safe_text(readiness.get("status"), limit=160),
+        "latest_readiness_scope_hash_short": latest_scope_hash_short,
+        "requested_scope_hash_short": requested_scope_hash_short,
+        "target_local_task_route": "future POST /api/data-health/producer-cache-refresh",
+        "target_task_type": "future_current_evidence_producer_cache_refresh",
+        "requested_by": _safe_text(raw.get("requested_by") or "local_user", limit=80),
+        "source": _safe_text(raw.get("source") or "data_health", limit=80),
+        "contains_secret": False,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _producer_cache_refresh_execution_request_row(
+    phase: str,
+    status: str,
+    *,
+    passed: bool,
+    blocks_local_refresh_task_submission: bool,
+    evidence: str,
+) -> dict[str, Any]:
+    return {
+        "phase": phase,
+        "status": status,
+        "passed": bool(passed),
+        "blocks_local_refresh_task_submission": bool(blocks_local_refresh_task_submission),
+        "evidence": evidence,
+        "request_ticket_only": True,
+        "writes_snapshot_cache": False,
+        "creates_task": False,
+        "executes_local_refresh": False,
+        "builds_missing_packets": False,
+        "does_not_refresh_provider": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _build_producer_cache_refresh_execution_request(
+    payload_safe: Mapping[str, Any],
+    *,
+    readiness: Mapping[str, Any],
+    readiness_rows: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    latest_scope_hash_short = _scope_hash_short_text(readiness.get("readiness_scope_hash_short"))
+    requested_scope_hash_short = _scope_hash_short_text(payload_safe.get("requested_scope_hash_short"))
+    readiness_visible = (
+        readiness.get("schema_version") == "data_health_current_evidence_producer_cache_refresh_readiness.v1"
+    )
+    scope_hash_matches = bool(
+        readiness_visible and latest_scope_hash_short and requested_scope_hash_short == latest_scope_hash_short
+    )
+    user_confirmed = payload_safe.get("user_confirmed") is True
+    readiness_ready = readiness.get("local_cache_refresh_ready") is True
+    required_count = int(readiness.get("current_cache_refresh_required_count") or 0)
+    already_ready = readiness_ready and required_count == 0
+    local_refresh_needed = readiness_ready and required_count > 0
+    safe_payload_ready = bool(
+        payload_safe.get("contains_secret") is False
+        and payload_safe.get("credential_values_read") is False
+        and payload_safe.get("credential_values_exposed") is False
+        and payload_safe.get("env_key_names_included") is False
+    )
+    rows = [
+        _producer_cache_refresh_execution_request_row(
+            "readiness_contract_visible",
+            "passed_readiness_visible" if readiness_visible else "blocked_missing_readiness_contract",
+            passed=readiness_visible,
+            blocks_local_refresh_task_submission=not readiness_visible,
+            evidence=f"readiness_status={readiness.get('status') or 'missing'}",
+        ),
+        _producer_cache_refresh_execution_request_row(
+            "scope_hash_matches_current_readiness",
+            "passed_scope_hash_match" if scope_hash_matches else "blocked_scope_hash_mismatch",
+            passed=scope_hash_matches,
+            blocks_local_refresh_task_submission=not scope_hash_matches,
+            evidence=(
+                f"requested_scope_hash_short={requested_scope_hash_short or 'missing'}; "
+                f"latest_scope_hash_short={latest_scope_hash_short or 'missing'}"
+            ),
+        ),
+        _producer_cache_refresh_execution_request_row(
+            "explicit_user_confirmation_recorded",
+            "passed_user_confirmed" if user_confirmed else "blocked_user_confirmation_required",
+            passed=user_confirmed,
+            blocks_local_refresh_task_submission=not user_confirmed,
+            evidence=f"confirmation_mode={payload_safe.get('confirmation_mode')}",
+        ),
+        _producer_cache_refresh_execution_request_row(
+            "local_builder_ready",
+            "passed_builder_ready" if readiness_ready else "blocked_generation_contract",
+            passed=readiness_ready,
+            blocks_local_refresh_task_submission=not readiness_ready,
+            evidence=(
+                f"local_builder_ready_count={readiness.get('local_builder_ready_count')}; "
+                f"blocked_producer_count={readiness.get('blocked_producer_count')}"
+            ),
+        ),
+        _producer_cache_refresh_execution_request_row(
+            "current_cache_refresh_need_classified",
+            "passed_refresh_needed" if local_refresh_needed else "passed_current_cache_ready"
+            if already_ready
+            else "blocked_no_refresh_target",
+            passed=local_refresh_needed or already_ready,
+            blocks_local_refresh_task_submission=not (local_refresh_needed or already_ready),
+            evidence=f"current_cache_refresh_required_count={required_count}",
+        ),
+        _producer_cache_refresh_execution_request_row(
+            "safe_payload_fields_only",
+            "passed_safe_payload" if safe_payload_ready else "blocked_unsafe_payload",
+            passed=safe_payload_ready,
+            blocks_local_refresh_task_submission=not safe_payload_ready,
+            evidence="Request contains producer keys, readiness hash, requester, and no credential values.",
+        ),
+        _producer_cache_refresh_execution_request_row(
+            "request_does_not_write_cache",
+            "passed_no_write",
+            passed=True,
+            blocks_local_refresh_task_submission=False,
+            evidence="This request ticket records intent only; it does not write snapshot cache.",
+        ),
+        _producer_cache_refresh_execution_request_row(
+            "provider_acceptance_still_pending",
+            "passed_provider_pending",
+            passed=True,
+            blocks_local_refresh_task_submission=False,
+            evidence="Provider-backed trade_cal acceptance and production freshness remain false.",
+        ),
+        _producer_cache_refresh_execution_request_row(
+            "cache_render_trade_boundary",
+            "passed_no_side_effects",
+            passed=True,
+            blocks_local_refresh_task_submission=False,
+            evidence="This request ticket does not run providers, models, GitHub, trades, or strategy action mutation.",
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["blocks_local_refresh_task_submission"]]
+    if not readiness_visible:
+        status = "producer_cache_refresh_execution_request_blocked_missing_readiness"
+        allowed_next_step = "reload_data_health_cache_until_readiness_visible"
+    elif not scope_hash_matches:
+        status = "producer_cache_refresh_execution_request_blocked_scope_hash_mismatch"
+        allowed_next_step = "rerun_request_with_latest_readiness_scope_hash"
+    elif not user_confirmed:
+        status = "producer_cache_refresh_execution_request_blocked_user_confirmation_required"
+        allowed_next_step = "rerun_request_with_explicit_user_confirmation"
+    elif not readiness_ready:
+        status = "producer_cache_refresh_execution_request_blocked_generation_contract"
+        allowed_next_step = "fix_local_producer_generation_contract_before_refresh"
+    elif already_ready:
+        status = "producer_cache_refresh_execution_request_current_cache_ready_no_refresh_required"
+        allowed_next_step = "collect_provider_trade_cal_acceptance_evidence"
+    else:
+        status = "producer_cache_refresh_execution_request_ready_manual_local_refresh_task_pending"
+        allowed_next_step = "manual_submit_future_local_producer_cache_refresh_task"
+    ready_for_manual_local_refresh_task_submission = not blocking_rows and local_refresh_needed
+    receipt = {
+        "schema_version": PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_current_evidence_producer_cache_refresh_execution_request_no_write_no_provider_execution",
+        "route": PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_ROUTE,
+        "target_local_task_route": payload_safe.get("target_local_task_route"),
+        "target_task_type": payload_safe.get("target_task_type"),
+        "task_type": PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_TASK_TYPE,
+        "ltg": "LTG-01/LTG-11",
+        "user_confirmed": user_confirmed,
+        "producer_keys": list(payload_safe.get("producer_keys") or []),
+        "producer_count": len(readiness_rows),
+        "readiness_status": readiness.get("status"),
+        "readiness_scope_hash_short": latest_scope_hash_short,
+        "requested_scope_hash_short": requested_scope_hash_short,
+        "scope_hash_matches_readiness": scope_hash_matches,
+        "local_cache_refresh_ready": readiness_ready,
+        "current_cache_refresh_needed": local_refresh_needed,
+        "current_cache_already_ready": already_ready,
+        "current_cache_refresh_required_count": required_count,
+        "blocked_producer_count": int(readiness.get("blocked_producer_count") or 0),
+        "ready_for_manual_local_refresh_task_submission": ready_for_manual_local_refresh_task_submission,
+        "ready_to_execute_from_cache": False,
+        "writes_snapshot_cache": False,
+        "creates_task": False,
+        "executes_local_refresh": False,
+        "builds_missing_packets": False,
+        "does_not_refresh_provider": True,
+        "provider_backed_long_window_acceptance_done": False,
+        "production_freshness_gate_complete": False,
+        "allowed_next_step": allowed_next_step,
+        "required_evidence_after_execution": [
+            "separate local cache refresh task id and terminal status",
+            "current cache producer expected_trade_date/data_date/freshness_state coverage",
+            "provider-backed trade_cal acceptance evidence remains separately required",
+            "fresh push-gate output",
+        ],
+        "missing_evidence_items": [
+            "separate local producer cache refresh task execution",
+            "current cache producer coverage promotion",
+            "real Tushare trade_cal provider call ledger",
+            "provider-backed freshness replay evidence",
+            "explicit production promotion review",
+        ],
+        "not_allowed_next_steps": [
+            "GET /api/data-health/cache local cache refresh",
+            "React render local cache refresh",
+            "execute local refresh from request ticket",
+            "write snapshot cache from request ticket",
+            "build missing packets from request ticket",
+            "call Tushare or DeepSeek from request ticket",
+            "promote request ticket to provider-backed acceptance",
+            "execute real trades or mutate strategy action",
+        ],
+        "row_count": len(rows),
+        "blocking_row_count": len(blocking_rows),
+        "blocking_phases": [row["phase"] for row in blocking_rows],
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    return receipt, rows
+
+
+def _latest_producer_cache_refresh_execution_request_from_tasks() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    latest_task = next(
+        (
+            task
+            for task in task_service.list_task_statuses()
+            if str(task.get("task_type") or "") == PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_TASK_TYPE
+        ),
+        None,
+    )
+    if not latest_task:
+        return (
+            {
+                "schema_version": "data_health_latest_producer_cache_refresh_execution_request.v1",
+                "status": "no_producer_cache_refresh_execution_request_task_found",
+                "scope": "local_task_status_lookup_no_cache_write_no_provider_execution",
+                "execution_request_status": "no_producer_cache_refresh_execution_request_task_found",
+                "latest_task_found": False,
+                "route": PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_ROUTE,
+                "task_type": PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_TASK_TYPE,
+                "latest_task_id": None,
+                "latest_task_status": None,
+                "latest_task_current_step": None,
+                "readiness_scope_hash_short": "",
+                "requested_scope_hash_short": "",
+                "receipt_visible": False,
+                "row_count": 0,
+                "blocking_row_count": 0,
+                "ready_for_manual_local_refresh_task_submission": False,
+                "ready_to_execute_from_cache": False,
+                "cache_get_creates_task": False,
+                "cache_get_writes_snapshot_cache": False,
+                "cache_get_external_calls": False,
+                "writes_snapshot_cache": False,
+                "creates_task": False,
+                "executes_local_refresh": False,
+                "builds_missing_packets": False,
+                "does_not_refresh_provider": True,
+                "provider_backed_long_window_acceptance_done": False,
+                "production_freshness_gate_complete": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+            [],
+        )
+    payload_safe = latest_task.get("payload_safe") if isinstance(latest_task.get("payload_safe"), dict) else {}
+    receipt = payload_safe.get("producer_cache_refresh_execution_request_receipt")
+    rows = payload_safe.get("producer_cache_refresh_execution_request_rows")
+    receipt_safe = _safe_value(receipt) if isinstance(receipt, dict) else {}
+    row_safe = _safe_value(rows) if isinstance(rows, list) else []
+    receipt_map = receipt_safe if isinstance(receipt_safe, dict) else {}
+    row_list = row_safe if isinstance(row_safe, list) else []
+    task_summary = {
+        "task_id": latest_task.get("task_id"),
+        "task_type": latest_task.get("task_type"),
+        "task_status": latest_task.get("status"),
+        "current_step": latest_task.get("current_step"),
+        "created_at": latest_task.get("created_at"),
+        "updated_at": latest_task.get("updated_at"),
+        "finished_at": latest_task.get("finished_at"),
+        "storage_source": latest_task.get("storage_source"),
+        "call_ledger_count": len(latest_task.get("call_ledger") or []),
+        "task_log_count": len(latest_task.get("task_log") or []),
+    }
+    latest_receipt = {
+        "schema_version": "data_health_latest_producer_cache_refresh_execution_request.v1",
+        "status": "latest_producer_cache_refresh_execution_request_visible",
+        "scope": "local_task_status_lookup_no_cache_write_no_provider_execution",
+        "latest_task_found": True,
+        "receipt_visible": bool(receipt_map),
+        "route": PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_ROUTE,
+        "task_type": PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_TASK_TYPE,
+        "latest_task": task_summary,
+        "latest_task_id": latest_task.get("task_id"),
+        "latest_task_status": latest_task.get("status"),
+        "latest_task_current_step": latest_task.get("current_step"),
+        "execution_request_status": receipt_map.get("status") or "missing_receipt",
+        "readiness_status": receipt_map.get("readiness_status") or "",
+        "readiness_scope_hash_short": receipt_map.get("readiness_scope_hash_short") or "",
+        "requested_scope_hash_short": receipt_map.get("requested_scope_hash_short") or "",
+        "scope_hash_matches_readiness": receipt_map.get("scope_hash_matches_readiness") is True,
+        "current_cache_refresh_required_count": int(receipt_map.get("current_cache_refresh_required_count") or 0),
+        "ready_for_manual_local_refresh_task_submission": (
+            receipt_map.get("ready_for_manual_local_refresh_task_submission") is True
+        ),
+        "ready_to_execute_from_cache": False,
+        "cache_get_creates_task": False,
+        "cache_get_writes_snapshot_cache": False,
+        "cache_get_external_calls": False,
+        "writes_snapshot_cache": False,
+        "creates_task": False,
+        "executes_local_refresh": False,
+        "builds_missing_packets": False,
+        "does_not_refresh_provider": True,
+        "provider_backed_long_window_acceptance_done": False,
+        "production_freshness_gate_complete": False,
+        "allowed_next_step": receipt_map.get("allowed_next_step") or "",
+        "blocking_row_count": int(receipt_map.get("blocking_row_count") or 0),
+        "row_count": len(row_list),
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,
@@ -4034,6 +4464,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         latest_trade_cal_provider_acceptance_execution_request_rows,
     ) = _latest_trade_cal_provider_acceptance_execution_request_from_tasks()
     (
+        latest_producer_cache_refresh_execution_request,
+        latest_producer_cache_refresh_execution_request_rows,
+    ) = _latest_producer_cache_refresh_execution_request_from_tasks()
+    (
         latest_tushare_provider_target_sample_execution_request,
         latest_tushare_provider_target_sample_execution_request_rows,
     ) = _latest_tushare_provider_target_sample_execution_request_from_tasks()
@@ -4123,6 +4557,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "latest_trade_cal_provider_acceptance_dry_run",
             "trade_cal_provider_acceptance_next_execution_recipe",
             "latest_trade_cal_provider_acceptance_execution_request",
+            "latest_producer_cache_refresh_execution_request",
             "latest_tushare_provider_target_sample_execution_request",
             "freshness_durable_evidence_recipe",
             "current_evidence_freshness_qa_contract",
@@ -4177,6 +4612,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         ),
         "latest_trade_cal_provider_acceptance_execution_request_rows": (
             latest_trade_cal_provider_acceptance_execution_request_rows
+        ),
+        "latest_producer_cache_refresh_execution_request": (
+            latest_producer_cache_refresh_execution_request
+        ),
+        "latest_producer_cache_refresh_execution_request_rows": (
+            latest_producer_cache_refresh_execution_request_rows
         ),
         "latest_tushare_provider_target_sample_execution_request": (
             latest_tushare_provider_target_sample_execution_request
@@ -4275,6 +4716,15 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             ),
             "latest_trade_cal_provider_acceptance_execution_request_blocking_row_count": int(
                 latest_trade_cal_provider_acceptance_execution_request.get("blocking_row_count") or 0
+            ),
+            "latest_producer_cache_refresh_execution_request_found": (
+                1 if latest_producer_cache_refresh_execution_request.get("latest_task_found") is True else 0
+            ),
+            "latest_producer_cache_refresh_execution_request_row_count": len(
+                latest_producer_cache_refresh_execution_request_rows
+            ),
+            "latest_producer_cache_refresh_execution_request_blocking_row_count": int(
+                latest_producer_cache_refresh_execution_request.get("blocking_row_count") or 0
             ),
             "latest_tushare_provider_target_sample_execution_request_found": (
                 1
@@ -4422,6 +4872,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "current_evidence_producer_cache_refresh_readiness_creates_task": False,
             "current_evidence_producer_cache_refresh_readiness_calls_provider": False,
             "current_evidence_producer_cache_refresh_readiness_is_not_provider_acceptance": True,
+            "latest_producer_cache_refresh_execution_request_lookup_is_local": True,
+            "latest_producer_cache_refresh_execution_request_lookup_creates_task": False,
+            "latest_producer_cache_refresh_execution_request_lookup_writes_snapshot_cache": False,
+            "latest_producer_cache_refresh_execution_request_lookup_calls_provider": False,
+            "latest_producer_cache_refresh_execution_request_is_not_cache_refresh": True,
+            "latest_producer_cache_refresh_execution_request_is_not_provider_acceptance": True,
         },
         "call_ledger": [
             {
@@ -4538,6 +4994,35 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 "latest_trade_cal_provider_acceptance_execution_request_blocking_row_count": int(
                     latest_trade_cal_provider_acceptance_execution_request.get("blocking_row_count") or 0
                 ),
+                "latest_producer_cache_refresh_execution_request_status": (
+                    latest_producer_cache_refresh_execution_request.get("execution_request_status")
+                ),
+                "latest_producer_cache_refresh_execution_request_task_id": (
+                    latest_producer_cache_refresh_execution_request.get("latest_task_id")
+                ),
+                "latest_producer_cache_refresh_execution_request_found": bool(
+                    latest_producer_cache_refresh_execution_request.get("latest_task_found")
+                ),
+                "latest_producer_cache_refresh_execution_request_ready_for_manual_local_refresh_task_submission": bool(
+                    latest_producer_cache_refresh_execution_request.get(
+                        "ready_for_manual_local_refresh_task_submission"
+                    )
+                ),
+                "latest_producer_cache_refresh_execution_request_scope_hash_matches": bool(
+                    latest_producer_cache_refresh_execution_request.get("scope_hash_matches_readiness")
+                ),
+                "latest_producer_cache_refresh_execution_request_row_count": len(
+                    latest_producer_cache_refresh_execution_request_rows
+                ),
+                "latest_producer_cache_refresh_execution_request_blocking_row_count": int(
+                    latest_producer_cache_refresh_execution_request.get("blocking_row_count") or 0
+                ),
+                "latest_producer_cache_refresh_execution_request_writes_snapshot_cache": bool(
+                    latest_producer_cache_refresh_execution_request.get("writes_snapshot_cache")
+                ),
+                "latest_producer_cache_refresh_execution_request_creates_task": bool(
+                    latest_producer_cache_refresh_execution_request.get("creates_task")
+                ),
                 "latest_tushare_provider_target_sample_execution_request_status": (
                     latest_tushare_provider_target_sample_execution_request.get("execution_request_status")
                 ),
@@ -4637,6 +5122,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "latest trade_cal provider acceptance dry-run 只读取本地 task metadata；GET cache 不创建 dry-run、不调用 Tushare、不证明 provider-backed 验收。",
             "trade_cal provider acceptance next execution recipe 只给出下一次 POST 验收配方；不会调用 Tushare、不会创建任务、不会证明生产完成。",
             "trade_cal provider execution request ticket 只绑定 dry-run scope hash 和后续手工 provider task 请求；不会调用 Tushare、不会创建 provider task、不会证明生产完成。",
+            "producer cache refresh execution request ticket 只绑定当前 readiness hash 和后续本地刷新请求；不会写 cache、不会创建任务、不会调用 provider、不会证明生产完成。",
             "freshness durable evidence recipe 只固定 LTG-01 生产验收证据清单；不会调用 Tushare、不会创建任务、不会把 dry-run/fixture/local artifact 提升成 provider-backed 验收。",
         ],
     }
@@ -4838,4 +5324,112 @@ def run_trade_cal_provider_acceptance_execution_request(payload: Any = None) -> 
         output_packet_key=PACKET_KEY,
         call_ledger=ledger,
         warning="trade_cal_provider_acceptance_execution_request_completed_no_external_call",
+    ) or task
+
+
+def run_producer_cache_refresh_execution_request(payload: Any = None) -> dict[str, Any]:
+    cache = read_data_health_timeline_cache()
+    readiness = _as_dict(cache.get("current_evidence_producer_cache_refresh_readiness"))
+    readiness_rows = [
+        row for row in _as_list(cache.get("current_evidence_producer_cache_refresh_rows")) if isinstance(row, dict)
+    ]
+    payload_safe = _producer_cache_refresh_execution_payload_safe(payload, readiness=readiness)
+    receipt, rows = _build_producer_cache_refresh_execution_request(
+        payload_safe,
+        readiness=readiness,
+        readiness_rows=readiness_rows,
+    )
+    payload_safe.update(
+        {
+            "producer_cache_refresh_execution_request_receipt": receipt,
+            "producer_cache_refresh_execution_request_rows": rows,
+            "execution_request_only": True,
+            "writes_snapshot_cache": False,
+            "creates_task": False,
+            "executes_local_refresh": False,
+            "builds_missing_packets": False,
+            "does_not_refresh_provider": True,
+            "production_freshness_gate_complete": False,
+        }
+    )
+    task = task_service.create_task_record(
+        PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload_safe,
+        current_step="producer_cache_refresh_execution_request_local_only",
+        warnings=[
+            "producer cache refresh execution request 只生成本地请求 ticket，不写 cache。",
+            "execution request 必须绑定当前 readiness scope hash；不会创建刷新任务。",
+            "execution request 不调用 Tushare/DeepSeek/GitHub、不执行真实交易、不修改 strategy action。",
+        ],
+    )
+    now = _now_iso()
+    ledger = [
+        {
+            "api": "local_producer_cache_refresh_execution_request",
+            "endpoint": PRODUCER_CACHE_REFRESH_EXECUTION_REQUEST_ROUTE,
+            "request_params_safe": {
+                "producer_keys": receipt["producer_keys"],
+                "readiness_status": receipt["readiness_status"],
+                "readiness_scope_hash_short": receipt["readiness_scope_hash_short"],
+                "requested_scope_hash_short": receipt["requested_scope_hash_short"],
+                "scope_hash_matches_readiness": receipt["scope_hash_matches_readiness"],
+                "current_cache_refresh_required_count": receipt["current_cache_refresh_required_count"],
+                "ready_for_manual_local_refresh_task_submission": receipt[
+                    "ready_for_manual_local_refresh_task_submission"
+                ],
+                "writes_snapshot_cache": False,
+                "creates_task": False,
+                "executes_local_refresh": False,
+                "does_not_refresh_provider": True,
+                "production_freshness_gate_complete": False,
+            },
+            "row_count": len(rows),
+            "data_date": now[:10],
+            "local_fetched_at": now,
+            "call_status": str(
+                receipt.get("status") or "producer_cache_refresh_execution_request_recorded_no_write_no_provider"
+            ),
+            "error_message_safe": "",
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+    status_to_step = {
+        "producer_cache_refresh_execution_request_blocked_missing_readiness": (
+            "producer_cache_refresh_execution_request_blocked_missing_readiness_no_write"
+        ),
+        "producer_cache_refresh_execution_request_blocked_scope_hash_mismatch": (
+            "producer_cache_refresh_execution_request_blocked_scope_hash_mismatch_no_write"
+        ),
+        "producer_cache_refresh_execution_request_blocked_user_confirmation_required": (
+            "producer_cache_refresh_execution_request_blocked_user_confirmation_required_no_write"
+        ),
+        "producer_cache_refresh_execution_request_blocked_generation_contract": (
+            "producer_cache_refresh_execution_request_blocked_generation_contract_no_write"
+        ),
+        "producer_cache_refresh_execution_request_current_cache_ready_no_refresh_required": (
+            "producer_cache_refresh_execution_request_current_cache_ready_no_write"
+        ),
+        "producer_cache_refresh_execution_request_ready_manual_local_refresh_task_pending": (
+            "producer_cache_refresh_execution_request_ready_manual_local_refresh_task_pending_no_write"
+        ),
+    }
+    current_step = status_to_step.get(
+        str(receipt.get("status") or ""),
+        "producer_cache_refresh_execution_request_recorded_no_write_no_provider",
+    )
+    return task_service.update_task_status(
+        str(task.get("task_id") or ""),
+        status="success",
+        progress=1.0,
+        current_step=current_step,
+        output_packet_key=PACKET_KEY,
+        call_ledger=ledger,
+        warning="producer_cache_refresh_execution_request_completed_no_write_no_external_call",
     ) or task

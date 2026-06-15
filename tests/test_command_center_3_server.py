@@ -8793,6 +8793,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("producer_generation_contract_is_local_refresh_pending", script)
         self.assertIn("current_evidence_producer_cache_refresh_readiness", script)
         self.assertIn("producer_cache_refresh_readiness_is_local_no_write", script)
+        self.assertIn("latest_producer_cache_refresh_execution_request", script)
+        self.assertIn("producer_cache_refresh_execution_request_lookup_is_local_no_write", script)
         self.assertIn("freshness_production_stage_scope_manifest", script)
         self.assertIn("freshness_production_stage_scope_manifest_is_complete_and_pending", script)
         self.assertIn("data_health_freshness_durable_evidence_recipe.v1", script)
@@ -8853,6 +8855,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(row_map["trade_cal_next_execution_recipe_binds_dry_run_scope_without_execution"]["passed"])
         self.assertTrue(row_map["producer_generation_contract_is_local_refresh_pending"]["passed"])
         self.assertTrue(row_map["producer_cache_refresh_readiness_is_local_no_write"]["passed"])
+        self.assertTrue(row_map["producer_cache_refresh_execution_request_lookup_is_local_no_write"]["passed"])
         self.assertEqual(payload["observed_counts"]["current_evidence_producer_generation_row_count"], 3)
         self.assertEqual(payload["observed_counts"]["current_evidence_producer_generation_blocker_count"], 0)
         self.assertEqual(
@@ -8873,6 +8876,27 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             {
                 "producer_cache_refresh_readiness_ready_manual_refresh_pending",
                 "producer_cache_refresh_readiness_current_cache_ready",
+            },
+        )
+        self.assertGreaterEqual(payload["observed_counts"]["latest_producer_cache_refresh_execution_request_found"], 0)
+        self.assertGreaterEqual(
+            payload["observed_counts"]["latest_producer_cache_refresh_execution_request_row_count"],
+            0,
+        )
+        self.assertGreaterEqual(
+            payload["observed_counts"]["latest_producer_cache_refresh_execution_request_blocking_row_count"],
+            0,
+        )
+        self.assertIn(
+            payload["observed_counts"]["latest_producer_cache_refresh_execution_request_status"],
+            {
+                "no_producer_cache_refresh_execution_request_task_found",
+                "producer_cache_refresh_execution_request_ready_manual_local_refresh_task_pending",
+                "producer_cache_refresh_execution_request_current_cache_ready_no_refresh_required",
+                "producer_cache_refresh_execution_request_blocked_missing_readiness",
+                "producer_cache_refresh_execution_request_blocked_scope_hash_mismatch",
+                "producer_cache_refresh_execution_request_blocked_user_confirmation_required",
+                "producer_cache_refresh_execution_request_blocked_generation_contract",
             },
         )
         required_freshness_stages = {
@@ -12053,7 +12077,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 48)
+        self.assertEqual(catalog["task_count"], 49)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -12072,7 +12096,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 48)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 49)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -12083,8 +12107,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 50)
-        self.assertEqual(route_coverage["task_creation_route_count"], 48)
+        self.assertEqual(route_coverage["known_post_route_count"], 51)
+        self.assertEqual(route_coverage["task_creation_route_count"], 49)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -12093,11 +12117,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 48)
+        self.assertEqual(implementation_status["task_count"], 49)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 45)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 46)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 46)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 47)
         self.assertEqual(implementation_status["external_capable_task_count"], 6)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -12110,6 +12134,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_trade_cal_provider_acceptance_dry_run",
                 "run_tushare_provider_target_sample_execution_request",
                 "run_trade_cal_provider_acceptance_execution_request",
+                "run_current_evidence_producer_cache_refresh_execution_request",
                 "refresh_factor_data",
                 "command_center_live_bootstrap",
                 "command_center_live_bootstrap_provider_model_acceptance_dry_run",
@@ -12161,6 +12186,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_trade_cal_provider_acceptance_dry_run",
                 "run_tushare_provider_target_sample_execution_request",
                 "run_trade_cal_provider_acceptance_execution_request",
+                "run_current_evidence_producer_cache_refresh_execution_request",
                 "refresh_factor_data",
                 "command_center_live_bootstrap",
                 "command_center_live_bootstrap_provider_model_acceptance_dry_run",
@@ -12224,6 +12250,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             route_coverage["known_post_routes"],
         )
         self.assertIn(
+            "POST /api/data-health/producer-cache-refresh-execution-request",
+            route_coverage["known_post_routes"],
+        )
+        self.assertIn(
             "POST /api/tasks/tushare-provider-target-sample-execution-request",
             route_coverage["known_post_routes"],
         )
@@ -12242,6 +12272,78 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/candidate-radar/worker-execution-request", route_coverage["known_post_routes"])
         self.assertIn("POST /api/candidate-radar/deep-scan-local-review", route_coverage["known_post_routes"])
         self.assertIn("POST /api/audit/motion-production-promotion-dry-run", route_coverage["known_post_routes"])
+        self.assertEqual(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"]["route"],
+            "POST /api/data-health/producer-cache-refresh-execution-request",
+        )
+        self.assertEqual(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"]["current_backend"],
+            "local_producer_cache_refresh_execution_request_pipeline",
+        )
+        self.assertEqual(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"]["external_call_policy"],
+            "local_producer_cache_refresh_execution_request_no_write_no_external_call",
+        )
+        self.assertEqual(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"]["possible_external_sources"],
+            [],
+        )
+        self.assertTrue(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"][
+                "local_execution_request_only"
+            ]
+        )
+        self.assertTrue(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"][
+                "requires_current_readiness_scope_hash"
+            ]
+        )
+        self.assertTrue(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"][
+                "requires_user_confirmation"
+            ]
+        )
+        self.assertFalse(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"]["writes_snapshot_cache"]
+        )
+        self.assertFalse(by_type["run_current_evidence_producer_cache_refresh_execution_request"]["creates_task"])
+        self.assertFalse(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"]["executes_local_refresh"]
+        )
+        self.assertFalse(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"]["builds_missing_packets"]
+        )
+        self.assertFalse(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"]["provider_execution_implemented"]
+        )
+        self.assertFalse(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"][
+                "production_freshness_gate_complete"
+            ]
+        )
+        self.assertFalse(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"]["cache_get_external_calls"]
+        )
+        self.assertFalse(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"][
+                "react_render_direct_provider_calls"
+            ]
+        )
+        self.assertTrue(by_type["run_current_evidence_producer_cache_refresh_execution_request"]["call_ledger_required"])
+        self.assertFalse(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"]["server_secret_values_read"]
+        )
+        self.assertFalse(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"]["credential_values_exposed"]
+        )
+        self.assertTrue(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"]["does_not_execute_trades"]
+        )
+        self.assertTrue(
+            by_type["run_current_evidence_producer_cache_refresh_execution_request"][
+                "does_not_modify_strategy_action"
+            ]
+        )
         self.assertEqual(catalog["task_lifecycle_routes"][0]["route"], "POST /api/tasks/{task_id}/cancel")
         self.assertEqual(catalog["task_lifecycle_routes"][0]["external_call_policy"], "local_cancel_no_external_call")
         self.assertEqual(catalog["task_lifecycle_routes"][1]["route"], "POST /api/tasks/{task_id}/retry")
@@ -13435,6 +13537,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/factor-quant/deepseek-explain", discovered_routes)
         self.assertIn("POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket", discovered_routes)
         self.assertIn("POST /api/data-health/trade-cal-provider-acceptance-execution-request", discovered_routes)
+        self.assertIn("POST /api/data-health/producer-cache-refresh-execution-request", discovered_routes)
         self.assertIn("POST /api/candidate-radar/scan-quick", discovered_routes)
         self.assertIn("POST /api/candidate-radar/quant-projection", discovered_routes)
         self.assertIn("POST /api/candidate-radar/quant-projection-acceptance-dry-run", discovered_routes)
@@ -13479,16 +13582,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 45)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 46)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 46)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 47)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 45)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 46)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 46)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 47)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -13496,6 +13599,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             packet["task_implementation_status"]["local_pipeline_task_types"],
         )
         self.assertIn("run_trade_cal_provider_acceptance_execution_request", packet["task_implementation_status"]["local_pipeline_task_types"])
+        self.assertIn(
+            "run_current_evidence_producer_cache_refresh_execution_request",
+            packet["task_implementation_status"]["local_pipeline_task_types"],
+        )
         self.assertIn("refresh_factor_data", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("command_center_live_bootstrap", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("command_center_live_bootstrap_provider_model_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -14296,9 +14403,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 45)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 46)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 46)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 47)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -14521,9 +14628,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 45)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 46)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 46)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 47)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -14554,9 +14661,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 45)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 46)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 46)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 47)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -14564,6 +14671,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             packet["task_implementation_status"]["local_pipeline_task_types"],
         )
         self.assertIn("run_trade_cal_provider_acceptance_execution_request", packet["task_implementation_status"]["local_pipeline_task_types"])
+        self.assertIn(
+            "run_current_evidence_producer_cache_refresh_execution_request",
+            packet["task_implementation_status"]["local_pipeline_task_types"],
+        )
         self.assertIn("refresh_factor_data", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("command_center_live_bootstrap", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("command_center_live_bootstrap_provider_model_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -15754,6 +15865,276 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(cache_response["call_ledger"][0]["external"])
         self.assertNotIn("TS_OK", json.dumps(cache_response, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache_response, ensure_ascii=False))
+
+    def test_producer_cache_refresh_execution_request_binds_readiness_without_write_or_provider_call(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "data_freshness": {
+                    "state": "stale",
+                    "expected_trade_date": "2026-06-12",
+                    "data_date": "2026-06-11",
+                    "authorization": "Bearer SHOULD_DROP",
+                }
+            }
+        )
+        cache_before = self.client.get("/api/data-health/cache").json()["data"]
+        readiness = cache_before["current_evidence_producer_cache_refresh_readiness"]
+
+        response = self.client.post(
+            "/api/data-health/producer-cache-refresh-execution-request",
+            json={
+                "approved_by_user": True,
+                "readiness_scope_hash_short": readiness["readiness_scope_hash_short"],
+                "producer_keys": readiness["producer_keys"],
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["task_type"], "run_current_evidence_producer_cache_refresh_execution_request")
+        self.assertEqual(task["status"], "success")
+        self.assertIn(
+            task["current_step"],
+            {
+                "producer_cache_refresh_execution_request_ready_manual_local_refresh_task_pending_no_write",
+                "producer_cache_refresh_execution_request_current_cache_ready_no_write",
+            },
+        )
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        payload = task["payload_safe"]
+        receipt = payload["producer_cache_refresh_execution_request_receipt"]
+        rows = {row["phase"]: row for row in payload["producer_cache_refresh_execution_request_rows"]}
+
+        self.assertEqual(
+            receipt["schema_version"],
+            "data_health_current_evidence_producer_cache_refresh_execution_request.v1",
+        )
+        self.assertEqual(receipt["route"], "POST /api/data-health/producer-cache-refresh-execution-request")
+        self.assertEqual(receipt["target_local_task_route"], "future POST /api/data-health/producer-cache-refresh")
+        self.assertEqual(receipt["target_task_type"], "future_current_evidence_producer_cache_refresh")
+        self.assertTrue(receipt["user_confirmed"])
+        self.assertEqual(receipt["readiness_scope_hash_short"], readiness["readiness_scope_hash_short"])
+        self.assertEqual(receipt["requested_scope_hash_short"], readiness["readiness_scope_hash_short"])
+        self.assertTrue(receipt["scope_hash_matches_readiness"])
+        self.assertTrue(receipt["local_cache_refresh_ready"])
+        self.assertEqual(receipt["current_cache_refresh_required_count"], 3)
+        self.assertTrue(receipt["current_cache_refresh_needed"])
+        self.assertTrue(receipt["ready_for_manual_local_refresh_task_submission"])
+        self.assertFalse(receipt["ready_to_execute_from_cache"])
+        self.assertFalse(receipt["writes_snapshot_cache"])
+        self.assertFalse(receipt["creates_task"])
+        self.assertFalse(receipt["executes_local_refresh"])
+        self.assertFalse(receipt["builds_missing_packets"])
+        self.assertTrue(receipt["does_not_refresh_provider"])
+        self.assertFalse(receipt["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(receipt["production_freshness_gate_complete"])
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertFalse(receipt["tushare_called"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertFalse(receipt.get("contains_secret", False))
+        self.assertFalse(receipt["credential_values_read"])
+        self.assertFalse(receipt["credential_values_exposed"])
+        self.assertFalse(receipt["env_key_names_included"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(receipt["does_not_modify_strategy_action"])
+        self.assertIn("write snapshot cache from request ticket", receipt["not_allowed_next_steps"])
+        self.assertIn("call Tushare or DeepSeek from request ticket", receipt["not_allowed_next_steps"])
+        self.assertIn("promote request ticket to provider-backed acceptance", receipt["not_allowed_next_steps"])
+        self.assertEqual(rows["readiness_contract_visible"]["status"], "passed_readiness_visible")
+        self.assertEqual(rows["scope_hash_matches_current_readiness"]["status"], "passed_scope_hash_match")
+        self.assertEqual(rows["explicit_user_confirmation_recorded"]["status"], "passed_user_confirmed")
+        self.assertEqual(rows["local_builder_ready"]["status"], "passed_builder_ready")
+        self.assertEqual(rows["safe_payload_fields_only"]["status"], "passed_safe_payload")
+        self.assertEqual(rows["request_does_not_write_cache"]["status"], "passed_no_write")
+        self.assertEqual(rows["provider_acceptance_still_pending"]["status"], "passed_provider_pending")
+        self.assertEqual(response["call_ledger"][0]["api"], "local_producer_cache_refresh_execution_request")
+        self.assertFalse(response["call_ledger"][0]["external"])
+        self.assertFalse(response["call_ledger"][0]["external_calls_triggered"])
+        self.assertFalse(response["call_ledger"][0]["tushare_called"])
+        self.assertFalse(response["call_ledger"][0]["deepseek_called"])
+        self.assertFalse(response["call_ledger"][0]["github_called"])
+        self.assertTrue(response["call_ledger"][0]["does_not_execute_trades"])
+        self.assertTrue(response["call_ledger"][0]["does_not_modify_strategy_action"])
+        self.assertFalse(payload["writes_snapshot_cache"])
+        self.assertFalse(payload["creates_task"])
+        self.assertFalse(payload["executes_local_refresh"])
+        self.assertFalse(payload["builds_missing_packets"])
+        self.assertTrue(payload["does_not_refresh_provider"])
+        self.assertFalse(payload["production_freshness_gate_complete"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+    def test_producer_cache_refresh_execution_request_rejects_scope_mismatch(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "data_freshness": {
+                    "state": "stale",
+                    "expected_trade_date": "2026-06-12",
+                    "data_date": "2026-06-11",
+                }
+            }
+        )
+
+        response = self.client.post(
+            "/api/data-health/producer-cache-refresh-execution-request",
+            json={
+                "approved_by_user": True,
+                "readiness_scope_hash_short": "deadbeefdeadbeef",
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(
+            task["current_step"],
+            "producer_cache_refresh_execution_request_blocked_scope_hash_mismatch_no_write",
+        )
+        receipt = task["payload_safe"]["producer_cache_refresh_execution_request_receipt"]
+        rows = {
+            row["phase"]: row
+            for row in task["payload_safe"]["producer_cache_refresh_execution_request_rows"]
+        }
+        self.assertEqual(
+            receipt["status"],
+            "producer_cache_refresh_execution_request_blocked_scope_hash_mismatch",
+        )
+        self.assertEqual(receipt["allowed_next_step"], "rerun_request_with_latest_readiness_scope_hash")
+        self.assertFalse(receipt["scope_hash_matches_readiness"])
+        self.assertFalse(receipt["ready_for_manual_local_refresh_task_submission"])
+        self.assertFalse(receipt["ready_to_execute_from_cache"])
+        self.assertFalse(receipt["writes_snapshot_cache"])
+        self.assertFalse(receipt["creates_task"])
+        self.assertFalse(receipt["executes_local_refresh"])
+        self.assertFalse(receipt["builds_missing_packets"])
+        self.assertTrue(receipt["does_not_refresh_provider"])
+        self.assertFalse(receipt["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(receipt["production_freshness_gate_complete"])
+        self.assertEqual(rows["scope_hash_matches_current_readiness"]["status"], "blocked_scope_hash_mismatch")
+        self.assertTrue(rows["scope_hash_matches_current_readiness"]["blocks_local_refresh_task_submission"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+    def test_data_health_cache_surfaces_latest_producer_cache_refresh_execution_request_without_write_or_provider_call(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "data_freshness": {
+                    "state": "stale",
+                    "expected_trade_date": "2026-06-12",
+                    "data_date": "2026-06-11",
+                }
+            }
+        )
+        cache_before = self.client.get("/api/data-health/cache").json()["data"]
+        readiness = cache_before["current_evidence_producer_cache_refresh_readiness"]
+        execution_response = self.client.post(
+            "/api/data-health/producer-cache-refresh-execution-request",
+            json={
+                "approved_by_user": True,
+                "readiness_scope_hash_short": readiness["readiness_scope_hash_short"],
+                "producer_keys": readiness["producer_keys"],
+            },
+        ).json()
+        self.assertTrue(execution_response["ok"])
+        execution_task = execution_response["data"]["task"]
+        execution_payload = execution_task["payload_safe"]
+        execution_receipt = execution_payload["producer_cache_refresh_execution_request_receipt"]
+        execution_rows = execution_payload["producer_cache_refresh_execution_request_rows"]
+
+        cache_response = self.client.get("/api/data-health/cache").json()
+
+        self.assertTrue(cache_response["ok"])
+        packet = cache_response["data"]
+        latest = packet["latest_producer_cache_refresh_execution_request"]
+        self.assertEqual(
+            latest["schema_version"],
+            "data_health_latest_producer_cache_refresh_execution_request.v1",
+        )
+        self.assertEqual(latest["status"], "latest_producer_cache_refresh_execution_request_visible")
+        self.assertEqual(latest["scope"], "local_task_status_lookup_no_cache_write_no_provider_execution")
+        self.assertTrue(latest["latest_task_found"])
+        self.assertTrue(latest["receipt_visible"])
+        self.assertEqual(latest["latest_task_id"], execution_task["task_id"])
+        self.assertEqual(latest["latest_task_status"], "success")
+        self.assertEqual(latest["execution_request_status"], execution_receipt["status"])
+        self.assertEqual(latest["readiness_scope_hash_short"], readiness["readiness_scope_hash_short"])
+        self.assertEqual(latest["requested_scope_hash_short"], readiness["readiness_scope_hash_short"])
+        self.assertTrue(latest["scope_hash_matches_readiness"])
+        self.assertTrue(latest["ready_for_manual_local_refresh_task_submission"])
+        self.assertFalse(latest["ready_to_execute_from_cache"])
+        self.assertFalse(latest["cache_get_creates_task"])
+        self.assertFalse(latest["cache_get_writes_snapshot_cache"])
+        self.assertFalse(latest["cache_get_external_calls"])
+        self.assertFalse(latest["writes_snapshot_cache"])
+        self.assertFalse(latest["creates_task"])
+        self.assertFalse(latest["executes_local_refresh"])
+        self.assertFalse(latest["builds_missing_packets"])
+        self.assertTrue(latest["does_not_refresh_provider"])
+        self.assertFalse(latest["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(latest["production_freshness_gate_complete"])
+        self.assertFalse(latest["external_calls_triggered"])
+        self.assertFalse(latest["tushare_called"])
+        self.assertFalse(latest["deepseek_called"])
+        self.assertFalse(latest["github_called"])
+        self.assertFalse(latest.get("contains_secret", False))
+        self.assertTrue(latest["does_not_execute_trades"])
+        self.assertTrue(latest["does_not_modify_strategy_action"])
+        self.assertEqual(packet["latest_producer_cache_refresh_execution_request_rows"], execution_rows)
+        self.assertEqual(packet["counts"]["latest_producer_cache_refresh_execution_request_found"], 1)
+        self.assertEqual(
+            packet["counts"]["latest_producer_cache_refresh_execution_request_row_count"],
+            len(execution_rows),
+        )
+        self.assertEqual(
+            packet["counts"]["latest_producer_cache_refresh_execution_request_blocking_row_count"],
+            execution_receipt["blocking_row_count"],
+        )
+        self.assertTrue(packet["policy"]["latest_producer_cache_refresh_execution_request_lookup_is_local"])
+        self.assertFalse(packet["policy"]["latest_producer_cache_refresh_execution_request_lookup_creates_task"])
+        self.assertFalse(packet["policy"]["latest_producer_cache_refresh_execution_request_lookup_writes_snapshot_cache"])
+        self.assertFalse(packet["policy"]["latest_producer_cache_refresh_execution_request_lookup_calls_provider"])
+        self.assertTrue(packet["policy"]["latest_producer_cache_refresh_execution_request_is_not_cache_refresh"])
+        self.assertTrue(packet["policy"]["latest_producer_cache_refresh_execution_request_is_not_provider_acceptance"])
+        self.assertTrue(cache_response["call_ledger"][0]["latest_producer_cache_refresh_execution_request_found"])
+        self.assertEqual(
+            cache_response["call_ledger"][0]["latest_producer_cache_refresh_execution_request_task_id"],
+            execution_task["task_id"],
+        )
+        self.assertEqual(
+            cache_response["call_ledger"][0]["latest_producer_cache_refresh_execution_request_status"],
+            execution_receipt["status"],
+        )
+        self.assertEqual(
+            cache_response["call_ledger"][0]["latest_producer_cache_refresh_execution_request_row_count"],
+            len(execution_rows),
+        )
+        self.assertFalse(
+            cache_response["call_ledger"][0]["latest_producer_cache_refresh_execution_request_writes_snapshot_cache"]
+        )
+        self.assertFalse(
+            cache_response["call_ledger"][0]["latest_producer_cache_refresh_execution_request_creates_task"]
+        )
+        self.assertFalse(cache_response["call_ledger"][0]["external"])
 
     def test_data_health_cache_surfaces_latest_trade_cal_provider_acceptance_dry_run_without_provider_call(self):
         self._with_meta_store()
@@ -17530,7 +17911,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 48)
+        self.assertEqual(task_catalog["data"]["task_count"], 49)
         self.assertIn("POST /api/bootstrap/live-startup", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-research-plan", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-worker-batch-dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
@@ -17552,6 +17933,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertIn(
             "POST /api/data-health/trade-cal-provider-acceptance-execution-request",
+            task_catalog["data"]["route_coverage"]["known_post_routes"],
+        )
+        self.assertIn(
+            "POST /api/data-health/producer-cache-refresh-execution-request",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
         )
         self.assertIn("POST /api/candidate-radar/scan-quick", task_catalog["data"]["route_coverage"]["known_post_routes"])
@@ -20378,6 +20763,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         producer_coverage = packet["current_evidence_producer_coverage_audit"]
         producer_generation = packet["current_evidence_producer_generation_contract"]
         producer_cache_refresh = packet["current_evidence_producer_cache_refresh_readiness"]
+        latest_producer_cache_refresh_request = packet["latest_producer_cache_refresh_execution_request"]
         provider_runbook = packet["trade_cal_provider_acceptance_runbook"]
         provider_promotion = packet["trade_cal_provider_acceptance_promotion_audit"]
         freshness_blocker_audit = packet["freshness_production_blocker_audit"]
@@ -20465,6 +20851,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["current_evidence_producer_cache_refresh_row_count"], 3)
         self.assertEqual(packet["counts"]["current_evidence_producer_cache_refresh_required_count"], 3)
         self.assertEqual(packet["counts"]["current_evidence_producer_cache_refresh_blocker_count"], 0)
+        self.assertEqual(packet["counts"]["latest_producer_cache_refresh_execution_request_found"], 0)
+        self.assertEqual(packet["counts"]["latest_producer_cache_refresh_execution_request_row_count"], 0)
+        self.assertEqual(packet["counts"]["latest_producer_cache_refresh_execution_request_blocking_row_count"], 0)
         self.assertEqual(sample["status"], "local_sample_validation_passed")
         self.assertEqual(sample["scope"], "local_synthetic_long_window_not_real_trade_cal_validation")
         self.assertTrue(sample["local_sample_validation_done"])
@@ -20517,6 +20906,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["policy"]["current_evidence_producer_cache_refresh_readiness_creates_task"])
         self.assertFalse(packet["policy"]["current_evidence_producer_cache_refresh_readiness_calls_provider"])
         self.assertTrue(packet["policy"]["current_evidence_producer_cache_refresh_readiness_is_not_provider_acceptance"])
+        self.assertTrue(packet["policy"]["latest_producer_cache_refresh_execution_request_lookup_is_local"])
+        self.assertFalse(packet["policy"]["latest_producer_cache_refresh_execution_request_lookup_creates_task"])
+        self.assertFalse(packet["policy"]["latest_producer_cache_refresh_execution_request_lookup_writes_snapshot_cache"])
+        self.assertFalse(packet["policy"]["latest_producer_cache_refresh_execution_request_lookup_calls_provider"])
+        self.assertTrue(packet["policy"]["latest_producer_cache_refresh_execution_request_is_not_cache_refresh"])
+        self.assertTrue(packet["policy"]["latest_producer_cache_refresh_execution_request_is_not_provider_acceptance"])
         self.assertTrue(packet["policy"]["freshness_production_blocker_audit_is_local"])
         self.assertFalse(packet["policy"]["freshness_production_blocker_audit_calls_provider"])
         self.assertFalse(packet["policy"]["freshness_production_ready"])
@@ -20951,6 +21346,36 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(producer_cache_refresh["deepseek_called"])
         self.assertFalse(producer_cache_refresh["github_called"])
         self.assertEqual(
+            latest_producer_cache_refresh_request["schema_version"],
+            "data_health_latest_producer_cache_refresh_execution_request.v1",
+        )
+        self.assertEqual(
+            latest_producer_cache_refresh_request["status"],
+            "no_producer_cache_refresh_execution_request_task_found",
+        )
+        self.assertEqual(
+            latest_producer_cache_refresh_request["scope"],
+            "local_task_status_lookup_no_cache_write_no_provider_execution",
+        )
+        self.assertFalse(latest_producer_cache_refresh_request["latest_task_found"])
+        self.assertFalse(latest_producer_cache_refresh_request["receipt_visible"])
+        self.assertFalse(latest_producer_cache_refresh_request["cache_get_creates_task"])
+        self.assertFalse(latest_producer_cache_refresh_request["cache_get_writes_snapshot_cache"])
+        self.assertFalse(latest_producer_cache_refresh_request["cache_get_external_calls"])
+        self.assertFalse(latest_producer_cache_refresh_request["writes_snapshot_cache"])
+        self.assertFalse(latest_producer_cache_refresh_request["creates_task"])
+        self.assertFalse(latest_producer_cache_refresh_request["executes_local_refresh"])
+        self.assertFalse(latest_producer_cache_refresh_request["builds_missing_packets"])
+        self.assertTrue(latest_producer_cache_refresh_request["does_not_refresh_provider"])
+        self.assertFalse(latest_producer_cache_refresh_request["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(latest_producer_cache_refresh_request["production_freshness_gate_complete"])
+        self.assertFalse(latest_producer_cache_refresh_request["external_calls_triggered"])
+        self.assertFalse(latest_producer_cache_refresh_request["tushare_called"])
+        self.assertFalse(latest_producer_cache_refresh_request["deepseek_called"])
+        self.assertFalse(latest_producer_cache_refresh_request["github_called"])
+        self.assertTrue(latest_producer_cache_refresh_request["does_not_execute_trades"])
+        self.assertTrue(latest_producer_cache_refresh_request["does_not_modify_strategy_action"])
+        self.assertEqual(
             set(producer_cache_refresh_rows),
             {"candidate_radar", "a_share_evidence_radar", "market_context"},
         )
@@ -21099,6 +21524,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(response["call_ledger"][0]["current_evidence_producer_cache_refresh_required_count"], 3)
         self.assertFalse(response["call_ledger"][0]["current_evidence_producer_cache_refresh_writes_snapshot_cache"])
+        self.assertFalse(response["call_ledger"][0]["latest_producer_cache_refresh_execution_request_found"])
+        self.assertEqual(
+            response["call_ledger"][0]["latest_producer_cache_refresh_execution_request_status"],
+            "no_producer_cache_refresh_execution_request_task_found",
+        )
+        self.assertEqual(response["call_ledger"][0]["latest_producer_cache_refresh_execution_request_row_count"], 0)
+        self.assertEqual(
+            response["call_ledger"][0]["latest_producer_cache_refresh_execution_request_blocking_row_count"],
+            0,
+        )
         self.assertEqual(sample_rows["sample_intraday_current_day_blocked"]["actual_state"], "future_unavailable")
         self.assertTrue(sample_rows["sample_intraday_current_day_blocked"]["blocks_composite_score"])
         self.assertEqual(sample_rows["sample_provider_delay_grace_previous_day"]["actual_state"], "provider_delay_grace")

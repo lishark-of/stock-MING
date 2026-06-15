@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   getDataHealthCache,
+  postProducerCacheRefreshExecutionRequest,
   postTradeCalProviderAcceptanceDryRun,
   postTradeCalProviderAcceptanceExecutionRequest,
   type TaskCreationEnvelope
@@ -28,6 +29,8 @@ export default function DataHealthTimeline() {
   const [tradeCalDryRunError, setTradeCalDryRunError] = useState("");
   const [tradeCalExecutionRequestReceipt, setTradeCalExecutionRequestReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [tradeCalExecutionRequestError, setTradeCalExecutionRequestError] = useState("");
+  const [producerCacheRefreshRequestReceipt, setProducerCacheRefreshRequestReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [producerCacheRefreshRequestError, setProducerCacheRefreshRequestError] = useState("");
 
   useEffect(() => {
     void getDataHealthCache().then((res) => {
@@ -83,6 +86,25 @@ export default function DataHealthTimeline() {
     });
   }
 
+  function launchProducerCacheRefreshExecutionRequest() {
+    const scopeHash = String(producerCacheRefreshReadiness.readiness_scope_hash_short ?? "");
+    setProducerCacheRefreshRequestError("");
+    void postProducerCacheRefreshExecutionRequest({
+      approved_by_user: true,
+      readiness_scope_hash_short: scopeHash,
+      producer_keys: producerCacheRefreshReadiness.producer_keys ?? ["candidate_radar", "a_share_evidence_radar", "market_context"],
+      requested_by: "command_center_3_data_health",
+      source: "data_health_page"
+    }).then((res) => {
+      setProducerCacheRefreshRequestReceipt(res);
+      if (!res.ok) {
+        setProducerCacheRefreshRequestError(String(res.error ?? "producer_cache_refresh_execution_request_failed"));
+      }
+    }).catch((err: unknown) => {
+      setProducerCacheRefreshRequestError(err instanceof Error ? err.message : String(err));
+    });
+  }
+
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const visibility = (cache.data_health_visibility_summary as Record<string, unknown> | undefined) ?? {};
@@ -105,6 +127,14 @@ export default function DataHealthTimeline() {
   const currentEvidenceFreshness = (cache.current_evidence_freshness_qa_contract as Record<string, unknown> | undefined) ?? {};
   const decisionSurfaceAudit = (cache.current_evidence_decision_surface_audit as Record<string, unknown> | undefined) ?? {};
   const producerCoverageAudit = (cache.current_evidence_producer_coverage_audit as Record<string, unknown> | undefined) ?? {};
+  const producerGenerationContract = (cache.current_evidence_producer_generation_contract as Record<string, unknown> | undefined) ?? {};
+  const producerCacheRefreshReadiness = (cache.current_evidence_producer_cache_refresh_readiness as Record<string, unknown> | undefined) ?? {};
+  const latestProducerCacheRefreshRequest = (cache.latest_producer_cache_refresh_execution_request as Record<string, unknown> | undefined) ?? {};
+  const latestProducerCacheRefreshRequestReceipt = latestProducerCacheRefreshRequest.receipt as Record<string, unknown> | undefined;
+  const producerCacheRefreshRequestPayload = (producerCacheRefreshRequestReceipt?.data?.task?.payload_safe as Record<string, unknown> | undefined) ?? {};
+  const postProducerCacheRefreshRequestReceipt = producerCacheRefreshRequestPayload.producer_cache_refresh_execution_request_receipt as Record<string, unknown> | undefined;
+  const producerCacheRefreshRequest = postProducerCacheRefreshRequestReceipt ?? latestProducerCacheRefreshRequestReceipt ?? latestProducerCacheRefreshRequest;
+  const producerCacheRefreshRequestRows = rows(producerCacheRefreshRequestPayload.producer_cache_refresh_execution_request_rows ?? cache.latest_producer_cache_refresh_execution_request_rows);
   const tradeCalDryRunPayload = (tradeCalDryRunReceipt?.data?.task?.payload_safe as Record<string, unknown> | undefined) ?? {};
   const postTradeCalDryRunReceipt = tradeCalDryRunPayload.trade_cal_provider_acceptance_dry_run_receipt as Record<string, unknown> | undefined;
   const tradeCalDryRun = postTradeCalDryRunReceipt ?? latestTradeCalDryRunReceipt ?? latestTradeCalDryRun;
@@ -172,6 +202,11 @@ export default function DataHealthTimeline() {
           { label: "可见面 blockers", value: counts.current_evidence_decision_surface_blocker_count as number | undefined, tone: Number(counts.current_evidence_decision_surface_blocker_count ?? 0) > 0 ? "bad" : "good" },
           { label: "producer 覆盖", value: producerCoverageAudit.status as string | undefined, tone: Number(counts.current_evidence_producer_coverage_blocker_count ?? 0) > 0 ? "bad" : "good" },
           { label: "producer blockers", value: counts.current_evidence_producer_coverage_blocker_count as number | undefined, tone: Number(counts.current_evidence_producer_coverage_blocker_count ?? 0) > 0 ? "bad" : "good" },
+          { label: "producer 生成", value: producerGenerationContract.status as string | undefined, tone: producerGenerationContract.local_generation_contract_ready === true ? "good" : "warn" },
+          { label: "cache refresh", value: producerCacheRefreshReadiness.status as string | undefined, tone: producerCacheRefreshReadiness.local_cache_refresh_ready === true ? "good" : "warn" },
+          { label: "refresh required", value: counts.current_evidence_producer_cache_refresh_required_count as number | undefined },
+          { label: "refresh request", value: latestProducerCacheRefreshRequest.latest_task_found === true ? "可见" : "未运行", tone: latestProducerCacheRefreshRequest.latest_task_found === true ? "good" : "neutral" },
+          { label: "request blockers", value: counts.latest_producer_cache_refresh_execution_request_blocking_row_count as number | undefined, tone: Number(counts.latest_producer_cache_refresh_execution_request_blocking_row_count ?? 0) > 0 ? "warn" : "good" },
           { label: "样本类型", value: freshnessSample.fixture_is_synthetic === true ? "fixture" : "unknown", tone: freshnessSample.fixture_is_synthetic === true ? "warn" : "neutral" },
           { label: "stale 边界", value: freshnessAcceptance.stale_expired_historical_unknown_are_research_only === true ? "research-only" : "需检查", tone: freshnessAcceptance.stale_expired_historical_unknown_are_research_only === true ? "good" : "bad" },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
@@ -236,6 +271,39 @@ export default function DataHealthTimeline() {
         <p>已观察到的 producer 必须显式带 expected_trade_date、data_date 和 freshness_state；本页不会构建缺失 packet、不会刷新 provider、不会修改 action。</p>
         <DataLineageTable rows={objectRow(producerCoverageAudit)} />
         <DataLineageTable rows={rows(cache.current_evidence_producer_coverage_rows)} />
+      </PacketCard>
+
+      <PacketCard title="当前证据 Producer 生成合同" subtitle="current_evidence_producer_generation_contract；本地生成器字段合同，不写 cache" status={String(producerGenerationContract.status ?? "producer_generation")}>
+        <p>local_generation_contract_ready: {String(producerGenerationContract.local_generation_contract_ready === true)}</p>
+        <p>current_cache_refresh_pending: {String(producerGenerationContract.current_cache_refresh_pending === true)}</p>
+        <p>writes_snapshot_cache / builds_missing_packets: {String(producerGenerationContract.writes_snapshot_cache ?? false)} / {String(producerGenerationContract.builds_missing_packets_in_current_cache ?? false)}</p>
+        <p>provider_backed_long_window_acceptance_done / production_freshness_gate_complete: {String(producerGenerationContract.provider_backed_long_window_acceptance_done ?? false)} / {String(producerGenerationContract.production_freshness_gate_complete ?? false)}</p>
+        <DataLineageTable rows={objectRow(producerGenerationContract)} />
+        <DataLineageTable rows={rows(cache.current_evidence_producer_generation_rows)} />
+      </PacketCard>
+
+      <PacketCard title="Producer cache refresh 请求 ticket" subtitle="按钮生成本地 execution-request；绑定 readiness hash，不写 cache、不创建刷新任务" status={String(producerCacheRefreshRequest.status ?? producerCacheRefreshRequest.execution_request_status ?? "not_run")}>
+        <div className="actions">
+          <button onClick={launchProducerCacheRefreshExecutionRequest}>生成 producer refresh 请求 ticket</button>
+        </div>
+        <p>readiness status: {String(producerCacheRefreshReadiness.status ?? "--")}</p>
+        <p>readiness scope hash: {String(producerCacheRefreshReadiness.readiness_scope_hash_short ?? "--")}</p>
+        <p>request status: {String(producerCacheRefreshRequest.status ?? producerCacheRefreshRequest.execution_request_status ?? "not_run")}</p>
+        <p>requested scope hash: {String(producerCacheRefreshRequest.requested_scope_hash_short ?? "--")}</p>
+        <p>scope_hash_matches_readiness: {String(producerCacheRefreshRequest.scope_hash_matches_readiness === true)}</p>
+        <p>ready_for_manual_local_refresh_task_submission: {String(producerCacheRefreshRequest.ready_for_manual_local_refresh_task_submission === true)}</p>
+        <p>writes_snapshot_cache / creates_task / executes_local_refresh: {String(producerCacheRefreshRequest.writes_snapshot_cache ?? false)} / {String(producerCacheRefreshRequest.creates_task ?? false)} / {String(producerCacheRefreshRequest.executes_local_refresh ?? false)}</p>
+        <p>tushare_called / deepseek_called / github_called: {String(producerCacheRefreshRequest.tushare_called ?? false)} / {String(producerCacheRefreshRequest.deepseek_called ?? false)} / {String(producerCacheRefreshRequest.github_called ?? false)}</p>
+        <p>provider_backed_long_window_acceptance_done / production_freshness_gate_complete: {String(producerCacheRefreshRequest.provider_backed_long_window_acceptance_done ?? false)} / {String(producerCacheRefreshRequest.production_freshness_gate_complete ?? false)}</p>
+        <p>allowed_next_step: {String(producerCacheRefreshRequest.allowed_next_step ?? "--")}</p>
+        <p>GET cache 只读取 latest request metadata；该 ticket 不刷新当前 cache、不构建缺失 packet、不证明 provider-backed freshness。</p>
+        {producerCacheRefreshRequestError ? <p className="risk-note">{producerCacheRefreshRequestError}</p> : null}
+        <TaskLaunchReceipt receipt={producerCacheRefreshRequestReceipt} />
+        <DataLineageTable rows={objectRow(producerCacheRefreshReadiness)} />
+        <DataLineageTable rows={rows(cache.current_evidence_producer_cache_refresh_rows)} />
+        <DataLineageTable rows={objectRow(producerCacheRefreshRequest)} />
+        <DataLineageTable rows={producerCacheRefreshRequestRows} />
+        <JsonDetails title="latest producer cache refresh execution request raw" data={latestProducerCacheRefreshRequest} />
       </PacketCard>
 
       <PacketCard title="Trade_cal 本地文件验收" subtitle="只读已有 Parquet/DuckDB cache；不是页面启动外联" status={String(tradeCalPhysical.status ?? "local_trade_cal_validation")}>

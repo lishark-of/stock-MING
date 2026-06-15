@@ -274,6 +274,13 @@ export function postTradeCalProviderAcceptanceExecutionRequest(payload: Record<s
   });
 }
 
+export function postProducerCacheRefreshExecutionRequest(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/data-health/producer-cache-refresh-execution-request", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getDesktopPreflightCache() {
   return request<Record<string, unknown>>("/api/desktop/preflight-cache");
 }

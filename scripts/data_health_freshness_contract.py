@@ -39,6 +39,7 @@ CONTRACT_KEYS = [
     "latest_trade_cal_provider_acceptance_dry_run",
     "trade_cal_provider_acceptance_next_execution_recipe",
     "latest_trade_cal_provider_acceptance_execution_request",
+    "latest_producer_cache_refresh_execution_request",
     "latest_tushare_provider_target_sample_execution_request",
     "current_evidence_freshness_qa_contract",
     "current_evidence_decision_surface_audit",
@@ -490,6 +491,12 @@ def build_contract() -> dict[str, Any]:
     producer_cache_refresh = _get(packet, "current_evidence_producer_cache_refresh_readiness")
     producer_cache_refresh_rows = [
         row for row in _as_list(packet.get("current_evidence_producer_cache_refresh_rows")) if isinstance(row, dict)
+    ]
+    latest_producer_cache_refresh_request = _get(packet, "latest_producer_cache_refresh_execution_request")
+    latest_producer_cache_refresh_request_rows = [
+        row
+        for row in _as_list(packet.get("latest_producer_cache_refresh_execution_request_rows"))
+        if isinstance(row, dict)
     ]
     policy = _get(packet, "policy")
     counts = _get(packet, "counts")
@@ -1411,6 +1418,50 @@ def build_contract() -> dict[str, Any]:
             "Producer cache-refresh readiness may show that a local refresh can carry generated freshness fields forward, but it must not rewrite cache, create tasks, call providers, or clear provider-backed acceptance.",
         ),
         _row(
+            "producer_cache_refresh_execution_request_lookup_is_local_no_write",
+            latest_producer_cache_refresh_request.get("schema_version")
+            == "data_health_latest_producer_cache_refresh_execution_request.v1"
+            and latest_producer_cache_refresh_request.get("scope")
+            == "local_task_status_lookup_no_cache_write_no_provider_execution"
+            and latest_producer_cache_refresh_request.get("status")
+            in {
+                "no_producer_cache_refresh_execution_request_task_found",
+                "latest_producer_cache_refresh_execution_request_visible",
+            }
+            and latest_producer_cache_refresh_request.get("cache_get_creates_task") is False
+            and latest_producer_cache_refresh_request.get("cache_get_writes_snapshot_cache") is False
+            and latest_producer_cache_refresh_request.get("cache_get_external_calls") is False
+            and latest_producer_cache_refresh_request.get("writes_snapshot_cache") is False
+            and latest_producer_cache_refresh_request.get("creates_task") is False
+            and latest_producer_cache_refresh_request.get("executes_local_refresh") is False
+            and latest_producer_cache_refresh_request.get("builds_missing_packets") is False
+            and latest_producer_cache_refresh_request.get("does_not_refresh_provider") is True
+            and latest_producer_cache_refresh_request.get("provider_backed_long_window_acceptance_done") is False
+            and latest_producer_cache_refresh_request.get("production_freshness_gate_complete") is False
+            and _flag_false(
+                latest_producer_cache_refresh_request,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and all(row.get("writes_snapshot_cache") is False for row in latest_producer_cache_refresh_request_rows)
+            and all(row.get("creates_task") is False for row in latest_producer_cache_refresh_request_rows)
+            and all(row.get("executes_local_refresh") is False for row in latest_producer_cache_refresh_request_rows)
+            and all(row.get("builds_missing_packets") is False for row in latest_producer_cache_refresh_request_rows)
+            and all(row.get("external_calls_triggered") is False for row in latest_producer_cache_refresh_request_rows)
+            and all(row.get("tushare_called") is False for row in latest_producer_cache_refresh_request_rows)
+            and all(row.get("deepseek_called") is False for row in latest_producer_cache_refresh_request_rows)
+            and all(row.get("github_called") is False for row in latest_producer_cache_refresh_request_rows)
+            and policy.get("latest_producer_cache_refresh_execution_request_lookup_is_local") is True
+            and policy.get("latest_producer_cache_refresh_execution_request_lookup_creates_task") is False
+            and policy.get("latest_producer_cache_refresh_execution_request_lookup_writes_snapshot_cache") is False
+            and policy.get("latest_producer_cache_refresh_execution_request_lookup_calls_provider") is False
+            and policy.get("latest_producer_cache_refresh_execution_request_is_not_cache_refresh") is True
+            and policy.get("latest_producer_cache_refresh_execution_request_is_not_provider_acceptance") is True,
+            "Latest producer cache-refresh execution-request lookup must remain cache-only task metadata replay: no task creation, no cache write, no provider/model/GitHub call, and no production freshness promotion.",
+        ),
+        _row(
             "freshness_production_stage_scope_manifest_is_complete_and_pending",
             production_stage_scope_ready,
             "Freshness production stages are listed as pending direct evidence while provider trade_cal acceptance, provider replay/failure evidence, producer coverage completion, decision-surface mutation, cache/render external calls, trades, action mutation, and secrets stay disabled.",
@@ -1439,6 +1490,7 @@ def build_contract() -> dict[str, Any]:
             and int(counts.get("latest_trade_cal_provider_acceptance_dry_run_found") or 0) >= 0
             and int(counts.get("trade_cal_provider_acceptance_next_execution_row_count") or 0) >= 10
             and int(counts.get("latest_trade_cal_provider_acceptance_execution_request_found") or 0) >= 0
+            and int(counts.get("latest_producer_cache_refresh_execution_request_found") or 0) >= 0
             and int(counts.get("current_evidence_freshness_qa_row_count") or 0) >= 8
             and int(counts.get("current_evidence_decision_surface_row_count") or 0) >= 5
             and int(counts.get("current_evidence_producer_coverage_row_count") or 0) >= 6
@@ -1501,6 +1553,18 @@ def build_contract() -> dict[str, Any]:
                 "current_evidence_producer_cache_refresh_blocker_count"
             ),
             "current_evidence_producer_cache_refresh_status": producer_cache_refresh.get("status"),
+            "latest_producer_cache_refresh_execution_request_found": counts.get(
+                "latest_producer_cache_refresh_execution_request_found"
+            ),
+            "latest_producer_cache_refresh_execution_request_row_count": counts.get(
+                "latest_producer_cache_refresh_execution_request_row_count"
+            ),
+            "latest_producer_cache_refresh_execution_request_blocking_row_count": counts.get(
+                "latest_producer_cache_refresh_execution_request_blocking_row_count"
+            ),
+            "latest_producer_cache_refresh_execution_request_status": (
+                latest_producer_cache_refresh_request.get("execution_request_status")
+            ),
             "trade_cal_provider_acceptance_pending_count": counts.get("trade_cal_provider_acceptance_pending_count"),
             "trade_cal_provider_acceptance_promotion_blocker_count": counts.get(
                 "trade_cal_provider_acceptance_promotion_blocker_count"

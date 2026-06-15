@@ -28,3 +28,9 @@ def post_trade_cal_provider_acceptance_dry_run(payload: dict[str, Any] | None = 
 def post_trade_cal_provider_acceptance_execution_request(payload: dict[str, Any] | None = None) -> dict:
     task = data_health_service.run_trade_cal_provider_acceptance_execution_request(payload)
     return task_envelope(task)
+
+
+@router.post("/producer-cache-refresh-execution-request")
+def post_producer_cache_refresh_execution_request(payload: dict[str, Any] | None = None) -> dict:
+    task = data_health_service.run_producer_cache_refresh_execution_request(payload)
+    return task_envelope(task)
