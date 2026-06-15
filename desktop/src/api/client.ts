@@ -398,6 +398,13 @@ export function postCandidateRadarFullPoolLocalScan(payload: Record<string, unkn
   });
 }
 
+export function postCandidateRadarFullPoolWorkerScan(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/candidate-radar/full-pool-worker-scan", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function postCandidateRadarDeepScanPlan(payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>("/api/candidate-radar/deep-scan-plan", {
     method: "POST",
