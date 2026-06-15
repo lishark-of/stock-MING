@@ -1378,6 +1378,115 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             }
         )
     try:
+        from server.services import audit_service
+
+        release_gate, _, workflow_rows = audit_service._release_gate_readiness_audit()
+        release_gate = release_gate if isinstance(release_gate, dict) else {}
+        ci_triage_contract, _ = audit_service._ci_notification_triage_contract(release_gate, workflow_rows)
+        ci_triage_contract = ci_triage_contract if isinstance(ci_triage_contract, dict) else {}
+        push_receipt, _ = audit_service._release_gate_push_readiness_receipt(release_gate, ci_triage_contract)
+        push_receipt = push_receipt if isinstance(push_receipt, dict) else {}
+        stage_rows = audit_service._release_gate_stage_scope_rows(
+            release_gate,
+            push_receipt,
+            ci_triage_contract,
+        )
+        stage_rows = stage_rows if isinstance(stage_rows, list) else []
+        row_count = len(stage_rows)
+        pending_count = int(
+            sum(1 for row in stage_rows if isinstance(row, dict) and row.get("stage_complete") is False)
+        )
+        local_evidence_count = sum(
+            1
+            for row in stage_rows
+            if isinstance(row, dict)
+            and row.get("local_static_contract_ready") is True
+            and row.get("ci_mirror_ready") is True
+        )
+        rows.append(
+            {
+                "id": "LTG-11",
+                "goal": "测试 / CI / smoke / 安全扫描标准化",
+                "stage_scope_manifest": "release_gate_stage_scope_manifest",
+                "status": "observed_in_audit_cache_release_gate_contract"
+                if stage_rows
+                else "missing_from_audit_cache_release_gate_contract",
+                "observed_source": "server.services.audit_service release gate local static helpers also surfaced by GET /api/audit/cache",
+                "cache_status": "ready" if stage_rows else "missing",
+                "cache_mode": "local_static_contract",
+                "row_count": row_count,
+                "pending_stage_count": pending_count,
+                "local_evidence_stage_count": local_evidence_count,
+                "production_blocker_count": pending_count,
+                "local_gate_ready": release_gate.get("local_gate_ready") is True,
+                "ci_mirror_ready": release_gate.get("ci_mirror_ready") is True,
+                "push_readiness_receipt_ready": push_receipt.get("local_receipt_ready") is True,
+                "ready_for_explicit_push_sequence": push_receipt.get("ready_for_explicit_local_gate_then_push")
+                is True,
+                "release_gate_complete": release_gate.get("release_gate_complete") is True,
+                "fresh_local_gate_run_observed": False,
+                "remote_actions_status_known": False,
+                "latest_remote_run_verified_green": False,
+                "failure_email_has_matching_head_and_logs": False,
+                "can_dismiss_failure_email_without_matching_head_and_logs": False,
+                "periodic_allowlist_review_ready": False,
+                "release_report_written_by_cache": False,
+                "release_report_is_ci_status": False,
+                "did_not_push": True,
+                "git_add_dot_used": False,
+                "github_api_called": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observed_local_release_gate_stage_scope_not_fresh_gate_or_remote_ci_completion",
+            }
+        )
+    except Exception:
+        rows.append(
+            {
+                "id": "LTG-11",
+                "goal": "测试 / CI / smoke / 安全扫描标准化",
+                "stage_scope_manifest": "release_gate_stage_scope_manifest",
+                "status": "local_observation_failed_safe_fallback",
+                "observed_source": "server.services.audit_service release gate local static helpers also surfaced by GET /api/audit/cache",
+                "error_message_safe": "release_gate_stage_scope_observation_failed",
+                "row_count": 0,
+                "pending_stage_count": 0,
+                "local_evidence_stage_count": 0,
+                "production_blocker_count": 0,
+                "local_gate_ready": False,
+                "ci_mirror_ready": False,
+                "push_readiness_receipt_ready": False,
+                "ready_for_explicit_push_sequence": False,
+                "release_gate_complete": False,
+                "fresh_local_gate_run_observed": False,
+                "remote_actions_status_known": False,
+                "latest_remote_run_verified_green": False,
+                "failure_email_has_matching_head_and_logs": False,
+                "can_dismiss_failure_email_without_matching_head_and_logs": False,
+                "periodic_allowlist_review_ready": False,
+                "release_report_written_by_cache": False,
+                "release_report_is_ci_status": False,
+                "did_not_push": True,
+                "git_add_dot_used": False,
+                "github_api_called": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observation_failure_is_not_completion",
+            }
+        )
+    try:
         from scripts import motion_viewport_qa_contract
 
         motion_contract = motion_viewport_qa_contract.build_contract()

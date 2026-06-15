@@ -143,6 +143,8 @@ Migration Status 现在还会从本地静态 Tauri desktop contract 观察 `taur
 
 Migration Status 现在还会从本地静态 Streamlit legacy contract 观察 `streamlit_retirement_stage_scope_manifest`，并以 `ltg_stage_scope_observed_rows` 展示 LTG-10 的普通主流程退场阶段清单。该观察只显示 route inventory、ordinary workflow parity、Candidate Radar parity、provider-backed parity、browser/performance QA、admin/debug retention decision、fallback retirement review 和 `app.py` removal-or-retention review 的剩余阻断项；不打开 Streamlit、不运行 legacy tools、不创建任务、不删除 fallback、不删除 `app.py`、不调用 Tushare/DeepSeek/GitHub、不修改 holdings/action、不执行交易，也不证明 Streamlit 已完全退出普通主流程。
 
+Migration Status 现在还会从本地 release gate 静态 helper 观察 `release_gate_stage_scope_manifest`，并以 `ltg_stage_scope_observed_rows` 展示 LTG-11 的八个 release-gate 证据阶段。该观察只显示本地 push gate 合同、fresh local gate run 缺口、secret/artifact allowlist review、CI mirror workflow、matching remote Actions status、failure-email triage、release report artifact policy 和 explicit push approval boundary；不运行 `scripts/push_gate_3_0.sh`、不调用 GitHub API、不读取远端 Actions log、不 push、不调用 Tushare/DeepSeek、不执行交易，也不证明最新 CI 已绿或 release gate complete。
+
 Migration Status 现在会从本地 Candidate Radar cache 观察 `candidate_radar_production_stage_scope_manifest`，并以 `ltg_stage_scope_observed_rows` 展示在 14 个长期目标总览中。该观察只读本地 cache，不创建任务、不刷新数据、不调用 Tushare/DeepSeek/GitHub、不执行交易，也不证明 LTG-13 production radar replacement complete。
 
 Migration Status 现在也会从本地静态 motion contract 观察 `motion_production_stage_scope_manifest`，把 LTG-14 的动效生产阶段清单并入 `ltg_stage_scope_observed_rows`。该观察不打开浏览器、不运行 motion runner、不写截图/视频、不读取 GitHub Actions、不调用 Tushare/DeepSeek/GitHub、不修改 packet/action/price/position，也不证明 production motion complete。
