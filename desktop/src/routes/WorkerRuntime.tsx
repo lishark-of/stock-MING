@@ -131,6 +131,65 @@ export default function WorkerRuntime() {
   const visibleProductionEvidencePlan = Object.keys(productionEvidencePlanResult).length
     ? ((productionEvidencePlanResult.worker_production_evidence_plan_receipt as Record<string, unknown> | undefined) ?? productionEvidencePlanResult)
     : workerProductionEvidencePlanReceipt;
+  const workerPacketEvidenceRows = [
+    {
+      packet: "synthetic_healthcheck",
+      route: "POST /api/worker/synthetic-healthcheck",
+      source_packet_read_status:
+        workerSyntheticHealthcheck.source_packet_read_status ??
+        productionReadiness.worker_synthetic_healthcheck_source_packet_read_status ??
+        cache.worker_synthetic_healthcheck_source_packet_read_status ??
+        "meta_missing",
+      source_packet_present:
+        workerSyntheticHealthcheck.source_packet_present ??
+        productionReadiness.worker_synthetic_healthcheck_source_packet_present ??
+        cache.worker_synthetic_healthcheck_source_packet_present ??
+        false,
+      cache_get_initializes_meta_store: workerSyntheticHealthcheck.cache_get_initializes_meta_store ?? false,
+      worker_started: false,
+      redis_pinged: false,
+      task_dispatched_by_get: false,
+      external_calls_triggered: false
+    },
+    {
+      packet: "activation_review",
+      route: "POST /api/worker/activation-review",
+      source_packet_read_status:
+        workerActivationReviewTaskReceipt.source_packet_read_status ??
+        productionReadiness.worker_activation_review_source_packet_read_status ??
+        cache.worker_activation_review_source_packet_read_status ??
+        "meta_missing",
+      source_packet_present:
+        workerActivationReviewTaskReceipt.source_packet_present ??
+        productionReadiness.worker_activation_review_source_packet_present ??
+        cache.worker_activation_review_source_packet_present ??
+        false,
+      cache_get_initializes_meta_store: workerActivationReviewTaskReceipt.cache_get_initializes_meta_store ?? false,
+      worker_started: false,
+      redis_pinged: false,
+      task_dispatched_by_get: false,
+      external_calls_triggered: false
+    },
+    {
+      packet: "production_evidence_plan",
+      route: "POST /api/worker/production-evidence-plan",
+      source_packet_read_status:
+        workerProductionEvidencePlanReceipt.source_packet_read_status ??
+        productionReadiness.worker_production_evidence_plan_source_packet_read_status ??
+        cache.worker_production_evidence_plan_source_packet_read_status ??
+        "meta_missing",
+      source_packet_present:
+        workerProductionEvidencePlanReceipt.source_packet_present ??
+        productionReadiness.worker_production_evidence_plan_source_packet_present ??
+        cache.worker_production_evidence_plan_source_packet_present ??
+        false,
+      cache_get_initializes_meta_store: workerProductionEvidencePlanReceipt.cache_get_initializes_meta_store ?? false,
+      worker_started: false,
+      redis_pinged: false,
+      task_dispatched_by_get: false,
+      external_calls_triggered: false
+    }
+  ];
   const dispatchPlanSummary = (cache.dispatch_plan_summary as Record<string, unknown> | undefined) ?? {};
   const dispatchPlanStatusCounts = dispatchPlanSummary.status_counts as Record<string, unknown> | undefined;
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
@@ -311,6 +370,13 @@ export default function WorkerRuntime() {
         <p>provider_model_task_validation_in_scope: {String(workerHealthcheckQa.provider_model_task_validation_in_scope ?? false)}</p>
         <p>这张表只定义后续人工 healthcheck 要验什么；不会启动 Celery、不会 ping Redis、不会启动 scheduler、不会派发任务。</p>
         <DataLineageTable rows={rows(productionReadiness.worker_healthcheck_qa_rows ?? cache.worker_healthcheck_qa_rows)} />
+      </PacketCard>
+
+      <PacketCard title="Worker persisted packet evidence" subtitle="只读展示显式 POST 证据包读取状态；证据缺失时不初始化 SQLite meta" status="packet_reader_no_init">
+        <p>synthetic / activation / evidence plan source: {String(workerPacketEvidenceRows[0].source_packet_read_status)} / {String(workerPacketEvidenceRows[1].source_packet_read_status)} / {String(workerPacketEvidenceRows[2].source_packet_read_status)}</p>
+        <p>source_packet_present: {String(workerPacketEvidenceRows[0].source_packet_present)} / {String(workerPacketEvidenceRows[1].source_packet_present)} / {String(workerPacketEvidenceRows[2].source_packet_present)}</p>
+        <p>这张表只说明 cache 读取显式 POST 留下的 packet，不启动 worker、不 ping Redis、不派发任务、不调用 Tushare/DeepSeek/GitHub。</p>
+        <DataLineageTable rows={workerPacketEvidenceRows} />
       </PacketCard>
 
       <PacketCard title="Worker synthetic healthcheck" subtitle="显式按钮触发本地 task/status/log 往返；不是 Celery/Redis 生产证明" status={String(visibleHealthcheck.status ?? "synthetic_healthcheck_missing")}>

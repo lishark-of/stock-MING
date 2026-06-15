@@ -167,6 +167,11 @@ REQUIRED_RUNTIME_DURABLE_EVIDENCE_MISSING_KEYS = (
     "local_fallback_rollback_evidence_required",
     "production_worker_promotion_review_required",
 )
+ALLOWED_WORKER_PACKET_READ_STATUSES = {
+    "meta_missing",
+    "packet_missing",
+    "packet_present",
+}
 RUNTIME_EVIDENCE_STAGE_LABELS = {
     "celery_process": "Celery process evidence",
     "redis_broker": "Redis broker evidence",
@@ -532,6 +537,22 @@ def build_contract() -> dict[str, Any]:
             and policy.get("cache_get_executes_synthetic_healthcheck") is False
             and policy.get("worker_synthetic_healthcheck_is_not_production_complete") is True,
             "Worker synthetic healthcheck must be a button-gated POST route; GET cache may read the last result but must not execute it or claim production completion.",
+        ),
+        _row(
+            "worker_persisted_packet_reader_is_no_init",
+            synthetic_healthcheck.get("source_packet_read_status") in ALLOWED_WORKER_PACKET_READ_STATUSES
+            and activation_review_task.get("source_packet_read_status") in ALLOWED_WORKER_PACKET_READ_STATUSES
+            and production_evidence_plan.get("source_packet_read_status") in ALLOWED_WORKER_PACKET_READ_STATUSES
+            and isinstance(synthetic_healthcheck.get("source_packet_present"), bool)
+            and isinstance(activation_review_task.get("source_packet_present"), bool)
+            and isinstance(production_evidence_plan.get("source_packet_present"), bool)
+            and synthetic_healthcheck.get("cache_get_initializes_meta_store") is False
+            and activation_review_task.get("cache_get_initializes_meta_store") is False
+            and production_evidence_plan.get("cache_get_initializes_meta_store") is False
+            and _flag_false(synthetic_healthcheck, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and _flag_false(activation_review_task, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and _flag_false(production_evidence_plan, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called"),
+            "Worker persisted-packet readers must expose source read status for explicit POST evidence without initializing meta storage, calling providers, starting workers, or dispatching tasks.",
         ),
         _row(
             "production_readiness_receipt_allows_only_explicit_next_step",
@@ -994,6 +1015,10 @@ def build_contract() -> dict[str, Any]:
                 synthetic_healthcheck.get("readback_task_identity_sha256")
             ),
             "synthetic_healthcheck_hash_matches": synthetic_healthcheck.get("task_readback_hash_matches"),
+            "synthetic_healthcheck_source_packet_read_status": synthetic_healthcheck.get(
+                "source_packet_read_status"
+            ),
+            "synthetic_healthcheck_source_packet_present": synthetic_healthcheck.get("source_packet_present"),
             "activation_review_status": activation.get("status"),
             "activation_blocker_count": activation.get("activation_blocker_count"),
             "worker_production_readiness_receipt_status": readiness_receipt.get("status"),
@@ -1005,10 +1030,20 @@ def build_contract() -> dict[str, Any]:
             "worker_activation_review_task_status": activation_review_task.get("status"),
             "worker_activation_review_task_local_blocker_count": activation_review_task.get("local_blocker_count"),
             "worker_activation_review_task_production_blocker_count": activation_review_task.get("production_blocker_count"),
+            "worker_activation_review_source_packet_read_status": activation_review_task.get(
+                "source_packet_read_status"
+            ),
+            "worker_activation_review_source_packet_present": activation_review_task.get("source_packet_present"),
             "worker_production_evidence_plan_status": production_evidence_plan.get("status"),
             "worker_production_evidence_plan_local_blocker_count": production_evidence_plan.get("local_blocker_count"),
             "worker_production_evidence_plan_production_blocker_count": production_evidence_plan.get(
                 "production_blocker_count"
+            ),
+            "worker_production_evidence_plan_source_packet_read_status": production_evidence_plan.get(
+                "source_packet_read_status"
+            ),
+            "worker_production_evidence_plan_source_packet_present": production_evidence_plan.get(
+                "source_packet_present"
             ),
             "worker_runtime_qa_execution_recipe_status": runtime_qa_recipe.get("status"),
             "worker_runtime_qa_execution_recipe_ready": runtime_qa_recipe.get("local_recipe_ready"),

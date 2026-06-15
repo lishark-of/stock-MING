@@ -9747,6 +9747,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("activation_review_task_is_button_gated_no_process_start", script)
         self.assertIn("worker_production_evidence_plan_receipt.v1", script)
         self.assertIn("production_evidence_plan_is_scope_ticket_only", script)
+        self.assertIn("worker_persisted_packet_reader_is_no_init", script)
         self.assertIn("worker_runtime_qa_execution_recipe.v1", script)
         self.assertIn("runtime_qa_execution_recipe_is_local_pending", script)
         self.assertIn("worker_runtime_durable_evidence_recipe.v1", script)
@@ -9818,6 +9819,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["worker_production_evidence_plan_status"],
             "worker_production_evidence_plan_pending_activation_review",
         )
+        allowed_packet_read_statuses = {"meta_missing", "packet_missing", "packet_present"}
+        self.assertIn(payload["observed"]["synthetic_healthcheck_source_packet_read_status"], allowed_packet_read_statuses)
+        self.assertIn(payload["observed"]["worker_activation_review_source_packet_read_status"], allowed_packet_read_statuses)
+        self.assertIn(
+            payload["observed"]["worker_production_evidence_plan_source_packet_read_status"],
+            allowed_packet_read_statuses,
+        )
+        self.assertIsInstance(payload["observed"]["synthetic_healthcheck_source_packet_present"], bool)
+        self.assertIsInstance(payload["observed"]["worker_activation_review_source_packet_present"], bool)
+        self.assertIsInstance(payload["observed"]["worker_production_evidence_plan_source_packet_present"], bool)
         self.assertGreater(payload["observed"]["worker_production_evidence_plan_local_blocker_count"], 0)
         self.assertGreater(payload["observed"]["worker_production_evidence_plan_production_blocker_count"], 0)
         self.assertEqual(
@@ -12059,6 +12070,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(synthetic_healthcheck["schema_version"], "worker_synthetic_healthcheck.v1")
         self.assertEqual(synthetic_healthcheck["status"], "synthetic_healthcheck_missing")
         self.assertEqual(synthetic_healthcheck["scope"], "explicit_post_worker_synthetic_healthcheck_no_process_start")
+        self.assertIn(synthetic_healthcheck["source_packet_read_status"], {"meta_missing", "packet_missing"})
+        self.assertFalse(synthetic_healthcheck["source_packet_present"])
+        self.assertFalse(synthetic_healthcheck["cache_get_initializes_meta_store"])
         self.assertFalse(synthetic_healthcheck["synthetic_healthcheck_executed"])
         self.assertFalse(synthetic_healthcheck["healthcheck_task_dispatched"])
         self.assertFalse(synthetic_healthcheck["local_task_round_trip_verified"])
@@ -12607,6 +12621,47 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("local_worker_runtime_durable_evidence_recipe", {item.get("api") for item in packet["call_ledger"]})
         self.assertNotIn("COMMAND_CENTER_REDIS_URL", json.dumps(packet, ensure_ascii=False))
         json.dumps(packet, ensure_ascii=False)
+
+    def test_worker_packet_readers_do_not_initialize_meta_store_when_missing(self):
+        db_path = self._with_meta_store()
+        self.assertFalse(db_path.exists())
+
+        synthetic = worker_service._read_worker_synthetic_healthcheck_packet()
+        self.assertFalse(db_path.exists())
+        activation_contract = {
+            "schema_version": "worker_activation_review_contract.v1",
+            "status": "worker_activation_review_ready_activation_pending",
+        }
+        activation_receipt = {
+            "schema_version": "worker_production_activation_receipt.v1",
+            "status": "worker_activation_receipt_ready_production_blocked",
+            "local_activation_receipt_ready": True,
+            "scheduler_started": False,
+            "provider_model_task_dispatched_by_receipt": False,
+            "external_calls_triggered": False,
+        }
+        activation_review = worker_service._read_worker_activation_review_packet(
+            synthetic,
+            activation_contract,
+            activation_receipt,
+        )
+        self.assertFalse(db_path.exists())
+        evidence_plan = worker_service._read_worker_production_evidence_plan_packet(
+            synthetic,
+            activation_review,
+            activation_receipt,
+        )
+        self.assertFalse(db_path.exists())
+
+        for packet in (synthetic, activation_review, evidence_plan):
+            self.assertEqual(packet["source_packet_read_status"], "meta_missing")
+            self.assertFalse(packet["source_packet_present"])
+            self.assertFalse(packet["cache_get_initializes_meta_store"])
+            self.assertFalse(packet["external_calls_triggered"])
+            self.assertFalse(packet["tushare_called"])
+            self.assertFalse(packet["deepseek_called"])
+            self.assertFalse(packet["github_called"])
+            self.assertFalse(packet["production_worker_complete"])
 
     def test_worker_synthetic_healthcheck_creates_local_task_without_backends(self):
         db_path = self._with_meta_store()
@@ -18743,6 +18798,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(activation_review_task["schema_version"], "worker_activation_review_task_receipt.v1")
         self.assertEqual(activation_review_task["status"], "worker_activation_review_task_pending")
         self.assertEqual(activation_review_task["scope"], "button_gated_worker_activation_review_no_process_start")
+        self.assertIn(activation_review_task["source_packet_read_status"], {"meta_missing", "packet_missing"})
+        self.assertFalse(activation_review_task["source_packet_present"])
+        self.assertFalse(activation_review_task["cache_get_initializes_meta_store"])
         self.assertFalse(activation_review_task["explicit_activation_review_done"])
         self.assertFalse(activation_review_task["activation_review_ready"])
         self.assertFalse(activation_review_task["production_worker_complete"])
@@ -18767,6 +18825,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(production_evidence_plan["schema_version"], "worker_production_evidence_plan_receipt.v1")
         self.assertEqual(production_evidence_plan["status"], "worker_production_evidence_plan_pending_activation_review")
         self.assertEqual(production_evidence_plan["scope"], "button_gated_worker_production_evidence_plan_no_process_start")
+        self.assertIn(production_evidence_plan["source_packet_read_status"], {"meta_missing", "packet_missing"})
+        self.assertFalse(production_evidence_plan["source_packet_present"])
+        self.assertFalse(production_evidence_plan["cache_get_initializes_meta_store"])
         self.assertFalse(production_evidence_plan["explicit_evidence_plan_done"])
         self.assertFalse(production_evidence_plan["evidence_plan_ready"])
         self.assertFalse(production_evidence_plan["production_worker_complete"])

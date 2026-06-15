@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import sqlite3
 from typing import Any
 
 from server.services import task_service
@@ -106,6 +107,26 @@ def _stable_json_text(payload: dict[str, Any]) -> str:
 
 def _json_sha256(payload: dict[str, Any]) -> str:
     return hashlib.sha256(_stable_json_text(payload).encode("utf-8")).hexdigest()
+
+
+def _read_worker_meta_packet_no_init(packet_key: str) -> tuple[Any, str]:
+    if not SQLITE_META_PATH.exists():
+        return None, "meta_missing"
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = sqlite3.connect(SQLITE_META_PATH)
+        row = conn.execute("SELECT payload_json FROM packets WHERE packet_key = ?", (packet_key,)).fetchone()
+    except Exception:
+        return None, "packet_read_failed"
+    finally:
+        if conn is not None:
+            conn.close()
+    if row is None:
+        return None, "packet_missing"
+    try:
+        return json.loads(row[0]), "packet_present"
+    except Exception:
+        return None, "packet_decode_failed"
 
 
 def _module_available(module_name: str) -> bool:
@@ -1165,13 +1186,16 @@ def _worker_task_log_persistence_audit(
     }
 
 
-def _missing_worker_synthetic_healthcheck_packet() -> dict[str, Any]:
+def _missing_worker_synthetic_healthcheck_packet(read_status: str = "packet_missing") -> dict[str, Any]:
     return {
         "packet_key": SYNTHETIC_HEALTHCHECK_PACKET_KEY,
         "schema_version": SYNTHETIC_HEALTHCHECK_SCHEMA_VERSION,
         "status": "synthetic_healthcheck_missing",
         "scope": "explicit_post_worker_synthetic_healthcheck_no_process_start",
         "mode": "button_gated_local_synthetic_healthcheck",
+        "source_packet_read_status": read_status,
+        "source_packet_present": False,
+        "cache_get_initializes_meta_store": False,
         "cache_only_placeholder": True,
         "synthetic_healthcheck_executed": False,
         "healthcheck_task_dispatched": False,
@@ -1227,18 +1251,18 @@ def _missing_worker_synthetic_healthcheck_packet() -> dict[str, Any]:
 
 
 def _read_worker_synthetic_healthcheck_packet() -> dict[str, Any]:
-    try:
-        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(SYNTHETIC_HEALTHCHECK_PACKET_KEY)
-    except Exception:
-        packet = None
+    packet, read_status = _read_worker_meta_packet_no_init(SYNTHETIC_HEALTHCHECK_PACKET_KEY)
     if not isinstance(packet, dict):
-        return _missing_worker_synthetic_healthcheck_packet()
+        return _missing_worker_synthetic_healthcheck_packet(read_status)
     safe_packet = _json_safe(packet)
     safe_packet.setdefault("healthcheck_hash_algorithm", "")
     safe_packet.setdefault("task_identity_sha256", "")
     safe_packet.setdefault("readback_task_identity_sha256", "")
     safe_packet.setdefault("task_readback_hash_matches", False)
     safe_packet.setdefault("safe_hash_payload_fields", [])
+    safe_packet["source_packet_read_status"] = read_status
+    safe_packet["source_packet_present"] = True
+    safe_packet["cache_get_initializes_meta_store"] = False
     return safe_packet
 
 
@@ -1461,13 +1485,18 @@ def _missing_worker_activation_review_packet(
     synthetic_healthcheck: dict[str, Any],
     activation_review_contract: dict[str, Any],
     production_activation_receipt: dict[str, Any],
+    read_status: str = "packet_missing",
 ) -> dict[str, Any]:
-    return _worker_activation_review_task_receipt(
+    receipt = _worker_activation_review_task_receipt(
         synthetic_healthcheck=synthetic_healthcheck,
         activation_review_contract=activation_review_contract,
         production_activation_receipt=production_activation_receipt,
         explicit_review=False,
     )
+    receipt["source_packet_read_status"] = read_status
+    receipt["source_packet_present"] = False
+    receipt["cache_get_initializes_meta_store"] = False
+    return receipt
 
 
 def _read_worker_activation_review_packet(
@@ -1475,15 +1504,13 @@ def _read_worker_activation_review_packet(
     activation_review_contract: dict[str, Any],
     production_activation_receipt: dict[str, Any],
 ) -> dict[str, Any]:
-    try:
-        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(ACTIVATION_REVIEW_PACKET_KEY)
-    except Exception:
-        packet = None
+    packet, read_status = _read_worker_meta_packet_no_init(ACTIVATION_REVIEW_PACKET_KEY)
     if not isinstance(packet, dict):
         return _missing_worker_activation_review_packet(
             synthetic_healthcheck,
             activation_review_contract,
             production_activation_receipt,
+            read_status,
         )
     receipt = _json_safe(packet.get("worker_activation_review_task_receipt") or packet)
     if not isinstance(receipt, dict) or receipt.get("schema_version") != ACTIVATION_REVIEW_SCHEMA_VERSION:
@@ -1491,6 +1518,7 @@ def _read_worker_activation_review_packet(
             synthetic_healthcheck,
             activation_review_contract,
             production_activation_receipt,
+            read_status,
         )
     rebuilt = _worker_activation_review_task_receipt(
         synthetic_healthcheck=synthetic_healthcheck,
@@ -1501,6 +1529,9 @@ def _read_worker_activation_review_packet(
         reviewed_at=str(receipt.get("reviewed_at") or "") or None,
         payload_safe=receipt.get("request_params_safe") if isinstance(receipt.get("request_params_safe"), dict) else {},
     )
+    rebuilt["source_packet_read_status"] = read_status
+    rebuilt["source_packet_present"] = True
+    rebuilt["cache_get_initializes_meta_store"] = False
     return rebuilt
 
 def _production_evidence_plan_row(
@@ -1770,13 +1801,18 @@ def _missing_worker_production_evidence_plan_packet(
     synthetic_healthcheck: dict[str, Any],
     activation_review_task: dict[str, Any],
     production_activation_receipt: dict[str, Any],
+    read_status: str = "packet_missing",
 ) -> dict[str, Any]:
-    return _worker_production_evidence_plan_receipt(
+    receipt = _worker_production_evidence_plan_receipt(
         synthetic_healthcheck=synthetic_healthcheck,
         activation_review_task=activation_review_task,
         production_activation_receipt=production_activation_receipt,
         explicit_plan=False,
     )
+    receipt["source_packet_read_status"] = read_status
+    receipt["source_packet_present"] = False
+    receipt["cache_get_initializes_meta_store"] = False
+    return receipt
 
 
 def _read_worker_production_evidence_plan_packet(
@@ -1784,15 +1820,13 @@ def _read_worker_production_evidence_plan_packet(
     activation_review_task: dict[str, Any],
     production_activation_receipt: dict[str, Any],
 ) -> dict[str, Any]:
-    try:
-        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(PRODUCTION_EVIDENCE_PLAN_PACKET_KEY)
-    except Exception:
-        packet = None
+    packet, read_status = _read_worker_meta_packet_no_init(PRODUCTION_EVIDENCE_PLAN_PACKET_KEY)
     if not isinstance(packet, dict):
         return _missing_worker_production_evidence_plan_packet(
             synthetic_healthcheck,
             activation_review_task,
             production_activation_receipt,
+            read_status,
         )
     receipt = _json_safe(packet.get("worker_production_evidence_plan_receipt") or packet)
     if not isinstance(receipt, dict) or receipt.get("schema_version") != PRODUCTION_EVIDENCE_PLAN_SCHEMA_VERSION:
@@ -1800,6 +1834,7 @@ def _read_worker_production_evidence_plan_packet(
             synthetic_healthcheck,
             activation_review_task,
             production_activation_receipt,
+            read_status,
         )
     rebuilt = _worker_production_evidence_plan_receipt(
         synthetic_healthcheck=synthetic_healthcheck,
@@ -1810,6 +1845,9 @@ def _read_worker_production_evidence_plan_packet(
         planned_at=str(receipt.get("planned_at") or "") or None,
         payload_safe=receipt.get("request_params_safe") if isinstance(receipt.get("request_params_safe"), dict) else {},
     )
+    rebuilt["source_packet_read_status"] = read_status
+    rebuilt["source_packet_present"] = True
+    rebuilt["cache_get_initializes_meta_store"] = False
     return rebuilt
 
 
@@ -3475,6 +3513,12 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     production_readiness["worker_queue_routing_queue_rows"] = queue_routing_contract["queue_rows"]
     production_readiness["worker_synthetic_healthcheck"] = synthetic_healthcheck
     production_readiness["worker_synthetic_healthcheck_rows"] = synthetic_healthcheck.get("rows") or []
+    production_readiness["worker_synthetic_healthcheck_source_packet_read_status"] = synthetic_healthcheck.get(
+        "source_packet_read_status"
+    )
+    production_readiness["worker_synthetic_healthcheck_source_packet_present"] = synthetic_healthcheck.get(
+        "source_packet_present"
+    )
     activation_review_contract = _worker_activation_review_contract(
         redis_configured=redis_configured,
         scheduled_refresh_enabled=scheduled_refresh_enabled,
@@ -3512,6 +3556,12 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     activation_review_task_rows = activation_review_task_receipt.get("rows") or []
     production_readiness["worker_activation_review_task_receipt"] = activation_review_task_receipt
     production_readiness["worker_activation_review_task_rows"] = activation_review_task_rows
+    production_readiness["worker_activation_review_source_packet_read_status"] = activation_review_task_receipt.get(
+        "source_packet_read_status"
+    )
+    production_readiness["worker_activation_review_source_packet_present"] = activation_review_task_receipt.get(
+        "source_packet_present"
+    )
     production_evidence_plan_receipt = _read_worker_production_evidence_plan_packet(
         synthetic_healthcheck,
         activation_review_task_receipt,
@@ -3520,6 +3570,12 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     production_evidence_plan_rows = production_evidence_plan_receipt.get("rows") or []
     production_readiness["worker_production_evidence_plan_receipt"] = production_evidence_plan_receipt
     production_readiness["worker_production_evidence_plan_rows"] = production_evidence_plan_rows
+    production_readiness["worker_production_evidence_plan_source_packet_read_status"] = production_evidence_plan_receipt.get(
+        "source_packet_read_status"
+    )
+    production_readiness["worker_production_evidence_plan_source_packet_present"] = production_evidence_plan_receipt.get(
+        "source_packet_present"
+    )
     runtime_qa_execution_recipe = _worker_runtime_qa_execution_recipe(
         production_evidence_plan=production_evidence_plan_receipt,
         production_activation_receipt=production_activation_receipt,
@@ -3620,6 +3676,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         "worker_queue_routing_queue_rows": queue_routing_contract["queue_rows"],
         "worker_synthetic_healthcheck": synthetic_healthcheck,
         "worker_synthetic_healthcheck_rows": synthetic_healthcheck.get("rows") or [],
+        "worker_synthetic_healthcheck_source_packet_read_status": synthetic_healthcheck.get("source_packet_read_status"),
+        "worker_synthetic_healthcheck_source_packet_present": synthetic_healthcheck.get("source_packet_present"),
         "worker_activation_review_contract": activation_review_contract,
         "worker_activation_review_rows": activation_review_contract["rows"],
         "worker_production_readiness_receipt": production_readiness_receipt,
@@ -3628,8 +3686,18 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         "worker_production_activation_rows": production_activation_receipt["rows"],
         "worker_activation_review_task_receipt": activation_review_task_receipt,
         "worker_activation_review_task_rows": activation_review_task_rows,
+        "worker_activation_review_source_packet_read_status": activation_review_task_receipt.get(
+            "source_packet_read_status"
+        ),
+        "worker_activation_review_source_packet_present": activation_review_task_receipt.get("source_packet_present"),
         "worker_production_evidence_plan_receipt": production_evidence_plan_receipt,
         "worker_production_evidence_plan_rows": production_evidence_plan_rows,
+        "worker_production_evidence_plan_source_packet_read_status": production_evidence_plan_receipt.get(
+            "source_packet_read_status"
+        ),
+        "worker_production_evidence_plan_source_packet_present": production_evidence_plan_receipt.get(
+            "source_packet_present"
+        ),
         "worker_runtime_qa_execution_recipe": runtime_qa_execution_recipe,
         "worker_runtime_qa_execution_recipe_rows": runtime_qa_execution_recipe["rows"],
         "worker_runtime_durable_evidence_recipe": runtime_durable_evidence_recipe,
