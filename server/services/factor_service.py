@@ -97,6 +97,49 @@ FACTOR_UNIVERSE_WORKER_BATCH_EXECUTION_PHASE_LABELS = {
     "result_summary_persistence": "Result summary persistence",
     "production_promotion_review": "Production promotion review",
 }
+FACTOR_UNIVERSE_DURABLE_EVIDENCE_SCHEMA_VERSION = "factor_universe_durable_evidence_recipe.v1"
+FACTOR_UNIVERSE_DURABLE_EVIDENCE_KEYS = (
+    "mode_contract_visible",
+    "storage_read_plan_visible",
+    "readiness_audit_visible",
+    "readiness_receipt_visible",
+    "activation_receipt_visible",
+    "local_rank_zscore_dry_run_visible",
+    "worker_batch_scope_ticket_visible",
+    "worker_batch_execution_recipe_visible",
+    "explicit_worker_task_required",
+    "worker_runtime_binding_required",
+    "storage_read_execution_required",
+    "cross_sectional_rank_required",
+    "zscore_required",
+    "neutralization_required",
+    "factor_combination_required",
+    "result_summary_persistence_required",
+    "full_pool_validation_required",
+    "promotion_review_required",
+    "no_render_worker_provider_trade_secret_boundary",
+)
+FACTOR_UNIVERSE_DURABLE_EVIDENCE_LABELS = {
+    "mode_contract_visible": "Mode contract visible",
+    "storage_read_plan_visible": "Storage read plan visible",
+    "readiness_audit_visible": "Readiness audit visible",
+    "readiness_receipt_visible": "Readiness receipt visible",
+    "activation_receipt_visible": "Activation receipt visible",
+    "local_rank_zscore_dry_run_visible": "Local rank/zscore dry-run visible",
+    "worker_batch_scope_ticket_visible": "Worker batch scope ticket visible",
+    "worker_batch_execution_recipe_visible": "Worker batch execution recipe visible",
+    "explicit_worker_task_required": "Explicit worker task required",
+    "worker_runtime_binding_required": "Worker runtime binding required",
+    "storage_read_execution_required": "Storage read execution required",
+    "cross_sectional_rank_required": "Cross-sectional rank required",
+    "zscore_required": "Z-score required",
+    "neutralization_required": "Neutralization required",
+    "factor_combination_required": "Factor combination required",
+    "result_summary_persistence_required": "Result summary persistence required",
+    "full_pool_validation_required": "Full-pool validation required",
+    "promotion_review_required": "Promotion review required",
+    "no_render_worker_provider_trade_secret_boundary": "No render, worker, provider, trade, or secret boundary",
+}
 FACTOR_TEST_PROVIDER_SMALL_POOL_SYMBOL_LIMIT = 20
 FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_SYMBOLS = 5
 FACTOR_TEST_PROVIDER_SMALL_POOL_MIN_WINDOW_DAYS = 60
@@ -224,6 +267,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet, universe_execution_receipt_ledger = _attach_factor_universe_execution_readiness_receipt(packet, now)
     packet, universe_activation_receipt_ledger = _attach_factor_universe_execution_activation_receipt(packet, now)
     packet, universe_batch_recipe_ledger = _attach_factor_universe_worker_batch_execution_recipe(packet, now)
+    packet, universe_durable_recipe_ledger = _attach_factor_universe_durable_evidence_recipe(packet, now)
     packet = _attach_deepseek_json_stability_audit(packet, governance=packet["deepseek_explain_governance"])
     packet, deepseek_activation_ledger = _attach_deepseek_production_activation_receipt(packet, now)
     packet, deepseek_benchmark_recipe_ledger = _attach_deepseek_provider_benchmark_execution_recipe(packet, now)
@@ -245,6 +289,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         + universe_execution_receipt_ledger
         + universe_activation_receipt_ledger
         + universe_batch_recipe_ledger
+        + universe_durable_recipe_ledger
         + deepseek_activation_ledger
         + deepseek_benchmark_recipe_ledger
         + deepseek_durable_recipe_ledger
@@ -263,6 +308,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     universe_execution_receipt_warning = "Factor Universe execution readiness receipt 只说明下一步显式 worker batch 是否可进入；不会运行 full-pool、rank/zscore、中性化或 provider 验收。"
     universe_activation_receipt_warning = "Factor Universe execution activation receipt 只把下一步固定为显式 worker batch 生产验收；不会创建任务、启动 worker、计算 full-pool/rank/zscore/neutralization 或 provider 验收。"
     universe_batch_recipe_warning = "Factor Universe worker-batch execution recipe 只固定未来显式 worker 批量研究验收顺序；不会创建任务、启动 worker、计算 rank/zscore/neutralization 或 provider 验收。"
+    universe_durable_recipe_warning = "Factor Universe durable evidence recipe 只固定 LTG-04 worker-backed/full-pool 生产验收直接证据清单；不会启动 worker、调用 Tushare/DeepSeek/GitHub、计算 rank/zscore 或标记生产完成。"
     deepseek_activation_warning = "DeepSeek production activation receipt 只汇总下一步生产解释验收缺口；不会调用模型，不代表 provider benchmark、response_format 强约束或 auto_after_task 生产完成。"
     deepseek_benchmark_recipe_warning = "DeepSeek provider benchmark execution recipe 只固定未来显式 benchmark 的样本、ledger、retry、成本和 promotion 标准；不会调用 DeepSeek 或完成生产解释。"
     deepseek_durable_recipe_warning = "DeepSeek durable evidence recipe 只固定 provider benchmark、response_format、retry/repair、model ledger、cost、redaction 和 promotion 缺口；不会调用 DeepSeek 或完成生产解释。"
@@ -280,6 +326,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         universe_execution_receipt_warning,
         universe_activation_receipt_warning,
         universe_batch_recipe_warning,
+        universe_durable_recipe_warning,
         deepseek_activation_warning,
         deepseek_benchmark_recipe_warning,
         deepseek_durable_recipe_warning,
@@ -297,6 +344,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         universe_execution_receipt_warning,
         universe_activation_receipt_warning,
         universe_batch_recipe_warning,
+        universe_durable_recipe_warning,
         deepseek_activation_warning,
         deepseek_benchmark_recipe_warning,
         deepseek_durable_recipe_warning,
@@ -5038,6 +5086,417 @@ def _attach_factor_universe_worker_batch_execution_recipe(packet: dict[str, Any]
         contract["deepseek_called"] = False
         contract["github_called"] = False
     return packet, list(recipe.get("call_ledger") or [])
+
+
+def _factor_universe_durable_evidence_recipe_row(
+    evidence_key: str,
+    source_contract: str,
+    status: str,
+    *,
+    passed: bool,
+    production_blocker: bool,
+    evidence: str,
+    next_action: str,
+    local_surface_required: bool = False,
+) -> dict[str, Any]:
+    return {
+        "evidence_key": evidence_key,
+        "evidence_label": FACTOR_UNIVERSE_DURABLE_EVIDENCE_LABELS.get(evidence_key, evidence_key),
+        "scope": "factor_universe_durable_evidence_recipe",
+        "source_contract": source_contract,
+        "status": status,
+        "passed": bool(passed),
+        "local_surface_required": bool(local_surface_required),
+        "production_blocker": bool(production_blocker),
+        "evidence": evidence,
+        "next_action": next_action,
+        "worker_task_created": False,
+        "worker_task_executed": False,
+        "worker_started": False,
+        "storage_read_executed": False,
+        "large_universe_pipeline_done": False,
+        "cross_sectional_rank_zscore_done": False,
+        "zscore_done": False,
+        "neutralization_done": False,
+        "factor_combination_research_done": False,
+        "result_summary_persisted": False,
+        "full_pool_validation_done": False,
+        "production_factor_universe_complete": False,
+        "partial_pool_is_full_market_proof": False,
+        "page_render_starts_full_pool": False,
+        "frontend_computes_rank_zscore": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+    }
+
+
+def _factor_universe_durable_evidence_recipe(
+    packet: dict[str, Any], now: str
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    contract = _dict(packet.get("universe_research_contract"))
+    task_plan = _dict(packet.get("universe_research_task_plan"))
+    readiness = _dict(packet.get("universe_execution_readiness_audit"))
+    readiness_receipt = _dict(packet.get("universe_execution_readiness_receipt"))
+    activation = _dict(packet.get("universe_execution_activation_receipt"))
+    rank_zscore = _dict(packet.get("universe_local_rank_zscore_dry_run"))
+    dry_run = _dict(packet.get("universe_worker_batch_dry_run_receipt"))
+    execution_recipe = _dict(packet.get("universe_worker_batch_execution_recipe"))
+
+    mode_contract_visible = bool(
+        contract.get("scope")
+        or contract.get("implemented_now")
+        or contract.get("future_task_modes")
+        or contract.get("worker_batch_execution_recipe_ready")
+    )
+    storage_plan_visible = task_plan.get("schema_version") == "factor_universe_research_read_plan.v1"
+    readiness_visible = readiness.get("schema_version") == "factor_universe_execution_readiness_audit.v1"
+    readiness_receipt_visible = (
+        readiness_receipt.get("schema_version") == "factor_universe_execution_readiness_receipt.v1"
+    )
+    activation_visible = activation.get("schema_version") == "factor_universe_execution_activation_receipt.v1"
+    rank_zscore_visible = rank_zscore.get("schema_version") == "factor_universe_local_rank_zscore_dry_run.v1"
+    dry_run_visible = bool(
+        dry_run.get("schema_version") == "factor_universe_worker_batch_dry_run.v1"
+        and dry_run.get("local_dry_run_ready") is True
+    )
+    execution_recipe_visible = bool(
+        execution_recipe.get("schema_version") == "factor_universe_worker_batch_execution_recipe.v1"
+        and execution_recipe.get("local_recipe_ready") is True
+    )
+    no_render_boundary_visible = bool(
+        contract.get("page_render_starts_full_pool") is False
+        and contract.get("frontend_computes_rank_zscore") is False
+        and contract.get("external_calls_triggered") is False
+        and contract.get("does_not_execute_trades") is True
+        and contract.get("does_not_modify_strategy_action") is True
+    )
+
+    rows = [
+        _factor_universe_durable_evidence_recipe_row(
+            "mode_contract_visible",
+            "universe_research_contract",
+            "visible_research_modes_declared" if mode_contract_visible else "blocked_missing_universe_mode_contract",
+            passed=mode_contract_visible,
+            production_blocker=False,
+            local_surface_required=True,
+            evidence="watchlist/custom_pool/full_pool modes are declared as research modes without page-render execution",
+            next_action="Keep mode rows visible while production execution evidence is collected separately.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "storage_read_plan_visible",
+            "universe_research_task_plan",
+            "visible_storage_read_plan" if storage_plan_visible else "blocked_missing_storage_read_plan",
+            passed=storage_plan_visible,
+            production_blocker=False,
+            local_surface_required=True,
+            evidence="local storage read-plan is visible for factor_values/daily/daily_basic/moneyflow/trade_cal",
+            next_action="Use the read-plan as lineage only; execute storage reads inside a future worker task.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "readiness_audit_visible",
+            "universe_execution_readiness_audit",
+            "visible_execution_readiness_audit" if readiness_visible else "blocked_missing_execution_readiness_audit",
+            passed=readiness_visible,
+            production_blocker=False,
+            local_surface_required=True,
+            evidence="readiness audit lists rank/zscore, neutralization, full-pool, and worker blockers",
+            next_action="Keep production blockers visible until direct worker evidence exists.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "readiness_receipt_visible",
+            "universe_execution_readiness_receipt",
+            "visible_worker_batch_next_step" if readiness_receipt_visible else "blocked_missing_readiness_receipt",
+            passed=readiness_receipt_visible,
+            production_blocker=False,
+            local_surface_required=True,
+            evidence="readiness receipt fixes the next allowed step as an explicit worker-batch task",
+            next_action="Do not run worker batches from GET cache or React render.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "activation_receipt_visible",
+            "universe_execution_activation_receipt",
+            "visible_activation_boundary" if activation_visible else "blocked_missing_activation_receipt",
+            passed=activation_visible,
+            production_blocker=False,
+            local_surface_required=True,
+            evidence="activation receipt states no task creation, no worker start, no provider/model call, and no production completion",
+            next_action="Create future worker-backed tasks only through explicit POST after user approval.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "local_rank_zscore_dry_run_visible",
+            "universe_local_rank_zscore_dry_run",
+            "visible_research_only_dry_run" if rank_zscore_visible else "blocked_missing_local_rank_zscore_dry_run",
+            passed=rank_zscore_visible,
+            production_blocker=False,
+            local_surface_required=True,
+            evidence="local rank/zscore sufficiency dry-run is visible as research-only and not full-pool proof",
+            next_action="Run production rank/zscore in a future worker-backed pipeline, not in React.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "worker_batch_scope_ticket_visible",
+            "universe_worker_batch_dry_run_receipt",
+            "visible_scope_ticket_only" if dry_run_visible else "blocked_missing_worker_batch_scope_ticket",
+            passed=dry_run_visible,
+            production_blocker=False,
+            local_surface_required=True,
+            evidence="worker-batch dry-run scope ticket and scope hash are visible without worker execution",
+            next_action="Bind any future worker task to this safe scope hash and stage list.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "worker_batch_execution_recipe_visible",
+            "universe_worker_batch_execution_recipe",
+            "visible_execution_recipe" if execution_recipe_visible else "blocked_missing_worker_batch_execution_recipe",
+            passed=execution_recipe_visible,
+            production_blocker=False,
+            local_surface_required=True,
+            evidence="worker-batch execution recipe lists explicit task, runtime binding, storage reads, rank/zscore, neutralization, combination, persistence, and promotion phases",
+            next_action="Treat the recipe as a future execution checklist only, not as execution evidence.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "explicit_worker_task_required",
+            "future_worker_task",
+            "pending_explicit_worker_task_id",
+            passed=False,
+            production_blocker=True,
+            evidence="no explicit worker task_id bound to the scope hash has been recorded",
+            next_action="Create a worker-backed batch research task only after explicit approval and scope binding.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "worker_runtime_binding_required",
+            "future_worker_runtime",
+            "pending_worker_runtime_binding_and_durable_task_logs",
+            passed=False,
+            production_blocker=True,
+            evidence="no worker runtime binding, queue execution, or durable task log evidence exists",
+            next_action="Capture worker runtime identity, queue binding, task logs, and safe errors during the future run.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "storage_read_execution_required",
+            "future_storage_read_execution",
+            "pending_worker_storage_read_execution",
+            passed=False,
+            production_blocker=True,
+            evidence="storage read-plan has not been executed by a worker over the selected universe",
+            next_action="Record dataset versions, row counts, safe hashes, and read errors from the worker execution.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "cross_sectional_rank_required",
+            "future_worker_metric_output",
+            "pending_cross_sectional_rank_output",
+            passed=False,
+            production_blocker=True,
+            evidence="cross-sectional rank output rows are not present",
+            next_action="Produce rank outputs in the worker pipeline and persist only safe research summaries.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "zscore_required",
+            "future_worker_metric_output",
+            "pending_zscore_output",
+            passed=False,
+            production_blocker=True,
+            evidence="zscore output rows are not present",
+            next_action="Produce zscore outputs in the worker pipeline and keep React read-only.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "neutralization_required",
+            "future_worker_metric_output",
+            "pending_neutralization_output",
+            passed=False,
+            production_blocker=True,
+            evidence="industry and market-cap neutralization output is not present",
+            next_action="Record neutralization config, sample coverage, and output summaries from the worker run.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "factor_combination_required",
+            "future_worker_metric_output",
+            "pending_factor_combination_research_output",
+            passed=False,
+            production_blocker=True,
+            evidence="factor combination research output is not present",
+            next_action="Keep combination results research-only and separate from strategy action.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "result_summary_persistence_required",
+            "future_result_summary",
+            "pending_persisted_safe_result_summary",
+            passed=False,
+            production_blocker=True,
+            evidence="persisted result summary with safe row counts and hashes is not present",
+            next_action="Persist safe summaries only after worker execution, with no raw secrets or provider credentials.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "full_pool_validation_required",
+            "future_full_pool_validation",
+            "pending_full_pool_validation",
+            passed=False,
+            production_blocker=True,
+            evidence="full-pool validation report has not been produced",
+            next_action="Validate coverage, truncation, skipped symbols, freshness, and degraded modes before promotion.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "promotion_review_required",
+            "future_manual_promotion_review",
+            "pending_manual_research_promotion_review",
+            passed=False,
+            production_blocker=True,
+            evidence="manual production promotion review has not accepted the worker-backed evidence",
+            next_action="Promote only after direct worker, storage, metric, persistence, no-trade, and no-action evidence is reviewed.",
+        ),
+        _factor_universe_durable_evidence_recipe_row(
+            "no_render_worker_provider_trade_secret_boundary",
+            "cache_and_react_boundary",
+            "visible_no_render_worker_provider_trade_secret_boundary" if no_render_boundary_visible else "blocked_boundary_not_visible",
+            passed=no_render_boundary_visible,
+            production_blocker=False,
+            local_surface_required=True,
+            evidence="cache/render path remains quiet: no full-pool start, no rank/zscore in React, no provider/model/GitHub calls, no trades, no action mutation, no secrets",
+            next_action="Keep this boundary green in every future worker/provider promotion.",
+        ),
+    ]
+
+    local_blockers = [row["evidence_key"] for row in rows if row["local_surface_required"] and not row["passed"]]
+    production_blockers = [row["evidence_key"] for row in rows if row["production_blocker"] and not row["passed"]]
+    local_recipe_ready = len(local_blockers) == 0
+    status = (
+        "factor_universe_durable_evidence_recipe_ready_production_pending"
+        if local_recipe_ready
+        else "factor_universe_durable_evidence_recipe_blocked_local_contract"
+    )
+    recipe = {
+        "schema_version": FACTOR_UNIVERSE_DURABLE_EVIDENCE_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_factor_universe_durable_evidence_recipe_no_worker_or_provider_execution",
+        "created_at": now,
+        "ltg": "LTG-04/LTG-11/LTG-12",
+        "local_recipe_ready": local_recipe_ready,
+        "durable_evidence_complete": False,
+        "durable_promotion_ready": False,
+        "worker_task_created": False,
+        "worker_task_executed": False,
+        "worker_started": False,
+        "storage_read_executed": False,
+        "large_universe_pipeline_done": False,
+        "cross_sectional_rank_zscore_done": False,
+        "zscore_done": False,
+        "neutralization_done": False,
+        "factor_combination_research_done": False,
+        "result_summary_persisted": False,
+        "full_pool_validation_done": False,
+        "production_factor_universe_complete": False,
+        "partial_pool_is_full_market_proof": False,
+        "page_render_starts_full_pool": False,
+        "frontend_computes_rank_zscore": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+        "evidence_keys": list(FACTOR_UNIVERSE_DURABLE_EVIDENCE_KEYS),
+        "local_blockers": local_blockers,
+        "local_blocker_count": len(local_blockers),
+        "missing_durable_evidence": production_blockers,
+        "production_blockers": production_blockers,
+        "production_blocker_count": len(production_blockers),
+        "required_evidence": [
+            "explicit worker task_id bound to scope hash",
+            "worker runtime binding and durable task logs",
+            "storage read execution evidence",
+            "cross-sectional rank output",
+            "zscore output",
+            "industry and market-cap neutralization output",
+            "factor combination research output",
+            "persisted result summary with safe hashes",
+            "full-pool validation report",
+            "manual promotion review",
+        ],
+        "not_allowed_next_steps": [
+            "treat_durable_recipe_as_production_completion",
+            "treat_durable_recipe_as_worker_backed_batch_execution",
+            "create worker task from GET cache",
+            "start worker from GET cache",
+            "call Tushare or DeepSeek from this recipe",
+            "call GitHub from this recipe",
+            "compute rank/zscore in React",
+            "local rank/zscore dry-run as production research",
+            "partial pool as full-market proof",
+            "mutate strategy action",
+            "real trade execution",
+            "leak token/key",
+        ],
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_factor_universe_durable_evidence_recipe",
+                "request_params_safe": {
+                    "scope": "local_factor_universe_durable_evidence_recipe_no_worker_or_provider_execution",
+                    "local_recipe_ready": local_recipe_ready,
+                    "durable_evidence_complete": False,
+                    "production_blocker_count": len(production_blockers),
+                    "production_factor_universe_complete": False,
+                },
+                "row_count": len(rows),
+                "data_date": None,
+                "local_fetched_at": now,
+                "call_status": (
+                    "local_durable_recipe_ready_production_pending"
+                    if local_recipe_ready
+                    else "local_durable_recipe_blocked_local_contract"
+                ),
+                "error_message_safe": "",
+                **_local_ledger_boundary(),
+            }
+        ],
+        "note": "This durable evidence recipe fixes LTG-04's direct production-evidence checklist. It does not create worker tasks, start workers, call Tushare/DeepSeek/GitHub, compute production rank/zscore, execute trades, or mutate strategy action.",
+    }
+    return recipe, rows, list(recipe.get("call_ledger") or [])
+
+
+def _attach_factor_universe_durable_evidence_recipe(packet: dict[str, Any], now: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    recipe, rows, ledger = _factor_universe_durable_evidence_recipe(packet, now)
+    packet["universe_durable_evidence_recipe"] = recipe
+    packet["universe_durable_evidence_rows"] = rows
+    contract = packet.get("universe_research_contract")
+    if isinstance(contract, dict):
+        contract = dict(contract)
+        contract["durable_evidence_recipe_status"] = recipe["status"]
+        contract["durable_evidence_recipe_ready"] = bool(recipe.get("local_recipe_ready"))
+        contract["durable_evidence_recipe_is_not_worker_execution"] = True
+        contract["durable_evidence_recipe_is_not_production_completion"] = True
+        contract["durable_evidence_production_blocker_count"] = int(recipe.get("production_blocker_count") or 0)
+        contract["worker_task_created"] = False
+        contract["worker_task_executed"] = False
+        contract["worker_started"] = False
+        contract["large_universe_pipeline_done"] = False
+        contract["cross_sectional_rank_zscore_done"] = False
+        contract["zscore_done"] = False
+        contract["neutralization_done"] = False
+        contract["factor_combination_research_done"] = False
+        contract["result_summary_persisted"] = False
+        contract["full_pool_validation_done"] = False
+        contract["production_factor_universe_complete"] = False
+        contract["page_render_starts_full_pool"] = False
+        contract["frontend_computes_rank_zscore"] = False
+        contract["external_calls_triggered"] = False
+        contract["tushare_called"] = False
+        contract["deepseek_called"] = False
+        contract["github_called"] = False
+        packet["universe_research_contract"] = contract
+    return packet, ledger
 
 
 def run_factor_universe_worker_batch_dry_run_task(payload: Any = None) -> dict[str, Any]:

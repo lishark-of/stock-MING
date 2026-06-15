@@ -68,6 +68,7 @@ export default function FactorQuantHub() {
   const universeExecutionActivationReceipt = packet.universe_execution_activation_receipt ?? {};
   const universeWorkerBatchDryRun = packet.universe_worker_batch_dry_run_receipt ?? {};
   const universeWorkerBatchExecutionRecipe = packet.universe_worker_batch_execution_recipe ?? {};
+  const universeDurableEvidenceRecipe = packet.universe_durable_evidence_recipe ?? {};
   const universeResearchTaskPlan = packet.universe_research_task_plan ?? {};
   const universeLocalRankZscore = packet.universe_local_rank_zscore_dry_run ?? {};
   const factorLibrary = packet.factor_library ?? {};
@@ -125,6 +126,8 @@ export default function FactorQuantHub() {
   const universeWorkerBatchDryRunCriterionRows = toRows(packet.universe_worker_batch_dry_run_rows);
   const universeWorkerBatchExecutionRecipeRows = objectRows(universeWorkerBatchExecutionRecipe as Record<string, unknown>, "universe_worker_batch_execution_recipe");
   const universeWorkerBatchExecutionPhaseRows = toRows(packet.universe_worker_batch_execution_rows);
+  const universeDurableEvidenceRecipeRows = objectRows(universeDurableEvidenceRecipe as Record<string, unknown>, "universe_durable_evidence_recipe");
+  const universeDurableEvidenceRows = toRows(packet.universe_durable_evidence_rows);
   const universeResearchTaskPlanRows = objectRows(universeResearchTaskPlan as Record<string, unknown>, "universe_read_plan");
   const universeResearchDatasetRows = toRows(packet.universe_research_task_plan_rows);
   const universeLocalRankZscoreRows = objectRows(universeLocalRankZscore as Record<string, unknown>, "local_rank_zscore");
@@ -493,6 +496,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">universe_worker_batch_execution_recipe 只固定未来显式 worker batch execution 的顺序和验收证据；它不创建 worker task、不启动 worker、不计算 rank/zscore/neutralization、不调用 Tushare/DeepSeek/GitHub，也不代表 production_factor_universe_complete。</p>
       <DataLineageTable rows={universeWorkerBatchExecutionPhaseRows} />
       <DataLineageTable rows={universeWorkerBatchExecutionRecipeRows} />
+      <h3>Factor Universe durable evidence recipe</h3>
+      <p className="risk-note">factor_universe_durable_evidence_recipe 只固定 LTG-04 worker-backed / full-pool 生产验收直接证据清单；不启动 worker、不调用 Tushare/DeepSeek/GitHub、不在前端计算 rank/zscore、不进入 strategy action，也不代表 production_factor_universe_complete。</p>
+      <DataLineageTable rows={universeDurableEvidenceRows} />
+      <DataLineageTable rows={universeDurableEvidenceRecipeRows} />
       <h3>Factor Universe 本地 Rank/Zscore Dry-run</h3>
       <p className="risk-note">universe_local_rank_zscore_dry_run 只读本地 factor_values 样本；样本不足时显示 blocked。预览行只用于 research，不代表 full-pool、provider-backed 或生产级 universe 研究完成，前端不计算 rank/zscore。</p>
       <DataLineageTable rows={universeLocalRankZscoreCriterionRows} />

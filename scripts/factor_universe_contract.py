@@ -54,6 +54,32 @@ REQUIRED_WORKER_BATCH_EXECUTION_PHASES = (
     "result_summary_persistence",
     "production_promotion_review",
 )
+REQUIRED_FACTOR_UNIVERSE_DURABLE_EVIDENCE_KEYS = tuple(
+    factor_service.FACTOR_UNIVERSE_DURABLE_EVIDENCE_KEYS
+)
+LOCAL_FACTOR_UNIVERSE_DURABLE_SURFACE_KEYS = {
+    "mode_contract_visible",
+    "storage_read_plan_visible",
+    "readiness_audit_visible",
+    "readiness_receipt_visible",
+    "activation_receipt_visible",
+    "local_rank_zscore_dry_run_visible",
+    "worker_batch_scope_ticket_visible",
+    "worker_batch_execution_recipe_visible",
+    "no_render_worker_provider_trade_secret_boundary",
+}
+PRODUCTION_FACTOR_UNIVERSE_DURABLE_BLOCKER_KEYS = {
+    "explicit_worker_task_required",
+    "worker_runtime_binding_required",
+    "storage_read_execution_required",
+    "cross_sectional_rank_required",
+    "zscore_required",
+    "neutralization_required",
+    "factor_combination_required",
+    "result_summary_persistence_required",
+    "full_pool_validation_required",
+    "promotion_review_required",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -193,7 +219,17 @@ def build_contract() -> dict[str, Any]:
     worker_batch_execution_rows = [
         row for row in _list(worker_batch_execution_recipe.get("rows")) if isinstance(row, dict)
     ]
+    recipe_packet["universe_worker_batch_execution_recipe"] = worker_batch_execution_recipe
+    recipe_packet["universe_worker_batch_execution_rows"] = worker_batch_execution_rows
+    durable_evidence_recipe, durable_evidence_rows, durable_evidence_ledger = (
+        factor_service._factor_universe_durable_evidence_recipe(recipe_packet, now)
+    )
     worker_batch_execution_phase_keys = [str(row.get("phase_key") or "") for row in worker_batch_execution_rows]
+    durable_rows_by_key = {
+        str(row.get("evidence_key") or ""): row
+        for row in durable_evidence_rows
+        if isinstance(row, dict)
+    }
     readiness_rows = {
         str(row.get("criterion") or ""): row
         for row in _list(readiness.get("rows"))
@@ -466,6 +502,89 @@ def build_contract() -> dict[str, Any]:
             "Worker-batch execution recipe may define the future ordered runtime path only; it must not create worker tasks, start workers, compute rank/zscore, call providers/models, or promote production completion.",
         ),
         _row(
+            "factor_universe_durable_evidence_recipe_is_local_production_pending",
+            durable_evidence_recipe.get("schema_version") == "factor_universe_durable_evidence_recipe.v1"
+            and durable_evidence_recipe.get("scope") == "local_factor_universe_durable_evidence_recipe_no_worker_or_provider_execution"
+            and durable_evidence_recipe.get("status") == "factor_universe_durable_evidence_recipe_ready_production_pending"
+            and durable_evidence_recipe.get("local_recipe_ready") is True
+            and durable_evidence_recipe.get("durable_evidence_complete") is False
+            and durable_evidence_recipe.get("durable_promotion_ready") is False
+            and durable_evidence_recipe.get("production_factor_universe_complete") is False
+            and durable_evidence_recipe.get("evidence_keys") == list(REQUIRED_FACTOR_UNIVERSE_DURABLE_EVIDENCE_KEYS)
+            and durable_evidence_recipe.get("local_blockers") == []
+            and set(durable_evidence_recipe.get("production_blockers") or []) == PRODUCTION_FACTOR_UNIVERSE_DURABLE_BLOCKER_KEYS
+            and durable_evidence_recipe.get("production_blocker_count") == len(PRODUCTION_FACTOR_UNIVERSE_DURABLE_BLOCKER_KEYS)
+            and "explicit worker task_id bound to scope hash" in durable_evidence_recipe.get("required_evidence", [])
+            and "worker runtime binding and durable task logs" in durable_evidence_recipe.get("required_evidence", [])
+            and "cross-sectional rank output" in durable_evidence_recipe.get("required_evidence", [])
+            and "zscore output" in durable_evidence_recipe.get("required_evidence", [])
+            and "full-pool validation report" in durable_evidence_recipe.get("required_evidence", [])
+            and "manual promotion review" in durable_evidence_recipe.get("required_evidence", [])
+            and "treat_durable_recipe_as_production_completion" in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and "treat_durable_recipe_as_worker_backed_batch_execution" in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and "create worker task from GET cache" in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and "start worker from GET cache" in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and "call Tushare or DeepSeek from this recipe" in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and "compute rank/zscore in React" in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and "partial pool as full-market proof" in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and durable_evidence_recipe.get("worker_task_created") is False
+            and durable_evidence_recipe.get("worker_task_executed") is False
+            and durable_evidence_recipe.get("worker_started") is False
+            and durable_evidence_recipe.get("storage_read_executed") is False
+            and durable_evidence_recipe.get("large_universe_pipeline_done") is False
+            and durable_evidence_recipe.get("cross_sectional_rank_zscore_done") is False
+            and durable_evidence_recipe.get("zscore_done") is False
+            and durable_evidence_recipe.get("neutralization_done") is False
+            and durable_evidence_recipe.get("factor_combination_research_done") is False
+            and durable_evidence_recipe.get("result_summary_persisted") is False
+            and durable_evidence_recipe.get("full_pool_validation_done") is False
+            and durable_evidence_recipe.get("page_render_starts_full_pool") is False
+            and durable_evidence_recipe.get("frontend_computes_rank_zscore") is False
+            and _flag_false(durable_evidence_recipe, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and durable_evidence_recipe.get("does_not_execute_trades") is True
+            and durable_evidence_recipe.get("does_not_modify_strategy_action") is True
+            and durable_evidence_recipe.get("contains_secret") is False
+            and set(durable_rows_by_key) == set(REQUIRED_FACTOR_UNIVERSE_DURABLE_EVIDENCE_KEYS)
+            and all(
+                durable_rows_by_key[key].get("passed") is True
+                and durable_rows_by_key[key].get("local_surface_required") is True
+                and durable_rows_by_key[key].get("production_blocker") is False
+                for key in LOCAL_FACTOR_UNIVERSE_DURABLE_SURFACE_KEYS
+            )
+            and all(
+                durable_rows_by_key[key].get("passed") is False
+                and durable_rows_by_key[key].get("production_blocker") is True
+                for key in PRODUCTION_FACTOR_UNIVERSE_DURABLE_BLOCKER_KEYS
+            )
+            and all(
+                row.get("scope") == "factor_universe_durable_evidence_recipe"
+                and row.get("worker_task_created") is False
+                and row.get("worker_task_executed") is False
+                and row.get("worker_started") is False
+                and row.get("storage_read_executed") is False
+                and row.get("large_universe_pipeline_done") is False
+                and row.get("cross_sectional_rank_zscore_done") is False
+                and row.get("zscore_done") is False
+                and row.get("neutralization_done") is False
+                and row.get("factor_combination_research_done") is False
+                and row.get("result_summary_persisted") is False
+                and row.get("full_pool_validation_done") is False
+                and row.get("production_factor_universe_complete") is False
+                and row.get("page_render_starts_full_pool") is False
+                and row.get("frontend_computes_rank_zscore") is False
+                and row.get("external_calls_triggered") is False
+                and row.get("tushare_called") is False
+                and row.get("deepseek_called") is False
+                and row.get("github_called") is False
+                and row.get("does_not_execute_trades") is True
+                and row.get("does_not_modify_strategy_action") is True
+                and row.get("contains_secret") is False
+                for row in durable_evidence_rows
+            )
+            and durable_evidence_ledger[0].get("api") == "local_factor_universe_durable_evidence_recipe",
+            "Durable evidence recipe may list LTG-04 direct production evidence only; it must not be treated as worker execution, full-pool validation, provider/model evidence, or production completion.",
+        ),
+        _row(
             "local_rank_zscore_dry_run_is_research_only",
             rank_zscore_dry_run.get("schema_version") == "factor_universe_local_rank_zscore_dry_run.v1"
             and rank_zscore_dry_run.get("scope") == "local_factor_values_rank_zscore_dry_run_not_full_pool_validation"
@@ -539,6 +658,13 @@ def build_contract() -> dict[str, Any]:
             and "Factor Universe worker-batch dry-run ticket" in factor_page
             and "universe_worker_batch_dry_run_receipt" in factor_page
             and "不代表 worker-backed batch execution" in factor_page
+            and "Factor Universe durable evidence recipe" in factor_page
+            and "universe_durable_evidence_recipe" in factor_page
+            and "universe_durable_evidence_rows" in factor_page
+            and "LTG-04 worker-backed / full-pool" in factor_page
+            and "不启动 worker、不调用 Tushare/DeepSeek/GitHub" in factor_page
+            and "不在前端计算 rank/zscore" in factor_page
+            and "production_factor_universe_complete" in factor_page
             and "批量研究预检" in factor_page
             and "Factor Universe 本地 Rank/Zscore Dry-run" in factor_page
             and "前端不计算 rank/zscore" in factor_page
@@ -585,8 +711,11 @@ def build_contract() -> dict[str, Any]:
             and "worker_batch_dry_run_ticket_is_local" in this_script
             and "worker_stage_scope_manifest_is_complete_and_pending" in this_script
             and "worker_batch_execution_recipe_is_local_pending" in this_script
+            and "factor_universe_durable_evidence_recipe_is_local_production_pending" in this_script
             and "factor_universe_worker_batch_execution_recipe.v1" in this_script
             and "local_factor_universe_worker_batch_execution_recipe_no_worker_or_provider_execution" in this_script
+            and "factor_universe_durable_evidence_recipe.v1" in this_script
+            and "local_factor_universe_durable_evidence_recipe_no_worker_or_provider_execution" in this_script
             and "run_factor_universe_worker_batch_dry_run" in this_script
             and "execution_readiness_receipt_is_local" in this_script
             and "execution_activation_receipt_is_local" in this_script
@@ -619,6 +748,8 @@ def build_contract() -> dict[str, Any]:
         "worker_batch_dry_run_ready": bool(worker_batch_dry_run.get("local_dry_run_ready")),
         "worker_batch_scope_ticket_ready": bool(worker_batch_dry_run.get("worker_batch_scope_hash_short")),
         "worker_batch_execution_recipe_ready": bool(worker_batch_execution_recipe.get("local_recipe_ready")),
+        "factor_universe_durable_evidence_recipe_ready": bool(durable_evidence_recipe.get("local_recipe_ready")),
+        "factor_universe_durable_evidence_recipe_status": durable_evidence_recipe.get("status"),
         "worker_execution_implemented": False,
         "local_rank_zscore_dry_run_executed": bool(rank_zscore_dry_run.get("rank_zscore_dry_run_executed")),
         "neutralization_done": False,
@@ -659,6 +790,10 @@ def build_contract() -> dict[str, Any]:
             "worker_batch_execution_pending_phase_count": sum(
                 1 for row in worker_batch_execution_rows if row.get("worker_task_executed") is False
             ),
+            "factor_universe_durable_evidence_recipe_status": durable_evidence_recipe.get("status"),
+            "factor_universe_durable_evidence_key_count": len(durable_evidence_rows),
+            "factor_universe_durable_evidence_keys": [row.get("evidence_key") for row in durable_evidence_rows],
+            "factor_universe_durable_evidence_production_blocker_count": durable_evidence_recipe.get("production_blocker_count"),
             "worker_stage_scope_count": len(worker_stage_scope_rows),
             "worker_stage_scope_keys": [row.get("stage_key") for row in worker_stage_scope_rows],
             "worker_stage_scope_pending_count": sum(
@@ -670,6 +805,8 @@ def build_contract() -> dict[str, Any]:
         "worker_stage_scope_rows": worker_stage_scope_rows,
         "worker_batch_execution_recipe": worker_batch_execution_recipe,
         "worker_batch_execution_rows": worker_batch_execution_rows,
+        "factor_universe_durable_evidence_recipe": durable_evidence_recipe,
+        "factor_universe_durable_evidence_rows": durable_evidence_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Worker batch dry-run is only a scope ticket; worker execution, rank/zscore, neutralization, provider-backed validation, and full-pool production research remain pending.",
     }
