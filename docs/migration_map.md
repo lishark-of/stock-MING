@@ -160,7 +160,7 @@ Migration Status 现在还会从本地静态 Trade isolation contract 观察 `tr
 
 Migration Status 现在会从本地 Candidate Radar cache 观察 `candidate_radar_production_stage_scope_manifest`，并以 `ltg_stage_scope_observed_rows` 展示在 14 个长期目标总览中。该观察只读本地 cache，不创建任务、不刷新数据、不调用 Tushare/DeepSeek/GitHub、不执行交易，也不证明 LTG-13 production radar replacement complete。
 
-Migration Status 现在也会从本地静态 motion contract 观察 `motion_production_stage_scope_manifest`，把 LTG-14 的动效生产阶段清单并入 `ltg_stage_scope_observed_rows`。该观察不打开浏览器、不运行 motion runner、不写截图/视频、不读取 GitHub Actions、不调用 Tushare/DeepSeek/GitHub、不修改 packet/action/price/position，也不证明 production motion complete。
+Migration Status 现在也会从本地静态 motion contract 观察 `motion_production_stage_scope_manifest`，把 LTG-14 的动效生产阶段清单并入 `ltg_stage_scope_observed_rows`；React 迁移状态页还会单独展示 “LTG-14 动效生产证据” 摘要，显示 stage scope、pending 数、本地证据行、visual QA promotion、performance promotion、durable CI evidence 和 production motion 状态。该观察不打开浏览器、不运行 motion runner、不写截图/视频、不读取 GitHub Actions、不调用 Tushare/DeepSeek/GitHub、不修改 packet/action/price/position，也不证明 production motion complete。
 
 Candidate Radar 现在还提供 `POST /api/candidate-radar/deep-scan-local-review`，写入 `deep_scan_local_review_receipt` 和 `deep_scan_local_review_rows`。该任务只做本地候选证据、trigger/invalidation、legacy parity、provider/freshness 缺口和交易隔离审查；它不执行 DeepSeek/model deep research、不刷新 Tushare/provider、不运行 worker deep-scan、不生成买入指令，并继续保持 `deep_scan_done=false`、`provider_backed_acceptance_done=false`、`worker_backed_execution_done=false`、`legacy_retirement_ready=false` 和 `legacy_fallback_required=true`。
 

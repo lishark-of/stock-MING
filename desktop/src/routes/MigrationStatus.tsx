@@ -27,6 +27,7 @@ export default function MigrationStatus() {
   const longTermBucketCounts = (longTermGoalSummary.bucket_counts as Record<string, unknown> | undefined) ?? {};
   const longTermNextPriority = (longTermGoalSummary.next_priority_order as Array<string> | undefined) ?? [];
   const ltgStageScopeObservedRows = (packet.ltg_stage_scope_observed_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const motionGoalObservedRow = ltgStageScopeObservedRows.find((row) => row.id === "LTG-14") ?? {};
   const tushareDeepseekLinkage = (packet.tushare_deepseek_linkage_review as Record<string, unknown> | undefined) ?? {};
   const tushareDeepseekLinkageRows = (packet.tushare_deepseek_linkage_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const tushareDeepseekModeLayerRows = (packet.tushare_deepseek_mode_layer_rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -153,6 +154,48 @@ export default function MigrationStatus() {
         ]}
       />
       <DataLineageTable rows={[candidateRadarGoalRow]} />
+      <h3>LTG-14 动效生产证据</h3>
+      <p className="risk-note">这里单独展示动效生产阶段证据：只读取本地静态合同，显示视觉 QA、性能 trace、CI/release evidence 和 production motion 仍是否 pending；不会打开浏览器或推广截图。</p>
+      <MetricGrid
+        items={[
+          {
+            label: "motion stage scope",
+            value: String(motionGoalObservedRow.status ?? "missing"),
+            tone: motionGoalObservedRow.status ? "good" : "warn"
+          },
+          {
+            label: "motion pending",
+            value: Number(motionGoalObservedRow.pending_stage_count ?? 0),
+            tone: Number(motionGoalObservedRow.pending_stage_count ?? 0) ? "warn" : "good"
+          },
+          {
+            label: "local evidence rows",
+            value: Number(motionGoalObservedRow.local_evidence_stage_count ?? 0),
+            tone: Number(motionGoalObservedRow.local_evidence_stage_count ?? 0) ? "good" : "warn"
+          },
+          {
+            label: "visual QA promoted",
+            value: motionGoalObservedRow.browser_visual_qa_promoted === true,
+            tone: motionGoalObservedRow.browser_visual_qa_promoted === true ? "good" : "warn"
+          },
+          {
+            label: "performance promoted",
+            value: motionGoalObservedRow.browser_performance_promoted === true,
+            tone: motionGoalObservedRow.browser_performance_promoted === true ? "good" : "warn"
+          },
+          {
+            label: "durable CI evidence",
+            value: motionGoalObservedRow.durable_ci_evidence_complete === true,
+            tone: motionGoalObservedRow.durable_ci_evidence_complete === true ? "good" : "warn"
+          },
+          {
+            label: "production motion",
+            value: motionGoalObservedRow.production_motion_complete === true,
+            tone: motionGoalObservedRow.production_motion_complete === true ? "good" : "warn"
+          }
+        ]}
+      />
+      <DataLineageTable rows={[motionGoalObservedRow]} />
       <h3>LTG stage-scope observed rows</h3>
       <p className="risk-note">这些 observed rows 只读取本地 cache 或静态合同里的阶段清单，用来让长期目标总览对齐具体页面证据；它们不是生产完成证据。</p>
       <DataLineageTable rows={ltgStageScopeObservedRows} />
