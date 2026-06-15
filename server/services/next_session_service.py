@@ -16,6 +16,37 @@ SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 MOTION_QA_ARTIFACT_ROOT = PROJECT_ROOT / ".stock_ming_3" / "motion_qa"
 MOTION_BROWSER_QA_RUNNER_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runner.mjs"
 NEXT_SESSION_ROUTE_SOURCE_PATH = PROJECT_ROOT / "desktop" / "src" / "routes" / "NextSessionMap.tsx"
+NEXT_SESSION_DURABLE_EVIDENCE_SCHEMA_VERSION = "next_session_durable_evidence_recipe.v1"
+NEXT_SESSION_DURABLE_EVIDENCE_KEYS = (
+    "cache_render_boundary_visible",
+    "exact_echarts_payload_visible",
+    "interaction_contract_visible",
+    "legacy_parity_recipe_visible",
+    "browser_qa_runbook_visible",
+    "local_browser_qa_review_visible",
+    "streamlit_reference_capture_required",
+    "feature_by_feature_parity_required",
+    "hover_click_parity_required",
+    "durable_browser_visual_performance_evidence_required",
+    "durable_ci_release_evidence_required",
+    "production_replacement_review_required",
+    "no_provider_trade_action_secret_boundary",
+)
+NEXT_SESSION_DURABLE_EVIDENCE_LABELS = {
+    "cache_render_boundary_visible": "Cache/render boundary is visible",
+    "exact_echarts_payload_visible": "Exact ECharts payload is visible",
+    "interaction_contract_visible": "Interaction contract is visible",
+    "legacy_parity_recipe_visible": "Legacy parity recipe is visible",
+    "browser_qa_runbook_visible": "Browser QA runbook is visible",
+    "local_browser_qa_review_visible": "Local browser QA review is visible",
+    "streamlit_reference_capture_required": "Streamlit reference capture is required",
+    "feature_by_feature_parity_required": "Feature-by-feature parity is required",
+    "hover_click_parity_required": "Hover/click parity is required",
+    "durable_browser_visual_performance_evidence_required": "Durable browser visual/performance evidence is required",
+    "durable_ci_release_evidence_required": "Durable CI or release evidence is required",
+    "production_replacement_review_required": "Production replacement review is required",
+    "no_provider_trade_action_secret_boundary": "No provider/trade/action/secret boundary is preserved",
+}
 
 
 def _now_iso() -> str:
@@ -1012,6 +1043,359 @@ def _next_session_legacy_parity_execution_recipe(packet: dict[str, Any]) -> tupl
     return recipe, rows
 
 
+def _next_session_durable_evidence_recipe_row(
+    evidence_key: str,
+    category: str,
+    status: str,
+    *,
+    passed: bool,
+    local_surface_required: bool,
+    production_blocker: bool,
+    evidence: str,
+    next_action: str,
+    recommended_order: int,
+) -> dict[str, Any]:
+    return {
+        "schema_version": NEXT_SESSION_DURABLE_EVIDENCE_SCHEMA_VERSION,
+        "evidence_key": evidence_key,
+        "evidence_label": NEXT_SESSION_DURABLE_EVIDENCE_LABELS[evidence_key],
+        "category": category,
+        "status": status,
+        "passed": bool(passed),
+        "local_surface_required": bool(local_surface_required),
+        "production_blocker": bool(production_blocker),
+        "recommended_order": recommended_order,
+        "evidence": evidence,
+        "next_action": next_action,
+        "recipe_only": True,
+        "cache_only": True,
+        "opens_no_browser": True,
+        "starts_no_servers": True,
+        "writes_no_artifacts": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_operation_zones": True,
+        "frontend_computes_trade_action": False,
+        "contains_secret": False,
+    }
+
+
+def _next_session_durable_evidence_recipe(packet: Mapping[str, Any], now: str) -> dict[str, Any]:
+    chart = _as_dict(packet.get("chart_payload"))
+    chart_summary = _as_dict(packet.get("chart_summary"))
+    chart_contract = _as_dict(chart.get("chart_contract"))
+    interaction_audit = _as_dict(chart.get("interaction_readiness_audit"))
+    activation = _as_dict(packet.get("next_session_replacement_activation_receipt"))
+    parity_recipe = _as_dict(packet.get("next_session_legacy_parity_execution_recipe"))
+    browser_runbook = _as_dict(packet.get("next_session_browser_qa_runbook_contract"))
+    browser_evidence = _as_dict(packet.get("next_session_browser_qa_evidence_summary"))
+    browser_review = _as_dict(packet.get("next_session_browser_qa_review_contract"))
+
+    cache_render_safe = (
+        packet.get("cache_only") is not False
+        and chart_contract.get("cache_only") is True
+        and chart_contract.get("frontend_computes_trade_action") is False
+        and chart_contract.get("does_not_modify_action") is True
+        and chart_contract.get("does_not_modify_operation_zones") is True
+        and chart_contract.get("external_calls_triggered") is False
+        and chart_contract.get("tushare_called") is False
+        and chart_contract.get("deepseek_called") is False
+        and chart_contract.get("github_called") is False
+    )
+    exact_payload_visible = (
+        chart.get("status") == "ready"
+        and chart.get("is_exact_next_session_packet") is True
+        and chart_summary.get("has_drawable_data") is True
+        and chart_contract.get("renderer") == "ECharts"
+    )
+    interaction_visible = (
+        interaction_audit.get("schema_version") == "next_session_interaction_readiness.v1"
+        and interaction_audit.get("status") == "interaction_contract_ready_parity_pending"
+        and int(interaction_audit.get("blocking_count") or 0) == 0
+    )
+    parity_recipe_visible = (
+        parity_recipe.get("schema_version") == "next_session_legacy_parity_execution_recipe.v1"
+        and parity_recipe.get("local_recipe_ready") is True
+    )
+    browser_runbook_visible = (
+        browser_runbook.get("schema_version") == "next_session_browser_qa_runbook.v1"
+        and browser_runbook.get("local_runbook_ready") is True
+    )
+    local_browser_review_visible = (
+        browser_review.get("schema_version") == "next_session_browser_qa_review.v1"
+        and browser_review.get("scope") == "button_gated_local_next_session_browser_qa_review_no_browser_execution"
+    )
+    local_browser_visual_perf_reviewed = (
+        browser_evidence.get("next_visual_qa_evidence_passed") is True
+        and browser_evidence.get("next_browser_performance_evidence_passed") is True
+        and browser_review.get("local_browser_qa_review_ready") is True
+    )
+    streamlit_parity_complete = activation.get("streamlit_parity_complete") is True
+    production_replacement_complete = activation.get("production_replacement_complete") is True
+    durable_ci_evidence_complete = activation.get("durable_ci_evidence_complete") is True
+    no_provider_trade_action_secret_boundary = (
+        activation.get("external_calls_triggered") is False
+        and activation.get("tushare_called") is False
+        and activation.get("deepseek_called") is False
+        and activation.get("github_called") is False
+        and activation.get("does_not_execute_trades") is True
+        and activation.get("does_not_modify_strategy_action") is True
+        and activation.get("does_not_modify_operation_zones") is True
+    )
+
+    rows = [
+        _next_session_durable_evidence_recipe_row(
+            "cache_render_boundary_visible",
+            "local_surface",
+            "passed_cache_render_boundary" if cache_render_safe else "blocked_cache_render_boundary",
+            passed=cache_render_safe,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=(
+                f"cache_only={chart_contract.get('cache_only')}; "
+                f"frontend_computes_trade_action={chart_contract.get('frontend_computes_trade_action')}"
+            ),
+            next_action="Keep GET cache and React render read-only, provider-silent, and action-silent.",
+            recommended_order=1,
+        ),
+        _next_session_durable_evidence_recipe_row(
+            "exact_echarts_payload_visible",
+            "local_surface",
+            "passed_exact_payload" if exact_payload_visible else "blocked_exact_payload",
+            passed=exact_payload_visible,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=(
+                f"chart_status={chart.get('status')}; exact={chart.get('is_exact_next_session_packet')}; "
+                f"renderer={chart_contract.get('renderer')}"
+            ),
+            next_action="Keep exact ECharts payload and latest-close/reference/zone context visible before parity execution.",
+            recommended_order=2,
+        ),
+        _next_session_durable_evidence_recipe_row(
+            "interaction_contract_visible",
+            "local_surface",
+            "passed_interaction_contract" if interaction_visible else "blocked_interaction_contract",
+            passed=interaction_visible,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=f"status={interaction_audit.get('status')}; blocking_count={interaction_audit.get('blocking_count')}",
+            next_action="Keep hover/click/source/guardrail rows visible while parity remains pending.",
+            recommended_order=3,
+        ),
+        _next_session_durable_evidence_recipe_row(
+            "legacy_parity_recipe_visible",
+            "local_surface",
+            "passed_legacy_parity_recipe" if parity_recipe_visible else "blocked_legacy_parity_recipe",
+            passed=parity_recipe_visible,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=f"status={parity_recipe.get('status')}; pending={parity_recipe.get('pending_phase_count')}",
+            next_action="Use the parity recipe as a no-feature-loss checklist, not as completed Streamlit parity.",
+            recommended_order=4,
+        ),
+        _next_session_durable_evidence_recipe_row(
+            "browser_qa_runbook_visible",
+            "local_surface",
+            "passed_browser_qa_runbook" if browser_runbook_visible else "blocked_browser_qa_runbook",
+            passed=browser_runbook_visible,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=f"status={browser_runbook.get('status')}; route={browser_runbook.get('next_route')}",
+            next_action="Keep browser QA execution explicit and outside GET/render paths.",
+            recommended_order=5,
+        ),
+        _next_session_durable_evidence_recipe_row(
+            "local_browser_qa_review_visible",
+            "local_surface",
+            "passed_local_review_surface" if local_browser_review_visible else "blocked_local_review_surface",
+            passed=local_browser_review_visible,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=(
+                f"status={browser_review.get('status')}; "
+                f"local_review_ready={browser_review.get('local_browser_qa_review_ready')}"
+            ),
+            next_action="Treat local QA review as a local artifact review only; durable promotion still needs direct evidence.",
+            recommended_order=6,
+        ),
+        _next_session_durable_evidence_recipe_row(
+            "streamlit_reference_capture_required",
+            "durable_evidence",
+            "completed" if streamlit_parity_complete else "pending_streamlit_reference_capture",
+            passed=streamlit_parity_complete,
+            local_surface_required=False,
+            production_blocker=not streamlit_parity_complete,
+            evidence=f"streamlit_parity_complete={streamlit_parity_complete}",
+            next_action="Capture Streamlit reference behavior for the same packet before claiming replacement parity.",
+            recommended_order=7,
+        ),
+        _next_session_durable_evidence_recipe_row(
+            "feature_by_feature_parity_required",
+            "durable_evidence",
+            "completed" if streamlit_parity_complete else "pending_feature_parity_matrix",
+            passed=streamlit_parity_complete,
+            local_surface_required=False,
+            production_blocker=not streamlit_parity_complete,
+            evidence=f"preserved_feature_groups={len(_as_list(parity_recipe.get('preserved_feature_groups')))}",
+            next_action="Review every legacy signal group against React/ECharts without dropping behavior to reduce scope.",
+            recommended_order=8,
+        ),
+        _next_session_durable_evidence_recipe_row(
+            "hover_click_parity_required",
+            "durable_evidence",
+            "completed" if streamlit_parity_complete else "pending_hover_click_parity",
+            passed=streamlit_parity_complete,
+            local_surface_required=False,
+            production_blocker=not streamlit_parity_complete,
+            evidence=f"interaction_visible={interaction_visible}; streamlit_parity_complete={streamlit_parity_complete}",
+            next_action="Record hover/click parity notes against legacy behavior before promotion.",
+            recommended_order=9,
+        ),
+        _next_session_durable_evidence_recipe_row(
+            "durable_browser_visual_performance_evidence_required",
+            "durable_evidence",
+            "completed" if False else "pending_durable_browser_visual_performance",
+            passed=False,
+            local_surface_required=False,
+            production_blocker=True,
+            evidence=(
+                f"local_visual_perf_reviewed={local_browser_visual_perf_reviewed}; "
+                f"visual={browser_evidence.get('next_visual_qa_evidence_passed')}; "
+                f"performance={browser_evidence.get('next_browser_performance_evidence_passed')}"
+            ),
+            next_action="Promote ignored local reports only after durable reviewer/CI/release evidence is attached.",
+            recommended_order=10,
+        ),
+        _next_session_durable_evidence_recipe_row(
+            "durable_ci_release_evidence_required",
+            "durable_evidence",
+            "completed" if durable_ci_evidence_complete else "pending_durable_ci_release_evidence",
+            passed=durable_ci_evidence_complete,
+            local_surface_required=False,
+            production_blocker=not durable_ci_evidence_complete,
+            evidence=f"durable_ci_evidence_complete={durable_ci_evidence_complete}",
+            next_action="Keep local artifacts separate from durable CI/release evidence.",
+            recommended_order=11,
+        ),
+        _next_session_durable_evidence_recipe_row(
+            "production_replacement_review_required",
+            "durable_evidence",
+            "completed" if production_replacement_complete else "pending_production_replacement_review",
+            passed=production_replacement_complete,
+            local_surface_required=False,
+            production_blocker=not production_replacement_complete,
+            evidence=f"production_replacement_complete={production_replacement_complete}",
+            next_action="Promote ECharts replacement only after parity, visual QA, performance trace, durable evidence, and review pass.",
+            recommended_order=12,
+        ),
+        _next_session_durable_evidence_recipe_row(
+            "no_provider_trade_action_secret_boundary",
+            "safety",
+            "passed_no_provider_trade_action_secret" if no_provider_trade_action_secret_boundary else "blocked_safety_boundary",
+            passed=no_provider_trade_action_secret_boundary,
+            local_surface_required=True,
+            production_blocker=not no_provider_trade_action_secret_boundary,
+            evidence="Recipe calls no provider/model/probe, executes no trades, mutates no strategy action or operation zones, and exposes no secret.",
+            next_action="Preserve provider/model/trade/action/secret boundaries while durable evidence improves.",
+            recommended_order=13,
+        ),
+    ]
+    local_blockers = [row["evidence_key"] for row in rows if row["local_surface_required"] and not row["passed"]]
+    durable_blockers = [row["evidence_key"] for row in rows if row["production_blocker"] and not row["passed"]]
+    local_ready = not local_blockers
+    contract = {
+        "schema_version": NEXT_SESSION_DURABLE_EVIDENCE_SCHEMA_VERSION,
+        "status": (
+            "next_session_durable_evidence_recipe_ready_production_pending"
+            if local_ready
+            else "next_session_durable_evidence_recipe_blocked_local_surface"
+        ),
+        "scope": "local_next_session_durable_evidence_recipe_no_browser_no_provider",
+        "ltg": "LTG-08/LTG-10/LTG-14",
+        "local_recipe_ready": local_ready,
+        "durable_evidence_complete": False,
+        "durable_promotion_ready": False,
+        "production_replacement_complete": False,
+        "streamlit_parity_complete": False,
+        "streamlit_reference_captured": False,
+        "feature_by_feature_parity_complete": False,
+        "hover_click_parity_complete": False,
+        "browser_visual_performance_reviewed": False,
+        "local_browser_visual_performance_reviewed": local_browser_visual_perf_reviewed,
+        "durable_ci_evidence_complete": False,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "worker_execution_implemented": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "page_render_starts_browser": False,
+        "page_render_starts_provider": False,
+        "page_render_starts_model": False,
+        "evidence_keys": list(NEXT_SESSION_DURABLE_EVIDENCE_KEYS),
+        "missing_durable_evidence": durable_blockers,
+        "required_evidence": [
+            "same-packet Streamlit reference capture",
+            "feature-by-feature legacy parity matrix",
+            "hover/click parity notes",
+            "durable browser visual/performance evidence for #next",
+            "durable CI or release evidence",
+            "explicit production replacement promotion review",
+        ],
+        "not_allowed_next_steps": [
+            "treat durable recipe as ECharts production replacement",
+            "treat local browser artifact review as durable evidence",
+            "treat interaction readiness as Streamlit parity",
+            "drop legacy signal groups to reduce scope",
+            "call Tushare or DeepSeek from GET cache or React render",
+            "open browser or start servers from durable recipe",
+            "compute strategy action in frontend",
+            "mutate price, position, strategy action, or operation zones",
+            "store raw token/key in packet, cache, ledger, log, or frontend",
+        ],
+        "allowed_next_step": "run_same_packet_streamlit_parity_then_browser_visual_performance_then_durable_promotion_review",
+        "row_count": len(rows),
+        "evidence_key_count": len(NEXT_SESSION_DURABLE_EVIDENCE_KEYS),
+        "local_blocker_count": len(local_blockers),
+        "durable_evidence_blocker_count": len(durable_blockers),
+        "production_blocker_count": len(durable_blockers),
+        "local_blockers": local_blockers,
+        "rows": rows,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_operation_zones": True,
+        "frontend_computes_trade_action": False,
+        "note": "This recipe fixes the durable evidence checklist for LTG-08. It does not open a browser, start servers, call providers/models/GitHub, execute trades, mutate action or operation zones, prove Streamlit parity, or complete ECharts production replacement.",
+    }
+    contract["call_ledger"] = [
+        {
+            "api": "local_next_session_durable_evidence_recipe",
+            "request_params_safe": {
+                "status": contract["status"],
+                "row_count": len(rows),
+                "production_blocker_count": len(durable_blockers),
+                "production_replacement_complete": False,
+            },
+            "row_count": len(rows),
+            "data_date": _next_session_data_date(dict(packet)),
+            "local_fetched_at": now,
+            "call_status": contract["status"],
+            "error_message_safe": "",
+            **_local_ledger_boundary(),
+        }
+    ]
+    return contract
+
+
 def read_next_session_cache() -> dict[str, Any]:
     packet = dict(packet_service.build_next_session_cache())
     activation_receipt, activation_rows = _next_session_replacement_activation_receipt(packet)
@@ -1040,6 +1424,9 @@ def read_next_session_cache() -> dict[str, Any]:
     packet["next_session_browser_qa_evidence_rows"] = browser_qa_evidence_rows
     packet["next_session_browser_qa_review_contract"] = browser_qa_review
     packet["next_session_browser_qa_review_rows"] = _as_list(browser_qa_review.get("rows"))
+    durable_evidence_recipe = _next_session_durable_evidence_recipe(packet, _now_iso())
+    packet["next_session_durable_evidence_recipe"] = durable_evidence_recipe
+    packet["next_session_durable_evidence_rows"] = durable_evidence_recipe["rows"]
     packet["next_session_activation_receipt_ready"] = activation_receipt["local_activation_receipt_ready"]
     packet["next_session_activation_production_blocker_count"] = activation_receipt["production_blocker_count"]
     packet["next_session_activation_missing_evidence_count"] = activation_receipt["missing_evidence_count"]
@@ -1047,14 +1434,21 @@ def read_next_session_cache() -> dict[str, Any]:
     packet["next_session_browser_qa_evidence_ready"] = browser_qa_evidence["next_browser_qa_evidence_ready"]
     packet["next_session_browser_qa_review_ready"] = browser_qa_review["local_browser_qa_review_ready"]
     packet["next_session_browser_qa_review_blocking_count"] = browser_qa_review["blocking_review_count"]
-    packet.setdefault("call_ledger", _next_session_cache_call_ledger(packet, _now_iso()))
-    packet.setdefault(
-        "warnings",
-        [
-            "GET /api/next-session/cache 只读取本地次日图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
-            " next_session_replacement_activation_receipt 只是替代验收路径，不运行浏览器、不证明生产替代完成。"
-        ],
-    )
+    packet["next_session_durable_evidence_recipe_ready"] = durable_evidence_recipe["local_recipe_ready"]
+    packet["next_session_durable_evidence_blocker_count"] = durable_evidence_recipe["durable_evidence_blocker_count"]
+    existing_ledger = [row for row in _as_list(packet.get("call_ledger")) if isinstance(row, dict)]
+    if not existing_ledger:
+        existing_ledger = _next_session_cache_call_ledger(packet, _now_iso())
+    packet["call_ledger"] = existing_ledger + durable_evidence_recipe["call_ledger"]
+    warnings = [str(item) for item in _as_list(packet.get("warnings"))]
+    for warning in [
+        "GET /api/next-session/cache 只读取本地次日图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
+        " next_session_replacement_activation_receipt 只是替代验收路径，不运行浏览器、不证明生产替代完成。",
+        "next_session_durable_evidence_recipe 只固定 ECharts 生产替代前的 durable evidence 清单；不会打开浏览器、调用 provider/model、执行交易或证明生产替代完成。",
+    ]:
+        if warning not in warnings:
+            warnings.append(warning)
+    packet["warnings"] = warnings
     return packet
 
 

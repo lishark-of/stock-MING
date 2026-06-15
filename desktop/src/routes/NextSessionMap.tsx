@@ -85,6 +85,8 @@ export default function NextSessionMap() {
   const browserQaEvidenceRows = rowsFromArray(packet.next_session_browser_qa_evidence_rows);
   const browserQaReview = (packet.next_session_browser_qa_review_contract as Record<string, unknown> | undefined) ?? {};
   const browserQaReviewRows = rowsFromArray(packet.next_session_browser_qa_review_rows);
+  const durableEvidenceRecipe = (packet.next_session_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
+  const durableEvidenceRows = rowsFromArray(packet.next_session_durable_evidence_rows);
   const latestCloseAnchor = (chartPayload?.latest_close_anchor as Record<string, unknown> | undefined) ?? {};
   const dataTrustSummary = (chartPayload?.data_trust_summary as Record<string, unknown> | undefined) ?? {};
   const positionConflict = (chartPayload?.position_conflict as Record<string, unknown> | undefined) ?? {};
@@ -181,6 +183,8 @@ export default function NextSessionMap() {
           { label: "QA evidence", value: String(browserQaEvidence.status ?? "missing"), tone: browserQaEvidence.next_browser_qa_evidence_ready === true ? "good" : "warn" },
           { label: "QA review", value: String(browserQaReview.status ?? "missing"), tone: browserQaReview.local_browser_qa_review_ready === true ? "good" : "warn" },
           { label: "QA 阻断", value: Number(browserQaReview.blocking_review_count ?? 0), tone: Number(browserQaReview.blocking_review_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "durable evidence", value: String(durableEvidenceRecipe.status ?? "missing"), tone: durableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
+          { label: "durable 阻断", value: Number(durableEvidenceRecipe.durable_evidence_blocker_count ?? 0), tone: Number(durableEvidenceRecipe.durable_evidence_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "路径锚定", value: `${String(chartMaturity.scenario_anchored_count ?? chartSummary.scenario_anchored_count ?? 0)}/${String(chartMaturity.scenario_anchor_count ?? 0)}` },
           { label: "最新 close", value: String(latestCloseAnchor.price ?? "--") },
           { label: "持仓冲突", value: positionConflict.has_conflict === true ? "有" : "无", tone: positionConflict.has_conflict === true ? "bad" : "good" },
@@ -217,6 +221,14 @@ export default function NextSessionMap() {
       <h3>ECharts 本地 QA 审查</h3>
       <DataLineageTable rows={[browserQaReview]} />
       <DataLineageTable rows={browserQaReviewRows} />
+      <h3>ECharts durable evidence recipe</h3>
+      <p className="risk-note">next_session_durable_evidence_recipe 只固定生产替代前的直接证据清单；它不打开浏览器、不启动服务、不调用 provider/model、不证明 Streamlit parity、不证明生产替代完成。</p>
+      <p>scope: {String(durableEvidenceRecipe.scope ?? "local_next_session_durable_evidence_recipe_no_browser_no_provider")}</p>
+      <p>local_recipe_ready: {String(durableEvidenceRecipe.local_recipe_ready === true)}；durable_evidence_complete: {String(durableEvidenceRecipe.durable_evidence_complete === true)}；durable_promotion_ready: {String(durableEvidenceRecipe.durable_promotion_ready === true)}</p>
+      <p>allowed_next_step: {String(durableEvidenceRecipe.allowed_next_step ?? "run_same_packet_streamlit_parity_then_browser_visual_performance_then_durable_promotion_review")}</p>
+      <p>not_allowed_next_steps: {Array.isArray(durableEvidenceRecipe.not_allowed_next_steps) ? durableEvidenceRecipe.not_allowed_next_steps.join(" / ") : "local browser artifact as durable evidence / interaction readiness as parity / provider calls from render / frontend action computation"}</p>
+      <DataLineageTable rows={[durableEvidenceRecipe]} />
+      <DataLineageTable rows={durableEvidenceRows} />
       <h3>ECharts 图表数据合同</h3>
       <DataLineageTable rows={chartContractRows} />
       <h3>缓存边界</h3>

@@ -60,6 +60,21 @@ REQUIRED_LEGACY_PARITY_PHASES = {
     "frontend_read_only_no_feature_loss_boundary",
     "production_replacement_promotion",
 }
+REQUIRED_DURABLE_EVIDENCE_KEYS = {
+    "cache_render_boundary_visible",
+    "exact_echarts_payload_visible",
+    "interaction_contract_visible",
+    "legacy_parity_recipe_visible",
+    "browser_qa_runbook_visible",
+    "local_browser_qa_review_visible",
+    "streamlit_reference_capture_required",
+    "feature_by_feature_parity_required",
+    "hover_click_parity_required",
+    "durable_browser_visual_performance_evidence_required",
+    "durable_ci_release_evidence_required",
+    "production_replacement_review_required",
+    "no_provider_trade_action_secret_boundary",
+}
 NEXT_SESSION_PRODUCTION_STAGE_LABELS = {
     "exact_cache_payload_contract": "exact cache payload and chart contract",
     "interaction_hover_click_contract": "hover and click interaction contract",
@@ -102,7 +117,14 @@ def _read_script(path: str) -> str:
 
 def _rows_by_key(rows: Any) -> dict[str, dict[str, Any]]:
     return {
-        str(row.get("key") or row.get("criterion") or row.get("activation_key") or row.get("phase") or ""): row
+        str(
+            row.get("key")
+            or row.get("criterion")
+            or row.get("activation_key")
+            or row.get("phase")
+            or row.get("evidence_key")
+            or ""
+        ): row
         for row in _list(rows)
         if isinstance(row, dict)
     }
@@ -282,6 +304,8 @@ def build_contract() -> dict[str, Any]:
     browser_qa_evidence_rows = [row for row in _list(exact_service_packet.get("next_session_browser_qa_evidence_rows")) if isinstance(row, dict)]
     browser_qa_review = _dict(exact_service_packet.get("next_session_browser_qa_review_contract"))
     browser_qa_review_rows = _rows_by_key(exact_service_packet.get("next_session_browser_qa_review_rows"))
+    durable_evidence_recipe = _dict(exact_service_packet.get("next_session_durable_evidence_recipe"))
+    durable_evidence_rows = _rows_by_key(exact_service_packet.get("next_session_durable_evidence_rows"))
 
     current_cache = next_session_service.read_next_session_cache()
     current_ledger = [row for row in _list(current_cache.get("call_ledger")) if isinstance(row, dict)]
@@ -370,7 +394,10 @@ def build_contract() -> dict[str, Any]:
             and current_cache.get("does_not_modify_operation_zones") is not False
             and _flag_false(current_cache, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
             and len(current_ledger) >= 1
-            and all(row.get("api") == "local_next_session_cache" for row in current_ledger)
+            and all(
+                row.get("api") in {"local_next_session_cache", "local_next_session_durable_evidence_recipe"}
+                for row in current_ledger
+            )
             and all(row.get("external") is False for row in current_ledger)
             and all(_flag_false(row, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called") for row in current_ledger)
             and all(row.get("does_not_execute_trades") is True for row in current_ledger)
@@ -539,6 +566,81 @@ def build_contract() -> dict[str, Any]:
             "Next-session browser QA review must be explicit POST, local artifact only, no browser execution, and not a production replacement promotion.",
         ),
         _row(
+            "next_session_durable_evidence_recipe_is_local_production_pending",
+            durable_evidence_recipe.get("schema_version")
+            == next_session_service.NEXT_SESSION_DURABLE_EVIDENCE_SCHEMA_VERSION
+            and durable_evidence_recipe.get("status")
+            == "next_session_durable_evidence_recipe_ready_production_pending"
+            and durable_evidence_recipe.get("scope")
+            == "local_next_session_durable_evidence_recipe_no_browser_no_provider"
+            and durable_evidence_recipe.get("local_recipe_ready") is True
+            and durable_evidence_recipe.get("durable_evidence_complete") is False
+            and durable_evidence_recipe.get("durable_promotion_ready") is False
+            and durable_evidence_recipe.get("production_replacement_complete") is False
+            and durable_evidence_recipe.get("streamlit_parity_complete") is False
+            and durable_evidence_recipe.get("streamlit_reference_captured") is False
+            and durable_evidence_recipe.get("feature_by_feature_parity_complete") is False
+            and durable_evidence_recipe.get("hover_click_parity_complete") is False
+            and durable_evidence_recipe.get("browser_visual_performance_reviewed") is False
+            and durable_evidence_recipe.get("durable_ci_evidence_complete") is False
+            and durable_evidence_recipe.get("provider_execution_implemented") is False
+            and durable_evidence_recipe.get("model_execution_implemented") is False
+            and durable_evidence_recipe.get("worker_execution_implemented") is False
+            and durable_evidence_recipe.get("cache_get_external_calls") is False
+            and durable_evidence_recipe.get("react_render_external_calls") is False
+            and durable_evidence_recipe.get("page_render_starts_browser") is False
+            and durable_evidence_recipe.get("page_render_starts_provider") is False
+            and durable_evidence_recipe.get("page_render_starts_model") is False
+            and durable_evidence_recipe.get("evidence_keys")
+            == list(next_session_service.NEXT_SESSION_DURABLE_EVIDENCE_KEYS)
+            and set(durable_evidence_rows) == REQUIRED_DURABLE_EVIDENCE_KEYS
+            and int(durable_evidence_recipe.get("row_count") or 0) == len(durable_evidence_rows)
+            and int(durable_evidence_recipe.get("evidence_key_count") or 0)
+            == len(next_session_service.NEXT_SESSION_DURABLE_EVIDENCE_KEYS)
+            and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) >= 5
+            and "same-packet Streamlit reference capture" in _list(durable_evidence_recipe.get("required_evidence"))
+            and "durable browser visual/performance evidence for #next"
+            in _list(durable_evidence_recipe.get("required_evidence"))
+            and "durable CI or release evidence" in _list(durable_evidence_recipe.get("required_evidence"))
+            and "treat durable recipe as ECharts production replacement"
+            in _list(durable_evidence_recipe.get("not_allowed_next_steps"))
+            and "treat local browser artifact review as durable evidence"
+            in _list(durable_evidence_recipe.get("not_allowed_next_steps"))
+            and "call Tushare or DeepSeek from GET cache or React render"
+            in _list(durable_evidence_recipe.get("not_allowed_next_steps"))
+            and _dict(durable_evidence_rows.get("cache_render_boundary_visible")).get("passed") is True
+            and _dict(durable_evidence_rows.get("exact_echarts_payload_visible")).get("passed") is True
+            and _dict(durable_evidence_rows.get("interaction_contract_visible")).get("passed") is True
+            and _dict(durable_evidence_rows.get("legacy_parity_recipe_visible")).get("passed") is True
+            and _dict(durable_evidence_rows.get("browser_qa_runbook_visible")).get("passed") is True
+            and _dict(durable_evidence_rows.get("local_browser_qa_review_visible")).get("passed") is True
+            and _dict(durable_evidence_rows.get("streamlit_reference_capture_required")).get("production_blocker")
+            is True
+            and _dict(durable_evidence_rows.get("durable_browser_visual_performance_evidence_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(durable_evidence_rows.get("no_provider_trade_action_secret_boundary")).get("passed") is True
+            and _flag_false(
+                durable_evidence_recipe,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+                "frontend_computes_trade_action",
+            )
+            and durable_evidence_recipe.get("does_not_execute_trades") is True
+            and durable_evidence_recipe.get("does_not_modify_strategy_action") is True
+            and durable_evidence_recipe.get("does_not_modify_operation_zones") is True
+            and any(
+                _dict(row).get("api") == "local_next_session_durable_evidence_recipe"
+                for row in _list(durable_evidence_recipe.get("call_ledger"))
+            )
+            and "next_session_durable_evidence_recipe" in next_page,
+            "Next-session durable evidence recipe must pin remaining Streamlit parity, browser visual/performance, CI/release, and promotion evidence without opening a browser, calling providers/models, executing trades, or claiming ECharts production replacement.",
+        ),
+        _row(
             "production_replacement_stage_scope_manifest_is_complete_and_pending",
             {row.get("stage_key") for row in production_stage_scope_rows}
             == REQUIRED_NEXT_SESSION_PRODUCTION_STAGES
@@ -579,6 +681,8 @@ def build_contract() -> dict[str, Any]:
             and 'postTask("/api/next-session/browser-qa-review"' in next_page
             and "next_session_browser_qa_evidence_summary" in next_page
             and "next_session_browser_qa_review_contract" in next_page
+            and "next_session_durable_evidence_recipe" in next_page
+            and "durableEvidenceRecipe" in next_page
             and "NextSessionChart" in next_page
             and "frontend_computes_trade_action" in next_page
             and "does_not_modify_operation_zones" in next_page
@@ -609,6 +713,7 @@ def build_contract() -> dict[str, Any]:
             "command_center_3_next_session_map_contract.v1" in this_script
             and "local_next_session_map_contract_no_browser_no_provider" in this_script
             and "next_session_replacement_activation_receipt.v1" in this_script
+            and "next_session_durable_evidence_recipe.v1" in this_script
             and "next_session_production_replacement_stage_scope_manifest" in this_script
             and "production_replacement_complete" in this_script
             and "streamlit_parity_complete" in this_script
@@ -637,6 +742,9 @@ def build_contract() -> dict[str, Any]:
         "browser_performance_trace_done": False,
         "replacement_activation_receipt_ready": activation_receipt.get("local_activation_receipt_ready") is True,
         "legacy_parity_recipe_ready": legacy_parity_recipe.get("local_recipe_ready") is True,
+        "durable_evidence_recipe_ready": durable_evidence_recipe.get("local_recipe_ready") is True,
+        "durable_evidence_complete": False,
+        "durable_evidence_blocker_count": durable_evidence_recipe.get("durable_evidence_blocker_count", 0),
         "cache_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -661,6 +769,10 @@ def build_contract() -> dict[str, Any]:
             "legacy_parity_recipe_status": legacy_parity_recipe.get("status"),
             "legacy_parity_pending_phase_count": legacy_parity_recipe.get("pending_phase_count"),
             "legacy_parity_phase_keys": sorted(row.get("phase") for row in legacy_parity_rows.values()),
+            "durable_evidence_recipe_status": durable_evidence_recipe.get("status"),
+            "durable_evidence_ready": durable_evidence_recipe.get("local_recipe_ready"),
+            "durable_evidence_blocker_count": durable_evidence_recipe.get("durable_evidence_blocker_count"),
+            "durable_evidence_missing": durable_evidence_recipe.get("missing_durable_evidence"),
             "historical_point_count": series_counts.get("historical_points"),
             "scenario_series_count": series_counts.get("scenario_series"),
             "reference_line_count": series_counts.get("reference_lines"),
@@ -675,6 +787,7 @@ def build_contract() -> dict[str, Any]:
             ),
         },
         "legacy_parity_execution_rows": list(legacy_parity_rows.values()),
+        "durable_evidence_rows": list(durable_evidence_rows.values()),
         "production_replacement_stage_scope_rows": production_stage_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Browser visual QA, performance trace, legacy Streamlit parity, and production ECharts replacement remain pending.",
