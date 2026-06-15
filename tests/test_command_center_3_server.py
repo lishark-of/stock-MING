@@ -220,6 +220,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("dry-run scope ticket", migration_goals["LTG-01"]["next_evidence_required"])
         self.assertEqual(migration_goals["LTG-02"]["stage_scope_manifest"], "tushare_production_stage_scope_manifest")
         self.assertIn("production stage-scope manifest", migration_goals["LTG-02"]["current_state"])
+        self.assertIn("durable evidence recipe", migration_goals["LTG-02"]["current_state"])
         self.assertIn("provider target samples", migration_goals["LTG-02"]["next_evidence_required"])
         self.assertEqual(migration_goals["LTG-03"]["completion_estimate"], "45%-55%")
         self.assertEqual(
@@ -6920,6 +6921,24 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(persisted["provider_target_sample_execution_ready"])
         self.assertEqual(persisted["provider_target_sample_execution_ready_count"], 1)
         self.assertEqual(persisted["provider_target_sample_execution_blocker_count"], 0)
+        durable_recipe = persisted["tushare_durable_evidence_recipe"]
+        durable_rows = {row["evidence_key"]: row for row in persisted["tushare_durable_evidence_rows"]}
+        self.assertEqual(durable_recipe["schema_version"], "tushare_durable_evidence_recipe.v1")
+        self.assertEqual(durable_recipe["scope"], "local_tushare_durable_evidence_recipe_no_provider_execution")
+        self.assertTrue(durable_recipe["local_recipe_ready"])
+        self.assertFalse(durable_recipe["durable_evidence_complete"])
+        self.assertFalse(durable_recipe["provider_backed_acceptance_done"])
+        self.assertFalse(durable_recipe["full_interface_acceptance_done"])
+        self.assertFalse(durable_recipe["production_tushare_pipeline_complete"])
+        self.assertFalse(durable_recipe["provider_refresh_called_by_recipe"])
+        self.assertIn("safe_provider_call_ledger", durable_rows)
+        self.assertIn("full_interface_promotion_review", durable_rows)
+        self.assertGreater(persisted["tushare_durable_evidence_blocker_count"], 0)
+        self.assertEqual(persisted["tushare_durable_evidence_row_count"], len(durable_rows))
+        self.assertFalse(persisted["api_validation_matrix_policy"]["tushare_durable_evidence_recipe_calls_provider"])
+        self.assertTrue(
+            persisted["api_validation_matrix_policy"]["tushare_durable_evidence_recipe_is_not_production_completion"]
+        )
 
     def test_tushare_target_sample_acceptance_supports_multiple_review_ready_domains_without_promotion(self):
         db_path = self._with_meta_store()
@@ -7884,6 +7903,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("interface_group_scope_complete_but_provider_acceptance_pending", script)
         self.assertIn("tushare_production_stage_scope_manifest", script)
         self.assertIn("tushare_production_stage_scope_manifest_is_complete_and_pending", script)
+        self.assertIn("tushare_durable_evidence_recipe", script)
+        self.assertIn("tushare_durable_evidence_recipe_is_local_provider_pending", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -8029,12 +8050,74 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["tushare_production_stage_scope_pending_count"],
             len(required_tushare_stages),
         )
+        required_tushare_durable_keys = {
+            "post_task_route_and_mode_gate",
+            "core_light_api_revalidation",
+            "trade_calendar_provider_sample",
+            "margin_financing_provider_sample",
+            "dragon_tiger_provider_sample",
+            "limit_emotion_provider_sample",
+            "chip_distribution_provider_sample",
+            "financial_disclosure_provider_sample",
+            "hard_risk_provider_sample",
+            "safe_provider_call_ledger",
+            "failure_mode_and_parameter_review",
+            "full_interface_promotion_review",
+            "storage_cache_promotion_review",
+        }
+        self.assertTrue(payload["tushare_durable_evidence_recipe_ready"])
+        self.assertEqual(
+            payload["tushare_durable_evidence_recipe_status"],
+            "tushare_durable_evidence_recipe_ready_provider_pending",
+        )
+        self.assertFalse(payload["tushare_durable_evidence_complete"])
+        self.assertGreater(payload["tushare_durable_evidence_blocker_count"], 0)
+        self.assertEqual(payload["observed"]["tushare_durable_evidence_row_count"], len(required_tushare_durable_keys))
+        self.assertEqual(payload["observed"]["tushare_durable_evidence_keys"], sorted(required_tushare_durable_keys))
+        self.assertGreater(payload["observed"]["tushare_durable_evidence_blocker_count"], 0)
+        self.assertIn(
+            "trade_calendar_provider_sample",
+            payload["observed"]["tushare_durable_evidence_blocking_keys"],
+        )
+        self.assertIn(
+            "safe_provider_call_ledger",
+            payload["observed"]["tushare_durable_evidence_blocking_keys"],
+        )
+        self.assertIn(
+            "full_interface_promotion_review",
+            payload["observed"]["tushare_durable_evidence_blocking_keys"],
+        )
+        durable_rows = payload["tushare_durable_evidence_rows"]
+        self.assertEqual({row["evidence_key"] for row in durable_rows}, required_tushare_durable_keys)
+        for row in durable_rows:
+            self.assertEqual(row["scope"], "tushare_durable_evidence_recipe")
+            self.assertFalse(row["provider_backed_acceptance_done"])
+            self.assertFalse(row["provider_backed_target_sample_acceptance_done"])
+            self.assertFalse(row["full_interface_acceptance_done"])
+            self.assertFalse(row["production_tushare_pipeline_complete"])
+            self.assertFalse(row["provider_task_created_by_recipe"])
+            self.assertFalse(row["provider_execution_implemented_by_recipe"])
+            self.assertFalse(row["provider_refresh_called_by_recipe"])
+            self.assertFalse(row["provider_call_ledger_evidence_done"])
+            self.assertFalse(row["failure_mode_evidence_done"])
+            self.assertFalse(row["request_parameter_provider_window_done"])
+            self.assertFalse(row["parquet_promotion_done"])
+            self.assertFalse(row["cache_get_external_calls"])
+            self.assertFalse(row["react_render_external_calls"])
+            self.assertFalse(row["recipe_external_calls_triggered"])
+            self.assertFalse(row["tushare_called_by_recipe"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
         self.assertIn("provider_evidence_gap_audit", payload["contract_keys"])
         self.assertIn("provider_target_sample_acceptance_contract", payload["contract_keys"])
         self.assertIn("provider_sample_readiness_receipt", payload["contract_keys"])
         self.assertIn("provider_sample_activation_receipt", payload["contract_keys"])
         self.assertIn("provider_target_sample_runbook_contract", payload["contract_keys"])
         self.assertIn("provider_target_sample_execution_recipe", payload["contract_keys"])
+        self.assertIn("tushare_durable_evidence_recipe", payload["contract_keys"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("post_task_catalog_button_gate", criteria)
         self.assertIn("api_acceptance_audit_is_semantic_only", criteria)
@@ -8054,6 +8137,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("multi_target_sample_execution_recipe_ready_review_pending_without_promotion", criteria)
         self.assertIn("interface_group_scope_complete_but_provider_acceptance_pending", criteria)
         self.assertIn("tushare_production_stage_scope_manifest_is_complete_and_pending", criteria)
+        self.assertIn("tushare_durable_evidence_recipe_is_local_provider_pending", criteria)
 
     def test_factor_test_lab_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/factor_test_lab_contract.py")
@@ -10758,6 +10842,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_target_sample_execution_recipe", by_type["refresh_tushare_facts"])
         self.assertFalse(by_type["refresh_tushare_facts"]["provider_target_sample_execution_recipe_is_provider_acceptance"])
         self.assertFalse(by_type["refresh_tushare_facts"]["provider_target_sample_execution_recipe_creates_task"])
+        self.assertIn("tushare_durable_evidence_recipe", by_type["refresh_tushare_facts"])
+        self.assertFalse(by_type["refresh_tushare_facts"]["tushare_durable_evidence_recipe_is_provider_acceptance"])
+        self.assertFalse(by_type["refresh_tushare_facts"]["tushare_durable_evidence_recipe_creates_task"])
         self.assertEqual(by_type["command_center_live_bootstrap"]["route"], "POST /api/bootstrap/live-startup")
         self.assertEqual(by_type["command_center_live_bootstrap"]["current_backend"], "local_bootstrap_pipeline_skeleton")
         self.assertEqual(by_type["command_center_live_bootstrap"]["external_call_policy"], "mode_gated_live_light_bootstrap_current_no_provider_execution")

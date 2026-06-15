@@ -56,6 +56,37 @@ VALIDATION_TARGET_GROUPS = (
     ("financial_disclosure", "财务披露", FINANCIAL_DISCLOSURE_REFRESH_APIS),
     ("hard_risk", "硬风险公告", HARD_RISK_REFRESH_APIS),
 )
+TUSHARE_DURABLE_EVIDENCE_SCHEMA_VERSION = "tushare_durable_evidence_recipe.v1"
+TUSHARE_DURABLE_EVIDENCE_KEYS = (
+    "post_task_route_and_mode_gate",
+    "core_light_api_revalidation",
+    "trade_calendar_provider_sample",
+    "margin_financing_provider_sample",
+    "dragon_tiger_provider_sample",
+    "limit_emotion_provider_sample",
+    "chip_distribution_provider_sample",
+    "financial_disclosure_provider_sample",
+    "hard_risk_provider_sample",
+    "safe_provider_call_ledger",
+    "failure_mode_and_parameter_review",
+    "full_interface_promotion_review",
+    "storage_cache_promotion_review",
+)
+TUSHARE_DURABLE_EVIDENCE_LABELS = {
+    "post_task_route_and_mode_gate": "POST task route and runtime mode gate",
+    "core_light_api_revalidation": "core light API release revalidation",
+    "trade_calendar_provider_sample": "trade_cal provider target sample",
+    "margin_financing_provider_sample": "margin financing provider target sample",
+    "dragon_tiger_provider_sample": "dragon-tiger provider target sample",
+    "limit_emotion_provider_sample": "limit/emotion provider target sample",
+    "chip_distribution_provider_sample": "chip distribution provider target sample",
+    "financial_disclosure_provider_sample": "financial disclosure provider target sample",
+    "hard_risk_provider_sample": "hard-risk provider target sample",
+    "safe_provider_call_ledger": "safe provider call ledger",
+    "failure_mode_and_parameter_review": "failure-mode and parameter review",
+    "full_interface_promotion_review": "full-interface promotion review",
+    "storage_cache_promotion_review": "storage/cache promotion review",
+}
 PROVIDER_TARGET_SAMPLE_REQUIREMENTS = {
     "trade_calendar": {
         "sample_window": "long_window_covering_open_closed_rows_weekends_holidays_and_latest_completed_session",
@@ -2126,6 +2157,323 @@ def _provider_target_sample_execution_recipe(
     }
 
 
+def _tushare_durable_evidence_recipe_row(
+    evidence_key: str,
+    *,
+    current_status: str,
+    target_status: str,
+    local_prerequisite_visible: bool,
+    direct_provider_evidence_required: bool,
+    missing_evidence: list[str],
+    target_group: str | None = None,
+    selected_apis: list[str] | None = None,
+) -> dict[str, Any]:
+    production_blocker = bool(direct_provider_evidence_required or not local_prerequisite_visible)
+    return {
+        "evidence_key": evidence_key,
+        "evidence_label": TUSHARE_DURABLE_EVIDENCE_LABELS[evidence_key],
+        "target_group": target_group or "",
+        "scope": "tushare_durable_evidence_recipe",
+        "current_status": current_status,
+        "target_status": target_status,
+        "selected_apis": list(selected_apis or []),
+        "local_prerequisite_visible": bool(local_prerequisite_visible),
+        "direct_provider_evidence_required": bool(direct_provider_evidence_required),
+        "production_blocker": production_blocker,
+        "missing_evidence": list(missing_evidence),
+        "provider_backed_acceptance_done": False,
+        "provider_backed_target_sample_acceptance_done": False,
+        "full_interface_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "provider_task_created_by_recipe": False,
+        "provider_execution_implemented_by_recipe": False,
+        "provider_refresh_called_by_recipe": False,
+        "provider_call_ledger_evidence_done": False,
+        "failure_mode_evidence_done": False,
+        "request_parameter_provider_window_done": False,
+        "parquet_promotion_done": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "recipe_external_calls_triggered": False,
+        "tushare_called_by_recipe": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def _tushare_durable_evidence_recipe(
+    *,
+    selected_apis: list[str],
+    api_validation_rows: list[dict[str, Any]],
+    validation_target_rows: list[dict[str, Any]],
+    api_acceptance_audit: dict[str, Any],
+    failure_mode_qa_contract: dict[str, Any],
+    request_parameter_qa_contract: dict[str, Any],
+    provider_target_sample_plan_contract: dict[str, Any],
+    provider_target_sample_acceptance_contract: dict[str, Any],
+    provider_acceptance_readiness_audit: dict[str, Any],
+    provider_acceptance_promotion_audit: dict[str, Any],
+    provider_evidence_gap_audit: dict[str, Any],
+    provider_sample_activation_receipt: dict[str, Any],
+    provider_target_sample_runbook_contract: dict[str, Any],
+    provider_target_sample_execution_recipe: dict[str, Any],
+) -> dict[str, Any]:
+    selected_set = set(selected_apis)
+    target_rows_by_key = {str(row.get("target") or ""): row for row in validation_target_rows}
+    gap_rows_by_key = {
+        str(row.get("target") or ""): row
+        for row in provider_evidence_gap_audit.get("rows", [])
+        if isinstance(row, Mapping)
+    }
+    runbook_rows_by_key = {
+        str(row.get("target") or ""): row
+        for row in provider_target_sample_runbook_contract.get("rows", [])
+        if isinstance(row, Mapping)
+    }
+    execution_rows_by_key = {
+        str(row.get("target") or ""): row
+        for row in provider_target_sample_execution_recipe.get("rows", [])
+        if isinstance(row, Mapping)
+    }
+    local_recipe_ready = bool(
+        api_acceptance_audit.get("schema_version") == "tushare_api_acceptance_audit.v1"
+        and failure_mode_qa_contract.get("schema_version") == "tushare_failure_mode_qa_contract.v1"
+        and request_parameter_qa_contract.get("schema_version") == "tushare_request_parameter_qa_contract.v1"
+        and provider_target_sample_plan_contract.get("schema_version")
+        == "tushare_provider_target_sample_plan_contract.v1"
+        and provider_target_sample_acceptance_contract.get("schema_version")
+        == "tushare_provider_target_sample_acceptance_contract.v1"
+        and provider_acceptance_readiness_audit.get("schema_version")
+        == "tushare_provider_acceptance_readiness_audit.v1"
+        and provider_acceptance_promotion_audit.get("schema_version")
+        == "tushare_provider_acceptance_promotion_audit.v1"
+        and provider_evidence_gap_audit.get("schema_version") == "tushare_provider_evidence_gap_audit.v1"
+        and provider_sample_activation_receipt.get("schema_version")
+        == "tushare_provider_sample_activation_receipt.v1"
+        and provider_target_sample_runbook_contract.get("schema_version")
+        == "tushare_provider_target_sample_runbook_contract.v1"
+        and provider_target_sample_execution_recipe.get("schema_version")
+        == "tushare_provider_target_sample_execution_recipe.v1"
+    )
+    route_gate_visible = bool(
+        provider_sample_activation_receipt.get("receipt_external_calls_triggered") is False
+        and provider_target_sample_execution_recipe.get("post_task_route") == "POST /api/tasks/refresh-tushare-facts"
+        and provider_target_sample_execution_recipe.get("provider_task_created_by_recipe") is False
+    )
+    core_selected_count = sum(1 for api in CORE_REFRESH_APIS if api in selected_set)
+    core_local_visible = bool(
+        core_selected_count == len(CORE_REFRESH_APIS)
+        or api_acceptance_audit.get("core_light_path_acceptance_done") is True
+        or api_acceptance_audit.get("selected_api_count", 0)
+    )
+    rows = [
+        _tushare_durable_evidence_recipe_row(
+            "post_task_route_and_mode_gate",
+            current_status="local_gate_visible" if route_gate_visible else "route_gate_missing",
+            target_status="explicit POST task and runtime mode gate stay visible before provider execution",
+            local_prerequisite_visible=route_gate_visible,
+            direct_provider_evidence_required=False,
+            missing_evidence=[] if route_gate_visible else ["explicit POST route and no-cache/render provider boundary"],
+        ),
+        _tushare_durable_evidence_recipe_row(
+            "core_light_api_revalidation",
+            current_status="light_path_visible" if core_local_visible else "core_light_revalidation_pending",
+            target_status="daily/daily_basic/moneyflow are release-revalidated with safe call ledger rows",
+            local_prerequisite_visible=core_local_visible,
+            direct_provider_evidence_required=True,
+            missing_evidence=[
+                "daily/daily_basic/moneyflow release revalidation call ledger",
+                "safe row_count/data_date/local_fetched_at/call_status evidence",
+                "no token/key and no strategy action mutation review",
+            ],
+            selected_apis=[api for api in CORE_REFRESH_APIS if api in selected_set],
+        ),
+    ]
+    for target, label, apis in VALIDATION_TARGET_GROUPS:
+        evidence_key = f"{target}_provider_sample"
+        target_row = target_rows_by_key.get(target, {})
+        gap_row = gap_rows_by_key.get(target, {})
+        runbook_row = runbook_rows_by_key.get(target, {})
+        execution_row = execution_rows_by_key.get(target, {})
+        target_selected_apis = [api for api in apis if api in selected_set]
+        local_prereq_visible = bool(
+            target_row
+            and provider_target_sample_plan_contract.get("schema_version")
+            == "tushare_provider_target_sample_plan_contract.v1"
+            and provider_evidence_gap_audit.get("schema_version") == "tushare_provider_evidence_gap_audit.v1"
+        )
+        if execution_row.get("recipe_ready_for_user_confirmation") is True:
+            current_status = "target_sample_recipe_ready_provider_execution_pending"
+        elif gap_row.get("target_sample_acceptance_ready_for_review") is True:
+            current_status = "target_sample_review_ready_promotion_pending"
+        elif target_selected_apis:
+            current_status = "target_sample_local_evidence_visible_provider_pending"
+        else:
+            current_status = "target_sample_provider_evidence_pending"
+        rows.append(
+            _tushare_durable_evidence_recipe_row(
+                evidence_key,
+                current_status=current_status,
+                target_status=f"{label} has provider-backed target sample, failure-mode evidence, and promotion review",
+                local_prerequisite_visible=local_prereq_visible,
+                direct_provider_evidence_required=True,
+                missing_evidence=[
+                    "explicit provider target-sample POST task",
+                    "safe provider call ledger for required APIs",
+                    "non-empty sample or classified valid-empty evidence",
+                    "failure-mode evidence for permission/empty/parse/provider/missing-param cases",
+                    "promotion review that keeps full-interface completion separate",
+                ],
+                target_group=target,
+                selected_apis=target_selected_apis,
+            )
+        )
+        rows[-1]["gap_status"] = gap_row.get("gap_status", "provider_evidence_pending")
+        rows[-1]["runbook_status"] = runbook_row.get("runbook_status", "target_sample_runbook_pending")
+        rows[-1]["execution_recipe_status"] = execution_row.get(
+            "execution_recipe_status",
+            "target_sample_execution_recipe_not_requested",
+        )
+    safe_call_ledger_visible = bool(
+        api_acceptance_audit.get("safe_request_params") is True
+        and api_acceptance_audit.get("safe_errors_redacted") is True
+        and api_acceptance_audit.get("selected_interfaces_have_call_ledger") is True
+    )
+    failure_and_params_visible = bool(
+        failure_mode_qa_contract.get("schema_version") == "tushare_failure_mode_qa_contract.v1"
+        and request_parameter_qa_contract.get("schema_version") == "tushare_request_parameter_qa_contract.v1"
+    )
+    rows.extend(
+        [
+            _tushare_durable_evidence_recipe_row(
+                "safe_provider_call_ledger",
+                current_status="local_semantic_audit_visible"
+                if safe_call_ledger_visible
+                else "safe_provider_call_ledger_pending",
+                target_status="all provider rows include safe request params, row count, data date, status, and redacted errors",
+                local_prerequisite_visible=safe_call_ledger_visible,
+                direct_provider_evidence_required=True,
+                missing_evidence=[
+                    "safe provider call ledger for every selected API",
+                    "row_count/data_date/local_fetched_at/call_status fields",
+                    "redacted error_message_safe review",
+                ],
+            ),
+            _tushare_durable_evidence_recipe_row(
+                "failure_mode_and_parameter_review",
+                current_status="local_failure_parameter_qa_visible"
+                if failure_and_params_visible
+                else "failure_parameter_qa_pending",
+                target_status="provider-backed permission, empty, parse, provider-error, and required-param states are reviewed",
+                local_prerequisite_visible=failure_and_params_visible,
+                direct_provider_evidence_required=True,
+                missing_evidence=[
+                    "provider-backed failure-mode evidence",
+                    "provider request window/parameter evidence",
+                    "permission/no-record/empty/parse/provider-error classification",
+                ],
+            ),
+            _tushare_durable_evidence_recipe_row(
+                "full_interface_promotion_review",
+                current_status="promotion_ready"
+                if provider_acceptance_promotion_audit.get("promotion_ready") is True
+                else "promotion_review_pending",
+                target_status="all target groups and selected interfaces are promoted only after direct provider evidence",
+                local_prerequisite_visible=provider_acceptance_promotion_audit.get("schema_version")
+                == "tushare_provider_acceptance_promotion_audit.v1",
+                direct_provider_evidence_required=True,
+                missing_evidence=[
+                    "explicit full-interface provider-backed acceptance marker",
+                    "all declared APIs selected and reviewed",
+                    "promotion audit with zero provider blockers",
+                ],
+            ),
+            _tushare_durable_evidence_recipe_row(
+                "storage_cache_promotion_review",
+                current_status="storage_promotion_pending",
+                target_status="Parquet/cache promotion is reviewed after provider acceptance and does not commit data artifacts",
+                local_prerequisite_visible=provider_acceptance_readiness_audit.get("schema_version")
+                == "tushare_provider_acceptance_readiness_audit.v1",
+                direct_provider_evidence_required=True,
+                missing_evidence=[
+                    "storage/cache promotion review",
+                    "Parquet dataset scope review for enabled datasets",
+                    "artifact scan proving parquet/db/cache outputs stay out of git",
+                ],
+            ),
+        ]
+    )
+    blocked_rows = [row for row in rows if row["production_blocker"]]
+    return {
+        "schema_version": TUSHARE_DURABLE_EVIDENCE_SCHEMA_VERSION,
+        "status": "tushare_durable_evidence_recipe_ready_provider_pending"
+        if local_recipe_ready
+        else "tushare_durable_evidence_recipe_blocked_local_contract",
+        "scope": "local_tushare_durable_evidence_recipe_no_provider_execution",
+        "ltg": "LTG-02",
+        "local_recipe_ready": local_recipe_ready,
+        "durable_evidence_complete": False,
+        "durable_promotion_ready": False,
+        "provider_backed_acceptance_done": False,
+        "provider_backed_target_sample_acceptance_done": False,
+        "full_interface_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "provider_task_created_by_recipe": False,
+        "provider_execution_implemented_by_recipe": False,
+        "provider_refresh_called_by_recipe": False,
+        "provider_call_ledger_evidence_done": False,
+        "failure_mode_evidence_done": False,
+        "request_parameter_provider_window_done": False,
+        "parquet_promotion_done": False,
+        "allowed_next_step": "collect_provider_target_sample_call_ledger_failure_mode_full_interface_storage_promotion_evidence",
+        "not_allowed_next_steps": [
+            "treat durable recipe as provider-backed Tushare acceptance",
+            "treat target-sample execution recipe as provider execution",
+            "treat matrix/mock/local QA as full-interface acceptance",
+            "call Tushare from GET cache",
+            "call Tushare from React render",
+            "set production_tushare_pipeline_complete from local recipe",
+            "promote unselected interfaces as verified",
+            "write token/key material to frontend/log/packet/cache",
+        ],
+        "row_count": len(rows),
+        "durable_evidence_blocker_count": len(blocked_rows),
+        "blocking_evidence_keys": [row["evidence_key"] for row in blocked_rows],
+        "missing_durable_evidence": sorted({item for row in blocked_rows for item in row["missing_evidence"]}),
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "recipe_external_calls_triggered": False,
+        "tushare_called_by_recipe": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_tushare_durable_evidence_recipe",
+                "source": "tushare local audits, target-sample runbook, execution recipe, and stage scope",
+                "row_count": len(rows),
+                "durable_evidence_blocker_count": len(blocked_rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_durable_evidence_recipe_provider_pending",
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This durable evidence recipe fixes the LTG-02 production acceptance proof bundle. It does not call Tushare, create tasks, promote matrix/mock/local evidence, write Parquet, execute trades, mutate strategy action, or prove production Tushare completion.",
+    }
+
+
 def _request_params_for_api(api: str, payload: Any) -> dict[str, Any]:
     safe = _safe_payload(payload)
     if "ticker" in safe and "ts_code" not in safe:
@@ -3111,6 +3459,22 @@ def run_tushare_refresh_task(
         provider_target_sample_runbook_contract=provider_target_sample_runbook_contract,
         provider_sample_activation_receipt=provider_sample_activation_receipt,
     )
+    tushare_durable_evidence_recipe = _tushare_durable_evidence_recipe(
+        selected_apis=selected_apis,
+        api_validation_rows=api_validation_rows,
+        validation_target_rows=validation_target_rows,
+        api_acceptance_audit=api_acceptance_audit,
+        failure_mode_qa_contract=failure_mode_qa_contract,
+        request_parameter_qa_contract=request_parameter_qa_contract,
+        provider_target_sample_plan_contract=provider_target_sample_plan_contract,
+        provider_target_sample_acceptance_contract=provider_target_sample_acceptance_contract,
+        provider_acceptance_readiness_audit=provider_acceptance_readiness_audit,
+        provider_acceptance_promotion_audit=provider_acceptance_promotion_audit,
+        provider_evidence_gap_audit=provider_evidence_gap_audit,
+        provider_sample_activation_receipt=provider_sample_activation_receipt,
+        provider_target_sample_runbook_contract=provider_target_sample_runbook_contract,
+        provider_target_sample_execution_recipe=provider_target_sample_execution_recipe,
+    )
     refresh_packet = {
         "packet_key": output_packet_key,
         "schema_version": "command_center_tushare_refresh_task.v1",
@@ -3171,6 +3535,9 @@ def run_tushare_refresh_task(
         "provider_target_sample_execution_recipe": provider_target_sample_execution_recipe,
         "provider_target_sample_execution_rows": provider_target_sample_execution_recipe["rows"],
         "provider_target_sample_execution_status": provider_target_sample_execution_recipe["status"],
+        "tushare_durable_evidence_recipe": tushare_durable_evidence_recipe,
+        "tushare_durable_evidence_rows": tushare_durable_evidence_recipe["rows"],
+        "tushare_durable_evidence_status": tushare_durable_evidence_recipe["status"],
         "api_validation_matrix_policy": {
             "scope": "selected APIs use real task call_ledger; unselected APIs are capability matrix only.",
             "selected_apis": list(selected_apis),
@@ -3214,6 +3581,11 @@ def run_tushare_refresh_task(
             "provider_target_sample_execution_recipe_calls_provider": False,
             "provider_target_sample_execution_recipe_creates_task": False,
             "provider_target_sample_execution_recipe_is_not_acceptance": True,
+            "tushare_durable_evidence_recipe_scope": "tushare_durable_evidence_recipe 只固定 LTG-02 全接口生产验收证据缺口；不调用 provider、不创建任务、不证明生产完成。",
+            "tushare_durable_evidence_recipe_calls_provider": False,
+            "tushare_durable_evidence_recipe_creates_task": False,
+            "tushare_durable_evidence_recipe_is_not_acceptance": True,
+            "tushare_durable_evidence_recipe_is_not_production_completion": True,
             "production_tushare_pipeline_complete": provider_acceptance_readiness_audit["production_tushare_pipeline_complete"],
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
@@ -3283,6 +3655,11 @@ def run_tushare_refresh_task(
         "provider_target_sample_execution_blocker_count": provider_target_sample_execution_recipe[
             "blocked_recipe_target_count"
         ],
+        "tushare_durable_evidence_recipe_ready": tushare_durable_evidence_recipe["local_recipe_ready"],
+        "tushare_durable_evidence_blocker_count": tushare_durable_evidence_recipe[
+            "durable_evidence_blocker_count"
+        ],
+        "tushare_durable_evidence_row_count": tushare_durable_evidence_recipe["row_count"],
         "provider_backed_acceptance_done": provider_acceptance_readiness_audit["provider_backed_acceptance_done"],
         "production_tushare_pipeline_complete": provider_acceptance_readiness_audit["production_tushare_pipeline_complete"],
         "external_calls_triggered": any(row.get("external_calls_triggered") is True for row in call_ledger),

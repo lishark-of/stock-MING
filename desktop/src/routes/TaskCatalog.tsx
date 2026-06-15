@@ -218,6 +218,7 @@ export default function TaskCatalog() {
           <p>provider_acceptance_readiness_audit 只汇总全接口生产验收阻断项；provider_acceptance_pending / provider_backed_acceptance_done=false 表示还没有真实 provider-backed 全接口验收。</p>
           <p>provider_sample_activation_receipt 是显式 provider 样本验收前的本地清单：不调用 Tushare、不创建任务、不把 matrix/local QA/gap ledger 当 provider-backed acceptance，也不宣称 production_tushare_pipeline_complete。</p>
           <p>provider_target_sample_execution_recipe 只固定下一次 target-sample provider 验收的人工确认、POST task、call_ledger、failure mode、promotion review 顺序；不调用 Tushare、不创建任务、不等于 full-interface acceptance。</p>
+          <p>tushare_durable_evidence_recipe 只固定 LTG-02 target samples、safe call ledger、failure mode、full-interface promotion 和 storage/cache promotion 的直接证据缺口；不调用 Tushare、不创建任务、不代表 production_tushare_pipeline_complete。</p>
           <button onClick={launchTushareRefresh}>刷新 Tushare facts</button>
           <TaskLaunchReceipt receipt={taskReceipt} />
         </PacketCard>

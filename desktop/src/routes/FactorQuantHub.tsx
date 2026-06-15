@@ -89,6 +89,7 @@ export default function FactorQuantHub() {
   const tushareProviderPromotionAudit = packet.provider_acceptance_promotion_audit ?? {};
   const tushareProviderEvidenceGapAudit = packet.provider_evidence_gap_audit ?? {};
   const tushareProviderSampleReadinessReceipt = packet.provider_sample_readiness_receipt ?? {};
+  const tushareDurableEvidenceRecipe = packet.tushare_durable_evidence_recipe ?? {};
   const dataLedger = packet.data_ledger ?? {};
   const researchContext = packet.research_context ?? {};
   const linkedPackets = packet.linked_packets ?? {};
@@ -167,6 +168,8 @@ export default function FactorQuantHub() {
   const tushareProviderEvidenceGapRows = toRows(packet.provider_evidence_gap_rows);
   const tushareProviderSampleReadinessRows = objectRows(tushareProviderSampleReadinessReceipt as Record<string, unknown>, "provider_sample_readiness");
   const tushareProviderSampleReadinessCriterionRows = toRows(packet.provider_sample_readiness_rows);
+  const tushareDurableEvidenceRows = toRows(packet.tushare_durable_evidence_rows);
+  const tushareDurableEvidenceRecipeRows = objectRows(tushareDurableEvidenceRecipe as Record<string, unknown>, "tushare_durable_evidence_recipe");
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
@@ -582,6 +585,22 @@ export default function FactorQuantHub() {
       <p className="risk-note">provider_sample_readiness_receipt 只说明下一步是否可以进入显式 POST 样本验收任务；它不调用 Tushare，不把 matrix、fake/local adapter、local QA 或 gap ledger 提升为生产验收。</p>
       <DataLineageTable rows={tushareProviderSampleReadinessCriterionRows} />
       <DataLineageTable rows={tushareProviderSampleReadinessRows} />
+      <PacketCard title="Tushare durable evidence recipe" subtitle="LTG-02 全接口生产验收证据配方；只读缺口，不调用 Tushare" status={String(tushareDurableEvidenceRecipe.status ?? "missing")}>
+        <p>schema_version: {String(tushareDurableEvidenceRecipe.schema_version ?? "tushare_durable_evidence_recipe.v1")}</p>
+        <p>scope: {String(tushareDurableEvidenceRecipe.scope ?? "local_tushare_durable_evidence_recipe_no_provider_execution")}</p>
+        <p>local_recipe_ready / durable_evidence_complete: {String(tushareDurableEvidenceRecipe.local_recipe_ready ?? false)} / {String(tushareDurableEvidenceRecipe.durable_evidence_complete ?? false)}</p>
+        <p>provider_backed_acceptance_done / full_interface_acceptance_done: {String(tushareDurableEvidenceRecipe.provider_backed_acceptance_done ?? false)} / {String(tushareDurableEvidenceRecipe.full_interface_acceptance_done ?? false)}</p>
+        <p>production_tushare_pipeline_complete: {String(tushareDurableEvidenceRecipe.production_tushare_pipeline_complete ?? false)}</p>
+        <p>durable_evidence_blocker_count: {String(tushareDurableEvidenceRecipe.durable_evidence_blocker_count ?? 0)}</p>
+        <p>blocking_evidence_keys: {Array.isArray(tushareDurableEvidenceRecipe.blocking_evidence_keys) ? tushareDurableEvidenceRecipe.blocking_evidence_keys.join(" / ") : ""}</p>
+        <p>allowed_next_step: {String(tushareDurableEvidenceRecipe.allowed_next_step ?? "collect_provider_target_sample_call_ledger_failure_mode_full_interface_storage_promotion_evidence")}</p>
+        <p>not_allowed_next_steps: {Array.isArray(tushareDurableEvidenceRecipe.not_allowed_next_steps) ? tushareDurableEvidenceRecipe.not_allowed_next_steps.join(" / ") : "treat durable recipe as provider-backed Tushare acceptance / call Tushare from GET cache / call Tushare from React render"}</p>
+        <p>provider_refresh_called_by_recipe / cache_get_external_calls / react_render_external_calls: {String(tushareDurableEvidenceRecipe.provider_refresh_called_by_recipe ?? false)} / {String(tushareDurableEvidenceRecipe.cache_get_external_calls ?? false)} / {String(tushareDurableEvidenceRecipe.react_render_external_calls ?? false)}</p>
+        <p>tushare / deepseek / github: {String(tushareDurableEvidenceRecipe.tushare_called_by_recipe ?? false)} / {String(tushareDurableEvidenceRecipe.deepseek_called ?? false)} / {String(tushareDurableEvidenceRecipe.github_called ?? false)}</p>
+      </PacketCard>
+      <h3>Tushare durable evidence rows</h3>
+      <DataLineageTable rows={tushareDurableEvidenceRows} />
+      <DataLineageTable rows={tushareDurableEvidenceRecipeRows} />
       <h3>次日图谱桥接</h3>
       <DataLineageTable rows={bridgeRows} />
       <h3>研究上下文</h3>
