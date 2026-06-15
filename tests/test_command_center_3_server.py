@@ -8789,6 +8789,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("trade_cal_next_execution_recipe_binds_dry_run_scope_without_execution", script)
         self.assertIn("freshness_production_blocker_audit", script)
         self.assertIn("current_evidence_producer_coverage_audit", script)
+        self.assertIn("current_evidence_producer_generation_contract", script)
+        self.assertIn("producer_generation_contract_is_local_refresh_pending", script)
         self.assertIn("freshness_production_stage_scope_manifest", script)
         self.assertIn("freshness_production_stage_scope_manifest_is_complete_and_pending", script)
         self.assertIn("data_health_freshness_durable_evidence_recipe.v1", script)
@@ -8847,6 +8849,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(row_map["trade_cal_next_execution_recipe_is_local_and_not_execution"]["passed"])
         self.assertTrue(row_map["freshness_durable_evidence_recipe_is_local_provider_pending"]["passed"])
         self.assertTrue(row_map["trade_cal_next_execution_recipe_binds_dry_run_scope_without_execution"]["passed"])
+        self.assertTrue(row_map["producer_generation_contract_is_local_refresh_pending"]["passed"])
+        self.assertEqual(payload["observed_counts"]["current_evidence_producer_generation_row_count"], 3)
+        self.assertEqual(payload["observed_counts"]["current_evidence_producer_generation_blocker_count"], 0)
+        self.assertEqual(
+            payload["observed_counts"]["current_evidence_producer_generation_status"],
+            "producer_generation_contract_ready_current_cache_refresh_pending",
+        )
+        self.assertTrue(
+            payload["observed_counts"]["current_evidence_producer_generation_current_cache_refresh_pending"]
+        )
         required_freshness_stages = {
             "acceptance_matrix_boundary",
             "synthetic_long_window_replay",
@@ -20317,6 +20329,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         current_evidence = packet["current_evidence_freshness_qa_contract"]
         decision_surface = packet["current_evidence_decision_surface_audit"]
         producer_coverage = packet["current_evidence_producer_coverage_audit"]
+        producer_generation = packet["current_evidence_producer_generation_contract"]
         provider_runbook = packet["trade_cal_provider_acceptance_runbook"]
         provider_promotion = packet["trade_cal_provider_acceptance_promotion_audit"]
         freshness_blocker_audit = packet["freshness_production_blocker_audit"]
@@ -20343,6 +20356,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         }
         producer_coverage_rows = {
             row["producer"]: row for row in packet["current_evidence_producer_coverage_rows"]
+        }
+        producer_generation_rows = {
+            row["producer"]: row for row in packet["current_evidence_producer_generation_rows"]
         }
         sample_rows = {row["scenario_id"]: row for row in packet["freshness_long_window_sample_rows"]}
         rows_by_id = {row["scenario_id"]: row for row in matrix}
@@ -20393,6 +20409,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["current_evidence_decision_surface_blocker_count"], 0)
         self.assertEqual(packet["counts"]["current_evidence_producer_coverage_row_count"], 6)
         self.assertEqual(packet["counts"]["current_evidence_producer_coverage_blocker_count"], 0)
+        self.assertEqual(packet["counts"]["current_evidence_producer_generation_row_count"], 3)
+        self.assertEqual(packet["counts"]["current_evidence_producer_generation_blocker_count"], 0)
         self.assertEqual(sample["status"], "local_sample_validation_passed")
         self.assertEqual(sample["scope"], "local_synthetic_long_window_not_real_trade_cal_validation")
         self.assertTrue(sample["local_sample_validation_done"])
@@ -20436,6 +20454,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["current_evidence_producer_coverage_audit_is_local"])
         self.assertFalse(packet["policy"]["current_evidence_producer_coverage_audit_builds_missing_packets"])
         self.assertTrue(packet["policy"]["current_evidence_producer_coverage_requires_expected_trade_date"])
+        self.assertTrue(packet["policy"]["current_evidence_producer_generation_contract_is_local"])
+        self.assertFalse(packet["policy"]["current_evidence_producer_generation_contract_writes_snapshot_cache"])
+        self.assertFalse(packet["policy"]["current_evidence_producer_generation_contract_calls_provider"])
+        self.assertTrue(packet["policy"]["current_evidence_producer_generation_is_not_provider_acceptance"])
         self.assertTrue(packet["policy"]["freshness_production_blocker_audit_is_local"])
         self.assertFalse(packet["policy"]["freshness_production_blocker_audit_calls_provider"])
         self.assertFalse(packet["policy"]["freshness_production_ready"])
@@ -20731,6 +20753,49 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(producer_coverage_rows["global_data_freshness"]["data_date"], "2026-06-11")
         self.assertEqual(producer_coverage_rows["factor_quant_hub"]["status"], "not_observed")
         self.assertEqual(producer_coverage_rows["candidate_radar"]["status"], "not_observed")
+        self.assertEqual(
+            producer_generation["schema_version"],
+            "data_health_current_evidence_producer_generation_contract.v1",
+        )
+        self.assertEqual(
+            producer_generation["status"],
+            "producer_generation_contract_ready_current_cache_refresh_pending",
+        )
+        self.assertEqual(
+            producer_generation["scope"],
+            "local_home_snapshot_builder_contract_no_provider_execution",
+        )
+        self.assertTrue(producer_generation["local_generation_contract_ready"])
+        self.assertTrue(producer_generation["current_cache_refresh_pending"])
+        self.assertFalse(producer_generation["writes_snapshot_cache"])
+        self.assertFalse(producer_generation["builds_missing_packets_in_current_cache"])
+        self.assertTrue(producer_generation["does_not_refresh_provider"])
+        self.assertTrue(producer_generation["does_not_use_generated_at_as_data_date"])
+        self.assertFalse(producer_generation["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(producer_generation["production_freshness_gate_complete"])
+        self.assertFalse(producer_generation["external_calls_triggered"])
+        self.assertFalse(producer_generation["tushare_called"])
+        self.assertFalse(producer_generation["deepseek_called"])
+        self.assertFalse(producer_generation["github_called"])
+        self.assertEqual(
+            set(producer_generation_rows),
+            {"candidate_radar", "a_share_evidence_radar", "market_context"},
+        )
+        for row in producer_generation_rows.values():
+            self.assertEqual(row["status"], "passed_generation_contract")
+            self.assertEqual(row["generated_coverage_status"], "passed_read_only_contract")
+            self.assertTrue(row["expected_trade_date"])
+            self.assertTrue(row["data_date"])
+            self.assertTrue(row["date_matches_expected_trade_date"])
+            self.assertTrue(row["builder_sample_uses_explicit_trade_date"])
+            self.assertTrue(row["does_not_use_generated_at_as_data_date"])
+            self.assertFalse(row["writes_snapshot_cache"])
+            self.assertTrue(row["cache_only"])
+            self.assertTrue(row["local_generation_contract"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
         self.assertEqual(provider_runbook["schema_version"], "data_health_trade_cal_provider_acceptance_runbook.v1")
         self.assertEqual(provider_runbook["status"], "trade_cal_provider_acceptance_runbook_ready_execution_pending")
         self.assertEqual(provider_runbook["scope"], "local_provider_acceptance_runbook_not_provider_execution")
@@ -20847,6 +20912,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "producer_freshness_coverage_ready_no_observed_blockers",
         )
         self.assertEqual(response["call_ledger"][0]["current_evidence_producer_coverage_blocker_count"], 0)
+        self.assertEqual(
+            response["call_ledger"][0]["current_evidence_producer_generation_contract_status"],
+            "producer_generation_contract_ready_current_cache_refresh_pending",
+        )
+        self.assertEqual(response["call_ledger"][0]["current_evidence_producer_generation_blocker_count"], 0)
+        self.assertTrue(
+            response["call_ledger"][0]["current_evidence_producer_generation_current_cache_refresh_pending"]
+        )
         self.assertEqual(sample_rows["sample_intraday_current_day_blocked"]["actual_state"], "future_unavailable")
         self.assertTrue(sample_rows["sample_intraday_current_day_blocked"]["blocks_composite_score"])
         self.assertEqual(sample_rows["sample_provider_delay_grace_previous_day"]["actual_state"], "provider_delay_grace")

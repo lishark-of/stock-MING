@@ -1073,6 +1073,142 @@ def _current_evidence_producer_coverage_audit(
     return contract, rows
 
 
+def _current_evidence_producer_generation_contract() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    producer_keys = ("candidate_radar", "a_share_evidence_radar", "market_context")
+    now = "2026-06-16T10:02:00"
+    try:
+        from command_center_factor_research import _expected_data_date
+        import command_center_home_snapshot as home_snapshot
+
+        expected_trade_date = _safe_text(_expected_data_date(now).get("expected_data_date"), limit=40)
+        trade_date = expected_trade_date.replace("-", "") if expected_trade_date else "20260615"
+        generated_snapshot = home_snapshot.build_home_action_snapshot(
+            {
+                "command_center_decision_packet": {
+                    "status": "ready",
+                    "overall_action": "等待",
+                    "updated_at": now,
+                },
+                "command_center_market_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "trade_date": trade_date,
+                    "summary": "local market context generation contract sample",
+                },
+                "radar_scan_status": "completed",
+                "radar_scan_results": {
+                    "trade_date": trade_date,
+                    "generated_at": now,
+                    "rule_rows": [
+                        {
+                            "candidate": {"ticker": "300750.SZ", "name": "宁德时代"},
+                            "score": {"total_score": 82, "battle_state": "等验证"},
+                        }
+                    ],
+                },
+                "command_center_moneyflow_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "trade_date": trade_date,
+                    "summary": "local moneyflow generation contract sample",
+                },
+            },
+            target="002008.SZ",
+            now=now,
+        )
+        generated_audit, generated_rows = _current_evidence_producer_coverage_audit(generated_snapshot)
+        rows = []
+        for raw_row in generated_rows:
+            if raw_row.get("producer") not in producer_keys:
+                continue
+            generated_status = _safe_text(raw_row.get("status"), limit=120)
+            passed = bool(generated_status == "passed_read_only_contract")
+            rows.append(
+                {
+                    "producer": raw_row.get("producer"),
+                    "status": "passed_generation_contract" if passed else "blocked_generation_contract",
+                    "generated_coverage_status": generated_status,
+                    "observed_path": raw_row.get("observed_path"),
+                    "expected_trade_date": raw_row.get("expected_trade_date"),
+                    "data_date": raw_row.get("data_date"),
+                    "freshness_state": raw_row.get("freshness_state"),
+                    "missing_fields": list(raw_row.get("missing_fields") or []),
+                    "date_matches_expected_trade_date": bool(raw_row.get("date_matches_expected_trade_date")),
+                    "builder_sample_uses_explicit_trade_date": True,
+                    "does_not_use_generated_at_as_data_date": True,
+                    "writes_snapshot_cache": False,
+                    "cache_only": True,
+                    "local_generation_contract": True,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                }
+            )
+        blocked_rows = [row for row in rows if str(row.get("status", "")).startswith("blocked_")]
+        contract = {
+            "schema_version": "data_health_current_evidence_producer_generation_contract.v1",
+            "status": "producer_generation_contract_ready_current_cache_refresh_pending"
+            if not blocked_rows
+            else "producer_generation_contract_blocked",
+            "scope": "local_home_snapshot_builder_contract_no_provider_execution",
+            "producer_count": len(rows),
+            "passed_producer_count": len(rows) - len(blocked_rows),
+            "blocked_producer_count": len(blocked_rows),
+            "blocked_producer_keys": [row["producer"] for row in blocked_rows],
+            "generated_snapshot_audit_status": generated_audit.get("status"),
+            "generated_snapshot_expected_trade_date": expected_trade_date or None,
+            "generated_snapshot_trade_date": trade_date,
+            "local_generation_contract_ready": not blocked_rows,
+            "current_cache_refresh_pending": True,
+            "writes_snapshot_cache": False,
+            "builds_missing_packets_in_current_cache": False,
+            "does_not_refresh_provider": True,
+            "does_not_use_generated_at_as_data_date": True,
+            "provider_backed_long_window_acceptance_done": False,
+            "production_freshness_gate_complete": False,
+            "cache_only": True,
+            "local_builder_contract": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "note": "This validates only the home snapshot producer builders in memory. It does not rewrite the current cache, refresh trade_cal, or prove provider-backed acceptance.",
+        }
+        return contract, rows
+    except Exception as exc:
+        contract = {
+            "schema_version": "data_health_current_evidence_producer_generation_contract.v1",
+            "status": "producer_generation_contract_error",
+            "scope": "local_home_snapshot_builder_contract_no_provider_execution",
+            "producer_count": len(producer_keys),
+            "passed_producer_count": 0,
+            "blocked_producer_count": len(producer_keys),
+            "blocked_producer_keys": list(producer_keys),
+            "local_generation_contract_ready": False,
+            "current_cache_refresh_pending": True,
+            "writes_snapshot_cache": False,
+            "builds_missing_packets_in_current_cache": False,
+            "does_not_refresh_provider": True,
+            "provider_backed_long_window_acceptance_done": False,
+            "production_freshness_gate_complete": False,
+            "cache_only": True,
+            "local_builder_contract": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "error_message_safe": _safe_text(exc, limit=160),
+        }
+        return contract, []
+
+
 def _trade_cal_provider_acceptance_row(
     criterion: str,
     status: str,
@@ -3653,6 +3789,9 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
     current_evidence_producer_coverage_audit, current_evidence_producer_coverage_rows = (
         _current_evidence_producer_coverage_audit(snapshot_map)
     )
+    current_evidence_producer_generation_contract, current_evidence_producer_generation_rows = (
+        _current_evidence_producer_generation_contract()
+    )
     trade_cal_provider_acceptance_promotion_audit, trade_cal_provider_acceptance_promotion_rows = (
         _trade_cal_provider_acceptance_promotion_audit(
             snapshot_map,
@@ -3804,6 +3943,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "current_evidence_freshness_qa_contract",
             "current_evidence_decision_surface_audit",
             "current_evidence_producer_coverage_audit",
+            "current_evidence_producer_generation_contract",
             "command_center_tushare_refresh_packet",
         ],
         "summary": visibility_summary.get("summary")
@@ -3866,6 +4006,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         "current_evidence_decision_surface_rows": current_evidence_decision_surface_rows,
         "current_evidence_producer_coverage_audit": current_evidence_producer_coverage_audit,
         "current_evidence_producer_coverage_rows": current_evidence_producer_coverage_rows,
+        "current_evidence_producer_generation_contract": current_evidence_producer_generation_contract,
+        "current_evidence_producer_generation_rows": current_evidence_producer_generation_rows,
         "timeline_rows": timeline_rows,
         "recovery_action_rows": recovery_action_rows,
         "provider_rows": provider_rows,
@@ -3973,6 +4115,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "current_evidence_producer_coverage_blocker_count": int(
                 current_evidence_producer_coverage_audit.get("blocked_producer_count") or 0
             ),
+            "current_evidence_producer_generation_row_count": len(
+                current_evidence_producer_generation_rows
+            ),
+            "current_evidence_producer_generation_blocker_count": int(
+                current_evidence_producer_generation_contract.get("blocked_producer_count") or 0
+            ),
         },
         "policy": {
             "cache_api_external_calls": False,
@@ -4067,6 +4215,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "current_evidence_producer_coverage_audit_is_local": True,
             "current_evidence_producer_coverage_audit_builds_missing_packets": False,
             "current_evidence_producer_coverage_requires_expected_trade_date": True,
+            "current_evidence_producer_generation_contract_is_local": True,
+            "current_evidence_producer_generation_contract_writes_snapshot_cache": False,
+            "current_evidence_producer_generation_contract_calls_provider": False,
+            "current_evidence_producer_generation_is_not_provider_acceptance": True,
         },
         "call_ledger": [
             {
@@ -4228,6 +4380,15 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 ),
                 "current_evidence_producer_coverage_blocker_count": int(
                     current_evidence_producer_coverage_audit.get("blocked_producer_count") or 0
+                ),
+                "current_evidence_producer_generation_contract_status": (
+                    current_evidence_producer_generation_contract.get("status")
+                ),
+                "current_evidence_producer_generation_blocker_count": int(
+                    current_evidence_producer_generation_contract.get("blocked_producer_count") or 0
+                ),
+                "current_evidence_producer_generation_current_cache_refresh_pending": bool(
+                    current_evidence_producer_generation_contract.get("current_cache_refresh_pending")
                 ),
                 "call_status": "cache_read" if snapshot else "cache_missing",
                 "local_fetched_at": _now_iso(),

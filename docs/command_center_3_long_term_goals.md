@@ -250,6 +250,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - The durable evidence recipe is not provider execution or production completion. It only makes the direct evidence bundle explicit; it cannot turn a dry-run ticket, synthetic replay, local artifact, or cache/render path into provider-backed acceptance.
 - Global `data_freshness` canonicalization is not provider-backed acceptance. It only normalizes already-present local cache fields for audit readability; visible producers still need explicit expected-date coverage before the producer-coverage blocker can clear.
 - Producer freshness context attachment is not provider-backed acceptance. It only makes future local snapshot packets carry their own date contract when explicit producer data dates exist; missing producer data dates must remain blocked or research-only.
+- Data Health now exposes `current_evidence_producer_generation_contract`: a local in-memory home-snapshot builder contract for market context, candidate radar, and A-share evidence radar producer freshness fields. It writes no cache, calls no provider/model/GitHub service, keeps `current_cache_refresh_pending=true`, and is not provider-backed `trade_cal` acceptance.
 
 ### Implementation Phases
 
@@ -273,6 +274,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - Data Health shows `current_evidence_freshness_qa_contract` and rows: current evidence requires expected trade date, data date alignment, freshness state eligibility, historical sample separation, provider-backed acceptance pending state, and decision-surface isolation.
 - Data Health shows `current_evidence_decision_surface_audit` and rows: visible score/support/preview surfaces are marked `not_observed`, `passed_read_only_audit`, or blocker states; missing visible fields are not treated as production proof.
 - Data Health shows `current_evidence_producer_coverage_audit` and rows: visible producers must carry expected trade date, data date, and freshness state; absent producers are `not_observed` and cannot be used as proof that every producer is production-ready.
+- Data Health shows `current_evidence_producer_generation_contract` and rows: local home-snapshot builder samples for candidate radar, A-share evidence radar, and market context can attach expected-date/data-date/freshness fields from explicit producer trade dates, while `current_cache_refresh_pending=true`, `writes_snapshot_cache=false`, and provider-backed acceptance remains false.
 - Push gate runs `scripts/data_health_freshness_contract.py` and fails if Data Health contracts lose local-only/no-provider/no-trade/no-action boundaries or falsely claim provider-backed freshness completion.
 - Data Health shows `trade_cal_provider_acceptance_runbook` and rows: explicit POST task requirement, safe payload, call ledger, long-window sample, schema, local artifact cross-check, freshness replay, failure modes, artifact promotion, current-evidence boundary, and secret/trade boundary.
 - Data Health shows `trade_cal_provider_acceptance_promotion_audit` and rows: explicit prior provider call ledger, safe call-ledger fields, minimum long-window evidence, schema/local artifact cross-check, open/closed/current coverage, freshness replay evidence, failure-mode evidence, current-evidence boundary recheck, explicit promotion marker, and read-only no-provider-call boundary.
@@ -307,6 +309,7 @@ Quota guidance while weekly budget is low: do not start broad new development wh
 - Do not treat the durable evidence recipe as permission to call Tushare from GET cache or React render.
 - Do not treat `current_evidence_decision_surface_audit` as runtime rescore, packet filtering, or provider-backed freshness proof.
 - Do not treat `current_evidence_producer_coverage_audit` as building missing packets, refreshing providers, or proving full producer coverage when rows are `not_observed`.
+- Do not treat `current_evidence_producer_generation_contract.local_generation_contract_ready=true` as a cache refresh, provider-backed `trade_cal` run, producer coverage completion, or production freshness completion.
 - Do not treat `scripts/data_health_freshness_contract.py` passing as real `trade_cal` provider acceptance; it only blocks local contract regressions.
 - Do not treat `freshness_production_stage_scope_manifest` as provider execution, provider call-ledger evidence, freshness replay evidence, failure-mode evidence, producer coverage completion, decision-surface mutation, promotion approval, or production freshness completion.
 
