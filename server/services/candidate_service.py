@@ -34,6 +34,47 @@ CANDIDATE_PROVIDER_PARITY_DRY_RUN_SCHEMA_VERSION = "candidate_radar_provider_par
 CANDIDATE_PROVIDER_PARITY_DRY_RUN_TASK_TYPE = "run_candidate_radar_provider_parity_dry_run"
 CANDIDATE_PROVIDER_PARITY_DRY_RUN_ROUTE = "POST /api/candidate-radar/provider-parity-dry-run"
 PROVIDER_PARITY_DEFAULT_CANDIDATE_LIMIT = 20
+CANDIDATE_RADAR_DURABLE_EVIDENCE_SCHEMA_VERSION = "candidate_radar_durable_evidence_recipe.v1"
+CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS = (
+    "cache_render_boundary_visible",
+    "quick_scan_task_pipeline_visible",
+    "legacy_parity_inventory_visible",
+    "no_feature_loss_surface_visible",
+    "result_delta_clarity_visible",
+    "local_full_pool_receipt_visible",
+    "local_deep_scan_review_visible",
+    "worker_execution_recipe_visible",
+    "provider_parity_scope_ticket_required",
+    "quant_projection_scope_ticket_required",
+    "worker_full_pool_execution_evidence_required",
+    "worker_deep_scan_execution_evidence_required",
+    "provider_backed_parity_call_ledger_required",
+    "browser_visual_performance_evidence_required",
+    "deepseek_model_ledger_if_enabled_required",
+    "legacy_retirement_review_required",
+    "production_promotion_review_required",
+    "no_trade_action_secret_boundary",
+)
+CANDIDATE_RADAR_DURABLE_EVIDENCE_LABELS = {
+    "cache_render_boundary_visible": "Cache render stays read-only and scan-silent",
+    "quick_scan_task_pipeline_visible": "Quick scan task pipeline is visible",
+    "legacy_parity_inventory_visible": "Legacy radar parity inventory is visible",
+    "no_feature_loss_surface_visible": "No-feature-loss local surface is visible",
+    "result_delta_clarity_visible": "Result delta clarity is visible",
+    "local_full_pool_receipt_visible": "Local full-pool receipt is visible",
+    "local_deep_scan_review_visible": "Local deep-scan review receipt is visible",
+    "worker_execution_recipe_visible": "Worker execution recipe is visible",
+    "provider_parity_scope_ticket_required": "Provider parity scope ticket is required",
+    "quant_projection_scope_ticket_required": "Search quant projection scope ticket is required",
+    "worker_full_pool_execution_evidence_required": "Worker full-pool execution evidence is required",
+    "worker_deep_scan_execution_evidence_required": "Worker deep-scan execution evidence is required",
+    "provider_backed_parity_call_ledger_required": "Provider-backed parity call ledger is required",
+    "browser_visual_performance_evidence_required": "Browser visual/performance evidence is required",
+    "deepseek_model_ledger_if_enabled_required": "DeepSeek model ledger is required when enabled",
+    "legacy_retirement_review_required": "Legacy radar retirement review is required",
+    "production_promotion_review_required": "Production promotion review is required",
+    "no_trade_action_secret_boundary": "No trade/action/secret boundary is preserved",
+}
 CANDIDATE_TUSHARE_ACCEPTANCE_ENV_KEYS = ("TUSHARE_TOKEN",)
 CANDIDATE_DEEPSEEK_ACCEPTANCE_ENV_KEYS = ("DEEPSEEK_API_KEY", "DEEPSEEK_TOKEN_1", "DEEPSEEK_TOKEN_2")
 PERSISTED_TASK_SCAN_MODES = LOCAL_POOL_SCAN_MODES | {QUANT_PROJECTION_SCAN_MODE}
@@ -4460,6 +4501,7 @@ def _attach_no_feature_loss_acceptance_contract(packet: Mapping[str, Any]) -> di
     view = _attach_candidate_radar_production_activation_receipt(view)
     view = _attach_candidate_radar_worker_execution_recipe(view)
     view = _attach_candidate_radar_next_execution_recipe(view)
+    view = _attach_candidate_radar_durable_evidence_recipe(view)
     return view
 
 
@@ -5829,6 +5871,414 @@ def _attach_candidate_radar_next_execution_recipe(packet: Mapping[str, Any]) -> 
     view["call_ledger"] = ledger
     view["candidate_radar_next_execution_recipe"] = contract
     view["candidate_radar_next_execution_rows"] = rows
+    return view
+
+
+def _candidate_radar_durable_evidence_recipe_row(
+    evidence_key: str,
+    category: str,
+    status: str,
+    *,
+    passed: bool,
+    local_surface_required: bool,
+    production_blocker: bool,
+    evidence: str,
+    next_action: str,
+    recommended_order: int,
+) -> dict[str, Any]:
+    return {
+        "schema_version": CANDIDATE_RADAR_DURABLE_EVIDENCE_SCHEMA_VERSION,
+        "evidence_key": evidence_key,
+        "label": CANDIDATE_RADAR_DURABLE_EVIDENCE_LABELS[evidence_key],
+        "category": category,
+        "status": status,
+        "passed": bool(passed),
+        "local_surface_required": bool(local_surface_required),
+        "production_blocker": bool(production_blocker),
+        "recommended_order": recommended_order,
+        "evidence": evidence,
+        "next_action": next_action,
+        "recipe_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+    }
+
+
+def _candidate_radar_durable_evidence_recipe(
+    packet: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    policy = _as_dict(packet.get("policy"))
+    task_pipeline = _as_dict(packet.get("fast_scan_task_pipeline_contract"))
+    legacy_receipt = _as_dict(packet.get("legacy_parity_acceptance_receipt"))
+    no_loss = _as_dict(packet.get("no_feature_loss_acceptance_contract"))
+    result_delta = _as_dict(packet.get("result_delta_clarity_contract"))
+    full_pool_receipt = _as_dict(packet.get("full_pool_local_execution_receipt"))
+    deep_scan_receipt = _as_dict(packet.get("deep_scan_local_review_receipt"))
+    worker_recipe = _as_dict(packet.get("candidate_radar_worker_execution_recipe"))
+    provider_parity_dry_run = _as_dict(packet.get("provider_parity_dry_run_receipt"))
+    quant_dry_run = _as_dict(packet.get("search_quant_projection_acceptance_dry_run_receipt"))
+    promotion = _as_dict(packet.get("candidate_radar_promotion_blocker_audit"))
+    activation = _as_dict(packet.get("candidate_radar_production_activation_receipt"))
+    browser_evidence = _as_dict(packet.get("candidate_browser_qa_evidence_summary"))
+    browser_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
+
+    cache_render_safe = bool(
+        packet.get("cache_only") is True
+        and packet.get("read_only") is True
+        and policy.get("does_not_scan_market") is True
+        and policy.get("post_task_required_for_scan") is True
+        and policy.get("does_not_call_tushare") is True
+        and policy.get("does_not_call_deepseek") is True
+        and policy.get("does_not_call_github") is True
+    )
+    quick_pipeline_ready = task_pipeline.get("local_task_pipeline_ready") is True
+    legacy_receipt_ready = legacy_receipt.get("local_acceptance_receipt_ready") is True
+    no_loss_ready = no_loss.get("local_no_feature_loss_contract_ready") is True
+    result_delta_ready = result_delta.get("local_result_delta_clarity_ready") is True
+    local_full_pool_visible = (
+        full_pool_receipt.get("schema_version") == "candidate_radar_full_pool_local_execution_receipt.v1"
+    )
+    local_deep_review_visible = (
+        deep_scan_receipt.get("schema_version") == "candidate_radar_deep_scan_local_review_receipt.v1"
+    )
+    worker_recipe_visible = worker_recipe.get("local_worker_execution_recipe_ready") is True
+    provider_ticket_visible = bool(provider_parity_dry_run.get("acceptance_scope_hash_short"))
+    quant_ticket_visible = bool(quant_dry_run.get("acceptance_scope_hash_short"))
+    full_pool_worker_done = activation.get("full_pool_scan_done") is True
+    deep_scan_worker_done = activation.get("deep_scan_done") is True
+    provider_backed_done = activation.get("provider_backed_acceptance_done") is True
+    local_browser_visual_perf_reviewed = bool(
+        browser_evidence.get("candidate_visual_qa_evidence_passed") is True
+        and browser_evidence.get("candidate_browser_performance_evidence_passed") is True
+        and browser_review.get("local_browser_qa_review_ready") is True
+        and promotion.get("browser_evidence_blocker_count") == 0
+    )
+    browser_visual_perf_done = False
+    deepseek_model_ledger_done = False
+    legacy_retirement_ready = promotion.get("legacy_retirement_ready") is True
+    promotion_ready = promotion.get("promotion_ready") is True
+    no_trade_boundary = bool(
+        packet.get("does_not_execute_trades") is True
+        and packet.get("does_not_modify_strategy_action") is True
+        and packet.get("does_not_modify_holdings") is not False
+        and packet.get("candidate_is_not_buy_instruction") is not False
+        and packet.get("contains_secret") is False
+    )
+
+    rows = [
+        _candidate_radar_durable_evidence_recipe_row(
+            "cache_render_boundary_visible",
+            "local_surface",
+            "passed_cache_render_silent" if cache_render_safe else "blocked_cache_render_boundary",
+            passed=cache_render_safe,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=f"cache_only={packet.get('cache_only')}; post_task_required={policy.get('post_task_required_for_scan')}",
+            next_action="Keep Candidate Radar GET/cache/render paths read-only and scan-silent.",
+            recommended_order=1,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "quick_scan_task_pipeline_visible",
+            "local_surface",
+            "passed_local_task_pipeline" if quick_pipeline_ready else "blocked_task_pipeline",
+            passed=quick_pipeline_ready,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=f"task_pipeline_status={task_pipeline.get('status')}; local_ready={quick_pipeline_ready}",
+            next_action="Keep quick/watchlist/custom scans behind explicit POST tasks.",
+            recommended_order=2,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "legacy_parity_inventory_visible",
+            "local_surface",
+            "passed_legacy_parity_receipt" if legacy_receipt_ready else "blocked_legacy_parity_receipt",
+            passed=legacy_receipt_ready,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=f"legacy_status={legacy_receipt.get('status')}; blockers={legacy_receipt.get('production_blocker_count')}",
+            next_action="Keep Top/Watch/Excluded, evidence links, score dimensions, triggers, filters, fallback, and manual deep research parity visible.",
+            recommended_order=3,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "no_feature_loss_surface_visible",
+            "local_surface",
+            "passed_no_feature_loss_surface" if no_loss_ready else "blocked_no_feature_loss_surface",
+            passed=no_loss_ready,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=f"no_loss_status={no_loss.get('status')}; visible_gaps={no_loss.get('visible_gap_count')}",
+            next_action="Report every missing radar behavior instead of hiding or inventing it.",
+            recommended_order=4,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "result_delta_clarity_visible",
+            "local_surface",
+            "passed_delta_surface" if result_delta_ready else "pending_delta_surface",
+            passed=result_delta_ready,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=f"delta_status={result_delta.get('status')}; previous_diff={result_delta.get('previous_cache_diff_done')}",
+            next_action="Keep changed/added/removed/rank-delta visibility for user clarity.",
+            recommended_order=5,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "local_full_pool_receipt_visible",
+            "local_surface",
+            "passed_local_receipt_visible" if local_full_pool_visible else "pending_local_full_pool_receipt",
+            passed=local_full_pool_visible,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=f"local_full_pool_execution_done={full_pool_receipt.get('local_full_pool_execution_done')}; worker_done={full_pool_receipt.get('worker_backed_execution_done')}",
+            next_action="Use local full-pool receipt only as shape evidence before real worker execution.",
+            recommended_order=6,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "local_deep_scan_review_visible",
+            "local_surface",
+            "passed_local_review_visible" if local_deep_review_visible else "pending_local_deep_review",
+            passed=local_deep_review_visible,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=f"local_deep_scan_review_done={deep_scan_receipt.get('local_deep_scan_review_done')}; deep_scan_done={deep_scan_receipt.get('deep_scan_done')}",
+            next_action="Use local deep review only as parity evidence before real deep-scan execution.",
+            recommended_order=7,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "worker_execution_recipe_visible",
+            "local_surface",
+            "passed_worker_recipe" if worker_recipe_visible else "pending_worker_recipe",
+            passed=worker_recipe_visible,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=f"worker_recipe_status={worker_recipe.get('status')}; blockers={worker_recipe.get('production_blocker_count')}",
+            next_action="Keep full-pool/deep-scan production execution behind worker task evidence.",
+            recommended_order=8,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "provider_parity_scope_ticket_required",
+            "durable_evidence",
+            "scope_ticket_visible" if provider_ticket_visible else "pending_provider_parity_dry_run",
+            passed=provider_ticket_visible,
+            local_surface_required=False,
+            production_blocker=not provider_ticket_visible,
+            evidence=f"provider_parity_status={provider_parity_dry_run.get('status')}; scope={provider_parity_dry_run.get('acceptance_scope_hash_short') or 'missing'}",
+            next_action="Create a user-approved provider parity dry-run scope ticket before any real provider-backed radar acceptance.",
+            recommended_order=9,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "quant_projection_scope_ticket_required",
+            "durable_evidence",
+            "scope_ticket_visible" if quant_ticket_visible else "pending_quant_projection_dry_run",
+            passed=quant_ticket_visible,
+            local_surface_required=False,
+            production_blocker=not quant_ticket_visible,
+            evidence=f"quant_dry_run_status={quant_dry_run.get('status')}; scope={quant_dry_run.get('acceptance_scope_hash_short') or 'missing'}",
+            next_action="Bind searched-symbol Tushare/DeepSeek acceptance to a user-approved dry-run scope.",
+            recommended_order=10,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "worker_full_pool_execution_evidence_required",
+            "durable_evidence",
+            "completed" if full_pool_worker_done else "pending_worker_full_pool_execution",
+            passed=full_pool_worker_done,
+            local_surface_required=False,
+            production_blocker=not full_pool_worker_done,
+            evidence=f"full_pool_scan_done={full_pool_worker_done}",
+            next_action="Run future worker-backed full-pool task and attach durable task/call/coverage evidence.",
+            recommended_order=11,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "worker_deep_scan_execution_evidence_required",
+            "durable_evidence",
+            "completed" if deep_scan_worker_done else "pending_worker_deep_scan_execution",
+            passed=deep_scan_worker_done,
+            local_surface_required=False,
+            production_blocker=not deep_scan_worker_done,
+            evidence=f"deep_scan_done={deep_scan_worker_done}",
+            next_action="Run future worker-backed deep scan with provider/model boundaries and safe failure rows.",
+            recommended_order=12,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "provider_backed_parity_call_ledger_required",
+            "durable_evidence",
+            "completed" if provider_backed_done else "pending_provider_call_ledger",
+            passed=provider_backed_done,
+            local_surface_required=False,
+            production_blocker=not provider_backed_done,
+            evidence=f"provider_backed_acceptance_done={provider_backed_done}",
+            next_action="Record real provider call ledger rows for selected radar signal groups before promotion.",
+            recommended_order=13,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "browser_visual_performance_evidence_required",
+            "durable_evidence",
+            "reviewed" if browser_visual_perf_done else "pending_browser_visual_performance",
+            passed=browser_visual_perf_done,
+            local_surface_required=False,
+            production_blocker=not browser_visual_perf_done,
+            evidence=f"local_reviewed={local_browser_visual_perf_reviewed}; visual={browser_evidence.get('candidate_visual_qa_evidence_passed')}; perf={browser_evidence.get('candidate_browser_performance_evidence_passed')}; review={browser_review.get('local_browser_qa_review_ready')}; durable_promotion=false",
+            next_action="Run and review browser visual/performance evidence before claiming no-stall radar replacement.",
+            recommended_order=14,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "deepseek_model_ledger_if_enabled_required",
+            "durable_evidence",
+            "pending_optional_model_ledger",
+            passed=deepseek_model_ledger_done,
+            local_surface_required=False,
+            production_blocker=True,
+            evidence="DeepSeek is not called by the recipe; future deep research must include model ledger, sanitizer, hashes, token usage, and parse_failed discard.",
+            next_action="Only attach DeepSeek evidence from explicit button/task execution, never from render.",
+            recommended_order=15,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "legacy_retirement_review_required",
+            "durable_evidence",
+            "ready_for_review" if legacy_retirement_ready else "pending_legacy_retirement_review",
+            passed=legacy_retirement_ready,
+            local_surface_required=False,
+            production_blocker=not legacy_retirement_ready,
+            evidence=f"legacy_retirement_ready={legacy_retirement_ready}",
+            next_action="Keep Streamlit radar fallback until worker/provider/browser promotion clears.",
+            recommended_order=16,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "production_promotion_review_required",
+            "durable_evidence",
+            "ready_for_promotion" if promotion_ready else "pending_promotion_review",
+            passed=promotion_ready,
+            local_surface_required=False,
+            production_blocker=not promotion_ready,
+            evidence=f"promotion_ready={promotion_ready}; blockers={promotion.get('blocking_promotion_count')}",
+            next_action="Promote only after direct worker/provider/browser/model evidence and redaction review.",
+            recommended_order=17,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
+            "no_trade_action_secret_boundary",
+            "safety",
+            "passed_research_only_secret_safe" if no_trade_boundary else "blocked_safety_boundary",
+            passed=no_trade_boundary,
+            local_surface_required=True,
+            production_blocker=not no_trade_boundary,
+            evidence="Candidate Radar does not execute trades, mutate action/holdings, expose secrets, or turn candidates into buy instructions.",
+            next_action="Keep radar outputs research-only even after production evidence improves.",
+            recommended_order=18,
+        ),
+    ]
+    local_blockers = [row["evidence_key"] for row in rows if row["local_surface_required"] and not row["passed"]]
+    durable_blockers = [row["evidence_key"] for row in rows if row["production_blocker"] and not row["passed"]]
+    local_ready = not local_blockers
+    contract = {
+        "schema_version": CANDIDATE_RADAR_DURABLE_EVIDENCE_SCHEMA_VERSION,
+        "status": (
+            "candidate_radar_durable_evidence_recipe_ready_production_pending"
+            if local_ready
+            else "candidate_radar_durable_evidence_recipe_blocked_local_surface"
+        ),
+        "scope": "local_candidate_radar_durable_evidence_recipe_no_scan_or_provider_call",
+        "ltg": "LTG-13/LTG-14/LTG-02/LTG-07",
+        "local_recipe_ready": local_ready,
+        "durable_evidence_complete": False,
+        "durable_promotion_ready": False,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "legacy_fallback_required": True,
+        "full_pool_scan_done": full_pool_worker_done,
+        "deep_scan_done": deep_scan_worker_done,
+        "provider_backed_acceptance_done": provider_backed_done,
+        "browser_visual_performance_reviewed": browser_visual_perf_done,
+        "deepseek_model_ledger_complete": deepseek_model_ledger_done,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "worker_execution_implemented": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "page_render_starts_scan": False,
+        "page_render_starts_full_pool": False,
+        "page_render_starts_deep_scan": False,
+        "evidence_keys": list(CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS),
+        "missing_durable_evidence": durable_blockers,
+        "required_evidence": [
+            "user-approved provider parity scope ticket",
+            "searched-symbol quant projection scope ticket when used",
+            "worker-backed full-pool execution task evidence",
+            "worker-backed deep-scan execution task evidence",
+            "real provider call ledger for selected radar signal groups",
+            "DeepSeek model ledger and sanitizer evidence when enabled",
+            "browser visual/performance evidence for #candidates",
+            "legacy fallback retirement review",
+            "production promotion and redaction review",
+        ],
+        "not_allowed_next_steps": [
+            "treat durable recipe as production radar replacement",
+            "treat quick scan as no-feature-loss production completion",
+            "treat local full-pool receipt as worker full-pool execution",
+            "treat local deep review as DeepSeek/provider deep scan",
+            "call Tushare or DeepSeek from GET cache or React render",
+            "retire legacy radar fallback from local recipe evidence",
+            "turn candidate score into buy/sell instruction",
+            "mutate strategy action, price, holdings, or operation zones",
+            "store raw token/key in packet, cache, ledger, log, or frontend",
+        ],
+        "allowed_next_step": "run_user_approved_scope_dry_runs_then_worker_provider_browser_acceptance",
+        "row_count": len(rows),
+        "evidence_key_count": len(CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS),
+        "local_blocker_count": len(local_blockers),
+        "durable_evidence_blocker_count": len(durable_blockers),
+        "production_blocker_count": len(durable_blockers),
+        "local_blockers": local_blockers,
+        "rows": rows,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "candidate_is_not_buy_instruction": True,
+        "note": "This recipe fixes the durable evidence checklist for LTG-13. It does not execute scans, start workers, call providers/models, retire legacy radar, or complete production replacement.",
+    }
+    return contract, rows
+
+
+def _attach_candidate_radar_durable_evidence_recipe(packet: Mapping[str, Any]) -> dict[str, Any]:
+    view = dict(packet)
+    contract, rows = _candidate_radar_durable_evidence_recipe(view)
+    counts = dict(_as_dict(view.get("counts")))
+    counts["candidate_radar_durable_evidence_row_count"] = contract["row_count"]
+    counts["candidate_radar_durable_evidence_blocker_count"] = contract["durable_evidence_blocker_count"]
+    counts["candidate_radar_durable_evidence_ready"] = contract["local_recipe_ready"]
+    policy = dict(_as_dict(view.get("policy")))
+    policy["candidate_radar_durable_evidence_recipe_is_local"] = True
+    policy["candidate_radar_durable_evidence_recipe_calls_provider_or_model"] = False
+    policy["candidate_radar_durable_evidence_recipe_is_not_production_replacement"] = True
+    policy["candidate_radar_durable_evidence_requires_worker_provider_browser_model_evidence"] = True
+    ledger = _as_list(view.get("call_ledger"))
+    ledger.append(
+        _candidate_call_ledger_row(
+            api="local_candidate_radar_durable_evidence_recipe",
+            source_snapshot="candidate_radar_packet",
+            row_count=len(rows),
+            call_status=contract["status"],
+        )
+    )
+    warnings = [str(item) for item in _as_list(view.get("warnings"))]
+    warning = "Candidate Radar durable evidence recipe 只固定下一票雷达生产替代证据清单；不会运行扫描、调用 Tushare/DeepSeek/GitHub、退掉 legacy 或完成生产替代。"
+    if warning not in warnings:
+        warnings.append(warning)
+    view["counts"] = counts
+    view["policy"] = policy
+    view["call_ledger"] = ledger
+    view["warnings"] = warnings
+    view["candidate_radar_durable_evidence_recipe"] = contract
+    view["candidate_radar_durable_evidence_rows"] = rows
     return view
 
 

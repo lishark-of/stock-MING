@@ -4504,6 +4504,78 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(worker_recipe["does_not_execute_trades"])
         self.assertTrue(worker_recipe["does_not_modify_strategy_action"])
         self.assertTrue(any(row["api"] == "local_candidate_radar_worker_execution_recipe" for row in packet["call_ledger"]))
+        durable_recipe = packet["candidate_radar_durable_evidence_recipe"]
+        durable_rows = {row["evidence_key"]: row for row in packet["candidate_radar_durable_evidence_rows"]}
+        self.assertEqual(durable_recipe["schema_version"], "candidate_radar_durable_evidence_recipe.v1")
+        self.assertEqual(
+            durable_recipe["status"],
+            "candidate_radar_durable_evidence_recipe_ready_production_pending",
+        )
+        self.assertEqual(
+            durable_recipe["scope"],
+            "local_candidate_radar_durable_evidence_recipe_no_scan_or_provider_call",
+        )
+        self.assertTrue(durable_recipe["local_recipe_ready"])
+        self.assertFalse(durable_recipe["durable_evidence_complete"])
+        self.assertFalse(durable_recipe["durable_promotion_ready"])
+        self.assertFalse(durable_recipe["production_radar_replacement_complete"])
+        self.assertFalse(durable_recipe["legacy_retirement_ready"])
+        self.assertTrue(durable_recipe["legacy_fallback_required"])
+        self.assertFalse(durable_recipe["full_pool_scan_done"])
+        self.assertFalse(durable_recipe["deep_scan_done"])
+        self.assertFalse(durable_recipe["provider_backed_acceptance_done"])
+        self.assertFalse(durable_recipe["browser_visual_performance_reviewed"])
+        self.assertFalse(durable_recipe["deepseek_model_ledger_complete"])
+        self.assertFalse(durable_recipe["provider_execution_implemented"])
+        self.assertFalse(durable_recipe["model_execution_implemented"])
+        self.assertFalse(durable_recipe["worker_execution_implemented"])
+        self.assertFalse(durable_recipe["cache_get_external_calls"])
+        self.assertFalse(durable_recipe["react_render_external_calls"])
+        self.assertFalse(durable_recipe["page_render_starts_scan"])
+        self.assertEqual(
+            durable_recipe["evidence_keys"],
+            list(candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS),
+        )
+        self.assertEqual(set(durable_rows), set(candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS))
+        self.assertEqual(durable_recipe["row_count"], len(candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS))
+        self.assertEqual(durable_recipe["evidence_key_count"], len(candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS))
+        self.assertGreaterEqual(durable_recipe["durable_evidence_blocker_count"], 9)
+        self.assertIn("provider_parity_scope_ticket_required", durable_recipe["missing_durable_evidence"])
+        self.assertIn("worker_full_pool_execution_evidence_required", durable_recipe["missing_durable_evidence"])
+        self.assertIn("deepseek_model_ledger_if_enabled_required", durable_recipe["missing_durable_evidence"])
+        self.assertIn("worker-backed full-pool execution task evidence", durable_recipe["required_evidence"])
+        self.assertIn("DeepSeek model ledger and sanitizer evidence when enabled", durable_recipe["required_evidence"])
+        self.assertIn("treat durable recipe as production radar replacement", durable_recipe["not_allowed_next_steps"])
+        self.assertIn("call Tushare or DeepSeek from GET cache or React render", durable_recipe["not_allowed_next_steps"])
+        self.assertTrue(durable_rows["cache_render_boundary_visible"]["passed"])
+        self.assertTrue(durable_rows["quick_scan_task_pipeline_visible"]["passed"])
+        self.assertTrue(durable_rows["worker_execution_recipe_visible"]["passed"])
+        self.assertTrue(durable_rows["provider_parity_scope_ticket_required"]["production_blocker"])
+        self.assertTrue(durable_rows["quant_projection_scope_ticket_required"]["production_blocker"])
+        self.assertTrue(durable_rows["worker_full_pool_execution_evidence_required"]["production_blocker"])
+        self.assertTrue(durable_rows["browser_visual_performance_evidence_required"]["production_blocker"])
+        self.assertTrue(durable_rows["deepseek_model_ledger_if_enabled_required"]["production_blocker"])
+        self.assertTrue(durable_rows["no_trade_action_secret_boundary"]["passed"])
+        self.assertTrue(packet["policy"]["candidate_radar_durable_evidence_recipe_is_local"])
+        self.assertFalse(packet["policy"]["candidate_radar_durable_evidence_recipe_calls_provider_or_model"])
+        self.assertTrue(packet["policy"]["candidate_radar_durable_evidence_recipe_is_not_production_replacement"])
+        self.assertTrue(packet["policy"]["candidate_radar_durable_evidence_requires_worker_provider_browser_model_evidence"])
+        self.assertEqual(
+            packet["counts"]["candidate_radar_durable_evidence_row_count"],
+            durable_recipe["row_count"],
+        )
+        self.assertEqual(
+            packet["counts"]["candidate_radar_durable_evidence_blocker_count"],
+            durable_recipe["durable_evidence_blocker_count"],
+        )
+        self.assertTrue(any(row["api"] == "local_candidate_radar_durable_evidence_recipe" for row in packet["call_ledger"]))
+        self.assertFalse(durable_recipe["external_calls_triggered"])
+        self.assertFalse(durable_recipe["tushare_called"])
+        self.assertFalse(durable_recipe["deepseek_called"])
+        self.assertFalse(durable_recipe["github_called"])
+        self.assertFalse(durable_recipe["contains_secret"])
+        self.assertTrue(durable_recipe["does_not_execute_trades"])
+        self.assertTrue(durable_recipe["does_not_modify_strategy_action"])
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
@@ -8556,6 +8628,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("candidate_radar_next_execution_recipe_is_local_fast_scan_path", script)
         self.assertIn("candidate_radar_worker_execution_recipe.v1", script)
         self.assertIn("candidate_radar_worker_execution_recipe_is_local_no_worker_start", script)
+        self.assertIn("candidate_radar_durable_evidence_recipe.v1", script)
+        self.assertIn("candidate_radar_durable_evidence_recipe_is_local_production_pending", script)
         self.assertIn("priority_explanation_is_local_not_trade_signal", script)
         self.assertIn("full_pool_plan_is_plan_only", script)
         self.assertIn("deep_scan_plan_is_plan_only", script)
@@ -8598,6 +8672,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["fast_scan_task_pipeline_ready"])
         self.assertTrue(payload["candidate_radar_next_execution_recipe_ready"])
         self.assertTrue(payload["candidate_radar_worker_execution_recipe_ready"])
+        self.assertTrue(payload["candidate_radar_durable_evidence_recipe_ready"])
+        self.assertGreaterEqual(payload["candidate_radar_durable_evidence_blocker_count"], 9)
         self.assertFalse(payload["external_calls_triggered"])
         self.assertFalse(payload["tushare_called"])
         self.assertFalse(payload["deepseek_called"])
@@ -8669,6 +8745,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "candidate_radar_worker_execution_recipe_ready_production_pending",
         )
         self.assertGreater(payload["observed"]["candidate_radar_worker_execution_recipe_production_blocker_count"], 0)
+        self.assertEqual(
+            payload["observed"]["candidate_radar_durable_evidence_status"],
+            "candidate_radar_durable_evidence_recipe_ready_production_pending",
+        )
+        self.assertTrue(payload["observed"]["candidate_radar_durable_evidence_ready"])
+        self.assertGreaterEqual(payload["observed"]["candidate_radar_durable_evidence_blocker_count"], 9)
+        self.assertIn(
+            "worker_full_pool_execution_evidence_required",
+            payload["observed"]["candidate_radar_durable_evidence_missing"],
+        )
         self.assertEqual(
             payload["observed"]["no_feature_loss_status"],
             "no_feature_loss_acceptance_local_ready_production_pending",

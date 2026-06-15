@@ -352,6 +352,12 @@ def build_contract() -> dict[str, Any]:
         for row in _list(cache_packet.get("candidate_radar_worker_execution_rows"))
         if isinstance(row, dict)
     }
+    durable_evidence_recipe = _dict(cache_packet.get("candidate_radar_durable_evidence_recipe"))
+    durable_evidence_rows = {
+        str(row.get("evidence_key") or ""): row
+        for row in _list(cache_packet.get("candidate_radar_durable_evidence_rows"))
+        if isinstance(row, dict)
+    }
     quick_receipt = _dict(cache_packet.get("quick_scan_execution_receipt"))
     quick_receipt_rows = {
         str(row.get("receipt_key") or ""): row
@@ -710,6 +716,101 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_worker_execution_rows" in candidate_frontend
             and "雷达 worker 执行配方" in candidate_frontend,
             "Candidate Radar worker execution recipe must make the future full-pool/deep-scan worker path explicit while starting no worker, calling no providers/models, and preserving legacy/no-trade boundaries.",
+        ),
+        _row(
+            "candidate_radar_durable_evidence_recipe_is_local_production_pending",
+            durable_evidence_recipe.get("schema_version")
+            == candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_SCHEMA_VERSION
+            and durable_evidence_recipe.get("status")
+            == "candidate_radar_durable_evidence_recipe_ready_production_pending"
+            and durable_evidence_recipe.get("scope")
+            == "local_candidate_radar_durable_evidence_recipe_no_scan_or_provider_call"
+            and durable_evidence_recipe.get("local_recipe_ready") is True
+            and durable_evidence_recipe.get("durable_evidence_complete") is False
+            and durable_evidence_recipe.get("durable_promotion_ready") is False
+            and durable_evidence_recipe.get("production_radar_replacement_complete") is False
+            and durable_evidence_recipe.get("legacy_retirement_ready") is False
+            and durable_evidence_recipe.get("legacy_fallback_required") is True
+            and durable_evidence_recipe.get("full_pool_scan_done") is False
+            and durable_evidence_recipe.get("deep_scan_done") is False
+            and durable_evidence_recipe.get("provider_backed_acceptance_done") is False
+            and durable_evidence_recipe.get("browser_visual_performance_reviewed") is False
+            and durable_evidence_recipe.get("deepseek_model_ledger_complete") is False
+            and durable_evidence_recipe.get("provider_execution_implemented") is False
+            and durable_evidence_recipe.get("model_execution_implemented") is False
+            and durable_evidence_recipe.get("worker_execution_implemented") is False
+            and durable_evidence_recipe.get("cache_get_external_calls") is False
+            and durable_evidence_recipe.get("react_render_external_calls") is False
+            and durable_evidence_recipe.get("page_render_starts_scan") is False
+            and durable_evidence_recipe.get("page_render_starts_full_pool") is False
+            and durable_evidence_recipe.get("page_render_starts_deep_scan") is False
+            and durable_evidence_recipe.get("evidence_keys")
+            == list(candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS)
+            and set(durable_evidence_rows) == set(candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS)
+            and int(durable_evidence_recipe.get("row_count") or 0) == len(durable_evidence_rows)
+            and int(durable_evidence_recipe.get("evidence_key_count") or 0)
+            == len(candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS)
+            and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) >= 9
+            and "user-approved provider parity scope ticket"
+            in _list(durable_evidence_recipe.get("required_evidence"))
+            and "worker-backed full-pool execution task evidence"
+            in _list(durable_evidence_recipe.get("required_evidence"))
+            and "DeepSeek model ledger and sanitizer evidence when enabled"
+            in _list(durable_evidence_recipe.get("required_evidence"))
+            and "treat durable recipe as production radar replacement"
+            in _list(durable_evidence_recipe.get("not_allowed_next_steps"))
+            and "call Tushare or DeepSeek from GET cache or React render"
+            in _list(durable_evidence_recipe.get("not_allowed_next_steps"))
+            and "store raw token/key in packet, cache, ledger, log, or frontend"
+            in _list(durable_evidence_recipe.get("not_allowed_next_steps"))
+            and _dict(durable_evidence_rows.get("cache_render_boundary_visible")).get("passed") is True
+            and _dict(durable_evidence_rows.get("quick_scan_task_pipeline_visible")).get("passed") is True
+            and _dict(durable_evidence_rows.get("worker_execution_recipe_visible")).get("passed") is True
+            and _dict(durable_evidence_rows.get("provider_parity_scope_ticket_required")).get("production_blocker")
+            is True
+            and _dict(durable_evidence_rows.get("quant_projection_scope_ticket_required")).get("production_blocker")
+            is True
+            and _dict(durable_evidence_rows.get("worker_full_pool_execution_evidence_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(durable_evidence_rows.get("provider_backed_parity_call_ledger_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(durable_evidence_rows.get("browser_visual_performance_evidence_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(durable_evidence_rows.get("deepseek_model_ledger_if_enabled_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(durable_evidence_rows.get("no_trade_action_secret_boundary")).get("passed") is True
+            and policy.get("candidate_radar_durable_evidence_recipe_is_local") is True
+            and policy.get("candidate_radar_durable_evidence_recipe_calls_provider_or_model") is False
+            and policy.get("candidate_radar_durable_evidence_recipe_is_not_production_replacement") is True
+            and policy.get("candidate_radar_durable_evidence_requires_worker_provider_browser_model_evidence") is True
+            and _flag_false(
+                durable_evidence_recipe,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and durable_evidence_recipe.get("does_not_execute_trades") is True
+            and durable_evidence_recipe.get("does_not_modify_strategy_action") is True
+            and durable_evidence_recipe.get("does_not_modify_holdings") is True
+            and durable_evidence_recipe.get("candidate_is_not_buy_instruction") is True
+            and any(
+                _dict(row).get("api") == "local_candidate_radar_durable_evidence_recipe"
+                for row in _list(cache_packet.get("call_ledger"))
+            )
+            and "candidate_radar_durable_evidence_recipe" in candidate_frontend
+            and "candidate_radar_durable_evidence_rows" in candidate_frontend
+            and "雷达耐久证据配方" in candidate_frontend,
+            "Candidate Radar durable evidence recipe must pin the remaining production replacement evidence without executing scans, starting workers, calling providers/models, retiring legacy, or producing trade signals.",
         ),
         _row(
             "full_pool_local_execution_receipt_is_local_not_provider_acceptance",
@@ -1421,6 +1522,7 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_search_quant_projection_acceptance_dry_run.v1" in this_script
             and "candidate_radar_production_activation_receipt.v1" in this_script
             and "candidate_radar_worker_execution_recipe.v1" in this_script
+            and "candidate_radar_durable_evidence_recipe.v1" in this_script
             and "candidate_is_not_buy_instruction" in this_script
             and ("request" + "s") not in this_script
             and ("ht" + "tpx") not in this_script
@@ -1469,6 +1571,10 @@ def build_contract() -> dict[str, Any]:
             "local_worker_execution_recipe_ready"
         )
         is True,
+        "candidate_radar_durable_evidence_recipe_ready": durable_evidence_recipe.get("local_recipe_ready") is True,
+        "candidate_radar_durable_evidence_blocker_count": durable_evidence_recipe.get(
+            "durable_evidence_blocker_count"
+        ),
         "cache_only": True,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -1517,6 +1623,12 @@ def build_contract() -> dict[str, Any]:
             "candidate_radar_worker_execution_recipe_production_blocker_count": worker_execution_recipe.get(
                 "production_blocker_count"
             ),
+            "candidate_radar_durable_evidence_status": durable_evidence_recipe.get("status"),
+            "candidate_radar_durable_evidence_ready": durable_evidence_recipe.get("local_recipe_ready"),
+            "candidate_radar_durable_evidence_blocker_count": durable_evidence_recipe.get(
+                "durable_evidence_blocker_count"
+            ),
+            "candidate_radar_durable_evidence_missing": durable_evidence_recipe.get("missing_durable_evidence"),
             "result_delta_status": result_delta.get("status"),
             "priority_explanation_status": priority_explanation.get("status"),
             "priority_explanation_gap_count": priority_explanation.get("explanation_gap_count"),

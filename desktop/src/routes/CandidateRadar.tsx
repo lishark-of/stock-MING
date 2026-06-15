@@ -137,6 +137,7 @@ export default function CandidateRadar() {
   const activationReceipt = (cache.candidate_radar_production_activation_receipt as Record<string, unknown> | undefined) ?? {};
   const nextExecutionRecipe = (cache.candidate_radar_next_execution_recipe as Record<string, unknown> | undefined) ?? {};
   const workerExecutionRecipe = (cache.candidate_radar_worker_execution_recipe as Record<string, unknown> | undefined) ?? {};
+  const durableEvidenceRecipe = (cache.candidate_radar_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
   const resultDeltaClarity = (cache.result_delta_clarity_contract as Record<string, unknown> | undefined) ?? {};
   const candidatePriorityExplanation = (cache.candidate_priority_explanation_contract as Record<string, unknown> | undefined) ?? {};
   const browserQaRunbook = (cache.candidate_browser_qa_runbook_contract as Record<string, unknown> | undefined) ?? {};
@@ -178,6 +179,7 @@ export default function CandidateRadar() {
   const activationReceiptRows = rows(cache.candidate_radar_production_activation_rows);
   const nextExecutionRecipeRows = rows(cache.candidate_radar_next_execution_rows);
   const workerExecutionRows = rows(cache.candidate_radar_worker_execution_rows);
+  const durableEvidenceRows = rows(cache.candidate_radar_durable_evidence_rows);
   const resultDeltaClarityRows = rows(cache.result_delta_clarity_rows);
   const previousCacheDiffRows = rows(cache.previous_cache_diff_rows);
   const candidatePriorityExplanationRows = rows(cache.candidate_priority_explanation_rows);
@@ -261,6 +263,8 @@ export default function CandidateRadar() {
           { label: "recipe pending", value: counts.candidate_radar_next_execution_production_pending_count as number | undefined, tone: Number(counts.candidate_radar_next_execution_production_pending_count ?? 0) ? "warn" : "good" },
           { label: "worker recipe", value: String(workerExecutionRecipe.status ?? "missing"), tone: workerExecutionRecipe.local_worker_execution_recipe_ready === true ? "good" : "warn" },
           { label: "worker recipe blockers", value: counts.candidate_radar_worker_execution_recipe_production_blocker_count as number | undefined, tone: Number(counts.candidate_radar_worker_execution_recipe_production_blocker_count ?? 0) ? "warn" : "good" },
+          { label: "durable recipe", value: String(durableEvidenceRecipe.status ?? "missing"), tone: durableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
+          { label: "durable blockers", value: counts.candidate_radar_durable_evidence_blocker_count as number | undefined, tone: Number(counts.candidate_radar_durable_evidence_blocker_count ?? 0) ? "warn" : "good" },
           { label: "delta clarity", value: String(resultDeltaClarity.status ?? "missing"), tone: resultDeltaClarity.local_result_delta_clarity_ready === true ? "good" : "warn" },
           { label: "delta gaps", value: counts.result_delta_clarity_visible_gap_count as number | undefined, tone: Number(counts.result_delta_clarity_visible_gap_count ?? 0) ? "warn" : "good" },
           { label: "delta pending", value: counts.result_delta_clarity_pending_count as number | undefined, tone: Number(counts.result_delta_clarity_pending_count ?? 0) ? "warn" : "good" },
@@ -560,6 +564,20 @@ export default function CandidateRadar() {
         <p>tushare_called / deepseek_called / github_called: {String(workerExecutionRecipe.tushare_called === true)} / {String(workerExecutionRecipe.deepseek_called === true)} / {String(workerExecutionRecipe.github_called === true)}</p>
         <DataLineageTable rows={objectRow(workerExecutionRecipe)} />
         <DataLineageTable rows={workerExecutionRows} />
+      </PacketCard>
+
+      <PacketCard title="雷达耐久证据配方" subtitle="candidate_radar_durable_evidence_recipe；生产替代前的直接证据清单，不运行扫描、不外联" status={String(durableEvidenceRecipe.status ?? "missing")}>
+        <p>scope: {String(durableEvidenceRecipe.scope ?? "local_candidate_radar_durable_evidence_recipe_no_scan_or_provider_call")}</p>
+        <p>local_recipe_ready: {String(durableEvidenceRecipe.local_recipe_ready === true)}；durable_evidence_complete: {String(durableEvidenceRecipe.durable_evidence_complete === true)}；durable_promotion_ready: {String(durableEvidenceRecipe.durable_promotion_ready === true)}</p>
+        <p>production_radar_replacement_complete: {String(durableEvidenceRecipe.production_radar_replacement_complete === true)}；legacy_retirement_ready: {String(durableEvidenceRecipe.legacy_retirement_ready === true)}；legacy_fallback_required: {String(durableEvidenceRecipe.legacy_fallback_required !== false)}</p>
+        <p>full_pool_scan_done / deep_scan_done / provider_backed_acceptance_done: {String(durableEvidenceRecipe.full_pool_scan_done === true)} / {String(durableEvidenceRecipe.deep_scan_done === true)} / {String(durableEvidenceRecipe.provider_backed_acceptance_done === true)}</p>
+        <p>browser_visual_performance_reviewed: {String(durableEvidenceRecipe.browser_visual_performance_reviewed === true)}；deepseek_model_ledger_complete: {String(durableEvidenceRecipe.deepseek_model_ledger_complete === true)}</p>
+        <p>cache_get_external_calls / react_render_external_calls: {String(durableEvidenceRecipe.cache_get_external_calls === true)} / {String(durableEvidenceRecipe.react_render_external_calls === true)}</p>
+        <p>tushare_called / deepseek_called / github_called: {String(durableEvidenceRecipe.tushare_called === true)} / {String(durableEvidenceRecipe.deepseek_called === true)} / {String(durableEvidenceRecipe.github_called === true)}</p>
+        <p>missing_durable_evidence: {Array.isArray(durableEvidenceRecipe.missing_durable_evidence) ? durableEvidenceRecipe.missing_durable_evidence.join(" / ") : "--"}</p>
+        <p>not_allowed_next_steps: {Array.isArray(durableEvidenceRecipe.not_allowed_next_steps) ? durableEvidenceRecipe.not_allowed_next_steps.join(" / ") : "quick scan as production replacement / provider calls from render / legacy retirement from local recipe"}</p>
+        <DataLineageTable rows={objectRow(durableEvidenceRecipe)} />
+        <DataLineageTable rows={durableEvidenceRows} />
       </PacketCard>
 
       <PacketCard title="雷达结果变化清晰度" subtitle="result_delta_clarity_contract；有上一版持久化 cache 时执行本地 previous-cache diff，浏览器视觉验收仍需单独跑" status={String(resultDeltaClarity.status ?? "missing")}>
