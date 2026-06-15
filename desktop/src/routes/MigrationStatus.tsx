@@ -23,6 +23,7 @@ export default function MigrationStatus() {
   const longTermGoalSummary = (packet.long_term_goal_summary as Record<string, unknown> | undefined) ?? {};
   const longTermBucketCounts = (longTermGoalSummary.bucket_counts as Record<string, unknown> | undefined) ?? {};
   const longTermNextPriority = (longTermGoalSummary.next_priority_order as Array<string> | undefined) ?? [];
+  const ltgStageScopeObservedRows = (packet.ltg_stage_scope_observed_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const tushareDeepseekLinkage = (packet.tushare_deepseek_linkage_review as Record<string, unknown> | undefined) ?? {};
   const tushareDeepseekLinkageRows = (packet.tushare_deepseek_linkage_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const tushareDeepseekModeLayerRows = (packet.tushare_deepseek_mode_layer_rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -59,6 +60,8 @@ export default function MigrationStatus() {
           { label: "baseline items", value: progress.length },
           { label: "LTG goals", value: longTermGoalSummary.goal_count as number | undefined },
           { label: "LTG closed", value: String(longTermGoalSummary.strict_closeout ?? "0/14"), tone: longTermGoalSummary.closed_count === 0 ? "warn" : "good" },
+          { label: "observed manifests", value: Number(longTermGoalSummary.observed_stage_scope_manifest_count ?? 0), tone: Number(longTermGoalSummary.observed_stage_scope_manifest_count ?? 0) ? "good" : "warn" },
+          { label: "observed pending", value: Number(longTermGoalSummary.observed_stage_scope_pending_count ?? 0), tone: Number(longTermGoalSummary.observed_stage_scope_pending_count ?? 0) ? "warn" : "good" },
           { label: "foundation", value: String(longTermGoalSummary.foundation_progress_estimate ?? "--") },
           { label: "production acceptance", value: String(longTermGoalSummary.production_acceptance_estimate ?? "--") },
           { label: "Tushare/DeepSeek linkage", value: String(tushareDeepseekLinkage.status ?? "pending") },
@@ -88,6 +91,9 @@ export default function MigrationStatus() {
         ]}
       />
       <DataLineageTable rows={longTermGoalRows} />
+      <h3>LTG stage-scope observed rows</h3>
+      <p className="risk-note">这些 observed rows 只读取本地 cache 里的阶段清单，用来让长期目标总览对齐具体页面证据；它们不是生产完成证据。</p>
+      <DataLineageTable rows={ltgStageScopeObservedRows} />
       <h3>Tushare / DeepSeek 联动审查</h3>
       <p className="risk-note">按四层审查：cache/render 安静、POST task 门控、task 内真实 provider/model execution、production promotion ledger；真实执行仍需后续显式验收。</p>
       <DataLineageTable rows={[tushareDeepseekLinkage]} />

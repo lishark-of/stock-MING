@@ -144,7 +144,7 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "下一票雷达快扫生产化",
         "completion_bucket": "real_validation_required",
         "completion_estimate": "35%-45%",
-        "current_state": "local quick-scan readiness, fast-scan task pipeline contract, no-feature-loss QA, legacy parity receipt, full/deep plan receipts, search-to-quant projection receipt, provider parity dry-run ticket, worker execution recipe, scope-bound worker execution-request ticket, scope-bound searched-symbol provider/model execution-request ticket, durable evidence recipe, and result-delta clarity exist.",
+        "current_state": "local quick-scan readiness, fast-scan task pipeline contract, no-feature-loss QA, legacy parity receipt, full/deep plan receipts, search-to-quant projection receipt, provider parity dry-run ticket, worker execution recipe, scope-bound worker execution-request ticket, scope-bound searched-symbol provider/model execution-request ticket, durable evidence recipe, production stage-scope manifest cache/React visibility, and result-delta clarity exist.",
         "not_complete_because": "async worker execution, real provider-backed radar parity execution, full-pool/deep-scan execution, real searched-symbol provider/model projection execution, DeepSeek model-ledger evidence when enabled, browser performance promotion, legacy retirement review, and durable production replacement evidence are still pending.",
         "next_step": "Use the worker execution-request, quant projection execution-request, and durable evidence recipe to bind real worker full-pool/deep-scan evidence, provider parity call ledger, real Tushare light call ledger, optional DeepSeek model ledger, browser performance/visual proof, and legacy retirement review before any production replacement claim.",
         "production_complete": False,
@@ -293,6 +293,14 @@ def _build_long_term_goal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         bucket = str(row["completion_bucket"])
         bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
     stage_scope_manifest_count = sum(1 for row in rows if row.get("has_stage_scope_manifest") is True)
+    observed_stage_scope_manifest_count = sum(
+        1 for row in rows if row.get("observed_stage_scope_manifest_status")
+    )
+    observed_stage_scope_pending_count = sum(
+        int(row.get("observed_stage_scope_pending_count") or 0)
+        for row in rows
+        if row.get("observed_stage_scope_manifest_status")
+    )
     return {
         "goal_count": len(rows),
         "closed_count": sum(1 for row in rows if row.get("production_complete") is True),
@@ -302,6 +310,8 @@ def _build_long_term_goal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "stage_scope_manifest_pending_count": sum(
             1 for row in rows if row.get("stage_scope_manifest_status") == "present_pending_production_evidence"
         ),
+        "observed_stage_scope_manifest_count": observed_stage_scope_manifest_count,
+        "observed_stage_scope_pending_count": observed_stage_scope_pending_count,
         "goals_with_next_evidence_count": sum(1 for row in rows if int(row.get("next_evidence_required_count") or 0) > 0),
         "can_close_from_local_contracts_count": sum(
             1 for row in rows if row.get("can_close_from_local_contracts") is True
@@ -323,6 +333,111 @@ def _build_long_term_goal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         ],
         "no_goal_may_close_from": ["scaffold", "preflight", "mock", "matrix", "sanitizer", "dry_run", "local_receipt"],
     }
+
+
+def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
+    try:
+        from server.services import candidate_service
+
+        candidate_packet = candidate_service.read_candidate_radar_cache()
+        if not isinstance(candidate_packet, dict):
+            candidate_packet = {}
+        manifest = candidate_packet.get("candidate_radar_production_stage_scope_manifest")
+        manifest = manifest if isinstance(manifest, dict) else {}
+        stage_rows = candidate_packet.get("candidate_radar_production_stage_scope_rows")
+        stage_rows = stage_rows if isinstance(stage_rows, list) else []
+        counts = candidate_packet.get("counts")
+        counts = counts if isinstance(counts, dict) else {}
+        manifest_visible = bool(manifest)
+        row_count = int(manifest.get("row_count") or len(stage_rows) or 0)
+        pending_count = int(
+            manifest.get("pending_stage_count")
+            or counts.get("candidate_radar_production_stage_scope_pending_count")
+            or 0
+        )
+        local_evidence_count = int(
+            manifest.get("local_evidence_stage_count")
+            or counts.get("candidate_radar_production_stage_scope_local_evidence_count")
+            or 0
+        )
+        return [
+            {
+                "id": "LTG-13",
+                "goal": "下一票雷达快扫生产化",
+                "stage_scope_manifest": "candidate_radar_production_stage_scope_manifest",
+                "status": "observed_in_candidate_radar_cache" if manifest_visible else "missing_from_candidate_radar_cache",
+                "observed_source": "GET /api/candidate-radar/cache local builder",
+                "cache_status": str(candidate_packet.get("status") or "missing"),
+                "cache_mode": str(candidate_packet.get("mode") or "cache_only"),
+                "row_count": row_count,
+                "pending_stage_count": pending_count,
+                "local_evidence_stage_count": local_evidence_count,
+                "production_blocker_count": int(manifest.get("production_blocker_count") or pending_count),
+                "production_radar_replacement_complete": manifest.get("production_radar_replacement_complete") is True,
+                "legacy_retirement_ready": manifest.get("legacy_retirement_ready") is True,
+                "full_pool_scan_done": manifest.get("full_pool_scan_done") is True,
+                "deep_scan_done": manifest.get("deep_scan_done") is True,
+                "provider_backed_acceptance_done": manifest.get("provider_backed_acceptance_done") is True,
+                "worker_backed_execution_done": manifest.get("worker_backed_execution_done") is True,
+                "browser_visual_delta_qa_done": manifest.get("browser_visual_delta_qa_done") is True,
+                "durable_ci_evidence_complete": manifest.get("durable_ci_evidence_complete") is True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observed_local_cache_stage_scope_manifest_not_production_completion",
+            }
+        ]
+    except Exception:
+        return [
+            {
+                "id": "LTG-13",
+                "goal": "下一票雷达快扫生产化",
+                "stage_scope_manifest": "candidate_radar_production_stage_scope_manifest",
+                "status": "local_observation_failed_safe_fallback",
+                "observed_source": "GET /api/candidate-radar/cache local builder",
+                "error_message_safe": "candidate_radar_stage_scope_observation_failed",
+                "row_count": 0,
+                "pending_stage_count": 0,
+                "local_evidence_stage_count": 0,
+                "production_blocker_count": 0,
+                "production_radar_replacement_complete": False,
+                "legacy_retirement_ready": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observation_failure_is_not_completion",
+            }
+        ]
+
+
+def _merge_ltg_stage_scope_observations(
+    rows: list[dict[str, Any]],
+    observed_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    observed_by_id = {str(row.get("id") or ""): row for row in observed_rows}
+    merged: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        observed = observed_by_id.get(str(item.get("id") or ""))
+        if observed:
+            item["observed_stage_scope_manifest_status"] = observed.get("status")
+            item["observed_stage_scope_manifest_source"] = observed.get("observed_source")
+            item["observed_stage_scope_row_count"] = observed.get("row_count")
+            item["observed_stage_scope_pending_count"] = observed.get("pending_stage_count")
+            item["observed_stage_scope_local_evidence_count"] = observed.get("local_evidence_stage_count")
+            item["observed_stage_scope_can_close_goal"] = False
+        merged.append(item)
+    return merged
 
 
 def _linkage_row(
@@ -614,7 +729,11 @@ def _now_iso() -> str:
 
 def build_migration_status() -> dict[str, Any]:
     loaded_at = _now_iso()
-    long_term_goal_rows = _enrich_long_term_goal_rows([dict(item) for item in LONG_TERM_GOAL_PROGRESS])
+    ltg_stage_scope_observed_rows = _build_ltg_stage_scope_observed_rows()
+    long_term_goal_rows = _merge_ltg_stage_scope_observations(
+        _enrich_long_term_goal_rows([dict(item) for item in LONG_TERM_GOAL_PROGRESS]),
+        ltg_stage_scope_observed_rows,
+    )
     long_term_goal_summary = _build_long_term_goal_summary(long_term_goal_rows)
     tushare_deepseek_linkage_rows = _build_tushare_deepseek_linkage_rows()
     tushare_deepseek_mode_layer_rows = _build_tushare_deepseek_mode_layer_rows()
@@ -631,6 +750,7 @@ def build_migration_status() -> dict[str, Any]:
         "progress_baseline": [dict(item) for item in MIGRATION_PROGRESS_BASELINE],
         "long_term_goal_summary": long_term_goal_summary,
         "long_term_goal_rows": long_term_goal_rows,
+        "ltg_stage_scope_observed_rows": ltg_stage_scope_observed_rows,
         "tushare_deepseek_linkage_review": tushare_deepseek_linkage_review,
         "tushare_deepseek_linkage_rows": tushare_deepseek_linkage_rows,
         "tushare_deepseek_mode_layer_rows": tushare_deepseek_mode_layer_rows,
@@ -660,8 +780,10 @@ def build_migration_status() -> dict[str, Any]:
                 "source_type": "user_provided_long_term_reference_baseline",
                 "row_count": len(MIGRATION_PROGRESS_BASELINE)
                 + len(long_term_goal_rows)
+                + len(ltg_stage_scope_observed_rows)
                 + len(tushare_deepseek_linkage_rows)
                 + len(tushare_deepseek_mode_layer_rows),
+                "ltg_stage_scope_observed_row_count": len(ltg_stage_scope_observed_rows),
                 "tushare_deepseek_linkage_row_count": len(tushare_deepseek_linkage_rows),
                 "tushare_deepseek_mode_layer_row_count": len(tushare_deepseek_mode_layer_rows),
                 "local_fetched_at": loaded_at,
@@ -677,6 +799,7 @@ def build_migration_status() -> dict[str, Any]:
         ],
         "warnings": [
             "GET /api/migration/status 只读展示用户提供的长期迁移基线；不会重新估算、外联或触发任务。",
+            "LTG stage-scope observed rows 只读取本地 cache 里的阶段清单；它们不是生产完成证据。",
             "14 个长期目标严格关闭数仍为 0/14；scaffold / preflight / mock / matrix / sanitizer / dry-run / local receipt 不能作为生产完成证据。",
             "Tushare / DeepSeek 联动按四层审查：cache/render 安静、POST task 门控、task 内真实 provider/model execution、production promotion ledger；真实执行与生产提升仍需后续显式验收。",
             "进度表用于规划判断，不代表自动完成迁移；后续阶段仍需逐项实现和测试。",
