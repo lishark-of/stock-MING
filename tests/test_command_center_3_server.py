@@ -275,6 +275,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(migration_goals["LTG-02"]["stage_scope_manifest"], "tushare_production_stage_scope_manifest")
         self.assertIn("production stage-scope manifest", migration_goals["LTG-02"]["current_state"])
         self.assertIn("latest target-sample request cache visibility", migration_goals["LTG-02"]["current_state"])
+        self.assertIn("React Data Health target-sample request visibility", migration_goals["LTG-02"]["current_state"])
         self.assertIn("durable evidence recipe", migration_goals["LTG-02"]["current_state"])
         self.assertIn("provider target samples", migration_goals["LTG-02"]["next_evidence_required"])
         self.assertEqual(migration_goals["LTG-03"]["completion_estimate"], "45%-55%")
@@ -16305,6 +16306,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration_goals["LTG-02"]["stage_scope_manifest"], "tushare_production_stage_scope_manifest")
         self.assertIn("production stage-scope manifest", migration_goals["LTG-02"]["current_state"])
         self.assertIn("latest target-sample request cache visibility", migration_goals["LTG-02"]["current_state"])
+        self.assertIn("React Data Health target-sample request visibility", migration_goals["LTG-02"]["current_state"])
         self.assertIn("provider target samples", migration_goals["LTG-02"]["next_evidence_required"])
         self.assertEqual(migration_goals["LTG-03"]["completion_estimate"], "45%-55%")
         self.assertEqual(
