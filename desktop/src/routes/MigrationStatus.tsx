@@ -41,6 +41,43 @@ export default function MigrationStatus() {
   const principles = Array.isArray(packet.principles) ? packet.principles : [];
   const packetAcceptanceRunwayRows = (packet.ltg_acceptance_runway_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const ltgNextAcceptanceActionRows = (packet.ltg_next_acceptance_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const ltgNextAcceptanceReceiptRows = ltgNextAcceptanceActionRows.map((row) => ({
+    queue_id: row.queue_id,
+    priority: row.priority,
+    action_label: row.action_label,
+    local_receipt_status: row.local_receipt_status,
+    observed_steps: row.observed_local_receipt_step_count,
+    missing_steps: row.missing_local_receipt_step_count,
+    next_local_step: row.next_local_step,
+    lookup_creates_task: row.local_receipt_lookup_creates_task,
+    lookup_calls_provider: row.local_receipt_lookup_calls_provider,
+    provider_execution: row.provider_execution_implemented,
+    model_execution: row.model_execution_implemented,
+    can_close: row.can_close_goal === true
+  }));
+  const ltgNextAcceptanceLocalStepRows = ltgNextAcceptanceActionRows.flatMap((row) => {
+    const localSteps = (row.local_step_rows as Array<Record<string, unknown>> | undefined) ?? [];
+    return localSteps.map((step) => ({
+      queue_id: row.queue_id,
+      priority: row.priority,
+      phase_key: step.phase_key,
+      route: step.route,
+      receipt_visible: step.receipt_visible,
+      task_found: step.task_found,
+      receipt_status: step.receipt_status,
+      blocker_count: step.receipt_blocker_count,
+      lookup_calls_provider: step.lookup_calls_provider,
+      creates_task_from_lookup: step.creates_task_from_lookup
+    }));
+  });
+  const missingLocalReceiptSteps = ltgNextAcceptanceActionRows.reduce(
+    (total, row) => total + Number(row.missing_local_receipt_step_count ?? 0),
+    0
+  );
+  const observedLocalReceiptSteps = ltgNextAcceptanceActionRows.reduce(
+    (total, row) => total + Number(row.observed_local_receipt_step_count ?? 0),
+    0
+  );
   const policy = packet.api_policy as Record<string, unknown> | undefined;
   const baselinePolicy = packet.baseline_policy as Record<string, unknown> | undefined;
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
@@ -147,6 +184,26 @@ export default function MigrationStatus() {
       <DataLineageTable rows={ltgAcceptanceRunwayRows} />
       <h3>LTG next acceptance action queue</h3>
       <p className="risk-note">这里集中显示 P1/P2/P3 的下一步显式验收路径：只读展示允许的 POST 路由、未来 provider/worker 证据和禁止事项；GET cache 和页面渲染不会创建任务或调用外部服务。</p>
+      <MetricGrid
+        items={[
+          { label: "near-term actions", value: ltgNextAcceptanceActionRows.length },
+          { label: "observed local receipts", value: observedLocalReceiptSteps, tone: observedLocalReceiptSteps ? "good" : "warn" },
+          { label: "missing local receipts", value: missingLocalReceiptSteps, tone: missingLocalReceiptSteps ? "warn" : "good" },
+          { label: "local step rows", value: ltgNextAcceptanceLocalStepRows.length },
+          {
+            label: "lookup creates task",
+            value: ltgNextAcceptanceActionRows.some((row) => row.local_receipt_lookup_creates_task === true),
+            tone: ltgNextAcceptanceActionRows.some((row) => row.local_receipt_lookup_creates_task === true) ? "bad" : "good"
+          },
+          {
+            label: "lookup calls provider",
+            value: ltgNextAcceptanceActionRows.some((row) => row.local_receipt_lookup_calls_provider === true),
+            tone: ltgNextAcceptanceActionRows.some((row) => row.local_receipt_lookup_calls_provider === true) ? "bad" : "good"
+          }
+        ]}
+      />
+      <DataLineageTable rows={ltgNextAcceptanceReceiptRows} />
+      <DataLineageTable rows={ltgNextAcceptanceLocalStepRows} />
       <DataLineageTable rows={ltgNextAcceptanceActionRows} />
       <DataLineageTable rows={longTermGoalRows} />
       <h3>LTG-13 下一票雷达 promotion dry-run</h3>
