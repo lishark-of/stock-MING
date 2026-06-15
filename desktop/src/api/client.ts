@@ -546,3 +546,10 @@ export function runWorkerRuntimeQaExecutionRequest(payload: Record<string, unkno
     body: JSON.stringify(payload)
   });
 }
+
+export function runWorkerRuntimeQaDryRun(payload: Record<string, unknown> = {}) {
+  return request<Record<string, unknown>>("/api/worker/runtime-qa-dry-run", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}

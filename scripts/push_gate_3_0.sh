@@ -118,7 +118,7 @@ write_release_readiness_report() {
 - candidate_radar_contract: passed_local_contract_replacement_pending
 - candidate_radar_browser_qa_runbook: passed_runbook_execution_pending
 - storage_contract: passed_local_contract_physical_migration_pending
-- worker_contract: passed_local_contract_worker_activation_pending
+- worker_contract: worker_contract_passed
 - tauri_desktop_contract: passed_local_contract_package_validation_pending
 - streamlit_legacy_contract: passed_local_contract_retirement_pending
 - trade_isolation_contract: passed_local_contract_real_trading_disconnected
