@@ -98,6 +98,7 @@ export default function DataHealthTimeline() {
   const latestTradeCalDryRun = (cache.latest_trade_cal_provider_acceptance_dry_run as Record<string, unknown> | undefined) ?? {};
   const tradeCalNextExecutionRecipe = (cache.trade_cal_provider_acceptance_next_execution_recipe as Record<string, unknown> | undefined) ?? {};
   const latestTradeCalExecutionRequest = (cache.latest_trade_cal_provider_acceptance_execution_request as Record<string, unknown> | undefined) ?? {};
+  const latestTushareTargetSampleExecutionRequest = (cache.latest_tushare_provider_target_sample_execution_request as Record<string, unknown> | undefined) ?? {};
   const freshnessDurableEvidenceRecipe = (cache.freshness_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
   const freshnessDurableEvidenceRows = rows(cache.freshness_durable_evidence_rows);
   const latestTradeCalDryRunReceipt = latestTradeCalDryRun.receipt as Record<string, unknown> | undefined;
@@ -114,6 +115,9 @@ export default function DataHealthTimeline() {
   const postTradeCalExecutionRequestReceipt = tradeCalExecutionRequestPayload.trade_cal_provider_acceptance_execution_request_receipt as Record<string, unknown> | undefined;
   const tradeCalExecutionRequest = postTradeCalExecutionRequestReceipt ?? latestTradeCalExecutionRequestReceipt ?? latestTradeCalExecutionRequest;
   const tradeCalExecutionRequestRows = rows(tradeCalExecutionRequestPayload.trade_cal_provider_acceptance_execution_request_rows ?? cache.latest_trade_cal_provider_acceptance_execution_request_rows);
+  const latestTushareTargetSampleExecutionRequestReceipt = latestTushareTargetSampleExecutionRequest.receipt as Record<string, unknown> | undefined;
+  const tushareTargetSampleExecutionRequest = latestTushareTargetSampleExecutionRequestReceipt ?? latestTushareTargetSampleExecutionRequest;
+  const tushareTargetSampleExecutionRequestRows = rows(cache.latest_tushare_provider_target_sample_execution_request_rows);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
@@ -157,6 +161,8 @@ export default function DataHealthTimeline() {
           { label: "配方 blockers", value: counts.trade_cal_provider_acceptance_next_execution_blocker_count as number | undefined, tone: Number(counts.trade_cal_provider_acceptance_next_execution_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "执行请求", value: latestTradeCalExecutionRequest.latest_task_found === true ? "可见" : "未运行", tone: latestTradeCalExecutionRequest.latest_task_found === true ? "good" : "neutral" },
           { label: "请求 blockers", value: counts.latest_trade_cal_provider_acceptance_execution_request_blocking_row_count as number | undefined, tone: Number(counts.latest_trade_cal_provider_acceptance_execution_request_blocking_row_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "Tushare 样本请求", value: latestTushareTargetSampleExecutionRequest.latest_task_found === true ? "可见" : "未运行", tone: latestTushareTargetSampleExecutionRequest.latest_task_found === true ? "good" : "neutral" },
+          { label: "样本请求 blockers", value: counts.latest_tushare_provider_target_sample_execution_request_blocking_row_count as number | undefined, tone: Number(counts.latest_tushare_provider_target_sample_execution_request_blocking_row_count ?? 0) > 0 ? "warn" : "good" },
           { label: "durable recipe", value: freshnessDurableEvidenceRecipe.status as string | undefined, tone: freshnessDurableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
           { label: "durable blockers", value: freshnessDurableEvidenceRecipe.durable_evidence_blocker_count ?? counts.freshness_durable_evidence_blocker_count, tone: Number(freshnessDurableEvidenceRecipe.durable_evidence_blocker_count ?? counts.freshness_durable_evidence_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "当前证据 QA", value: currentEvidenceFreshness.status as string | undefined, tone: currentEvidenceFreshness.provider_backed_long_window_acceptance_done === true ? "good" : "warn" },
@@ -347,6 +353,26 @@ export default function DataHealthTimeline() {
         <DataLineageTable rows={objectRow(tradeCalExecutionRequest)} />
         <DataLineageTable rows={tradeCalExecutionRequestRows} />
         <JsonDetails title="latest trade_cal provider acceptance execution request raw" data={latestTradeCalExecutionRequest} />
+      </PacketCard>
+
+      <PacketCard title="Tushare target-sample 执行请求 ticket" subtitle="Data Health 只读展示 latest target-sample request；不调用 Tushare、不创建 provider task" status={String(tushareTargetSampleExecutionRequest.status ?? tushareTargetSampleExecutionRequest.execution_request_status ?? "not_run")}>
+        <p>status: {String(tushareTargetSampleExecutionRequest.status ?? tushareTargetSampleExecutionRequest.execution_request_status ?? "not_run")}</p>
+        <p>latest task: {String(latestTushareTargetSampleExecutionRequest.latest_task_id ?? "--")} / {String(latestTushareTargetSampleExecutionRequest.latest_task_status ?? "--")} / {String(latestTushareTargetSampleExecutionRequest.latest_task_current_step ?? "--")}</p>
+        <p>target route: {String(tushareTargetSampleExecutionRequest.target_post_task_route ?? "POST /api/tasks/refresh-tushare-facts")} / {String(tushareTargetSampleExecutionRequest.target_acceptance_mode ?? "provider_target_sample_acceptance")}</p>
+        <p>requested targets: {Array.isArray(tushareTargetSampleExecutionRequest.requested_targets) ? tushareTargetSampleExecutionRequest.requested_targets.join(" / ") : "--"}</p>
+        <p>selected APIs: {Array.isArray(tushareTargetSampleExecutionRequest.selected_apis) ? tushareTargetSampleExecutionRequest.selected_apis.join(" / ") : "--"}</p>
+        <p>scope hash match / operator confirmation: {String(tushareTargetSampleExecutionRequest.execution_recipe_scope_hash_matches_latest === true)} / {String(tushareTargetSampleExecutionRequest.operator_confirmation_recorded === true)}</p>
+        <p>ready_for_manual_provider_task_submission: {String(tushareTargetSampleExecutionRequest.ready_for_manual_provider_task_submission === true)}</p>
+        <p>ready_to_execute_from_cache / creates_provider_task: {String(tushareTargetSampleExecutionRequest.ready_to_execute_from_cache ?? false)} / {String(tushareTargetSampleExecutionRequest.creates_provider_task ?? false)}</p>
+        <p>provider_task_executed_by_request / provider_execution_implemented: {String(tushareTargetSampleExecutionRequest.provider_task_executed_by_request ?? false)} / {String(tushareTargetSampleExecutionRequest.provider_execution_implemented ?? false)}</p>
+        <p>provider_backed_target_sample_acceptance_done / full_interface_acceptance_done: {String(tushareTargetSampleExecutionRequest.provider_backed_target_sample_acceptance_done ?? false)} / {String(tushareTargetSampleExecutionRequest.full_interface_acceptance_done ?? false)}</p>
+        <p>production_tushare_pipeline_complete: {String(tushareTargetSampleExecutionRequest.production_tushare_pipeline_complete ?? false)}</p>
+        <p>cache_get_external_calls / react_render_external_calls: {String(tushareTargetSampleExecutionRequest.cache_get_external_calls ?? false)} / {String(tushareTargetSampleExecutionRequest.react_render_external_calls ?? false)}</p>
+        <p>tushare_called / deepseek_called / github_called: {String(tushareTargetSampleExecutionRequest.tushare_called ?? false)} / {String(tushareTargetSampleExecutionRequest.deepseek_called ?? false)} / {String(tushareTargetSampleExecutionRequest.github_called ?? false)}</p>
+        <p>GET cache 只读取 latest Tushare target-sample execution request metadata；它不是 provider call ledger，也不是 LTG-02 provider-backed target-sample acceptance。</p>
+        <DataLineageTable rows={objectRow(tushareTargetSampleExecutionRequest)} />
+        <DataLineageTable rows={tushareTargetSampleExecutionRequestRows} />
+        <JsonDetails title="latest Tushare target-sample execution request raw" data={latestTushareTargetSampleExecutionRequest} />
       </PacketCard>
 
       <PacketCard title="Freshness durable evidence recipe" subtitle="LTG-01 生产验收证据配方；固定 provider trade_cal 直接证据清单，不调用 Tushare" status={String(freshnessDurableEvidenceRecipe.status ?? "freshness_durable_evidence_recipe_not_loaded")}>
