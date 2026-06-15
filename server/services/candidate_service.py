@@ -43,6 +43,9 @@ CANDIDATE_WORKER_EXECUTION_REQUEST_ROUTE = "POST /api/candidate-radar/worker-exe
 CANDIDATE_FULL_POOL_WORKER_FALLBACK_SCHEMA_VERSION = "candidate_radar_full_pool_worker_fallback.v1"
 CANDIDATE_FULL_POOL_WORKER_FALLBACK_TASK_TYPE = "run_candidate_radar_full_pool_worker_fallback"
 CANDIDATE_FULL_POOL_WORKER_FALLBACK_ROUTE = "POST /api/candidate-radar/full-pool-worker-scan"
+CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_SCHEMA_VERSION = "candidate_radar_deep_scan_worker_fallback.v1"
+CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_TASK_TYPE = "run_candidate_radar_deep_scan_worker_fallback"
+CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_ROUTE = "POST /api/candidate-radar/deep-scan-worker"
 CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_SCHEMA_VERSION = "candidate_radar_production_replacement_review.v1"
 CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_TASK_TYPE = "run_candidate_radar_production_replacement_review"
 CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_ROUTE = "POST /api/candidate-radar/production-replacement-review"
@@ -130,6 +133,7 @@ PERSISTED_TASK_SCAN_MODES = LOCAL_POOL_SCAN_MODES | {
     "provider_parity_dry_run",
     "worker_execution_request",
     "full_pool_worker_fallback",
+    "deep_scan_worker_fallback",
     "quant_projection_execution_request",
     "production_replacement_review",
 }
@@ -4872,6 +4876,7 @@ def _attach_no_feature_loss_acceptance_contract(packet: Mapping[str, Any]) -> di
     view = _attach_candidate_radar_worker_execution_recipe(view)
     view = _attach_candidate_radar_worker_execution_request(view)
     view = _attach_candidate_radar_full_pool_worker_fallback(view)
+    view = _attach_candidate_radar_deep_scan_worker_fallback(view)
     view = _attach_candidate_radar_next_execution_recipe(view)
     view = _attach_candidate_radar_durable_evidence_recipe(view)
     view = _attach_candidate_radar_production_stage_scope_manifest(view)
@@ -5822,7 +5827,7 @@ def _candidate_radar_worker_execution_recipe(
     scope_input = {
         "schema_version": "candidate_radar_worker_execution_recipe.v1",
         "recommended_worker_full_pool_route": CANDIDATE_FULL_POOL_WORKER_FALLBACK_ROUTE,
-        "recommended_worker_deep_scan_route": "future POST /api/candidate-radar/deep-scan-worker",
+        "recommended_worker_deep_scan_route": CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_ROUTE,
         "required_storage_datasets": list(FULL_POOL_REQUIRED_STORAGE_DATASETS),
         "required_legacy_signal_groups": [str(item.get("group")) for item in LEGACY_RADAR_SIGNAL_GROUPS],
         "recipe_keys": [str(row["recipe_key"]) for row in rows],
@@ -5849,9 +5854,9 @@ def _candidate_radar_worker_execution_recipe(
         "ready_to_start_worker_from_cache": False,
         "requires_explicit_user_action": True,
         "recommended_worker_full_pool_task_type": CANDIDATE_FULL_POOL_WORKER_FALLBACK_TASK_TYPE,
-        "recommended_worker_deep_scan_task_type": "future_run_candidate_radar_deep_scan_worker",
+        "recommended_worker_deep_scan_task_type": CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_TASK_TYPE,
         "recommended_worker_full_pool_route": CANDIDATE_FULL_POOL_WORKER_FALLBACK_ROUTE,
-        "recommended_worker_deep_scan_route": "future POST /api/candidate-radar/deep-scan-worker",
+        "recommended_worker_deep_scan_route": CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_ROUTE,
         "required_storage_datasets": list(FULL_POOL_REQUIRED_STORAGE_DATASETS),
         "required_legacy_signal_groups": [str(item.get("group")) for item in LEGACY_RADAR_SIGNAL_GROUPS],
         "required_legacy_parity_items": [str(item.get("key")) for item in LEGACY_RADAR_PARITY_ITEMS],
@@ -6103,7 +6108,7 @@ def _candidate_radar_worker_execution_request(
             passed=True,
             local_blocker=False,
             production_blocker=False,
-            evidence=f"{CANDIDATE_FULL_POOL_WORKER_FALLBACK_ROUTE} and future POST /api/candidate-radar/deep-scan-worker",
+            evidence=f"{CANDIDATE_FULL_POOL_WORKER_FALLBACK_ROUTE} and {CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_ROUTE}",
             next_action="Implement future worker routes only after runtime worker readiness is accepted.",
         ),
         _candidate_worker_execution_request_row(
@@ -6179,9 +6184,9 @@ def _candidate_radar_worker_execution_request(
         "quant_projection_scope_hash": quant_dry_run.get("acceptance_scope_hash") or "",
         "quant_projection_scope_hash_short": quant_dry_run.get("acceptance_scope_hash_short") or "",
         "target_worker_full_pool_route": CANDIDATE_FULL_POOL_WORKER_FALLBACK_ROUTE,
-        "target_worker_deep_scan_route": "future POST /api/candidate-radar/deep-scan-worker",
+        "target_worker_deep_scan_route": CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_ROUTE,
         "target_worker_full_pool_task_type": CANDIDATE_FULL_POOL_WORKER_FALLBACK_TASK_TYPE,
-        "target_worker_deep_scan_task_type": "future_run_candidate_radar_deep_scan_worker",
+        "target_worker_deep_scan_task_type": CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_TASK_TYPE,
         "allowed_next_step": allowed_next_step,
         "local_blocker_count": len(local_blockers),
         "production_blocker_count": len(production_blockers),
@@ -6569,6 +6574,320 @@ def _attach_candidate_radar_full_pool_worker_fallback(packet: Mapping[str, Any])
     return view
 
 
+def _candidate_deep_scan_worker_fallback_row(
+    criterion: str,
+    status: str,
+    *,
+    passed: bool,
+    local_blocker: bool,
+    production_blocker: bool,
+    evidence: str,
+    next_action: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_SCHEMA_VERSION,
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "local_blocker": bool(local_blocker),
+        "production_blocker": bool(production_blocker),
+        "evidence": evidence,
+        "next_action": next_action,
+        "local_worker_fallback_task": True,
+        "worker_task_created": False,
+        "worker_task_executed": False,
+        "worker_started": False,
+        "redis_broker_used": False,
+        "celery_worker_started": False,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "deepseek_model_execution_done": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+    }
+
+
+def _candidate_radar_deep_scan_worker_fallback_receipt(
+    packet: Mapping[str, Any],
+    *,
+    payload_safe: Mapping[str, Any] | None = None,
+    explicit_execution: bool = False,
+    task_id: str | None = None,
+    executed_at: str | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    payload = payload_safe or {}
+    operator_approved = _coerce_bool(
+        payload.get("operator_approved") or payload.get("user_approved") or payload.get("approved"),
+        False,
+    )
+    worker_recipe = _as_dict(packet.get("candidate_radar_worker_execution_recipe"))
+    worker_request = _as_dict(packet.get("candidate_radar_worker_execution_request_receipt"))
+    local_deep_review = _as_dict(packet.get("deep_scan_local_review_receipt"))
+    candidate_rows = [row for row in _as_list(packet.get("candidate_rows")) if isinstance(row, dict)]
+    requested_scope_hash = _safe_text(
+        payload.get("worker_execution_scope_hash") or payload.get("scope_hash") or "",
+        limit=128,
+    )
+    expected_scope_hash = _safe_text(
+        worker_request.get("worker_execution_scope_hash")
+        or worker_recipe.get("worker_execution_scope_hash")
+        or "",
+        limit=128,
+    )
+    scope_hash_matches = bool(requested_scope_hash and expected_scope_hash and requested_scope_hash == expected_scope_hash)
+    worker_request_ready = worker_request.get("local_execution_request_ready") is True
+    local_deep_review_done = local_deep_review.get("local_deep_scan_review_done") is True
+    candidate_rows_ready = bool(candidate_rows)
+    rows = [
+        _candidate_deep_scan_worker_fallback_row(
+            "explicit_post_deep_scan_worker_fallback",
+            "passed_explicit_post" if explicit_execution else "blocked_missing_explicit_post",
+            passed=explicit_execution,
+            local_blocker=not explicit_execution,
+            production_blocker=False,
+            evidence=f"route={CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_ROUTE}; task_id={task_id or ''}",
+            next_action="Use only the explicit POST route to consume local deep-scan fallback evidence.",
+        ),
+        _candidate_deep_scan_worker_fallback_row(
+            "operator_approval_recorded",
+            "passed_operator_approved" if operator_approved else "blocked_operator_approval_required",
+            passed=operator_approved,
+            local_blocker=explicit_execution and not operator_approved,
+            production_blocker=False,
+            evidence=f"operator_approved={operator_approved}",
+            next_action="Require explicit operator approval before consuming deep-scan worker scope.",
+        ),
+        _candidate_deep_scan_worker_fallback_row(
+            "worker_execution_request_ready",
+            "passed_worker_request_ready" if worker_request_ready else "blocked_worker_request_required",
+            passed=worker_request_ready,
+            local_blocker=not worker_request_ready,
+            production_blocker=False,
+            evidence=f"status={worker_request.get('status')}; ready={worker_request_ready}",
+            next_action="Create a scope-bound worker execution request before running deep-scan fallback.",
+        ),
+        _candidate_deep_scan_worker_fallback_row(
+            "worker_execution_scope_hash_bound",
+            "passed_scope_hash_bound" if scope_hash_matches else "blocked_scope_hash_mismatch_or_missing",
+            passed=scope_hash_matches,
+            local_blocker=explicit_execution and not scope_hash_matches,
+            production_blocker=False,
+            evidence=(
+                f"requested={requested_scope_hash[:16] if requested_scope_hash else 'missing'}; "
+                f"expected={expected_scope_hash[:16] if expected_scope_hash else 'missing'}"
+            ),
+            next_action="Bind fallback execution to the latest approved worker execution request hash.",
+        ),
+        _candidate_deep_scan_worker_fallback_row(
+            "local_deep_scan_review_consumed",
+            "passed_local_deep_review_consumed" if local_deep_review_done else "blocked_local_deep_review_missing",
+            passed=local_deep_review_done,
+            local_blocker=not local_deep_review_done,
+            production_blocker=False,
+            evidence=f"status={local_deep_review.get('status')}; local_done={local_deep_review_done}",
+            next_action="Run local deep-scan review before consuming the worker fallback route.",
+        ),
+        _candidate_deep_scan_worker_fallback_row(
+            "candidate_rows_ready",
+            "passed_candidate_rows_ready" if candidate_rows_ready else "blocked_empty_candidate_rows",
+            passed=candidate_rows_ready,
+            local_blocker=not candidate_rows_ready,
+            production_blocker=False,
+            evidence=f"candidate_row_count={len(candidate_rows)}",
+            next_action="Provide local candidate rows before running deep-scan fallback execution.",
+        ),
+        _candidate_deep_scan_worker_fallback_row(
+            "worker_runtime_still_pending",
+            "pending_celery_redis_runtime",
+            passed=False,
+            local_blocker=False,
+            production_blocker=True,
+            evidence="This route consumes local deep-scan fallback evidence and does not start Celery or Redis.",
+            next_action="Promote only after real worker process, queue, logs, cancellation, retry, and durable evidence exist.",
+        ),
+        _candidate_deep_scan_worker_fallback_row(
+            "deepseek_model_execution_still_pending",
+            "pending_model_ledger",
+            passed=False,
+            local_blocker=False,
+            production_blocker=True,
+            evidence="Fallback execution does not call DeepSeek or produce a model ledger.",
+            next_action="Keep model-backed deep research as a separate explicit task with sanitizer and ledger evidence.",
+        ),
+        _candidate_deep_scan_worker_fallback_row(
+            "provider_backed_parity_still_pending",
+            "pending_provider_backed_parity",
+            passed=False,
+            local_blocker=False,
+            production_blocker=True,
+            evidence="Fallback execution does not refresh provider rows or prove legacy signal parity.",
+            next_action="Run provider-backed parity acceptance with safe call ledger before production replacement.",
+        ),
+        _candidate_deep_scan_worker_fallback_row(
+            "browser_and_legacy_promotion_still_pending",
+            "pending_browser_legacy_promotion",
+            passed=False,
+            local_blocker=False,
+            production_blocker=True,
+            evidence="Fallback execution does not promote browser performance evidence or retire legacy radar.",
+            next_action="Keep browser promotion and legacy retirement review as separate acceptance steps.",
+        ),
+        _candidate_deep_scan_worker_fallback_row(
+            "no_provider_model_trade_secret_boundary",
+            "passed_no_side_effects",
+            passed=True,
+            local_blocker=False,
+            production_blocker=False,
+            evidence="No provider/model/GitHub calls, no trades, no action mutation, and no secret persistence.",
+            next_action="Preserve this boundary when replacing fallback with real worker/model execution.",
+        ),
+    ]
+    local_blockers = [row["criterion"] for row in rows if row.get("local_blocker")]
+    production_blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
+    local_ready = explicit_execution and operator_approved and not local_blockers
+    if not explicit_execution:
+        status = "candidate_radar_deep_scan_worker_fallback_missing"
+        allowed_next_step = "run_button_gated_deep_scan_worker_fallback"
+    elif not operator_approved:
+        status = "candidate_radar_deep_scan_worker_fallback_blocked_operator_approval_required"
+        allowed_next_step = "rerun_with_operator_approval"
+    elif not worker_request_ready:
+        status = "candidate_radar_deep_scan_worker_fallback_blocked_worker_request_required"
+        allowed_next_step = "create_worker_execution_request_ticket"
+    elif not scope_hash_matches:
+        status = "candidate_radar_deep_scan_worker_fallback_blocked_scope_hash_mismatch"
+        allowed_next_step = "rerun_against_latest_worker_execution_scope_hash"
+    elif not (local_deep_review_done and candidate_rows_ready):
+        status = "candidate_radar_deep_scan_worker_fallback_blocked_local_deep_review_required"
+        allowed_next_step = "run_local_deep_scan_review_with_candidate_rows"
+    else:
+        status = "candidate_radar_deep_scan_worker_fallback_ready_worker_runtime_pending"
+        allowed_next_step = "promote_to_real_worker_and_model_after_celery_redis_acceptance"
+    receipt = {
+        "schema_version": CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_SCHEMA_VERSION,
+        "status": status,
+        "scope": "button_gated_local_deep_scan_worker_fallback_no_worker_or_model_start",
+        "ltg": "LTG-13/LTG-06/LTG-07",
+        "route": CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_ROUTE,
+        "task_type": CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_TASK_TYPE,
+        "task_id": task_id or "",
+        "executed_at": executed_at,
+        "explicit_deep_scan_worker_fallback_done": explicit_execution,
+        "operator_approved": operator_approved,
+        "local_worker_fallback_deep_scan_done": local_ready,
+        "local_worker_fallback_ready": local_ready,
+        "ready_for_worker_runtime_promotion": False,
+        "production_deep_scan_done": False,
+        "deep_scan_done": False,
+        "worker_deep_scan_execution_done": False,
+        "worker_backed_execution_done": False,
+        "async_worker_execution_done": False,
+        "worker_execution_implemented": False,
+        "worker_task_created": False,
+        "worker_task_executed": False,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_broker_used": False,
+        "provider_backed_acceptance_done": False,
+        "model_execution_implemented": False,
+        "deepseek_model_execution_done": False,
+        "deepseek_model_ledger_complete": False,
+        "browser_visual_performance_promoted": False,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "legacy_fallback_required": True,
+        "worker_execution_request_ready": worker_request_ready,
+        "worker_execution_scope_hash": expected_scope_hash,
+        "worker_execution_scope_hash_short": expected_scope_hash[:16] if expected_scope_hash else "",
+        "requested_worker_execution_scope_hash": requested_scope_hash,
+        "requested_worker_execution_scope_hash_matches_latest": scope_hash_matches,
+        "local_deep_scan_review_done": local_deep_review_done,
+        "candidate_row_count": len(candidate_rows),
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+        "allowed_next_step": allowed_next_step,
+        "not_allowed_next_steps": [
+            "treat local deep-scan worker fallback as Celery worker execution",
+            "treat local deep-scan worker fallback as DeepSeek/model deep research",
+            "treat local deep-scan worker fallback as provider-backed parity",
+            "start worker from GET cache or React render",
+            "retire legacy radar fallback from local deep-scan fallback",
+            "turn candidate rows into buy/sell instructions",
+            "store raw token/key in packet, cache, ledger, log, or frontend",
+        ],
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+        "row_count": len(rows),
+        "rows": rows,
+        "note": "This receipt proves only a button-gated local deep-scan worker-fallback route consumed local review evidence. It is not Celery/Redis worker execution, DeepSeek/model execution, provider-backed parity, or production radar replacement.",
+    }
+    return receipt, rows
+
+
+def _attach_candidate_radar_deep_scan_worker_fallback(packet: Mapping[str, Any]) -> dict[str, Any]:
+    view = dict(packet)
+    existing = _as_dict(view.get("candidate_radar_deep_scan_worker_fallback_receipt"))
+    if existing.get("schema_version") == CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_SCHEMA_VERSION:
+        receipt = dict(existing)
+        rows = [
+            row
+            for row in _as_list(view.get("candidate_radar_deep_scan_worker_fallback_rows"))
+            if isinstance(row, dict)
+        ]
+        if not rows:
+            rows = [row for row in _as_list(receipt.get("rows")) if isinstance(row, dict)]
+    else:
+        receipt, rows = _candidate_radar_deep_scan_worker_fallback_receipt(view)
+    counts = dict(_as_dict(view.get("counts")))
+    counts["candidate_radar_deep_scan_worker_fallback_row_count"] = len(rows)
+    counts["candidate_radar_deep_scan_worker_fallback_local_blocker_count"] = receipt.get("local_blocker_count", 0)
+    counts["candidate_radar_deep_scan_worker_fallback_production_blocker_count"] = receipt.get(
+        "production_blocker_count", 0
+    )
+    counts["candidate_radar_deep_scan_worker_fallback_ready"] = (
+        receipt.get("local_worker_fallback_deep_scan_done") is True
+    )
+    policy = dict(_as_dict(view.get("policy")))
+    policy["candidate_radar_deep_scan_worker_fallback_is_button_gated"] = True
+    policy["candidate_radar_deep_scan_worker_fallback_is_local"] = True
+    policy["candidate_radar_deep_scan_worker_fallback_does_not_start_worker"] = True
+    policy["candidate_radar_deep_scan_worker_fallback_does_not_call_deepseek"] = True
+    policy["candidate_radar_deep_scan_worker_fallback_is_not_production_replacement"] = True
+    policy["candidate_radar_deep_scan_worker_fallback_keeps_external_calls_false"] = True
+    ledger = _as_list(view.get("call_ledger"))
+    ledger.append(
+        _candidate_call_ledger_row(
+            api="local_candidate_radar_deep_scan_worker_fallback_preview",
+            source_snapshot="candidate_radar_packet",
+            row_count=len(rows),
+            call_status=str(receipt.get("status") or "candidate_radar_deep_scan_worker_fallback_missing"),
+        )
+    )
+    view["counts"] = counts
+    view["policy"] = policy
+    view["call_ledger"] = ledger
+    view["candidate_radar_deep_scan_worker_fallback_receipt"] = receipt
+    view["candidate_radar_deep_scan_worker_fallback_rows"] = rows
+    return view
+
+
 def _candidate_radar_next_execution_recipe_row(
     phase: str,
     status: str,
@@ -6816,7 +7135,7 @@ def _candidate_radar_next_execution_recipe(
         "recommended_worker_full_pool_route": worker_recipe.get("recommended_worker_full_pool_route")
         or CANDIDATE_FULL_POOL_WORKER_FALLBACK_ROUTE,
         "recommended_worker_deep_scan_route": worker_recipe.get("recommended_worker_deep_scan_route")
-        or "future POST /api/candidate-radar/deep-scan-worker",
+        or CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_ROUTE,
         "worker_execution_request_route": CANDIDATE_WORKER_EXECUTION_REQUEST_ROUTE,
         "provider_parity_dry_run_route": "POST /api/candidate-radar/provider-parity-dry-run",
         "quant_projection_acceptance_dry_run_route": "POST /api/candidate-radar/quant-projection-acceptance-dry-run",
@@ -7543,6 +7862,7 @@ def _candidate_radar_production_replacement_review(
     worker_recipe = _as_dict(packet.get("candidate_radar_worker_execution_recipe"))
     worker_request = _as_dict(packet.get("candidate_radar_worker_execution_request_receipt"))
     full_pool_worker_fallback = _as_dict(packet.get("candidate_radar_full_pool_worker_fallback_receipt"))
+    deep_scan_worker_fallback = _as_dict(packet.get("candidate_radar_deep_scan_worker_fallback_receipt"))
     browser_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
     durable_recipe = _as_dict(packet.get("candidate_radar_durable_evidence_recipe"))
     stage_manifest = _as_dict(packet.get("candidate_radar_production_stage_scope_manifest"))
@@ -7571,6 +7891,7 @@ def _candidate_radar_production_replacement_review(
     worker_recipe_ready = worker_recipe.get("local_worker_execution_recipe_ready") is True
     worker_request_ready = worker_request.get("local_execution_request_ready") is True
     full_pool_worker_fallback_ready = full_pool_worker_fallback.get("local_worker_fallback_full_pool_done") is True
+    deep_scan_worker_fallback_ready = deep_scan_worker_fallback.get("local_worker_fallback_deep_scan_done") is True
     browser_review_ready = browser_review.get("local_browser_qa_review_ready") is True
     durable_recipe_ready = durable_recipe.get("local_recipe_ready") is True
     stage_manifest_ready = stage_manifest.get("local_manifest_ready") is True
@@ -7710,6 +8031,20 @@ def _candidate_radar_production_replacement_review(
             recommended_order=11,
         ),
         _candidate_radar_production_replacement_review_row(
+            "deep_scan_worker_fallback_visible",
+            "local_surface",
+            "local_worker_fallback_visible" if deep_scan_worker_fallback_ready else "pending_deep_scan_worker_fallback",
+            passed=deep_scan_worker_fallback_ready,
+            local_review_required=False,
+            production_blocker=False,
+            evidence=(
+                f"status={deep_scan_worker_fallback.get('status')}; "
+                f"model_execution_pending={deep_scan_worker_fallback.get('model_execution_implemented') is False}"
+            ),
+            next_action="Use local deep-scan worker fallback as route-shape evidence only; keep real worker/model execution pending.",
+            recommended_order=12,
+        ),
+        _candidate_radar_production_replacement_review_row(
             "quant_projection_execution_request_visible",
             "acceptance_ticket",
             "quant_request_visible" if quant_request_visible else "pending_quant_projection_execution_request",
@@ -7718,7 +8053,7 @@ def _candidate_radar_production_replacement_review(
             production_blocker=not quant_request_visible,
             evidence=f"status={quant_request.get('status')}; scope_match={quant_request.get('requested_acceptance_scope_hash_matches_latest')}",
             next_action="Bind searched-symbol provider/model execution to a prior dry-run scope before future Tushare/DeepSeek execution.",
-            recommended_order=12,
+            recommended_order=13,
         ),
         _candidate_radar_production_replacement_review_row(
             "browser_qa_review_visible",
@@ -7729,7 +8064,7 @@ def _candidate_radar_production_replacement_review(
             production_blocker=not browser_review_ready,
             evidence=f"status={browser_review.get('status')}; local_browser_qa_review_ready={browser_review_ready}",
             next_action="Attach browser visual/performance review evidence for #candidates before production replacement.",
-            recommended_order=13,
+            recommended_order=14,
         ),
         _candidate_radar_production_replacement_review_row(
             "durable_evidence_recipe_visible",
@@ -7740,7 +8075,7 @@ def _candidate_radar_production_replacement_review(
             production_blocker=not durable_recipe_ready,
             evidence=f"status={durable_recipe.get('status')}; blockers={durable_recipe.get('durable_evidence_blocker_count')}",
             next_action="Use durable evidence recipe as the checklist, not as production completion.",
-            recommended_order=14,
+            recommended_order=15,
         ),
         _candidate_radar_production_replacement_review_row(
             "production_stage_scope_manifest_visible",
@@ -7751,7 +8086,7 @@ def _candidate_radar_production_replacement_review(
             production_blocker=not stage_manifest_ready,
             evidence=f"status={stage_manifest.get('status')}; pending={stage_manifest.get('pending_stage_count')}",
             next_action="Keep stage-scope pending until direct worker/provider/browser/model evidence exists.",
-            recommended_order=15,
+            recommended_order=16,
         ),
         _candidate_radar_production_replacement_review_row(
             "direct_worker_provider_browser_evidence_required",
@@ -7765,7 +8100,7 @@ def _candidate_radar_production_replacement_review(
                 f"provider={durable_recipe.get('provider_backed_acceptance_done')}; browser={durable_recipe.get('browser_visual_performance_reviewed')}"
             ),
             next_action="Collect real worker full-pool/deep-scan, provider call ledger, optional model ledger, and browser performance promotion evidence.",
-            recommended_order=16,
+            recommended_order=17,
         ),
         _candidate_radar_production_replacement_review_row(
             "legacy_retirement_stays_blocked",
@@ -7776,7 +8111,7 @@ def _candidate_radar_production_replacement_review(
             production_blocker=True,
             evidence=f"promotion_ready={promotion.get('promotion_ready')}; legacy_retirement_ready={stage_manifest.get('legacy_retirement_ready')}",
             next_action="Keep Streamlit/legacy radar fallback until production promotion review clears.",
-            recommended_order=17,
+            recommended_order=18,
         ),
         _candidate_radar_production_replacement_review_row(
             "no_trade_action_secret_boundary",
@@ -7787,7 +8122,7 @@ def _candidate_radar_production_replacement_review(
             production_blocker=not safety_ready,
             evidence="Candidate Radar review does not call external providers/models, expose secrets, execute trades, or mutate strategy action.",
             next_action="Preserve research-only boundaries in every future radar execution task.",
-            recommended_order=18,
+            recommended_order=19,
         ),
     ]
 
@@ -7836,12 +8171,14 @@ def _candidate_radar_production_replacement_review(
         "provider_parity_scope_ticket_visible": provider_ticket_visible,
         "worker_execution_request_visible": worker_request_ready,
         "full_pool_worker_fallback_visible": full_pool_worker_fallback_ready,
+        "deep_scan_worker_fallback_visible": deep_scan_worker_fallback_ready,
         "quant_projection_execution_request_visible": quant_request_visible,
         "browser_qa_review_visible": browser_review_ready,
         "durable_evidence_recipe_visible": durable_recipe_ready,
         "stage_scope_manifest_visible": stage_manifest_ready,
         "worker_full_pool_execution_done": False,
         "local_full_pool_worker_fallback_done": full_pool_worker_fallback_ready,
+        "local_deep_scan_worker_fallback_done": deep_scan_worker_fallback_ready,
         "worker_deep_scan_execution_done": False,
         "provider_backed_acceptance_done": False,
         "deepseek_model_ledger_complete": False,
@@ -10783,6 +11120,126 @@ def run_candidate_full_pool_worker_fallback_task(payload: Any = None) -> dict[st
         current_step=final_step,
         call_ledger=[ledger],
         warning="candidate_radar_full_pool_worker_fallback_recorded_no_external_call",
+    ) or task
+
+
+def run_candidate_deep_scan_worker_fallback_task(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="candidate_radar_deep_scan_worker_fallback_queued",
+        warnings=[
+            "下一票雷达 deep-scan worker fallback 只消费本地 deep-scan review 证据；不会启动 Redis/Celery worker。",
+            "fallback 不调用 Tushare、DeepSeek 或 GitHub，不执行真实交易，不修改 strategy action。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.25,
+        current_step="reading_candidate_radar_deep_scan_worker_fallback_inputs",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = read_candidate_radar_cache()
+    now = _now_iso()
+    receipt, receipt_rows = _candidate_radar_deep_scan_worker_fallback_receipt(
+        packet,
+        payload_safe=payload_safe,
+        explicit_execution=True,
+        task_id=str(task["task_id"]),
+        executed_at=now,
+    )
+    request_params_safe = {
+        "scan_mode": "deep_scan_worker_fallback",
+        "local_worker_fallback_only": True,
+        "operator_approved": receipt.get("operator_approved") is True,
+        "worker_execution_scope_hash_short": receipt.get("worker_execution_scope_hash_short") or "",
+        "requested_worker_execution_scope_hash_matches_latest": receipt.get(
+            "requested_worker_execution_scope_hash_matches_latest"
+        )
+        is True,
+        "local_deep_scan_review_done": receipt.get("local_deep_scan_review_done") is True,
+        "local_worker_fallback_deep_scan_done": receipt.get("local_worker_fallback_deep_scan_done") is True,
+        "candidate_row_count": receipt.get("candidate_row_count") or 0,
+        "external_sources_allowed": False,
+        "worker_started": False,
+        "redis_broker_used": False,
+        "celery_worker_started": False,
+        "provider_backed_acceptance_done": False,
+        "model_execution_implemented": False,
+        "deepseek_model_execution_done": False,
+        "production_deep_scan_done": False,
+    }
+    ledger = _candidate_call_ledger_row(
+        api="local_candidate_radar_deep_scan_worker_fallback",
+        source_snapshot="candidate_radar_local_deep_scan_review",
+        row_count=len(_as_list(packet.get("candidate_rows"))),
+        call_status=receipt.get("status") or "candidate_radar_deep_scan_worker_fallback_recorded",
+        request_params_safe=request_params_safe,
+    )
+    packet = dict(packet)
+    packet["task_id"] = task["task_id"]
+    packet["scan_mode"] = "deep_scan_worker_fallback"
+    packet["deep_scan_worker_fallback_completed_at"] = now
+    packet["candidate_radar_deep_scan_worker_fallback_receipt"] = receipt
+    packet["candidate_radar_deep_scan_worker_fallback_rows"] = receipt_rows
+    counts = _as_dict(packet.get("counts"))
+    counts["candidate_radar_deep_scan_worker_fallback_row_count"] = len(receipt_rows)
+    counts["candidate_radar_deep_scan_worker_fallback_local_blocker_count"] = receipt.get("local_blocker_count", 0)
+    counts["candidate_radar_deep_scan_worker_fallback_production_blocker_count"] = receipt.get(
+        "production_blocker_count", 0
+    )
+    counts["candidate_radar_deep_scan_worker_fallback_ready"] = (
+        receipt.get("local_worker_fallback_deep_scan_done") is True
+    )
+    packet["counts"] = counts
+    policy = _as_dict(packet.get("policy"))
+    policy["candidate_radar_deep_scan_worker_fallback_is_button_gated"] = True
+    policy["candidate_radar_deep_scan_worker_fallback_is_local"] = True
+    policy["candidate_radar_deep_scan_worker_fallback_does_not_start_worker"] = True
+    policy["candidate_radar_deep_scan_worker_fallback_does_not_call_deepseek"] = True
+    policy["candidate_radar_deep_scan_worker_fallback_is_not_production_replacement"] = True
+    policy["candidate_radar_deep_scan_worker_fallback_keeps_external_calls_false"] = True
+    packet["policy"] = policy
+    packet["call_ledger"] = [ledger]
+    packet["warnings"] = [
+        "下一票雷达 deep-scan worker fallback 已写入本地收据；真实 Celery/Redis worker、DeepSeek/model ledger、provider parity、browser promotion 和 production replacement 仍未完成。"
+    ] + [
+        warning
+        for warning in _as_list(packet.get("warnings"))
+        if "deep-scan worker fallback" not in str(warning)
+    ]
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
+    except Exception:
+        ledger["call_status"] = "deep_scan_worker_fallback_storage_write_failed"
+        ledger["error_message_safe"] = "candidate_radar_deep_scan_worker_fallback_sqlite_write_failed"
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="candidate_radar_deep_scan_worker_fallback_storage_write_failed",
+            error_message_safe="candidate_radar_deep_scan_worker_fallback_sqlite_write_failed",
+            call_ledger=[ledger],
+            warning="candidate_radar_deep_scan_worker_fallback_failed_no_external_call",
+        ) or task
+
+    final_step = (
+        "candidate_radar_deep_scan_worker_fallback_ready"
+        if receipt.get("local_worker_fallback_deep_scan_done") is True
+        else "candidate_radar_deep_scan_worker_fallback_blocked_local_review"
+    )
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step=final_step,
+        call_ledger=[ledger],
+        warning="candidate_radar_deep_scan_worker_fallback_recorded_no_external_call",
     ) or task
 
 

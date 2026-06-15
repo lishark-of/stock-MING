@@ -4,7 +4,7 @@
 This push-gate guard is not a production radar scan. It reads local cache and
 builds local plan-only, local-universe, and worker-shaped fallback contracts to
 prevent quick scans, full-pool plans, local full-pool execution receipts,
-full-pool worker fallback receipts, deep-scan plans, search quant projection
+full-pool/deep-scan worker fallback receipts, deep-scan plans, search quant projection
 receipts, no-feature-loss QA, replacement triage, and result-delta clarity from
 being mistaken for production radar replacement, provider/model execution, or
 buy signals.
@@ -34,6 +34,7 @@ REQUIRED_TASK_TYPES = {
     "run_candidate_radar_provider_parity_dry_run",
     "run_candidate_radar_worker_execution_request",
     "run_candidate_radar_full_pool_worker_fallback",
+    "run_candidate_radar_deep_scan_worker_fallback",
     "run_candidate_radar_full_pool_plan",
     "run_candidate_radar_full_pool_local_scan",
     "run_candidate_radar_deep_scan_plan",
@@ -420,6 +421,25 @@ def build_contract() -> dict[str, Any]:
     }
     production_review_packet["candidate_radar_full_pool_worker_fallback_receipt"] = full_pool_worker_fallback
     production_review_packet["candidate_radar_full_pool_worker_fallback_rows"] = full_pool_worker_fallback_rows_list
+    deep_scan_worker_fallback, deep_scan_worker_fallback_rows_list = (
+        candidate_service._candidate_radar_deep_scan_worker_fallback_receipt(
+            production_review_packet,
+            payload_safe={
+                "operator_approved": True,
+                "worker_execution_scope_hash": worker_execution_request.get("worker_execution_scope_hash"),
+            },
+            explicit_execution=True,
+            task_id="local-contract-deep-scan-worker-fallback",
+            executed_at=now,
+        )
+    )
+    deep_scan_worker_fallback_rows = {
+        str(row.get("criterion") or ""): row
+        for row in deep_scan_worker_fallback_rows_list
+        if isinstance(row, dict)
+    }
+    production_review_packet["candidate_radar_deep_scan_worker_fallback_receipt"] = deep_scan_worker_fallback
+    production_review_packet["candidate_radar_deep_scan_worker_fallback_rows"] = deep_scan_worker_fallback_rows_list
     production_review_packet["search_quant_projection_execution_request_receipt"] = quant_execution_request
     production_review_packet["search_quant_projection_execution_request_rows"] = quant_execution_request_rows_list
     production_review_packet = candidate_service._attach_candidate_radar_next_execution_recipe(production_review_packet)
@@ -688,6 +708,27 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_candidate_radar_full_pool_worker_fallback"].get("tushare_called") is False
             and task_rows["run_candidate_radar_full_pool_worker_fallback"].get("deepseek_called") is False
             and task_rows["run_candidate_radar_full_pool_worker_fallback"].get("github_called") is False
+            and task_rows["run_candidate_radar_deep_scan_worker_fallback"].get("route")
+            == candidate_service.CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_ROUTE
+            and task_rows["run_candidate_radar_deep_scan_worker_fallback"].get("local_worker_fallback_only") is True
+            and task_rows["run_candidate_radar_deep_scan_worker_fallback"].get("requires_worker_execution_request")
+            is True
+            and task_rows["run_candidate_radar_deep_scan_worker_fallback"].get("requires_worker_execution_scope_hash")
+            is True
+            and task_rows["run_candidate_radar_deep_scan_worker_fallback"].get("requires_local_deep_scan_review")
+            is True
+            and task_rows["run_candidate_radar_deep_scan_worker_fallback"].get("creates_worker_task") is False
+            and task_rows["run_candidate_radar_deep_scan_worker_fallback"].get("worker_started") is False
+            and task_rows["run_candidate_radar_deep_scan_worker_fallback"].get("redis_broker_used") is False
+            and task_rows["run_candidate_radar_deep_scan_worker_fallback"].get("celery_worker_started") is False
+            and task_rows["run_candidate_radar_deep_scan_worker_fallback"].get("production_deep_scan_done") is False
+            and task_rows["run_candidate_radar_deep_scan_worker_fallback"].get("model_execution_implemented") is False
+            and task_rows["run_candidate_radar_deep_scan_worker_fallback"].get("deepseek_model_execution_done") is False
+            and task_rows["run_candidate_radar_deep_scan_worker_fallback"].get("provider_backed_acceptance_done")
+            is False
+            and task_rows["run_candidate_radar_deep_scan_worker_fallback"].get("tushare_called") is False
+            and task_rows["run_candidate_radar_deep_scan_worker_fallback"].get("deepseek_called") is False
+            and task_rows["run_candidate_radar_deep_scan_worker_fallback"].get("github_called") is False
             and task_rows["run_candidate_radar_full_pool_plan"].get("route") == "POST /api/candidate-radar/full-pool-plan"
             and task_rows["run_candidate_radar_full_pool_plan"].get("plan_only") is True
             and task_rows["run_candidate_radar_full_pool_plan"].get("full_pool_scan_done") is False
@@ -754,7 +795,7 @@ def build_contract() -> dict[str, Any]:
             and next_execution_recipe.get("recommended_worker_full_pool_route")
             == candidate_service.CANDIDATE_FULL_POOL_WORKER_FALLBACK_ROUTE
             and next_execution_recipe.get("recommended_worker_deep_scan_route")
-            == "future POST /api/candidate-radar/deep-scan-worker"
+            == candidate_service.CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_ROUTE
             and next_execution_recipe.get("worker_execution_request_route")
             == "POST /api/candidate-radar/worker-execution-request"
             and next_execution_recipe.get("provider_parity_dry_run_route")
@@ -834,7 +875,7 @@ def build_contract() -> dict[str, Any]:
             and worker_execution_recipe.get("recommended_worker_full_pool_route")
             == candidate_service.CANDIDATE_FULL_POOL_WORKER_FALLBACK_ROUTE
             and worker_execution_recipe.get("recommended_worker_deep_scan_route")
-            == "future POST /api/candidate-radar/deep-scan-worker"
+            == candidate_service.CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_ROUTE
             and worker_execution_recipe.get("required_storage_datasets")
             == candidate_service.FULL_POOL_REQUIRED_STORAGE_DATASETS
             and set(worker_execution_recipe.get("required_legacy_signal_groups") or [])
@@ -924,7 +965,7 @@ def build_contract() -> dict[str, Any]:
             and worker_execution_request.get("target_worker_full_pool_route")
             == candidate_service.CANDIDATE_FULL_POOL_WORKER_FALLBACK_ROUTE
             and worker_execution_request.get("target_worker_deep_scan_route")
-            == "future POST /api/candidate-radar/deep-scan-worker"
+            == candidate_service.CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_ROUTE
             and worker_execution_request.get("worker_task_created") is False
             and worker_execution_request.get("worker_task_executed") is False
             and worker_execution_request.get("worker_execution_implemented") is False
@@ -1014,6 +1055,63 @@ def build_contract() -> dict[str, Any]:
             "Candidate Radar full-pool worker fallback must prove only the local route shape and explicit scope binding while preserving real worker/provider/browser production blockers.",
         ),
         _row(
+            "candidate_radar_deep_scan_worker_fallback_is_local_route_shape_only",
+            deep_scan_worker_fallback.get("schema_version")
+            == candidate_service.CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_SCHEMA_VERSION
+            and deep_scan_worker_fallback.get("status")
+            == "candidate_radar_deep_scan_worker_fallback_ready_worker_runtime_pending"
+            and deep_scan_worker_fallback.get("scope")
+            == "button_gated_local_deep_scan_worker_fallback_no_worker_or_model_start"
+            and deep_scan_worker_fallback.get("route") == candidate_service.CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_ROUTE
+            and deep_scan_worker_fallback.get("task_type") == candidate_service.CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_TASK_TYPE
+            and deep_scan_worker_fallback.get("explicit_deep_scan_worker_fallback_done") is True
+            and deep_scan_worker_fallback.get("operator_approved") is True
+            and deep_scan_worker_fallback.get("local_worker_fallback_deep_scan_done") is True
+            and deep_scan_worker_fallback.get("ready_for_worker_runtime_promotion") is False
+            and deep_scan_worker_fallback.get("requested_worker_execution_scope_hash_matches_latest") is True
+            and len(str(deep_scan_worker_fallback.get("worker_execution_scope_hash") or "")) == 64
+            and int(deep_scan_worker_fallback.get("candidate_row_count") or 0) > 0
+            and deep_scan_worker_fallback.get("local_blocker_count") == 0
+            and int(deep_scan_worker_fallback.get("production_blocker_count") or 0) >= 4
+            and deep_scan_worker_fallback.get("worker_task_created") is False
+            and deep_scan_worker_fallback.get("worker_started") is False
+            and deep_scan_worker_fallback.get("celery_worker_started") is False
+            and deep_scan_worker_fallback.get("redis_broker_used") is False
+            and deep_scan_worker_fallback.get("worker_execution_implemented") is False
+            and deep_scan_worker_fallback.get("production_deep_scan_done") is False
+            and deep_scan_worker_fallback.get("deep_scan_done") is False
+            and deep_scan_worker_fallback.get("model_execution_implemented") is False
+            and deep_scan_worker_fallback.get("deepseek_model_ledger_complete") is False
+            and deep_scan_worker_fallback.get("provider_backed_acceptance_done") is False
+            and deep_scan_worker_fallback.get("production_radar_replacement_complete") is False
+            and deep_scan_worker_fallback.get("legacy_retirement_ready") is False
+            and _dict(deep_scan_worker_fallback_rows.get("worker_runtime_still_pending")).get("production_blocker")
+            is True
+            and _dict(deep_scan_worker_fallback_rows.get("deepseek_model_execution_still_pending")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(deep_scan_worker_fallback_rows.get("provider_backed_parity_still_pending")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(deep_scan_worker_fallback_rows.get("no_provider_model_trade_secret_boundary")).get("passed")
+            is True
+            and _flag_false(
+                deep_scan_worker_fallback,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and deep_scan_worker_fallback.get("does_not_execute_trades") is True
+            and deep_scan_worker_fallback.get("does_not_modify_strategy_action") is True
+            and "candidate_radar_deep_scan_worker_fallback_receipt" in candidate_frontend
+            and "Deep-scan worker fallback" in candidate_frontend,
+            "Candidate Radar deep-scan worker fallback must prove only the local route shape and explicit scope binding while preserving real worker/model/provider/browser production blockers.",
+        ),
+        _row(
             "candidate_radar_production_replacement_review_is_local_production_blocked",
             production_replacement_review.get("schema_version")
             == candidate_service.CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_SCHEMA_VERSION
@@ -1039,9 +1137,11 @@ def build_contract() -> dict[str, Any]:
             and production_replacement_review.get("provider_parity_scope_ticket_visible") is True
             and production_replacement_review.get("worker_execution_request_visible") is True
             and production_replacement_review.get("full_pool_worker_fallback_visible") is True
+            and production_replacement_review.get("deep_scan_worker_fallback_visible") is True
             and production_replacement_review.get("quant_projection_execution_request_visible") is True
             and production_replacement_review.get("worker_full_pool_execution_done") is False
             and production_replacement_review.get("local_full_pool_worker_fallback_done") is True
+            and production_replacement_review.get("local_deep_scan_worker_fallback_done") is True
             and production_replacement_review.get("worker_deep_scan_execution_done") is False
             and production_replacement_review.get("provider_backed_acceptance_done") is False
             and production_replacement_review.get("deepseek_model_ledger_complete") is False
@@ -1967,6 +2067,7 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_production_activation_receipt.v1" in this_script
             and "candidate_radar_worker_execution_recipe.v1" in this_script
             and "candidate_radar_full_pool_worker_fallback.v1" in this_script
+            and "candidate_radar_deep_scan_worker_fallback.v1" in this_script
             and "candidate_radar_durable_evidence_recipe.v1" in this_script
             and "candidate_radar_production_replacement_review.v1" in this_script
             and "candidate_is_not_buy_instruction" in this_script
@@ -2023,6 +2124,10 @@ def build_contract() -> dict[str, Any]:
         is True,
         "candidate_radar_full_pool_worker_fallback_ready": full_pool_worker_fallback.get(
             "local_worker_fallback_full_pool_done"
+        )
+        is True,
+        "candidate_radar_deep_scan_worker_fallback_ready": deep_scan_worker_fallback.get(
+            "local_worker_fallback_deep_scan_done"
         )
         is True,
         "candidate_radar_durable_evidence_recipe_ready": durable_evidence_recipe.get("local_recipe_ready") is True,
@@ -2097,6 +2202,10 @@ def build_contract() -> dict[str, Any]:
             "candidate_radar_full_pool_worker_fallback_status": full_pool_worker_fallback.get("status"),
             "candidate_radar_full_pool_worker_fallback_ready": full_pool_worker_fallback.get(
                 "local_worker_fallback_full_pool_done"
+            ),
+            "candidate_radar_deep_scan_worker_fallback_status": deep_scan_worker_fallback.get("status"),
+            "candidate_radar_deep_scan_worker_fallback_ready": deep_scan_worker_fallback.get(
+                "local_worker_fallback_deep_scan_done"
             ),
             "candidate_radar_production_replacement_review_status": production_replacement_review.get("status"),
             "candidate_radar_production_replacement_review_ready": production_replacement_review.get(

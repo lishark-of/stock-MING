@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getBootstrapStatus, getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
+import { getBootstrapStatus, getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -151,6 +151,7 @@ export default function CandidateRadar() {
   const workerExecutionRecipe = (cache.candidate_radar_worker_execution_recipe as Record<string, unknown> | undefined) ?? {};
   const workerExecutionRequest = (cache.candidate_radar_worker_execution_request_receipt as Record<string, unknown> | undefined) ?? {};
   const fullPoolWorkerFallback = (cache.candidate_radar_full_pool_worker_fallback_receipt as Record<string, unknown> | undefined) ?? {};
+  const deepScanWorkerFallback = (cache.candidate_radar_deep_scan_worker_fallback_receipt as Record<string, unknown> | undefined) ?? {};
   const productionReplacementReview = (cache.candidate_radar_production_replacement_review_receipt as Record<string, unknown> | undefined) ?? {};
   const launchQuantProjectionExecutionRequest = () =>
     void postCandidateRadarQuantProjectionExecutionRequest({
@@ -175,6 +176,16 @@ export default function CandidateRadar() {
   const launchFullPoolWorkerFallback = () =>
     void postCandidateRadarFullPoolWorkerScan({
       scan_mode: "full_pool_worker_fallback",
+      operator_approved: true,
+      worker_execution_scope_hash: String(workerExecutionRequest.worker_execution_scope_hash ?? workerExecutionRecipe.worker_execution_scope_hash ?? ""),
+      requested_by: "candidate_radar_page"
+    }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
+  const launchDeepScanWorkerFallback = () =>
+    void postCandidateRadarDeepScanWorker({
+      scan_mode: "deep_scan_worker_fallback",
       operator_approved: true,
       worker_execution_scope_hash: String(workerExecutionRequest.worker_execution_scope_hash ?? workerExecutionRecipe.worker_execution_scope_hash ?? ""),
       requested_by: "candidate_radar_page"
@@ -237,6 +248,7 @@ export default function CandidateRadar() {
   const workerExecutionRows = rows(cache.candidate_radar_worker_execution_rows);
   const workerExecutionRequestRows = rows(cache.candidate_radar_worker_execution_request_rows);
   const fullPoolWorkerFallbackRows = rows(cache.candidate_radar_full_pool_worker_fallback_rows);
+  const deepScanWorkerFallbackRows = rows(cache.candidate_radar_deep_scan_worker_fallback_rows);
   const productionReplacementReviewRows = rows(cache.candidate_radar_production_replacement_review_rows);
   const durableEvidenceRows = rows(cache.candidate_radar_durable_evidence_rows);
   const productionStageScopeRows = rows(cache.candidate_radar_production_stage_scope_rows);
@@ -339,8 +351,10 @@ export default function CandidateRadar() {
           { label: "worker recipe blockers", value: counts.candidate_radar_worker_execution_recipe_production_blocker_count as number | undefined, tone: Number(counts.candidate_radar_worker_execution_recipe_production_blocker_count ?? 0) ? "warn" : "good" },
           { label: "worker request", value: String(workerExecutionRequest.status ?? "missing"), tone: workerExecutionRequest.local_execution_request_ready === true ? "good" : "warn" },
           { label: "request blockers", value: counts.candidate_radar_worker_execution_request_local_blocker_count as number | undefined, tone: Number(counts.candidate_radar_worker_execution_request_local_blocker_count ?? 0) ? "warn" : "good" },
-          { label: "worker fallback", value: String(fullPoolWorkerFallback.status ?? "missing"), tone: fullPoolWorkerFallback.local_worker_fallback_full_pool_done === true ? "good" : "warn" },
-          { label: "fallback blockers", value: counts.candidate_radar_full_pool_worker_fallback_local_blocker_count as number | undefined, tone: Number(counts.candidate_radar_full_pool_worker_fallback_local_blocker_count ?? 0) ? "warn" : "good" },
+          { label: "full fallback", value: String(fullPoolWorkerFallback.status ?? "missing"), tone: fullPoolWorkerFallback.local_worker_fallback_full_pool_done === true ? "good" : "warn" },
+          { label: "full fallback blockers", value: counts.candidate_radar_full_pool_worker_fallback_local_blocker_count as number | undefined, tone: Number(counts.candidate_radar_full_pool_worker_fallback_local_blocker_count ?? 0) ? "warn" : "good" },
+          { label: "deep fallback", value: String(deepScanWorkerFallback.status ?? "missing"), tone: deepScanWorkerFallback.local_worker_fallback_deep_scan_done === true ? "good" : "warn" },
+          { label: "deep fallback blockers", value: counts.candidate_radar_deep_scan_worker_fallback_local_blocker_count as number | undefined, tone: Number(counts.candidate_radar_deep_scan_worker_fallback_local_blocker_count ?? 0) ? "warn" : "good" },
           { label: "replacement review", value: String(productionReplacementReview.status ?? "missing"), tone: productionReplacementReview.local_review_ready === true ? "good" : "warn" },
           { label: "review blockers", value: counts.candidate_radar_production_replacement_review_production_blocker_count as number | undefined, tone: Number(counts.candidate_radar_production_replacement_review_production_blocker_count ?? 0) ? "warn" : "good" },
           { label: "durable recipe", value: String(durableEvidenceRecipe.status ?? "missing"), tone: durableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
@@ -653,7 +667,7 @@ export default function CandidateRadar() {
         <p>allowed_next_step: {String(nextExecutionRecipe.allowed_next_step ?? "resolve_local_candidate_radar_fast_scan_blockers")}</p>
         <p>recommended_fast_scan_route: {String(nextExecutionRecipe.recommended_fast_scan_route ?? "POST /api/candidate-radar/scan-quick")}</p>
         <p>recommended_full_pool_local_route: {String(nextExecutionRecipe.recommended_full_pool_local_route ?? "POST /api/candidate-radar/full-pool-local-scan")}；recommended_deep_scan_local_review_route: {String(nextExecutionRecipe.recommended_deep_scan_local_review_route ?? "POST /api/candidate-radar/deep-scan-local-review")}</p>
-        <p>recommended_worker_full_pool_route: {String(nextExecutionRecipe.recommended_worker_full_pool_route ?? "POST /api/candidate-radar/full-pool-worker-scan")}；recommended_worker_deep_scan_route: {String(nextExecutionRecipe.recommended_worker_deep_scan_route ?? "future POST /api/candidate-radar/deep-scan-worker")}</p>
+        <p>recommended_worker_full_pool_route: {String(nextExecutionRecipe.recommended_worker_full_pool_route ?? "POST /api/candidate-radar/full-pool-worker-scan")}；recommended_worker_deep_scan_route: {String(nextExecutionRecipe.recommended_worker_deep_scan_route ?? "POST /api/candidate-radar/deep-scan-worker")}</p>
         <p>provider/model/browser 验收路线: {String(nextExecutionRecipe.provider_parity_dry_run_route ?? "POST /api/candidate-radar/provider-parity-dry-run")} / {String(nextExecutionRecipe.quant_projection_acceptance_dry_run_route ?? "POST /api/candidate-radar/quant-projection-acceptance-dry-run")} / {String(nextExecutionRecipe.quant_projection_execution_request_route ?? "POST /api/candidate-radar/quant-projection-execution-request")} / {String(nextExecutionRecipe.browser_qa_review_route ?? "POST /api/candidate-radar/browser-qa-review")}</p>
         <p>ready_to_execute_from_cache: {String(nextExecutionRecipe.ready_to_execute_from_cache === true)}；worker_execution_recipe_ready: {String(nextExecutionRecipe.worker_execution_recipe_ready === true)}；worker_execution_implemented: {String(nextExecutionRecipe.worker_execution_implemented === true)}</p>
         <p>production_radar_replacement_complete: {String(nextExecutionRecipe.production_radar_replacement_complete === true)}；legacy_retirement_ready: {String(nextExecutionRecipe.legacy_retirement_ready === true)}</p>
@@ -667,7 +681,7 @@ export default function CandidateRadar() {
         <p>local_worker_execution_recipe_ready: {String(workerExecutionRecipe.local_worker_execution_recipe_ready === true)}</p>
         <p>worker_execution_scope_hash_short: {String(workerExecutionRecipe.worker_execution_scope_hash_short ?? "--")}</p>
         <p>recommended_worker_full_pool_route: {String(workerExecutionRecipe.recommended_worker_full_pool_route ?? "POST /api/candidate-radar/full-pool-worker-scan")}</p>
-        <p>recommended_worker_deep_scan_route: {String(workerExecutionRecipe.recommended_worker_deep_scan_route ?? "future POST /api/candidate-radar/deep-scan-worker")}</p>
+        <p>recommended_worker_deep_scan_route: {String(workerExecutionRecipe.recommended_worker_deep_scan_route ?? "POST /api/candidate-radar/deep-scan-worker")}</p>
         <p>worker_task_created / worker_execution_implemented: {String(workerExecutionRecipe.worker_task_created === true)} / {String(workerExecutionRecipe.worker_execution_implemented === true)}</p>
         <p>full_pool_scan_done / deep_scan_done / provider_backed_acceptance_done: {String(workerExecutionRecipe.full_pool_scan_done === true)} / {String(workerExecutionRecipe.deep_scan_done === true)} / {String(workerExecutionRecipe.provider_backed_acceptance_done === true)}</p>
         <p>required_storage_datasets: {Array.isArray(workerExecutionRecipe.required_storage_datasets) ? workerExecutionRecipe.required_storage_datasets.join(" / ") : "daily / daily_basic / moneyflow / trade_cal"}</p>
@@ -687,7 +701,7 @@ export default function CandidateRadar() {
         <p>requested hash matches latest: {String(workerExecutionRequest.requested_worker_execution_scope_hash_matches_latest === true)}；scope: {String(workerExecutionRequest.worker_execution_scope_hash_short ?? "--")}</p>
         <p>local full-pool / deep review / provider parity: {String(workerExecutionRequest.local_full_pool_receipt_visible === true)} / {String(workerExecutionRequest.local_deep_scan_review_visible === true)} / {String(workerExecutionRequest.provider_parity_scope_ticket_visible === true)}</p>
         <p>quant projection scope visible: {String(workerExecutionRequest.quant_projection_scope_ticket_visible === true)}</p>
-        <p>target: {String(workerExecutionRequest.target_worker_full_pool_route ?? "POST /api/candidate-radar/full-pool-worker-scan")} / {String(workerExecutionRequest.target_worker_deep_scan_route ?? "future POST /api/candidate-radar/deep-scan-worker")}</p>
+        <p>target: {String(workerExecutionRequest.target_worker_full_pool_route ?? "POST /api/candidate-radar/full-pool-worker-scan")} / {String(workerExecutionRequest.target_worker_deep_scan_route ?? "POST /api/candidate-radar/deep-scan-worker")}</p>
         <p>worker_task_created / worker_task_executed / worker_started: {String(workerExecutionRequest.worker_task_created === true)} / {String(workerExecutionRequest.worker_task_executed === true)} / {String(workerExecutionRequest.worker_started === true)}</p>
         <p>full_pool_scan_done / deep_scan_done / production_replacement: {String(workerExecutionRequest.full_pool_scan_done === true)} / {String(workerExecutionRequest.deep_scan_done === true)} / {String(workerExecutionRequest.production_radar_replacement_complete === true)}</p>
         <p>tushare_called / deepseek_called / github_called: {String(workerExecutionRequest.tushare_called === true)} / {String(workerExecutionRequest.deepseek_called === true)} / {String(workerExecutionRequest.github_called === true)}</p>
@@ -712,6 +726,22 @@ export default function CandidateRadar() {
         <DataLineageTable rows={fullPoolWorkerFallbackRows} />
       </PacketCard>
 
+      <PacketCard title="Deep-scan worker fallback" subtitle="POST /api/candidate-radar/deep-scan-worker；消费本地 deep-scan review，不启动 Redis/Celery/DeepSeek" status={String(deepScanWorkerFallback.status ?? "missing")}>
+        <div className="actions">
+          <button onClick={launchDeepScanWorkerFallback} disabled={!workerExecutionRequest.worker_execution_scope_hash}>
+            运行 deep-scan worker fallback
+          </button>
+        </div>
+        <p>local_worker_fallback_deep_scan_done: {String(deepScanWorkerFallback.local_worker_fallback_deep_scan_done === true)}；ready_for_worker_runtime_promotion: {String(deepScanWorkerFallback.ready_for_worker_runtime_promotion === true)}</p>
+        <p>scope match: {String(deepScanWorkerFallback.requested_worker_execution_scope_hash_matches_latest === true)}；scope: {String(deepScanWorkerFallback.worker_execution_scope_hash_short ?? "--")}</p>
+        <p>candidate_row_count: {String(deepScanWorkerFallback.candidate_row_count ?? 0)}；local_blocker_count / production_blocker_count: {String(deepScanWorkerFallback.local_blocker_count ?? 0)} / {String(deepScanWorkerFallback.production_blocker_count ?? 0)}</p>
+        <p>worker_started / celery_worker_started / redis_broker_used: {String(deepScanWorkerFallback.worker_started === true)} / {String(deepScanWorkerFallback.celery_worker_started === true)} / {String(deepScanWorkerFallback.redis_broker_used === true)}</p>
+        <p>production_deep_scan_done / deepseek_model_ledger_complete / legacy_retirement_ready: {String(deepScanWorkerFallback.production_deep_scan_done === true)} / {String(deepScanWorkerFallback.deepseek_model_ledger_complete === true)} / {String(deepScanWorkerFallback.legacy_retirement_ready === true)}</p>
+        <p>tushare_called / deepseek_called / github_called: {String(deepScanWorkerFallback.tushare_called === true)} / {String(deepScanWorkerFallback.deepseek_called === true)} / {String(deepScanWorkerFallback.github_called === true)}</p>
+        <DataLineageTable rows={objectRow(deepScanWorkerFallback)} />
+        <DataLineageTable rows={deepScanWorkerFallbackRows} />
+      </PacketCard>
+
       <PacketCard title="雷达生产替代审查" subtitle="POST /api/candidate-radar/production-replacement-review；汇总快扫、不降能、worker/provider/browser 缺口，不执行外部任务" status={String(productionReplacementReview.status ?? "missing")}>
         <div className="actions">
           <button onClick={launchProductionReplacementReview}>生成 production replacement review</button>
@@ -719,7 +749,7 @@ export default function CandidateRadar() {
         <p>local_review_ready: {String(productionReplacementReview.local_review_ready === true)}；ready_for_production_replacement: {String(productionReplacementReview.ready_for_production_replacement === true)}</p>
         <p>production_radar_replacement_complete: {String(productionReplacementReview.production_radar_replacement_complete === true)}；legacy_retirement_ready: {String(productionReplacementReview.legacy_retirement_ready === true)}；legacy_fallback_required: {String(productionReplacementReview.legacy_fallback_required !== false)}</p>
         <p>fast_scan_ready: {String(productionReplacementReview.fast_scan_ready === true)}；no_feature_loss_local_surface_ready: {String(productionReplacementReview.no_feature_loss_local_surface_ready === true)}；legacy_parity_receipt_ready: {String(productionReplacementReview.legacy_parity_receipt_ready === true)}</p>
-        <p>local full/deep/fallback: {String(productionReplacementReview.local_full_pool_receipt_visible === true)} / {String(productionReplacementReview.local_deep_scan_review_visible === true)} / {String(productionReplacementReview.full_pool_worker_fallback_visible === true)}；provider scope / worker request / quant request / browser review: {String(productionReplacementReview.provider_parity_scope_ticket_visible === true)} / {String(productionReplacementReview.worker_execution_request_visible === true)} / {String(productionReplacementReview.quant_projection_execution_request_visible === true)} / {String(productionReplacementReview.browser_qa_review_visible === true)}</p>
+        <p>local full/deep/full fallback/deep fallback: {String(productionReplacementReview.local_full_pool_receipt_visible === true)} / {String(productionReplacementReview.local_deep_scan_review_visible === true)} / {String(productionReplacementReview.full_pool_worker_fallback_visible === true)} / {String(productionReplacementReview.deep_scan_worker_fallback_visible === true)}；provider scope / worker request / quant request / browser review: {String(productionReplacementReview.provider_parity_scope_ticket_visible === true)} / {String(productionReplacementReview.worker_execution_request_visible === true)} / {String(productionReplacementReview.quant_projection_execution_request_visible === true)} / {String(productionReplacementReview.browser_qa_review_visible === true)}</p>
         <p>worker full/deep / provider backed / DeepSeek ledger / browser promoted: {String(productionReplacementReview.worker_full_pool_execution_done === true)} / {String(productionReplacementReview.worker_deep_scan_execution_done === true)} / {String(productionReplacementReview.provider_backed_acceptance_done === true)} / {String(productionReplacementReview.deepseek_model_ledger_complete === true)} / {String(productionReplacementReview.browser_visual_performance_promoted === true)}</p>
         <p>local_blocker_count / production_blocker_count: {String(productionReplacementReview.local_blocker_count ?? 0)} / {String(productionReplacementReview.production_blocker_count ?? 0)}；review_scope_hash_short: {String(productionReplacementReview.review_scope_hash_short ?? "--")}</p>
         <p>tushare_called / deepseek_called / github_called: {String(productionReplacementReview.tushare_called === true)} / {String(productionReplacementReview.deepseek_called === true)} / {String(productionReplacementReview.github_called === true)}</p>
