@@ -26,6 +26,31 @@ TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS = 730
 TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS = 8
 TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_FAILURE_MODES = 6
 TRADE_CAL_PROVIDER_ACCEPTANCE_ENV_KEYS = ("TUSHARE_TOKEN",)
+FRESHNESS_DURABLE_EVIDENCE_SCHEMA_VERSION = "data_health_freshness_durable_evidence_recipe.v1"
+FRESHNESS_DURABLE_EVIDENCE_KEYS = (
+    "local_freshness_matrix_regression",
+    "local_trade_cal_artifact_validation",
+    "provider_trade_cal_scope_ticket",
+    "explicit_provider_trade_cal_task",
+    "safe_provider_call_ledger",
+    "provider_freshness_replay",
+    "provider_failure_mode_evidence",
+    "current_evidence_producer_coverage",
+    "decision_surface_isolation",
+    "production_promotion_review",
+)
+FRESHNESS_DURABLE_EVIDENCE_LABELS = {
+    "local_freshness_matrix_regression": "local freshness matrix regression",
+    "local_trade_cal_artifact_validation": "local trade_cal artifact validation",
+    "provider_trade_cal_scope_ticket": "provider trade_cal scope ticket",
+    "explicit_provider_trade_cal_task": "explicit provider trade_cal task",
+    "safe_provider_call_ledger": "safe provider call ledger",
+    "provider_freshness_replay": "provider-backed freshness replay",
+    "provider_failure_mode_evidence": "provider-backed failure-mode evidence",
+    "current_evidence_producer_coverage": "current evidence producer expected-date coverage",
+    "decision_surface_isolation": "decision-surface isolation",
+    "production_promotion_review": "production promotion review",
+}
 
 
 def _freshness_long_window_sample_validation() -> dict[str, Any]:
@@ -2665,6 +2690,261 @@ def _trade_cal_provider_acceptance_next_execution_recipe(
     return contract, recipe_rows
 
 
+def _freshness_durable_evidence_recipe_row(
+    evidence_key: str,
+    *,
+    current_status: str,
+    target_status: str,
+    local_prerequisite_visible: bool,
+    direct_evidence_required: bool,
+    missing_evidence: list[str],
+) -> dict[str, Any]:
+    production_blocker = bool(direct_evidence_required or not local_prerequisite_visible)
+    return {
+        "evidence_key": evidence_key,
+        "evidence_label": FRESHNESS_DURABLE_EVIDENCE_LABELS[evidence_key],
+        "scope": "freshness_durable_evidence_recipe",
+        "current_status": current_status,
+        "target_status": target_status,
+        "local_prerequisite_visible": bool(local_prerequisite_visible),
+        "direct_evidence_required": bool(direct_evidence_required),
+        "production_blocker": production_blocker,
+        "missing_evidence": missing_evidence,
+        "provider_backed_trade_cal_acceptance_done": False,
+        "production_freshness_gate_complete": False,
+        "real_trade_cal_long_window_validation_done": False,
+        "provider_refresh_called_by_recipe": False,
+        "provider_execution_implemented": False,
+        "provider_call_ledger_evidence_done": False,
+        "freshness_replay_provider_evidence_done": False,
+        "failure_mode_provider_evidence_done": False,
+        "current_evidence_producer_coverage_complete": False,
+        "decision_surface_mutated_by_recipe": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def _freshness_durable_evidence_recipe(
+    *,
+    freshness_acceptance_summary: Mapping[str, Any],
+    trade_cal_physical: Mapping[str, Any],
+    readiness_receipt: Mapping[str, Any],
+    activation_receipt: Mapping[str, Any],
+    latest_dry_run: Mapping[str, Any],
+    next_execution_recipe: Mapping[str, Any],
+    current_evidence: Mapping[str, Any],
+    decision_surface: Mapping[str, Any],
+    producer_coverage: Mapping[str, Any],
+    provider_promotion: Mapping[str, Any],
+) -> dict[str, Any]:
+    matrix_visible = freshness_acceptance_summary.get("scope") == "local_contract_not_real_trade_cal_validation"
+    local_trade_cal_visible = trade_cal_physical.get("scope") == "local_physical_trade_cal_parquet_validation"
+    local_trade_cal_ready = trade_cal_physical.get("local_trade_cal_physical_validation_done") is True
+    dry_run_visible = latest_dry_run.get("latest_task_found") is True or (
+        next_execution_recipe.get("requires_prior_dry_run_scope_ticket") is True
+    )
+    explicit_task_ready = bool(
+        readiness_receipt.get("ready_for_explicit_provider_task") is True
+        or activation_receipt.get("ready_for_explicit_provider_task") is True
+        or next_execution_recipe.get("recipe_ready_for_user_confirmation") is True
+    )
+    provider_promotion_ready = provider_promotion.get("promotion_ready") is True
+    current_evidence_ready = current_evidence.get("current_evidence_candidate_status") == "current_evidence_ready"
+    decision_surface_clear = int(decision_surface.get("blocked_surface_count") or 0) == 0
+    producer_coverage_clear = int(producer_coverage.get("blocked_producer_count") or 0) == 0
+    local_recipe_ready = bool(
+        matrix_visible
+        and local_trade_cal_visible
+        and readiness_receipt.get("schema_version")
+        == "data_health_freshness_provider_acceptance_readiness_receipt.v1"
+        and activation_receipt.get("schema_version")
+        == "data_health_freshness_provider_acceptance_activation_receipt.v1"
+        and next_execution_recipe.get("schema_version")
+        == "data_health_trade_cal_provider_acceptance_next_execution_recipe.v1"
+    )
+    rows = [
+        _freshness_durable_evidence_recipe_row(
+            "local_freshness_matrix_regression",
+            current_status="local_verified" if matrix_visible else "local_contract_missing",
+            target_status="keep local matrix and stale-data boundaries under regression guard",
+            local_prerequisite_visible=matrix_visible,
+            direct_evidence_required=False,
+            missing_evidence=[] if matrix_visible else ["freshness acceptance matrix local contract"],
+        ),
+        _freshness_durable_evidence_recipe_row(
+            "local_trade_cal_artifact_validation",
+            current_status="local_verified" if local_trade_cal_ready else "local_artifact_validation_pending",
+            target_status="local trade_cal artifact supports freshness replay inputs",
+            local_prerequisite_visible=local_trade_cal_ready,
+            direct_evidence_required=False,
+            missing_evidence=[] if local_trade_cal_ready else ["local trade_cal Parquet schema/window/current coverage"],
+        ),
+        _freshness_durable_evidence_recipe_row(
+            "provider_trade_cal_scope_ticket",
+            current_status="local_scope_ticket_visible" if dry_run_visible else "dry_run_scope_ticket_pending",
+            target_status="explicit provider task is bound to a redacted dry-run scope ticket",
+            local_prerequisite_visible=dry_run_visible,
+            direct_evidence_required=False,
+            missing_evidence=[] if dry_run_visible else ["trade_cal provider acceptance dry-run scope ticket"],
+        ),
+        _freshness_durable_evidence_recipe_row(
+            "explicit_provider_trade_cal_task",
+            current_status="provider_task_execution_pending",
+            target_status="approved POST task executes provider-backed trade_cal long-window acceptance",
+            local_prerequisite_visible=explicit_task_ready,
+            direct_evidence_required=True,
+            missing_evidence=[
+                "explicit user-approved POST task",
+                "provider-backed trade_cal long-window execution",
+                "provider task id and terminal status",
+            ],
+        ),
+        _freshness_durable_evidence_recipe_row(
+            "safe_provider_call_ledger",
+            current_status="provider_call_ledger_pending",
+            target_status="provider call ledger contains safe row counts, data dates, and redacted errors",
+            local_prerequisite_visible=provider_promotion_ready,
+            direct_evidence_required=True,
+            missing_evidence=[
+                "safe provider call ledger",
+                "row_count and data_date evidence",
+                "redacted error_message_safe evidence",
+            ],
+        ),
+        _freshness_durable_evidence_recipe_row(
+            "provider_freshness_replay",
+            current_status="provider_replay_pending",
+            target_status="provider-backed trade_cal replay covers premarket, intraday, auction, postmarket, non-trading day, and delay grace",
+            local_prerequisite_visible=provider_promotion_ready,
+            direct_evidence_required=True,
+            missing_evidence=[
+                "provider-backed freshness replay rows",
+                "expected_trade_date replay report",
+                "stale/expired/historical/unknown exclusion proof",
+            ],
+        ),
+        _freshness_durable_evidence_recipe_row(
+            "provider_failure_mode_evidence",
+            current_status="provider_failure_modes_pending",
+            target_status="permission, empty window, parser, schema, stale, and missing-calendar states are distinguished",
+            local_prerequisite_visible=provider_promotion_ready,
+            direct_evidence_required=True,
+            missing_evidence=[
+                "provider permission failure evidence",
+                "empty-window and parser failure evidence",
+                "schema/missing-calendar failure evidence",
+            ],
+        ),
+        _freshness_durable_evidence_recipe_row(
+            "current_evidence_producer_coverage",
+            current_status="local_clear" if current_evidence_ready and producer_coverage_clear else "producer_coverage_pending",
+            target_status="all current-evidence producers expose expected_trade_date/data_date/freshness_state",
+            local_prerequisite_visible=current_evidence_ready and producer_coverage_clear,
+            direct_evidence_required=True,
+            missing_evidence=[
+                "producer expected_trade_date coverage",
+                "producer data_date coverage",
+                "producer freshness_state coverage",
+            ],
+        ),
+        _freshness_durable_evidence_recipe_row(
+            "decision_surface_isolation",
+            current_status="local_clear" if decision_surface_clear else "decision_surface_review_pending",
+            target_status="stale/research-only evidence is blocked from score/support/preview/action surfaces",
+            local_prerequisite_visible=decision_surface_clear,
+            direct_evidence_required=True,
+            missing_evidence=[
+                "score/support/evidence preview isolation proof",
+                "next-session bridge preview isolation proof",
+                "strategy action non-mutation proof",
+            ],
+        ),
+        _freshness_durable_evidence_recipe_row(
+            "production_promotion_review",
+            current_status="promotion_review_pending",
+            target_status="production freshness promotion is reviewed after direct provider evidence is attached",
+            local_prerequisite_visible=provider_promotion_ready,
+            direct_evidence_required=True,
+            missing_evidence=[
+                "provider-backed acceptance promotion marker",
+                "fresh push-gate output",
+                "release review that production_freshness_gate_complete may become true",
+            ],
+        ),
+    ]
+    blocked_rows = [row for row in rows if row["production_blocker"]]
+    return {
+        "schema_version": FRESHNESS_DURABLE_EVIDENCE_SCHEMA_VERSION,
+        "status": "freshness_durable_evidence_recipe_ready_provider_pending"
+        if local_recipe_ready
+        else "freshness_durable_evidence_recipe_blocked_local_contract",
+        "scope": "local_freshness_durable_evidence_recipe_no_provider_execution",
+        "ltg": "LTG-01",
+        "local_recipe_ready": local_recipe_ready,
+        "durable_evidence_complete": False,
+        "durable_promotion_ready": False,
+        "provider_backed_trade_cal_acceptance_done": False,
+        "production_freshness_gate_complete": False,
+        "real_trade_cal_long_window_validation_done": False,
+        "provider_execution_implemented": False,
+        "provider_refresh_called_by_recipe": False,
+        "feature_boundary": "stale_expired_historical_unknown_remain_research_only_until_direct_provider_evidence",
+        "allowed_next_step": "collect_direct_trade_cal_provider_call_ledger_replay_failure_mode_and_promotion_evidence",
+        "not_allowed_next_steps": [
+            "treat durable recipe as provider-backed trade_cal acceptance",
+            "treat dry-run scope ticket as provider execution",
+            "treat synthetic replay as provider replay",
+            "treat local trade_cal artifact as provider acceptance",
+            "set production_freshness_gate_complete from cache/render",
+            "allow stale/research-only evidence into score/support/preview/action",
+        ],
+        "missing_evidence_items": sorted({item for row in blocked_rows for item in _as_list(row.get("missing_evidence"))}),
+        "row_count": len(rows),
+        "durable_evidence_blocker_count": len(blocked_rows),
+        "blocking_evidence_keys": [row["evidence_key"] for row in blocked_rows],
+        "provider_call_ledger_evidence_done": False,
+        "freshness_replay_provider_evidence_done": False,
+        "failure_mode_provider_evidence_done": False,
+        "current_evidence_producer_coverage_complete": False,
+        "decision_surface_mutated_by_recipe": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_freshness_durable_evidence_recipe",
+                "source": "freshness contracts, provider readiness receipts, and local audits",
+                "row_count": len(rows),
+                "durable_evidence_blocker_count": len(blocked_rows),
+                "call_status": "local_durable_evidence_recipe",
+                "local_fetched_at": _now_iso(),
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This durable evidence recipe fixes the LTG-01 production acceptance checklist. It does not call Tushare, create tasks, write artifacts, promote freshness, execute trades, mutate strategy action, or complete provider-backed acceptance.",
+    }
+
+
 def read_data_health_timeline_cache() -> dict[str, Any]:
     snapshot = packet_service.load_snapshot_cache()
     safe_snapshot = _safe_value(snapshot)
@@ -2775,6 +3055,19 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             latest_dry_run=latest_trade_cal_provider_acceptance_dry_run,
         )
     )
+    freshness_durable_evidence_recipe = _freshness_durable_evidence_recipe(
+        freshness_acceptance_summary=freshness_acceptance_summary,
+        trade_cal_physical=trade_cal_physical_validation,
+        readiness_receipt=freshness_provider_acceptance_readiness_receipt,
+        activation_receipt=freshness_provider_acceptance_activation_receipt,
+        latest_dry_run=latest_trade_cal_provider_acceptance_dry_run,
+        next_execution_recipe=trade_cal_provider_acceptance_next_execution_recipe,
+        current_evidence=current_evidence_freshness_qa_contract,
+        decision_surface=current_evidence_decision_surface_audit,
+        producer_coverage=current_evidence_producer_coverage_audit,
+        provider_promotion=trade_cal_provider_acceptance_promotion_audit,
+    )
+    freshness_durable_evidence_rows = _as_list(freshness_durable_evidence_recipe.get("rows"))
 
     timeline_rows = _combined_rows(
         (timeline_value, "data_health_timeline", "event"),
@@ -2845,6 +3138,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "freshness_provider_acceptance_activation_receipt",
             "latest_trade_cal_provider_acceptance_dry_run",
             "trade_cal_provider_acceptance_next_execution_recipe",
+            "freshness_durable_evidence_recipe",
             "current_evidence_freshness_qa_contract",
             "current_evidence_decision_surface_audit",
             "current_evidence_producer_coverage_audit",
@@ -2890,6 +3184,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             trade_cal_provider_acceptance_next_execution_recipe
         ),
         "trade_cal_provider_acceptance_next_execution_rows": trade_cal_provider_acceptance_next_execution_rows,
+        "freshness_durable_evidence_recipe": freshness_durable_evidence_recipe,
+        "freshness_durable_evidence_rows": freshness_durable_evidence_rows,
         "current_evidence_freshness_qa_contract": current_evidence_freshness_qa_contract,
         "current_evidence_freshness_qa_rows": current_evidence_freshness_qa_rows,
         "current_evidence_decision_surface_audit": current_evidence_decision_surface_audit,
@@ -2964,6 +3260,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             ),
             "trade_cal_provider_acceptance_next_execution_blocker_count": int(
                 trade_cal_provider_acceptance_next_execution_recipe.get("blocking_row_count") or 0
+            ),
+            "freshness_durable_evidence_row_count": len(freshness_durable_evidence_rows),
+            "freshness_durable_evidence_blocker_count": int(
+                freshness_durable_evidence_recipe.get("durable_evidence_blocker_count") or 0
             ),
             "current_evidence_freshness_qa_row_count": len(current_evidence_freshness_qa_rows),
             "current_evidence_freshness_qa_blocker_count": int(
@@ -3041,6 +3341,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal_provider_acceptance_next_execution_recipe_calls_provider": False,
             "trade_cal_provider_acceptance_next_execution_recipe_requires_dry_run": True,
             "trade_cal_provider_acceptance_next_execution_recipe_is_not_acceptance": True,
+            "freshness_durable_evidence_recipe_is_local": True,
+            "freshness_durable_evidence_recipe_calls_provider": False,
+            "freshness_durable_evidence_recipe_creates_task": False,
+            "freshness_durable_evidence_recipe_is_not_provider_acceptance": True,
+            "freshness_durable_evidence_recipe_is_not_production_completion": True,
+            "freshness_durable_evidence_requires_provider_call_ledger": True,
             "current_evidence_freshness_qa_is_local_contract": True,
             "current_evidence_requires_expected_trade_date": True,
             "historical_samples_are_research_only": True,
@@ -3144,6 +3450,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                         "recipe_ready_for_user_confirmation"
                     )
                 ),
+                "freshness_durable_evidence_recipe_status": freshness_durable_evidence_recipe.get("status"),
+                "freshness_durable_evidence_blocker_count": int(
+                    freshness_durable_evidence_recipe.get("durable_evidence_blocker_count") or 0
+                ),
                 "current_evidence_freshness_qa_status": current_evidence_freshness_qa_contract.get("status"),
                 "current_evidence_candidate_status": current_evidence_freshness_qa_contract.get(
                     "current_evidence_candidate_status"
@@ -3165,7 +3475,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 "local_fetched_at": _now_iso(),
                 "external": False,
             }
-        ],
+        ]
+        + freshness_durable_evidence_recipe["call_ledger"],
         "external_calls_triggered": False,
         "tushare_called": False,
         "akshare_called": False,
@@ -3191,6 +3502,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "freshness provider acceptance activation receipt 只是显式 provider 验收前的本地清单；不会调用 Tushare、不会创建任务、不会宣称生产完成。",
             "latest trade_cal provider acceptance dry-run 只读取本地 task metadata；GET cache 不创建 dry-run、不调用 Tushare、不证明 provider-backed 验收。",
             "trade_cal provider acceptance next execution recipe 只给出下一次 POST 验收配方；不会调用 Tushare、不会创建任务、不会证明生产完成。",
+            "freshness durable evidence recipe 只固定 LTG-01 生产验收证据清单；不会调用 Tushare、不会创建任务、不会把 dry-run/fixture/local artifact 提升成 provider-backed 验收。",
         ],
     }
     if status == "cache_missing":

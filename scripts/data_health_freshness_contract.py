@@ -72,6 +72,18 @@ LOCAL_FRESHNESS_STAGE_EVIDENCE_KEYS = {
     "current_evidence_producer_expected_dates",
     "decision_surface_isolation_review",
 }
+REQUIRED_FRESHNESS_DURABLE_EVIDENCE_KEYS = {
+    "local_freshness_matrix_regression",
+    "local_trade_cal_artifact_validation",
+    "provider_trade_cal_scope_ticket",
+    "explicit_provider_trade_cal_task",
+    "safe_provider_call_ledger",
+    "provider_freshness_replay",
+    "provider_failure_mode_evidence",
+    "current_evidence_producer_coverage",
+    "decision_surface_isolation",
+    "production_promotion_review",
+}
 
 
 def _get(mapping: dict[str, Any], key: str) -> dict[str, Any]:
@@ -283,6 +295,11 @@ def build_contract() -> dict[str, Any]:
     activation_receipt = _get(packet, "freshness_provider_acceptance_activation_receipt")
     next_execution_recipe = _get(packet, "trade_cal_provider_acceptance_next_execution_recipe")
     next_execution_recipe_rows = _as_list(packet.get("trade_cal_provider_acceptance_next_execution_rows"))
+    durable_evidence_recipe = _get(packet, "freshness_durable_evidence_recipe")
+    durable_evidence_rows = [
+        row for row in _as_list(packet.get("freshness_durable_evidence_rows")) if isinstance(row, dict)
+    ]
+    durable_evidence_keys = {str(row.get("evidence_key") or "") for row in durable_evidence_rows}
     current = _get(packet, "current_evidence_freshness_qa_contract")
     surfaces = _get(packet, "current_evidence_decision_surface_audit")
     producers = _get(packet, "current_evidence_producer_coverage_audit")
@@ -518,6 +535,72 @@ def build_contract() -> dict[str, Any]:
             and policy.get("trade_cal_provider_acceptance_next_execution_recipe_requires_dry_run") is True
             and policy.get("trade_cal_provider_acceptance_next_execution_recipe_is_not_acceptance") is True,
             "The next-execution recipe may describe the explicit future POST task, but it must stay local, require a dry-run scope ticket plus user confirmation, and never run provider calls itself.",
+        ),
+        _row(
+            "freshness_durable_evidence_recipe_is_local_provider_pending",
+            durable_evidence_recipe.get("schema_version") == "data_health_freshness_durable_evidence_recipe.v1"
+            and durable_evidence_recipe.get("scope")
+            == "local_freshness_durable_evidence_recipe_no_provider_execution"
+            and durable_evidence_recipe.get("status")
+            in {
+                "freshness_durable_evidence_recipe_ready_provider_pending",
+                "freshness_durable_evidence_recipe_blocked_local_contract",
+            }
+            and durable_evidence_recipe.get("local_recipe_ready") is True
+            and durable_evidence_recipe.get("durable_evidence_complete") is False
+            and durable_evidence_recipe.get("durable_promotion_ready") is False
+            and durable_evidence_recipe.get("provider_backed_trade_cal_acceptance_done") is False
+            and durable_evidence_recipe.get("production_freshness_gate_complete") is False
+            and durable_evidence_recipe.get("real_trade_cal_long_window_validation_done") is False
+            and durable_evidence_recipe.get("provider_execution_implemented") is False
+            and durable_evidence_recipe.get("provider_refresh_called_by_recipe") is False
+            and durable_evidence_keys == REQUIRED_FRESHNESS_DURABLE_EVIDENCE_KEYS
+            and len(durable_evidence_rows) == len(REQUIRED_FRESHNESS_DURABLE_EVIDENCE_KEYS)
+            and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) > 0
+            and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0)
+            == sum(1 for row in durable_evidence_rows if row.get("production_blocker") is True)
+            and "explicit_provider_trade_cal_task" in set(durable_evidence_recipe.get("blocking_evidence_keys") or [])
+            and "safe_provider_call_ledger" in set(durable_evidence_recipe.get("blocking_evidence_keys") or [])
+            and "provider_freshness_replay" in set(durable_evidence_recipe.get("blocking_evidence_keys") or [])
+            and "provider_failure_mode_evidence" in set(durable_evidence_recipe.get("blocking_evidence_keys") or [])
+            and "treat durable recipe as provider-backed trade_cal acceptance"
+            in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and "treat dry-run scope ticket as provider execution"
+            in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and "treat synthetic replay as provider replay"
+            in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and "treat local trade_cal artifact as provider acceptance"
+            in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and "set production_freshness_gate_complete from cache/render"
+            in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and all(row.get("scope") == "freshness_durable_evidence_recipe" for row in durable_evidence_rows)
+            and all(row.get("provider_backed_trade_cal_acceptance_done") is False for row in durable_evidence_rows)
+            and all(row.get("production_freshness_gate_complete") is False for row in durable_evidence_rows)
+            and all(row.get("provider_refresh_called_by_recipe") is False for row in durable_evidence_rows)
+            and all(row.get("provider_execution_implemented") is False for row in durable_evidence_rows)
+            and all(row.get("provider_call_ledger_evidence_done") is False for row in durable_evidence_rows)
+            and all(row.get("freshness_replay_provider_evidence_done") is False for row in durable_evidence_rows)
+            and all(row.get("failure_mode_provider_evidence_done") is False for row in durable_evidence_rows)
+            and all(row.get("cache_get_external_calls") is False for row in durable_evidence_rows)
+            and all(row.get("react_render_external_calls") is False for row in durable_evidence_rows)
+            and all(row.get("external_calls_triggered") is False for row in durable_evidence_rows)
+            and all(row.get("tushare_called") is False for row in durable_evidence_rows)
+            and all(row.get("deepseek_called") is False for row in durable_evidence_rows)
+            and all(row.get("github_called") is False for row in durable_evidence_rows)
+            and all(row.get("does_not_execute_trades") is True for row in durable_evidence_rows)
+            and all(row.get("does_not_modify_strategy_action") is True for row in durable_evidence_rows)
+            and all(row.get("contains_secret") is False for row in durable_evidence_rows)
+            and _as_list(durable_evidence_recipe.get("call_ledger"))
+            and _as_dict(_as_list(durable_evidence_recipe.get("call_ledger"))[0]).get("api")
+            == "local_freshness_durable_evidence_recipe"
+            and _as_dict(_as_list(durable_evidence_recipe.get("call_ledger"))[0]).get("external") is False
+            and policy.get("freshness_durable_evidence_recipe_is_local") is True
+            and policy.get("freshness_durable_evidence_recipe_calls_provider") is False
+            and policy.get("freshness_durable_evidence_recipe_creates_task") is False
+            and policy.get("freshness_durable_evidence_recipe_is_not_provider_acceptance") is True
+            and policy.get("freshness_durable_evidence_recipe_is_not_production_completion") is True
+            and policy.get("freshness_durable_evidence_requires_provider_call_ledger") is True,
+            "Freshness durable evidence recipe must enumerate provider task, call ledger, replay, failure-mode, producer, decision-surface, and promotion evidence without calling providers or claiming production completion.",
         ),
         _row(
             "trade_cal_dry_run_scope_ticket_is_local_no_provider",
@@ -773,10 +856,17 @@ def build_contract() -> dict[str, Any]:
         "does_not_modify_strategy_action": True,
         "row_count": len(rows),
         "freshness_production_stage_scope_count": len(production_stage_scope_rows),
+        "freshness_durable_evidence_recipe_ready": durable_evidence_recipe.get("local_recipe_ready") is True,
+        "freshness_durable_evidence_recipe_status": durable_evidence_recipe.get("status"),
+        "freshness_durable_evidence_complete": False,
+        "freshness_durable_evidence_blocker_count": durable_evidence_recipe.get(
+            "durable_evidence_blocker_count"
+        ),
         "blocking_criterion_count": len(blockers),
         "blockers": blockers,
         "rows": rows,
         "freshness_production_stage_scope_rows": production_stage_scope_rows,
+        "freshness_durable_evidence_rows": durable_evidence_rows,
         "observed_counts": {
             "freshness_acceptance_scenario_count": counts.get("freshness_acceptance_scenario_count"),
             "current_evidence_freshness_qa_row_count": counts.get("current_evidence_freshness_qa_row_count"),
@@ -824,6 +914,12 @@ def build_contract() -> dict[str, Any]:
                 if row.get("target_status") == "provider_backed_freshness_direct_evidence_required"
                 and row.get("production_freshness_gate_complete") is False
             ),
+            "freshness_durable_evidence_row_count": len(durable_evidence_rows),
+            "freshness_durable_evidence_keys": sorted(durable_evidence_keys),
+            "freshness_durable_evidence_blocker_count": durable_evidence_recipe.get(
+                "durable_evidence_blocker_count"
+            ),
+            "freshness_durable_evidence_blocking_keys": durable_evidence_recipe.get("blocking_evidence_keys"),
         },
         "note": "This is a local push-gate contract. Pending/provider-backed blockers are expected until explicit provider acceptance is run later.",
     }

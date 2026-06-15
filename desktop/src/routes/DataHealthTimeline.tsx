@@ -68,6 +68,8 @@ export default function DataHealthTimeline() {
   const freshnessProviderActivationReceipt = (cache.freshness_provider_acceptance_activation_receipt as Record<string, unknown> | undefined) ?? {};
   const latestTradeCalDryRun = (cache.latest_trade_cal_provider_acceptance_dry_run as Record<string, unknown> | undefined) ?? {};
   const tradeCalNextExecutionRecipe = (cache.trade_cal_provider_acceptance_next_execution_recipe as Record<string, unknown> | undefined) ?? {};
+  const freshnessDurableEvidenceRecipe = (cache.freshness_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
+  const freshnessDurableEvidenceRows = rows(cache.freshness_durable_evidence_rows);
   const latestTradeCalDryRunReceipt = latestTradeCalDryRun.receipt as Record<string, unknown> | undefined;
   const currentEvidenceFreshness = (cache.current_evidence_freshness_qa_contract as Record<string, unknown> | undefined) ?? {};
   const decisionSurfaceAudit = (cache.current_evidence_decision_surface_audit as Record<string, unknown> | undefined) ?? {};
@@ -118,6 +120,8 @@ export default function DataHealthTimeline() {
           { label: "dry-run blockers", value: counts.latest_trade_cal_provider_acceptance_dry_run_blocking_row_count as number | undefined, tone: Number(counts.latest_trade_cal_provider_acceptance_dry_run_blocking_row_count ?? 0) > 0 ? "warn" : "good" },
           { label: "下一步配方", value: tradeCalNextExecutionRecipe.status as string | undefined, tone: tradeCalNextExecutionRecipe.recipe_ready_for_user_confirmation === true ? "good" : "warn" },
           { label: "配方 blockers", value: counts.trade_cal_provider_acceptance_next_execution_blocker_count as number | undefined, tone: Number(counts.trade_cal_provider_acceptance_next_execution_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "durable recipe", value: freshnessDurableEvidenceRecipe.status as string | undefined, tone: freshnessDurableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
+          { label: "durable blockers", value: freshnessDurableEvidenceRecipe.durable_evidence_blocker_count ?? counts.freshness_durable_evidence_blocker_count, tone: Number(freshnessDurableEvidenceRecipe.durable_evidence_blocker_count ?? counts.freshness_durable_evidence_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "当前证据 QA", value: currentEvidenceFreshness.status as string | undefined, tone: currentEvidenceFreshness.provider_backed_long_window_acceptance_done === true ? "good" : "warn" },
           { label: "当前证据准入", value: currentEvidenceFreshness.current_evidence_candidate_status as string | undefined, tone: currentEvidenceFreshness.current_evidence_candidate_status === "current_evidence_ready" ? "good" : "warn" },
           { label: "证据 blockers", value: counts.current_evidence_freshness_qa_blocker_count as number | undefined, tone: counts.current_evidence_freshness_qa_blocker_count === 0 ? "good" : "warn" },
@@ -284,6 +288,23 @@ export default function DataHealthTimeline() {
         <p>not_allowed_next_steps: {Array.isArray(tradeCalNextExecutionRecipe.not_allowed_next_steps) ? tradeCalNextExecutionRecipe.not_allowed_next_steps.join(" / ") : "GET cache provider refresh / React render provider refresh / skip dry-run scope ticket / skip user confirmation / promote recipe to provider-backed acceptance"}</p>
         <DataLineageTable rows={objectRow(tradeCalNextExecutionRecipe)} />
         <DataLineageTable rows={rows(cache.trade_cal_provider_acceptance_next_execution_rows)} />
+      </PacketCard>
+
+      <PacketCard title="Freshness durable evidence recipe" subtitle="LTG-01 生产验收证据配方；固定 provider trade_cal 直接证据清单，不调用 Tushare" status={String(freshnessDurableEvidenceRecipe.status ?? "freshness_durable_evidence_recipe_not_loaded")}>
+        <p>schema_version: {String(freshnessDurableEvidenceRecipe.schema_version ?? "data_health_freshness_durable_evidence_recipe.v1")}</p>
+        <p>scope: {String(freshnessDurableEvidenceRecipe.scope ?? "local_freshness_durable_evidence_recipe_no_provider_execution")}</p>
+        <p>local_recipe_ready: {String(freshnessDurableEvidenceRecipe.local_recipe_ready ?? false)}</p>
+        <p>durable_evidence_complete / durable_promotion_ready: {String(freshnessDurableEvidenceRecipe.durable_evidence_complete ?? false)} / {String(freshnessDurableEvidenceRecipe.durable_promotion_ready ?? false)}</p>
+        <p>provider_backed_trade_cal_acceptance_done / production_freshness_gate_complete: {String(freshnessDurableEvidenceRecipe.provider_backed_trade_cal_acceptance_done ?? false)} / {String(freshnessDurableEvidenceRecipe.production_freshness_gate_complete ?? false)}</p>
+        <p>real_trade_cal_long_window_validation_done / provider_execution_implemented: {String(freshnessDurableEvidenceRecipe.real_trade_cal_long_window_validation_done ?? false)} / {String(freshnessDurableEvidenceRecipe.provider_execution_implemented ?? false)}</p>
+        <p>durable_evidence_blocker_count: {String(freshnessDurableEvidenceRecipe.durable_evidence_blocker_count ?? 0)}</p>
+        <p>blocking_evidence_keys: {Array.isArray(freshnessDurableEvidenceRecipe.blocking_evidence_keys) ? freshnessDurableEvidenceRecipe.blocking_evidence_keys.join(" / ") : "explicit_provider_trade_cal_task / safe_provider_call_ledger / provider_freshness_replay / provider_failure_mode_evidence / current_evidence_producer_coverage / decision_surface_isolation / production_promotion_review"}</p>
+        <p>allowed_next_step: {String(freshnessDurableEvidenceRecipe.allowed_next_step ?? "collect_direct_trade_cal_provider_call_ledger_replay_failure_mode_and_promotion_evidence")}</p>
+        <p>not_allowed_next_steps: {Array.isArray(freshnessDurableEvidenceRecipe.not_allowed_next_steps) ? freshnessDurableEvidenceRecipe.not_allowed_next_steps.join(" / ") : "treat durable recipe as provider-backed trade_cal acceptance / treat dry-run scope ticket as provider execution / treat synthetic replay as provider replay / treat local trade_cal artifact as provider acceptance / set production_freshness_gate_complete from cache/render"}</p>
+        <p>provider_refresh_called_by_recipe / cache_get_external_calls / react_render_external_calls: {String(freshnessDurableEvidenceRecipe.provider_refresh_called_by_recipe ?? false)} / {String(freshnessDurableEvidenceRecipe.cache_get_external_calls ?? false)} / {String(freshnessDurableEvidenceRecipe.react_render_external_calls ?? false)}</p>
+        <p>tushare_called / deepseek_called / github_called: {String(freshnessDurableEvidenceRecipe.tushare_called ?? false)} / {String(freshnessDurableEvidenceRecipe.deepseek_called ?? false)} / {String(freshnessDurableEvidenceRecipe.github_called ?? false)}</p>
+        <DataLineageTable rows={freshnessDurableEvidenceRows} />
+        <DataLineageTable rows={rows(freshnessDurableEvidenceRecipe.call_ledger)} />
       </PacketCard>
 
       <PacketCard title="Freshness 长窗口样本验收" subtitle="local synthetic trade_cal fixture；使用实际 freshness gate，不调用 Tushare" status={String(freshnessSample.status ?? "sample_validation")}>

@@ -7697,6 +7697,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("current_evidence_producer_coverage_audit", script)
         self.assertIn("freshness_production_stage_scope_manifest", script)
         self.assertIn("freshness_production_stage_scope_manifest_is_complete_and_pending", script)
+        self.assertIn("data_health_freshness_durable_evidence_recipe.v1", script)
+        self.assertIn("freshness_durable_evidence_recipe_is_local_provider_pending", script)
         self.assertNotIn("requests", script)
         self.assertNotIn("httpx", script)
         self.assertNotIn("api.github.com", script)
@@ -7740,8 +7742,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             bool,
         )
         self.assertGreaterEqual(payload["observed_counts"]["latest_trade_cal_next_execution_recipe_blocker_count"], 0)
+        self.assertTrue(payload["freshness_durable_evidence_recipe_ready"])
+        self.assertEqual(
+            payload["freshness_durable_evidence_recipe_status"],
+            "freshness_durable_evidence_recipe_ready_provider_pending",
+        )
+        self.assertFalse(payload["freshness_durable_evidence_complete"])
+        self.assertGreater(payload["freshness_durable_evidence_blocker_count"], 0)
         row_map = {row["criterion"]: row for row in payload["rows"]}
         self.assertTrue(row_map["trade_cal_next_execution_recipe_is_local_and_not_execution"]["passed"])
+        self.assertTrue(row_map["freshness_durable_evidence_recipe_is_local_provider_pending"]["passed"])
         self.assertTrue(row_map["trade_cal_next_execution_recipe_binds_dry_run_scope_without_execution"]["passed"])
         required_freshness_stages = {
             "acceptance_matrix_boundary",
@@ -7794,6 +7804,49 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed_counts"]["freshness_production_stage_scope_pending_count"],
             len(required_freshness_stages),
         )
+        required_durable_keys = {
+            "local_freshness_matrix_regression",
+            "local_trade_cal_artifact_validation",
+            "provider_trade_cal_scope_ticket",
+            "explicit_provider_trade_cal_task",
+            "safe_provider_call_ledger",
+            "provider_freshness_replay",
+            "provider_failure_mode_evidence",
+            "current_evidence_producer_coverage",
+            "decision_surface_isolation",
+            "production_promotion_review",
+        }
+        self.assertEqual(payload["observed_counts"]["freshness_durable_evidence_row_count"], 10)
+        self.assertEqual(payload["observed_counts"]["freshness_durable_evidence_keys"], sorted(required_durable_keys))
+        self.assertGreater(payload["observed_counts"]["freshness_durable_evidence_blocker_count"], 0)
+        self.assertIn(
+            "explicit_provider_trade_cal_task",
+            payload["observed_counts"]["freshness_durable_evidence_blocking_keys"],
+        )
+        self.assertIn(
+            "provider_freshness_replay",
+            payload["observed_counts"]["freshness_durable_evidence_blocking_keys"],
+        )
+        durable_rows = payload["freshness_durable_evidence_rows"]
+        self.assertEqual({row["evidence_key"] for row in durable_rows}, required_durable_keys)
+        for row in durable_rows:
+            self.assertEqual(row["scope"], "freshness_durable_evidence_recipe")
+            self.assertFalse(row["provider_backed_trade_cal_acceptance_done"])
+            self.assertFalse(row["production_freshness_gate_complete"])
+            self.assertFalse(row["provider_refresh_called_by_recipe"])
+            self.assertFalse(row["provider_execution_implemented"])
+            self.assertFalse(row["provider_call_ledger_evidence_done"])
+            self.assertFalse(row["freshness_replay_provider_evidence_done"])
+            self.assertFalse(row["failure_mode_provider_evidence_done"])
+            self.assertFalse(row["cache_get_external_calls"])
+            self.assertFalse(row["react_render_external_calls"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("acceptance_matrix_is_not_provider_acceptance", criteria)
         self.assertIn("provider_runbook_execution_pending", criteria)
@@ -7802,6 +7855,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("freshness_production_blocker_audit_is_local_pending", criteria)
         self.assertIn("producer_coverage_audit_is_read_only", criteria)
         self.assertIn("freshness_production_stage_scope_manifest_is_complete_and_pending", criteria)
+        self.assertIn("freshness_durable_evidence_recipe_is_local_provider_pending", criteria)
 
     def test_tushare_acceptance_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/tushare_acceptance_contract.py")
@@ -16890,12 +16944,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         readiness_receipt = packet["freshness_provider_acceptance_readiness_receipt"]
         activation_receipt = packet["freshness_provider_acceptance_activation_receipt"]
         next_execution_recipe = packet["trade_cal_provider_acceptance_next_execution_recipe"]
+        durable_recipe = packet["freshness_durable_evidence_recipe"]
         freshness_blocker_rows = {row["phase"]: row for row in packet["freshness_production_blocker_rows"]}
         readiness_rows = {row["criterion"]: row for row in packet["freshness_provider_acceptance_readiness_rows"]}
         activation_rows = {row["criterion"]: row for row in packet["freshness_provider_acceptance_activation_rows"]}
         next_execution_rows = {
             row["phase"]: row for row in packet["trade_cal_provider_acceptance_next_execution_rows"]
         }
+        durable_rows = {row["evidence_key"]: row for row in packet["freshness_durable_evidence_rows"]}
         provider_runbook_rows = {row["criterion"]: row for row in packet["trade_cal_provider_acceptance_runbook_rows"]}
         provider_promotion_rows = {
             row["criterion"]: row for row in packet["trade_cal_provider_acceptance_promotion_rows"]
@@ -16950,6 +17006,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(packet["counts"]["latest_trade_cal_provider_acceptance_dry_run_blocking_row_count"], 0)
         self.assertEqual(packet["counts"]["trade_cal_provider_acceptance_next_execution_row_count"], 10)
         self.assertGreater(packet["counts"]["trade_cal_provider_acceptance_next_execution_blocker_count"], 0)
+        self.assertEqual(packet["counts"]["freshness_durable_evidence_row_count"], 10)
+        self.assertGreater(packet["counts"]["freshness_durable_evidence_blocker_count"], 0)
         self.assertEqual(packet["counts"]["current_evidence_freshness_qa_row_count"], 8)
         self.assertEqual(packet["counts"]["current_evidence_freshness_qa_blocker_count"], 3)
         self.assertEqual(packet["counts"]["current_evidence_decision_surface_row_count"], 5)
@@ -17016,6 +17074,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["policy"]["trade_cal_provider_acceptance_next_execution_recipe_calls_provider"])
         self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_next_execution_recipe_requires_dry_run"])
         self.assertTrue(packet["policy"]["trade_cal_provider_acceptance_next_execution_recipe_is_not_acceptance"])
+        self.assertTrue(packet["policy"]["freshness_durable_evidence_recipe_is_local"])
+        self.assertFalse(packet["policy"]["freshness_durable_evidence_recipe_calls_provider"])
+        self.assertFalse(packet["policy"]["freshness_durable_evidence_recipe_creates_task"])
+        self.assertTrue(packet["policy"]["freshness_durable_evidence_recipe_is_not_provider_acceptance"])
+        self.assertTrue(packet["policy"]["freshness_durable_evidence_recipe_is_not_production_completion"])
+        self.assertTrue(packet["policy"]["freshness_durable_evidence_requires_provider_call_ledger"])
         latest_dry_run = packet["latest_trade_cal_provider_acceptance_dry_run"]
         self.assertEqual(
             latest_dry_run["schema_version"],
@@ -17172,6 +17236,66 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "pending_future_provider_task",
         )
         self.assertEqual(next_execution_rows["cache_render_trade_boundary"]["status"], "passed_no_side_effects")
+        required_durable_keys = {
+            "local_freshness_matrix_regression",
+            "local_trade_cal_artifact_validation",
+            "provider_trade_cal_scope_ticket",
+            "explicit_provider_trade_cal_task",
+            "safe_provider_call_ledger",
+            "provider_freshness_replay",
+            "provider_failure_mode_evidence",
+            "current_evidence_producer_coverage",
+            "decision_surface_isolation",
+            "production_promotion_review",
+        }
+        self.assertEqual(durable_recipe["schema_version"], "data_health_freshness_durable_evidence_recipe.v1")
+        self.assertEqual(durable_recipe["scope"], "local_freshness_durable_evidence_recipe_no_provider_execution")
+        self.assertEqual(durable_recipe["status"], "freshness_durable_evidence_recipe_ready_provider_pending")
+        self.assertTrue(durable_recipe["local_recipe_ready"])
+        self.assertFalse(durable_recipe["durable_evidence_complete"])
+        self.assertFalse(durable_recipe["durable_promotion_ready"])
+        self.assertFalse(durable_recipe["provider_backed_trade_cal_acceptance_done"])
+        self.assertFalse(durable_recipe["production_freshness_gate_complete"])
+        self.assertFalse(durable_recipe["real_trade_cal_long_window_validation_done"])
+        self.assertFalse(durable_recipe["provider_execution_implemented"])
+        self.assertFalse(durable_recipe["provider_refresh_called_by_recipe"])
+        self.assertEqual(durable_recipe["row_count"], len(required_durable_keys))
+        self.assertGreater(durable_recipe["durable_evidence_blocker_count"], 0)
+        self.assertEqual(set(durable_rows), required_durable_keys)
+        self.assertIn("explicit_provider_trade_cal_task", durable_recipe["blocking_evidence_keys"])
+        self.assertIn("safe_provider_call_ledger", durable_recipe["blocking_evidence_keys"])
+        self.assertIn("provider_freshness_replay", durable_recipe["blocking_evidence_keys"])
+        self.assertIn("provider_failure_mode_evidence", durable_recipe["blocking_evidence_keys"])
+        self.assertIn("treat durable recipe as provider-backed trade_cal acceptance", durable_recipe["not_allowed_next_steps"])
+        self.assertIn("treat dry-run scope ticket as provider execution", durable_recipe["not_allowed_next_steps"])
+        self.assertIn("treat synthetic replay as provider replay", durable_recipe["not_allowed_next_steps"])
+        self.assertIn("treat local trade_cal artifact as provider acceptance", durable_recipe["not_allowed_next_steps"])
+        self.assertIn("set production_freshness_gate_complete from cache/render", durable_recipe["not_allowed_next_steps"])
+        self.assertEqual(durable_rows["local_freshness_matrix_regression"]["current_status"], "local_verified")
+        self.assertTrue(durable_rows["explicit_provider_trade_cal_task"]["direct_evidence_required"])
+        self.assertTrue(durable_rows["safe_provider_call_ledger"]["production_blocker"])
+        self.assertTrue(durable_rows["provider_freshness_replay"]["production_blocker"])
+        self.assertTrue(durable_rows["provider_failure_mode_evidence"]["production_blocker"])
+        for row in durable_rows.values():
+            self.assertEqual(row["scope"], "freshness_durable_evidence_recipe")
+            self.assertFalse(row["provider_backed_trade_cal_acceptance_done"])
+            self.assertFalse(row["production_freshness_gate_complete"])
+            self.assertFalse(row["provider_refresh_called_by_recipe"])
+            self.assertFalse(row["provider_execution_implemented"])
+            self.assertFalse(row["provider_call_ledger_evidence_done"])
+            self.assertFalse(row["freshness_replay_provider_evidence_done"])
+            self.assertFalse(row["failure_mode_provider_evidence_done"])
+            self.assertFalse(row["cache_get_external_calls"])
+            self.assertFalse(row["react_render_external_calls"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
+        self.assertEqual(durable_recipe["call_ledger"][0]["api"], "local_freshness_durable_evidence_recipe")
+        self.assertFalse(durable_recipe["call_ledger"][0]["external"])
         self.assertEqual(current_evidence["schema_version"], "data_health_current_evidence_freshness_qa.v1")
         self.assertEqual(
             current_evidence["status"],
@@ -17327,6 +17451,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(
             response["call_ledger"][0]["trade_cal_provider_acceptance_next_execution_ready_for_user_confirmation"]
         )
+        self.assertEqual(
+            response["call_ledger"][0]["freshness_durable_evidence_recipe_status"],
+            "freshness_durable_evidence_recipe_ready_provider_pending",
+        )
+        self.assertGreater(response["call_ledger"][0]["freshness_durable_evidence_blocker_count"], 0)
+        self.assertEqual(response["call_ledger"][1]["api"], "local_freshness_durable_evidence_recipe")
+        self.assertFalse(response["call_ledger"][1]["external"])
         self.assertEqual(
             response["call_ledger"][0]["current_evidence_decision_surface_audit_status"],
             "decision_surface_audit_ready_no_observed_blockers",
