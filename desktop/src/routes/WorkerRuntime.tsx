@@ -112,6 +112,18 @@ export default function WorkerRuntime() {
   const workerProductionEvidencePlanReceipt =
     (productionReadiness.worker_production_evidence_plan_receipt as Record<string, unknown> | undefined) ??
     ((cache.worker_production_evidence_plan_receipt as Record<string, unknown> | undefined) ?? {});
+  const workerRuntimeQaExecutionRecipe =
+    (productionReadiness.worker_runtime_qa_execution_recipe as Record<string, unknown> | undefined) ??
+    ((cache.worker_runtime_qa_execution_recipe as Record<string, unknown> | undefined) ?? {});
+  const workerRuntimeQaExecutionRows =
+    (productionReadiness.worker_runtime_qa_execution_recipe_rows as Array<Record<string, unknown>> | undefined) ??
+    ((cache.worker_runtime_qa_execution_recipe_rows as Array<Record<string, unknown>> | undefined) ?? []);
+  const workerRuntimeDurableEvidenceRecipe =
+    (productionReadiness.worker_runtime_durable_evidence_recipe as Record<string, unknown> | undefined) ??
+    ((cache.worker_runtime_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {});
+  const workerRuntimeDurableEvidenceRows =
+    (productionReadiness.worker_runtime_durable_evidence_rows as Array<Record<string, unknown>> | undefined) ??
+    ((cache.worker_runtime_durable_evidence_rows as Array<Record<string, unknown>> | undefined) ?? []);
   const visibleHealthcheck = Object.keys(healthcheckResult).length ? healthcheckResult : workerSyntheticHealthcheck;
   const visibleActivationReview = Object.keys(activationReviewResult).length
     ? ((activationReviewResult.worker_activation_review_task_receipt as Record<string, unknown> | undefined) ?? activationReviewResult)
@@ -176,6 +188,10 @@ export default function WorkerRuntime() {
           { label: "review task blockers", value: visibleActivationReview.production_blocker_count ?? counts.worker_activation_review_task_production_blocker_count, tone: Number(visibleActivationReview.production_blocker_count ?? counts.worker_activation_review_task_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "evidence plan", value: visibleProductionEvidencePlan.evidence_plan_ready === true ? "ready" : "pending", tone: visibleProductionEvidencePlan.evidence_plan_ready === true ? "good" : "warn" },
           { label: "runtime QA gaps", value: visibleProductionEvidencePlan.production_blocker_count ?? counts.worker_production_evidence_plan_production_blocker_count, tone: Number(visibleProductionEvidencePlan.production_blocker_count ?? counts.worker_production_evidence_plan_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "runtime recipe", value: String(workerRuntimeQaExecutionRecipe.status ?? "missing"), tone: workerRuntimeQaExecutionRecipe.local_recipe_ready === true ? "good" : "warn" },
+          { label: "runtime phases", value: counts.worker_runtime_qa_execution_recipe_pending_phase_count ?? workerRuntimeQaExecutionRecipe.pending_phase_count ?? workerRuntimeQaExecutionRows.length, tone: Number(counts.worker_runtime_qa_execution_recipe_pending_phase_count ?? workerRuntimeQaExecutionRecipe.pending_phase_count ?? workerRuntimeQaExecutionRows.length) > 0 ? "warn" : "good" },
+          { label: "durable evidence", value: String(workerRuntimeDurableEvidenceRecipe.status ?? "missing"), tone: workerRuntimeDurableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
+          { label: "durable blockers", value: counts.worker_runtime_durable_evidence_production_blocker_count ?? workerRuntimeDurableEvidenceRecipe.production_blocker_count ?? workerRuntimeDurableEvidenceRows.length, tone: Number(counts.worker_runtime_durable_evidence_production_blocker_count ?? workerRuntimeDurableEvidenceRecipe.production_blocker_count ?? workerRuntimeDurableEvidenceRows.length) > 0 ? "warn" : "good" },
           { label: "worker complete", value: productionBlockerAudit.production_worker_complete === true ? "是" : "否", tone: productionBlockerAudit.production_worker_complete === true ? "bad" : "good" },
           { label: "local fallback", value: runtime.local_fallback_enabled, tone: runtime.local_fallback_enabled === false ? "bad" : "good" },
           { label: "Celery", value: runtime.celery_available, tone: runtime.celery_available === true ? "good" : "warn" },
@@ -371,6 +387,31 @@ export default function WorkerRuntime() {
         <p>not_allowed_next_steps: {Array.isArray(visibleProductionEvidencePlan.not_allowed_next_steps) ? visibleProductionEvidencePlan.not_allowed_next_steps.join(" / ") : "start Celery from evidence plan / ping Redis from evidence plan / evidence plan as production worker completion"}</p>
         <p>该计划只生成后续 runtime QA 的安全 scope ticket；不能当作 Celery/Redis process proof 或 production worker complete。</p>
         <DataLineageTable rows={rows(productionReadiness.worker_production_evidence_plan_rows ?? cache.worker_production_evidence_plan_rows ?? visibleProductionEvidencePlan.rows)} />
+      </PacketCard>
+
+      <PacketCard title="Worker runtime QA execution recipe" subtitle="LTG-06 runtime QA 执行顺序 recipe；只读、不启动 Celery、不 ping Redis、不派发任务" status={String(workerRuntimeQaExecutionRecipe.status ?? "missing")}>
+        <p>schema_version: {String(workerRuntimeQaExecutionRecipe.schema_version ?? "worker_runtime_qa_execution_recipe.v1")}</p>
+        <p>scope: {String(workerRuntimeQaExecutionRecipe.scope ?? "local_worker_runtime_qa_execution_recipe_no_process_start")}</p>
+        <p>local_recipe_ready / runtime_qa_done: {String(workerRuntimeQaExecutionRecipe.local_recipe_ready ?? false)} / {String(workerRuntimeQaExecutionRecipe.runtime_qa_done ?? false)}</p>
+        <p>production_worker_complete: {String(workerRuntimeQaExecutionRecipe.production_worker_complete ?? false)}</p>
+        <p>worker_started / redis_pinged / scheduler_started / task_dispatched: {String(workerRuntimeQaExecutionRecipe.worker_started ?? false)} / {String(workerRuntimeQaExecutionRecipe.redis_pinged ?? false)} / {String(workerRuntimeQaExecutionRecipe.scheduler_started ?? false)} / {String(workerRuntimeQaExecutionRecipe.task_dispatched ?? false)}</p>
+        <p>provider_model_task_dispatched / healthcheck_executed: {String(workerRuntimeQaExecutionRecipe.provider_model_task_dispatched ?? false)} / {String(workerRuntimeQaExecutionRecipe.healthcheck_executed ?? false)}</p>
+        <p>tushare / deepseek / github: {String(workerRuntimeQaExecutionRecipe.tushare_called ?? false)} / {String(workerRuntimeQaExecutionRecipe.deepseek_called ?? false)} / {String(workerRuntimeQaExecutionRecipe.github_called ?? false)}</p>
+        <p>not_allowed_next_steps: {Array.isArray(workerRuntimeQaExecutionRecipe.not_allowed_next_steps) ? workerRuntimeQaExecutionRecipe.not_allowed_next_steps.join(" / ") : "treat_recipe_as_runtime_qa_evidence / start Celery from GET cache / mark_production_worker_complete_from_scope_ticket"}</p>
+        <DataLineageTable rows={workerRuntimeQaExecutionRows} />
+      </PacketCard>
+
+      <PacketCard title="Worker runtime durable evidence recipe" subtitle="LTG-06 durable evidence 缺口清单；本地只读、不启动进程、不调用 provider" status={String(workerRuntimeDurableEvidenceRecipe.status ?? "missing")}>
+        <p>schema_version: {String(workerRuntimeDurableEvidenceRecipe.schema_version ?? "worker_runtime_durable_evidence_recipe.v1")}</p>
+        <p>scope: {String(workerRuntimeDurableEvidenceRecipe.scope ?? "local_worker_runtime_durable_evidence_recipe_no_process_start_no_dispatch")}</p>
+        <p>local_recipe_ready / durable_evidence_complete: {String(workerRuntimeDurableEvidenceRecipe.local_recipe_ready ?? false)} / {String(workerRuntimeDurableEvidenceRecipe.durable_evidence_complete ?? false)}</p>
+        <p>durable_promotion_ready / production_worker_complete: {String(workerRuntimeDurableEvidenceRecipe.durable_promotion_ready ?? false)} / {String(workerRuntimeDurableEvidenceRecipe.production_worker_complete ?? false)}</p>
+        <p>missing_durable_evidence: {Array.isArray(workerRuntimeDurableEvidenceRecipe.missing_durable_evidence) ? workerRuntimeDurableEvidenceRecipe.missing_durable_evidence.join(" / ") : ""}</p>
+        <p>worker_started / redis_pinged / scheduler_started / task_dispatched: {String(workerRuntimeDurableEvidenceRecipe.worker_started ?? false)} / {String(workerRuntimeDurableEvidenceRecipe.redis_pinged ?? false)} / {String(workerRuntimeDurableEvidenceRecipe.scheduler_started ?? false)} / {String(workerRuntimeDurableEvidenceRecipe.task_dispatched ?? false)}</p>
+        <p>provider_model_task_dispatched / healthcheck_executed: {String(workerRuntimeDurableEvidenceRecipe.provider_model_task_dispatched ?? false)} / {String(workerRuntimeDurableEvidenceRecipe.healthcheck_executed ?? false)}</p>
+        <p>tushare / deepseek / github: {String(workerRuntimeDurableEvidenceRecipe.tushare_called ?? false)} / {String(workerRuntimeDurableEvidenceRecipe.deepseek_called ?? false)} / {String(workerRuntimeDurableEvidenceRecipe.github_called ?? false)}</p>
+        <p>not_allowed_next_steps: {Array.isArray(workerRuntimeDurableEvidenceRecipe.not_allowed_next_steps) ? workerRuntimeDurableEvidenceRecipe.not_allowed_next_steps.join(" / ") : "treat_durable_recipe_as_runtime_qa_execution / start Celery from durable recipe / mark_production_worker_complete_from_durable_recipe"}</p>
+        <DataLineageTable rows={workerRuntimeDurableEvidenceRows} />
       </PacketCard>
 
       <PacketCard title="Worker production readiness receipt" subtitle="LTG-06 下一步收据；只允许显式 POST healthcheck 和人工 activation review" status={String(workerProductionReadinessReceipt.status ?? "worker_readiness_receipt_ready_synthetic_healthcheck_pending")}>

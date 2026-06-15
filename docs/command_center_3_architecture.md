@@ -209,6 +209,8 @@ Worker queue routing 已形成只读生产路由合同：`worker_queue_routing_c
 
 `POST /api/worker/production-evidence-plan` 只生成 `worker_production_evidence_plan_receipt`、rows 和 `scope_ticket_sha256`，把后续 runtime QA 的 Celery process、Redis broker、cross-process controls、append-only worker logs、scheduler default-off runtime、provider/model no-autoschedule、no-trade/no-action 证据范围固定下来。它不启动 Celery、不 ping Redis、不启动 scheduler、不派发任务、不调用 Tushare/DeepSeek/GitHub、不执行交易，也不能被误写为 runtime QA evidence 或 production worker completion。
 
+`worker_runtime_durable_evidence_recipe` 是 LTG-06 的 durable evidence 缺口清单：它把 blocker audit、healthcheck QA、task-log audit、queue routing、readiness/activation receipts、production evidence plan 和 `worker_runtime_qa_execution_recipe` 汇总成 18 个 evidence key，其中 Celery process、Redis broker reachability、queue round-trip、cross-process controls、append-only worker logs、scheduler runtime proof、provider/model no-autoschedule runtime proof、local fallback rollback 和 production promotion review 继续保持 blocked。该 recipe 只读本地 cache，不启动 Celery、不 ping Redis、不启动 scheduler、不派发任务、不调用 Tushare/DeepSeek/GitHub、不执行交易、不修改 action、不读取或输出 secret，也不能被误写为 runtime QA execution、durable evidence complete 或 production worker completion。
+
 ### Storage
 
 - SQLite：packet 元数据、任务状态、用户配置。当前已落地 packet payload、packet metadata 和 task lifecycle metadata。

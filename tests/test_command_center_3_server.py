@@ -8998,6 +8998,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("production_evidence_plan_is_scope_ticket_only", script)
         self.assertIn("worker_runtime_qa_execution_recipe.v1", script)
         self.assertIn("runtime_qa_execution_recipe_is_local_pending", script)
+        self.assertIn("worker_runtime_durable_evidence_recipe.v1", script)
+        self.assertIn("runtime_durable_evidence_recipe_is_local_pending", script)
         self.assertIn("worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending", script)
         self.assertIn("worker_runtime_evidence_stage_scope_rows", script)
         self.assertNotIn("requests", script)
@@ -9037,6 +9039,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["worker_runtime_qa_execution_recipe_status"],
             "worker_runtime_qa_recipe_ready_execution_pending",
         )
+        self.assertTrue(payload["worker_runtime_durable_evidence_recipe_ready"])
+        self.assertEqual(
+            payload["worker_runtime_durable_evidence_recipe_status"],
+            "worker_runtime_durable_evidence_recipe_ready_production_pending",
+        )
         self.assertEqual(
             payload["worker_production_activation_receipt_status"],
             "worker_activation_receipt_ready_production_blocked",
@@ -9067,6 +9074,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "worker_runtime_qa_recipe_ready_execution_pending",
         )
         self.assertTrue(payload["observed"]["worker_runtime_qa_execution_recipe_ready"])
+        self.assertEqual(
+            payload["observed"]["worker_runtime_durable_evidence_recipe_status"],
+            "worker_runtime_durable_evidence_recipe_ready_production_pending",
+        )
+        self.assertTrue(payload["observed"]["worker_runtime_durable_evidence_recipe_ready"])
         self.assertEqual(
             payload["observed"]["worker_production_activation_receipt_status"],
             "worker_activation_receipt_ready_production_blocked",
@@ -9111,6 +9123,72 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(row["runtime_qa_done"])
             self.assertFalse(row["production_ready"])
             self.assertTrue(row["production_blocker"])
+            self.assertFalse(row["worker_started"])
+            self.assertFalse(row["redis_pinged"])
+            self.assertFalse(row["scheduler_started"])
+            self.assertFalse(row["task_dispatched"])
+            self.assertFalse(row["provider_model_task_dispatched"])
+            self.assertFalse(row["healthcheck_executed"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
+        required_durable_keys = [
+            "production_blocker_audit_visible",
+            "healthcheck_qa_contract_visible",
+            "task_log_persistence_audit_visible",
+            "queue_routing_contract_visible",
+            "readiness_receipt_visible",
+            "activation_receipt_visible",
+            "production_evidence_plan_visible",
+            "runtime_qa_execution_recipe_ready",
+            "celery_process_evidence_required",
+            "redis_broker_reachability_evidence_required",
+            "queue_round_trip_evidence_required",
+            "cross_process_controls_evidence_required",
+            "append_only_worker_log_evidence_required",
+            "scheduler_default_off_runtime_evidence_required",
+            "provider_model_no_autoschedule_runtime_evidence_required",
+            "local_fallback_rollback_evidence_required",
+            "production_worker_promotion_review_required",
+            "no_process_provider_trade_secret_boundary",
+        ]
+        missing_durable_keys = [
+            "celery_process_evidence_required",
+            "redis_broker_reachability_evidence_required",
+            "queue_round_trip_evidence_required",
+            "cross_process_controls_evidence_required",
+            "append_only_worker_log_evidence_required",
+            "scheduler_default_off_runtime_evidence_required",
+            "provider_model_no_autoschedule_runtime_evidence_required",
+            "local_fallback_rollback_evidence_required",
+            "production_worker_promotion_review_required",
+        ]
+        self.assertEqual(payload["observed"]["worker_runtime_durable_evidence_key_count"], len(required_durable_keys))
+        self.assertEqual(payload["observed"]["worker_runtime_durable_evidence_keys"], required_durable_keys)
+        self.assertEqual(payload["observed"]["worker_runtime_durable_evidence_missing_keys"], missing_durable_keys)
+        self.assertEqual(
+            payload["worker_runtime_durable_evidence_production_blocker_count"],
+            len(missing_durable_keys),
+        )
+        self.assertEqual(
+            payload["observed"]["worker_runtime_durable_evidence_production_blocker_count"],
+            len(missing_durable_keys),
+        )
+        durable_rows = {row["evidence_key"]: row for row in payload["worker_runtime_durable_evidence_rows"]}
+        self.assertEqual(set(durable_rows), set(required_durable_keys))
+        self.assertEqual(durable_rows["production_blocker_audit_visible"]["status"], "passed")
+        self.assertEqual(durable_rows["celery_process_evidence_required"]["status"], "blocked")
+        self.assertEqual(durable_rows["redis_broker_reachability_evidence_required"]["status"], "blocked")
+        self.assertEqual(durable_rows["production_worker_promotion_review_required"]["status"], "blocked")
+        self.assertFalse(durable_rows["production_blocker_audit_visible"]["production_blocker"])
+        self.assertTrue(durable_rows["celery_process_evidence_required"]["production_blocker"])
+        for row in durable_rows.values():
+            self.assertTrue(row["required_before_production"])
+            self.assertFalse(row["production_ready"])
             self.assertFalse(row["worker_started"])
             self.assertFalse(row["redis_pinged"])
             self.assertFalse(row["scheduler_started"])
@@ -9171,6 +9249,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("activation_review_task_is_button_gated_no_process_start", criteria)
         self.assertIn("production_evidence_plan_is_scope_ticket_only", criteria)
         self.assertIn("runtime_qa_execution_recipe_is_local_pending", criteria)
+        self.assertIn("runtime_durable_evidence_recipe_is_local_pending", criteria)
         self.assertIn("worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("production_activation_receipt_keeps_worker_blocked", criteria)
 
@@ -11346,6 +11425,115 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(row["contains_secret"])
         self.assertEqual(runtime_qa_recipe["call_ledger"][0]["api"], "local_worker_runtime_qa_execution_recipe")
         self.assertFalse(runtime_qa_recipe["call_ledger"][0]["external"])
+        runtime_durable_recipe = packet["production_readiness"]["worker_runtime_durable_evidence_recipe"]
+        self.assertEqual(runtime_durable_recipe["schema_version"], "worker_runtime_durable_evidence_recipe.v1")
+        self.assertEqual(
+            runtime_durable_recipe["scope"],
+            "local_worker_runtime_durable_evidence_recipe_no_process_start_no_dispatch",
+        )
+        self.assertEqual(
+            runtime_durable_recipe["status"],
+            "worker_runtime_durable_evidence_recipe_ready_production_pending",
+        )
+        self.assertTrue(runtime_durable_recipe["local_recipe_ready"])
+        self.assertFalse(runtime_durable_recipe["durable_evidence_complete"])
+        self.assertFalse(runtime_durable_recipe["durable_promotion_ready"])
+        self.assertFalse(runtime_durable_recipe["runtime_qa_done"])
+        self.assertFalse(runtime_durable_recipe["production_worker_complete"])
+        self.assertFalse(runtime_durable_recipe["worker_started"])
+        self.assertFalse(runtime_durable_recipe["redis_pinged"])
+        self.assertFalse(runtime_durable_recipe["scheduler_started"])
+        self.assertFalse(runtime_durable_recipe["task_dispatched"])
+        self.assertFalse(runtime_durable_recipe["provider_model_task_dispatched"])
+        self.assertFalse(runtime_durable_recipe["healthcheck_executed"])
+        self.assertFalse(runtime_durable_recipe["external_calls_triggered"])
+        self.assertFalse(runtime_durable_recipe["tushare_called"])
+        self.assertFalse(runtime_durable_recipe["deepseek_called"])
+        self.assertFalse(runtime_durable_recipe["github_called"])
+        self.assertTrue(runtime_durable_recipe["does_not_execute_trades"])
+        self.assertTrue(runtime_durable_recipe["does_not_modify_strategy_action"])
+        self.assertFalse(runtime_durable_recipe["contains_secret"])
+        required_runtime_durable_keys = [
+            "production_blocker_audit_visible",
+            "healthcheck_qa_contract_visible",
+            "task_log_persistence_audit_visible",
+            "queue_routing_contract_visible",
+            "readiness_receipt_visible",
+            "activation_receipt_visible",
+            "production_evidence_plan_visible",
+            "runtime_qa_execution_recipe_ready",
+            "celery_process_evidence_required",
+            "redis_broker_reachability_evidence_required",
+            "queue_round_trip_evidence_required",
+            "cross_process_controls_evidence_required",
+            "append_only_worker_log_evidence_required",
+            "scheduler_default_off_runtime_evidence_required",
+            "provider_model_no_autoschedule_runtime_evidence_required",
+            "local_fallback_rollback_evidence_required",
+            "production_worker_promotion_review_required",
+            "no_process_provider_trade_secret_boundary",
+        ]
+        missing_runtime_durable_keys = [
+            "celery_process_evidence_required",
+            "redis_broker_reachability_evidence_required",
+            "queue_round_trip_evidence_required",
+            "cross_process_controls_evidence_required",
+            "append_only_worker_log_evidence_required",
+            "scheduler_default_off_runtime_evidence_required",
+            "provider_model_no_autoschedule_runtime_evidence_required",
+            "local_fallback_rollback_evidence_required",
+            "production_worker_promotion_review_required",
+        ]
+        self.assertEqual(runtime_durable_recipe["evidence_keys"], required_runtime_durable_keys)
+        self.assertEqual(runtime_durable_recipe["missing_durable_evidence"], missing_runtime_durable_keys)
+        self.assertEqual(runtime_durable_recipe["evidence_key_count"], len(required_runtime_durable_keys))
+        self.assertEqual(runtime_durable_recipe["row_count"], len(required_runtime_durable_keys))
+        self.assertEqual(runtime_durable_recipe["production_blocker_count"], len(missing_runtime_durable_keys))
+        self.assertIn("manual Celery process evidence", runtime_durable_recipe["required_evidence"])
+        self.assertIn("redacted Redis broker reachability evidence", runtime_durable_recipe["required_evidence"])
+        self.assertIn("append-only worker log evidence", runtime_durable_recipe["required_evidence"])
+        self.assertIn("production worker promotion review", runtime_durable_recipe["required_evidence"])
+        self.assertIn("treat_durable_recipe_as_runtime_qa_execution", runtime_durable_recipe["not_allowed_next_steps"])
+        self.assertIn("start Celery from durable recipe", runtime_durable_recipe["not_allowed_next_steps"])
+        self.assertIn("ping Redis from durable recipe", runtime_durable_recipe["not_allowed_next_steps"])
+        self.assertIn("dispatch tasks from durable recipe", runtime_durable_recipe["not_allowed_next_steps"])
+        self.assertIn(
+            "mark_production_worker_complete_from_durable_recipe",
+            runtime_durable_recipe["not_allowed_next_steps"],
+        )
+        self.assertEqual(packet["worker_runtime_durable_evidence_recipe"], runtime_durable_recipe)
+        self.assertEqual(packet["worker_runtime_durable_evidence_rows"], runtime_durable_recipe["rows"])
+        runtime_durable_rows = {row["evidence_key"]: row for row in runtime_durable_recipe["rows"]}
+        self.assertEqual(set(runtime_durable_rows), set(required_runtime_durable_keys))
+        self.assertEqual(runtime_durable_rows["production_blocker_audit_visible"]["status"], "passed")
+        self.assertEqual(runtime_durable_rows["runtime_qa_execution_recipe_ready"]["status"], "passed")
+        self.assertEqual(runtime_durable_rows["celery_process_evidence_required"]["status"], "blocked")
+        self.assertEqual(runtime_durable_rows["redis_broker_reachability_evidence_required"]["status"], "blocked")
+        self.assertEqual(runtime_durable_rows["queue_round_trip_evidence_required"]["status"], "blocked")
+        self.assertEqual(runtime_durable_rows["production_worker_promotion_review_required"]["status"], "blocked")
+        self.assertFalse(runtime_durable_rows["production_blocker_audit_visible"]["production_blocker"])
+        self.assertTrue(runtime_durable_rows["celery_process_evidence_required"]["production_blocker"])
+        for row in runtime_durable_rows.values():
+            self.assertTrue(row["required_before_production"])
+            self.assertFalse(row["production_ready"])
+            self.assertFalse(row["worker_started"])
+            self.assertFalse(row["redis_pinged"])
+            self.assertFalse(row["scheduler_started"])
+            self.assertFalse(row["task_dispatched"])
+            self.assertFalse(row["provider_model_task_dispatched"])
+            self.assertFalse(row["healthcheck_executed"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
+        self.assertEqual(
+            runtime_durable_recipe["call_ledger"][0]["api"],
+            "local_worker_runtime_durable_evidence_recipe",
+        )
+        self.assertFalse(runtime_durable_recipe["call_ledger"][0]["external"])
         preflight_by_key = {row["step_key"]: row for row in packet["production_readiness"]["manual_preflight_steps"]}
         self.assertIn("configure_redis_broker", preflight_by_key)
         self.assertIn("start_celery_worker", preflight_by_key)
@@ -11515,6 +11703,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             packet["counts"]["worker_runtime_qa_execution_recipe_pending_phase_count"],
             runtime_qa_recipe["pending_phase_count"],
         )
+        self.assertEqual(packet["counts"]["worker_runtime_durable_evidence_recipe_ready"], 1)
+        self.assertEqual(
+            packet["counts"]["worker_runtime_durable_evidence_row_count"],
+            runtime_durable_recipe["row_count"],
+        )
+        self.assertEqual(
+            packet["counts"]["worker_runtime_durable_evidence_production_blocker_count"],
+            runtime_durable_recipe["production_blocker_count"],
+        )
         self.assertEqual(packet["counts"]["dispatch_plan_task_count"], len(packet["dispatch_plan_rows"]))
         self.assertEqual(packet["counts"]["dispatch_plan_queue_count"], len(packet["dispatch_plan_summary"]["queue_names"]))
         self.assertEqual(packet["counts"]["manual_preflight_step_count"], len(packet["production_readiness"]["manual_preflight_steps"]))
@@ -11540,6 +11737,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["policy"]["worker_runtime_qa_execution_recipe_is_local"])
         self.assertTrue(packet["policy"]["worker_runtime_qa_execution_recipe_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_runtime_qa_execution_recipe_is_not_production_completion"])
+        self.assertTrue(packet["policy"]["worker_runtime_durable_evidence_recipe_is_local"])
+        self.assertTrue(packet["policy"]["worker_runtime_durable_evidence_recipe_is_not_process_start"])
+        self.assertTrue(packet["policy"]["worker_runtime_durable_evidence_recipe_is_not_production_completion"])
         self.assertTrue(packet["policy"]["does_not_ping_redis"])
         self.assertTrue(packet["policy"]["does_not_start_celery_worker"])
         self.assertTrue(packet["policy"]["does_not_start_scheduler"])
@@ -11557,6 +11757,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
         self.assertEqual(packet["call_ledger"][0]["api"], "local_worker_runtime_cache")
+        self.assertIn("local_worker_runtime_durable_evidence_recipe", {item.get("api") for item in packet["call_ledger"]})
         self.assertNotIn("COMMAND_CENTER_REDIS_URL", json.dumps(packet, ensure_ascii=False))
         json.dumps(packet, ensure_ascii=False)
 

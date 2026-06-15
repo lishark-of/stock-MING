@@ -136,6 +136,37 @@ REQUIRED_RUNTIME_QA_EXECUTION_PHASES = (
     "local_fallback_rollback_plan",
     "production_worker_promotion_review",
 )
+REQUIRED_RUNTIME_DURABLE_EVIDENCE_KEYS = (
+    "production_blocker_audit_visible",
+    "healthcheck_qa_contract_visible",
+    "task_log_persistence_audit_visible",
+    "queue_routing_contract_visible",
+    "readiness_receipt_visible",
+    "activation_receipt_visible",
+    "production_evidence_plan_visible",
+    "runtime_qa_execution_recipe_ready",
+    "celery_process_evidence_required",
+    "redis_broker_reachability_evidence_required",
+    "queue_round_trip_evidence_required",
+    "cross_process_controls_evidence_required",
+    "append_only_worker_log_evidence_required",
+    "scheduler_default_off_runtime_evidence_required",
+    "provider_model_no_autoschedule_runtime_evidence_required",
+    "local_fallback_rollback_evidence_required",
+    "production_worker_promotion_review_required",
+    "no_process_provider_trade_secret_boundary",
+)
+REQUIRED_RUNTIME_DURABLE_EVIDENCE_MISSING_KEYS = (
+    "celery_process_evidence_required",
+    "redis_broker_reachability_evidence_required",
+    "queue_round_trip_evidence_required",
+    "cross_process_controls_evidence_required",
+    "append_only_worker_log_evidence_required",
+    "scheduler_default_off_runtime_evidence_required",
+    "provider_model_no_autoschedule_runtime_evidence_required",
+    "local_fallback_rollback_evidence_required",
+    "production_worker_promotion_review_required",
+)
 RUNTIME_EVIDENCE_STAGE_LABELS = {
     "celery_process": "Celery process evidence",
     "redis_broker": "Redis broker evidence",
@@ -282,6 +313,11 @@ def build_contract() -> dict[str, Any]:
         row for row in _list(packet.get("worker_runtime_qa_execution_recipe_rows")) if isinstance(row, dict)
     ]
     runtime_qa_recipe_phases = {str(row.get("phase") or "") for row in runtime_qa_recipe_rows}
+    runtime_durable_recipe = _dict(packet.get("worker_runtime_durable_evidence_recipe"))
+    runtime_durable_rows = [
+        row for row in _list(packet.get("worker_runtime_durable_evidence_rows")) if isinstance(row, dict)
+    ]
+    runtime_durable_keys = {str(row.get("evidence_key") or "") for row in runtime_durable_rows}
     task_persistence = _dict(packet.get("task_persistence"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/worker_contract.py")
@@ -694,6 +730,80 @@ def build_contract() -> dict[str, Any]:
             "Worker runtime QA recipe must sequence manual Celery/Redis evidence without starting processes, pinging Redis, dispatching tasks, calling providers/models, trading, or claiming production worker completion.",
         ),
         _row(
+            "runtime_durable_evidence_recipe_is_local_pending",
+            runtime_durable_recipe.get("schema_version") == "worker_runtime_durable_evidence_recipe.v1"
+            and runtime_durable_recipe.get("scope")
+            == "local_worker_runtime_durable_evidence_recipe_no_process_start_no_dispatch"
+            and runtime_durable_recipe.get("status")
+            == "worker_runtime_durable_evidence_recipe_ready_production_pending"
+            and runtime_durable_recipe.get("local_recipe_ready") is True
+            and runtime_durable_recipe.get("durable_evidence_complete") is False
+            and runtime_durable_recipe.get("durable_promotion_ready") is False
+            and runtime_durable_recipe.get("runtime_qa_done") is False
+            and runtime_durable_recipe.get("production_worker_complete") is False
+            and runtime_durable_recipe.get("worker_started") is False
+            and runtime_durable_recipe.get("redis_pinged") is False
+            and runtime_durable_recipe.get("scheduler_started") is False
+            and runtime_durable_recipe.get("task_dispatched") is False
+            and runtime_durable_recipe.get("provider_model_task_dispatched") is False
+            and runtime_durable_recipe.get("healthcheck_executed") is False
+            and _flag_false(
+                runtime_durable_recipe,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and runtime_durable_recipe.get("does_not_execute_trades") is True
+            and runtime_durable_recipe.get("does_not_modify_strategy_action") is True
+            and runtime_durable_recipe.get("contains_secret") is False
+            and tuple(runtime_durable_recipe.get("evidence_keys") or ())
+            == REQUIRED_RUNTIME_DURABLE_EVIDENCE_KEYS
+            and int(runtime_durable_recipe.get("evidence_key_count") or 0)
+            == len(REQUIRED_RUNTIME_DURABLE_EVIDENCE_KEYS)
+            and int(runtime_durable_recipe.get("row_count") or 0)
+            == len(REQUIRED_RUNTIME_DURABLE_EVIDENCE_KEYS)
+            and runtime_durable_keys == set(REQUIRED_RUNTIME_DURABLE_EVIDENCE_KEYS)
+            and set(runtime_durable_recipe.get("missing_durable_evidence") or [])
+            == set(REQUIRED_RUNTIME_DURABLE_EVIDENCE_MISSING_KEYS)
+            and int(runtime_durable_recipe.get("production_blocker_count") or 0)
+            == len(REQUIRED_RUNTIME_DURABLE_EVIDENCE_MISSING_KEYS)
+            and int(runtime_durable_recipe.get("durable_evidence_blocker_count") or 0)
+            == len(REQUIRED_RUNTIME_DURABLE_EVIDENCE_MISSING_KEYS)
+            and {
+                "manual Celery process evidence",
+                "redacted Redis broker reachability evidence",
+                "append-only worker log evidence",
+                "production worker promotion review",
+            }.issubset(set(runtime_durable_recipe.get("required_evidence") or []))
+            and {
+                "treat_durable_recipe_as_runtime_qa_execution",
+                "start Celery from durable recipe",
+                "ping Redis from durable recipe",
+                "dispatch tasks from durable recipe",
+                "mark_production_worker_complete_from_durable_recipe",
+            }.issubset(set(runtime_durable_recipe.get("not_allowed_next_steps") or []))
+            and all(row.get("required_before_production") is True for row in runtime_durable_rows)
+            and all(row.get("production_ready") is False for row in runtime_durable_rows)
+            and all(row.get("worker_started") is False for row in runtime_durable_rows)
+            and all(row.get("redis_pinged") is False for row in runtime_durable_rows)
+            and all(row.get("scheduler_started") is False for row in runtime_durable_rows)
+            and all(row.get("task_dispatched") is False for row in runtime_durable_rows)
+            and all(row.get("provider_model_task_dispatched") is False for row in runtime_durable_rows)
+            and all(row.get("healthcheck_executed") is False for row in runtime_durable_rows)
+            and all(row.get("external_calls_triggered") is False for row in runtime_durable_rows)
+            and all(row.get("tushare_called") is False for row in runtime_durable_rows)
+            and all(row.get("deepseek_called") is False for row in runtime_durable_rows)
+            and all(row.get("github_called") is False for row in runtime_durable_rows)
+            and all(row.get("does_not_execute_trades") is True for row in runtime_durable_rows)
+            and all(row.get("does_not_modify_strategy_action") is True for row in runtime_durable_rows)
+            and all(row.get("contains_secret") is False for row in runtime_durable_rows)
+            and _list(runtime_durable_recipe.get("call_ledger"))
+            and _dict(_list(runtime_durable_recipe.get("call_ledger"))[0]).get("api")
+            == "local_worker_runtime_durable_evidence_recipe",
+            "Worker runtime durable evidence recipe must expose the direct production evidence gaps while remaining local-only, no-process-start, no-provider-call, no-trade, and production-pending.",
+        ),
+        _row(
             "worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending",
             [row.get("stage_key") for row in worker_runtime_evidence_stage_scope_rows]
             == list(REQUIRED_RUNTIME_EVIDENCE_STAGES)
@@ -795,6 +905,7 @@ def build_contract() -> dict[str, Any]:
             and "worker_activation_review_task_receipt.v1" in this_script
             and "worker_production_evidence_plan_receipt.v1" in this_script
             and "worker_runtime_qa_execution_recipe.v1" in this_script
+            and "worker_runtime_durable_evidence_recipe.v1" in this_script
             and "worker_queue_routing_contract.v1" in this_script
             and "task_readback_fingerprint_matches" in this_script
             and "queue_routing_contract_is_local_and_button_gated" in this_script
@@ -802,6 +913,7 @@ def build_contract() -> dict[str, Any]:
             and "activation_review_task_is_button_gated_no_process_start" in this_script
             and "production_evidence_plan_is_scope_ticket_only" in this_script
             and "runtime_qa_execution_recipe_is_local_pending" in this_script
+            and "runtime_durable_evidence_recipe_is_local_pending" in this_script
             and "worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending" in this_script
             and "production_worker_complete" in this_script
             and "healthcheck_executed" in this_script
@@ -841,6 +953,11 @@ def build_contract() -> dict[str, Any]:
         "worker_production_evidence_plan_status": production_evidence_plan.get("status"),
         "worker_runtime_qa_execution_recipe_ready": runtime_qa_recipe.get("local_recipe_ready") is True,
         "worker_runtime_qa_execution_recipe_status": runtime_qa_recipe.get("status"),
+        "worker_runtime_durable_evidence_recipe_ready": runtime_durable_recipe.get("local_recipe_ready") is True,
+        "worker_runtime_durable_evidence_recipe_status": runtime_durable_recipe.get("status"),
+        "worker_runtime_durable_evidence_production_blocker_count": runtime_durable_recipe.get(
+            "production_blocker_count"
+        ),
         "worker_queue_routing_contract_ready": queue_routing.get("queue_routing_contract_ready") is True,
         "worker_queue_routing_contract_status": queue_routing.get("status"),
         "local_fallback_available": True,
@@ -900,6 +1017,14 @@ def build_contract() -> dict[str, Any]:
             "worker_runtime_qa_execution_pending_phase_count": sum(
                 1 for row in runtime_qa_recipe_rows if row.get("runtime_qa_done") is False
             ),
+            "worker_runtime_durable_evidence_recipe_status": runtime_durable_recipe.get("status"),
+            "worker_runtime_durable_evidence_recipe_ready": runtime_durable_recipe.get("local_recipe_ready"),
+            "worker_runtime_durable_evidence_key_count": len(runtime_durable_rows),
+            "worker_runtime_durable_evidence_keys": [row.get("evidence_key") for row in runtime_durable_rows],
+            "worker_runtime_durable_evidence_missing_keys": runtime_durable_recipe.get("missing_durable_evidence"),
+            "worker_runtime_durable_evidence_production_blocker_count": runtime_durable_recipe.get(
+                "production_blocker_count"
+            ),
             "worker_runtime_evidence_stage_scope_count": len(worker_runtime_evidence_stage_scope_rows),
             "worker_runtime_evidence_stage_scope_keys": [
                 row.get("stage_key") for row in worker_runtime_evidence_stage_scope_rows
@@ -913,6 +1038,7 @@ def build_contract() -> dict[str, Any]:
             "cache_get_external_call_count": dispatch_summary.get("cache_get_external_call_count"),
         },
         "worker_runtime_qa_execution_recipe_rows": runtime_qa_recipe_rows,
+        "worker_runtime_durable_evidence_rows": runtime_durable_rows,
         "worker_runtime_evidence_stage_scope_rows": worker_runtime_evidence_stage_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. It does not run the synthetic healthcheck. Celery worker startup, Redis broker reachability, cross-process task controls, scheduler production config, and production worker activation remain pending.",
