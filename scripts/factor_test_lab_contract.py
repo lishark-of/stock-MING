@@ -100,6 +100,31 @@ REQUIRED_PROVIDER_SMALL_POOL_EXECUTION_PHASES = (
     "pit_bias_controls_validation",
     "promotion_review",
 )
+REQUIRED_FACTOR_TEST_DURABLE_EVIDENCE_KEYS = tuple(factor_service.FACTOR_TEST_DURABLE_EVIDENCE_KEYS)
+LOCAL_FACTOR_TEST_DURABLE_SURFACE_KEYS = {
+    "local_light_metric_baseline_visible",
+    "storage_query_boundary_visible",
+    "local_dataset_sample_evidence_visible",
+    "production_validation_qa_visible",
+    "provider_blocker_audit_visible",
+    "provider_sample_readiness_receipt_visible",
+    "provider_sample_activation_receipt_visible",
+    "provider_small_pool_scope_ticket_visible",
+    "provider_small_pool_execution_recipe_visible",
+    "no_trade_action_secret_boundary",
+}
+PRODUCTION_FACTOR_TEST_DURABLE_BLOCKER_KEYS = {
+    "provider_backed_small_pool_task_required",
+    "safe_provider_call_ledger_required",
+    "sample_row_collection_required",
+    "multi_horizon_forward_returns_required",
+    "rolling_ic_icir_required",
+    "cost_turnover_validation_required",
+    "neutralization_stability_required",
+    "pit_bias_controls_required",
+    "full_market_boundary_review_required",
+    "promotion_review_required",
+}
 
 
 def _row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
@@ -288,6 +313,7 @@ def build_contract() -> dict[str, Any]:
     provider_sample_receipt = factor_service._factor_test_provider_sample_readiness_receipt(factor_tests, now)
     factor_tests["provider_sample_readiness_receipt"] = provider_sample_receipt
     provider_sample_activation = factor_service._factor_test_provider_sample_activation_receipt(factor_tests, now)
+    factor_tests["provider_sample_activation_receipt"] = provider_sample_activation
     dry_run_payload = factor_service._factor_test_provider_small_pool_dry_run_payload(
         {
             "approved_by_user": True,
@@ -313,6 +339,16 @@ def build_contract() -> dict[str, Any]:
     provider_small_pool_execution_phase_keys = [
         str(row.get("phase_key") or "") for row in provider_small_pool_execution_rows
     ]
+    factor_tests["provider_small_pool_execution_recipe"] = provider_small_pool_execution_recipe
+    factor_tests["provider_small_pool_execution_rows"] = provider_small_pool_execution_rows
+    durable_evidence_recipe, durable_evidence_rows, durable_evidence_ledger = factor_service._factor_test_durable_evidence_recipe(
+        factor_tests, now
+    )
+    durable_rows_by_key = {
+        str(row.get("evidence_key") or ""): row
+        for row in durable_evidence_rows
+        if isinstance(row, dict)
+    }
     required_metric_scope = list(factor_service.FACTOR_TEST_PROVIDER_SMALL_POOL_REQUIRED_METRICS)
     selected_metric_scope = [str(item) for item in _list(dry_run_receipt.get("metrics"))]
     factor_metric_scope_rows = _factor_metric_scope_rows(required_metric_scope, selected_metric_scope)
@@ -374,6 +410,7 @@ def build_contract() -> dict[str, Any]:
     cache_provider_blocker_audit = _dict(cache_factor_tests.get("provider_validation_blocker_audit"))
     cache_provider_sample_receipt = _dict(cache_factor_tests.get("provider_sample_readiness_receipt"))
     cache_provider_sample_activation = _dict(cache_factor_tests.get("provider_sample_activation_receipt"))
+    cache_durable_evidence_recipe = _dict(cache_factor_tests.get("durable_evidence_recipe"))
     cache_call_ledger = _list(cache_packet.get("call_ledger"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/factor_test_lab_contract.py")
@@ -660,6 +697,81 @@ def build_contract() -> dict[str, Any]:
             "Provider small-pool execution recipe may define the future provider-backed validation order only; it must not create tasks, call providers/models, compute production metrics, expose credentials, or promote completion.",
         ),
         _row(
+            "factor_test_durable_evidence_recipe_is_local_production_pending",
+            durable_evidence_recipe.get("schema_version") == "factor_test_durable_evidence_recipe.v1"
+            and durable_evidence_recipe.get("scope") == "local_factor_test_durable_evidence_recipe_no_provider_execution"
+            and durable_evidence_recipe.get("status") == "factor_test_durable_evidence_recipe_ready_production_pending"
+            and durable_evidence_recipe.get("local_recipe_ready") is True
+            and durable_evidence_recipe.get("durable_evidence_complete") is False
+            and durable_evidence_recipe.get("durable_promotion_ready") is False
+            and durable_evidence_recipe.get("evidence_keys") == list(REQUIRED_FACTOR_TEST_DURABLE_EVIDENCE_KEYS)
+            and durable_evidence_recipe.get("local_blockers") == []
+            and set(durable_evidence_recipe.get("production_blockers") or []) == PRODUCTION_FACTOR_TEST_DURABLE_BLOCKER_KEYS
+            and durable_evidence_recipe.get("production_blocker_count") == len(PRODUCTION_FACTOR_TEST_DURABLE_BLOCKER_KEYS)
+            and "explicit provider task_id bound to small-pool scope hash" in durable_evidence_recipe.get("required_evidence", [])
+            and "safe provider call ledger rows for target pool" in durable_evidence_recipe.get("required_evidence", [])
+            and "rolling IC/Rank IC/ICIR evidence" in durable_evidence_recipe.get("required_evidence", [])
+            and "manual Factor Test production promotion review" in durable_evidence_recipe.get("required_evidence", [])
+            and "treat durable recipe as production completion" in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and "call Tushare from GET cache" in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and "call Tushare from React render" in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and "compute production IC/Rank IC/ICIR in React" in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and "local dataset sample as provider evidence" in durable_evidence_recipe.get("not_allowed_next_steps", [])
+            and durable_evidence_recipe.get("provider_task_created") is False
+            and durable_evidence_recipe.get("provider_execution_implemented") is False
+            and durable_evidence_recipe.get("provider_call_ledger_evidence_done") is False
+            and durable_evidence_recipe.get("sample_rows_collected") is False
+            and durable_evidence_recipe.get("multi_horizon_forward_returns_done") is False
+            and durable_evidence_recipe.get("rolling_window_validation_done") is False
+            and durable_evidence_recipe.get("cost_assumption_validation_done") is False
+            and durable_evidence_recipe.get("neutralization_stability_done") is False
+            and durable_evidence_recipe.get("pit_bias_controls_done") is False
+            and durable_evidence_recipe.get("provider_backed_small_pool_validation_done") is False
+            and durable_evidence_recipe.get("full_market_validation_done") is False
+            and durable_evidence_recipe.get("production_factor_test_validation_complete") is False
+            and durable_evidence_recipe.get("cache_get_external_calls") is False
+            and durable_evidence_recipe.get("react_render_external_calls") is False
+            and _flag_false(durable_evidence_recipe, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and durable_evidence_recipe.get("does_not_execute_trades") is True
+            and durable_evidence_recipe.get("does_not_modify_strategy_action") is True
+            and durable_evidence_recipe.get("contains_secret") is False
+            and durable_evidence_recipe.get("env_key_name_exposed") is False
+            and durable_evidence_recipe.get("credential_value_exposed") is False
+            and set(durable_rows_by_key) == set(REQUIRED_FACTOR_TEST_DURABLE_EVIDENCE_KEYS)
+            and all(
+                _dict(durable_rows_by_key.get(key)).get("passed") is True
+                and _dict(durable_rows_by_key.get(key)).get("local_surface_required") is True
+                and _dict(durable_rows_by_key.get(key)).get("production_blocker") is False
+                for key in LOCAL_FACTOR_TEST_DURABLE_SURFACE_KEYS
+            )
+            and all(
+                _dict(durable_rows_by_key.get(key)).get("passed") is False
+                and _dict(durable_rows_by_key.get(key)).get("production_blocker") is True
+                and _dict(durable_rows_by_key.get(key)).get("provider_execution_implemented") is False
+                and _dict(durable_rows_by_key.get(key)).get("production_factor_test_validation_complete") is False
+                for key in PRODUCTION_FACTOR_TEST_DURABLE_BLOCKER_KEYS
+            )
+            and all(
+                row.get("scope") == "factor_test_durable_evidence_recipe"
+                and row.get("cache_get_external_calls") is False
+                and row.get("react_render_external_calls") is False
+                and row.get("external_calls_triggered") is False
+                and row.get("tushare_called") is False
+                and row.get("deepseek_called") is False
+                and row.get("github_called") is False
+                and row.get("does_not_execute_trades") is True
+                and row.get("does_not_modify_strategy_action") is True
+                and row.get("contains_secret") is False
+                and row.get("env_key_name_exposed") is False
+                and row.get("credential_value_exposed") is False
+                for row in durable_evidence_rows
+            )
+            and _list(durable_evidence_recipe.get("call_ledger"))[0].get("api")
+            == "local_factor_test_durable_evidence_recipe"
+            and durable_evidence_ledger[0].get("call_status") == "local_recipe_ready_production_pending",
+            "Factor Test durable evidence recipe must pin the remaining direct provider-backed proof bundle without calling providers/models, computing production metrics, exposing credentials, or claiming completion.",
+        ),
+        _row(
             "factor_metric_scope_manifest_is_complete_and_research_only",
             [row.get("metric_key") for row in factor_metric_scope_rows] == required_metric_scope
             and set(selected_metric_scope) == set(required_metric_scope)
@@ -802,6 +914,8 @@ def build_contract() -> dict[str, Any]:
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "provider_small_pool_execution_recipe_ready": bool(provider_small_pool_execution_recipe.get("local_recipe_ready")),
+        "factor_test_durable_evidence_recipe_ready": bool(durable_evidence_recipe.get("local_recipe_ready")),
+        "factor_test_durable_evidence_recipe_status": durable_evidence_recipe.get("status"),
         "row_count": len(rows),
         "factor_test_production_stage_scope_count": len(production_stage_scope_rows),
         "blocking_criterion_count": len(blockers),
@@ -827,6 +941,10 @@ def build_contract() -> dict[str, Any]:
             "provider_small_pool_execution_pending_phase_count": sum(
                 1 for row in provider_small_pool_execution_rows if row.get("provider_execution_implemented") is False
             ),
+            "factor_test_durable_evidence_recipe_status": durable_evidence_recipe.get("status"),
+            "factor_test_durable_evidence_recipe_row_count": len(durable_evidence_rows),
+            "factor_test_durable_evidence_production_blocker_count": durable_evidence_recipe.get("production_blocker_count"),
+            "cache_factor_test_durable_evidence_recipe_status": cache_durable_evidence_recipe.get("status"),
             "cache_production_qa_status": cache_production_qa.get("status"),
             "cache_provider_blocker_status": cache_provider_blocker_audit.get("status"),
             "cache_provider_sample_receipt_status": cache_provider_sample_receipt.get("status"),
@@ -853,6 +971,8 @@ def build_contract() -> dict[str, Any]:
         "factor_test_production_stage_scope_rows": production_stage_scope_rows,
         "provider_small_pool_execution_recipe": provider_small_pool_execution_recipe,
         "provider_small_pool_execution_rows": provider_small_pool_execution_rows,
+        "factor_test_durable_evidence_recipe": durable_evidence_recipe,
+        "factor_test_durable_evidence_rows": durable_evidence_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Real provider-backed small-pool and full-market Factor Test Lab validation remain pending.",
     }

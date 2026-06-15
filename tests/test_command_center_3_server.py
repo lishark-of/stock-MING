@@ -229,6 +229,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertIn("provider small-pool dry-run scope ticket", migration_goals["LTG-03"]["current_state"])
         self.assertIn("production stage-scope manifest", migration_goals["LTG-03"]["current_state"])
+        self.assertIn("durable evidence recipe", migration_goals["LTG-03"]["current_state"])
         self.assertIn("provider small-pool samples", migration_goals["LTG-03"]["next_evidence_required"])
         self.assertIn("safe scope ticket", migration_goals["LTG-03"]["next_step"])
         self.assertFalse(migration_goals["LTG-03"]["production_complete"])
@@ -14532,6 +14533,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertIn("provider small-pool dry-run scope ticket", migration_goals["LTG-03"]["current_state"])
         self.assertIn("production stage-scope manifest", migration_goals["LTG-03"]["current_state"])
+        self.assertIn("durable evidence recipe", migration_goals["LTG-03"]["current_state"])
         self.assertIn("provider small-pool samples", migration_goals["LTG-03"]["next_evidence_required"])
         self.assertIn("provider-backed small-stock-pool validation", migration_goals["LTG-03"]["next_step"])
         self.assertFalse(migration_goals["LTG-03"]["production_complete"])
@@ -20194,6 +20196,88 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(factor["data"]["factor_tests"]["acceptance_contract"]["production_factor_test_validation_complete"])
         self.assertIn(
             "local_factor_test_provider_small_pool_execution_recipe",
+            {item.get("api") for item in factor["call_ledger"]},
+        )
+        durable_recipe = factor["data"]["factor_tests"]["durable_evidence_recipe"]
+        self.assertEqual(durable_recipe["schema_version"], "factor_test_durable_evidence_recipe.v1")
+        self.assertEqual(
+            durable_recipe["scope"],
+            "local_factor_test_durable_evidence_recipe_no_provider_execution",
+        )
+        self.assertEqual(
+            durable_recipe["status"],
+            "factor_test_durable_evidence_recipe_ready_production_pending",
+        )
+        self.assertTrue(durable_recipe["local_recipe_ready"])
+        self.assertFalse(durable_recipe["durable_evidence_complete"])
+        self.assertFalse(durable_recipe["durable_promotion_ready"])
+        self.assertFalse(durable_recipe["provider_task_created"])
+        self.assertFalse(durable_recipe["provider_execution_implemented"])
+        self.assertFalse(durable_recipe["provider_call_ledger_evidence_done"])
+        self.assertFalse(durable_recipe["sample_rows_collected"])
+        self.assertFalse(durable_recipe["multi_horizon_forward_returns_done"])
+        self.assertFalse(durable_recipe["rolling_window_validation_done"])
+        self.assertFalse(durable_recipe["cost_assumption_validation_done"])
+        self.assertFalse(durable_recipe["neutralization_stability_done"])
+        self.assertFalse(durable_recipe["pit_bias_controls_done"])
+        self.assertFalse(durable_recipe["provider_backed_small_pool_validation_done"])
+        self.assertFalse(durable_recipe["full_market_validation_done"])
+        self.assertFalse(durable_recipe["production_factor_test_validation_complete"])
+        self.assertFalse(durable_recipe["external_calls_triggered"])
+        self.assertFalse(durable_recipe["tushare_called"])
+        self.assertFalse(durable_recipe["deepseek_called"])
+        self.assertFalse(durable_recipe["github_called"])
+        self.assertTrue(durable_recipe["does_not_execute_trades"])
+        self.assertTrue(durable_recipe["does_not_modify_strategy_action"])
+        self.assertFalse(durable_recipe["contains_secret"])
+        self.assertFalse(durable_recipe["env_key_name_exposed"])
+        self.assertFalse(durable_recipe["credential_value_exposed"])
+        self.assertEqual(durable_recipe["local_blockers"], [])
+        self.assertEqual(durable_recipe["production_blocker_count"], 10)
+        self.assertIn("explicit provider task_id bound to small-pool scope hash", durable_recipe["required_evidence"])
+        self.assertIn("safe provider call ledger rows for target pool", durable_recipe["required_evidence"])
+        self.assertIn("rolling IC/Rank IC/ICIR evidence", durable_recipe["required_evidence"])
+        self.assertIn("manual Factor Test production promotion review", durable_recipe["required_evidence"])
+        self.assertIn("treat durable recipe as production completion", durable_recipe["not_allowed_next_steps"])
+        self.assertIn("call Tushare from GET cache", durable_recipe["not_allowed_next_steps"])
+        self.assertIn("call Tushare from React render", durable_recipe["not_allowed_next_steps"])
+        self.assertIn("compute production IC/Rank IC/ICIR in React", durable_recipe["not_allowed_next_steps"])
+        durable_rows = {
+            row["evidence_key"]: row
+            for row in factor["data"]["factor_tests"]["durable_evidence_rows"]
+        }
+        self.assertIn("provider_small_pool_scope_ticket_visible", durable_rows)
+        self.assertIn("provider_backed_small_pool_task_required", durable_rows)
+        self.assertTrue(durable_rows["provider_small_pool_scope_ticket_visible"]["passed"])
+        self.assertTrue(durable_rows["provider_small_pool_scope_ticket_visible"]["local_surface_required"])
+        self.assertFalse(durable_rows["provider_small_pool_scope_ticket_visible"]["production_blocker"])
+        self.assertFalse(durable_rows["provider_backed_small_pool_task_required"]["passed"])
+        self.assertTrue(durable_rows["provider_backed_small_pool_task_required"]["production_blocker"])
+        self.assertFalse(durable_rows["provider_backed_small_pool_task_required"]["provider_execution_implemented"])
+        for row in durable_rows.values():
+            self.assertEqual(row["scope"], "factor_test_durable_evidence_recipe")
+            self.assertFalse(row["cache_get_external_calls"])
+            self.assertFalse(row["react_render_external_calls"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["contains_secret"])
+        self.assertTrue(factor["data"]["factor_tests"]["acceptance_contract"]["durable_evidence_recipe_ready"])
+        self.assertEqual(
+            factor["data"]["factor_tests"]["acceptance_contract"]["durable_evidence_recipe_status"],
+            "factor_test_durable_evidence_recipe_ready_production_pending",
+        )
+        self.assertTrue(
+            factor["data"]["factor_tests"]["acceptance_contract"]["durable_evidence_recipe_is_not_provider_validation"]
+        )
+        self.assertTrue(
+            factor["data"]["factor_tests"]["acceptance_contract"]["durable_evidence_recipe_is_not_production_completion"]
+        )
+        self.assertIn(
+            "local_factor_test_durable_evidence_recipe",
             {item.get("api") for item in factor["call_ledger"]},
         )
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(factor, ensure_ascii=False))

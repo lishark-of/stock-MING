@@ -44,7 +44,7 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "Factor Test Lab 完整生产化",
         "completion_bucket": "real_validation_required",
         "completion_estimate": "45%-55%",
-        "current_state": "IC, Rank IC, ICIR, groups, drawdown, neutralization, split, decay, cost-model scaffolds, local provider blocker receipts, provider small-pool dry-run scope ticket, provider execution recipe, and production stage-scope manifest exist as research-only/preflight evidence.",
+        "current_state": "IC, Rank IC, ICIR, groups, drawdown, neutralization, split, decay, cost-model scaffolds, local provider blocker receipts, provider small-pool dry-run scope ticket, provider execution recipe, production stage-scope manifest, and durable evidence recipe exist as research-only/preflight evidence.",
         "not_complete_because": "real provider-backed small-pool validation, safe provider call ledger rows, larger sample coverage, rolling/cost/neutralization/bias evidence, and production research acceptance are still pending.",
         "next_step": "Run a separate user-approved provider-backed small-stock-pool validation bound to the safe scope ticket and execution recipe, then keep every metric outside strategy action.",
         "production_complete": False,
