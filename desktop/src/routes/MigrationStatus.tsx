@@ -22,6 +22,7 @@ export default function MigrationStatus() {
 
   const progress = (packet.progress_baseline as Array<Record<string, unknown>> | undefined) ?? [];
   const longTermGoalRows = (packet.long_term_goal_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const candidateRadarGoalRow = longTermGoalRows.find((row) => row.id === "LTG-13") ?? {};
   const longTermGoalSummary = (packet.long_term_goal_summary as Record<string, unknown> | undefined) ?? {};
   const longTermBucketCounts = (longTermGoalSummary.bucket_counts as Record<string, unknown> | undefined) ?? {};
   const longTermNextPriority = (longTermGoalSummary.next_priority_order as Array<string> | undefined) ?? [];
@@ -120,6 +121,38 @@ export default function MigrationStatus() {
         ]}
       />
       <DataLineageTable rows={longTermGoalRows} />
+      <h3>LTG-13 下一票雷达 promotion dry-run</h3>
+      <p className="risk-note">这里单独展示下一票雷达的本地 promotion dry-run：它只说明本地审查票据是否可见、是否进入 local review、还有多少生产证据 blocker；不能关闭 LTG-13。</p>
+      <MetricGrid
+        items={[
+          {
+            label: "promotion dry-run",
+            value: String(candidateRadarGoalRow.observed_production_promotion_dry_run_status ?? "missing"),
+            tone: candidateRadarGoalRow.observed_production_promotion_dry_run_ready_for_local_review === true ? "warn" : "neutral"
+          },
+          {
+            label: "receipt visible",
+            value: candidateRadarGoalRow.observed_production_promotion_dry_run_visible === true,
+            tone: candidateRadarGoalRow.observed_production_promotion_dry_run_visible === true ? "good" : "warn"
+          },
+          {
+            label: "local review ready",
+            value: candidateRadarGoalRow.observed_production_promotion_dry_run_ready_for_local_review === true,
+            tone: candidateRadarGoalRow.observed_production_promotion_dry_run_ready_for_local_review === true ? "warn" : "neutral"
+          },
+          {
+            label: "production blockers",
+            value: Number(candidateRadarGoalRow.observed_production_promotion_dry_run_production_blocker_count ?? 0),
+            tone: Number(candidateRadarGoalRow.observed_production_promotion_dry_run_production_blocker_count ?? 0) ? "bad" : "good"
+          },
+          {
+            label: "can close LTG-13",
+            value: candidateRadarGoalRow.observed_production_promotion_dry_run_can_close_goal === true,
+            tone: candidateRadarGoalRow.observed_production_promotion_dry_run_can_close_goal === true ? "bad" : "good"
+          }
+        ]}
+      />
+      <DataLineageTable rows={[candidateRadarGoalRow]} />
       <h3>LTG stage-scope observed rows</h3>
       <p className="risk-note">这些 observed rows 只读取本地 cache 或静态合同里的阶段清单，用来让长期目标总览对齐具体页面证据；它们不是生产完成证据。</p>
       <DataLineageTable rows={ltgStageScopeObservedRows} />
