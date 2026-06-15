@@ -392,6 +392,71 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
     },
 ]
 
+LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
+    "p1_trade_cal_provider_acceptance": [
+        {
+            "phase_key": "trade_cal_dry_run_scope_ticket",
+            "task_type": "run_trade_cal_provider_acceptance_dry_run",
+            "receipt_key": "trade_cal_provider_acceptance_dry_run_receipt",
+            "route": "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
+        },
+        {
+            "phase_key": "trade_cal_execution_request_ticket",
+            "task_type": "run_trade_cal_provider_acceptance_execution_request",
+            "receipt_key": "trade_cal_provider_acceptance_execution_request_receipt",
+            "route": "POST /api/data-health/trade-cal-provider-acceptance-execution-request",
+        },
+        {
+            "phase_key": "trade_cal_promotion_review_receipt",
+            "task_type": "run_trade_cal_provider_acceptance_promotion_review",
+            "receipt_key": "trade_cal_provider_acceptance_promotion_review_receipt",
+            "route": "POST /api/data-health/trade-cal-provider-acceptance-promotion-review",
+        },
+    ],
+    "p2_tushare_target_sample_acceptance": [
+        {
+            "phase_key": "target_sample_execution_request_ticket",
+            "task_type": "run_tushare_provider_target_sample_execution_request",
+            "receipt_key": "provider_target_sample_execution_request_receipt",
+            "route": "POST /api/tasks/tushare-provider-target-sample-execution-request",
+        },
+    ],
+    "p3_factor_small_pool_provider_validation": [
+        {
+            "phase_key": "factor_small_pool_dry_run_scope_ticket",
+            "task_type": "run_factor_test_provider_small_pool_acceptance_dry_run",
+            "receipt_key": "provider_small_pool_acceptance_dry_run_receipt",
+            "route": "POST /api/factor-quant/provider-small-pool-dry-run",
+        },
+        {
+            "phase_key": "factor_small_pool_execution_request_ticket",
+            "task_type": "run_factor_test_provider_small_pool_execution_request",
+            "receipt_key": "provider_small_pool_execution_request_receipt",
+            "route": "POST /api/factor-quant/provider-small-pool-execution-request",
+        },
+    ],
+    "p3_candidate_radar_provider_worker_promotion": [
+        {
+            "phase_key": "radar_quant_projection_dry_run_scope_ticket",
+            "task_type": "run_candidate_radar_quant_projection_acceptance_dry_run",
+            "receipt_key": "search_quant_projection_acceptance_dry_run_receipt",
+            "route": "POST /api/candidate-radar/quant-projection-acceptance-dry-run",
+        },
+        {
+            "phase_key": "radar_quant_projection_execution_request_ticket",
+            "task_type": "run_candidate_radar_quant_projection_execution_request",
+            "receipt_key": "search_quant_projection_execution_request_receipt",
+            "route": "POST /api/candidate-radar/quant-projection-execution-request",
+        },
+        {
+            "phase_key": "radar_production_promotion_dry_run_ticket",
+            "task_type": "run_candidate_radar_production_promotion_dry_run",
+            "receipt_key": "candidate_radar_production_promotion_dry_run_receipt",
+            "route": "POST /api/candidate-radar/production-promotion-dry-run",
+        },
+    ],
+}
+
 
 def _enrich_long_term_goal_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     enriched_rows: list[dict[str, Any]] = []
@@ -490,12 +555,102 @@ def _build_ltg_acceptance_runway_rows(rows: list[dict[str, Any]]) -> list[dict[s
     return runway_rows
 
 
+def _task_statuses_by_type() -> dict[str, list[dict[str, Any]]]:
+    by_type: dict[str, list[dict[str, Any]]] = {}
+    for task in task_service.list_task_statuses():
+        task_type = str(task.get("task_type") or "")
+        if task_type:
+            by_type.setdefault(task_type, []).append(task)
+    return by_type
+
+
+def _receipt_blocker_count(receipt: dict[str, Any]) -> int:
+    blocker_keys = (
+        "blocking_row_count",
+        "blocking_phase_count",
+        "local_blocker_count",
+        "production_blocker_count",
+        "provider_evidence_blocker_count",
+        "credential_missing_provider_count",
+        "durable_evidence_blocker_count",
+    )
+    return max((int(receipt.get(key) or 0) for key in blocker_keys), default=0)
+
+
+def _build_ltg_next_action_local_step_rows(
+    queue_id: str,
+    tasks_by_type: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    step_rows: list[dict[str, Any]] = []
+    for step in LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS.get(queue_id, []):
+        task_type = str(step["task_type"])
+        latest_task = next(iter(tasks_by_type.get(task_type, [])), {})
+        payload_safe = latest_task.get("payload_safe") if isinstance(latest_task.get("payload_safe"), dict) else {}
+        receipt = payload_safe.get(str(step["receipt_key"])) if isinstance(payload_safe, dict) else {}
+        receipt_map = receipt if isinstance(receipt, dict) else {}
+        task_found = bool(latest_task)
+        receipt_visible = bool(receipt_map)
+        step_rows.append(
+            {
+                "phase_key": step["phase_key"],
+                "task_type": task_type,
+                "route": step["route"],
+                "task_found": task_found,
+                "receipt_visible": receipt_visible,
+                "latest_task_id": latest_task.get("task_id") if task_found else "",
+                "latest_task_status": latest_task.get("status") if task_found else "",
+                "latest_task_current_step": latest_task.get("current_step") if task_found else "",
+                "latest_task_storage_source": latest_task.get("storage_source") if task_found else "",
+                "receipt_status": receipt_map.get("status") or "",
+                "receipt_blocker_count": _receipt_blocker_count(receipt_map) if receipt_visible else 0,
+                "local_ready": any(
+                    receipt_map.get(key) is True
+                    for key in (
+                        "local_dry_run_ready",
+                        "local_execution_request_ready",
+                        "ready_for_local_promotion_review",
+                        "promotion_review_ready_for_release",
+                        "recipe_ready_for_user_confirmation",
+                    )
+                ),
+                "creates_task_from_lookup": False,
+                "lookup_calls_provider": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "evidence_boundary": "latest_local_receipt_lookup_is_not_provider_or_worker_execution",
+            }
+        )
+    return step_rows
+
+
 def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows_by_id = {str(row.get("id") or ""): row for row in rows}
+    tasks_by_type = _task_statuses_by_type()
     action_rows: list[dict[str, Any]] = []
     for index, action in enumerate(LTG_NEXT_ACCEPTANCE_ACTION_QUEUE, start=1):
         ltg_ids = [str(item) for item in action["ltg_ids"]]
         linked_rows = [rows_by_id[goal_id] for goal_id in ltg_ids if goal_id in rows_by_id]
+        local_step_rows = _build_ltg_next_action_local_step_rows(str(action["queue_id"]), tasks_by_type)
+        observed_steps = [row for row in local_step_rows if row["receipt_visible"] is True]
+        missing_steps = [row for row in local_step_rows if row["receipt_visible"] is False]
+        if not local_step_rows:
+            local_status = "local_receipt_lookup_not_configured"
+            next_local_step = ""
+        elif not observed_steps:
+            local_status = "local_receipts_missing"
+            next_local_step = str(missing_steps[0].get("route") or "")
+        elif missing_steps:
+            local_status = "local_receipts_partially_visible_next_step_pending"
+            next_local_step = str(missing_steps[0].get("route") or "")
+        else:
+            local_status = "local_receipts_visible_provider_or_worker_evidence_pending"
+            next_local_step = str(action["future_provider_route"])
+        latest_observed = observed_steps[-1] if observed_steps else {}
         action_rows.append(
             {
                 "queue_order": index,
@@ -514,6 +669,21 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 "required_evidence_count": len(action["required_evidence"]),
                 "not_allowed_next_steps": list(action["not_allowed_next_steps"]),
                 "not_allowed_next_step_count": len(action["not_allowed_next_steps"]),
+                "local_receipt_status": local_status,
+                "next_local_step": next_local_step,
+                "local_receipt_step_count": len(local_step_rows),
+                "observed_local_receipt_step_count": len(observed_steps),
+                "missing_local_receipt_step_count": len(missing_steps),
+                "observed_local_receipt_steps": [str(row.get("phase_key") or "") for row in observed_steps],
+                "missing_local_receipt_steps": [str(row.get("phase_key") or "") for row in missing_steps],
+                "latest_observed_task_id": latest_observed.get("latest_task_id") or "",
+                "latest_observed_task_type": latest_observed.get("task_type") or "",
+                "latest_observed_receipt_status": latest_observed.get("receipt_status") or "",
+                "local_receipt_blocker_count": sum(int(row.get("receipt_blocker_count") or 0) for row in observed_steps),
+                "local_step_rows": local_step_rows,
+                "local_receipt_lookup_source": "task_service.list_task_statuses_memory_plus_sqlite_read_only",
+                "local_receipt_lookup_creates_task": False,
+                "local_receipt_lookup_calls_provider": False,
                 "max_linked_observed_pending": max(
                     (int(row.get("observed_stage_scope_pending_count") or 0) for row in linked_rows),
                     default=0,

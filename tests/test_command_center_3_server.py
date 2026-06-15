@@ -313,6 +313,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
         )
         self.assertEqual(
+            action_rows["p1_trade_cal_provider_acceptance"]["next_local_step"],
+            "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
+        )
+        self.assertEqual(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_step_count"], 3)
+        self.assertEqual(action_rows["p2_tushare_target_sample_acceptance"]["local_receipt_step_count"], 1)
+        self.assertEqual(action_rows["p3_factor_small_pool_provider_validation"]["local_receipt_step_count"], 2)
+        self.assertEqual(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_step_count"], 3)
+        self.assertTrue(all(row["local_receipt_lookup_creates_task"] is False for row in migration["ltg_next_acceptance_action_rows"]))
+        self.assertTrue(all(row["local_receipt_lookup_calls_provider"] is False for row in migration["ltg_next_acceptance_action_rows"]))
+        self.assertTrue(all(row["local_receipt_status"] for row in migration["ltg_next_acceptance_action_rows"]))
+        self.assertEqual(
             action_rows["p2_tushare_target_sample_acceptance"]["future_provider_route"],
             "POST /api/tasks/refresh-tushare-facts",
         )
@@ -18361,9 +18372,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("P2", runway_rows["LTG-02"]["priority"])
         self.assertIn("P3", runway_rows["LTG-03"]["priority"])
         self.assertIn("LTG-01", action_rows["p1_trade_cal_provider_acceptance"]["ltg_ids"])
+        self.assertEqual(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_step_count"], 3)
+        self.assertEqual(
+            action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_lookup_source"],
+            "task_service.list_task_statuses_memory_plus_sqlite_read_only",
+        )
+        self.assertFalse(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_lookup_creates_task"])
         self.assertFalse(action_rows["p1_trade_cal_provider_acceptance"]["creates_task_from_get"])
         self.assertFalse(action_rows["p2_tushare_target_sample_acceptance"]["external_calls_triggered"])
         self.assertTrue(action_rows["p3_candidate_radar_provider_worker_promotion"]["does_not_modify_strategy_action"])
+        self.assertFalse(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_lookup_calls_provider"])
         self.assertFalse(runway_rows["LTG-01"]["can_close_goal"])
         self.assertFalse(runway_rows["LTG-02"]["external_calls_triggered"])
         self.assertFalse(runway_rows["LTG-03"]["tushare_called"])
