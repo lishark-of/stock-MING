@@ -760,6 +760,11 @@ def build_command_center_radar_packet(
             "display_count": len(top_candidates),
             "cache_state": data_status,
             "data_status": data_status,
+            "trade_date": _first_text(
+                existing.get("trade_date"),
+                existing.get("data_date"),
+                existing.get("latest_trade_date"),
+            ),
             "status": packet_status if top_candidates else "waiting",
             "summary": _radar_summary_text(
                 top_candidates,
@@ -821,6 +826,11 @@ def build_command_center_radar_packet(
         "cache_state": data_status,
         "source": _first_text(summary.get("source_mode"), scan_packet.get("source_mode"), live_section.get("source"), default="下一票雷达缓存"),
         "generated_at": generated_at,
+        "trade_date": _first_text(
+            scan_packet.get("trade_date"),
+            summary.get("trade_date"),
+            live_section.get("trade_date"),
+        ),
         "total_count": total_count,
         "display_count": len(top_candidates),
         "top_candidates": top_candidates,

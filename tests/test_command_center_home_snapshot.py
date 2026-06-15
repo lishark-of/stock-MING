@@ -711,6 +711,64 @@ class CommandCenterHomeSnapshotTests(unittest.TestCase):
         self.assertEqual(overview["external_call_policy"], "not_triggered")
         self.assertFalse(payload["radar_packet"]["deepseek_called"])
 
+    def test_home_snapshot_attaches_producer_freshness_context_without_provider_calls(self):
+        today = _dt.date.today().isoformat()
+        trade_date = today.replace("-", "")
+        payload = snapshot.build_home_action_snapshot(
+            {
+                "command_center_decision_packet": {
+                    "status": "ready",
+                    "overall_action": "等待",
+                    "updated_at": f"{today}T10:00:00",
+                },
+                "command_center_market_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "trade_date": trade_date,
+                    "summary": "市场风格缓存",
+                },
+                "radar_scan_status": "completed",
+                "radar_scan_results": {
+                    "trade_date": trade_date,
+                    "generated_at": f"{today}T10:01:00",
+                    "rule_rows": [
+                        {
+                            "candidate": {"ticker": "300750.SZ", "name": "宁德时代"},
+                            "score": {"total_score": 82, "battle_state": "等验证"},
+                        }
+                    ],
+                },
+                "command_center_moneyflow_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "trade_date": trade_date,
+                    "summary": "资金流可用",
+                },
+            },
+            target="002008.SZ",
+            now=f"{today}T10:02:00",
+        )
+
+        expected_trade_date = payload["data_freshness"]["expected_trade_date"]
+        for key in ("market_packet", "radar_packet", "a_share_evidence_packet"):
+            packet = payload[key]
+            self.assertEqual(packet["expected_trade_date"], expected_trade_date)
+            self.assertEqual(packet["data_date"], today)
+            self.assertFalse(packet["freshness_context_is_provider_acceptance"])
+            self.assertFalse(packet["freshness_context_calls_provider"])
+            self.assertFalse(packet["freshness_context_external_calls_triggered"])
+            self.assertTrue(packet["freshness_context_does_not_modify_strategy_action"])
+            self.assertTrue(packet["freshness_context_does_not_execute_trades"])
+            self.assertEqual(packet["data_freshness"]["expected_trade_date"], expected_trade_date)
+            self.assertEqual(packet["data_freshness"]["data_date"], today)
+            self.assertFalse(packet["data_freshness"]["external_calls_triggered"])
+            self.assertFalse(packet["data_freshness"]["tushare_called"])
+            self.assertFalse(packet["data_freshness"]["deepseek_called"])
+            self.assertFalse(packet["data_freshness"]["github_called"])
+        self.assertFalse(payload["deepseek_called"])
+        self.assertFalse(payload["radar_packet"]["deepseek_called"])
+        self.assertFalse(payload["a_share_evidence_packet"]["deepseek_called"])
+
     def test_next_ticket_missing_evidence_enters_recovery_center(self):
         today = _dt.date.today().isoformat()
         state = {

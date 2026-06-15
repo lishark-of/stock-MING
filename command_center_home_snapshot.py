@@ -957,6 +957,14 @@ def _empty_snapshot(reason: str = "暂无可执行候选。点击刷新今日基
         snapshot,
         snapshot["command_center_evidence_radar_packet"],
     )
+    evidence_data_date = _latest_lineage_data_date(snapshot["a_share_fact_lineage_summary"])
+    if evidence_data_date:
+        snapshot["a_share_evidence_packet"]["data_date"] = evidence_data_date
+    snapshot["a_share_evidence_packet"] = _attach_current_evidence_freshness_context(
+        snapshot["a_share_evidence_packet"],
+        snapshot.get("data_freshness") or {},
+    )
+    snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
     snapshot["data_health_ledger"] = _as_mapping(_as_mapping(snapshot.get("data_capability_console")).get("data_health_ledger"))
     snapshot["data_health_visibility_summary"] = data_health_ledger_service.build_data_health_visibility_summary(
         snapshot["data_health_ledger"]
@@ -1094,6 +1102,14 @@ def load_home_action_snapshot(path: str | Path | None = None, base_dir: str | Pa
         snapshot,
         snapshot["command_center_evidence_radar_packet"],
     )
+    evidence_data_date = _latest_lineage_data_date(snapshot["a_share_fact_lineage_summary"])
+    if evidence_data_date:
+        snapshot["a_share_evidence_packet"]["data_date"] = evidence_data_date
+    snapshot["a_share_evidence_packet"] = _attach_current_evidence_freshness_context(
+        snapshot["a_share_evidence_packet"],
+        snapshot.get("data_freshness") or {},
+    )
+    snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["next_ticket_evidence_recovery_actions"] = build_next_ticket_evidence_recovery_actions_snapshot(snapshot)
@@ -1214,12 +1230,112 @@ def build_data_freshness(timestamp: Any = None, errors: Any = None, deepseek_cal
     else:
         state = classify_data_freshness(timestamp, today=today)
         label = {"today": "今日已刷新", "stale": "使用缓存", "missing": "待刷新"}[state]
-    return {
+    packet = {
         "state": state,
         "label": label,
         "last_updated": _to_text(timestamp, "暂无"),
         "deepseek_called": bool(deepseek_called),
     }
+    try:
+        from command_center_factor_research import _expected_data_date
+
+        expected_context = _expected_data_date(_to_text(timestamp) or _now_iso(today))
+    except Exception:
+        expected_context = {}
+    expected_trade_date = _to_text(expected_context.get("expected_data_date"))
+    if expected_trade_date:
+        packet["expected_trade_date"] = expected_trade_date
+        packet["expected_data_date"] = expected_trade_date
+        packet["expected_trade_date_source"] = _to_text(
+            expected_context.get("expected_data_date_source"),
+            "local_expected_date_gate",
+        )
+        packet["expected_trade_date_calendar_validated"] = bool(
+            expected_context.get("expected_data_date_calendar_validated")
+        )
+    packet["freshness_state"] = "fresh" if state == "today" else state
+    return packet
+
+
+def _date_text(value: Any) -> str:
+    text = _to_text(value)
+    if not text or text == "暂无":
+        return ""
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if len(digits) >= 8:
+        digits = digits[:8]
+        return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+    if len(text) >= 10 and text[4:5] == "-" and text[7:8] == "-":
+        return text[:10]
+    return ""
+
+
+def _explicit_packet_data_date(packet: Mapping[str, Any]) -> str:
+    for key in ("data_date", "latest_data_date", "latest_trade_date", "trade_date", "as_of_date", "date"):
+        text = _date_text(packet.get(key))
+        if text:
+            return text
+    return ""
+
+
+def _attach_current_evidence_freshness_context(packet: Any, data_freshness: Any = None) -> dict:
+    payload = _as_mapping(packet)
+    if not payload:
+        return {}
+    freshness = _as_mapping(data_freshness)
+    expected_trade_date = _date_text(
+        payload.get("expected_trade_date")
+        or payload.get("expected_data_date")
+        or freshness.get("expected_trade_date")
+        or freshness.get("expected_data_date")
+    )
+    data_date = _explicit_packet_data_date(payload)
+    freshness_state = _to_text(
+        payload.get("freshness_state")
+        or payload.get("data_freshness_state")
+        or payload.get("freshness_status")
+        or payload.get("data_status")
+        or payload.get("status")
+    ).lower()
+    if expected_trade_date and data_date:
+        freshness_state = "fresh" if expected_trade_date == data_date else "stale"
+    if expected_trade_date:
+        payload.setdefault("expected_trade_date", expected_trade_date)
+        payload.setdefault("expected_data_date", expected_trade_date)
+    if data_date:
+        payload.setdefault("data_date", data_date)
+        payload.setdefault("latest_data_date", data_date)
+    if freshness_state:
+        payload.setdefault("freshness_state", freshness_state)
+    payload.setdefault("freshness_context_source", "producer_explicit_date_plus_global_expected_trade_date")
+    payload.setdefault("freshness_context_is_provider_acceptance", False)
+    payload.setdefault("freshness_context_calls_provider", False)
+    payload.setdefault("freshness_context_external_calls_triggered", False)
+    payload.setdefault("freshness_context_does_not_modify_strategy_action", True)
+    payload.setdefault("freshness_context_does_not_execute_trades", True)
+    nested = _as_mapping(payload.get("data_freshness"))
+    nested.setdefault("expected_trade_date", expected_trade_date or None)
+    nested.setdefault("expected_data_date", expected_trade_date or None)
+    nested.setdefault("data_date", data_date or None)
+    nested.setdefault("latest_data_date", data_date or None)
+    nested.setdefault("freshness_state", freshness_state or None)
+    nested.setdefault("context_source", payload["freshness_context_source"])
+    nested.setdefault("is_provider_acceptance", False)
+    nested.setdefault("external_calls_triggered", False)
+    nested.setdefault("tushare_called", False)
+    nested.setdefault("deepseek_called", False)
+    nested.setdefault("github_called", False)
+    payload["data_freshness"] = nested
+    return payload
+
+
+def _latest_lineage_data_date(lineage_packet: Any = None) -> str:
+    dates = []
+    for row in _as_list(_as_mapping(lineage_packet).get("items")):
+        text = _date_text(_as_mapping(row).get("data_date"))
+        if text:
+            dates.append(text)
+    return max(dates) if dates else ""
 
 
 def _packet_data_coverage(live_packet: Any, decision_packet: Any, strategy_packet: Any) -> dict:
@@ -7584,6 +7700,17 @@ def build_home_action_snapshot(
         hard_risk_packet,
     )
     data_freshness = build_data_freshness(timestamp, errors, deepseek_called=deepseek_called)
+    market_packet = _attach_current_evidence_freshness_context(market_packet, data_freshness)
+    radar_packet_for_snapshot = _attach_current_evidence_freshness_context(
+        radar_packet_service.build_command_center_radar_packet(
+            {
+                "command_center_radar_packet": radar_packet,
+                "data_freshness": data_freshness,
+            },
+            live_packet=live,
+        ),
+        data_freshness,
+    )
     analysis_method_packet = (
         state_map.get("command_center_analysis_method_packet")
         or state_map.get("analysis_method_packet")
@@ -7616,10 +7743,7 @@ def build_home_action_snapshot(
         "today_action": build_today_action(decision),
         "holding_action": build_holding_action(target=target, position_profile=position_profile, strategy_packet=strategy, state=state_map),
         "next_ticket_candidates": next_ticket_candidates,
-        "radar_packet": radar_packet_service.build_command_center_radar_packet(
-            {"command_center_radar_packet": radar_packet},
-            live_packet=live,
-        ),
+        "radar_packet": radar_packet_for_snapshot,
         "etf_packet": etf_packet,
         "discipline_packet": discipline_packet,
         "quant_packet": quant_packet,
@@ -7776,6 +7900,14 @@ def build_home_action_snapshot(
             empty,
             empty["command_center_evidence_radar_packet"],
         )
+        evidence_data_date = _latest_lineage_data_date(empty["a_share_fact_lineage_summary"])
+        if evidence_data_date:
+            empty["a_share_evidence_packet"]["data_date"] = evidence_data_date
+        empty["a_share_evidence_packet"] = _attach_current_evidence_freshness_context(
+            empty["a_share_evidence_packet"],
+            empty.get("data_freshness") or {},
+        )
+        empty["command_center_evidence_radar_packet"] = empty["a_share_evidence_packet"]
         empty["risk_alerts"] = attach_legacy_decision_chain_risk_alerts(
             empty.get("risk_alerts") or {},
             empty.get("legacy_decision_chain_summary") or {},
@@ -7821,6 +7953,14 @@ def build_home_action_snapshot(
         snapshot,
         snapshot["command_center_evidence_radar_packet"],
     )
+    evidence_data_date = _latest_lineage_data_date(snapshot["a_share_fact_lineage_summary"])
+    if evidence_data_date:
+        snapshot["a_share_evidence_packet"]["data_date"] = evidence_data_date
+    snapshot["a_share_evidence_packet"] = _attach_current_evidence_freshness_context(
+        snapshot["a_share_evidence_packet"],
+        snapshot.get("data_freshness") or {},
+    )
+    snapshot["command_center_evidence_radar_packet"] = snapshot["a_share_evidence_packet"]
     snapshot["legacy_a_share_fact_recovery_actions"] = build_legacy_a_share_fact_recovery_actions_snapshot(snapshot)
     snapshot["tool_recovery_actions"] = build_tool_recovery_actions_snapshot(snapshot)
     snapshot["next_ticket_evidence_recovery_actions"] = build_next_ticket_evidence_recovery_actions_snapshot(snapshot)

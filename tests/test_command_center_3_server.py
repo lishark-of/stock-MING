@@ -20986,6 +20986,68 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
 
+    def test_data_health_accepts_home_snapshot_producer_freshness_context(self):
+        import command_center_home_snapshot as home_snapshot
+
+        self._with_parquet_root()
+        today = _dt.date.today().isoformat()
+        trade_date = today.replace("-", "")
+        snapshot_payload = home_snapshot.build_home_action_snapshot(
+            {
+                "command_center_decision_packet": {
+                    "status": "ready",
+                    "overall_action": "等待",
+                    "updated_at": f"{today}T10:00:00",
+                },
+                "command_center_market_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "trade_date": trade_date,
+                    "summary": "市场风格缓存",
+                },
+                "radar_scan_status": "completed",
+                "radar_scan_results": {
+                    "trade_date": trade_date,
+                    "generated_at": f"{today}T10:01:00",
+                    "rule_rows": [
+                        {
+                            "candidate": {"ticker": "300750.SZ", "name": "宁德时代"},
+                            "score": {"total_score": 82, "battle_state": "等验证"},
+                        }
+                    ],
+                },
+                "command_center_moneyflow_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "trade_date": trade_date,
+                    "summary": "资金流可用",
+                },
+            },
+            target="002008.SZ",
+            now=f"{today}T10:02:00",
+        )
+        self._with_snapshot_cache(snapshot_payload)
+
+        response = self.client.get("/api/data-health/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        rows = {row["producer"]: row for row in packet["current_evidence_producer_coverage_rows"]}
+        for key in ("candidate_radar", "a_share_evidence_radar", "market_context"):
+            self.assertNotIn("expected_trade_date", rows[key]["missing_fields"])
+            self.assertNotIn("data_date", rows[key]["missing_fields"])
+            self.assertTrue(rows[key]["expected_trade_date_present"])
+            self.assertTrue(rows[key]["data_date_present"])
+            self.assertTrue(rows[key]["freshness_state_present"])
+            self.assertFalse(str(rows[key]["status"]).startswith("blocked_"))
+        self.assertEqual(packet["current_evidence_producer_coverage_audit"]["blocked_producer_count"], 0)
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+
     def test_data_health_decision_surface_audit_exposes_research_only_surface_blockers(self):
         self._with_parquet_root()
         self._with_snapshot_cache(
