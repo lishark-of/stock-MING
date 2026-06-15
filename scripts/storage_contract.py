@@ -44,6 +44,7 @@ REQUIRED_STORAGE_TASK_TYPES = {
     "run_storage_partition_migration_dry_run",
     "run_storage_compaction_dry_run",
     "run_storage_cache_ttl_dry_run",
+    "run_storage_physical_execution_request",
 }
 REQUIRED_PHYSICAL_MIGRATION_STAGES = (
     "physical_schema_validation",
@@ -71,6 +72,7 @@ REQUIRED_STORAGE_PHYSICAL_DURABLE_EVIDENCE_KEYS = (
     "readiness_receipt_visible",
     "activation_receipt_visible",
     "physical_execution_recipe_ready",
+    "physical_execution_request_visible",
     "physical_schema_validation_evidence_required",
     "dataset_version_manifest_validation_required",
     "partition_migration_evidence_required",
@@ -230,6 +232,13 @@ def build_contract() -> dict[str, Any]:
         for row in _list(overview.get("storage_physical_execution_recipe_rows"))
         if isinstance(row, dict)
     }
+    physical_execution_request_packet = storage_service.storage_physical_execution_request_packet(
+        payload_safe={
+            "source": "storage_contract",
+            "approved_by_user": True,
+            "physical_execution_scope_hash": physical_execution_recipe.get("physical_execution_scope_hash"),
+        }
+    )
     durable_evidence_recipe = _dict(overview.get("storage_physical_durable_evidence_recipe"))
     durable_evidence_rows = {
         str(row.get("evidence_key") or ""): row
@@ -262,6 +271,7 @@ def build_contract() -> dict[str, Any]:
     overview_datasets = set(_dict(overview.get("dataset_status")).keys())
     schema_evidence_done = schema_acceptance_evidence.get("physical_schema_validation_done") is True
     expected_durable_missing = {
+        "physical_execution_request_visible",
         "dataset_version_manifest_validation_required",
         "partition_migration_evidence_required",
         "physical_compaction_evidence_required",
@@ -467,6 +477,67 @@ def build_contract() -> dict[str, Any]:
             and all(row.get("does_not_modify_strategy_action") is True for row in physical_execution_rows.values())
             and all(row.get("contains_secret") is False for row in physical_execution_rows.values()),
             "Physical execution recipe must sequence LTG-05 production work while staying local-only, no-write, no-provider, no-delete, no-trade, and pending.",
+        ),
+        _row(
+            "physical_execution_request_is_scope_bound_local",
+            physical_execution_request_packet.get("schema_version")
+            == "command_center_3_storage_physical_execution_request.v1"
+            and physical_execution_request_packet.get("scope")
+            == "local_storage_physical_execution_request_no_write_no_delete_no_provider"
+            and physical_execution_request_packet.get("status")
+            == "storage_physical_execution_request_ready_manual_physical_tasks_pending"
+            and physical_execution_request_packet.get("local_execution_request_ready") is True
+            and physical_execution_request_packet.get("ready_for_manual_physical_task_submission") is True
+            and physical_execution_request_packet.get("approved_by_user") is True
+            and physical_execution_request_packet.get("requested_scope_hash_matches_latest") is True
+            and _is_sha256(physical_execution_request_packet.get("physical_execution_scope_hash"))
+            and physical_execution_request_packet.get("target_storage_task_route")
+            == "future POST /api/storage/physical-execution"
+            and physical_execution_request_packet.get("target_storage_task_type") == "run_storage_physical_execution"
+            and tuple(physical_execution_request_packet.get("target_phases") or ())
+            == REQUIRED_STORAGE_PHYSICAL_EXECUTION_PHASES
+            and physical_execution_request_packet.get("physical_task_created") is False
+            and physical_execution_request_packet.get("physical_task_executed") is False
+            and physical_execution_request_packet.get("physical_execution_implemented") is False
+            and physical_execution_request_packet.get("production_storage_complete") is False
+            and physical_execution_request_packet.get("writes_parquet") is False
+            and physical_execution_request_packet.get("writes_manifest") is False
+            and physical_execution_request_packet.get("deletes_artifacts") is False
+            and physical_execution_request_packet.get("refreshes_providers") is False
+            and physical_execution_request_packet.get("runs_commands") is False
+            and physical_execution_request_packet.get("reads_row_payloads") is False
+            and physical_execution_request_packet.get("reads_env_files") is False
+            and _flag_false(
+                physical_execution_request_packet,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and physical_execution_request_packet.get("does_not_execute_trades") is True
+            and physical_execution_request_packet.get("does_not_modify_strategy_action") is True
+            and physical_execution_request_packet.get("contains_secret") is False
+            and {
+                "treat_execution_request_as_physical_storage_execution",
+                "write_parquet_from_execution_request",
+                "write_manifest_from_execution_request",
+                "delete_artifacts_from_execution_request",
+                "refresh_providers_from_execution_request",
+                "mark_production_storage_complete_from_execution_request",
+            }.issubset(set(physical_execution_request_packet.get("not_allowed_next_steps") or []))
+            and all(
+                row.get("request_only") is True
+                and row.get("writes_parquet") is False
+                and row.get("writes_manifest") is False
+                and row.get("deletes_artifacts") is False
+                and row.get("external_calls_triggered") is False
+                and row.get("does_not_execute_trades") is True
+                and row.get("does_not_modify_strategy_action") is True
+                and row.get("contains_secret") is False
+                for row in _list(physical_execution_request_packet.get("rows"))
+                if isinstance(row, dict)
+            ),
+            "Storage physical execution request must bind the current recipe scope hash without writing Parquet, writing manifests, deleting files, calling providers/models/GitHub, trading, or completing production storage.",
         ),
         _row(
             "schema_validation_acceptance_evidence_is_read_only",
@@ -854,6 +925,16 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_storage_partition_migration_dry_run"].get("partition_migration_executed") is False
             and task_rows["run_storage_compaction_dry_run"].get("physical_compaction_executed") is False
             and task_rows["run_storage_cache_ttl_dry_run"].get("refresh_executed") is False
+            and task_rows["run_storage_physical_execution_request"].get("local_execution_request_only") is True
+            and task_rows["run_storage_physical_execution_request"].get("requires_bound_scope_hash") is True
+            and task_rows["run_storage_physical_execution_request"].get("creates_physical_task") is False
+            and task_rows["run_storage_physical_execution_request"].get("physical_task_executed_by_request") is False
+            and task_rows["run_storage_physical_execution_request"].get("physical_execution_implemented") is False
+            and task_rows["run_storage_physical_execution_request"].get("writes_parquet_on_post") is False
+            and task_rows["run_storage_physical_execution_request"].get("writes_manifest_on_post") is False
+            and task_rows["run_storage_physical_execution_request"].get("deletes_artifacts_on_post") is False
+            and task_rows["run_storage_physical_execution_request"].get("refreshes_external_sources_on_post") is False
+            and task_rows["run_storage_physical_execution_request"].get("production_storage_complete") is False
             and task_rows["run_storage_artifact_cleanup_dry_run"].get("delete_files_on_post") is False,
             "Storage tasks must be button-gated local pipelines; dry-runs stay no-write while the manifest writer is explicit, confirm-gated, manifest-only, no-provider, no-Parquet, and no-trade.",
         ),
@@ -872,9 +953,11 @@ def build_contract() -> dict[str, Any]:
             and "local_storage_contract_no_physical_migration" in this_script
             and "command_center_3_storage_physical_migration_activation_receipt.v1" in this_script
             and "command_center_3_storage_physical_execution_recipe.v1" in this_script
+            and "command_center_3_storage_physical_execution_request.v1" in this_script
             and "command_center_3_storage_physical_durable_evidence_recipe.v1" in this_script
             and "physical_migration_activation_receipt_keeps_execution_pending" in this_script
             and "physical_execution_recipe_is_local_pending" in this_script
+            and "physical_execution_request_is_scope_bound_local" in this_script
             and "physical_durable_evidence_recipe_is_local_pending" in this_script
             and "physical_migration_stage_scope_manifest_is_complete_and_pending" in this_script
             and "production_storage_complete" in this_script
@@ -960,6 +1043,13 @@ def build_contract() -> dict[str, Any]:
             "storage_physical_execution_pending_phase_count": sum(
                 1 for row in physical_execution_rows.values() if row.get("execution_done") is False
             ),
+            "storage_physical_execution_request_status": physical_execution_request_packet.get("status"),
+            "storage_physical_execution_request_ready": physical_execution_request_packet.get(
+                "local_execution_request_ready"
+            ),
+            "storage_physical_execution_request_scope_hash_present": _is_sha256(
+                physical_execution_request_packet.get("physical_execution_scope_hash")
+            ),
             "storage_physical_durable_evidence_recipe_status": durable_evidence_recipe.get("status"),
             "storage_physical_durable_evidence_recipe_ready": durable_evidence_recipe.get("local_recipe_ready"),
             "storage_physical_durable_evidence_key_count": len(durable_evidence_rows),
@@ -1015,6 +1105,7 @@ def build_contract() -> dict[str, Any]:
                 if row.get("production_storage_complete") is False
             ),
         },
+        "storage_physical_execution_request_packet": physical_execution_request_packet,
         "storage_physical_execution_recipe_rows": list(physical_execution_rows.values()),
         "storage_physical_durable_evidence_rows": list(durable_evidence_rows.values()),
         "physical_migration_stage_scope_rows": physical_migration_stage_scope_rows,

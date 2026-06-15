@@ -110,6 +110,12 @@ def run_storage_cache_ttl_dry_run(payload: dict[str, Any] | None = None) -> dict
     return task_envelope(task)
 
 
+@router.post("/physical-execution-request")
+def run_storage_physical_execution_request(payload: dict[str, Any] | None = None) -> dict:
+    task = storage_service.run_storage_physical_execution_request_task(payload)
+    return task_envelope(task)
+
+
 @router.get("/{dataset}")
 def get_parquet_dataset_status(
     dataset: str,

@@ -475,6 +475,13 @@ export function postStorageCacheTtlDryRun(payload: Record<string, unknown> = {})
   });
 }
 
+export function postStoragePhysicalExecutionRequest(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/storage/physical-execution-request", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function postTask(path: string, payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>(path, {
     method: "POST",

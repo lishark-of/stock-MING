@@ -13,6 +13,7 @@ import {
   postStorageDatasetVersionManifestValidate,
   postStorageDatasetVersionManifestWrite,
   postStoragePartitionMigrationDryRun,
+  postStoragePhysicalExecutionRequest,
   postStorageSchemaValidationAcceptance,
   postStorageSchemaValidationDryRun,
   type StorageQueryParams,
@@ -100,6 +101,8 @@ export default function StorageOverview() {
   const [compactionDryRunReceipt, setCompactionDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [cacheTtlDryRunTaskId, setCacheTtlDryRunTaskId] = useState("");
   const [cacheTtlDryRunReceipt, setCacheTtlDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [physicalExecutionRequestTaskId, setPhysicalExecutionRequestTaskId] = useState("");
+  const [physicalExecutionRequestReceipt, setPhysicalExecutionRequestReceipt] = useState<TaskCreationEnvelope | null>(null);
 
   const refreshStorage = () => {
     void getStorageOverview().then((res) => {
@@ -193,6 +196,15 @@ export default function StorageOverview() {
     void postStorageCacheTtlDryRun({ source: "storage_overview_button" }).then((res) => {
       setCacheTtlDryRunReceipt(res);
       if (res.ok) setCacheTtlDryRunTaskId(res.data.task_id);
+    });
+  const launchPhysicalExecutionRequest = () =>
+    void postStoragePhysicalExecutionRequest({
+      source: "storage_overview_button",
+      approved_by_user: true,
+      physical_execution_scope_hash: String(storagePhysicalExecutionRecipe.physical_execution_scope_hash ?? "")
+    }).then((res) => {
+      setPhysicalExecutionRequestReceipt(res);
+      if (res.ok) setPhysicalExecutionRequestTaskId(res.data.task_id);
     });
 
   useEffect(() => {
@@ -374,6 +386,12 @@ export default function StorageOverview() {
   const storagePhysicalExecutionRows =
     (overview.storage_physical_execution_recipe_rows as Array<Record<string, unknown>> | undefined) ??
     ((storageCatalog.storage_physical_execution_recipe_rows as Array<Record<string, unknown>> | undefined) ?? []);
+  const storagePhysicalExecutionRequest =
+    (overview.storage_physical_execution_request as Record<string, unknown> | undefined) ??
+    ((storageCatalog.storage_physical_execution_request as Record<string, unknown> | undefined) ?? {});
+  const storagePhysicalExecutionRequestRows =
+    (overview.storage_physical_execution_request_rows as Array<Record<string, unknown>> | undefined) ??
+    ((storageCatalog.storage_physical_execution_request_rows as Array<Record<string, unknown>> | undefined) ?? []);
   const storagePhysicalDurableEvidenceRecipe =
     (overview.storage_physical_durable_evidence_recipe as Record<string, unknown> | undefined) ??
     ((storageCatalog.storage_physical_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {});
@@ -442,6 +460,7 @@ export default function StorageOverview() {
           { label: "activation blockers", value: storagePhysicalMigrationActivationReceipt.blocked_activation_count ?? 0, tone: Number(storagePhysicalMigrationActivationReceipt.blocked_activation_count ?? 0) > 0 ? "warn" : "good" },
           { label: "storage execution", value: String(storagePhysicalExecutionRecipe.status ?? overview.storage_physical_execution_recipe_status ?? "missing"), tone: storagePhysicalExecutionRecipe.local_recipe_ready === true ? "good" : "warn" },
           { label: "execution phases", value: overview.storage_physical_execution_pending_phase_count ?? storagePhysicalExecutionRecipe.pending_phase_count ?? storagePhysicalExecutionRows.length, tone: Number(overview.storage_physical_execution_pending_phase_count ?? storagePhysicalExecutionRecipe.pending_phase_count ?? storagePhysicalExecutionRows.length) > 0 ? "warn" : "good" },
+          { label: "execution request", value: String(storagePhysicalExecutionRequest.status ?? overview.storage_physical_execution_request_status ?? "missing"), tone: storagePhysicalExecutionRequest.local_execution_request_ready === true ? "good" : "warn" },
           { label: "storage durable", value: String(storagePhysicalDurableEvidenceRecipe.status ?? overview.storage_physical_durable_evidence_recipe_status ?? "missing"), tone: storagePhysicalDurableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
           { label: "durable blockers", value: overview.storage_physical_durable_evidence_production_blocker_count ?? storagePhysicalDurableEvidenceRecipe.production_blocker_count ?? storagePhysicalDurableEvidenceRows.length, tone: Number(overview.storage_physical_durable_evidence_production_blocker_count ?? storagePhysicalDurableEvidenceRecipe.production_blocker_count ?? storagePhysicalDurableEvidenceRows.length) > 0 ? "warn" : "good" },
           { label: "physical schema done", value: String(storagePhysicalMigrationActivationReceipt.physical_schema_validation_done ?? false), tone: storagePhysicalMigrationActivationReceipt.physical_schema_validation_done === true ? "good" : "warn" },
@@ -561,10 +580,30 @@ export default function StorageOverview() {
         <p>scope: {String(storagePhysicalExecutionRecipe.scope ?? "local_storage_physical_execution_recipe_no_write_no_provider")}</p>
         <p>local_recipe_ready / production_storage_complete: {String(storagePhysicalExecutionRecipe.local_recipe_ready ?? false)} / {String(storagePhysicalExecutionRecipe.production_storage_complete ?? false)}</p>
         <p>execution_done / physical_execution_done: {String(storagePhysicalExecutionRecipe.execution_done ?? false)} / {String(storagePhysicalExecutionRecipe.physical_execution_done ?? false)}</p>
+        <p>physical_execution_scope_hash: {String(storagePhysicalExecutionRecipe.physical_execution_scope_hash_short ?? "")}</p>
         <p>writes_parquet / writes_manifest / deletes_artifacts: {String(storagePhysicalExecutionRecipe.writes_parquet ?? false)} / {String(storagePhysicalExecutionRecipe.writes_manifest ?? false)} / {String(storagePhysicalExecutionRecipe.deletes_artifacts ?? false)}</p>
         <p>tushare / deepseek / github: {String(storagePhysicalExecutionRecipe.tushare_called ?? false)} / {String(storagePhysicalExecutionRecipe.deepseek_called ?? false)} / {String(storagePhysicalExecutionRecipe.github_called ?? false)}</p>
         <p>not_allowed_next_steps: {JSON.stringify(storagePhysicalExecutionRecipe.not_allowed_next_steps ?? ["treat_recipe_as_physical_execution_evidence", "write_parquet_from_get_storage_cache", "mark_production_storage_complete_from_preflight_or_dry_run"])}</p>
         <DataLineageTable rows={storagePhysicalExecutionRows} />
+      </PacketCard>
+
+      <PacketCard title="Storage physical execution request" subtitle="按钮门控生成本地 execution request ticket；只绑定 recipe scope hash，不写 Parquet、不删文件、不刷新 provider" status={String(storagePhysicalExecutionRequest.status ?? "missing")}>
+        <p>schema_version: {String(storagePhysicalExecutionRequest.schema_version ?? "command_center_3_storage_physical_execution_request.v1")}</p>
+        <p>scope: {String(storagePhysicalExecutionRequest.scope ?? "local_storage_physical_execution_request_no_write_no_delete_no_provider")}</p>
+        <p>local_execution_request_ready / production_storage_complete: {String(storagePhysicalExecutionRequest.local_execution_request_ready ?? false)} / {String(storagePhysicalExecutionRequest.production_storage_complete ?? false)}</p>
+        <p>ready_for_manual_physical_task_submission: {String(storagePhysicalExecutionRequest.ready_for_manual_physical_task_submission ?? false)}</p>
+        <p>scope_hash_bound: {String(storagePhysicalExecutionRequest.requested_scope_hash_matches_latest ?? false)} / {String(storagePhysicalExecutionRequest.physical_execution_scope_hash_short ?? "")}</p>
+        <p>target_storage_task_route: {String(storagePhysicalExecutionRequest.target_storage_task_route ?? "future POST /api/storage/physical-execution")}</p>
+        <p>physical_task_created / physical_task_executed: {String(storagePhysicalExecutionRequest.physical_task_created ?? false)} / {String(storagePhysicalExecutionRequest.physical_task_executed ?? false)}</p>
+        <p>writes_parquet / writes_manifest / deletes_artifacts: {String(storagePhysicalExecutionRequest.writes_parquet ?? false)} / {String(storagePhysicalExecutionRequest.writes_manifest ?? false)} / {String(storagePhysicalExecutionRequest.deletes_artifacts ?? false)}</p>
+        <p>tushare / deepseek / github: {String(storagePhysicalExecutionRequest.tushare_called ?? false)} / {String(storagePhysicalExecutionRequest.deepseek_called ?? false)} / {String(storagePhysicalExecutionRequest.github_called ?? false)}</p>
+        <p>not_allowed_next_steps: {JSON.stringify(storagePhysicalExecutionRequest.not_allowed_next_steps ?? ["treat_execution_request_as_physical_storage_execution", "write_parquet_from_execution_request", "mark_production_storage_complete_from_execution_request"])}</p>
+        <div className="actions">
+          <button disabled={!storagePhysicalExecutionRecipe.physical_execution_scope_hash} onClick={launchPhysicalExecutionRequest}>生成 physical execution request</button>
+        </div>
+        <TaskLaunchReceipt receipt={physicalExecutionRequestReceipt} />
+        <TaskStatusPanel taskId={physicalExecutionRequestTaskId} onSuccess={refreshStorage} />
+        <DataLineageTable rows={storagePhysicalExecutionRequestRows} />
       </PacketCard>
 
       <PacketCard title="Storage physical durable evidence recipe" subtitle="LTG-05 durable evidence 缺口清单；本地只读，不写 Parquet、不删文件、不调用 provider" status={String(storagePhysicalDurableEvidenceRecipe.status ?? "missing")}>
