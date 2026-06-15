@@ -20939,6 +20939,53 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(response["call_ledger"][0]["current_evidence_producer_coverage_blocker_count"], 1)
 
+    def test_data_health_canonicalizes_global_freshness_without_provider_acceptance(self):
+        self._with_parquet_root()
+        self._with_snapshot_cache(
+            {
+                "data_freshness": {
+                    "state": "today",
+                    "expected_trade_date": "2026-06-12",
+                    "last_updated": "2026-06-12T09:45:25",
+                },
+                "market_packet": {
+                    "data_status": "ready",
+                    "trade_date": "20260608",
+                },
+            }
+        )
+
+        response = self.client.get("/api/data-health/cache").json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        data_freshness = packet["data_freshness"]
+        current_evidence = packet["current_evidence_freshness_qa_contract"]
+        rows = {row["producer"]: row for row in packet["current_evidence_producer_coverage_rows"]}
+        self.assertEqual(data_freshness["freshness_state"], "fresh")
+        self.assertEqual(data_freshness["data_date"], "2026-06-12")
+        self.assertEqual(data_freshness["expected_trade_date"], "2026-06-12")
+        self.assertEqual(
+            data_freshness["canonical_context_source"],
+            "local_expected_date_gate_and_existing_data_freshness",
+        )
+        self.assertFalse(data_freshness["canonical_context_is_provider_acceptance"])
+        self.assertFalse(data_freshness["canonical_context_calls_provider"])
+        self.assertFalse(data_freshness["canonical_context_external_calls_triggered"])
+        self.assertTrue(data_freshness["canonical_context_does_not_modify_strategy_action"])
+        self.assertTrue(data_freshness["canonical_context_does_not_execute_trades"])
+        self.assertEqual(current_evidence["current_evidence_candidate_status"], "current_evidence_ready")
+        self.assertEqual(rows["global_data_freshness"]["status"], "passed_read_only_contract")
+        self.assertEqual(rows["market_context"]["status"], "blocked_expected_trade_date_missing")
+        self.assertEqual(rows["market_context"]["data_date"], "2026-06-08")
+        self.assertIn("expected_trade_date", rows["market_context"]["missing_fields"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+
     def test_data_health_decision_surface_audit_exposes_research_only_surface_blockers(self):
         self._with_parquet_root()
         self._with_snapshot_cache(

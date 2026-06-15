@@ -441,8 +441,8 @@ def _current_evidence_freshness_qa_contract(
     trade_cal_physical: Mapping[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     state = _safe_text(
-        data_freshness.get("state")
-        or data_freshness.get("freshness_state")
+        data_freshness.get("freshness_state")
+        or data_freshness.get("state")
         or data_freshness.get("status")
         or "unknown",
         limit=80,
@@ -461,7 +461,7 @@ def _current_evidence_freshness_qa_contract(
         "trade_date",
         "as_of_date",
     )
-    full_fresh_states = {"fresh"}
+    full_fresh_states = {"fresh", "today"}
     grace_states = {"provider_delay_grace"}
     research_only_states = {"stale", "expired", "historical", "unknown", "missing", "future_unavailable"}
     date_matches_expected = bool(expected_trade_date and data_date and expected_trade_date == data_date)
@@ -615,6 +615,68 @@ def _current_evidence_freshness_qa_contract(
 
 
 BAD_CURRENT_EVIDENCE_STATES = {"stale", "expired", "historical", "unknown", "missing", "future_unavailable", "stale_data"}
+
+
+def _canonical_data_freshness_context(
+    data_freshness: Mapping[str, Any],
+    *,
+    allow_expected_date_fallback: bool = True,
+    allow_timestamp_as_data_date: bool = True,
+) -> dict[str, Any]:
+    item = dict(data_freshness)
+    if not item:
+        return {}
+
+    expected_trade_date = _date_text_from_mapping(
+        item,
+        "expected_trade_date",
+        "expected_data_date",
+        "expected_date",
+    )
+    if not expected_trade_date and allow_expected_date_fallback:
+        from command_center_factor_research import _expected_data_date
+
+        gate_context = _expected_data_date(_now_iso())
+        expected_trade_date = _safe_text(gate_context.get("expected_data_date"), limit=40)
+    data_date_keys = [
+        "data_date",
+        "latest_data_date",
+        "latest_trade_date",
+        "trade_date",
+        "as_of_date",
+    ]
+    if allow_timestamp_as_data_date:
+        data_date_keys.extend(["last_updated", "updated_at", "local_fetched_at"])
+    data_date = _date_text_from_mapping(item, *data_date_keys)
+    raw_state = _safe_text(
+        item.get("state")
+        or item.get("freshness_state")
+        or item.get("freshness_status")
+        or item.get("data_status")
+        or item.get("status")
+        or "",
+        limit=80,
+    ).lower()
+    canonical_state = _safe_text(item.get("freshness_state") or "", limit=80).lower()
+    if raw_state == "today" and expected_trade_date and data_date and expected_trade_date == data_date:
+        canonical_state = "fresh"
+    elif not canonical_state and raw_state:
+        canonical_state = raw_state
+    if expected_trade_date:
+        item.setdefault("expected_trade_date", expected_trade_date)
+        item.setdefault("expected_data_date", expected_trade_date)
+    if data_date:
+        item.setdefault("data_date", data_date)
+        item.setdefault("latest_data_date", data_date)
+    if canonical_state:
+        item["freshness_state"] = canonical_state
+    item["canonical_context_source"] = "local_expected_date_gate_and_existing_data_freshness"
+    item["canonical_context_is_provider_acceptance"] = False
+    item["canonical_context_calls_provider"] = False
+    item["canonical_context_external_calls_triggered"] = False
+    item["canonical_context_does_not_modify_strategy_action"] = True
+    item["canonical_context_does_not_execute_trades"] = True
+    return item
 
 
 def _mapping_list(value: Any) -> list[dict[str, Any]]:
@@ -814,6 +876,7 @@ CURRENT_EVIDENCE_PRODUCER_SPECS: tuple[dict[str, Any], ...] = (
             ("command_center_3_candidate_radar_cache", "freshness_state"),
             ("candidate_radar_packet", "freshness_state"),
             ("radar_packet", "freshness_state"),
+            ("radar_packet",),
         ),
         "required": False,
         "detail": "Candidate radar scans must carry freshness_state so radar candidates remain research-only when inputs are stale.",
@@ -832,8 +895,10 @@ CURRENT_EVIDENCE_PRODUCER_SPECS: tuple[dict[str, Any], ...] = (
         "producer": "a_share_evidence_radar",
         "path_options": (
             ("command_center_evidence_radar_packet", "data_freshness"),
+            ("command_center_evidence_radar_packet",),
             ("a_share_evidence_packet", "data_freshness"),
             ("a_share_fact_lineage_summary", "data_freshness"),
+            ("a_share_fact_lineage_summary",),
         ),
         "required": False,
         "detail": "Evidence radar and fact-lineage summaries need expected-date context when promoted to current evidence.",
@@ -842,6 +907,7 @@ CURRENT_EVIDENCE_PRODUCER_SPECS: tuple[dict[str, Any], ...] = (
         "producer": "market_context",
         "path_options": (
             ("market_packet", "data_freshness"),
+            ("market_packet",),
             ("command_center_market_context_packet", "data_freshness"),
             ("moneyflow_packet", "data_freshness"),
         ),
@@ -873,9 +939,10 @@ def _first_mapping_at_paths(root: Mapping[str, Any], paths: tuple[tuple[str, ...
 
 def _producer_freshness_status(mapping: Mapping[str, Any]) -> str:
     return _safe_text(
-        mapping.get("state")
-        or mapping.get("freshness_state")
+        mapping.get("freshness_state")
+        or mapping.get("state")
         or mapping.get("freshness_status")
+        or mapping.get("data_status")
         or mapping.get("status")
         or "",
         limit=80,
@@ -885,6 +952,12 @@ def _producer_freshness_status(mapping: Mapping[str, Any]) -> str:
 def _producer_coverage_row(spec: Mapping[str, Any], snapshot: Mapping[str, Any]) -> dict[str, Any]:
     path_options = tuple(tuple(str(part) for part in path) for path in spec.get("path_options") or ())
     mapping, observed_path, mapping_observed = _first_mapping_at_paths(snapshot, path_options)
+    if mapping:
+        mapping = _canonical_data_freshness_context(
+            mapping,
+            allow_expected_date_fallback=False,
+            allow_timestamp_as_data_date=False,
+        )
     required = bool(spec.get("required"))
     packet_observed = mapping_observed or (observed_path is not None) or any(
         path and isinstance(snapshot.get(path[0]), Mapping) for path in path_options
@@ -3547,6 +3620,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
     capability_matrix = _first_value(snapshot_map, "a_share_capability_matrix")
     health_ledger = _first_value(snapshot_map, "data_health_ledger", "command_center_data_health_ledger")
     data_freshness = _first_mapping(snapshot_map, "data_freshness")
+    data_freshness = _canonical_data_freshness_context(data_freshness)
+    if data_freshness:
+        snapshot_map = dict(snapshot_map)
+        snapshot_map["data_freshness"] = data_freshness
     data_coverage = _first_mapping(snapshot_map, "data_coverage")
     data_gap_report = _first_value(snapshot_map, "data_gap_report")
     home_issue_brief = _first_value(snapshot_map, "home_data_issue_brief")
