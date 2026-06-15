@@ -641,6 +641,22 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertGreaterEqual(observed_stage_rows["LTG-13"]["row_count"], 10)
         self.assertGreaterEqual(observed_stage_rows["LTG-13"]["pending_stage_count"], 10)
         self.assertFalse(observed_stage_rows["LTG-13"]["production_radar_replacement_complete"])
+        self.assertTrue(observed_stage_rows["LTG-13"]["production_promotion_dry_run_visible"])
+        self.assertEqual(
+            observed_stage_rows["LTG-13"]["production_promotion_dry_run_status"],
+            "candidate_radar_production_promotion_dry_run_missing",
+        )
+        self.assertEqual(
+            observed_stage_rows["LTG-13"]["production_promotion_dry_run_route"],
+            "POST /api/candidate-radar/production-promotion-dry-run",
+        )
+        self.assertFalse(observed_stage_rows["LTG-13"]["production_promotion_dry_run_explicit_task_done"])
+        self.assertFalse(observed_stage_rows["LTG-13"]["production_promotion_dry_run_ready_for_local_review"])
+        self.assertGreaterEqual(
+            observed_stage_rows["LTG-13"]["production_promotion_dry_run_production_blocker_count"],
+            6,
+        )
+        self.assertFalse(observed_stage_rows["LTG-13"]["production_promotion_dry_run_can_close_goal"])
         self.assertFalse(observed_stage_rows["LTG-13"]["external_calls_triggered"])
         self.assertFalse(observed_stage_rows["LTG-13"]["tushare_called"])
         self.assertFalse(observed_stage_rows["LTG-13"]["deepseek_called"])
@@ -799,6 +815,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertGreaterEqual(migration_goals["LTG-13"]["observed_stage_scope_pending_count"], 10)
         self.assertFalse(migration_goals["LTG-13"]["observed_stage_scope_can_close_goal"])
+        self.assertEqual(
+            migration_goals["LTG-13"]["observed_production_promotion_dry_run_status"],
+            "candidate_radar_production_promotion_dry_run_missing",
+        )
+        self.assertTrue(migration_goals["LTG-13"]["observed_production_promotion_dry_run_visible"])
+        self.assertFalse(
+            migration_goals["LTG-13"]["observed_production_promotion_dry_run_ready_for_local_review"]
+        )
+        self.assertGreaterEqual(
+            migration_goals["LTG-13"]["observed_production_promotion_dry_run_production_blocker_count"],
+            6,
+        )
+        self.assertFalse(migration_goals["LTG-13"]["observed_production_promotion_dry_run_can_close_goal"])
         self.assertEqual(
             migration_goals["LTG-14"]["observed_stage_scope_manifest_status"],
             "observed_in_motion_viewport_static_contract",

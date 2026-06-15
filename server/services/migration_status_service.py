@@ -990,6 +990,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         stage_rows = stage_rows if isinstance(stage_rows, list) else []
         counts = candidate_packet.get("counts")
         counts = counts if isinstance(counts, dict) else {}
+        promotion_dry_run = candidate_packet.get("candidate_radar_production_promotion_dry_run_receipt")
+        promotion_dry_run = promotion_dry_run if isinstance(promotion_dry_run, dict) else {}
         manifest_visible = bool(manifest)
         row_count = int(manifest.get("row_count") or len(stage_rows) or 0)
         pending_count = int(
@@ -1023,6 +1025,23 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "worker_backed_execution_done": manifest.get("worker_backed_execution_done") is True,
                 "browser_visual_delta_qa_done": manifest.get("browser_visual_delta_qa_done") is True,
                 "durable_ci_evidence_complete": manifest.get("durable_ci_evidence_complete") is True,
+                "production_promotion_dry_run_visible": bool(promotion_dry_run),
+                "production_promotion_dry_run_status": str(promotion_dry_run.get("status") or "missing"),
+                "production_promotion_dry_run_route": str(
+                    promotion_dry_run.get("route") or "POST /api/candidate-radar/production-promotion-dry-run"
+                ),
+                "production_promotion_dry_run_explicit_task_done": (
+                    promotion_dry_run.get("explicit_promotion_dry_run_task_done") is True
+                ),
+                "production_promotion_dry_run_ready_for_local_review": (
+                    promotion_dry_run.get("ready_for_local_promotion_review") is True
+                ),
+                "production_promotion_dry_run_production_blocker_count": int(
+                    promotion_dry_run.get("production_blocker_count")
+                    or counts.get("candidate_radar_production_promotion_dry_run_production_blocker_count")
+                    or 0
+                ),
+                "production_promotion_dry_run_can_close_goal": False,
                 "external_calls_triggered": False,
                 "tushare_called": False,
                 "deepseek_called": False,
@@ -1049,6 +1068,13 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "production_blocker_count": 0,
                 "production_radar_replacement_complete": False,
                 "legacy_retirement_ready": False,
+                "production_promotion_dry_run_visible": False,
+                "production_promotion_dry_run_status": "observation_failed",
+                "production_promotion_dry_run_route": "POST /api/candidate-radar/production-promotion-dry-run",
+                "production_promotion_dry_run_explicit_task_done": False,
+                "production_promotion_dry_run_ready_for_local_review": False,
+                "production_promotion_dry_run_production_blocker_count": 0,
+                "production_promotion_dry_run_can_close_goal": False,
                 "external_calls_triggered": False,
                 "tushare_called": False,
                 "deepseek_called": False,
@@ -1705,6 +1731,20 @@ def _merge_ltg_stage_scope_observations(
             item["observed_stage_scope_pending_count"] = observed.get("pending_stage_count")
             item["observed_stage_scope_local_evidence_count"] = observed.get("local_evidence_stage_count")
             item["observed_stage_scope_can_close_goal"] = False
+            if str(item.get("id") or "") == "LTG-13":
+                item["observed_production_promotion_dry_run_status"] = observed.get(
+                    "production_promotion_dry_run_status"
+                )
+                item["observed_production_promotion_dry_run_visible"] = observed.get(
+                    "production_promotion_dry_run_visible"
+                )
+                item["observed_production_promotion_dry_run_ready_for_local_review"] = observed.get(
+                    "production_promotion_dry_run_ready_for_local_review"
+                )
+                item["observed_production_promotion_dry_run_production_blocker_count"] = observed.get(
+                    "production_promotion_dry_run_production_blocker_count"
+                )
+                item["observed_production_promotion_dry_run_can_close_goal"] = False
         merged.append(item)
     return merged
 
