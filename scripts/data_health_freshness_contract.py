@@ -39,6 +39,7 @@ CONTRACT_KEYS = [
     "latest_trade_cal_provider_acceptance_dry_run",
     "trade_cal_provider_acceptance_next_execution_recipe",
     "latest_trade_cal_provider_acceptance_execution_request",
+    "latest_trade_cal_provider_acceptance_promotion_review",
     "latest_producer_cache_refresh_execution_request",
     "latest_producer_cache_refresh",
     "latest_tushare_provider_target_sample_execution_request",
@@ -256,6 +257,15 @@ def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
                 }
             )
             latest_after_execution_request_cache = data_health_service.read_data_health_timeline_cache()
+            promotion_review = data_health_service.run_trade_cal_provider_acceptance_promotion_review(
+                {
+                    "approved_by_user": True,
+                    "requested_by": "contract",
+                    "source": "data_health_freshness_contract",
+                    "token": "SHOULD_DROP",
+                }
+            )
+            latest_after_promotion_review_cache = data_health_service.read_data_health_timeline_cache()
             execution_request_mismatch = data_health_service.run_trade_cal_provider_acceptance_execution_request(
                 {
                     "approved_by_user": True,
@@ -392,6 +402,8 @@ def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
                 "latest_after_ready_cache": latest_after_ready_cache,
                 "execution_request": execution_request,
                 "latest_after_execution_request_cache": latest_after_execution_request_cache,
+                "promotion_review": promotion_review,
+                "latest_after_promotion_review_cache": latest_after_promotion_review_cache,
                 "execution_request_mismatch": execution_request_mismatch,
                 "target_sample_execution_request": target_sample_execution_request,
                 "latest_after_target_sample_execution_request_cache": (
@@ -463,6 +475,27 @@ def build_contract() -> dict[str, Any]:
     )
     latest_after_execution_request_counts = _get(latest_after_execution_request_cache, "counts")
     latest_after_execution_request_policy = _get(latest_after_execution_request_cache, "policy")
+    promotion_review = _as_dict(dry_run_cases.get("promotion_review"))
+    promotion_review_payload = _as_dict(promotion_review.get("payload_safe"))
+    promotion_review_receipt = _as_dict(
+        promotion_review_payload.get("trade_cal_provider_acceptance_promotion_review_receipt")
+    )
+    promotion_review_rows = {
+        str(row.get("phase") or ""): row
+        for row in _as_list(promotion_review_payload.get("trade_cal_provider_acceptance_promotion_review_rows"))
+        if isinstance(row, dict)
+    }
+    promotion_review_ledger = [_as_dict(row) for row in _as_list(promotion_review.get("call_ledger"))]
+    latest_after_promotion_review_cache = _as_dict(dry_run_cases.get("latest_after_promotion_review_cache"))
+    latest_after_promotion_review = _get(
+        latest_after_promotion_review_cache,
+        "latest_trade_cal_provider_acceptance_promotion_review",
+    )
+    latest_after_promotion_review_rows = _as_list(
+        latest_after_promotion_review_cache.get("latest_trade_cal_provider_acceptance_promotion_review_rows")
+    )
+    latest_after_promotion_review_counts = _get(latest_after_promotion_review_cache, "counts")
+    latest_after_promotion_review_policy = _get(latest_after_promotion_review_cache, "policy")
     target_sample_execution_request_payload = _as_dict(target_sample_execution_request.get("payload_safe"))
     target_sample_execution_request_receipt = _as_dict(
         target_sample_execution_request_payload.get("provider_target_sample_execution_request_receipt")
@@ -522,6 +555,8 @@ def build_contract() -> dict[str, Any]:
             "latest_after_ready_cache": latest_after_ready_cache,
             "execution_request": execution_request,
             "latest_after_execution_request_cache": latest_after_execution_request_cache,
+            "promotion_review": dry_run_cases.get("promotion_review"),
+            "latest_after_promotion_review_cache": dry_run_cases.get("latest_after_promotion_review_cache"),
             "execution_request_mismatch": execution_request_mismatch,
             "target_sample_execution_request": target_sample_execution_request,
             "latest_after_target_sample_execution_request_cache": (
@@ -1168,6 +1203,130 @@ def build_contract() -> dict[str, Any]:
             and "SHOULD_DROP" not in dry_run_serialized
             and "TUSHARE_TOKEN" not in dry_run_serialized,
             "GET Data Health cache may replay the latest local execution request metadata, but it must not create a task, call providers, leak credentials, or claim provider-backed acceptance.",
+        ),
+        _row(
+            "trade_cal_promotion_review_records_blockers_without_provider_call",
+            promotion_review.get("status") == "success"
+            and promotion_review.get("task_type") == "run_trade_cal_provider_acceptance_promotion_review"
+            and promotion_review.get("current_step")
+            == "trade_cal_promotion_review_recorded_blockers_visible_no_provider_call"
+            and promotion_review_receipt.get("schema_version")
+            == "data_health_trade_cal_provider_acceptance_promotion_review.v1"
+            and promotion_review_receipt.get("route")
+            == "POST /api/data-health/trade-cal-provider-acceptance-promotion-review"
+            and promotion_review_receipt.get("status")
+            == "trade_cal_provider_acceptance_promotion_review_recorded_blockers_visible"
+            and promotion_review_receipt.get("user_confirmed") is True
+            and promotion_review_receipt.get("promotion_ready_from_audit") is False
+            and promotion_review_receipt.get("promotion_review_ready_for_release") is False
+            and promotion_review_receipt.get("ready_for_production_freshness_release_review") is False
+            and promotion_review_receipt.get("latest_execution_request_found") is True
+            and promotion_review_receipt.get("latest_execution_request_task_id") == execution_request.get("task_id")
+            and promotion_review_receipt.get("latest_execution_request_status") == execution_request_receipt.get("status")
+            and promotion_review_receipt.get("creates_provider_task") is False
+            and promotion_review_receipt.get("provider_task_executed_by_review") is False
+            and promotion_review_receipt.get("provider_execution_implemented") is False
+            and promotion_review_receipt.get("provider_backed_long_window_acceptance_done") is False
+            and promotion_review_receipt.get("production_freshness_gate_complete") is False
+            and "create provider task from promotion review"
+            in promotion_review_receipt.get("not_allowed_next_steps", [])
+            and "treat promotion review as production freshness completion"
+            in promotion_review_receipt.get("not_allowed_next_steps", [])
+            and promotion_review_rows.get("promotion_audit_visible", {}).get("status") == "passed_audit_visible"
+            and promotion_review_rows.get("explicit_user_confirmation_recorded", {}).get("status")
+            == "passed_user_confirmed"
+            and promotion_review_rows.get("latest_execution_request_lineage_visible", {}).get("status")
+            == "passed_execution_request_visible"
+            and promotion_review_rows.get("prior_provider_evidence_visible", {}).get("status")
+            == "blocked_missing_provider_call_evidence"
+            and promotion_review_ledger
+            and promotion_review_ledger[0].get("api")
+            == "local_trade_cal_provider_acceptance_promotion_review"
+            and promotion_review_ledger[0].get("external") is False
+            and _flag_false(
+                promotion_review,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and promotion_review.get("does_not_execute_trades") is True
+            and promotion_review.get("does_not_modify_strategy_action") is True
+            and fake_token not in dry_run_serialized
+            and "SHOULD_DROP" not in dry_run_serialized
+            and "TUSHARE_TOKEN" not in dry_run_serialized,
+            "The promotion review may record current blockers after an execution-request ticket, but it must stay local, create no provider task, and keep production freshness incomplete.",
+        ),
+        _row(
+            "latest_trade_cal_promotion_review_cache_lookup_is_local_read_only",
+            latest_after_promotion_review_cache.get("mode") == "cache_only"
+            and latest_after_promotion_review_cache.get("read_only") is True
+            and latest_after_promotion_review.get("schema_version")
+            == "data_health_latest_trade_cal_provider_acceptance_promotion_review.v1"
+            and latest_after_promotion_review.get("status")
+            == "latest_trade_cal_provider_acceptance_promotion_review_visible"
+            and latest_after_promotion_review.get("scope") == "local_task_status_lookup_no_provider_execution"
+            and latest_after_promotion_review.get("latest_task_found") is True
+            and latest_after_promotion_review.get("receipt_visible") is True
+            and latest_after_promotion_review.get("latest_task_id") == promotion_review.get("task_id")
+            and latest_after_promotion_review.get("promotion_review_status")
+            == promotion_review_receipt.get("status")
+            and latest_after_promotion_review.get("promotion_review_ready_for_release") is False
+            and latest_after_promotion_review.get("ready_for_production_freshness_release_review") is False
+            and latest_after_promotion_review.get("latest_execution_request_task_id") == execution_request.get("task_id")
+            and latest_after_promotion_review.get("creates_provider_task") is False
+            and latest_after_promotion_review.get("provider_task_executed_by_review") is False
+            and latest_after_promotion_review.get("provider_execution_implemented") is False
+            and latest_after_promotion_review.get("provider_backed_long_window_acceptance_done") is False
+            and latest_after_promotion_review.get("production_freshness_gate_complete") is False
+            and latest_after_promotion_review.get("cache_get_creates_task") is False
+            and latest_after_promotion_review.get("cache_get_external_calls") is False
+            and _flag_false(
+                latest_after_promotion_review,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and int(
+                latest_after_promotion_review_counts.get(
+                    "latest_trade_cal_provider_acceptance_promotion_review_found"
+                )
+                or 0
+            )
+            == 1
+            and int(
+                latest_after_promotion_review_counts.get(
+                    "latest_trade_cal_provider_acceptance_promotion_review_row_count"
+                )
+                or 0
+            )
+            == len(latest_after_promotion_review_rows)
+            and latest_after_promotion_review_policy.get(
+                "latest_trade_cal_provider_acceptance_promotion_review_lookup_is_local"
+            )
+            is True
+            and latest_after_promotion_review_policy.get(
+                "latest_trade_cal_provider_acceptance_promotion_review_lookup_creates_task"
+            )
+            is False
+            and latest_after_promotion_review_policy.get(
+                "latest_trade_cal_provider_acceptance_promotion_review_lookup_calls_provider"
+            )
+            is False
+            and latest_after_promotion_review_policy.get(
+                "latest_trade_cal_provider_acceptance_promotion_review_is_not_production_completion"
+            )
+            is True
+            and latest_after_promotion_review_policy.get(
+                "latest_trade_cal_provider_acceptance_promotion_review_creates_provider_task"
+            )
+            is False
+            and fake_token not in dry_run_serialized
+            and "SHOULD_DROP" not in dry_run_serialized
+            and "TUSHARE_TOKEN" not in dry_run_serialized,
+            "GET Data Health cache may replay the latest local promotion-review metadata, but it must not create a task, call providers, leak credentials, or claim production freshness completion.",
         ),
         _row(
             "tushare_target_sample_execution_request_binds_scope_without_provider_call",

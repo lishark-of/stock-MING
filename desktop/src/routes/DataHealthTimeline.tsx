@@ -5,6 +5,7 @@ import {
   postProducerCacheRefreshExecutionRequest,
   postTradeCalProviderAcceptanceDryRun,
   postTradeCalProviderAcceptanceExecutionRequest,
+  postTradeCalProviderAcceptancePromotionReview,
   type TaskCreationEnvelope
 } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
@@ -30,6 +31,8 @@ export default function DataHealthTimeline() {
   const [tradeCalDryRunError, setTradeCalDryRunError] = useState("");
   const [tradeCalExecutionRequestReceipt, setTradeCalExecutionRequestReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [tradeCalExecutionRequestError, setTradeCalExecutionRequestError] = useState("");
+  const [tradeCalPromotionReviewReceipt, setTradeCalPromotionReviewReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [tradeCalPromotionReviewError, setTradeCalPromotionReviewError] = useState("");
   const [producerCacheRefreshRequestReceipt, setProducerCacheRefreshRequestReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [producerCacheRefreshRequestError, setProducerCacheRefreshRequestError] = useState("");
   const [producerCacheRefreshReceipt, setProducerCacheRefreshReceipt] = useState<TaskCreationEnvelope | null>(null);
@@ -89,6 +92,24 @@ export default function DataHealthTimeline() {
     });
   }
 
+  function launchTradeCalPromotionReview() {
+    setTradeCalPromotionReviewError("");
+    void postTradeCalProviderAcceptancePromotionReview({
+      approved_by_user: true,
+      requested_by: "command_center_3_data_health",
+      source: "data_health_page",
+      promotion_audit_status: tradeCalPromotionAudit.status,
+      latest_execution_request_task_id: tradeCalExecutionRequest.latest_task_id
+    }).then((res) => {
+      setTradeCalPromotionReviewReceipt(res);
+      if (!res.ok) {
+        setTradeCalPromotionReviewError(String(res.error ?? "trade_cal_provider_acceptance_promotion_review_failed"));
+      }
+    }).catch((err: unknown) => {
+      setTradeCalPromotionReviewError(err instanceof Error ? err.message : String(err));
+    });
+  }
+
   function launchProducerCacheRefreshExecutionRequest() {
     const scopeHash = String(producerCacheRefreshReadiness.readiness_scope_hash_short ?? "");
     setProducerCacheRefreshRequestError("");
@@ -142,6 +163,7 @@ export default function DataHealthTimeline() {
   const latestTradeCalDryRun = (cache.latest_trade_cal_provider_acceptance_dry_run as Record<string, unknown> | undefined) ?? {};
   const tradeCalNextExecutionRecipe = (cache.trade_cal_provider_acceptance_next_execution_recipe as Record<string, unknown> | undefined) ?? {};
   const latestTradeCalExecutionRequest = (cache.latest_trade_cal_provider_acceptance_execution_request as Record<string, unknown> | undefined) ?? {};
+  const latestTradeCalPromotionReview = (cache.latest_trade_cal_provider_acceptance_promotion_review as Record<string, unknown> | undefined) ?? {};
   const latestTushareTargetSampleExecutionRequest = (cache.latest_tushare_provider_target_sample_execution_request as Record<string, unknown> | undefined) ?? {};
   const freshnessDurableEvidenceRecipe = (cache.freshness_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
   const freshnessDurableEvidenceRows = rows(cache.freshness_durable_evidence_rows);
@@ -173,6 +195,11 @@ export default function DataHealthTimeline() {
   const postTradeCalExecutionRequestReceipt = tradeCalExecutionRequestPayload.trade_cal_provider_acceptance_execution_request_receipt as Record<string, unknown> | undefined;
   const tradeCalExecutionRequest = postTradeCalExecutionRequestReceipt ?? latestTradeCalExecutionRequestReceipt ?? latestTradeCalExecutionRequest;
   const tradeCalExecutionRequestRows = rows(tradeCalExecutionRequestPayload.trade_cal_provider_acceptance_execution_request_rows ?? cache.latest_trade_cal_provider_acceptance_execution_request_rows);
+  const latestTradeCalPromotionReviewReceipt = latestTradeCalPromotionReview.receipt as Record<string, unknown> | undefined;
+  const tradeCalPromotionReviewPayload = (tradeCalPromotionReviewReceipt?.data?.task?.payload_safe as Record<string, unknown> | undefined) ?? {};
+  const postTradeCalPromotionReviewReceipt = tradeCalPromotionReviewPayload.trade_cal_provider_acceptance_promotion_review_receipt as Record<string, unknown> | undefined;
+  const tradeCalPromotionReview = postTradeCalPromotionReviewReceipt ?? latestTradeCalPromotionReviewReceipt ?? latestTradeCalPromotionReview;
+  const tradeCalPromotionReviewRows = rows(tradeCalPromotionReviewPayload.trade_cal_provider_acceptance_promotion_review_rows ?? cache.latest_trade_cal_provider_acceptance_promotion_review_rows);
   const latestTushareTargetSampleExecutionRequestReceipt = latestTushareTargetSampleExecutionRequest.receipt as Record<string, unknown> | undefined;
   const tushareTargetSampleExecutionRequest = latestTushareTargetSampleExecutionRequestReceipt ?? latestTushareTargetSampleExecutionRequest;
   const tushareTargetSampleExecutionRequestRows = rows(cache.latest_tushare_provider_target_sample_execution_request_rows);
@@ -219,6 +246,9 @@ export default function DataHealthTimeline() {
           { label: "配方 blockers", value: counts.trade_cal_provider_acceptance_next_execution_blocker_count as number | undefined, tone: Number(counts.trade_cal_provider_acceptance_next_execution_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "执行请求", value: latestTradeCalExecutionRequest.latest_task_found === true ? "可见" : "未运行", tone: latestTradeCalExecutionRequest.latest_task_found === true ? "good" : "neutral" },
           { label: "请求 blockers", value: counts.latest_trade_cal_provider_acceptance_execution_request_blocking_row_count as number | undefined, tone: Number(counts.latest_trade_cal_provider_acceptance_execution_request_blocking_row_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "promotion review", value: latestTradeCalPromotionReview.latest_task_found === true ? "可见" : "未运行", tone: latestTradeCalPromotionReview.latest_task_found === true ? "good" : "neutral" },
+          { label: "review blockers", value: counts.latest_trade_cal_provider_acceptance_promotion_review_blocking_row_count as number | undefined, tone: Number(counts.latest_trade_cal_provider_acceptance_promotion_review_blocking_row_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "release ready", value: tradeCalPromotionReview.promotion_review_ready_for_release === true ? "待发布审查" : "未就绪", tone: tradeCalPromotionReview.promotion_review_ready_for_release === true ? "good" : "neutral" },
           { label: "Tushare 样本请求", value: latestTushareTargetSampleExecutionRequest.latest_task_found === true ? "可见" : "未运行", tone: latestTushareTargetSampleExecutionRequest.latest_task_found === true ? "good" : "neutral" },
           { label: "样本请求 blockers", value: counts.latest_tushare_provider_target_sample_execution_request_blocking_row_count as number | undefined, tone: Number(counts.latest_tushare_provider_target_sample_execution_request_blocking_row_count ?? 0) > 0 ? "warn" : "good" },
           { label: "durable recipe", value: freshnessDurableEvidenceRecipe.status as string | undefined, tone: freshnessDurableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
@@ -392,6 +422,28 @@ export default function DataHealthTimeline() {
         <p>只有看到显式 provider call ledger、长窗口、schema、本地 artifact 交叉检查、freshness replay、失败模式和当前证据边界全部通过时，才允许把 trade_cal 验收从 pending 提升。</p>
         <DataLineageTable rows={objectRow(tradeCalPromotionAudit)} />
         <DataLineageTable rows={rows(cache.trade_cal_provider_acceptance_promotion_rows)} />
+      </PacketCard>
+
+      <PacketCard title="Trade_cal provider 提升 review 收据" subtitle="按钮生成本地 promotion review；不调用 Tushare、不创建 provider task、不证明生产完成" status={String(tradeCalPromotionReview.status ?? tradeCalPromotionReview.promotion_review_status ?? "not_run")}>
+        <div className="actions">
+          <button onClick={launchTradeCalPromotionReview}>生成 promotion review 收据</button>
+        </div>
+        <p>status: {String(tradeCalPromotionReview.status ?? tradeCalPromotionReview.promotion_review_status ?? "not_run")}</p>
+        <p>promotion_audit_status: {String(tradeCalPromotionReview.promotion_audit_status ?? "--")}</p>
+        <p>latest execution request: {String(tradeCalPromotionReview.latest_execution_request_task_id ?? "--")} / {String(tradeCalPromotionReview.latest_execution_request_status ?? "--")}</p>
+        <p>promotion_review_ready_for_release: {String(tradeCalPromotionReview.promotion_review_ready_for_release === true)}</p>
+        <p>ready_for_production_freshness_release_review: {String(tradeCalPromotionReview.ready_for_production_freshness_release_review === true)}</p>
+        <p>evidence_row_count / blocking_row_count: {String(tradeCalPromotionReview.evidence_row_count ?? 0)} / {String(tradeCalPromotionReview.blocking_row_count ?? 0)}</p>
+        <p>creates_provider_task / provider_execution_implemented: {String(tradeCalPromotionReview.creates_provider_task ?? false)} / {String(tradeCalPromotionReview.provider_execution_implemented ?? false)}</p>
+        <p>provider_backed_long_window_acceptance_done / production_freshness_gate_complete: {String(tradeCalPromotionReview.provider_backed_long_window_acceptance_done ?? false)} / {String(tradeCalPromotionReview.production_freshness_gate_complete ?? false)}</p>
+        <p>allowed_next_step: {String(tradeCalPromotionReview.allowed_next_step ?? "--")}</p>
+        <p>not_allowed_next_steps: {Array.isArray(tradeCalPromotionReview.not_allowed_next_steps) ? tradeCalPromotionReview.not_allowed_next_steps.join(" / ") : "GET cache provider refresh / React render provider refresh / create provider task from promotion review / treat promotion review as production freshness completion"}</p>
+        <p>GET cache 只读取 latest promotion review metadata；review 只保存本地审查收据，不调用 Tushare，不修改 action。</p>
+        {tradeCalPromotionReviewError ? <p className="risk-note">{tradeCalPromotionReviewError}</p> : null}
+        <TaskLaunchReceipt receipt={tradeCalPromotionReviewReceipt} />
+        <DataLineageTable rows={objectRow(tradeCalPromotionReview)} />
+        <DataLineageTable rows={tradeCalPromotionReviewRows} />
+        <JsonDetails title="latest trade_cal provider acceptance promotion review raw" data={latestTradeCalPromotionReview} />
       </PacketCard>
 
       <PacketCard title="Freshness 生产 blocker 审计" subtitle="freshness_production_blocker_audit；汇总 LTG-01 剩余阻断项，不调用 provider" status={String(freshnessProductionBlockerAudit.status ?? "freshness_production_blockers")}>

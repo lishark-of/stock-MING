@@ -30,6 +30,12 @@ def post_trade_cal_provider_acceptance_execution_request(payload: dict[str, Any]
     return task_envelope(task)
 
 
+@router.post("/trade-cal-provider-acceptance-promotion-review")
+def post_trade_cal_provider_acceptance_promotion_review(payload: dict[str, Any] | None = None) -> dict:
+    task = data_health_service.run_trade_cal_provider_acceptance_promotion_review(payload)
+    return task_envelope(task)
+
+
 @router.post("/producer-cache-refresh-execution-request")
 def post_producer_cache_refresh_execution_request(payload: dict[str, Any] | None = None) -> dict:
     task = data_health_service.run_producer_cache_refresh_execution_request(payload)
