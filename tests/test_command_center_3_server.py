@@ -256,8 +256,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(migration["long_term_goal_summary"]["closed_count"], 0)
         self.assertEqual(migration["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
-        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 10)
-        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_pending_count"], 89)
+        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 11)
+        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_pending_count"], 97)
         self.assertEqual(migration["long_term_goal_summary"]["goals_with_next_evidence_count"], 14)
         self.assertEqual(migration["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
@@ -269,7 +269,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(all(row["can_close_from_local_contracts"] is False for row in migration["long_term_goal_rows"]))
         self.assertIn("LTG-13", {row["id"] for row in migration["long_term_goal_rows"]})
         self.assertIn("LTG-14", {row["id"] for row in migration["long_term_goal_rows"]})
-        self.assertEqual(len(migration["ltg_stage_scope_observed_rows"]), 10)
+        self.assertEqual(len(migration["ltg_stage_scope_observed_rows"]), 11)
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
         self.assertEqual(
             observed_stage_rows["LTG-01"]["stage_scope_manifest"],
@@ -468,6 +468,37 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(observed_stage_rows["LTG-08"]["does_not_execute_trades"])
         self.assertTrue(observed_stage_rows["LTG-08"]["does_not_modify_operation_zones"])
         self.assertFalse(observed_stage_rows["LTG-08"]["can_close_from_observed_row"])
+        self.assertEqual(
+            observed_stage_rows["LTG-09"]["stage_scope_manifest"],
+            "tauri_production_package_stage_scope_manifest",
+        )
+        self.assertEqual(observed_stage_rows["LTG-09"]["status"], "observed_in_tauri_desktop_static_contract")
+        self.assertEqual(observed_stage_rows["LTG-09"]["row_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-09"]["pending_stage_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-09"]["local_evidence_stage_count"], 8)
+        self.assertFalse(observed_stage_rows["LTG-09"]["production_package_complete"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["tauri_build_executed"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["packaged_runtime_qa_done"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["tauri_package_durable_evidence_complete"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["release_binary_is_completion"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["app_bundle_detected"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["dmg_distribution_detected"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["backend_startup_runtime_validated"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["backend_offline_packaged_ux_verified"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["config_log_runtime_paths_validated"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["signing_notarization_done"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["tauri_runtime_started_by_contract"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["packaged_app_opened_by_contract"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["fastapi_started_by_contract"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["config_values_read_by_contract"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["log_files_written_by_contract"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["provider_model_task_dispatched_by_contract"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["external_calls_triggered"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["tushare_called"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["deepseek_called"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["github_called"])
+        self.assertTrue(observed_stage_rows["LTG-09"]["does_not_execute_trades"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["can_close_from_observed_row"])
         self.assertEqual(observed_stage_rows["LTG-13"]["stage_scope_manifest"], "candidate_radar_production_stage_scope_manifest")
         self.assertEqual(observed_stage_rows["LTG-13"]["status"], "observed_in_candidate_radar_cache")
         self.assertGreaterEqual(observed_stage_rows["LTG-13"]["row_count"], 10)
@@ -581,6 +612,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertGreaterEqual(migration_goals["LTG-08"]["observed_stage_scope_pending_count"], 8)
         self.assertFalse(migration_goals["LTG-08"]["observed_stage_scope_can_close_goal"])
+        self.assertEqual(migration_goals["LTG-09"]["stage_scope_manifest"], "tauri_production_package_stage_scope_manifest")
+        self.assertIn("production package stage-scope manifest", migration_goals["LTG-09"]["current_state"])
+        self.assertIn("tauri dev/build", migration_goals["LTG-09"]["next_evidence_required"])
+        self.assertIn("packaged runtime QA", migration_goals["LTG-09"]["next_evidence_required"])
+        self.assertFalse(migration_goals["LTG-09"]["production_complete"])
+        self.assertEqual(
+            migration_goals["LTG-09"]["observed_stage_scope_manifest_status"],
+            "observed_in_tauri_desktop_static_contract",
+        )
+        self.assertEqual(migration_goals["LTG-09"]["observed_stage_scope_pending_count"], 8)
+        self.assertFalse(migration_goals["LTG-09"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(
             migration_goals["LTG-13"]["observed_stage_scope_manifest_status"],
             "observed_in_candidate_radar_cache",
@@ -654,7 +696,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(any(row["github_called"] for row in linkage_rows.values()))
         self.assertTrue(all(row["does_not_execute_trades"] for row in linkage_rows.values()))
         self.assertEqual(migration["call_ledger"][0]["api"], "local_migration_status_cache")
-        self.assertEqual(migration["call_ledger"][0]["ltg_stage_scope_observed_row_count"], 10)
+        self.assertEqual(migration["call_ledger"][0]["ltg_stage_scope_observed_row_count"], 11)
         self.assertEqual(migration["call_ledger"][0]["tushare_deepseek_linkage_row_count"], 7)
         self.assertEqual(migration["call_ledger"][0]["tushare_deepseek_mode_layer_row_count"], 4)
         self.assertFalse(migration["call_ledger"][0]["external"])
@@ -16654,11 +16696,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration["data"]["long_term_goal_summary"]["strict_closeout"], "0/14")
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
-        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 10)
-        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 89)
+        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 11)
+        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 97)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
-        self.assertEqual(len(migration["data"]["ltg_stage_scope_observed_rows"]), 10)
+        self.assertEqual(len(migration["data"]["ltg_stage_scope_observed_rows"]), 11)
         self.assertTrue(all(row["production_complete"] is False for row in migration["data"]["long_term_goal_rows"]))
         self.assertTrue(all(row["has_stage_scope_manifest"] is True for row in migration["data"]["long_term_goal_rows"]))
         self.assertTrue(
@@ -16897,6 +16939,37 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(observed_stage_rows["LTG-08"]["does_not_modify_operation_zones"])
         self.assertFalse(observed_stage_rows["LTG-08"]["can_close_from_observed_row"])
         self.assertEqual(
+            observed_stage_rows["LTG-09"]["stage_scope_manifest"],
+            "tauri_production_package_stage_scope_manifest",
+        )
+        self.assertEqual(observed_stage_rows["LTG-09"]["status"], "observed_in_tauri_desktop_static_contract")
+        self.assertEqual(observed_stage_rows["LTG-09"]["row_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-09"]["pending_stage_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-09"]["local_evidence_stage_count"], 8)
+        self.assertFalse(observed_stage_rows["LTG-09"]["production_package_complete"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["tauri_build_executed"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["packaged_runtime_qa_done"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["tauri_package_durable_evidence_complete"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["release_binary_is_completion"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["app_bundle_detected"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["dmg_distribution_detected"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["backend_startup_runtime_validated"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["backend_offline_packaged_ux_verified"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["config_log_runtime_paths_validated"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["signing_notarization_done"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["tauri_runtime_started_by_contract"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["packaged_app_opened_by_contract"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["fastapi_started_by_contract"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["config_values_read_by_contract"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["log_files_written_by_contract"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["provider_model_task_dispatched_by_contract"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["external_calls_triggered"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["tushare_called"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["deepseek_called"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["github_called"])
+        self.assertTrue(observed_stage_rows["LTG-09"]["does_not_execute_trades"])
+        self.assertFalse(observed_stage_rows["LTG-09"]["can_close_from_observed_row"])
+        self.assertEqual(
             observed_stage_rows["LTG-13"]["stage_scope_manifest"],
             "candidate_radar_production_stage_scope_manifest",
         )
@@ -16980,6 +17053,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertGreaterEqual(migration_goals["LTG-08"]["observed_stage_scope_pending_count"], 8)
         self.assertFalse(migration_goals["LTG-08"]["observed_stage_scope_can_close_goal"])
+        self.assertEqual(migration_goals["LTG-09"]["stage_scope_manifest"], "tauri_production_package_stage_scope_manifest")
+        self.assertIn("production package stage-scope manifest", migration_goals["LTG-09"]["current_state"])
+        self.assertIn("tauri dev/build", migration_goals["LTG-09"]["next_evidence_required"])
+        self.assertIn("packaged runtime QA", migration_goals["LTG-09"]["next_evidence_required"])
+        self.assertFalse(migration_goals["LTG-09"]["production_complete"])
+        self.assertEqual(
+            migration_goals["LTG-09"]["observed_stage_scope_manifest_status"],
+            "observed_in_tauri_desktop_static_contract",
+        )
+        self.assertEqual(migration_goals["LTG-09"]["observed_stage_scope_pending_count"], 8)
+        self.assertFalse(migration_goals["LTG-09"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(
             migration_goals["LTG-13"]["observed_stage_scope_manifest_status"],
             "observed_in_candidate_radar_cache",
@@ -16992,7 +17076,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertGreaterEqual(migration_goals["LTG-14"]["observed_stage_scope_pending_count"], 10)
         self.assertFalse(migration_goals["LTG-14"]["observed_stage_scope_can_close_goal"])
-        self.assertEqual(migration["data"]["call_ledger"][0]["ltg_stage_scope_observed_row_count"], 10)
+        self.assertEqual(migration["data"]["call_ledger"][0]["ltg_stage_scope_observed_row_count"], 11)
         self.assertEqual(
             migration["data"]["tushare_deepseek_linkage_review"]["status"],
             "linkage_contract_visible_provider_model_execution_pending",

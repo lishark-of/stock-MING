@@ -104,9 +104,9 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "Tauri desktop production package",
         "completion_bucket": "productionization_required",
         "completion_estimate": "30%-40%",
-        "current_state": "desktop preflight, runtime contract, backend-offline UX source contract, package QA matrix, and blocker audit exist.",
-        "not_complete_because": "tauri build/package, packaged runtime QA, signing/notarization, and release evidence are pending.",
-        "next_step": "Run explicit Tauri dev/build and packaged runtime QA when desktop packaging is the active focus.",
+        "current_state": "desktop preflight, runtime contract, backend-offline UX source contract, package QA matrix, release manifest, readiness receipt, durable evidence recipe, blocker audit, and production package stage-scope manifest exist.",
+        "not_complete_because": "repeatable tauri dev/build evidence, .app/DMG package QA, packaged runtime QA, backend startup/runtime UX evidence, config/log runtime path validation, signing/notarization, and production release evidence are pending.",
+        "next_step": "Run explicit Tauri dev/build and packaged runtime QA only when desktop packaging is the active focus, then promote with durable evidence rows reviewed.",
         "production_complete": False,
     },
     {
@@ -1129,6 +1129,121 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "browser_visual_qa_done": False,
                 "browser_performance_trace_done": False,
                 "durable_ci_evidence_complete": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observation_failure_is_not_completion",
+            }
+        )
+    try:
+        from scripts import tauri_desktop_contract
+
+        tauri_contract = tauri_desktop_contract.build_contract()
+        if not isinstance(tauri_contract, dict):
+            tauri_contract = {}
+        observed = tauri_contract.get("observed")
+        observed = observed if isinstance(observed, dict) else {}
+        stage_rows = tauri_contract.get("production_package_stage_scope_rows")
+        stage_rows = stage_rows if isinstance(stage_rows, list) else []
+        row_count = int(observed.get("production_package_stage_scope_count") or len(stage_rows) or 0)
+        pending_count = int(
+            observed.get("production_package_stage_scope_pending_count")
+            or sum(
+                1
+                for row in stage_rows
+                if isinstance(row, dict) and row.get("production_package_complete") is False
+            )
+        )
+        local_evidence_count = sum(
+            1
+            for row in stage_rows
+            if isinstance(row, dict) and row.get("current_status") == "local_manifest_or_static_qa_only"
+        )
+        rows.append(
+            {
+                "id": "LTG-09",
+                "goal": "Tauri desktop production package",
+                "stage_scope_manifest": "tauri_production_package_stage_scope_manifest",
+                "status": "observed_in_tauri_desktop_static_contract"
+                if stage_rows
+                else "missing_from_tauri_desktop_static_contract",
+                "observed_source": "scripts/tauri_desktop_contract.build_contract local static contract",
+                "cache_status": str(tauri_contract.get("status") or "missing"),
+                "cache_mode": "local_static_contract",
+                "row_count": row_count,
+                "pending_stage_count": pending_count,
+                "local_evidence_stage_count": local_evidence_count,
+                "production_blocker_count": pending_count,
+                "production_package_complete": tauri_contract.get("production_package_complete") is True,
+                "tauri_build_executed": tauri_contract.get("tauri_build_executed") is True,
+                "packaged_runtime_qa_done": tauri_contract.get("packaged_runtime_qa_done") is True,
+                "tauri_package_durable_evidence_complete": tauri_contract.get(
+                    "tauri_package_durable_evidence_complete"
+                )
+                is True,
+                "tauri_runtime_started_by_contract": False,
+                "packaged_app_opened_by_contract": False,
+                "fastapi_started_by_contract": False,
+                "config_values_read_by_contract": False,
+                "log_files_written_by_contract": False,
+                "provider_model_task_dispatched_by_contract": False,
+                "release_binary_detected": any(
+                    isinstance(row, dict) and row.get("release_binary_detected") is True for row in stage_rows
+                ),
+                "release_binary_is_completion": False,
+                "app_bundle_detected": False,
+                "dmg_distribution_detected": False,
+                "backend_startup_runtime_validated": False,
+                "backend_offline_packaged_ux_verified": False,
+                "config_log_runtime_paths_validated": False,
+                "signing_notarization_done": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observed_local_static_tauri_stage_scope_not_production_completion",
+            }
+        )
+    except Exception:
+        rows.append(
+            {
+                "id": "LTG-09",
+                "goal": "Tauri desktop production package",
+                "stage_scope_manifest": "tauri_production_package_stage_scope_manifest",
+                "status": "local_observation_failed_safe_fallback",
+                "observed_source": "scripts/tauri_desktop_contract.build_contract local static contract",
+                "error_message_safe": "tauri_stage_scope_observation_failed",
+                "row_count": 0,
+                "pending_stage_count": 0,
+                "local_evidence_stage_count": 0,
+                "production_blocker_count": 0,
+                "production_package_complete": False,
+                "tauri_build_executed": False,
+                "packaged_runtime_qa_done": False,
+                "tauri_package_durable_evidence_complete": False,
+                "tauri_runtime_started_by_contract": False,
+                "packaged_app_opened_by_contract": False,
+                "fastapi_started_by_contract": False,
+                "config_values_read_by_contract": False,
+                "log_files_written_by_contract": False,
+                "provider_model_task_dispatched_by_contract": False,
+                "release_binary_detected": False,
+                "release_binary_is_completion": False,
+                "app_bundle_detected": False,
+                "dmg_distribution_detected": False,
+                "backend_startup_runtime_validated": False,
+                "backend_offline_packaged_ux_verified": False,
+                "config_log_runtime_paths_validated": False,
+                "signing_notarization_done": False,
                 "external_calls_triggered": False,
                 "tushare_called": False,
                 "deepseek_called": False,
