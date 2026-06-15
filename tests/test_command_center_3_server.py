@@ -8179,8 +8179,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("retry_repair_dry_run_is_local_and_production_blocked", script)
         self.assertIn("factor_deepseek_retry_repair_dry_run_contract.v1", script)
         self.assertIn("factor_deepseek_provider_benchmark_execution_recipe.v1", script)
+        self.assertIn("factor_deepseek_durable_evidence_recipe.v1", script)
         self.assertIn("production_activation_receipt_guides_next_safe_step", script)
         self.assertIn("provider_benchmark_execution_recipe_is_local_pending", script)
+        self.assertIn("deepseek_durable_evidence_recipe_is_local_pending", script)
         self.assertIn("deepseek_production_activation_receipt.v1", script)
         self.assertIn("deepseek_production_stage_scope_manifest", script)
         self.assertIn("deepseek_production_stage_scope_manifest_is_complete_and_pending", script)
@@ -8214,6 +8216,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["auto_after_task_production_ready"])
         self.assertTrue(payload["deepseek_production_activation_receipt_ready"])
         self.assertTrue(payload["provider_benchmark_execution_recipe_ready"])
+        self.assertTrue(payload["deepseek_durable_evidence_recipe_ready"])
+        self.assertEqual(
+            payload["deepseek_durable_evidence_recipe_status"],
+            "deepseek_durable_evidence_recipe_ready_production_pending",
+        )
         self.assertFalse(payload["production_deepseek_explanation_complete"])
         self.assertTrue(payload["sanitizer_only"])
         self.assertTrue(payload["cache_only"])
@@ -8257,6 +8264,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["benchmark_recipe_allowed_next_step"],
             "explicit_deepseek_provider_benchmark_task_with_user_approval",
         )
+        self.assertEqual(
+            payload["observed"]["durable_evidence_recipe_status"],
+            "deepseek_durable_evidence_recipe_ready_production_pending",
+        )
+        self.assertTrue(payload["observed"]["durable_evidence_recipe_ready"])
         self.assertEqual(payload["observed"]["task_backend"], "guarded_prompt_or_payload_sanitizer")
         self.assertTrue(payload["observed"]["task_button_gated"])
         required_production_stages = {
@@ -8295,6 +8307,62 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertTrue(row["does_not_override_numeric_values"])
             self.assertTrue(row["does_not_output_strategy_action"])
             self.assertFalse(row["contains_secret"])
+        required_durable_keys = [
+            "manual_default_off_governance_visible",
+            "sanitizer_whitelist_visible",
+            "json_stability_audit_visible",
+            "response_format_review_visible",
+            "retry_repair_dry_run_visible",
+            "production_activation_receipt_visible",
+            "provider_benchmark_execution_recipe_visible",
+            "provider_benchmark_report_required",
+            "provider_response_format_execution_required",
+            "bounded_retry_repair_execution_required",
+            "model_ledger_hash_dedupe_required",
+            "sanitizer_parse_failed_provider_review_required",
+            "token_budget_cost_evidence_required",
+            "auto_after_task_mode_gate_required",
+            "redaction_review_required",
+            "production_promotion_review_required",
+            "no_model_trade_action_secret_boundary",
+        ]
+        missing_durable_keys = [
+            "provider_benchmark_report_required",
+            "provider_response_format_execution_required",
+            "bounded_retry_repair_execution_required",
+            "model_ledger_hash_dedupe_required",
+            "sanitizer_parse_failed_provider_review_required",
+            "token_budget_cost_evidence_required",
+            "auto_after_task_mode_gate_required",
+            "redaction_review_required",
+            "production_promotion_review_required",
+        ]
+        self.assertEqual(payload["observed"]["durable_evidence_key_count"], len(required_durable_keys))
+        self.assertEqual(payload["observed"]["durable_evidence_keys"], required_durable_keys)
+        self.assertEqual(payload["observed"]["durable_evidence_missing_keys"], missing_durable_keys)
+        self.assertEqual(payload["deepseek_durable_evidence_blocker_count"], len(missing_durable_keys))
+        durable_rows = {row["evidence_key"]: row for row in payload["deepseek_durable_evidence_rows"]}
+        self.assertEqual(set(durable_rows), set(required_durable_keys))
+        self.assertEqual(durable_rows["manual_default_off_governance_visible"]["status"], "passed")
+        self.assertEqual(durable_rows["provider_benchmark_report_required"]["status"], "blocked")
+        self.assertEqual(durable_rows["provider_response_format_execution_required"]["status"], "blocked")
+        self.assertEqual(durable_rows["production_promotion_review_required"]["status"], "blocked")
+        self.assertFalse(durable_rows["manual_default_off_governance_visible"]["production_blocker"])
+        self.assertTrue(durable_rows["provider_benchmark_report_required"]["production_blocker"])
+        for row in durable_rows.values():
+            self.assertTrue(row["required_before_production"])
+            self.assertFalse(row["production_ready"])
+            self.assertEqual(row["model_call_status"], "not_called")
+            self.assertFalse(row["provider_model_called"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_override_numeric_values"])
+            self.assertTrue(row["does_not_output_strategy_action"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("cache_get_governance_is_manual_default_no_model_call", criteria)
         self.assertIn("sanitizer_whitelist_discards_action_numeric_fields", criteria)
@@ -8304,6 +8372,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("retry_repair_dry_run_is_local_and_production_blocked", criteria)
         self.assertIn("production_activation_receipt_guides_next_safe_step", criteria)
         self.assertIn("provider_benchmark_execution_recipe_is_local_pending", criteria)
+        self.assertIn("deepseek_durable_evidence_recipe_is_local_pending", criteria)
         self.assertIn("deepseek_production_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("local_builders_match_cache_governance_boundaries", criteria)
         self.assertIn("deepseek_task_is_button_gated_and_config_driven", criteria)
@@ -19921,6 +19990,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         activation_rows = {row["criterion"]: row for row in factor["data"]["deepseek_production_activation_rows"]}
         benchmark_recipe = factor["data"]["deepseek_provider_benchmark_execution_recipe"]
         benchmark_recipe_rows = {row["phase_key"]: row for row in factor["data"]["deepseek_provider_benchmark_execution_rows"]}
+        durable_recipe = factor["data"]["deepseek_durable_evidence_recipe"]
+        durable_rows = {row["evidence_key"]: row for row in factor["data"]["deepseek_durable_evidence_rows"]}
         self.assertFalse(factor["data"]["deepseek_called"])
         self.assertEqual(explanation["payload"]["summary"], "整理摘要")
         self.assertIn("price", explanation["ignored_keys"])
@@ -20079,6 +20150,99 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "local_deepseek_provider_benchmark_execution_recipe",
             {item.get("api") for item in factor["data"]["call_ledger"]},
         )
+        self.assertEqual(durable_recipe["schema_version"], "factor_deepseek_durable_evidence_recipe.v1")
+        self.assertEqual(durable_recipe["status"], "deepseek_durable_evidence_recipe_ready_production_pending")
+        self.assertEqual(durable_recipe["scope"], "local_deepseek_durable_evidence_recipe_no_model_call")
+        self.assertTrue(durable_recipe["local_recipe_ready"])
+        self.assertFalse(durable_recipe["durable_evidence_complete"])
+        self.assertFalse(durable_recipe["durable_promotion_ready"])
+        self.assertFalse(durable_recipe["provider_benchmark_done"])
+        self.assertFalse(durable_recipe["larger_benchmark_done"])
+        self.assertFalse(durable_recipe["provider_response_format_enforced"])
+        self.assertFalse(durable_recipe["response_format_enforced"])
+        self.assertFalse(durable_recipe["bounded_retry_repair_ready"])
+        self.assertFalse(durable_recipe["bounded_retry_repair_executed"])
+        self.assertFalse(durable_recipe["token_budget_cost_evidence_complete"])
+        self.assertFalse(durable_recipe["auto_after_task_production_ready"])
+        self.assertFalse(durable_recipe["production_deepseek_explanation_complete"])
+        self.assertFalse(durable_recipe["provider_model_called_by_recipe"])
+        self.assertFalse(durable_recipe["cache_get_external_calls"])
+        self.assertFalse(durable_recipe["external_calls_triggered"])
+        self.assertFalse(durable_recipe["tushare_called"])
+        self.assertFalse(durable_recipe["deepseek_called"])
+        self.assertFalse(durable_recipe["github_called"])
+        self.assertFalse(durable_recipe["contains_secret"])
+        self.assertTrue(durable_recipe["does_not_execute_trades"])
+        self.assertTrue(durable_recipe["does_not_modify_strategy_action"])
+        self.assertTrue(durable_recipe["does_not_override_numeric_values"])
+        self.assertTrue(durable_recipe["does_not_output_strategy_action"])
+        required_durable_keys = [
+            "manual_default_off_governance_visible",
+            "sanitizer_whitelist_visible",
+            "json_stability_audit_visible",
+            "response_format_review_visible",
+            "retry_repair_dry_run_visible",
+            "production_activation_receipt_visible",
+            "provider_benchmark_execution_recipe_visible",
+            "provider_benchmark_report_required",
+            "provider_response_format_execution_required",
+            "bounded_retry_repair_execution_required",
+            "model_ledger_hash_dedupe_required",
+            "sanitizer_parse_failed_provider_review_required",
+            "token_budget_cost_evidence_required",
+            "auto_after_task_mode_gate_required",
+            "redaction_review_required",
+            "production_promotion_review_required",
+            "no_model_trade_action_secret_boundary",
+        ]
+        missing_durable_keys = [
+            "provider_benchmark_report_required",
+            "provider_response_format_execution_required",
+            "bounded_retry_repair_execution_required",
+            "model_ledger_hash_dedupe_required",
+            "sanitizer_parse_failed_provider_review_required",
+            "token_budget_cost_evidence_required",
+            "auto_after_task_mode_gate_required",
+            "redaction_review_required",
+            "production_promotion_review_required",
+        ]
+        self.assertEqual(durable_recipe["evidence_keys"], required_durable_keys)
+        self.assertEqual(durable_recipe["missing_durable_evidence"], missing_durable_keys)
+        self.assertEqual(durable_recipe["evidence_key_count"], len(required_durable_keys))
+        self.assertEqual(durable_recipe["row_count"], len(required_durable_keys))
+        self.assertEqual(durable_recipe["production_blocker_count"], len(missing_durable_keys))
+        self.assertEqual(durable_recipe["durable_evidence_blocker_count"], len(missing_durable_keys))
+        self.assertIn("provider benchmark report with at least 40 samples", durable_recipe["required_evidence"])
+        self.assertIn("provider response_format/json_schema execution evidence", durable_recipe["required_evidence"])
+        self.assertIn("bounded retry/repair execution ledger", durable_recipe["required_evidence"])
+        self.assertIn("redacted model ledger with token usage and hashes", durable_recipe["required_evidence"])
+        self.assertIn("production promotion review", durable_recipe["required_evidence"])
+        self.assertIn("treat_durable_recipe_as_provider_benchmark", durable_recipe["not_allowed_next_steps"])
+        self.assertIn("call DeepSeek from GET cache", durable_recipe["not_allowed_next_steps"])
+        self.assertIn("call DeepSeek from React render", durable_recipe["not_allowed_next_steps"])
+        self.assertIn("durable recipe as production completion", durable_recipe["not_allowed_next_steps"])
+        self.assertEqual(set(durable_rows), set(required_durable_keys))
+        self.assertEqual(durable_rows["manual_default_off_governance_visible"]["status"], "passed")
+        self.assertEqual(durable_rows["provider_benchmark_report_required"]["status"], "blocked")
+        self.assertEqual(durable_rows["provider_response_format_execution_required"]["status"], "blocked")
+        self.assertEqual(durable_rows["production_promotion_review_required"]["status"], "blocked")
+        self.assertFalse(durable_rows["manual_default_off_governance_visible"]["production_blocker"])
+        self.assertTrue(durable_rows["provider_benchmark_report_required"]["production_blocker"])
+        for row in durable_rows.values():
+            self.assertTrue(row["required_before_production"])
+            self.assertFalse(row["production_ready"])
+            self.assertEqual(row["model_call_status"], "not_called")
+            self.assertFalse(row["provider_model_called"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_override_numeric_values"])
+            self.assertTrue(row["does_not_output_strategy_action"])
+        self.assertIn("local_deepseek_durable_evidence_recipe", {item.get("api") for item in factor["data"]["call_ledger"]})
         self.assertEqual(
             factor["data"]["deepseek_explain_governance"]["json_stability_audit_status"],
             "manual_ready_production_blocked",
@@ -20096,6 +20260,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(
             factor["data"]["deepseek_explain_governance"]["provider_benchmark_execution_recipe_status"],
             "deepseek_provider_benchmark_recipe_ready_model_execution_pending",
+        )
+        self.assertTrue(factor["data"]["deepseek_explain_governance"]["durable_evidence_recipe_ready"])
+        self.assertEqual(
+            factor["data"]["deepseek_explain_governance"]["durable_evidence_recipe_status"],
+            "deepseek_durable_evidence_recipe_ready_production_pending",
         )
         self.assertFalse(factor["data"]["deepseek_explain_governance"]["bounded_retry_repair_ready"])
         self.assertFalse(factor["data"]["deepseek_explain_governance"]["response_format_production_ready"])

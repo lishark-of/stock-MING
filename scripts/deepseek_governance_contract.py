@@ -97,6 +97,36 @@ REQUIRED_BENCHMARK_RECIPE_PHASES = {
     "auto_after_task_mode_gate",
     "production_promotion_review",
 }
+REQUIRED_DURABLE_EVIDENCE_KEYS = (
+    "manual_default_off_governance_visible",
+    "sanitizer_whitelist_visible",
+    "json_stability_audit_visible",
+    "response_format_review_visible",
+    "retry_repair_dry_run_visible",
+    "production_activation_receipt_visible",
+    "provider_benchmark_execution_recipe_visible",
+    "provider_benchmark_report_required",
+    "provider_response_format_execution_required",
+    "bounded_retry_repair_execution_required",
+    "model_ledger_hash_dedupe_required",
+    "sanitizer_parse_failed_provider_review_required",
+    "token_budget_cost_evidence_required",
+    "auto_after_task_mode_gate_required",
+    "redaction_review_required",
+    "production_promotion_review_required",
+    "no_model_trade_action_secret_boundary",
+)
+REQUIRED_DURABLE_EVIDENCE_MISSING_KEYS = (
+    "provider_benchmark_report_required",
+    "provider_response_format_execution_required",
+    "bounded_retry_repair_execution_required",
+    "model_ledger_hash_dedupe_required",
+    "sanitizer_parse_failed_provider_review_required",
+    "token_budget_cost_evidence_required",
+    "auto_after_task_mode_gate_required",
+    "redaction_review_required",
+    "production_promotion_review_required",
+)
 DEEPSEEK_PRODUCTION_STAGE_LABELS = {
     "larger_provider_benchmark": "larger provider-backed JSON stability benchmark",
     "provider_response_format_enforcement": "provider response_format enforcement",
@@ -250,6 +280,12 @@ def build_contract() -> dict[str, Any]:
         for row in _list(cache_packet.get("deepseek_provider_benchmark_execution_rows") or benchmark_recipe.get("rows"))
         if isinstance(row, dict)
     }
+    durable_recipe = _dict(cache_packet.get("deepseek_durable_evidence_recipe"))
+    durable_recipe_rows = [
+        row for row in _list(cache_packet.get("deepseek_durable_evidence_rows") or durable_recipe.get("rows"))
+        if isinstance(row, dict)
+    ]
+    durable_evidence_keys = {str(row.get("evidence_key") or "") for row in durable_recipe_rows}
     catalog = task_service.build_task_catalog()
     task = _deepseek_task(catalog)
     task_strategy = _dict(task.get("deepseek_model_strategy"))
@@ -513,6 +549,70 @@ def build_contract() -> dict[str, Any]:
             "Provider benchmark execution recipe must fix the next real benchmark scope while staying local, model-silent, secret-safe, and production-pending.",
         ),
         _row(
+            "deepseek_durable_evidence_recipe_is_local_pending",
+            durable_recipe.get("schema_version") == "factor_deepseek_durable_evidence_recipe.v1"
+            and durable_recipe.get("status") == "deepseek_durable_evidence_recipe_ready_production_pending"
+            and durable_recipe.get("scope") == "local_deepseek_durable_evidence_recipe_no_model_call"
+            and durable_recipe.get("local_recipe_ready") is True
+            and durable_recipe.get("durable_evidence_complete") is False
+            and durable_recipe.get("durable_promotion_ready") is False
+            and durable_recipe.get("provider_benchmark_done") is False
+            and durable_recipe.get("larger_benchmark_done") is False
+            and durable_recipe.get("provider_response_format_enforced") is False
+            and durable_recipe.get("response_format_enforced") is False
+            and durable_recipe.get("bounded_retry_repair_ready") is False
+            and durable_recipe.get("bounded_retry_repair_executed") is False
+            and durable_recipe.get("token_budget_cost_evidence_complete") is False
+            and durable_recipe.get("auto_after_task_production_ready") is False
+            and durable_recipe.get("production_deepseek_explanation_complete") is False
+            and durable_recipe.get("provider_model_called_by_recipe") is False
+            and durable_recipe.get("cache_get_external_calls") is False
+            and _flag_false(durable_recipe, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called", "contains_secret")
+            and durable_recipe.get("does_not_execute_trades") is True
+            and durable_recipe.get("does_not_modify_strategy_action") is True
+            and durable_recipe.get("does_not_override_numeric_values") is True
+            and durable_recipe.get("does_not_output_strategy_action") is True
+            and tuple(_list(durable_recipe.get("evidence_keys"))) == REQUIRED_DURABLE_EVIDENCE_KEYS
+            and int(durable_recipe.get("evidence_key_count") or 0) == len(REQUIRED_DURABLE_EVIDENCE_KEYS)
+            and int(durable_recipe.get("row_count") or 0) == len(REQUIRED_DURABLE_EVIDENCE_KEYS)
+            and durable_evidence_keys == set(REQUIRED_DURABLE_EVIDENCE_KEYS)
+            and set(_list(durable_recipe.get("missing_durable_evidence"))) == set(REQUIRED_DURABLE_EVIDENCE_MISSING_KEYS)
+            and int(durable_recipe.get("production_blocker_count") or 0) == len(REQUIRED_DURABLE_EVIDENCE_MISSING_KEYS)
+            and int(durable_recipe.get("durable_evidence_blocker_count") or 0) == len(REQUIRED_DURABLE_EVIDENCE_MISSING_KEYS)
+            and {
+                "provider benchmark report with at least 40 samples",
+                "provider response_format/json_schema execution evidence",
+                "bounded retry/repair execution ledger",
+                "redacted model ledger with token usage and hashes",
+                "token budget and cost evidence",
+                "production promotion review",
+            }.issubset(set(_list(durable_recipe.get("required_evidence"))))
+            and {
+                "treat_durable_recipe_as_provider_benchmark",
+                "call DeepSeek from GET cache",
+                "call DeepSeek from React render",
+                "raw token/key in prompt, ledger, packet, cache, or log",
+                "durable recipe as production completion",
+                "DeepSeek numeric/action overwrite",
+            }.issubset(set(_list(durable_recipe.get("not_allowed_next_steps"))))
+            and all(row.get("required_before_production") is True for row in durable_recipe_rows)
+            and all(row.get("production_ready") is False for row in durable_recipe_rows)
+            and all(row.get("model_call_status") == "not_called" for row in durable_recipe_rows)
+            and all(row.get("provider_model_called") is False for row in durable_recipe_rows)
+            and all(row.get("external_calls_triggered") is False for row in durable_recipe_rows)
+            and all(row.get("tushare_called") is False for row in durable_recipe_rows)
+            and all(row.get("deepseek_called") is False for row in durable_recipe_rows)
+            and all(row.get("github_called") is False for row in durable_recipe_rows)
+            and all(row.get("contains_secret") is False for row in durable_recipe_rows)
+            and all(row.get("does_not_execute_trades") is True for row in durable_recipe_rows)
+            and all(row.get("does_not_modify_strategy_action") is True for row in durable_recipe_rows)
+            and all(row.get("does_not_override_numeric_values") is True for row in durable_recipe_rows)
+            and all(row.get("does_not_output_strategy_action") is True for row in durable_recipe_rows)
+            and _list(durable_recipe.get("call_ledger"))
+            and _dict(_list(durable_recipe.get("call_ledger"))[0]).get("api") == "local_deepseek_durable_evidence_recipe",
+            "DeepSeek durable evidence recipe must expose provider benchmark, response-format, retry/repair, ledger, cost, redaction, and promotion gaps while staying local, model-silent, secret-safe, no-trade, and production-pending.",
+        ),
+        _row(
             "deepseek_production_stage_scope_manifest_is_complete_and_pending",
             {row.get("stage_key") for row in deepseek_production_stage_scope_rows}
             == REQUIRED_DEEPSEEK_PRODUCTION_STAGES
@@ -558,10 +658,12 @@ def build_contract() -> dict[str, Any]:
             and "deepseek_production_activation_receipt.v1" in this_script
             and "factor_deepseek_retry_repair_dry_run_contract.v1" in this_script
             and "factor_deepseek_provider_benchmark_execution_recipe.v1" in this_script
+            and "factor_deepseek_durable_evidence_recipe.v1" in this_script
             and "provider_benchmark_done" in this_script
             and "production_deepseek_explanation_complete" in this_script
             and "deepseek_production_stage_scope_manifest" in this_script
             and "response_format_enforced" in this_script
+            and "deepseek_durable_evidence_recipe_is_local_pending" in this_script
             and "does_not_execute_trades" in this_script
             and ("request" + "s") not in this_script
             and ("ht" + "tpx") not in this_script
@@ -589,6 +691,9 @@ def build_contract() -> dict[str, Any]:
         "auto_after_task_production_ready": False,
         "deepseek_production_activation_receipt_ready": activation_receipt.get("local_activation_receipt_ready") is True,
         "provider_benchmark_execution_recipe_ready": benchmark_recipe.get("local_recipe_ready") is True,
+        "deepseek_durable_evidence_recipe_ready": durable_recipe.get("local_recipe_ready") is True,
+        "deepseek_durable_evidence_recipe_status": durable_recipe.get("status"),
+        "deepseek_durable_evidence_blocker_count": durable_recipe.get("durable_evidence_blocker_count"),
         "production_deepseek_explanation_complete": False,
         "sanitizer_only": True,
         "cache_only": True,
@@ -625,6 +730,12 @@ def build_contract() -> dict[str, Any]:
             "benchmark_recipe_required_sample_count": benchmark_recipe.get("required_sample_count"),
             "benchmark_recipe_phase_count": benchmark_recipe.get("phase_count"),
             "benchmark_recipe_allowed_next_step": benchmark_recipe.get("allowed_next_step"),
+            "durable_evidence_recipe_status": durable_recipe.get("status"),
+            "durable_evidence_recipe_ready": durable_recipe.get("local_recipe_ready"),
+            "durable_evidence_key_count": len(durable_recipe_rows),
+            "durable_evidence_keys": [row.get("evidence_key") for row in durable_recipe_rows],
+            "durable_evidence_missing_keys": durable_recipe.get("missing_durable_evidence"),
+            "durable_evidence_blocker_count": durable_recipe.get("durable_evidence_blocker_count"),
             "task_backend": task.get("current_backend"),
             "task_button_gated": task.get("button_gated"),
             "deepseek_production_stage_scope_count": len(deepseek_production_stage_scope_rows),
@@ -637,6 +748,7 @@ def build_contract() -> dict[str, Any]:
                 if row.get("production_deepseek_explanation_complete") is False
             ),
         },
+        "deepseek_durable_evidence_rows": durable_recipe_rows,
         "deepseek_production_stage_scope_rows": deepseek_production_stage_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Real provider-backed DeepSeek benchmark, provider response_format enforcement, bounded retry/repair, and production automatic explanation remain pending.",

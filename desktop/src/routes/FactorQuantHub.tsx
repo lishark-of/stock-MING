@@ -99,6 +99,7 @@ export default function FactorQuantHub() {
   const deepseekResponseFormatReview = packet.deepseek_response_format_review_contract ?? {};
   const deepseekRetryRepairDryRun = packet.deepseek_retry_repair_dry_run_contract ?? {};
   const deepseekProductionActivationReceipt = packet.deepseek_production_activation_receipt ?? {};
+  const deepseekDurableEvidenceRecipe = packet.deepseek_durable_evidence_recipe ?? {};
   const scoreChart = packet.score_chart_payload ?? {};
   const scoreChartContract = scoreChart.chart_contract ?? {};
   const scoreChartRows = toRows(scoreChart.bucket_rows);
@@ -109,6 +110,7 @@ export default function FactorQuantHub() {
   const deepseekRetryRepairDryRunRows = toRows(packet.deepseek_retry_repair_dry_run_rows);
   const deepseekProductionActivationRows = toRows(packet.deepseek_production_activation_rows);
   const deepseekProductionActivationReceiptRows = objectRows(deepseekProductionActivationReceipt as Record<string, unknown>, "deepseek_activation_receipt");
+  const deepseekDurableEvidenceRows = toRows(packet.deepseek_durable_evidence_rows);
   const universeResearchRows = objectRows(universeResearch as Record<string, unknown>, "universe_contract");
   const universeModeRows = toRows(packet.universe_research_mode_rows);
   const universeExecutionReadinessRows = objectRows(universeExecutionReadiness as Record<string, unknown>, "universe_execution_readiness");
@@ -326,6 +328,8 @@ export default function FactorQuantHub() {
           { label: "DS activation", value: deepseekProductionActivationReceipt.status ?? "missing", tone: deepseekProductionActivationReceipt.local_activation_receipt_ready === true ? "good" : "warn" },
           { label: "DS provider benchmark", value: deepseekProductionActivationReceipt.provider_benchmark_done === true ? "完成" : "未完成", tone: deepseekProductionActivationReceipt.provider_benchmark_done === true ? "good" : "warn" },
           { label: "DS activation blockers", value: deepseekProductionActivationReceipt.blocking_criterion_count ?? 0, tone: Number(deepseekProductionActivationReceipt.blocking_criterion_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "DS durable evidence", value: deepseekDurableEvidenceRecipe.status ?? "missing", tone: deepseekDurableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
+          { label: "DS durable blockers", value: deepseekDurableEvidenceRecipe.durable_evidence_blocker_count ?? 0, tone: Number(deepseekDurableEvidenceRecipe.durable_evidence_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "snapshot", value: packet.source_snapshot_available === true, tone: packet.source_snapshot_available === true ? "good" : "warn" },
           { label: "Tushare failure QA", value: tushareFailureModeQa.status ?? "missing", tone: tushareFailureModeQa.status === "failure_mode_qa_blocked" ? "bad" : "warn" },
           { label: "failure modes", value: tushareFailureModeQa.observed_mode_count ?? 0 },
@@ -440,6 +444,21 @@ export default function FactorQuantHub() {
       <p className="risk-note">activation receipt 只允许后续显式 provider benchmark、response_format 强约束、retry/repair 和 cost review；GET cache 和页面渲染仍不调用 DeepSeek，不覆盖数值或 action。</p>
       <DataLineageTable rows={deepseekProductionActivationRows} />
       <DataLineageTable rows={deepseekProductionActivationReceiptRows} />
+      <PacketCard title="DeepSeek durable evidence recipe" subtitle="LTG-07 durable evidence 缺口清单；只读、不调用模型、不把 recipe 当 benchmark">
+        <p>schema_version: {String(deepseekDurableEvidenceRecipe.schema_version ?? "factor_deepseek_durable_evidence_recipe.v1")}</p>
+        <p>status: {String(deepseekDurableEvidenceRecipe.status ?? "missing")}</p>
+        <p>scope: {String(deepseekDurableEvidenceRecipe.scope ?? "local_deepseek_durable_evidence_recipe_no_model_call")}</p>
+        <p>local_recipe_ready / durable_evidence_complete: {String(deepseekDurableEvidenceRecipe.local_recipe_ready ?? false)} / {String(deepseekDurableEvidenceRecipe.durable_evidence_complete ?? false)}</p>
+        <p>provider_benchmark_done / provider_response_format_enforced: {String(deepseekDurableEvidenceRecipe.provider_benchmark_done ?? false)} / {String(deepseekDurableEvidenceRecipe.provider_response_format_enforced ?? false)}</p>
+        <p>bounded_retry_repair_executed / token_budget_cost_evidence_complete: {String(deepseekDurableEvidenceRecipe.bounded_retry_repair_executed ?? false)} / {String(deepseekDurableEvidenceRecipe.token_budget_cost_evidence_complete ?? false)}</p>
+        <p>auto_after_task_production_ready / production_deepseek_explanation_complete: {String(deepseekDurableEvidenceRecipe.auto_after_task_production_ready ?? false)} / {String(deepseekDurableEvidenceRecipe.production_deepseek_explanation_complete ?? false)}</p>
+        <p>provider_model_called_by_recipe / cache_get_external_calls: {String(deepseekDurableEvidenceRecipe.provider_model_called_by_recipe ?? false)} / {String(deepseekDurableEvidenceRecipe.cache_get_external_calls ?? false)}</p>
+        <p>tushare / deepseek / github: {String(deepseekDurableEvidenceRecipe.tushare_called ?? false)} / {String(deepseekDurableEvidenceRecipe.deepseek_called ?? false)} / {String(deepseekDurableEvidenceRecipe.github_called ?? false)}</p>
+        <p>missing_durable_evidence: {Array.isArray(deepseekDurableEvidenceRecipe.missing_durable_evidence) ? deepseekDurableEvidenceRecipe.missing_durable_evidence.join(" / ") : ""}</p>
+        <p>not_allowed_next_steps: {Array.isArray(deepseekDurableEvidenceRecipe.not_allowed_next_steps) ? deepseekDurableEvidenceRecipe.not_allowed_next_steps.join(" / ") : "treat_durable_recipe_as_provider_benchmark / call DeepSeek from GET cache / durable recipe as production completion"}</p>
+      </PacketCard>
+      <h3>DeepSeek durable evidence rows</h3>
+      <DataLineageTable rows={deepseekDurableEvidenceRows} />
       <h3>因子库</h3>
       <DataLineageTable rows={toRows(factorLibrary.factors)} />
       <h3>运行值</h3>
