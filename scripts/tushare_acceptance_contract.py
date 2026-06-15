@@ -37,6 +37,7 @@ CONTRACT_KEYS = [
     "provider_sample_activation_receipt",
     "provider_target_sample_runbook_contract",
     "provider_target_sample_execution_recipe",
+    "provider_target_sample_execution_request_receipt",
     "tushare_durable_evidence_recipe",
 ]
 REQUIRED_TUSHARE_DURABLE_EVIDENCE_KEYS = {
@@ -274,6 +275,9 @@ def build_contract() -> dict[str, Any]:
     durable_evidence_keys = {str(row.get("evidence_key") or "") for row in durable_evidence_rows}
 
     refresh_catalog = _catalog_by_type("refresh_tushare_facts")
+    target_sample_execution_request_catalog = _catalog_by_type(
+        "run_tushare_provider_target_sample_execution_request"
+    )
     factor_refresh_catalog = _catalog_by_type("refresh_factor_data")
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/tushare_acceptance_contract.py")
@@ -439,6 +443,27 @@ def build_contract() -> dict[str, Any]:
         provider_target_sample_runbook_contract=target_sample_runbook,
         provider_sample_activation_receipt=target_sample_activation,
     )
+    target_sample_execution_request, target_sample_execution_request_rows = (
+        tushare_task_service._provider_target_sample_execution_request_receipt(
+            {
+                "operator_approved": True,
+                "execution_recipe_scope_hash": target_sample_execution_recipe.get(
+                    "execution_recipe_scope_hash"
+                ),
+                "target_sample_acceptance_groups": ["margin_financing"],
+                "apis": target_sample_selected_apis,
+                "ts_code": "002008.SZ",
+                "trade_date": "20260610",
+                "start_date": "20260601",
+                "end_date": "20260610",
+                "token": "SHOULD_NOT_APPEAR",
+            },
+            latest_execution_recipe=target_sample_execution_recipe,
+        )
+    )
+    target_sample_execution_request_row_by_criterion = {
+        row.get("criterion"): row for row in target_sample_execution_request_rows
+    }
     target_sample_gap_rows = {row.get("target"): row for row in target_sample_gap.get("rows", [])}
     target_sample_receipt_rows = {row.get("criterion"): row for row in target_sample_receipt.get("rows", [])}
     target_sample_runbook_rows = {row.get("target"): row for row in target_sample_runbook.get("rows", [])}
@@ -1163,6 +1188,70 @@ def build_contract() -> dict[str, Any]:
             "Target-sample execution recipe is only an ordered local recipe for the next explicit provider review; it must not call Tushare, create tasks, or complete production acceptance.",
         ),
         _row(
+            "target_sample_execution_request_is_scope_bound_local_ticket",
+            target_sample_execution_request_catalog.get("route")
+            == "POST /api/tasks/tushare-provider-target-sample-execution-request"
+            and target_sample_execution_request_catalog.get("button_gated") is True
+            and target_sample_execution_request_catalog.get("possible_external_sources") == []
+            and target_sample_execution_request_catalog.get("future_external_sources") == ["tushare"]
+            and target_sample_execution_request_catalog.get("local_execution_request_only") is True
+            and target_sample_execution_request_catalog.get("requires_bound_execution_recipe_scope_hash") is True
+            and target_sample_execution_request_catalog.get("target_provider_task_route")
+            == "POST /api/tasks/refresh-tushare-facts"
+            and target_sample_execution_request_catalog.get("creates_provider_task") is False
+            and target_sample_execution_request_catalog.get("provider_execution_implemented") is False
+            and target_sample_execution_request.get("schema_version")
+            == "tushare_provider_target_sample_execution_request.v1"
+            and target_sample_execution_request.get("status")
+            == "target_sample_execution_request_ready_manual_provider_task_pending"
+            and target_sample_execution_request.get("local_execution_request_ready") is True
+            and target_sample_execution_request.get("ready_for_manual_provider_task_submission") is True
+            and target_sample_execution_request.get("execution_recipe_scope_hash_matches_latest") is True
+            and target_sample_execution_request.get("operator_confirmation_recorded") is True
+            and target_sample_execution_request.get("requested_targets") == ["margin_financing"]
+            and target_sample_execution_request.get("selected_apis") == ["margin_detail"]
+            and target_sample_execution_request.get("target_payload_safe", {}).get("acceptance_mode")
+            == "provider_target_sample_acceptance"
+            and target_sample_execution_request.get("target_payload_safe", {}).get(
+                "provider_execution_requires_separate_post_task"
+            )
+            is True
+            and target_sample_execution_request.get("creates_provider_task") is False
+            and target_sample_execution_request.get("provider_task_executed_by_request") is False
+            and target_sample_execution_request.get("provider_execution_implemented") is False
+            and target_sample_execution_request.get("provider_call_ledger_evidence_done") is False
+            and target_sample_execution_request.get("provider_backed_target_sample_acceptance_done") is False
+            and target_sample_execution_request.get("full_interface_acceptance_done") is False
+            and target_sample_execution_request.get("production_tushare_pipeline_complete") is False
+            and "call Tushare from this request"
+            in target_sample_execution_request.get("not_allowed_next_steps", [])
+            and target_sample_execution_request_row_by_criterion[
+                "execution_recipe_scope_hash_bound"
+            ].get("status")
+            == "passed"
+            and target_sample_execution_request_row_by_criterion[
+                "provider_task_still_pending"
+            ].get("status")
+            == "passed"
+            and _flag_false(
+                target_sample_execution_request,
+                "cache_get_external_calls",
+                "react_render_external_calls",
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+                "credential_values_read",
+                "credential_values_exposed",
+                "env_key_names_included",
+            )
+            and target_sample_execution_request.get("does_not_execute_trades") is True
+            and target_sample_execution_request.get("does_not_modify_strategy_action") is True
+            and "SHOULD_NOT_APPEAR" not in json.dumps(target_sample_execution_request, ensure_ascii=False),
+            "Target-sample execution-request binds operator approval and latest recipe scope, but remains local/no-provider and cannot be called production acceptance.",
+        ),
+        _row(
             "multi_target_sample_runbook_ready_review_pending_without_promotion",
             multi_target_runbook.get("status") == "target_sample_runbook_ready_provider_review_pending"
             and multi_target_runbook.get("runbook_ready") is True
@@ -1414,6 +1503,19 @@ def build_contract() -> dict[str, Any]:
             ),
             "provider_target_sample_execution_ready_count": target_sample_execution_recipe.get(
                 "recipe_ready_target_count"
+            ),
+            "provider_target_sample_execution_scope_hash_short": target_sample_execution_recipe.get(
+                "execution_recipe_scope_hash_short"
+            ),
+            "provider_target_sample_execution_request_status": target_sample_execution_request.get("status"),
+            "provider_target_sample_execution_request_ready": target_sample_execution_request.get(
+                "local_execution_request_ready"
+            ),
+            "provider_target_sample_execution_request_creates_task": target_sample_execution_request.get(
+                "creates_provider_task"
+            ),
+            "provider_target_sample_execution_request_calls_tushare": target_sample_execution_request.get(
+                "tushare_called"
             ),
             "tushare_durable_evidence_row_count": len(durable_evidence_rows),
             "tushare_durable_evidence_keys": sorted(durable_evidence_keys),

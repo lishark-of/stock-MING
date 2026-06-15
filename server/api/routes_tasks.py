@@ -30,6 +30,12 @@ def refresh_tushare_facts(payload: dict[str, Any] | None = None) -> dict:
     return task_envelope(task)
 
 
+@router.post("/tushare-provider-target-sample-execution-request")
+def tushare_provider_target_sample_execution_request(payload: dict[str, Any] | None = None) -> dict:
+    task = tushare_task_service.run_tushare_provider_target_sample_execution_request(payload)
+    return task_envelope(task)
+
+
 @router.get("/{task_id}")
 def get_task(task_id: str) -> dict:
     task = task_service.read_task_status(task_id)

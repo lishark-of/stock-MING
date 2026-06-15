@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
+import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -263,6 +265,9 @@ EXPECTED_FAILURE_MODE_QA = (
 )
 TRADE_CAL_PROVIDER_ACCEPTANCE_MODE = "provider_backed_trade_cal_long_window"
 PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE = "provider_target_sample_acceptance"
+PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_SCHEMA_VERSION = "tushare_provider_target_sample_execution_request.v1"
+PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_TASK_TYPE = "run_tushare_provider_target_sample_execution_request"
+PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_ROUTE = "POST /api/tasks/tushare-provider-target-sample-execution-request"
 TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS = 730
 TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_FAILURE_MODES = len(EXPECTED_FAILURE_MODE_QA)
 TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS = 8
@@ -2089,6 +2094,28 @@ def _provider_target_sample_execution_recipe(
         if row.get("requested_for_execution_recipe") is True
         and row.get("recipe_ready_for_user_confirmation") is not True
     )
+    requested_targets = list(provider_target_sample_runbook_contract.get("requested_targets") or [])
+    scope_payload = {
+        "schema_version": "tushare_provider_target_sample_execution_recipe.v1",
+        "scope": "local_target_sample_execution_recipe_no_provider_execution",
+        "post_task_route": "POST /api/tasks/refresh-tushare-facts",
+        "required_acceptance_mode": PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE,
+        "requested_targets": requested_targets,
+        "phase_keys": phase_keys,
+        "target_rows": [
+            {
+                "target": row.get("target"),
+                "requested_for_execution_recipe": row.get("requested_for_execution_recipe") is True,
+                "selected_apis": sorted(str(api) for api in row.get("selected_apis") or []),
+                "execution_recipe_status": row.get("execution_recipe_status"),
+                "recipe_ready_for_user_confirmation": row.get("recipe_ready_for_user_confirmation") is True,
+            }
+            for row in rows
+            if row.get("requested_for_execution_recipe") is True
+        ],
+    }
+    scope_hash_input = json.dumps(scope_payload, ensure_ascii=False, sort_keys=True)
+    scope_hash = hashlib.sha256(scope_hash_input.encode("utf-8")).hexdigest()
     return {
         "schema_version": "tushare_provider_target_sample_execution_recipe.v1",
         "status": "target_sample_execution_recipe_ready_user_confirmation_required"
@@ -2099,11 +2126,15 @@ def _provider_target_sample_execution_recipe(
         "required_acceptance_mode": PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE,
         "runbook_ready": runbook_ready,
         "activation_receipt_ready": activation_local_safe,
-        "requested_targets": list(provider_target_sample_runbook_contract.get("requested_targets") or []),
+        "requested_targets": requested_targets,
         "requested_target_count": len(requested_rows),
         "recipe_ready_target_count": ready_count,
         "blocked_recipe_target_count": blocked_count,
         "recipe_ready_for_user_confirmation": recipe_ready,
+        "execution_recipe_scope_hash_algorithm": "sha256",
+        "execution_recipe_scope_hash": scope_hash,
+        "execution_recipe_scope_hash_short": scope_hash[:16],
+        "execution_recipe_scope_hash_input_field_count": len(scope_payload),
         "allowed_next_step": "manual_confirm_then_execute_post_task_and_review_promotion"
         if recipe_ready
         else "complete_target_sample_runbook_and_activation_receipt",
@@ -2155,6 +2186,325 @@ def _provider_target_sample_execution_recipe(
         ],
         "note": "This recipe fixes the operator-confirmed order for a future explicit Tushare target-sample acceptance run. It does not call Tushare, create tasks, promote local/fake evidence, execute trades, mutate action, or prove production completion.",
     }
+
+
+def _latest_tushare_refresh_packet() -> dict[str, Any]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet("command_center_tushare_refresh_packet")
+    except Exception:
+        return {}
+    return dict(packet) if isinstance(packet, Mapping) else {}
+
+
+def _provider_target_sample_execution_request_receipt(
+    payload: Any,
+    *,
+    latest_execution_recipe: Mapping[str, Any] | None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    payload_safe = _safe_payload(payload)
+    recipe = dict(latest_execution_recipe or {})
+    recipe_visible = bool(recipe)
+    latest_scope_hash = str(recipe.get("execution_recipe_scope_hash") or "")
+    latest_scope_hash_short = str(recipe.get("execution_recipe_scope_hash_short") or latest_scope_hash[:16])
+    requested_scope_hash = str(
+        payload_safe.get("execution_recipe_scope_hash")
+        or payload_safe.get("execution_recipe_scope_hash_short")
+        or payload_safe.get("scope_hash")
+        or ""
+    ).strip()
+    scope_matches = bool(
+        latest_scope_hash
+        and requested_scope_hash
+        and requested_scope_hash in {latest_scope_hash, latest_scope_hash_short}
+    )
+    operator_confirmed = bool(
+        payload_safe.get("operator_approved") is True
+        or payload_safe.get("user_confirmed") is True
+        or payload_safe.get("manual_confirmation") is True
+    )
+    payload_targets, unknown_targets = _target_sample_acceptance_requested_targets(payload_safe)
+    latest_targets = [str(item) for item in recipe.get("requested_targets") or [] if str(item or "")]
+    requested_targets = payload_targets or latest_targets
+    latest_rows = [row for row in recipe.get("rows", []) if isinstance(row, Mapping)]
+    recipe_selected_apis: list[str] = []
+    for row in latest_rows:
+        if row.get("requested_for_execution_recipe") is not True:
+            continue
+        for api in row.get("selected_apis") or []:
+            key = str(api or "")
+            if key and key not in recipe_selected_apis:
+                recipe_selected_apis.append(key)
+    selected_apis = _selected_apis(payload_safe, recipe_selected_apis)
+    target_scope_matches_latest = bool(latest_targets and sorted(requested_targets) == sorted(latest_targets))
+    recipe_ready = bool(
+        recipe.get("schema_version") == "tushare_provider_target_sample_execution_recipe.v1"
+        and recipe.get("recipe_ready_for_user_confirmation") is True
+        and recipe.get("status") == "target_sample_execution_recipe_ready_user_confirmation_required"
+        and recipe.get("provider_task_created_by_recipe") is False
+        and recipe.get("recipe_external_calls_triggered") is False
+        and recipe.get("tushare_called_by_recipe") is False
+    )
+    target_payload_safe = {
+        "apis": selected_apis,
+        "acceptance_mode": PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE,
+        "target_sample_acceptance_groups": requested_targets,
+        "execution_recipe_scope_hash_short": latest_scope_hash_short,
+        "provider_execution_requires_separate_post_task": True,
+    }
+    for key in ("ts_code", "trade_date", "start_date", "end_date", "ann_date", "period", "float_date", "limit_type"):
+        if payload_safe.get(key) not in (None, ""):
+            target_payload_safe[key] = payload_safe.get(key)
+
+    checks = [
+        (
+            "latest_execution_recipe_visible",
+            recipe_visible,
+            "latest command_center_tushare_refresh_packet exposes provider_target_sample_execution_recipe",
+        ),
+        (
+            "latest_execution_recipe_ready",
+            recipe_ready,
+            "recipe is ready for user confirmation and did not create/call provider work",
+        ),
+        (
+            "execution_recipe_scope_hash_bound",
+            scope_matches,
+            "request must include the latest full or short execution_recipe_scope_hash",
+        ),
+        (
+            "operator_confirmation_recorded",
+            operator_confirmed,
+            "operator_approved/user_confirmed/manual_confirmation must be true",
+        ),
+        (
+            "target_group_scope_matches_latest_recipe",
+            target_scope_matches_latest and not unknown_targets,
+            "requested target groups must match the latest recipe and use known groups",
+        ),
+        (
+            "target_payload_safe",
+            bool(selected_apis and not _has_sensitive_key(target_payload_safe)),
+            "future provider payload contains only selected APIs, known target groups, and safe date/symbol context",
+        ),
+        (
+            "provider_task_still_pending",
+            True,
+            "this request does not create the future refresh_tushare_facts provider task",
+        ),
+        (
+            "provider_call_ledger_still_required",
+            True,
+            "real provider acceptance still needs call_ledger evidence after a separate provider task",
+        ),
+        (
+            "production_promotion_still_blocked",
+            True,
+            "full-interface production promotion remains blocked until durable provider evidence exists",
+        ),
+        (
+            "no_external_no_secret_no_trade_boundary",
+            True,
+            "request is local-only, keeps credentials hidden, and cannot trade or mutate strategy action",
+        ),
+    ]
+    rows = [
+        {
+            "criterion": criterion,
+            "status": "passed" if passed else "blocked",
+            "passed": bool(passed),
+            "evidence": evidence,
+            "blocking": not bool(passed),
+            "cache_get_external_calls": False,
+            "react_render_external_calls": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+        for criterion, passed, evidence in checks
+    ]
+    blocker_count = sum(1 for row in rows if row["blocking"])
+    if not recipe_visible:
+        status = "target_sample_execution_request_blocked_missing_latest_recipe"
+        allowed_next_step = "run_or_restore_refresh_tushare_facts_target_sample_recipe"
+    elif not recipe_ready:
+        status = "target_sample_execution_request_blocked_recipe_not_ready"
+        allowed_next_step = "repair_latest_target_sample_execution_recipe"
+    elif not scope_matches:
+        status = "target_sample_execution_request_blocked_scope_hash_mismatch"
+        allowed_next_step = "copy_latest_execution_recipe_scope_hash_then_confirm"
+    elif not operator_confirmed:
+        status = "target_sample_execution_request_blocked_operator_confirmation_missing"
+        allowed_next_step = "set_operator_approved_true_after_manual_review"
+    elif unknown_targets or not target_scope_matches_latest:
+        status = "target_sample_execution_request_blocked_target_scope_mismatch"
+        allowed_next_step = "use_target_groups_from_latest_execution_recipe"
+    elif not selected_apis:
+        status = "target_sample_execution_request_blocked_empty_api_scope"
+        allowed_next_step = "select_target_sample_apis_before_provider_task"
+    else:
+        status = "target_sample_execution_request_ready_manual_provider_task_pending"
+        allowed_next_step = "manually_submit_refresh_tushare_facts_provider_target_sample_task"
+    ready = status == "target_sample_execution_request_ready_manual_provider_task_pending"
+    receipt = {
+        "schema_version": PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_tushare_provider_target_sample_execution_request_no_provider_execution",
+        "route": PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_ROUTE,
+        "task_type": PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_TASK_TYPE,
+        "target_post_task_route": "POST /api/tasks/refresh-tushare-facts",
+        "target_task_type": "refresh_tushare_facts",
+        "target_acceptance_mode": PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE,
+        "latest_execution_recipe_visible": recipe_visible,
+        "latest_execution_recipe_status": recipe.get("status") or "",
+        "latest_execution_recipe_ready_for_user_confirmation": recipe.get("recipe_ready_for_user_confirmation") is True,
+        "latest_execution_recipe_scope_hash_short": latest_scope_hash_short,
+        "requested_execution_recipe_scope_hash_short": requested_scope_hash[:16],
+        "execution_recipe_scope_hash_matches_latest": scope_matches,
+        "operator_confirmation_recorded": operator_confirmed,
+        "requested_targets": requested_targets,
+        "latest_requested_targets": latest_targets,
+        "unknown_requested_targets": unknown_targets,
+        "target_group_scope_matches_latest_recipe": target_scope_matches_latest,
+        "selected_apis": selected_apis,
+        "target_payload_safe": target_payload_safe,
+        "blocking_criterion_count": blocker_count,
+        "row_count": len(rows),
+        "local_execution_request_ready": ready,
+        "ready_for_manual_provider_task_submission": ready,
+        "ready_to_execute_from_cache": False,
+        "creates_provider_task": False,
+        "provider_task_created": False,
+        "provider_task_executed_by_request": False,
+        "provider_execution_implemented": False,
+        "provider_call_ledger_evidence_done": False,
+        "provider_backed_target_sample_acceptance_done": False,
+        "full_interface_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "allowed_next_step": allowed_next_step,
+        "not_allowed_next_steps": [
+            "call Tushare from this request",
+            "call DeepSeek from this request",
+            "call GitHub from this request",
+            "create provider task from this request",
+            "GET cache provider refresh",
+            "React render provider refresh",
+            "execution request as provider-backed acceptance",
+            "execution request as full-interface production completion",
+            "strategy action mutation",
+            "real trade execution",
+        ],
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_tushare_provider_target_sample_execution_request",
+                "source": "latest target-sample execution recipe and explicit operator confirmation",
+                "row_count": len(rows),
+                "request_params_safe": {
+                    "requested_targets": requested_targets,
+                    "selected_apis": selected_apis,
+                    "execution_recipe_scope_hash_short": latest_scope_hash_short,
+                },
+                "data_date": None,
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_execution_request_provider_task_pending",
+                "error_message_safe": "",
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This local execution-request ticket binds manual approval and the latest recipe scope for a future provider target-sample task. It does not call Tushare, create that task, promote acceptance, execute trades, or mutate strategy action.",
+    }
+    return receipt, rows
+
+
+def run_tushare_provider_target_sample_execution_request(payload: Any = None) -> dict[str, Any]:
+    latest_packet = _latest_tushare_refresh_packet()
+    latest_recipe = latest_packet.get("provider_target_sample_execution_recipe")
+    receipt, rows = _provider_target_sample_execution_request_receipt(
+        payload,
+        latest_execution_recipe=latest_recipe if isinstance(latest_recipe, Mapping) else None,
+    )
+    packet_key = "command_center_tushare_provider_target_sample_execution_request_packet"
+    payload_safe = {
+        "provider_target_sample_execution_request_receipt": receipt,
+        "provider_target_sample_execution_request_rows": rows,
+    }
+    task = create_task_record(
+        PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_TASK_TYPE,
+        output_packet_key=packet_key,
+        payload=payload_safe,
+        current_step="tushare_provider_target_sample_execution_request_queued_local_only",
+        warnings=[
+            "该任务只生成本地 Tushare target-sample execution-request ticket，不调用 Tushare。",
+            "该任务不创建 provider task，不写 Parquet，不证明 LTG-02 生产完成。",
+            "该任务不调用 DeepSeek/GitHub，不执行真实交易，不修改 strategy action。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.45,
+        current_step="building_tushare_provider_target_sample_execution_request",
+        call_ledger=receipt["call_ledger"],
+    )
+    packet = {
+        "packet_key": packet_key,
+        "schema_version": "command_center_tushare_provider_target_sample_execution_request_packet.v1",
+        "status": receipt["status"],
+        "task_type": PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_TASK_TYPE,
+        "receipt": receipt,
+        "rows": rows,
+        "local_execution_request_ready": receipt["local_execution_request_ready"],
+        "ready_for_manual_provider_task_submission": receipt["ready_for_manual_provider_task_submission"],
+        "provider_execution_implemented": False,
+        "provider_task_executed_by_request": False,
+        "provider_backed_target_sample_acceptance_done": False,
+        "full_interface_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "call_ledger": receipt["call_ledger"],
+    }
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(packet_key, packet)
+    except Exception:
+        pass
+    return update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="tushare_provider_target_sample_execution_request_ready"
+        if receipt["local_execution_request_ready"]
+        else "tushare_provider_target_sample_execution_request_blocked",
+        call_ledger=receipt["call_ledger"],
+    ) or task
 
 
 def _tushare_durable_evidence_recipe_row(
