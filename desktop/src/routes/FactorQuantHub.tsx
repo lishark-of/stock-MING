@@ -102,6 +102,7 @@ export default function FactorQuantHub() {
   const deepseekResponseFormatReview = packet.deepseek_response_format_review_contract ?? {};
   const deepseekRetryRepairDryRun = packet.deepseek_retry_repair_dry_run_contract ?? {};
   const deepseekProductionActivationReceipt = packet.deepseek_production_activation_receipt ?? {};
+  const deepseekProviderBenchmarkScopeTicket = packet.deepseek_provider_benchmark_scope_ticket_receipt ?? {};
   const deepseekDurableEvidenceRecipe = packet.deepseek_durable_evidence_recipe ?? {};
   const scoreChart = packet.score_chart_payload ?? {};
   const scoreChartContract = scoreChart.chart_contract ?? {};
@@ -113,6 +114,8 @@ export default function FactorQuantHub() {
   const deepseekRetryRepairDryRunRows = toRows(packet.deepseek_retry_repair_dry_run_rows);
   const deepseekProductionActivationRows = toRows(packet.deepseek_production_activation_rows);
   const deepseekProductionActivationReceiptRows = objectRows(deepseekProductionActivationReceipt as Record<string, unknown>, "deepseek_activation_receipt");
+  const deepseekProviderBenchmarkScopeRows = toRows(packet.deepseek_provider_benchmark_scope_ticket_rows);
+  const deepseekProviderBenchmarkScopeReceiptRows = objectRows(deepseekProviderBenchmarkScopeTicket as Record<string, unknown>, "deepseek_benchmark_scope_ticket");
   const deepseekDurableEvidenceRows = toRows(packet.deepseek_durable_evidence_rows);
   const universeResearchRows = objectRows(universeResearch as Record<string, unknown>, "universe_contract");
   const universeModeRows = toRows(packet.universe_research_mode_rows);
@@ -227,6 +230,7 @@ export default function FactorQuantHub() {
         <button onClick={() => launchTask("/api/factor-quant/universe-worker-batch-dry-run", { approved_by_user: true, universe_mode: "full_pool" })}>批量研究预检</button>
         <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-dry-run", { approved_by_user: true, symbols: ["002008.SZ", "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"], forward_return_horizons: ["1d", "5d"] })}>小池验收预检</button>
         <button onClick={() => launchTask("/api/factor-quant/deepseek-explain")}>DeepSeek 整理</button>
+        <button onClick={() => launchTask("/api/factor-quant/deepseek-provider-benchmark-scope-ticket", { approved_by_user: true, sample_count: 40, response_format: "json_schema", max_retry_per_sample: 2 })}>DeepSeek benchmark 预检</button>
       </div>
       <p className="risk-note">DeepSeek 解释模式：{String(deepseekGovernance.mode ?? "manual_only")}；auto_after_task 默认关闭。自动解释已关闭时，可手动点击生成解释。</p>
       <p className="risk-note">多因子量化不是交易建议；不改价格、持仓、operation_zones 或 strategy action。</p>
@@ -336,6 +340,8 @@ export default function FactorQuantHub() {
           { label: "DS auto ready", value: deepseekJsonStability.auto_after_task_production_ready === true ? "ready" : "blocked", tone: deepseekJsonStability.auto_after_task_production_ready === true ? "good" : "warn" },
           { label: "DS activation", value: deepseekProductionActivationReceipt.status ?? "missing", tone: deepseekProductionActivationReceipt.local_activation_receipt_ready === true ? "good" : "warn" },
           { label: "DS provider benchmark", value: deepseekProductionActivationReceipt.provider_benchmark_done === true ? "完成" : "未完成", tone: deepseekProductionActivationReceipt.provider_benchmark_done === true ? "good" : "warn" },
+          { label: "DS scope ticket", value: deepseekProviderBenchmarkScopeTicket.status ?? "missing", tone: deepseekProviderBenchmarkScopeTicket.local_scope_ticket_ready === true ? "good" : "warn" },
+          { label: "DS scope hash", value: deepseekProviderBenchmarkScopeTicket.benchmark_scope_hash_short ?? "missing", tone: deepseekProviderBenchmarkScopeTicket.benchmark_scope_hash_short ? "good" : "neutral" },
           { label: "DS activation blockers", value: deepseekProductionActivationReceipt.blocking_criterion_count ?? 0, tone: Number(deepseekProductionActivationReceipt.blocking_criterion_count ?? 0) > 0 ? "warn" : "good" },
           { label: "DS durable evidence", value: deepseekDurableEvidenceRecipe.status ?? "missing", tone: deepseekDurableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
           { label: "DS durable blockers", value: deepseekDurableEvidenceRecipe.durable_evidence_blocker_count ?? 0, tone: Number(deepseekDurableEvidenceRecipe.durable_evidence_blocker_count ?? 0) > 0 ? "warn" : "good" },
@@ -453,6 +459,20 @@ export default function FactorQuantHub() {
       <p className="risk-note">activation receipt 只允许后续显式 provider benchmark、response_format 强约束、retry/repair 和 cost review；GET cache 和页面渲染仍不调用 DeepSeek，不覆盖数值或 action。</p>
       <DataLineageTable rows={deepseekProductionActivationRows} />
       <DataLineageTable rows={deepseekProductionActivationReceiptRows} />
+      <PacketCard title="DeepSeek provider benchmark scope ticket" subtitle="显式 POST 预检票据；不调用模型、不证明 provider benchmark">
+        <p>status: {String(deepseekProviderBenchmarkScopeTicket.status ?? "missing")}</p>
+        <p>local_scope_ticket_ready / ready_for_explicit_provider_benchmark_task: {String(deepseekProviderBenchmarkScopeTicket.local_scope_ticket_ready ?? false)} / {String(deepseekProviderBenchmarkScopeTicket.ready_for_explicit_provider_benchmark_task ?? false)}</p>
+        <p>benchmark_scope_hash_short: {String(deepseekProviderBenchmarkScopeTicket.benchmark_scope_hash_short ?? "")}</p>
+        <p>requested_sample_count / required_sample_count: {String(deepseekProviderBenchmarkScopeTicket.requested_sample_count ?? 0)} / {String(deepseekProviderBenchmarkScopeTicket.required_sample_count ?? 40)}</p>
+        <p>response_format / max_retry_per_sample: {String(deepseekProviderBenchmarkScopeTicket.response_format ?? "json_schema")} / {String(deepseekProviderBenchmarkScopeTicket.max_retry_per_sample ?? 2)}</p>
+        <p>server_secret_present / credential_values_exposed / env_key_names_exposed: {String(deepseekProviderBenchmarkScopeTicket.server_secret_present ?? false)} / {String(deepseekProviderBenchmarkScopeTicket.credential_values_exposed ?? false)} / {String(deepseekProviderBenchmarkScopeTicket.env_key_names_exposed ?? false)}</p>
+        <p>provider_benchmark_done / production_deepseek_explanation_complete: {String(deepseekProviderBenchmarkScopeTicket.provider_benchmark_done ?? false)} / {String(deepseekProviderBenchmarkScopeTicket.production_deepseek_explanation_complete ?? false)}</p>
+        <p>model_call_status / deepseek_called: {String(deepseekProviderBenchmarkScopeTicket.model_call_status ?? "not_called")} / {String(deepseekProviderBenchmarkScopeTicket.deepseek_called ?? false)}</p>
+        <p>not_allowed_next_steps: {Array.isArray(deepseekProviderBenchmarkScopeTicket.not_allowed_next_steps) ? deepseekProviderBenchmarkScopeTicket.not_allowed_next_steps.join(" / ") : "scope ticket as provider benchmark evidence / call DeepSeek from scope ticket / auto_after_task promotion from scope ticket"}</p>
+      </PacketCard>
+      <h3>DeepSeek provider benchmark scope rows</h3>
+      <DataLineageTable rows={deepseekProviderBenchmarkScopeRows} />
+      <DataLineageTable rows={deepseekProviderBenchmarkScopeReceiptRows} />
       <PacketCard title="DeepSeek durable evidence recipe" subtitle="LTG-07 durable evidence 缺口清单；只读、不调用模型、不把 recipe 当 benchmark">
         <p>schema_version: {String(deepseekDurableEvidenceRecipe.schema_version ?? "factor_deepseek_durable_evidence_recipe.v1")}</p>
         <p>status: {String(deepseekDurableEvidenceRecipe.status ?? "missing")}</p>

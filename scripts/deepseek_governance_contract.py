@@ -182,6 +182,13 @@ def _deepseek_task(catalog: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _deepseek_scope_ticket_task(catalog: dict[str, Any]) -> dict[str, Any]:
+    for task in _list(catalog.get("tasks")):
+        if isinstance(task, dict) and task.get("task_type") == "run_deepseek_provider_benchmark_scope_ticket":
+            return task
+    return {}
+
+
 def _local_prompt_preview() -> dict[str, Any]:
     return {
         "input_hash": "local-deepseek-governance-contract",
@@ -280,6 +287,10 @@ def build_contract() -> dict[str, Any]:
         for row in _list(cache_packet.get("deepseek_provider_benchmark_execution_rows") or benchmark_recipe.get("rows"))
         if isinstance(row, dict)
     }
+    benchmark_scope_ticket = _dict(cache_packet.get("deepseek_provider_benchmark_scope_ticket_receipt"))
+    benchmark_scope_ticket_rows = _rows_by_criterion(
+        cache_packet.get("deepseek_provider_benchmark_scope_ticket_rows") or benchmark_scope_ticket.get("rows")
+    )
     durable_recipe = _dict(cache_packet.get("deepseek_durable_evidence_recipe"))
     durable_recipe_rows = [
         row for row in _list(cache_packet.get("deepseek_durable_evidence_rows") or durable_recipe.get("rows"))
@@ -288,6 +299,7 @@ def build_contract() -> dict[str, Any]:
     durable_evidence_keys = {str(row.get("evidence_key") or "") for row in durable_recipe_rows}
     catalog = task_service.build_task_catalog()
     task = _deepseek_task(catalog)
+    scope_ticket_task = _deepseek_scope_ticket_task(catalog)
     task_strategy = _dict(task.get("deepseek_model_strategy"))
 
     sample_payload = {
@@ -549,6 +561,52 @@ def build_contract() -> dict[str, Any]:
             "Provider benchmark execution recipe must fix the next real benchmark scope while staying local, model-silent, secret-safe, and production-pending.",
         ),
         _row(
+            "provider_benchmark_scope_ticket_is_button_gated_preflight",
+            benchmark_scope_ticket.get("schema_version") == "factor_deepseek_provider_benchmark_scope_ticket_receipt.v1"
+            and benchmark_scope_ticket.get("scope") == "local_deepseek_provider_benchmark_scope_ticket_no_model_call"
+            and benchmark_scope_ticket.get("status")
+            in {
+                "deepseek_provider_benchmark_scope_ticket_missing",
+                "deepseek_provider_benchmark_scope_ticket_blocked_preflight",
+                "deepseek_provider_benchmark_scope_ticket_ready_secret_pending",
+                "deepseek_provider_benchmark_scope_ticket_ready_model_execution_pending",
+            }
+            and scope_ticket_task.get("route") == "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket"
+            and scope_ticket_task.get("button_gated") is True
+            and scope_ticket_task.get("current_backend") == "local_deepseek_provider_benchmark_scope_ticket_pipeline"
+            and scope_ticket_task.get("external_call_policy") == "local_scope_ticket_no_model_call"
+            and scope_ticket_task.get("model_execution_implemented") is False
+            and scope_ticket_task.get("provider_benchmark_done") is False
+            and scope_ticket_task.get("provider_response_format_enforced") is False
+            and scope_ticket_task.get("bounded_retry_repair_executed") is False
+            and scope_ticket_task.get("production_deepseek_explanation_complete") is False
+            and benchmark_scope_ticket.get("model_execution_implemented") is False
+            and benchmark_scope_ticket.get("provider_benchmark_done") is False
+            and benchmark_scope_ticket.get("provider_response_format_enforced") is False
+            and benchmark_scope_ticket.get("bounded_retry_repair_executed") is False
+            and benchmark_scope_ticket.get("token_budget_cost_evidence_complete") is False
+            and benchmark_scope_ticket.get("auto_after_task_production_ready") is False
+            and benchmark_scope_ticket.get("production_deepseek_explanation_complete") is False
+            and benchmark_scope_ticket.get("server_secret_values_read") is False
+            and benchmark_scope_ticket.get("env_key_names_exposed") is False
+            and benchmark_scope_ticket.get("credential_values_exposed") is False
+            and benchmark_scope_ticket.get("model_call_status") == "not_called"
+            and benchmark_scope_ticket.get("provider_model_called") is False
+            and benchmark_scope_ticket.get("cache_get_external_calls") is False
+            and _flag_false(benchmark_scope_ticket, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called", "contains_secret")
+            and benchmark_scope_ticket.get("does_not_execute_trades") is True
+            and benchmark_scope_ticket.get("does_not_modify_strategy_action") is True
+            and benchmark_scope_ticket.get("does_not_override_numeric_values") is True
+            and benchmark_scope_ticket.get("does_not_output_strategy_action") is True
+            and {"explicit_user_approval", "sample_count_meets_threshold", "provider_response_format_scope", "bounded_retry_budget_scope", "model_ledger_fields_scope", "benchmark_phase_scope", "server_secret_presence_boolean", "scope_ticket_hash_visible", "no_model_call_boundary", "no_trade_action_numeric_boundary", "production_completion_stays_blocked"}.issubset(set(benchmark_scope_ticket_rows))
+            and "scope ticket as provider benchmark evidence" in _list(benchmark_scope_ticket.get("not_allowed_next_steps"))
+            and "call DeepSeek from scope ticket" in _list(benchmark_scope_ticket.get("not_allowed_next_steps"))
+            and "auto_after_task promotion from scope ticket" in _list(benchmark_scope_ticket.get("not_allowed_next_steps"))
+            and _list(benchmark_scope_ticket.get("call_ledger"))
+            and _dict(_list(benchmark_scope_ticket.get("call_ledger"))[0]).get("api") == "local_deepseek_provider_benchmark_scope_ticket",
+            "DeepSeek provider benchmark scope ticket must be a button-gated local POST preflight that can bind a future benchmark scope without model calls, credentials, trades, action/numeric overwrite, or production completion.",
+        ),
+        _row(
             "deepseek_durable_evidence_recipe_is_local_pending",
             durable_recipe.get("schema_version") == "factor_deepseek_durable_evidence_recipe.v1"
             and durable_recipe.get("status") == "deepseek_durable_evidence_recipe_ready_production_pending"
@@ -658,11 +716,13 @@ def build_contract() -> dict[str, Any]:
             and "deepseek_production_activation_receipt.v1" in this_script
             and "factor_deepseek_retry_repair_dry_run_contract.v1" in this_script
             and "factor_deepseek_provider_benchmark_execution_recipe.v1" in this_script
+            and "factor_deepseek_provider_benchmark_scope_ticket_receipt.v1" in this_script
             and "factor_deepseek_durable_evidence_recipe.v1" in this_script
             and "provider_benchmark_done" in this_script
             and "production_deepseek_explanation_complete" in this_script
             and "deepseek_production_stage_scope_manifest" in this_script
             and "response_format_enforced" in this_script
+            and "provider_benchmark_scope_ticket_is_button_gated_preflight" in this_script
             and "deepseek_durable_evidence_recipe_is_local_pending" in this_script
             and "does_not_execute_trades" in this_script
             and ("request" + "s") not in this_script
@@ -691,6 +751,8 @@ def build_contract() -> dict[str, Any]:
         "auto_after_task_production_ready": False,
         "deepseek_production_activation_receipt_ready": activation_receipt.get("local_activation_receipt_ready") is True,
         "provider_benchmark_execution_recipe_ready": benchmark_recipe.get("local_recipe_ready") is True,
+        "provider_benchmark_scope_ticket_ready": benchmark_scope_ticket.get("local_scope_ticket_ready") is True,
+        "provider_benchmark_scope_ticket_status": benchmark_scope_ticket.get("status"),
         "deepseek_durable_evidence_recipe_ready": durable_recipe.get("local_recipe_ready") is True,
         "deepseek_durable_evidence_recipe_status": durable_recipe.get("status"),
         "deepseek_durable_evidence_blocker_count": durable_recipe.get("durable_evidence_blocker_count"),
@@ -730,6 +792,10 @@ def build_contract() -> dict[str, Any]:
             "benchmark_recipe_required_sample_count": benchmark_recipe.get("required_sample_count"),
             "benchmark_recipe_phase_count": benchmark_recipe.get("phase_count"),
             "benchmark_recipe_allowed_next_step": benchmark_recipe.get("allowed_next_step"),
+            "benchmark_scope_ticket_status": benchmark_scope_ticket.get("status"),
+            "benchmark_scope_ticket_hash_short": benchmark_scope_ticket.get("benchmark_scope_hash_short"),
+            "benchmark_scope_ticket_ready": benchmark_scope_ticket.get("local_scope_ticket_ready"),
+            "benchmark_scope_ticket_secret_present": benchmark_scope_ticket.get("server_secret_present"),
             "durable_evidence_recipe_status": durable_recipe.get("status"),
             "durable_evidence_recipe_ready": durable_recipe.get("local_recipe_ready"),
             "durable_evidence_key_count": len(durable_recipe_rows),

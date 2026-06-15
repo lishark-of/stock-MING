@@ -8819,9 +8819,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("retry_repair_dry_run_is_local_and_production_blocked", script)
         self.assertIn("factor_deepseek_retry_repair_dry_run_contract.v1", script)
         self.assertIn("factor_deepseek_provider_benchmark_execution_recipe.v1", script)
+        self.assertIn("factor_deepseek_provider_benchmark_scope_ticket_receipt.v1", script)
         self.assertIn("factor_deepseek_durable_evidence_recipe.v1", script)
         self.assertIn("production_activation_receipt_guides_next_safe_step", script)
         self.assertIn("provider_benchmark_execution_recipe_is_local_pending", script)
+        self.assertIn("provider_benchmark_scope_ticket_is_button_gated_preflight", script)
         self.assertIn("deepseek_durable_evidence_recipe_is_local_pending", script)
         self.assertIn("deepseek_production_activation_receipt.v1", script)
         self.assertIn("deepseek_production_stage_scope_manifest", script)
@@ -8856,6 +8858,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["auto_after_task_production_ready"])
         self.assertTrue(payload["deepseek_production_activation_receipt_ready"])
         self.assertTrue(payload["provider_benchmark_execution_recipe_ready"])
+        self.assertFalse(payload["provider_benchmark_scope_ticket_ready"])
+        self.assertEqual(
+            payload["provider_benchmark_scope_ticket_status"],
+            "deepseek_provider_benchmark_scope_ticket_missing",
+        )
         self.assertTrue(payload["deepseek_durable_evidence_recipe_ready"])
         self.assertEqual(
             payload["deepseek_durable_evidence_recipe_status"],
@@ -8904,6 +8911,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["benchmark_recipe_allowed_next_step"],
             "explicit_deepseek_provider_benchmark_task_with_user_approval",
         )
+        self.assertEqual(
+            payload["observed"]["benchmark_scope_ticket_status"],
+            "deepseek_provider_benchmark_scope_ticket_missing",
+        )
+        self.assertFalse(payload["observed"]["benchmark_scope_ticket_ready"])
+        self.assertTrue(payload["observed"]["benchmark_scope_ticket_hash_short"])
+        self.assertIsInstance(payload["observed"]["benchmark_scope_ticket_secret_present"], bool)
         self.assertEqual(
             payload["observed"]["durable_evidence_recipe_status"],
             "deepseek_durable_evidence_recipe_ready_production_pending",
@@ -9012,6 +9026,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("retry_repair_dry_run_is_local_and_production_blocked", criteria)
         self.assertIn("production_activation_receipt_guides_next_safe_step", criteria)
         self.assertIn("provider_benchmark_execution_recipe_is_local_pending", criteria)
+        self.assertIn("provider_benchmark_scope_ticket_is_button_gated_preflight", criteria)
         self.assertIn("deepseek_durable_evidence_recipe_is_local_pending", criteria)
         self.assertIn("deepseek_production_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("local_builders_match_cache_governance_boundaries", criteria)
@@ -10884,7 +10899,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 38)
+        self.assertEqual(catalog["task_count"], 39)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -10903,7 +10918,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 38)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 39)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -10914,8 +10929,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 40)
-        self.assertEqual(route_coverage["task_creation_route_count"], 38)
+        self.assertEqual(route_coverage["known_post_route_count"], 41)
+        self.assertEqual(route_coverage["task_creation_route_count"], 39)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -10924,11 +10939,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 38)
+        self.assertEqual(implementation_status["task_count"], 39)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 35)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 36)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 36)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 37)
         self.assertEqual(implementation_status["external_capable_task_count"], 6)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -10972,6 +10987,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_worker_synthetic_healthcheck",
                 "run_worker_activation_review",
                 "run_worker_production_evidence_plan",
+                "run_deepseek_provider_benchmark_scope_ticket",
             },
         )
         self.assertEqual(implementation_status["guarded_local_task_types"], ["run_deepseek_factor_explanation"])
@@ -11014,6 +11030,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_worker_activation_review",
                 "run_worker_production_evidence_plan",
                 "run_deepseek_factor_explanation",
+                "run_deepseek_provider_benchmark_scope_ticket",
             },
         )
         self.assertTrue(implementation_status["all_external_capable_tasks_are_button_gated"])
@@ -11034,6 +11051,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/bootstrap/provider-model-acceptance-dry-run", route_coverage["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-worker-batch-dry-run", route_coverage["known_post_routes"])
         self.assertIn("POST /api/factor-quant/provider-small-pool-dry-run", route_coverage["known_post_routes"])
+        self.assertIn("POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket", route_coverage["known_post_routes"])
         self.assertIn("POST /api/worker/synthetic-healthcheck", route_coverage["known_post_routes"])
         self.assertIn("POST /api/worker/activation-review", route_coverage["known_post_routes"])
         self.assertIn("POST /api/worker/production-evidence-plan", route_coverage["known_post_routes"])
@@ -11223,6 +11241,42 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(factor_strategy["does_not_hardcode_model"])
         self.assertFalse(factor_strategy["contains_secret"])
         self.assertFalse(factor_strategy["external_call_on_cache_read"])
+        self.assertEqual(
+            by_type["run_deepseek_provider_benchmark_scope_ticket"]["route"],
+            "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket",
+        )
+        self.assertEqual(
+            by_type["run_deepseek_provider_benchmark_scope_ticket"]["current_backend"],
+            "local_deepseek_provider_benchmark_scope_ticket_pipeline",
+        )
+        self.assertEqual(
+            by_type["run_deepseek_provider_benchmark_scope_ticket"]["external_call_policy"],
+            "local_scope_ticket_no_model_call",
+        )
+        self.assertEqual(by_type["run_deepseek_provider_benchmark_scope_ticket"]["possible_external_sources"], [])
+        self.assertEqual(by_type["run_deepseek_provider_benchmark_scope_ticket"]["future_external_sources"], ["deepseek"])
+        self.assertTrue(by_type["run_deepseek_provider_benchmark_scope_ticket"]["local_scope_ticket_only"])
+        self.assertEqual(by_type["run_deepseek_provider_benchmark_scope_ticket"]["minimum_sample_count"], 40)
+        self.assertEqual(by_type["run_deepseek_provider_benchmark_scope_ticket"]["required_json_success_rate"], 0.9)
+        self.assertTrue(by_type["run_deepseek_provider_benchmark_scope_ticket"]["requires_user_approval_flag"])
+        self.assertEqual(
+            by_type["run_deepseek_provider_benchmark_scope_ticket"]["server_secret_presence_check"],
+            "environment_key_membership_only_no_value_read",
+        )
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_scope_ticket"]["server_secret_values_read"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_scope_ticket"]["env_key_names_exposed"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_scope_ticket"]["credential_values_exposed"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_scope_ticket"]["model_execution_implemented"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_scope_ticket"]["provider_benchmark_done"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_scope_ticket"]["provider_response_format_enforced"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_scope_ticket"]["bounded_retry_repair_executed"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_scope_ticket"]["production_deepseek_explanation_complete"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_scope_ticket"]["cache_get_external_calls"])
+        self.assertFalse(by_type["run_deepseek_provider_benchmark_scope_ticket"]["react_render_direct_model_calls"])
+        self.assertTrue(by_type["run_deepseek_provider_benchmark_scope_ticket"]["does_not_execute_trades"])
+        self.assertTrue(by_type["run_deepseek_provider_benchmark_scope_ticket"]["does_not_modify_strategy_action"])
+        self.assertTrue(by_type["run_deepseek_provider_benchmark_scope_ticket"]["does_not_override_numeric_values"])
+        self.assertTrue(by_type["run_deepseek_provider_benchmark_scope_ticket"]["does_not_output_strategy_action"])
         self.assertIn("github", by_type["probe_serenity_github"]["possible_external_sources"])
         self.assertEqual(by_type["run_chokepoint_scan"]["deepseek_model_strategy_purpose"], "explain")
         self.assertIn("DEEPSEEK_EXPLAIN_MODEL", by_type["run_chokepoint_scan"]["deepseek_model_config_keys"])
@@ -11879,6 +11933,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/factor-quant/universe-worker-batch-dry-run", discovered_routes)
         self.assertIn("POST /api/factor-quant/provider-small-pool-dry-run", discovered_routes)
         self.assertIn("POST /api/factor-quant/deepseek-explain", discovered_routes)
+        self.assertIn("POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket", discovered_routes)
         self.assertIn("POST /api/candidate-radar/scan-quick", discovered_routes)
         self.assertIn("POST /api/candidate-radar/quant-projection", discovered_routes)
         self.assertIn("POST /api/candidate-radar/quant-projection-acceptance-dry-run", discovered_routes)
@@ -11919,16 +11974,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 35)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 36)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 36)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 37)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 35)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 36)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 36)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 37)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("refresh_factor_data", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -11960,6 +12015,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("run_worker_synthetic_healthcheck", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_worker_activation_review", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_worker_production_evidence_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
+        self.assertIn("run_deepseek_provider_benchmark_scope_ticket", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_deepseek_factor_explanation", packet["task_implementation_status"]["guarded_local_task_types"])
         self.assertIn("task_retry_policy_summary", packet)
         self.assertEqual(packet["task_retry_policy_summary"]["status"], "audit_ready")
@@ -12586,9 +12642,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 35)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 36)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 36)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 37)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -12786,9 +12842,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 35)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 36)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 36)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 37)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -12819,9 +12875,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 35)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 36)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 36)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 37)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("refresh_factor_data", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -12853,6 +12909,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("run_worker_activation_review", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_worker_production_evidence_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_deepseek_factor_explanation", packet["task_implementation_status"]["guarded_local_task_types"])
+        self.assertIn("run_deepseek_provider_benchmark_scope_ticket", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertEqual(packet["task_persistence"]["storage_backend"], "memory_plus_sqlite_fallback")
         self.assertTrue(packet["task_persistence"]["task_rows_include_storage_source"])
         self.assertEqual({row["source"] for row in packet["task_persistence_source_rows"]}, {"memory", "sqlite_meta", "deduplicated"})
@@ -13332,6 +13389,104 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(explanation["does_not_override_numeric_values"])
         self.assertFalse(packet["governance"]["allow_core_action"])
         self.assertTrue(packet["next_session_bridge"]["does_not_modify_operation_zones"])
+
+    def test_deepseek_provider_benchmark_scope_ticket_task_creates_local_preflight_only(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        task = factor_service.create_factor_task(
+            "run_deepseek_provider_benchmark_scope_ticket",
+            payload={
+                "approved_by_user": True,
+                "sample_count": 40,
+                "response_format": "json_schema",
+                "max_retry_per_sample": 2,
+                "api_key": "SHOULD_DROP",
+            },
+        )
+        packet = factor_service.read_factor_quant_cache()
+        receipt = packet["deepseek_provider_benchmark_scope_ticket_receipt"]
+        rows = {row["criterion"]: row for row in packet["deepseek_provider_benchmark_scope_ticket_rows"]}
+
+        self.assertEqual(task["status"], "success")
+        self.assertIn(
+            task["current_step"],
+            {
+                "deepseek_provider_benchmark_scope_ticket_ready_secret_pending",
+                "deepseek_provider_benchmark_scope_ticket_ready_model_execution_pending",
+            },
+        )
+        self.assertEqual(task["task_type"], "run_deepseek_provider_benchmark_scope_ticket")
+        self.assertEqual(task["call_ledger"][0]["api"], "local_deepseek_provider_benchmark_scope_ticket")
+        self.assertIn(task["call_ledger"][0]["call_status"], {
+            "deepseek_provider_benchmark_scope_ticket_ready_secret_pending",
+            "deepseek_provider_benchmark_scope_ticket_ready_model_execution_pending",
+        })
+        self.assert_local_ledger_boundary(task["call_ledger"][0])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertNotIn("api_key", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+
+        self.assertEqual(receipt["schema_version"], "factor_deepseek_provider_benchmark_scope_ticket_receipt.v1")
+        self.assertEqual(receipt["scope"], "local_deepseek_provider_benchmark_scope_ticket_no_model_call")
+        self.assertEqual(receipt["status"], task["current_step"])
+        self.assertTrue(receipt["source_packet_present"])
+        self.assertFalse(receipt["cache_get_initializes_scope_ticket"])
+        self.assertTrue(receipt["local_scope_ticket_ready"])
+        self.assertEqual(receipt["requested_sample_count"], 40)
+        self.assertEqual(receipt["required_sample_count"], 40)
+        self.assertEqual(receipt["response_format"], "json_schema")
+        self.assertEqual(receipt["max_retry_per_sample"], 2)
+        self.assertTrue(receipt["benchmark_scope_hash_short"])
+        self.assertEqual(len(receipt["benchmark_scope_hash_short"]), 16)
+        self.assertTrue(receipt["server_secret_presence_checked"])
+        self.assertIsInstance(receipt["server_secret_present"], bool)
+        self.assertFalse(receipt["server_secret_values_read"])
+        self.assertFalse(receipt["env_key_names_exposed"])
+        self.assertFalse(receipt["credential_values_exposed"])
+        self.assertEqual(receipt["model_call_status"], "not_called")
+        self.assertFalse(receipt["model_execution_implemented"])
+        self.assertFalse(receipt["provider_model_called"])
+        self.assertFalse(receipt["provider_benchmark_done"])
+        self.assertFalse(receipt["provider_response_format_enforced"])
+        self.assertFalse(receipt["bounded_retry_repair_executed"])
+        self.assertFalse(receipt["production_deepseek_explanation_complete"])
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertFalse(receipt["tushare_called"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(receipt["does_not_modify_strategy_action"])
+        self.assertTrue(receipt["does_not_override_numeric_values"])
+        self.assertTrue(receipt["does_not_output_strategy_action"])
+        self.assertIn("scope ticket as provider benchmark evidence", receipt["not_allowed_next_steps"])
+        self.assertIn("call DeepSeek from scope ticket", receipt["not_allowed_next_steps"])
+        self.assertIn("provider benchmark model ledger", receipt["missing_evidence"])
+        self.assertIn("provider response_format/json_schema execution evidence", receipt["missing_evidence"])
+        self.assertEqual(receipt["call_ledger"][0]["api"], "local_deepseek_provider_benchmark_scope_ticket")
+        self.assertEqual(receipt["call_ledger"][0]["call_status"], receipt["status"])
+        self.assert_local_ledger_boundary(receipt["call_ledger"][0])
+        self.assertIn("explicit_user_approval", rows)
+        self.assertTrue(rows["explicit_user_approval"]["passed"])
+        self.assertIn("sample_count_meets_threshold", rows)
+        self.assertTrue(rows["sample_count_meets_threshold"]["passed"])
+        self.assertIn("server_secret_presence_boolean", rows)
+        self.assertIsInstance(rows["server_secret_presence_boolean"]["passed"], bool)
+        self.assertTrue(rows["no_model_call_boundary"]["passed"])
+        self.assertTrue(rows["no_trade_action_numeric_boundary"]["passed"])
+        self.assertTrue(rows["production_completion_stays_blocked"]["passed"])
+        self.assertEqual(
+            packet["deepseek_explain_governance"]["provider_benchmark_scope_ticket_status"],
+            receipt["status"],
+        )
+        self.assertTrue(packet["deepseek_explain_governance"]["provider_benchmark_scope_ticket_ready"])
+        self.assertEqual(
+            packet["deepseek_explain_governance"]["provider_benchmark_scope_hash_short"],
+            receipt["benchmark_scope_hash_short"],
+        )
+        self.assertIn("local_deepseek_provider_benchmark_scope_ticket", {item.get("api") for item in packet["call_ledger"]})
+        self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
 
     def test_deepseek_disabled_mode_rejects_explanation_task_without_model_call(self):
         self._with_meta_store()
@@ -14935,11 +15090,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 38)
+        self.assertEqual(task_catalog["data"]["task_count"], 39)
         self.assertIn("POST /api/bootstrap/live-startup", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-research-plan", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-worker-batch-dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/provider-small-pool-dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
+        self.assertIn(
+            "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket",
+            task_catalog["data"]["route_coverage"]["known_post_routes"],
+        )
         self.assertIn("POST /api/next-session/browser-qa-review", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/tasks/refresh-tushare-facts", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn(
@@ -21014,6 +21173,58 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("local_factor_universe_worker_batch_dry_run", {item.get("api") for item in packet["call_ledger"]})
         self.assertIn("local_factor_universe_worker_batch_execution_recipe", {item.get("api") for item in packet["call_ledger"]})
         self.assertIn("local_factor_universe_durable_evidence_recipe", {item.get("api") for item in packet["call_ledger"]})
+        self.assertNotIn("SHOULD_DROP", json.dumps(factor, ensure_ascii=False))
+
+    def test_deepseek_provider_benchmark_scope_ticket_endpoint_is_button_gated_local_only(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        created = self.client.post(
+            "/api/factor-quant/deepseek-provider-benchmark-scope-ticket",
+            json={
+                "approved_by_user": True,
+                "sample_count": 40,
+                "response_format": "json_schema",
+                "max_retry_per_sample": 2,
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(created["ok"])
+        task = created["data"]["task"]
+        self.assertEqual(task["task_type"], "run_deepseek_provider_benchmark_scope_ticket")
+        self.assertEqual(task["status"], "success")
+        self.assertIn(
+            task["current_step"],
+            {
+                "deepseek_provider_benchmark_scope_ticket_ready_secret_pending",
+                "deepseek_provider_benchmark_scope_ticket_ready_model_execution_pending",
+            },
+        )
+        self.assertEqual(created["call_ledger"][0]["api"], "local_deepseek_provider_benchmark_scope_ticket")
+        self.assert_local_ledger_boundary(created["call_ledger"][0])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("token", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(created, ensure_ascii=False))
+
+        factor = self.client.get("/api/factor-quant/cache").json()
+        self.assertTrue(factor["ok"])
+        receipt = factor["data"]["deepseek_provider_benchmark_scope_ticket_receipt"]
+        self.assertEqual(receipt["status"], task["current_step"])
+        self.assertTrue(receipt["source_packet_present"])
+        self.assertFalse(receipt["cache_get_initializes_scope_ticket"])
+        self.assertTrue(receipt["local_scope_ticket_ready"])
+        self.assertFalse(receipt["provider_benchmark_done"])
+        self.assertFalse(receipt["production_deepseek_explanation_complete"])
+        self.assertEqual(receipt["model_call_status"], "not_called")
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertIn("scope ticket as provider benchmark evidence", receipt["not_allowed_next_steps"])
         self.assertNotIn("SHOULD_DROP", json.dumps(factor, ensure_ascii=False))
 
     def test_deepseek_explain_endpoint_is_guarded_and_sanitized(self):

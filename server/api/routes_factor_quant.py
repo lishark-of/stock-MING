@@ -56,3 +56,9 @@ def dry_run_factor_test_provider_small_pool(payload: dict[str, Any] | None = Non
 def explain_factor_with_deepseek(payload: dict[str, Any] | None = None) -> dict:
     task = factor_service.create_factor_task("run_deepseek_factor_explanation", payload)
     return task_envelope(task)
+
+
+@router.post("/deepseek-provider-benchmark-scope-ticket")
+def create_deepseek_provider_benchmark_scope_ticket(payload: dict[str, Any] | None = None) -> dict:
+    task = factor_service.create_factor_task("run_deepseek_provider_benchmark_scope_ticket", payload)
+    return task_envelope(task)
