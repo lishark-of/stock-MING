@@ -218,6 +218,13 @@ export function getMigrationStatus() {
   return request<Record<string, unknown>>("/api/migration/status");
 }
 
+export function postTushareDeepseekLinkageReview(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/migration/tushare-deepseek-linkage-review", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getModelStrategyCache() {
   return request<Record<string, unknown>>("/api/model-strategy/cache");
 }

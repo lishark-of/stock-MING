@@ -22,7 +22,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from server.services import bootstrap_service, candidate_service, task_service  # noqa: E402
+from server.services import bootstrap_service, candidate_service, migration_status_service, task_service  # noqa: E402
 
 
 ENV_KEYS = (
@@ -327,6 +327,64 @@ def build_contract() -> dict[str, Any]:
                 )
             )
 
+            linkage_review_task = migration_status_service.run_tushare_deepseek_linkage_review(
+                {
+                    "approved_by_user": True,
+                    "reviewer": "linkage_contract",
+                    "token": "SHOULD_DROP",
+                }
+            )
+            linkage_review_payload = _dict(linkage_review_task.get("payload_safe"))
+            linkage_review_receipt = _dict(linkage_review_payload.get("tushare_deepseek_linkage_review_receipt"))
+            linkage_review_rows = _list(linkage_review_payload.get("tushare_deepseek_linkage_review_rows"))
+            linkage_review_text = _json(linkage_review_task)
+            migration_status = migration_status_service.build_migration_status()
+            latest_linkage_review = _dict(migration_status.get("latest_tushare_deepseek_linkage_review"))
+            latest_linkage_review_rows = _list(migration_status.get("latest_tushare_deepseek_linkage_review_rows"))
+            rows.append(
+                _row(
+                    "linkage_review_task_records_pending_evidence_without_calls",
+                    linkage_review_task.get("task_type") == "run_tushare_deepseek_linkage_review"
+                    and linkage_review_task.get("status") == "success"
+                    and linkage_review_receipt.get("status")
+                    == "tushare_deepseek_linkage_review_recorded_real_evidence_pending"
+                    and linkage_review_receipt.get("user_confirmed") is True
+                    and linkage_review_receipt.get("cache_render_silent") is True
+                    and linkage_review_receipt.get("post_task_creation_button_gated") is True
+                    and linkage_review_receipt.get("provider_execution_implemented") is False
+                    and linkage_review_receipt.get("model_execution_implemented") is False
+                    and linkage_review_receipt.get("production_live_light_complete") is False
+                    and linkage_review_receipt.get("production_quant_projection_complete") is False
+                    and linkage_review_receipt.get("blocking_row_count", 0) > 0
+                    and "real_tushare_call_ledger" in _list(linkage_review_receipt.get("missing_evidence_items"))
+                    and "deepseek_model_ledger_if_enabled"
+                    in _list(linkage_review_receipt.get("missing_evidence_items"))
+                    and linkage_review_task.get("external_calls_triggered") is False
+                    and linkage_review_task.get("tushare_called") is False
+                    and linkage_review_task.get("deepseek_called") is False
+                    and linkage_review_task.get("github_called") is False
+                    and linkage_review_receipt.get("contains_secret") is False
+                    and "SHOULD_DROP" not in linkage_review_text,
+                    "linkage review task records the pending real-provider/model evidence boundary without calls or secrets.",
+                )
+            )
+            rows.append(
+                _row(
+                    "latest_linkage_review_cache_lookup_is_local_read_only",
+                    latest_linkage_review.get("status") == "latest_tushare_deepseek_linkage_review_visible"
+                    and latest_linkage_review.get("latest_task_id") == linkage_review_task.get("task_id")
+                    and latest_linkage_review.get("review_status") == linkage_review_receipt.get("status")
+                    and len(latest_linkage_review_rows) == len(linkage_review_rows)
+                    and latest_linkage_review.get("cache_get_creates_task") is False
+                    and latest_linkage_review.get("external_calls_triggered") is False
+                    and latest_linkage_review.get("tushare_called") is False
+                    and latest_linkage_review.get("deepseek_called") is False
+                    and latest_linkage_review.get("github_called") is False
+                    and latest_linkage_review.get("contains_secret") is False,
+                    "GET migration status may replay the latest linkage review metadata, but it must not create tasks, call providers/models/probes, or expose secrets.",
+                )
+            )
+
             push_gate = (PROJECT_ROOT / "scripts" / "push_gate_3_0.sh").read_text(encoding="utf-8")
             this_script = (PROJECT_ROOT / "scripts" / "tushare_deepseek_linkage_contract.py").read_text(
                 encoding="utf-8"
@@ -370,7 +428,7 @@ def build_contract() -> dict[str, Any]:
         "schema_version": "command_center_3_tushare_deepseek_linkage_contract.v1",
         "status": "tushare_deepseek_linkage_contract_passed" if not blockers else "tushare_deepseek_linkage_contract_blocked",
         "scope": "local_tushare_deepseek_linkage_contract_no_provider_or_model_execution",
-        "ltg": "LTG-02/LTG-07/LTG-13/LTG-11",
+        "ltg": "LTG-02/LTG-07/LTG-11/LTG-12/LTG-13",
         "contract_ready": not blockers,
         "runtime_mode_layering_ready": not blockers,
         "live_light_provider_linkage_visible": not blockers,

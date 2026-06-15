@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getMigrationStatus } from "../api/client";
+import { getMigrationStatus, postTushareDeepseekLinkageReview } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -9,6 +9,8 @@ export default function MigrationStatus() {
   const [packet, setPacket] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
+  const [linkageReviewTask, setLinkageReviewTask] = useState<Record<string, unknown>>({});
+  const [linkageReviewError, setLinkageReviewError] = useState<string>("");
 
   useEffect(() => {
     void getMigrationStatus().then((res) => {
@@ -27,6 +29,13 @@ export default function MigrationStatus() {
   const tushareDeepseekLinkage = (packet.tushare_deepseek_linkage_review as Record<string, unknown> | undefined) ?? {};
   const tushareDeepseekLinkageRows = (packet.tushare_deepseek_linkage_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const tushareDeepseekModeLayerRows = (packet.tushare_deepseek_mode_layer_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const latestTushareDeepseekLinkageReview = (packet.latest_tushare_deepseek_linkage_review as Record<string, unknown> | undefined) ?? {};
+  const linkageReviewPayload = (linkageReviewTask.payload_safe as Record<string, unknown> | undefined) ?? {};
+  const postLinkageReviewReceipt = (linkageReviewPayload.tushare_deepseek_linkage_review_receipt as Record<string, unknown> | undefined) ?? {};
+  const latestLinkageReviewRows = (packet.latest_tushare_deepseek_linkage_review_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const postLinkageReviewRows = (linkageReviewPayload.tushare_deepseek_linkage_review_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const linkageReviewReceipt = Object.keys(postLinkageReviewReceipt).length ? postLinkageReviewReceipt : latestTushareDeepseekLinkageReview;
+  const linkageReviewRows = postLinkageReviewRows.length ? postLinkageReviewRows : latestLinkageReviewRows;
   const principles = Array.isArray(packet.principles) ? packet.principles : [];
   const policy = packet.api_policy as Record<string, unknown> | undefined;
   const baselinePolicy = packet.baseline_policy as Record<string, unknown> | undefined;
@@ -45,16 +54,34 @@ export default function MigrationStatus() {
           : "迁移原则";
     return { index: index + 1, category, principle: text };
   });
+  const refreshMigrationStatus = () => void getMigrationStatus().then((res) => {
+    setPacket(res.data);
+    setCacheEnvelopeLedger(res.call_ledger ?? []);
+    setCacheEnvelopeWarnings(res.warnings ?? []);
+  });
+  const launchLinkageReview = () => {
+    setLinkageReviewError("");
+    void postTushareDeepseekLinkageReview({
+      approved_by_user: true,
+      review_scope: "tushare_deepseek_mode_layer_linkage",
+      reviewer: "local_ui"
+    }).then((res) => {
+      if (!res.ok) {
+        setLinkageReviewError(String(res.error ?? "tushare_deepseek_linkage_review_failed"));
+        return;
+      }
+      setLinkageReviewTask(res.data.task as unknown as Record<string, unknown>);
+      refreshMigrationStatus();
+    });
+  };
 
   return (
     <PacketCard title="Command Center 3.0 迁移状态" subtitle="固定长期参考基线；只读、不重新估算、不外联" status={String(packet.status ?? "loading")}>
       <div className="actions">
-        <button onClick={() => void getMigrationStatus().then((res) => {
-          setPacket(res.data);
-          setCacheEnvelopeLedger(res.call_ledger ?? []);
-          setCacheEnvelopeWarnings(res.warnings ?? []);
-        })}>查看迁移基线</button>
+        <button onClick={refreshMigrationStatus}>查看迁移基线</button>
+        <button onClick={launchLinkageReview}>生成联动 review 收据</button>
       </div>
+      {linkageReviewError && <p className="risk-note">{linkageReviewError}</p>}
       <MetricGrid
         items={[
           { label: "baseline items", value: progress.length },
@@ -68,6 +95,8 @@ export default function MigrationStatus() {
           { label: "linkage layers", value: tushareDeepseekLinkageRows.length },
           { label: "mode layers", value: tushareDeepseekModeLayerRows.length },
           { label: "linkage blockers", value: Number(tushareDeepseekLinkage.blocking_row_count ?? 0), tone: Number(tushareDeepseekLinkage.blocking_row_count ?? 0) ? "bad" : "good" },
+          { label: "latest linkage review", value: String(linkageReviewReceipt.status ?? "not_run") },
+          { label: "review blockers", value: Number(linkageReviewReceipt.blocking_row_count ?? 0), tone: Number(linkageReviewReceipt.blocking_row_count ?? 0) ? "warn" : "good" },
           { label: "cache envelope ledger", value: cacheCallLedger.length },
           { label: "cache warnings", value: cacheWarnings.length },
           { label: "planning baseline", value: baselinePolicy?.use_as_planning_baseline === true, tone: baselinePolicy?.use_as_planning_baseline === true ? "good" : "warn" },
@@ -99,6 +128,10 @@ export default function MigrationStatus() {
       <DataLineageTable rows={[tushareDeepseekLinkage]} />
       <DataLineageTable rows={tushareDeepseekModeLayerRows} />
       <DataLineageTable rows={tushareDeepseekLinkageRows} />
+      <h3>Tushare / DeepSeek 联动 review 收据</h3>
+      <p className="risk-note">该按钮只生成本地审查收据：不调用 Tushare、DeepSeek 或 GitHub，不创建 provider/model task，不执行真实交易，不修改 strategy action。</p>
+      <DataLineageTable rows={[linkageReviewReceipt]} />
+      <DataLineageTable rows={linkageReviewRows} />
       <h3>长期迁移原则</h3>
       <p className="risk-note">这组原则来自用户长期基线；React/Tauri 主入口只读展示，不重新估算、不创建任务。</p>
       <DataLineageTable rows={principleRows} />

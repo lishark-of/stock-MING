@@ -3,6 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from server.services import task_service
+
+
+TUSHARE_DEEPSEEK_LINKAGE_REVIEW_TASK_TYPE = "run_tushare_deepseek_linkage_review"
+TUSHARE_DEEPSEEK_LINKAGE_REVIEW_ROUTE = "POST /api/migration/tushare-deepseek-linkage-review"
+TUSHARE_DEEPSEEK_LINKAGE_REVIEW_PACKET_KEY = "command_center_3_migration_status"
+
 
 MIGRATION_PROGRESS_BASELINE = [
     {"module": "Streamlit 保留为 legacy", "current_degree": "70%"},
@@ -1970,6 +1977,397 @@ def _build_tushare_deepseek_linkage_review(
         "next_review": "Before real live_light promotion, require explicit provider call ledger, DeepSeek model ledger, redaction review, UI non-blocking evidence, and production promotion evidence.",
     }
 
+
+def _linkage_review_task_row(
+    phase: str,
+    *,
+    status: str,
+    evidence: str,
+    required_evidence: list[str],
+    passed: bool,
+    production_blocker: bool = False,
+) -> dict[str, Any]:
+    return {
+        "phase": phase,
+        "status": status,
+        "passed": bool(passed),
+        "production_blocker": bool(production_blocker),
+        "evidence": evidence,
+        "required_evidence": required_evidence,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def _build_tushare_deepseek_linkage_review_task_receipt(
+    *,
+    linkage_review: dict[str, Any],
+    linkage_rows: list[dict[str, Any]],
+    mode_layer_rows: list[dict[str, Any]],
+    payload_safe: dict[str, Any],
+    task_id: str,
+    reviewed_at: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    linkage_by_key = {str(row.get("linkage_key") or ""): row for row in linkage_rows}
+    mode_by_key = {str(row.get("layer_key") or ""): row for row in mode_layer_rows}
+    user_confirmed = payload_safe.get("approved_by_user") is True or payload_safe.get("user_confirmed") is True
+    provider_row = linkage_by_key.get("tushare_light_provider_execution", {})
+    model_row = linkage_by_key.get("deepseek_pro_after_task_execution", {})
+    promotion_row = linkage_by_key.get("production_promotion_boundary", {})
+    real_trade_row = linkage_by_key.get("real_trading_boundary", {})
+    cache_render_silent = (
+        linkage_review.get("cache_render_silent") is True
+        and linkage_review.get("cache_get_calls_tushare") is False
+        and linkage_review.get("cache_get_calls_deepseek") is False
+        and linkage_review.get("react_render_calls_tushare") is False
+        and linkage_review.get("react_render_calls_deepseek") is False
+    )
+    post_task_gate_visible = (
+        linkage_review.get("post_task_creation_button_gated") is True
+        and mode_by_key.get("post_task_creation", {}).get("current_status") == "button_gated_allowed"
+    )
+    provider_evidence_done = provider_row.get("provider_execution_implemented") is True
+    model_evidence_done = model_row.get("model_execution_implemented") is True
+    production_promotion_done = promotion_row.get("production_promotion_complete") is True
+    real_trading_isolated = real_trade_row.get("real_trading_connected") is False
+    rows = [
+        _linkage_review_task_row(
+            "explicit_user_confirmation",
+            status="passed_user_confirmed" if user_confirmed else "blocked_user_confirmation_required",
+            evidence="operator confirmed local linkage review" if user_confirmed else "missing approved_by_user/user_confirmed flag",
+            required_evidence=["explicit reviewer confirmation before recording a review receipt"],
+            passed=user_confirmed,
+            production_blocker=not user_confirmed,
+        ),
+        _linkage_review_task_row(
+            "cache_render_silence",
+            status="passed_cache_render_silent" if cache_render_silent else "blocked_cache_render_boundary_regression",
+            evidence="GET cache and initial React render remain provider/model silent.",
+            required_evidence=["cache_get_no_tushare", "cache_get_no_deepseek", "react_render_no_provider_model_call"],
+            passed=cache_render_silent,
+            production_blocker=not cache_render_silent,
+        ),
+        _linkage_review_task_row(
+            "post_task_gate_visible",
+            status="passed_button_task_gate_visible" if post_task_gate_visible else "blocked_missing_post_task_gate",
+            evidence="Tushare/DeepSeek work is represented as explicit task/mode-gated rows.",
+            required_evidence=["visible runtime mode", "button or live_light task boundary", "safe payload", "call/model ledger requirements"],
+            passed=post_task_gate_visible,
+            production_blocker=not post_task_gate_visible,
+        ),
+        _linkage_review_task_row(
+            "tushare_call_ledger_evidence",
+            status="pending_real_tushare_call_ledger",
+            evidence=str(provider_row.get("status") or "pending_real_call_ledger"),
+            required_evidence=list(provider_row.get("required_evidence") or []),
+            passed=provider_evidence_done,
+            production_blocker=not provider_evidence_done,
+        ),
+        _linkage_review_task_row(
+            "deepseek_model_ledger_evidence",
+            status="pending_deepseek_model_ledger_and_benchmark",
+            evidence=str(model_row.get("status") or "pending_model_ledger_and_benchmark"),
+            required_evidence=list(model_row.get("required_evidence") or []),
+            passed=model_evidence_done,
+            production_blocker=not model_evidence_done,
+        ),
+        _linkage_review_task_row(
+            "github_probe_exclusion",
+            status="passed_github_probe_manual_only",
+            evidence=str(linkage_by_key.get("github_probe_boundary", {}).get("status") or "manual_only"),
+            required_evidence=["no_live_light_default_probe", "explicit_user_action"],
+            passed=linkage_by_key.get("github_probe_boundary", {}).get("github_called") is not True,
+            production_blocker=False,
+        ),
+        _linkage_review_task_row(
+            "production_promotion_evidence",
+            status="pending_production_promotion_review",
+            evidence=str(promotion_row.get("status") or "blocked_until_provider_model_browser_and_redaction_evidence"),
+            required_evidence=list(promotion_row.get("required_evidence") or []),
+            passed=production_promotion_done,
+            production_blocker=not production_promotion_done,
+        ),
+        _linkage_review_task_row(
+            "real_trading_isolation",
+            status="passed_real_trading_disconnected" if real_trading_isolated else "blocked_real_trading_connected",
+            evidence=str(real_trade_row.get("status") or "disconnected"),
+            required_evidence=list(real_trade_row.get("required_evidence") or []),
+            passed=real_trading_isolated,
+            production_blocker=not real_trading_isolated,
+        ),
+        _linkage_review_task_row(
+            "secret_boundary",
+            status="passed_no_secret_value_read_or_exposed",
+            evidence="review payload is sanitized by task_service and only records booleans/labels.",
+            required_evidence=["no token/key in payload_safe", "no env key names in receipt", "ledger redaction review before promotion"],
+            passed=True,
+            production_blocker=False,
+        ),
+    ]
+    production_blockers = [row for row in rows if row.get("production_blocker")]
+    missing_evidence = sorted(
+        {
+            str(item)
+            for row in production_blockers
+            for item in row.get("required_evidence", [])
+            if item
+        }
+    )
+    if not user_confirmed:
+        status = "tushare_deepseek_linkage_review_blocked_user_confirmation_required"
+        allowed_next_step = "rerun_linkage_review_with_explicit_user_confirmation"
+    elif production_blockers:
+        status = "tushare_deepseek_linkage_review_recorded_real_evidence_pending"
+        allowed_next_step = "collect_real_tushare_call_ledger_deepseek_model_ledger_browser_redaction_evidence_then_rerun_review"
+    else:
+        status = "tushare_deepseek_linkage_review_ready_for_manual_promotion_review"
+        allowed_next_step = "run_full_push_gate_and_manual_release_review_before_any_production_promotion"
+    receipt = {
+        "schema_version": "command_center_3_tushare_deepseek_linkage_review_task.v1",
+        "status": status,
+        "scope": "local_tushare_deepseek_linkage_review_no_provider_or_model_execution",
+        "route": TUSHARE_DEEPSEEK_LINKAGE_REVIEW_ROUTE,
+        "task_type": TUSHARE_DEEPSEEK_LINKAGE_REVIEW_TASK_TYPE,
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "user_confirmed": user_confirmed,
+        "mode_layer_model": linkage_review.get("mode_layer_model"),
+        "boundary_interpretation": linkage_review.get("boundary_interpretation"),
+        "row_count": len(rows),
+        "blocking_row_count": len(production_blockers),
+        "missing_evidence_items": missing_evidence,
+        "allowed_next_step": allowed_next_step,
+        "not_allowed_next_steps": [
+            "call Tushare from GET cache or React render",
+            "call DeepSeek from GET cache or React render",
+            "create GitHub probe from live_light default chain",
+            "treat dry-run or local receipt as real provider/model acceptance",
+            "promote production from scaffold/preflight/matrix/sanitizer/local receipt",
+            "overwrite numeric fields, prices, holdings, operation_zones, or strategy action",
+            "connect real trading",
+        ],
+        "cache_render_silent": cache_render_silent,
+        "post_task_creation_button_gated": post_task_gate_visible,
+        "provider_model_execution_pending": True,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "production_live_light_complete": False,
+        "production_quant_projection_complete": False,
+        "production_promotion_complete": False,
+        "ready_for_production_promotion_review": False,
+        "real_trading_disconnected": real_trading_isolated,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    return receipt, rows
+
+
+def _latest_tushare_deepseek_linkage_review_from_tasks() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    latest_task = next(
+        (
+            task
+            for task in task_service.list_task_statuses()
+            if str(task.get("task_type") or "") == TUSHARE_DEEPSEEK_LINKAGE_REVIEW_TASK_TYPE
+        ),
+        None,
+    )
+    if not latest_task:
+        return (
+            {
+                "schema_version": "command_center_3_latest_tushare_deepseek_linkage_review.v1",
+                "status": "no_tushare_deepseek_linkage_review_task_found",
+                "scope": "local_task_status_lookup_no_provider_or_model_execution",
+                "latest_task_found": False,
+                "route": TUSHARE_DEEPSEEK_LINKAGE_REVIEW_ROUTE,
+                "task_type": TUSHARE_DEEPSEEK_LINKAGE_REVIEW_TASK_TYPE,
+                "receipt_visible": False,
+                "row_count": 0,
+                "blocking_row_count": 0,
+                "ready_for_production_promotion_review": False,
+                "provider_execution_implemented": False,
+                "model_execution_implemented": False,
+                "production_live_light_complete": False,
+                "production_quant_projection_complete": False,
+                "cache_get_creates_task": False,
+                "cache_get_external_calls": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+            [],
+        )
+    payload_safe = latest_task.get("payload_safe") if isinstance(latest_task.get("payload_safe"), dict) else {}
+    receipt = payload_safe.get("tushare_deepseek_linkage_review_receipt")
+    rows = payload_safe.get("tushare_deepseek_linkage_review_rows")
+    receipt_map = receipt if isinstance(receipt, dict) else {}
+    row_list = rows if isinstance(rows, list) else []
+    latest = {
+        "schema_version": "command_center_3_latest_tushare_deepseek_linkage_review.v1",
+        "status": "latest_tushare_deepseek_linkage_review_visible",
+        "scope": "local_task_status_lookup_no_provider_or_model_execution",
+        "latest_task_found": True,
+        "receipt_visible": bool(receipt_map),
+        "route": TUSHARE_DEEPSEEK_LINKAGE_REVIEW_ROUTE,
+        "task_type": TUSHARE_DEEPSEEK_LINKAGE_REVIEW_TASK_TYPE,
+        "latest_task_id": latest_task.get("task_id"),
+        "latest_task_status": latest_task.get("status"),
+        "latest_task_current_step": latest_task.get("current_step"),
+        "review_status": receipt_map.get("status") or "missing_receipt",
+        "row_count": len(row_list),
+        "blocking_row_count": sum(1 for row in row_list if isinstance(row, dict) and row.get("production_blocker")),
+        "user_confirmed": receipt_map.get("user_confirmed") is True,
+        "cache_render_silent": receipt_map.get("cache_render_silent") is True,
+        "post_task_creation_button_gated": receipt_map.get("post_task_creation_button_gated") is True,
+        "provider_model_execution_pending": True,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "production_live_light_complete": False,
+        "production_quant_projection_complete": False,
+        "production_promotion_complete": False,
+        "ready_for_production_promotion_review": False,
+        "cache_get_creates_task": False,
+        "cache_get_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+    return latest, row_list
+
+
+def run_tushare_deepseek_linkage_review(payload: Any = None) -> dict[str, Any]:
+    payload_preview = task_service.build_task_record(
+        TUSHARE_DEEPSEEK_LINKAGE_REVIEW_TASK_TYPE,
+        payload=payload,
+    )
+    payload_safe = payload_preview.get("payload_safe") if isinstance(payload_preview.get("payload_safe"), dict) else {}
+    linkage_rows = _build_tushare_deepseek_linkage_rows()
+    mode_layer_rows = _build_tushare_deepseek_mode_layer_rows()
+    linkage_review = _build_tushare_deepseek_linkage_review(linkage_rows, mode_layer_rows)
+    reviewed_at = _now_iso()
+    receipt, rows = _build_tushare_deepseek_linkage_review_task_receipt(
+        linkage_review=linkage_review,
+        linkage_rows=linkage_rows,
+        mode_layer_rows=mode_layer_rows,
+        payload_safe=payload_safe,
+        task_id="",
+        reviewed_at=reviewed_at,
+    )
+    payload_safe.update(
+        {
+            "tushare_deepseek_linkage_review_receipt": receipt,
+            "tushare_deepseek_linkage_review_rows": rows,
+            "linkage_review_only": True,
+            "creates_provider_task": False,
+            "creates_model_task": False,
+            "provider_execution_implemented": False,
+            "model_execution_implemented": False,
+            "production_live_light_complete": False,
+            "production_quant_projection_complete": False,
+        }
+    )
+    task = task_service.create_task_record(
+        TUSHARE_DEEPSEEK_LINKAGE_REVIEW_TASK_TYPE,
+        output_packet_key=TUSHARE_DEEPSEEK_LINKAGE_REVIEW_PACKET_KEY,
+        payload=payload_safe,
+        current_step="tushare_deepseek_linkage_review_local_only",
+        warnings=[
+            "Tushare/DeepSeek linkage review 只保存本地审查收据，不调用 Tushare、DeepSeek 或 GitHub。",
+            "linkage review 不创建 provider/model task，不把 scaffold/preflight/matrix/sanitizer/local receipt 提升为生产完成。",
+            "linkage review 不执行真实交易、不修改 strategy action、不读取 token/key 值。",
+        ],
+    )
+    receipt, rows = _build_tushare_deepseek_linkage_review_task_receipt(
+        linkage_review=linkage_review,
+        linkage_rows=linkage_rows,
+        mode_layer_rows=mode_layer_rows,
+        payload_safe=payload_safe,
+        task_id=str(task.get("task_id") or ""),
+        reviewed_at=reviewed_at,
+    )
+    task_payload = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    task_payload.update(
+        {
+            "tushare_deepseek_linkage_review_receipt": receipt,
+            "tushare_deepseek_linkage_review_rows": rows,
+        }
+    )
+    task["payload_safe"] = task_payload
+    ledger = [
+        {
+            "api": "local_tushare_deepseek_linkage_review",
+            "endpoint": TUSHARE_DEEPSEEK_LINKAGE_REVIEW_ROUTE,
+            "request_params_safe": {
+                "review_status": receipt["status"],
+                "user_confirmed": receipt["user_confirmed"],
+                "cache_render_silent": receipt["cache_render_silent"],
+                "post_task_creation_button_gated": receipt["post_task_creation_button_gated"],
+                "provider_execution_implemented": False,
+                "model_execution_implemented": False,
+                "blocking_row_count": receipt["blocking_row_count"],
+            },
+            "row_count": len(rows),
+            "local_fetched_at": reviewed_at,
+            "call_status": receipt["status"],
+            "error_message_safe": "",
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+    status_to_step = {
+        "tushare_deepseek_linkage_review_blocked_user_confirmation_required": (
+            "tushare_deepseek_linkage_review_blocked_user_confirmation_required_no_external_call"
+        ),
+        "tushare_deepseek_linkage_review_recorded_real_evidence_pending": (
+            "tushare_deepseek_linkage_review_recorded_real_evidence_pending_no_external_call"
+        ),
+        "tushare_deepseek_linkage_review_ready_for_manual_promotion_review": (
+            "tushare_deepseek_linkage_review_ready_for_manual_promotion_review_no_external_call"
+        ),
+    }
+    current_step = status_to_step.get(
+        str(receipt.get("status") or ""),
+        "tushare_deepseek_linkage_review_recorded_no_external_call",
+    )
+    task_service._persist_task(task)
+    return task_service.update_task_status(
+        str(task.get("task_id") or ""),
+        status="success",
+        progress=1.0,
+        current_step=current_step,
+        output_packet_key=TUSHARE_DEEPSEEK_LINKAGE_REVIEW_PACKET_KEY,
+        call_ledger=ledger,
+        warning="tushare_deepseek_linkage_review_completed_no_external_call",
+    ) or task
+
+
 MIGRATION_PRINCIPLES = [
     "不砍功能。",
     "Streamlit 不再作为普通主流程。",
@@ -2003,6 +2401,9 @@ def build_migration_status() -> dict[str, Any]:
         tushare_deepseek_linkage_rows,
         tushare_deepseek_mode_layer_rows,
     )
+    latest_tushare_deepseek_linkage_review, latest_tushare_deepseek_linkage_review_rows = (
+        _latest_tushare_deepseek_linkage_review_from_tasks()
+    )
     return {
         "packet_key": "command_center_3_migration_status",
         "schema_version": "command_center_3_migration_status.v2",
@@ -2016,6 +2417,8 @@ def build_migration_status() -> dict[str, Any]:
         "tushare_deepseek_linkage_review": tushare_deepseek_linkage_review,
         "tushare_deepseek_linkage_rows": tushare_deepseek_linkage_rows,
         "tushare_deepseek_mode_layer_rows": tushare_deepseek_mode_layer_rows,
+        "latest_tushare_deepseek_linkage_review": latest_tushare_deepseek_linkage_review,
+        "latest_tushare_deepseek_linkage_review_rows": latest_tushare_deepseek_linkage_review_rows,
         "target_stack": list(TARGET_STACK),
         "principles": list(MIGRATION_PRINCIPLES),
         "baseline_policy": {
@@ -2048,6 +2451,12 @@ def build_migration_status() -> dict[str, Any]:
                 "ltg_stage_scope_observed_row_count": len(ltg_stage_scope_observed_rows),
                 "tushare_deepseek_linkage_row_count": len(tushare_deepseek_linkage_rows),
                 "tushare_deepseek_mode_layer_row_count": len(tushare_deepseek_mode_layer_rows),
+                "latest_tushare_deepseek_linkage_review_found": bool(
+                    latest_tushare_deepseek_linkage_review.get("latest_task_found")
+                ),
+                "latest_tushare_deepseek_linkage_review_row_count": len(
+                    latest_tushare_deepseek_linkage_review_rows
+                ),
                 "local_fetched_at": loaded_at,
                 "call_status": "cache_read",
                 "external": False,

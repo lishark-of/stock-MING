@@ -60,6 +60,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 
 - `GET /health`
 - `GET /api/migration/status`
+- `POST /api/migration/tushare-deepseek-linkage-review`
 - `GET /api/packets`
 - `GET /api/packets/{packet_key}`
 - `GET /api/model-strategy/cache`
@@ -103,7 +104,7 @@ python3 -m uvicorn server.main:app --reload --port 8710
 - `GET /api/bootstrap/status` 还输出 `live_light_activation_receipt` 和 rows，把下一步真实 provider/model 执行前的启用条件固定为本地收据：mode layering、cache/render silence、POST task boundary、rate limit、symbol cap、call/model ledger、GitHub 排除、full-pool reserve、token/key 边界和交易隔离必须可见；Tushare provider execution、DeepSeek model execution 和 production promotion 仍是 blocked。该收据不调用 provider/model/GitHub，不证明 `live_light` 生产完成。
 - `GET /api/bootstrap/status` 还输出 `live_light_provider_model_acceptance_runbook` 和 rows，把未来用户确认后的真实验收顺序固定为 mode/scope preflight、显式批准、server-side secret presence check、`trade_cal`、`daily/daily_basic/moneyflow`、local factor/next-session、DeepSeek pro model ledger、UI non-blocking evidence、ledger redaction review 和 production promotion review。runbook 只列证据要求，不调用 Tushare/DeepSeek/GitHub，不读取凭据值，不证明 acceptance 完成。
 - `scripts/bootstrap_runtime_contract.py` 已接入本地 push gate，用临时 SQLite 和模式化配置复核 `cache_only` 离线、`live_light` 限频 task skeleton、staged run plan、DeepSeek model-ledger preview、payload 安全摘要、no-provider/no-model/no-GitHub/no-trade/no-action 边界。它不调用 Tushare、DeepSeek、GitHub，不证明真实 `live_light` provider execution 完成。
-- `/api/migration/status` 返回用户给定的 3.0 长期迁移进度基线、目标技术栈和安全原则；该接口只读、不外联、不重新估算进度。
+- `/api/migration/status` 返回用户给定的 3.0 长期迁移进度基线、目标技术栈、安全原则、Tushare/DeepSeek 四层联动审查和 latest linkage review metadata；该接口只读、不外联、不重新估算进度、不创建 task。`POST /api/migration/tushare-deepseek-linkage-review` 只在用户显式触发时记录本地 linkage review 收据，复核 cache/render silence、POST task gate、provider/model execution evidence、production promotion evidence 和 real-trading isolation；它不创建 provider/model task、不调用 Tushare/DeepSeek/GitHub、不读取 token/key、不证明 production linkage 完成。
 - `/api/tasks/catalog` 返回按钮门控任务目录、可能外部源、call ledger 要求和交易边界；DeepSeek-capable 任务会声明 `deepseek_model_strategy_purpose`、配置键和非硬编码模型来源；该接口只读，不创建任务。
 - `GET .../cache` 优先读取 `.stock_ming_3/meta.sqlite` 中已有持久化 packet；没有持久化 packet 时再读取 `.stock_ming_cache/command_center_latest.json` 本地快照或本地 builder；没有精确 packet 时返回 `cache_missing`，不会把旧 packet 冒充新 packet。
 - `/api/packets/{packet_key}` 的读取优先级为 `sqlite_meta > snapshot > local_builder > missing`，并支持部分 2.0 本地快照别名，例如 `command_center_moneyflow_packet` → `moneyflow_packet`、`strategy_execution_packet` → `strategy_packet`。
