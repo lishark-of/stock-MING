@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
+import { getBootstrapStatus, getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuickScan, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -21,6 +21,9 @@ export default function CandidateRadar() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
+  const [bootstrapStatus, setBootstrapStatus] = useState<Record<string, unknown>>({});
+  const [bootstrapEnvelopeLedger, setBootstrapEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [bootstrapEnvelopeWarnings, setBootstrapEnvelopeWarnings] = useState<Array<string>>([]);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [customPoolText, setCustomPoolText] = useState("");
@@ -31,6 +34,13 @@ export default function CandidateRadar() {
       setCache(res.data);
       setCacheEnvelopeLedger(res.call_ledger ?? []);
       setCacheEnvelopeWarnings(res.warnings ?? []);
+    });
+  };
+  const refreshBootstrapStatus = () => {
+    void getBootstrapStatus().then((res) => {
+      setBootstrapStatus(res.data);
+      setBootstrapEnvelopeLedger(res.call_ledger ?? []);
+      setBootstrapEnvelopeWarnings(res.warnings ?? []);
     });
   };
   const launchQuickScan = () =>
@@ -116,6 +126,7 @@ export default function CandidateRadar() {
 
   useEffect(() => {
     refreshCache();
+    refreshBootstrapStatus();
   }, []);
 
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
@@ -189,6 +200,12 @@ export default function CandidateRadar() {
   const browserQaReviewRows = rows(cache.candidate_browser_qa_review_rows);
   const providerCoverageRows = rows(cache.provider_coverage_rows);
   const degradedModeRows = rows(cache.degraded_mode_rows);
+  const bootstrapLiveLight = (bootstrapStatus.live_light as Record<string, unknown> | undefined) ?? {};
+  const bootstrapModeRows = rows(bootstrapStatus.mode_rows);
+  const bootstrapConfigRows = rows(bootstrapStatus.config_rows);
+  const bootstrapProviderLinkageRows = rows(bootstrapStatus.provider_linkage_rows);
+  const bootstrapActivationReceipt = (bootstrapStatus.live_light_activation_receipt as Record<string, unknown> | undefined) ?? {};
+  const bootstrapWarningRows = bootstrapEnvelopeWarnings.map((warning, index) => ({ index: index + 1, warning }));
   const fullPoolStageRows = rows(cache.full_pool_plan_stage_rows);
   const fullPoolFilterRows = rows(cache.full_pool_plan_filter_rows);
   const fullPoolSignalRows = rows(cache.full_pool_required_signal_rows);
@@ -218,6 +235,11 @@ export default function CandidateRadar() {
       <MetricGrid
         items={[
           { label: "mode", value: cache.mode as string | undefined },
+          { label: "runtime mode", value: String(bootstrapStatus.mode ?? "cache_only"), tone: bootstrapStatus.mode === "live_light" ? "warn" : "good" },
+          { label: "live_light", value: bootstrapLiveLight.enabled === true ? "enabled" : "off", tone: bootstrapLiveLight.enabled === true ? "warn" : "good" },
+          { label: "auto Tushare", value: bootstrapLiveLight.tushare_on_open === true ? "on" : "off", tone: bootstrapLiveLight.tushare_on_open === true ? "warn" : "good" },
+          { label: "auto DeepSeek", value: bootstrapLiveLight.deepseek_on_open === true ? "on" : "off", tone: bootstrapLiveLight.deepseek_on_open === true ? "warn" : "good" },
+          { label: "bootstrap task", value: bootstrapLiveLight.bootstrap_task_implemented === true ? "ready" : "pending", tone: bootstrapLiveLight.bootstrap_task_implemented === true ? "good" : "warn" },
           { label: "候选数", value: counts.candidate_count as number | undefined },
           { label: "可准备", value: counts.ready_count as number | undefined },
           { label: "只观察", value: counts.observe_count as number | undefined },
@@ -346,6 +368,19 @@ export default function CandidateRadar() {
               { label: "trade guard", state: cache.does_not_execute_trades === false ? "blocked" : "done", detail: "safe" }
             ]}
           />
+        </PacketCard>
+
+        <PacketCard title="雷达运行模式分层" subtitle="GET /api/bootstrap/status；雷达页只读展示 cache_only / manual / live_light 边界" status={String(bootstrapStatus.status ?? "cache_only")}>
+          <p>runtime mode: {String(bootstrapStatus.mode ?? "cache_only")}；live_light enabled: {String(bootstrapLiveLight.enabled === true)}</p>
+          <p>Tushare 自动刷新 / DeepSeek pro 自动解释: {String(bootstrapLiveLight.tushare_on_open === true)} / {String(bootstrapLiveLight.deepseek_on_open === true)}</p>
+          <p>symbol_limit / rate_limit_seconds: {String(bootstrapLiveLight.symbol_limit ?? "--")} / {String(bootstrapLiveLight.rate_limit_seconds ?? "--")}</p>
+          <p>bootstrap_task_implemented: {String(bootstrapLiveLight.bootstrap_task_implemented === true)}；provider_execution_implemented / model_execution_implemented: {String(bootstrapLiveLight.provider_execution_implemented === true)} / {String(bootstrapLiveLight.model_execution_implemented === true)}</p>
+          <p>activation receipt: {String(bootstrapActivationReceipt.status ?? "--")}；雷达页不会直接调用 Tushare、DeepSeek、GitHub，也不会从 render 启动 full-pool 或 deep-scan。</p>
+          <DataLineageTable rows={bootstrapModeRows} />
+          <DataLineageTable rows={bootstrapConfigRows} />
+          <DataLineageTable rows={bootstrapProviderLinkageRows} />
+          <DataLineageTable rows={bootstrapEnvelopeLedger} />
+          {bootstrapWarningRows.length ? <DataLineageTable rows={bootstrapWarningRows} /> : null}
         </PacketCard>
 
         <PacketCard title="搜票量化推演" subtitle="POST /api/candidate-radar/quant-projection；本地回执，不调用 Tushare/DeepSeek" status={String(searchQuantProjectionReceipt.status ?? "local_receipt")}>
