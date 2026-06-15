@@ -1209,6 +1209,106 @@ def _current_evidence_producer_generation_contract() -> tuple[dict[str, Any], li
         return contract, []
 
 
+def _current_evidence_producer_cache_refresh_readiness(
+    coverage_rows: list[dict[str, Any]],
+    generation_contract: Mapping[str, Any],
+    generation_rows: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    producer_keys = ("candidate_radar", "a_share_evidence_radar", "market_context")
+    coverage_by_key = {
+        str(row.get("producer") or ""): row for row in coverage_rows if isinstance(row, Mapping)
+    }
+    generation_by_key = {
+        str(row.get("producer") or ""): row for row in generation_rows if isinstance(row, Mapping)
+    }
+    rows: list[dict[str, Any]] = []
+    for producer in producer_keys:
+        current_row = coverage_by_key.get(producer, {})
+        generated_row = generation_by_key.get(producer, {})
+        current_status = _safe_text(current_row.get("status") or "not_observed", limit=120)
+        generated_status = _safe_text(generated_row.get("status") or "not_observed", limit=120)
+        builder_ready = generated_status == "passed_generation_contract"
+        current_cache_ready = current_status == "passed_read_only_contract"
+        refresh_required = bool(builder_ready and not current_cache_ready)
+        status = (
+            "current_cache_already_has_producer_freshness_context"
+            if current_cache_ready
+            else "ready_for_local_cache_refresh"
+            if refresh_required
+            else "blocked_generation_contract_missing"
+        )
+        rows.append(
+            {
+                "producer": producer,
+                "status": status,
+                "current_cache_status": current_status,
+                "generation_contract_status": generated_status,
+                "local_builder_ready": builder_ready,
+                "current_cache_ready": current_cache_ready,
+                "current_cache_refresh_required": refresh_required,
+                "current_cache_observed_path": current_row.get("observed_path"),
+                "current_cache_expected_trade_date": current_row.get("expected_trade_date"),
+                "current_cache_data_date": current_row.get("data_date"),
+                "generated_expected_trade_date": generated_row.get("expected_trade_date"),
+                "generated_data_date": generated_row.get("data_date"),
+                "generated_freshness_state": generated_row.get("freshness_state"),
+                "generated_date_matches_expected_trade_date": bool(
+                    generated_row.get("date_matches_expected_trade_date")
+                ),
+                "writes_snapshot_cache": False,
+                "creates_task": False,
+                "builds_missing_packets": False,
+                "does_not_refresh_provider": True,
+                "provider_backed_trade_cal_acceptance_done": False,
+                "production_freshness_gate_complete": False,
+                "cache_only": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            }
+        )
+    refresh_rows = [row for row in rows if row.get("current_cache_refresh_required")]
+    blocked_rows = [row for row in rows if str(row.get("status", "")).startswith("blocked_")]
+    ready = not blocked_rows and bool(generation_contract.get("local_generation_contract_ready"))
+    contract = {
+        "schema_version": "data_health_current_evidence_producer_cache_refresh_readiness.v1",
+        "status": "producer_cache_refresh_readiness_ready_manual_refresh_pending"
+        if ready and refresh_rows
+        else "producer_cache_refresh_readiness_current_cache_ready"
+        if ready
+        else "producer_cache_refresh_readiness_blocked_generation_contract",
+        "scope": "local_current_cache_refresh_readiness_no_write_no_provider_execution",
+        "producer_count": len(rows),
+        "local_builder_ready_count": sum(1 for row in rows if row.get("local_builder_ready")),
+        "current_cache_ready_count": sum(1 for row in rows if row.get("current_cache_ready")),
+        "current_cache_refresh_required_count": len(refresh_rows),
+        "blocked_producer_count": len(blocked_rows),
+        "blocked_producer_keys": [row["producer"] for row in blocked_rows],
+        "local_cache_refresh_ready": ready,
+        "current_cache_refresh_pending": bool(refresh_rows),
+        "writes_snapshot_cache": False,
+        "creates_task": False,
+        "builds_missing_packets": False,
+        "does_not_refresh_provider": True,
+        "provider_backed_long_window_acceptance_done": False,
+        "production_freshness_gate_complete": False,
+        "cache_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "note": "This read-only contract compares current cache producer coverage with the local generation contract. It does not rewrite cache, create tasks, refresh providers, or prove provider-backed acceptance.",
+    }
+    return contract, rows
+
+
 def _trade_cal_provider_acceptance_row(
     criterion: str,
     status: str,
@@ -3532,6 +3632,7 @@ def _freshness_durable_evidence_recipe(
     decision_surface: Mapping[str, Any],
     producer_coverage: Mapping[str, Any],
     producer_generation: Mapping[str, Any],
+    producer_cache_refresh: Mapping[str, Any],
     provider_promotion: Mapping[str, Any],
 ) -> dict[str, Any]:
     matrix_visible = freshness_acceptance_summary.get("scope") == "local_contract_not_real_trade_cal_validation"
@@ -3552,6 +3653,11 @@ def _freshness_durable_evidence_recipe(
     producer_generation_ready = bool(producer_generation.get("local_generation_contract_ready") is True)
     producer_generation_cache_pending = bool(producer_generation.get("current_cache_refresh_pending") is True)
     producer_generation_status = _safe_text(producer_generation.get("status"), limit=120)
+    producer_cache_refresh_status = _safe_text(producer_cache_refresh.get("status"), limit=140)
+    producer_cache_refresh_ready = bool(producer_cache_refresh.get("local_cache_refresh_ready") is True)
+    producer_cache_refresh_required_count = int(
+        producer_cache_refresh.get("current_cache_refresh_required_count") or 0
+    )
     producer_coverage_status = (
         "local_clear"
         if current_evidence_ready and producer_coverage_clear
@@ -3678,6 +3784,20 @@ def _freshness_durable_evidence_recipe(
                 ),
                 "producer_generation_is_not_provider_acceptance": True,
                 "producer_generation_ready_is_not_completion": True,
+                "producer_cache_refresh_readiness_status": producer_cache_refresh_status,
+                "producer_cache_refresh_ready": producer_cache_refresh_ready,
+                "producer_cache_refresh_required_count": producer_cache_refresh_required_count,
+                "producer_cache_refresh_writes_snapshot_cache": bool(
+                    producer_cache_refresh.get("writes_snapshot_cache")
+                ),
+                "producer_cache_refresh_creates_task": bool(producer_cache_refresh.get("creates_task")),
+                "producer_cache_refresh_calls_provider": bool(
+                    producer_cache_refresh.get("external_calls_triggered")
+                    or producer_cache_refresh.get("tushare_called")
+                    or producer_cache_refresh.get("deepseek_called")
+                    or producer_cache_refresh.get("github_called")
+                ),
+                "producer_cache_refresh_is_not_provider_acceptance": True,
             },
         ),
         _freshness_durable_evidence_recipe_row(
@@ -3726,6 +3846,10 @@ def _freshness_durable_evidence_recipe(
         "producer_generation_current_cache_refresh_pending": producer_generation_cache_pending,
         "producer_generation_is_not_provider_acceptance": True,
         "producer_generation_ready_is_not_completion": True,
+        "producer_cache_refresh_readiness_status": producer_cache_refresh_status,
+        "producer_cache_refresh_ready": producer_cache_refresh_ready,
+        "producer_cache_refresh_required_count": producer_cache_refresh_required_count,
+        "producer_cache_refresh_is_not_provider_acceptance": True,
         "feature_boundary": "stale_expired_historical_unknown_remain_research_only_until_direct_provider_evidence",
         "allowed_next_step": "collect_direct_trade_cal_provider_call_ledger_replay_failure_mode_and_promotion_evidence",
         "not_allowed_next_steps": [
@@ -3764,6 +3888,9 @@ def _freshness_durable_evidence_recipe(
                 "producer_generation_contract_status": producer_generation_status,
                 "producer_generation_contract_ready": producer_generation_ready,
                 "producer_generation_current_cache_refresh_pending": producer_generation_cache_pending,
+                "producer_cache_refresh_readiness_status": producer_cache_refresh_status,
+                "producer_cache_refresh_ready": producer_cache_refresh_ready,
+                "producer_cache_refresh_required_count": producer_cache_refresh_required_count,
                 "call_status": "local_durable_evidence_recipe",
                 "local_fetched_at": _now_iso(),
                 "external": False,
@@ -3841,6 +3968,13 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
     current_evidence_producer_generation_contract, current_evidence_producer_generation_rows = (
         _current_evidence_producer_generation_contract()
     )
+    current_evidence_producer_cache_refresh_readiness, current_evidence_producer_cache_refresh_rows = (
+        _current_evidence_producer_cache_refresh_readiness(
+            current_evidence_producer_coverage_rows,
+            current_evidence_producer_generation_contract,
+            current_evidence_producer_generation_rows,
+        )
+    )
     trade_cal_provider_acceptance_promotion_audit, trade_cal_provider_acceptance_promotion_rows = (
         _trade_cal_provider_acceptance_promotion_audit(
             snapshot_map,
@@ -3914,6 +4048,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         decision_surface=current_evidence_decision_surface_audit,
         producer_coverage=current_evidence_producer_coverage_audit,
         producer_generation=current_evidence_producer_generation_contract,
+        producer_cache_refresh=current_evidence_producer_cache_refresh_readiness,
         provider_promotion=trade_cal_provider_acceptance_promotion_audit,
     )
     freshness_durable_evidence_rows = _as_list(freshness_durable_evidence_recipe.get("rows"))
@@ -3994,6 +4129,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "current_evidence_decision_surface_audit",
             "current_evidence_producer_coverage_audit",
             "current_evidence_producer_generation_contract",
+            "current_evidence_producer_cache_refresh_readiness",
             "command_center_tushare_refresh_packet",
         ],
         "summary": visibility_summary.get("summary")
@@ -4058,6 +4194,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         "current_evidence_producer_coverage_rows": current_evidence_producer_coverage_rows,
         "current_evidence_producer_generation_contract": current_evidence_producer_generation_contract,
         "current_evidence_producer_generation_rows": current_evidence_producer_generation_rows,
+        "current_evidence_producer_cache_refresh_readiness": current_evidence_producer_cache_refresh_readiness,
+        "current_evidence_producer_cache_refresh_rows": current_evidence_producer_cache_refresh_rows,
         "timeline_rows": timeline_rows,
         "recovery_action_rows": recovery_action_rows,
         "provider_rows": provider_rows,
@@ -4171,6 +4309,16 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "current_evidence_producer_generation_blocker_count": int(
                 current_evidence_producer_generation_contract.get("blocked_producer_count") or 0
             ),
+            "current_evidence_producer_cache_refresh_row_count": len(
+                current_evidence_producer_cache_refresh_rows
+            ),
+            "current_evidence_producer_cache_refresh_required_count": int(
+                current_evidence_producer_cache_refresh_readiness.get("current_cache_refresh_required_count")
+                or 0
+            ),
+            "current_evidence_producer_cache_refresh_blocker_count": int(
+                current_evidence_producer_cache_refresh_readiness.get("blocked_producer_count") or 0
+            ),
         },
         "policy": {
             "cache_api_external_calls": False,
@@ -4269,6 +4417,11 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "current_evidence_producer_generation_contract_writes_snapshot_cache": False,
             "current_evidence_producer_generation_contract_calls_provider": False,
             "current_evidence_producer_generation_is_not_provider_acceptance": True,
+            "current_evidence_producer_cache_refresh_readiness_is_local": True,
+            "current_evidence_producer_cache_refresh_readiness_writes_snapshot_cache": False,
+            "current_evidence_producer_cache_refresh_readiness_creates_task": False,
+            "current_evidence_producer_cache_refresh_readiness_calls_provider": False,
+            "current_evidence_producer_cache_refresh_readiness_is_not_provider_acceptance": True,
         },
         "call_ledger": [
             {
@@ -4439,6 +4592,18 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 ),
                 "current_evidence_producer_generation_current_cache_refresh_pending": bool(
                     current_evidence_producer_generation_contract.get("current_cache_refresh_pending")
+                ),
+                "current_evidence_producer_cache_refresh_readiness_status": (
+                    current_evidence_producer_cache_refresh_readiness.get("status")
+                ),
+                "current_evidence_producer_cache_refresh_required_count": int(
+                    current_evidence_producer_cache_refresh_readiness.get(
+                        "current_cache_refresh_required_count"
+                    )
+                    or 0
+                ),
+                "current_evidence_producer_cache_refresh_writes_snapshot_cache": bool(
+                    current_evidence_producer_cache_refresh_readiness.get("writes_snapshot_cache")
                 ),
                 "call_status": "cache_read" if snapshot else "cache_missing",
                 "local_fetched_at": _now_iso(),
