@@ -338,6 +338,92 @@ def _build_long_term_goal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
 def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     try:
+        from scripts import data_health_freshness_contract
+
+        stage_rows = data_health_freshness_contract._freshness_production_stage_scope_rows()
+        stage_rows = stage_rows if isinstance(stage_rows, list) else []
+        row_count = len(stage_rows)
+        pending_count = sum(
+            1
+            for row in stage_rows
+            if isinstance(row, dict) and row.get("production_freshness_gate_complete") is False
+        )
+        local_evidence_count = sum(
+            1 for row in stage_rows if isinstance(row, dict) and row.get("local_stage_evidence_present") is True
+        )
+        rows.append(
+            {
+                "id": "LTG-01",
+                "goal": "A 股交易日历级 freshness 生产化",
+                "stage_scope_manifest": "freshness_production_stage_scope_manifest",
+                "status": "observed_in_data_health_freshness_static_contract"
+                if stage_rows
+                else "missing_from_data_health_freshness_static_contract",
+                "observed_source": "scripts/data_health_freshness_contract._freshness_production_stage_scope_rows local static contract",
+                "cache_status": "data_health_freshness_static_contract",
+                "cache_mode": "local_static_contract",
+                "row_count": row_count,
+                "pending_stage_count": pending_count,
+                "local_evidence_stage_count": local_evidence_count,
+                "production_blocker_count": pending_count,
+                "provider_backed_trade_cal_acceptance_done": False,
+                "production_freshness_gate_complete": False,
+                "real_trade_cal_long_window_validation_done": False,
+                "provider_refresh_called_by_contract": False,
+                "provider_execution_implemented": False,
+                "provider_call_ledger_evidence_done": False,
+                "freshness_replay_provider_evidence_done": False,
+                "failure_mode_provider_evidence_done": False,
+                "current_evidence_producer_coverage_complete": False,
+                "decision_surface_mutated_by_contract": False,
+                "cache_get_external_calls": False,
+                "react_render_external_calls": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observed_local_static_freshness_stage_scope_not_production_completion",
+            }
+        )
+    except Exception:
+        rows.append(
+            {
+                "id": "LTG-01",
+                "goal": "A 股交易日历级 freshness 生产化",
+                "stage_scope_manifest": "freshness_production_stage_scope_manifest",
+                "status": "local_observation_failed_safe_fallback",
+                "observed_source": "scripts/data_health_freshness_contract._freshness_production_stage_scope_rows local static contract",
+                "error_message_safe": "freshness_stage_scope_observation_failed",
+                "row_count": 0,
+                "pending_stage_count": 0,
+                "local_evidence_stage_count": 0,
+                "production_blocker_count": 0,
+                "provider_backed_trade_cal_acceptance_done": False,
+                "production_freshness_gate_complete": False,
+                "real_trade_cal_long_window_validation_done": False,
+                "provider_refresh_called_by_contract": False,
+                "provider_execution_implemented": False,
+                "provider_call_ledger_evidence_done": False,
+                "freshness_replay_provider_evidence_done": False,
+                "failure_mode_provider_evidence_done": False,
+                "current_evidence_producer_coverage_complete": False,
+                "decision_surface_mutated_by_contract": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observation_failure_is_not_completion",
+            }
+        )
+    try:
         from server.services import candidate_service
 
         candidate_packet = candidate_service.read_candidate_radar_cache()
