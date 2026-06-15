@@ -54,9 +54,9 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "Factor 全市场 / 股票池研究",
         "completion_bucket": "real_validation_required",
         "completion_estimate": "30%-40%",
-        "current_state": "watchlist/custom/full-pool contracts, local read-plan receipts, readiness/activation receipts, local rank/zscore sufficiency audit, worker-batch dry-run scope ticket, worker-batch execution recipe, and durable evidence recipe exist.",
+        "current_state": "watchlist/custom/full-pool contracts, local read-plan receipts, readiness/activation receipts, local rank/zscore sufficiency audit, worker-batch dry-run scope ticket, worker-batch execution recipe, bound execution-request ticket, and durable evidence recipe exist.",
         "not_complete_because": "worker-backed batch execution, durable task logs, cross-sectional rank/zscore, neutralization, factor combination research, result persistence, and full-pool validation are pending.",
-        "next_step": "Implement a separate explicit worker-backed batch research task bound to the safe scope ticket and execution recipe after storage/worker readiness is stronger.",
+        "next_step": "Implement a separate explicit worker-backed batch research task bound to the safe scope ticket, execution-request ticket, and execution recipe after storage/worker readiness is stronger.",
         "production_complete": False,
     },
     {

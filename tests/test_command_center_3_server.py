@@ -8592,11 +8592,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("universe_modes_are_declared_not_executed", script)
         self.assertIn("read_plan_consumes_storage_contracts_only", script)
         self.assertIn("execution_readiness_keeps_production_blockers_visible", script)
-        self.assertIn("task_catalog_is_button_gated_read_plan_and_worker_dry_run_only", script)
+        self.assertIn("task_catalog_is_button_gated_read_plan_worker_dry_run_and_execution_request_only", script)
         self.assertIn("worker_stage_scope_manifest_is_complete_and_pending", script)
         self.assertIn("worker_batch_execution_recipe_is_local_pending", script)
+        self.assertIn("worker_batch_execution_request_is_scope_bound_local", script)
+        self.assertIn("run_factor_universe_worker_batch_execution_request", script)
         self.assertIn("factor_universe_worker_batch_execution_recipe.v1", script)
         self.assertIn("local_factor_universe_worker_batch_execution_recipe_no_worker_or_provider_execution", script)
+        self.assertIn("factor_universe_worker_batch_execution_request.v1", script)
+        self.assertIn("local_factor_universe_worker_batch_execution_request_no_worker_or_provider_execution", script)
         self.assertIn("factor_universe_durable_evidence_recipe_is_local_production_pending", script)
         self.assertIn("factor_universe_durable_evidence_recipe.v1", script)
         self.assertIn("local_factor_universe_durable_evidence_recipe_no_worker_or_provider_execution", script)
@@ -8668,9 +8672,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["factor_universe_durable_evidence_recipe_status"],
             "factor_universe_durable_evidence_recipe_ready_production_pending",
         )
-        self.assertEqual(payload["observed"]["factor_universe_durable_evidence_key_count"], 19)
+        self.assertEqual(
+            payload["observed"]["worker_batch_execution_request_status"],
+            "factor_universe_worker_batch_execution_request_ready_manual_worker_task_pending",
+        )
+        self.assertEqual(payload["observed"]["factor_universe_durable_evidence_key_count"], 20)
         self.assertEqual(payload["observed"]["factor_universe_durable_evidence_production_blocker_count"], 10)
         self.assertEqual(payload["observed"]["worker_batch_task_backend"], "local_factor_universe_worker_batch_dry_run_pipeline")
+        self.assertEqual(
+            payload["observed"]["worker_batch_execution_request_task_backend"],
+            "local_factor_universe_worker_batch_execution_request_pipeline",
+        )
         self.assertEqual(
             set(payload["observed"]["declared_universe_modes"]),
             {"current_target", "watchlist", "custom_pool", "full_pool"},
@@ -8835,9 +8847,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("worker_batch_dry_run_ticket_is_local", criteria)
         self.assertIn("worker_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("worker_batch_execution_recipe_is_local_pending", criteria)
+        self.assertIn("worker_batch_execution_request_is_scope_bound_local", criteria)
         self.assertIn("factor_universe_durable_evidence_recipe_is_local_production_pending", criteria)
         self.assertIn("local_rank_zscore_dry_run_is_research_only", criteria)
-        self.assertIn("task_catalog_is_button_gated_read_plan_and_worker_dry_run_only", criteria)
+        self.assertIn("task_catalog_is_button_gated_read_plan_worker_dry_run_and_execution_request_only", criteria)
         self.assertIn("frontend_displays_plan_and_does_not_compute_universe", criteria)
         self.assertIn("research_outputs_do_not_enter_action_surfaces", criteria)
 
@@ -10939,7 +10952,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 41)
+        self.assertEqual(catalog["task_count"], 42)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -10958,7 +10971,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 41)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 42)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -10969,8 +10982,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 43)
-        self.assertEqual(route_coverage["task_creation_route_count"], 41)
+        self.assertEqual(route_coverage["known_post_route_count"], 44)
+        self.assertEqual(route_coverage["task_creation_route_count"], 42)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -10979,11 +10992,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 41)
+        self.assertEqual(implementation_status["task_count"], 42)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 38)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 39)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 39)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 40)
         self.assertEqual(implementation_status["external_capable_task_count"], 6)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -11001,6 +11014,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_factor_light",
                 "run_factor_universe_research_plan",
                 "run_factor_universe_worker_batch_dry_run",
+                "run_factor_universe_worker_batch_execution_request",
                 "run_factor_test_provider_small_pool_acceptance_dry_run",
                 "run_factor_test_provider_small_pool_execution_request",
                 "build_next_session_projection",
@@ -11045,6 +11059,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_factor_light",
                 "run_factor_universe_research_plan",
                 "run_factor_universe_worker_batch_dry_run",
+                "run_factor_universe_worker_batch_execution_request",
                 "run_factor_test_provider_small_pool_acceptance_dry_run",
                 "run_factor_test_provider_small_pool_execution_request",
                 "build_next_session_projection",
@@ -11098,6 +11113,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/bootstrap/live-startup", route_coverage["known_post_routes"])
         self.assertIn("POST /api/bootstrap/provider-model-acceptance-dry-run", route_coverage["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-worker-batch-dry-run", route_coverage["known_post_routes"])
+        self.assertIn("POST /api/factor-quant/universe-worker-batch-execution-request", route_coverage["known_post_routes"])
         self.assertIn("POST /api/factor-quant/provider-small-pool-dry-run", route_coverage["known_post_routes"])
         self.assertIn("POST /api/factor-quant/provider-small-pool-execution-request", route_coverage["known_post_routes"])
         self.assertIn("POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket", route_coverage["known_post_routes"])
@@ -11397,6 +11413,48 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(by_type["run_factor_universe_worker_batch_dry_run"]["cache_get_external_calls"])
         self.assertFalse(by_type["run_factor_universe_worker_batch_dry_run"]["react_render_direct_worker_calls"])
         self.assertTrue(by_type["run_factor_universe_worker_batch_dry_run"]["call_ledger_required"])
+        self.assertEqual(
+            by_type["run_factor_universe_worker_batch_execution_request"]["route"],
+            "POST /api/factor-quant/universe-worker-batch-execution-request",
+        )
+        self.assertEqual(
+            by_type["run_factor_universe_worker_batch_execution_request"]["current_backend"],
+            "local_factor_universe_worker_batch_execution_request_pipeline",
+        )
+        self.assertEqual(
+            by_type["run_factor_universe_worker_batch_execution_request"]["external_call_policy"],
+            "local_execution_request_no_worker_provider_or_model_call",
+        )
+        self.assertEqual(by_type["run_factor_universe_worker_batch_execution_request"]["possible_external_sources"], [])
+        self.assertTrue(by_type["run_factor_universe_worker_batch_execution_request"]["local_execution_request_only"])
+        self.assertEqual(
+            by_type["run_factor_universe_worker_batch_execution_request"]["requires_prior_task_type"],
+            "run_factor_universe_worker_batch_dry_run",
+        )
+        self.assertTrue(by_type["run_factor_universe_worker_batch_execution_request"]["requires_bound_scope_hash"])
+        self.assertEqual(
+            by_type["run_factor_universe_worker_batch_execution_request"]["target_worker_task_route"],
+            "future POST /api/factor-quant/universe-worker-batch-research",
+        )
+        self.assertEqual(
+            by_type["run_factor_universe_worker_batch_execution_request"]["target_worker_task_type"],
+            "run_factor_universe_worker_batch_research",
+        )
+        self.assertFalse(by_type["run_factor_universe_worker_batch_execution_request"]["creates_worker_task"])
+        self.assertFalse(by_type["run_factor_universe_worker_batch_execution_request"]["starts_worker"])
+        self.assertFalse(by_type["run_factor_universe_worker_batch_execution_request"]["starts_celery_worker"])
+        self.assertFalse(by_type["run_factor_universe_worker_batch_execution_request"]["pings_redis"])
+        self.assertFalse(by_type["run_factor_universe_worker_batch_execution_request"]["worker_execution_implemented"])
+        self.assertFalse(by_type["run_factor_universe_worker_batch_execution_request"]["worker_task_executed_by_request"])
+        self.assertFalse(by_type["run_factor_universe_worker_batch_execution_request"]["large_universe_pipeline_done"])
+        self.assertFalse(by_type["run_factor_universe_worker_batch_execution_request"]["cross_sectional_rank_zscore_done"])
+        self.assertFalse(by_type["run_factor_universe_worker_batch_execution_request"]["neutralization_done"])
+        self.assertFalse(by_type["run_factor_universe_worker_batch_execution_request"]["production_factor_universe_complete"])
+        self.assertFalse(by_type["run_factor_universe_worker_batch_execution_request"]["cache_get_external_calls"])
+        self.assertFalse(by_type["run_factor_universe_worker_batch_execution_request"]["react_render_direct_worker_calls"])
+        self.assertTrue(by_type["run_factor_universe_worker_batch_execution_request"]["call_ledger_required"])
+        self.assertTrue(by_type["run_factor_universe_worker_batch_execution_request"]["does_not_execute_trades"])
+        self.assertTrue(by_type["run_factor_universe_worker_batch_execution_request"]["does_not_modify_strategy_action"])
         self.assertEqual(
             by_type["run_factor_test_provider_small_pool_acceptance_dry_run"]["route"],
             "POST /api/factor-quant/provider-small-pool-dry-run",
@@ -12017,6 +12075,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/factor-quant/run-light", discovered_routes)
         self.assertIn("POST /api/factor-quant/universe-research-plan", discovered_routes)
         self.assertIn("POST /api/factor-quant/universe-worker-batch-dry-run", discovered_routes)
+        self.assertIn("POST /api/factor-quant/universe-worker-batch-execution-request", discovered_routes)
         self.assertIn("POST /api/factor-quant/provider-small-pool-dry-run", discovered_routes)
         self.assertIn("POST /api/factor-quant/provider-small-pool-execution-request", discovered_routes)
         self.assertIn("POST /api/factor-quant/deepseek-explain", discovered_routes)
@@ -12062,16 +12121,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 38)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 39)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 39)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 40)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 38)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 39)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 39)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 40)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_execution_request", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -12081,6 +12140,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("run_factor_light", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_universe_research_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_universe_worker_batch_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
+        self.assertIn("run_factor_universe_worker_batch_execution_request", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_test_provider_small_pool_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_test_provider_small_pool_execution_request", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_candidate_radar_full_pool_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -12732,9 +12792,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 38)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 39)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 39)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 40)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -12932,9 +12992,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 38)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 39)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 39)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 40)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -12965,9 +13025,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 38)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 39)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 39)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 40)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_execution_request", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -12977,6 +13037,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("run_factor_light", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_universe_research_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_universe_worker_batch_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
+        self.assertIn("run_factor_universe_worker_batch_execution_request", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_test_provider_small_pool_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_factor_test_provider_small_pool_execution_request", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_candidate_radar_full_pool_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -15442,10 +15503,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 41)
+        self.assertEqual(task_catalog["data"]["task_count"], 42)
         self.assertIn("POST /api/bootstrap/live-startup", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-research-plan", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-worker-batch-dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
+        self.assertIn("POST /api/factor-quant/universe-worker-batch-execution-request", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/provider-small-pool-dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn(
             "POST /api/factor-quant/provider-small-pool-execution-request",
@@ -21670,11 +21732,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("call Tushare or DeepSeek from this recipe", durable_recipe["not_allowed_next_steps"])
         self.assertIn("compute rank/zscore in React", durable_recipe["not_allowed_next_steps"])
         durable_rows = {row["evidence_key"]: row for row in packet["universe_durable_evidence_rows"]}
-        self.assertEqual(len(durable_rows), 19)
+        self.assertEqual(len(durable_rows), 20)
         self.assertTrue(durable_rows["mode_contract_visible"]["passed"])
         self.assertFalse(durable_rows["storage_read_plan_visible"]["passed"])
         self.assertEqual(durable_rows["storage_read_plan_visible"]["status"], "blocked_missing_storage_read_plan")
         self.assertTrue(durable_rows["worker_batch_execution_recipe_visible"]["passed"])
+        self.assertTrue(durable_rows["worker_batch_execution_request_visible"]["passed"])
+        self.assertTrue(durable_rows["worker_batch_execution_request_visible"]["local_surface_required"])
+        self.assertFalse(durable_rows["worker_batch_execution_request_visible"]["production_blocker"])
         self.assertTrue(durable_rows["no_render_worker_provider_trade_secret_boundary"]["passed"])
         self.assertFalse(durable_rows["explicit_worker_task_required"]["passed"])
         self.assertTrue(durable_rows["explicit_worker_task_required"]["production_blocker"])
@@ -21685,6 +21750,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["universe_research_contract"]["worker_batch_dry_run_is_not_execution"])
         self.assertTrue(packet["universe_research_contract"]["worker_batch_execution_recipe_ready"])
         self.assertTrue(packet["universe_research_contract"]["worker_batch_execution_recipe_is_not_execution"])
+        self.assertFalse(packet["universe_research_contract"]["worker_batch_execution_request_ready"])
+        self.assertTrue(packet["universe_research_contract"]["worker_batch_execution_request_is_not_worker_execution"])
         self.assertFalse(packet["universe_research_contract"]["durable_evidence_recipe_ready"])
         self.assertTrue(packet["universe_research_contract"]["durable_evidence_recipe_is_not_worker_execution"])
         self.assertTrue(packet["universe_research_contract"]["durable_evidence_recipe_is_not_production_completion"])
@@ -21693,8 +21760,147 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["universe_research_contract"]["production_factor_universe_complete"])
         self.assertIn("local_factor_universe_worker_batch_dry_run", {item.get("api") for item in packet["call_ledger"]})
         self.assertIn("local_factor_universe_worker_batch_execution_recipe", {item.get("api") for item in packet["call_ledger"]})
+        self.assertIn("local_factor_universe_worker_batch_execution_request", {item.get("api") for item in packet["call_ledger"]})
         self.assertIn("local_factor_universe_durable_evidence_recipe", {item.get("api") for item in packet["call_ledger"]})
         self.assertNotIn("SHOULD_DROP", json.dumps(factor, ensure_ascii=False))
+
+    def test_factor_universe_worker_batch_execution_request_binds_scope_without_worker_start(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        symbols = [f"000{index:03d}.SZ" for index in range(1, 25)]
+
+        dry_run_response = self.client.post(
+            "/api/factor-quant/universe-worker-batch-dry-run",
+            json={
+                "approved_by_user": True,
+                "universe_mode": "custom_pool",
+                "symbols": symbols,
+            },
+        ).json()
+        self.assertTrue(dry_run_response["ok"])
+        dry_run_receipt = dry_run_response["data"]["task"]["payload_safe"]["universe_worker_batch_dry_run_receipt"]
+
+        response = self.client.post(
+            "/api/factor-quant/universe-worker-batch-execution-request",
+            json={
+                "approved_by_user": True,
+                "worker_batch_scope_hash": dry_run_receipt["worker_batch_scope_hash"],
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["task_type"], "run_factor_universe_worker_batch_execution_request")
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(
+            task["current_step"],
+            "factor_universe_worker_batch_execution_request_ready_manual_worker_task_pending",
+        )
+        self.assertNotIn("token", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        receipt = task["payload_safe"]["universe_worker_batch_execution_request_receipt"]
+        rows = {row["criterion"]: row for row in task["payload_safe"]["universe_worker_batch_execution_request_rows"]}
+        self.assertEqual(receipt["schema_version"], "factor_universe_worker_batch_execution_request.v1")
+        self.assertEqual(
+            receipt["scope"],
+            "local_factor_universe_worker_batch_execution_request_no_worker_or_provider_execution",
+        )
+        self.assertTrue(receipt["local_execution_request_ready"])
+        self.assertTrue(receipt["ready_for_manual_worker_task_submission"])
+        self.assertTrue(receipt["requested_scope_hash_matches_latest"])
+        self.assertEqual(receipt["worker_batch_scope_hash_short"], dry_run_receipt["worker_batch_scope_hash_short"])
+        self.assertEqual(receipt["target_worker_task_route"], "future POST /api/factor-quant/universe-worker-batch-research")
+        self.assertEqual(receipt["target_worker_task_type"], "run_factor_universe_worker_batch_research")
+        self.assertEqual(receipt["target_acceptance_mode"], "worker_backed_factor_universe_batch_research")
+        self.assertEqual(receipt["universe_mode"], "custom_pool")
+        self.assertEqual(receipt["symbol_count"], 24)
+        self.assertIn("neutralization", receipt["required_stages"])
+        self.assertEqual(receipt["blocking_criterion_count"], 0)
+        self.assertTrue(rows["latest_worker_batch_scope_ticket_visible"]["passed"])
+        self.assertTrue(rows["scope_hash_bound_to_latest_dry_run"]["passed"])
+        self.assertTrue(rows["explicit_user_confirmation"]["passed"])
+        self.assertTrue(rows["execution_recipe_ready"]["passed"])
+        self.assertTrue(rows["target_worker_task_route_declared"]["passed"])
+        self.assertFalse(receipt["worker_task_created"])
+        self.assertFalse(receipt["worker_task_executed"])
+        self.assertFalse(receipt["worker_execution_implemented"])
+        self.assertFalse(receipt["worker_started"])
+        self.assertFalse(receipt["storage_read_executed"])
+        self.assertFalse(receipt["large_universe_pipeline_done"])
+        self.assertFalse(receipt["cross_sectional_rank_zscore_done"])
+        self.assertFalse(receipt["neutralization_done"])
+        self.assertFalse(receipt["factor_combination_research_done"])
+        self.assertFalse(receipt["result_summary_persisted"])
+        self.assertFalse(receipt["full_pool_validation_done"])
+        self.assertFalse(receipt["production_factor_universe_complete"])
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertFalse(receipt["tushare_called"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(receipt["does_not_modify_strategy_action"])
+        self.assertFalse(receipt["contains_secret"])
+        self.assertFalse(receipt["env_key_name_exposed"])
+        self.assertFalse(receipt["credential_value_exposed"])
+        self.assertEqual(task["call_ledger"][0]["api"], "local_factor_universe_worker_batch_execution_request")
+        self.assertEqual(
+            task["call_ledger"][0]["call_status"],
+            "factor_universe_worker_batch_execution_request_ready_manual_worker_task_pending",
+        )
+        self.assert_local_ledger_boundary(task["call_ledger"][0])
+
+        factor = self.client.get("/api/factor-quant/cache").json()
+        self.assertTrue(factor["ok"])
+        packet = factor["data"]
+        cached = packet["universe_worker_batch_execution_request_receipt"]
+        self.assertEqual(cached["status"], receipt["status"])
+        self.assertEqual(cached["task_id"], task["task_id"])
+        self.assertTrue(cached["source_packet_present"])
+        self.assertFalse(cached["cache_get_initializes_execution_request"])
+        self.assertTrue(packet["universe_research_contract"]["worker_batch_execution_request_ready"])
+        self.assertTrue(packet["universe_research_contract"]["worker_batch_execution_request_is_not_worker_execution"])
+        self.assertFalse(packet["universe_research_contract"]["worker_task_created"])
+        self.assertFalse(packet["universe_research_contract"]["worker_task_executed"])
+        self.assertFalse(packet["universe_research_contract"]["worker_started"])
+        self.assertFalse(packet["universe_research_contract"]["large_universe_pipeline_done"])
+        self.assertFalse(packet["universe_research_contract"]["production_factor_universe_complete"])
+        self.assertIn("local_factor_universe_worker_batch_execution_request", {item.get("api") for item in packet["call_ledger"]})
+
+    def test_factor_universe_worker_batch_execution_request_rejects_scope_mismatch(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        symbols = [f"000{index:03d}.SZ" for index in range(1, 25)]
+
+        dry_run_response = self.client.post(
+            "/api/factor-quant/universe-worker-batch-dry-run",
+            json={"approved_by_user": True, "universe_mode": "custom_pool", "symbols": symbols},
+        ).json()
+        self.assertTrue(dry_run_response["ok"])
+
+        response = self.client.post(
+            "/api/factor-quant/universe-worker-batch-execution-request",
+            json={"approved_by_user": True, "worker_batch_scope_hash": "0" * 64, "token": "SHOULD_DROP"},
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(
+            task["current_step"],
+            "factor_universe_worker_batch_execution_request_blocked_scope_hash_mismatch",
+        )
+        receipt = task["payload_safe"]["universe_worker_batch_execution_request_receipt"]
+        self.assertFalse(receipt["local_execution_request_ready"])
+        self.assertFalse(receipt["ready_for_manual_worker_task_submission"])
+        self.assertFalse(receipt["requested_scope_hash_matches_latest"])
+        self.assertIn("scope_hash_bound_to_latest_dry_run", receipt["blocking_criteria"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
 
     def test_deepseek_provider_benchmark_scope_ticket_endpoint_is_button_gated_local_only(self):
         self._with_meta_store()

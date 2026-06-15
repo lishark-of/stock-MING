@@ -68,6 +68,7 @@ export default function FactorQuantHub() {
   const universeExecutionActivationReceipt = packet.universe_execution_activation_receipt ?? {};
   const universeWorkerBatchDryRun = packet.universe_worker_batch_dry_run_receipt ?? {};
   const universeWorkerBatchExecutionRecipe = packet.universe_worker_batch_execution_recipe ?? {};
+  const universeWorkerBatchExecutionRequest = packet.universe_worker_batch_execution_request_receipt ?? {};
   const universeDurableEvidenceRecipe = packet.universe_durable_evidence_recipe ?? {};
   const universeResearchTaskPlan = packet.universe_research_task_plan ?? {};
   const universeLocalRankZscore = packet.universe_local_rank_zscore_dry_run ?? {};
@@ -130,6 +131,8 @@ export default function FactorQuantHub() {
   const universeWorkerBatchDryRunCriterionRows = toRows(packet.universe_worker_batch_dry_run_rows);
   const universeWorkerBatchExecutionRecipeRows = objectRows(universeWorkerBatchExecutionRecipe as Record<string, unknown>, "universe_worker_batch_execution_recipe");
   const universeWorkerBatchExecutionPhaseRows = toRows(packet.universe_worker_batch_execution_rows);
+  const universeWorkerBatchExecutionRequestRows = objectRows(universeWorkerBatchExecutionRequest as Record<string, unknown>, "universe_worker_batch_execution_request");
+  const universeWorkerBatchExecutionRequestCriterionRows = toRows(packet.universe_worker_batch_execution_request_rows);
   const universeDurableEvidenceRecipeRows = objectRows(universeDurableEvidenceRecipe as Record<string, unknown>, "universe_durable_evidence_recipe");
   const universeDurableEvidenceRows = toRows(packet.universe_durable_evidence_rows);
   const universeResearchTaskPlanRows = objectRows(universeResearchTaskPlan as Record<string, unknown>, "universe_read_plan");
@@ -231,6 +234,7 @@ export default function FactorQuantHub() {
         <button onClick={() => launchTask("/api/factor-quant/run-light", { auto_after_task: autoAfterTask })}>运行计算</button>
         <button onClick={() => launchTask("/api/factor-quant/universe-research-plan", { universe_mode: "full_pool" })}>生成读取计划</button>
         <button onClick={() => launchTask("/api/factor-quant/universe-worker-batch-dry-run", { approved_by_user: true, universe_mode: "full_pool" })}>批量研究预检</button>
+        <button onClick={() => launchTask("/api/factor-quant/universe-worker-batch-execution-request", { approved_by_user: true, worker_batch_scope_hash: String(universeWorkerBatchDryRun.worker_batch_scope_hash ?? "") })}>批量执行请求</button>
         <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-dry-run", { approved_by_user: true, symbols: ["002008.SZ", "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"], forward_return_horizons: ["1d", "5d"] })}>小池验收预检</button>
         <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-execution-request", { approved_by_user: true, acceptance_scope_hash: String(factorTestProviderSmallPoolDryRun.acceptance_scope_hash ?? "") })}>小池执行请求</button>
         <button onClick={() => launchTask("/api/factor-quant/deepseek-explain")}>DeepSeek 整理</button>
@@ -266,6 +270,7 @@ export default function FactorQuantHub() {
           { label: "universe activation", value: universeExecutionActivationReceipt.status ?? "missing", tone: universeExecutionActivationReceipt.ready_for_explicit_worker_batch_task === true ? "good" : "warn" },
           { label: "worker-batch dry-run", value: universeWorkerBatchDryRun.status ?? "missing", tone: universeWorkerBatchDryRun.local_dry_run_ready === true ? "good" : "warn" },
           { label: "worker execution recipe", value: universeWorkerBatchExecutionRecipe.status ?? "missing", tone: universeWorkerBatchExecutionRecipe.local_recipe_ready === true ? "good" : "warn" },
+          { label: "worker execution request", value: universeWorkerBatchExecutionRequest.status ?? "missing", tone: universeWorkerBatchExecutionRequest.local_execution_request_ready === true ? "good" : "warn" },
           { label: "worker recipe phases", value: universeWorkerBatchExecutionRecipe.pending_phase_count ?? 0, tone: Number(universeWorkerBatchExecutionRecipe.pending_phase_count ?? 0) > 0 ? "warn" : "neutral" },
           { label: "worker dry-run blockers", value: universeWorkerBatchDryRun.blocking_criterion_count ?? 0, tone: Number(universeWorkerBatchDryRun.blocking_criterion_count ?? 0) > 0 ? "warn" : "good" },
           { label: "activation blockers", value: universeExecutionActivationReceipt.production_blocker_count ?? 0, tone: Number(universeExecutionActivationReceipt.production_blocker_count ?? 0) > 0 ? "warn" : "good" },
@@ -520,6 +525,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">universe_worker_batch_execution_recipe 只固定未来显式 worker batch execution 的顺序和验收证据；它不创建 worker task、不启动 worker、不计算 rank/zscore/neutralization、不调用 Tushare/DeepSeek/GitHub，也不代表 production_factor_universe_complete。</p>
       <DataLineageTable rows={universeWorkerBatchExecutionPhaseRows} />
       <DataLineageTable rows={universeWorkerBatchExecutionRecipeRows} />
+      <h3>Factor Universe worker-batch execution request</h3>
+      <p className="risk-note">universe_worker_batch_execution_request_receipt 只绑定 latest dry-run scope hash、用户确认和未来 worker task 目标；不创建 worker task、不启动 worker、不调用 Tushare/DeepSeek/GitHub、不计算 rank/zscore/neutralization，也不代表 full-pool production research。</p>
+      <DataLineageTable rows={universeWorkerBatchExecutionRequestCriterionRows} />
+      <DataLineageTable rows={universeWorkerBatchExecutionRequestRows} />
       <h3>Factor Universe durable evidence recipe</h3>
       <p className="risk-note">factor_universe_durable_evidence_recipe 只固定 LTG-04 worker-backed / full-pool 生产验收直接证据清单；不启动 worker、不调用 Tushare/DeepSeek/GitHub、不在前端计算 rank/zscore、不进入 strategy action，也不代表 production_factor_universe_complete。</p>
       <DataLineageTable rows={universeDurableEvidenceRows} />

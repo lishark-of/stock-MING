@@ -66,6 +66,7 @@ LOCAL_FACTOR_UNIVERSE_DURABLE_SURFACE_KEYS = {
     "local_rank_zscore_dry_run_visible",
     "worker_batch_scope_ticket_visible",
     "worker_batch_execution_recipe_visible",
+    "worker_batch_execution_request_visible",
     "no_render_worker_provider_trade_secret_boundary",
 }
 PRODUCTION_FACTOR_UNIVERSE_DURABLE_BLOCKER_KEYS = {
@@ -221,6 +222,22 @@ def build_contract() -> dict[str, Any]:
     ]
     recipe_packet["universe_worker_batch_execution_recipe"] = worker_batch_execution_recipe
     recipe_packet["universe_worker_batch_execution_rows"] = worker_batch_execution_rows
+    worker_batch_execution_request_payload = factor_service._factor_universe_worker_batch_execution_request_payload(
+        {
+            "approved_by_user": True,
+            "worker_batch_scope_hash": worker_batch_dry_run.get("worker_batch_scope_hash"),
+        },
+        recipe_packet,
+        now,
+    )
+    worker_batch_execution_request, worker_batch_execution_request_rows = (
+        factor_service._factor_universe_worker_batch_execution_request_receipt(
+            worker_batch_execution_request_payload,
+            now,
+        )
+    )
+    recipe_packet["universe_worker_batch_execution_request_receipt"] = worker_batch_execution_request
+    recipe_packet["universe_worker_batch_execution_request_rows"] = worker_batch_execution_request_rows
     durable_evidence_recipe, durable_evidence_rows, durable_evidence_ledger = (
         factor_service._factor_universe_durable_evidence_recipe(recipe_packet, now)
     )
@@ -242,6 +259,7 @@ def build_contract() -> dict[str, Any]:
     }
     universe_task = _dict(task_catalog.get("run_factor_universe_research_plan"))
     worker_batch_task = _dict(task_catalog.get("run_factor_universe_worker_batch_dry_run"))
+    worker_batch_request_task = _dict(task_catalog.get("run_factor_universe_worker_batch_execution_request"))
     light_task = _dict(task_catalog.get("run_factor_light"))
     factor_page = _read_script("desktop/src/routes/FactorQuantHub.tsx")
     api_client = _read_script("desktop/src/api/client.ts")
@@ -502,6 +520,44 @@ def build_contract() -> dict[str, Any]:
             "Worker-batch execution recipe may define the future ordered runtime path only; it must not create worker tasks, start workers, compute rank/zscore, call providers/models, or promote production completion.",
         ),
         _row(
+            "worker_batch_execution_request_is_scope_bound_local",
+            worker_batch_execution_request.get("schema_version") == "factor_universe_worker_batch_execution_request.v1"
+            and worker_batch_execution_request.get("scope") == "local_factor_universe_worker_batch_execution_request_no_worker_or_provider_execution"
+            and worker_batch_execution_request.get("status") == "factor_universe_worker_batch_execution_request_ready_manual_worker_task_pending"
+            and worker_batch_execution_request.get("local_execution_request_ready") is True
+            and worker_batch_execution_request.get("ready_for_manual_worker_task_submission") is True
+            and worker_batch_execution_request.get("requested_scope_hash_matches_latest") is True
+            and worker_batch_execution_request.get("worker_batch_scope_hash_short") == worker_batch_dry_run.get("worker_batch_scope_hash_short")
+            and worker_batch_execution_request.get("target_worker_task_route") == "future POST /api/factor-quant/universe-worker-batch-research"
+            and worker_batch_execution_request.get("target_worker_task_type") == "run_factor_universe_worker_batch_research"
+            and worker_batch_execution_request.get("target_acceptance_mode") == "worker_backed_factor_universe_batch_research"
+            and worker_batch_execution_request.get("worker_task_created") is False
+            and worker_batch_execution_request.get("worker_task_executed") is False
+            and worker_batch_execution_request.get("worker_execution_implemented") is False
+            and worker_batch_execution_request.get("worker_started") is False
+            and worker_batch_execution_request.get("storage_read_executed") is False
+            and worker_batch_execution_request.get("large_universe_pipeline_done") is False
+            and worker_batch_execution_request.get("cross_sectional_rank_zscore_done") is False
+            and worker_batch_execution_request.get("neutralization_done") is False
+            and worker_batch_execution_request.get("factor_combination_research_done") is False
+            and worker_batch_execution_request.get("result_summary_persisted") is False
+            and worker_batch_execution_request.get("full_pool_validation_done") is False
+            and worker_batch_execution_request.get("production_factor_universe_complete") is False
+            and worker_batch_execution_request.get("cache_get_external_calls") is False
+            and worker_batch_execution_request.get("react_render_external_calls") is False
+            and _flag_false(worker_batch_execution_request, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and worker_batch_execution_request.get("does_not_execute_trades") is True
+            and worker_batch_execution_request.get("does_not_modify_strategy_action") is True
+            and worker_batch_execution_request.get("contains_secret") is False
+            and worker_batch_execution_request.get("blocking_criterion_count") == 0
+            and "treat_execution_request_as_worker_batch_execution" in worker_batch_execution_request.get("not_allowed_next_steps", [])
+            and "create worker task from GET cache" in worker_batch_execution_request.get("not_allowed_next_steps", [])
+            and "start worker from execution request" in worker_batch_execution_request.get("not_allowed_next_steps", [])
+            and "compute production rank/zscore from execution request" in worker_batch_execution_request.get("not_allowed_next_steps", [])
+            and _list(worker_batch_execution_request.get("call_ledger"))[0].get("api") == "local_factor_universe_worker_batch_execution_request",
+            "Worker-batch execution request may bind a future manual worker task scope only; it must not create or start workers, compute metrics, call providers/models, or promote production completion.",
+        ),
+        _row(
             "factor_universe_durable_evidence_recipe_is_local_production_pending",
             durable_evidence_recipe.get("schema_version") == "factor_universe_durable_evidence_recipe.v1"
             and durable_evidence_recipe.get("scope") == "local_factor_universe_durable_evidence_recipe_no_worker_or_provider_execution"
@@ -605,7 +661,7 @@ def build_contract() -> dict[str, Any]:
             "Local rank/zscore dry-run may only audit/preview local factor_values cross-sections and must not promote production universe flags.",
         ),
         _row(
-            "task_catalog_is_button_gated_read_plan_and_worker_dry_run_only",
+            "task_catalog_is_button_gated_read_plan_worker_dry_run_and_execution_request_only",
             universe_task.get("route") == "POST /api/factor-quant/universe-research-plan"
             and universe_task.get("button_gated") is True
             and universe_task.get("current_backend") == "local_storage_query_read_plan_pipeline"
@@ -637,9 +693,31 @@ def build_contract() -> dict[str, Any]:
             and worker_batch_task.get("react_render_direct_worker_calls") is False
             and worker_batch_task.get("does_not_execute_trades") is True
             and worker_batch_task.get("does_not_modify_strategy_action") is True
+            and worker_batch_request_task.get("route") == "POST /api/factor-quant/universe-worker-batch-execution-request"
+            and worker_batch_request_task.get("button_gated") is True
+            and worker_batch_request_task.get("current_backend") == "local_factor_universe_worker_batch_execution_request_pipeline"
+            and worker_batch_request_task.get("external_call_policy") == "local_execution_request_no_worker_provider_or_model_call"
+            and worker_batch_request_task.get("possible_external_sources") == []
+            and worker_batch_request_task.get("local_execution_request_only") is True
+            and worker_batch_request_task.get("requires_bound_scope_hash") is True
+            and worker_batch_request_task.get("target_worker_task_route") == "future POST /api/factor-quant/universe-worker-batch-research"
+            and worker_batch_request_task.get("creates_worker_task") is False
+            and worker_batch_request_task.get("starts_worker") is False
+            and worker_batch_request_task.get("starts_celery_worker") is False
+            and worker_batch_request_task.get("pings_redis") is False
+            and worker_batch_request_task.get("worker_execution_implemented") is False
+            and worker_batch_request_task.get("worker_task_executed_by_request") is False
+            and worker_batch_request_task.get("large_universe_pipeline_done") is False
+            and worker_batch_request_task.get("cross_sectional_rank_zscore_done") is False
+            and worker_batch_request_task.get("neutralization_done") is False
+            and worker_batch_request_task.get("production_factor_universe_complete") is False
+            and worker_batch_request_task.get("cache_get_external_calls") is False
+            and worker_batch_request_task.get("react_render_direct_worker_calls") is False
+            and worker_batch_request_task.get("does_not_execute_trades") is True
+            and worker_batch_request_task.get("does_not_modify_strategy_action") is True
             and light_task.get("universe_modes") == ["current_target"]
             and light_task.get("future_universe_modes") == ["watchlist", "custom_pool", "full_pool"],
-            "Task catalog must keep factor universe work button-gated: read-plan-only and worker-batch dry-run ticket only while light mode remains current_target-only.",
+            "Task catalog must keep factor universe work button-gated: read-plan-only, worker-batch dry-run ticket, and execution-request ticket only while light mode remains current_target-only.",
         ),
         _row(
             "frontend_displays_plan_and_does_not_compute_universe",
@@ -648,6 +726,7 @@ def build_contract() -> dict[str, Any]:
             and "import { getFactorQuantCache, postTask" in factor_page
             and "launchTask(\"/api/factor-quant/universe-research-plan\"" in factor_page
             and "launchTask(\"/api/factor-quant/universe-worker-batch-dry-run\"" in factor_page
+            and "launchTask(\"/api/factor-quant/universe-worker-batch-execution-request\"" in factor_page
             and "universe_execution_readiness_audit" in factor_page
             and "universe_execution_readiness_receipt" in factor_page
             and "universe_execution_activation_receipt" in factor_page
@@ -658,6 +737,9 @@ def build_contract() -> dict[str, Any]:
             and "Factor Universe worker-batch dry-run ticket" in factor_page
             and "universe_worker_batch_dry_run_receipt" in factor_page
             and "不代表 worker-backed batch execution" in factor_page
+            and "Factor Universe worker-batch execution request" in factor_page
+            and "universe_worker_batch_execution_request_receipt" in factor_page
+            and "不创建 worker task、不启动 worker" in factor_page
             and "Factor Universe durable evidence recipe" in factor_page
             and "universe_durable_evidence_recipe" in factor_page
             and "universe_durable_evidence_rows" in factor_page
@@ -711,12 +793,16 @@ def build_contract() -> dict[str, Any]:
             and "worker_batch_dry_run_ticket_is_local" in this_script
             and "worker_stage_scope_manifest_is_complete_and_pending" in this_script
             and "worker_batch_execution_recipe_is_local_pending" in this_script
+            and "worker_batch_execution_request_is_scope_bound_local" in this_script
             and "factor_universe_durable_evidence_recipe_is_local_production_pending" in this_script
             and "factor_universe_worker_batch_execution_recipe.v1" in this_script
             and "local_factor_universe_worker_batch_execution_recipe_no_worker_or_provider_execution" in this_script
+            and "factor_universe_worker_batch_execution_request.v1" in this_script
+            and "local_factor_universe_worker_batch_execution_request_no_worker_or_provider_execution" in this_script
             and "factor_universe_durable_evidence_recipe.v1" in this_script
             and "local_factor_universe_durable_evidence_recipe_no_worker_or_provider_execution" in this_script
             and "run_factor_universe_worker_batch_dry_run" in this_script
+            and "run_factor_universe_worker_batch_execution_request" in this_script
             and "execution_readiness_receipt_is_local" in this_script
             and "execution_activation_receipt_is_local" in this_script
             and "does_not_execute_trades" in this_script
@@ -748,6 +834,7 @@ def build_contract() -> dict[str, Any]:
         "worker_batch_dry_run_ready": bool(worker_batch_dry_run.get("local_dry_run_ready")),
         "worker_batch_scope_ticket_ready": bool(worker_batch_dry_run.get("worker_batch_scope_hash_short")),
         "worker_batch_execution_recipe_ready": bool(worker_batch_execution_recipe.get("local_recipe_ready")),
+        "worker_batch_execution_request_ready": bool(worker_batch_execution_request.get("local_execution_request_ready")),
         "factor_universe_durable_evidence_recipe_ready": bool(durable_evidence_recipe.get("local_recipe_ready")),
         "factor_universe_durable_evidence_recipe_status": durable_evidence_recipe.get("status"),
         "worker_execution_implemented": False,
@@ -785,6 +872,8 @@ def build_contract() -> dict[str, Any]:
             "worker_batch_dry_run_status": worker_batch_dry_run.get("status"),
             "worker_batch_scope_hash_short": worker_batch_dry_run.get("worker_batch_scope_hash_short"),
             "worker_batch_execution_recipe_status": worker_batch_execution_recipe.get("status"),
+            "worker_batch_execution_request_status": worker_batch_execution_request.get("status"),
+            "worker_batch_execution_request_scope_hash_short": worker_batch_execution_request.get("worker_batch_scope_hash_short"),
             "worker_batch_execution_phase_count": len(worker_batch_execution_rows),
             "worker_batch_execution_phase_keys": worker_batch_execution_phase_keys,
             "worker_batch_execution_pending_phase_count": sum(
@@ -801,10 +890,13 @@ def build_contract() -> dict[str, Any]:
             ),
             "task_backend": universe_task.get("current_backend"),
             "worker_batch_task_backend": worker_batch_task.get("current_backend"),
+            "worker_batch_execution_request_task_backend": worker_batch_request_task.get("current_backend"),
         },
         "worker_stage_scope_rows": worker_stage_scope_rows,
         "worker_batch_execution_recipe": worker_batch_execution_recipe,
         "worker_batch_execution_rows": worker_batch_execution_rows,
+        "worker_batch_execution_request": worker_batch_execution_request,
+        "worker_batch_execution_request_rows": worker_batch_execution_request_rows,
         "factor_universe_durable_evidence_recipe": durable_evidence_recipe,
         "factor_universe_durable_evidence_rows": durable_evidence_rows,
         "rows": rows,
