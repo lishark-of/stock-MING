@@ -115,6 +115,8 @@ Migration Status 现在会从本地静态 Data Health freshness contract 观察 
 
 Migration Status 现在也会从本地静态 Tushare acceptance contract 观察 `tushare_production_stage_scope_manifest`，并以 `ltg_stage_scope_observed_rows` 展示 LTG-02 的全接口生产阶段清单。该观察只显示 POST/mode gate、core light revalidation、`trade_cal`、两融、龙虎榜、涨跌停/情绪、筹码、财报披露、硬风险和 promotion/storage review 的剩余阻断项；不调用 Tushare、不创建 provider task、不写 Parquet、不更新 provider call ledger、不修改 `strategy_action`，也不证明 provider-backed full-interface acceptance 或 production Tushare pipeline complete。
 
+Migration Status 现在还会从本地静态 Factor Test Lab contract 观察 `factor_test_production_stage_scope_manifest`，并以 `ltg_stage_scope_observed_rows` 展示 LTG-03 的生产验证阶段清单。该观察只显示 local light baseline、provider small-pool scope ticket、provider-backed sample、multi-horizon returns、rolling IC/ICIR、cost/turnover、neutralization、PIT/bias、full-market boundary 和 promotion review 的剩余阻断项；不调用 Tushare/DeepSeek/GitHub、不创建 provider task、不计算 production IC、不写入 action/evidence/next-session projection，也不证明 provider-backed small-pool validation、full-market validation 或 production Factor Test validation complete。
+
 `/api/recovery/cache` 已接入数据恢复中心只读迁移：读取本地 `data_recovery_actions`、`tool_recovery_actions`、`recovery_result_timeline`、`data_health_timeline_recovery_actions`、`a_share_evidence_recovery_ledger`、`provider_recovery_matrix` 和 `data_gap_report`，输出恢复动作、恢复时间线和调用血缘；不调用 Tushare/AkShare/yfinance/DeepSeek/GitHub、不执行恢复动作、不刷新数据、不执行真实交易、不修改持仓或 `strategy_execution_packet.action`。
 
 `/api/strategy/cache` 已接入策略执行 / 今日决策只读迁移：读取本地 `strategy_execution_packet` 与 `command_center_decision_packet`，输出 action 来源、策略 trace、决策摘要和调用血缘；不调用 Tushare/DeepSeek/GitHub、不运行回测、不执行真实交易、不修改 `strategy_execution_packet.action` 或 `command_center_decision_packet`。

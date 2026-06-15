@@ -512,6 +512,105 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             }
         )
     try:
+        from scripts import factor_test_lab_contract
+
+        stage_rows = factor_test_lab_contract._factor_test_production_stage_scope_rows()
+        stage_rows = stage_rows if isinstance(stage_rows, list) else []
+        row_count = len(stage_rows)
+        pending_count = sum(
+            1
+            for row in stage_rows
+            if isinstance(row, dict) and row.get("production_factor_test_validation_complete") is False
+        )
+        local_evidence_count = sum(
+            1 for row in stage_rows if isinstance(row, dict) and row.get("local_stage_evidence_present") is True
+        )
+        rows.append(
+            {
+                "id": "LTG-03",
+                "goal": "Factor Test Lab 完整生产化",
+                "stage_scope_manifest": "factor_test_production_stage_scope_manifest",
+                "status": "observed_in_factor_test_lab_static_contract"
+                if stage_rows
+                else "missing_from_factor_test_lab_static_contract",
+                "observed_source": "scripts/factor_test_lab_contract._factor_test_production_stage_scope_rows local static contract",
+                "cache_status": "factor_test_lab_static_contract",
+                "cache_mode": "local_static_contract",
+                "row_count": row_count,
+                "pending_stage_count": pending_count,
+                "local_evidence_stage_count": local_evidence_count,
+                "production_blocker_count": pending_count,
+                "provider_backed_small_pool_validation_done": False,
+                "full_market_validation_done": False,
+                "production_factor_test_validation_complete": False,
+                "real_provider_sample_still_required": True,
+                "provider_promotion_still_required": True,
+                "provider_execution_implemented": False,
+                "provider_call_ledger_evidence_done": False,
+                "multi_horizon_forward_returns_done": False,
+                "rolling_window_validation_done": False,
+                "cost_assumption_validation_done": False,
+                "neutralization_stability_done": False,
+                "pit_bias_controls_done": False,
+                "full_market_promotion_done": False,
+                "metrics_remain_research_only": True,
+                "enters_strategy_action": False,
+                "enters_core_action": False,
+                "enters_evidence_effects": False,
+                "enters_next_session_projection": False,
+                "frontend_computes_action": False,
+                "cache_get_external_calls": False,
+                "react_render_external_calls": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observed_local_static_factor_test_stage_scope_not_production_completion",
+            }
+        )
+    except Exception:
+        rows.append(
+            {
+                "id": "LTG-03",
+                "goal": "Factor Test Lab 完整生产化",
+                "stage_scope_manifest": "factor_test_production_stage_scope_manifest",
+                "status": "local_observation_failed_safe_fallback",
+                "observed_source": "scripts/factor_test_lab_contract._factor_test_production_stage_scope_rows local static contract",
+                "error_message_safe": "factor_test_stage_scope_observation_failed",
+                "row_count": 0,
+                "pending_stage_count": 0,
+                "local_evidence_stage_count": 0,
+                "production_blocker_count": 0,
+                "provider_backed_small_pool_validation_done": False,
+                "full_market_validation_done": False,
+                "production_factor_test_validation_complete": False,
+                "real_provider_sample_still_required": True,
+                "provider_promotion_still_required": True,
+                "provider_execution_implemented": False,
+                "provider_call_ledger_evidence_done": False,
+                "multi_horizon_forward_returns_done": False,
+                "rolling_window_validation_done": False,
+                "cost_assumption_validation_done": False,
+                "neutralization_stability_done": False,
+                "pit_bias_controls_done": False,
+                "full_market_promotion_done": False,
+                "metrics_remain_research_only": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observation_failure_is_not_completion",
+            }
+        )
+    try:
         from server.services import candidate_service
 
         candidate_packet = candidate_service.read_candidate_radar_cache()
