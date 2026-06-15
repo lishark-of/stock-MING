@@ -342,6 +342,13 @@ export function postCandidateRadarProviderParityDryRun(payload: Record<string, u
   });
 }
 
+export function postCandidateRadarWorkerExecutionRequest(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/candidate-radar/worker-execution-request", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function postCandidateRadarFullPoolPlan(payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>("/api/candidate-radar/full-pool-plan", {
     method: "POST",

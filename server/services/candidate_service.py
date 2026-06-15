@@ -34,6 +34,9 @@ CANDIDATE_PROVIDER_PARITY_DRY_RUN_SCHEMA_VERSION = "candidate_radar_provider_par
 CANDIDATE_PROVIDER_PARITY_DRY_RUN_TASK_TYPE = "run_candidate_radar_provider_parity_dry_run"
 CANDIDATE_PROVIDER_PARITY_DRY_RUN_ROUTE = "POST /api/candidate-radar/provider-parity-dry-run"
 PROVIDER_PARITY_DEFAULT_CANDIDATE_LIMIT = 20
+CANDIDATE_WORKER_EXECUTION_REQUEST_SCHEMA_VERSION = "candidate_radar_worker_execution_request.v1"
+CANDIDATE_WORKER_EXECUTION_REQUEST_TASK_TYPE = "run_candidate_radar_worker_execution_request"
+CANDIDATE_WORKER_EXECUTION_REQUEST_ROUTE = "POST /api/candidate-radar/worker-execution-request"
 CANDIDATE_RADAR_DURABLE_EVIDENCE_SCHEMA_VERSION = "candidate_radar_durable_evidence_recipe.v1"
 CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS = (
     "cache_render_boundary_visible",
@@ -44,6 +47,7 @@ CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS = (
     "local_full_pool_receipt_visible",
     "local_deep_scan_review_visible",
     "worker_execution_recipe_visible",
+    "worker_execution_request_visible",
     "provider_parity_scope_ticket_required",
     "quant_projection_scope_ticket_required",
     "worker_full_pool_execution_evidence_required",
@@ -64,6 +68,7 @@ CANDIDATE_RADAR_DURABLE_EVIDENCE_LABELS = {
     "local_full_pool_receipt_visible": "Local full-pool receipt is visible",
     "local_deep_scan_review_visible": "Local deep-scan review receipt is visible",
     "worker_execution_recipe_visible": "Worker execution recipe is visible",
+    "worker_execution_request_visible": "Worker execution request ticket is visible",
     "provider_parity_scope_ticket_required": "Provider parity scope ticket is required",
     "quant_projection_scope_ticket_required": "Search quant projection scope ticket is required",
     "worker_full_pool_execution_evidence_required": "Worker full-pool execution evidence is required",
@@ -77,7 +82,12 @@ CANDIDATE_RADAR_DURABLE_EVIDENCE_LABELS = {
 }
 CANDIDATE_TUSHARE_ACCEPTANCE_ENV_KEYS = ("TUSHARE_TOKEN",)
 CANDIDATE_DEEPSEEK_ACCEPTANCE_ENV_KEYS = ("DEEPSEEK_API_KEY", "DEEPSEEK_TOKEN_1", "DEEPSEEK_TOKEN_2")
-PERSISTED_TASK_SCAN_MODES = LOCAL_POOL_SCAN_MODES | {QUANT_PROJECTION_SCAN_MODE}
+PERSISTED_TASK_SCAN_MODES = LOCAL_POOL_SCAN_MODES | {
+    QUANT_PROJECTION_SCAN_MODE,
+    "deep_scan_local_review",
+    "provider_parity_dry_run",
+    "worker_execution_request",
+}
 FAST_SCAN_DISPLAY_CANDIDATE_LIMIT = 120
 FAST_SCAN_LOCAL_POOL_INPUT_LIMIT = 50
 FULL_POOL_LOCAL_INPUT_LIMIT = 500
@@ -4500,6 +4510,7 @@ def _attach_no_feature_loss_acceptance_contract(packet: Mapping[str, Any]) -> di
     view = _attach_candidate_radar_promotion_blocker_audit(view)
     view = _attach_candidate_radar_production_activation_receipt(view)
     view = _attach_candidate_radar_worker_execution_recipe(view)
+    view = _attach_candidate_radar_worker_execution_request(view)
     view = _attach_candidate_radar_next_execution_recipe(view)
     view = _attach_candidate_radar_durable_evidence_recipe(view)
     return view
@@ -5445,6 +5456,19 @@ def _candidate_radar_worker_execution_recipe(
     local_blockers = [row["recipe_key"] for row in rows if not row.get("local_ready")]
     production_blockers = [row["recipe_key"] for row in rows if row.get("production_blocker")]
     local_ready = not local_blockers
+    scope_input = {
+        "schema_version": "candidate_radar_worker_execution_recipe.v1",
+        "recommended_worker_full_pool_route": "future POST /api/candidate-radar/full-pool-worker-scan",
+        "recommended_worker_deep_scan_route": "future POST /api/candidate-radar/deep-scan-worker",
+        "required_storage_datasets": list(FULL_POOL_REQUIRED_STORAGE_DATASETS),
+        "required_legacy_signal_groups": [str(item.get("group")) for item in LEGACY_RADAR_SIGNAL_GROUPS],
+        "recipe_keys": [str(row["recipe_key"]) for row in rows],
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+    }
+    worker_scope_hash = hashlib.sha256(
+        json.dumps(scope_input, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
     contract = {
         "schema_version": "candidate_radar_worker_execution_recipe.v1",
         "status": (
@@ -5454,6 +5478,10 @@ def _candidate_radar_worker_execution_recipe(
         ),
         "scope": "local_candidate_radar_worker_execution_recipe_no_worker_start",
         "ltg": "LTG-13",
+        "worker_execution_scope_hash": worker_scope_hash,
+        "worker_execution_scope_hash_short": worker_scope_hash[:16],
+        "worker_execution_scope_hash_algorithm": "sha256",
+        "worker_execution_scope_hash_input_includes_secret": False,
         "local_worker_execution_recipe_ready": local_ready,
         "ready_to_start_worker_from_cache": False,
         "requires_explicit_user_action": True,
@@ -5561,6 +5589,319 @@ def _attach_candidate_radar_worker_execution_recipe(packet: Mapping[str, Any]) -
     return view
 
 
+def _candidate_worker_execution_request_row(
+    criterion: str,
+    status: str,
+    *,
+    passed: bool,
+    local_blocker: bool,
+    production_blocker: bool,
+    evidence: str,
+    next_action: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": CANDIDATE_WORKER_EXECUTION_REQUEST_SCHEMA_VERSION,
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "local_blocker": bool(local_blocker),
+        "production_blocker": bool(production_blocker),
+        "evidence": evidence,
+        "next_action": next_action,
+        "worker_task_created": False,
+        "worker_task_executed": False,
+        "worker_started": False,
+        "full_pool_scan_done": False,
+        "deep_scan_done": False,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+    }
+
+
+def _candidate_radar_worker_execution_request(
+    packet: Mapping[str, Any],
+    *,
+    payload_safe: Mapping[str, Any] | None = None,
+    explicit_request: bool = False,
+    task_id: str | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    payload = payload_safe or {}
+    operator_approved = _coerce_bool(
+        payload.get("operator_approved") or payload.get("user_approved") or payload.get("approved"),
+        False,
+    )
+    worker_recipe = _as_dict(packet.get("candidate_radar_worker_execution_recipe"))
+    full_pool_receipt = _as_dict(packet.get("full_pool_local_execution_receipt"))
+    deep_scan_receipt = _as_dict(packet.get("deep_scan_local_review_receipt"))
+    provider_parity = _as_dict(packet.get("provider_parity_dry_run_receipt"))
+    quant_dry_run = _as_dict(packet.get("search_quant_projection_acceptance_dry_run_receipt"))
+    requested_scope_hash = _safe_text(
+        payload.get("worker_execution_scope_hash") or payload.get("scope_hash") or "",
+        limit=128,
+    )
+    expected_scope_hash = _safe_text(worker_recipe.get("worker_execution_scope_hash") or "", limit=128)
+    scope_hash_matches = bool(requested_scope_hash and expected_scope_hash and requested_scope_hash == expected_scope_hash)
+    worker_recipe_ready = worker_recipe.get("local_worker_execution_recipe_ready") is True
+    full_pool_local_visible = (
+        full_pool_receipt.get("schema_version") == "candidate_radar_full_pool_local_execution_receipt.v1"
+    )
+    deep_scan_local_visible = (
+        deep_scan_receipt.get("schema_version") == "candidate_radar_deep_scan_local_review_receipt.v1"
+    )
+    provider_scope_visible = bool(provider_parity.get("acceptance_scope_hash"))
+    quant_scope_visible = bool(quant_dry_run.get("acceptance_scope_hash"))
+    rows = [
+        _candidate_worker_execution_request_row(
+            "explicit_post_worker_execution_request_done",
+            "passed_explicit_post" if explicit_request else "blocked_missing_explicit_post",
+            passed=explicit_request,
+            local_blocker=not explicit_request,
+            production_blocker=False,
+            evidence=f"explicit_request={explicit_request}; task_id={task_id or ''}",
+            next_action="Use only POST /api/candidate-radar/worker-execution-request to create the request ticket.",
+        ),
+        _candidate_worker_execution_request_row(
+            "operator_approval_recorded",
+            "passed_operator_approved" if operator_approved else "blocked_operator_approval_required",
+            passed=operator_approved,
+            local_blocker=explicit_request and not operator_approved,
+            production_blocker=False,
+            evidence=f"operator_approved={operator_approved}",
+            next_action="Require explicit operator approval before a future worker-backed radar task.",
+        ),
+        _candidate_worker_execution_request_row(
+            "worker_execution_recipe_ready",
+            "passed_worker_recipe_ready" if worker_recipe_ready else "blocked_worker_recipe_not_ready",
+            passed=worker_recipe_ready,
+            local_blocker=not worker_recipe_ready,
+            production_blocker=False,
+            evidence=f"worker_recipe_status={worker_recipe.get('status')}; hash={worker_recipe.get('worker_execution_scope_hash_short') or 'missing'}",
+            next_action="Keep the worker execution recipe visible before creating any worker task.",
+        ),
+        _candidate_worker_execution_request_row(
+            "worker_execution_scope_hash_bound",
+            "passed_scope_hash_bound" if scope_hash_matches else "blocked_scope_hash_mismatch_or_missing",
+            passed=scope_hash_matches,
+            local_blocker=explicit_request and not scope_hash_matches,
+            production_blocker=False,
+            evidence=(
+                f"requested={requested_scope_hash[:16] if requested_scope_hash else 'missing'}; "
+                f"expected={expected_scope_hash[:16] if expected_scope_hash else 'missing'}"
+            ),
+            next_action="Bind the request to the latest worker execution recipe hash.",
+        ),
+        _candidate_worker_execution_request_row(
+            "local_full_pool_receipt_visible",
+            "passed_local_full_pool_receipt" if full_pool_local_visible else "blocked_local_full_pool_receipt_missing",
+            passed=full_pool_local_visible,
+            local_blocker=not full_pool_local_visible,
+            production_blocker=False,
+            evidence=f"status={full_pool_receipt.get('status')}; local_done={full_pool_receipt.get('local_full_pool_execution_done')}",
+            next_action="Run the local full-pool receipt path before future worker-backed full-pool execution.",
+        ),
+        _candidate_worker_execution_request_row(
+            "local_deep_scan_review_visible",
+            "passed_local_deep_scan_review" if deep_scan_local_visible else "blocked_local_deep_scan_review_missing",
+            passed=deep_scan_local_visible,
+            local_blocker=not deep_scan_local_visible,
+            production_blocker=False,
+            evidence=f"status={deep_scan_receipt.get('status')}; local_review_done={deep_scan_receipt.get('local_deep_scan_review_done')}",
+            next_action="Run the local deep-scan review before future worker-backed deep scan.",
+        ),
+        _candidate_worker_execution_request_row(
+            "provider_parity_scope_ticket_visible",
+            "passed_provider_parity_scope" if provider_scope_visible else "blocked_provider_parity_scope_missing",
+            passed=provider_scope_visible,
+            local_blocker=not provider_scope_visible,
+            production_blocker=False,
+            evidence=f"status={provider_parity.get('status')}; hash={provider_parity.get('acceptance_scope_hash_short') or 'missing'}",
+            next_action="Create the provider parity dry-run scope ticket before worker/provider promotion.",
+        ),
+        _candidate_worker_execution_request_row(
+            "quant_projection_scope_ticket_visible",
+            "scope_ticket_visible" if quant_scope_visible else "pending_optional_quant_projection_scope",
+            passed=quant_scope_visible,
+            local_blocker=False,
+            production_blocker=not quant_scope_visible,
+            evidence=f"status={quant_dry_run.get('status')}; hash={quant_dry_run.get('acceptance_scope_hash_short') or 'missing'}",
+            next_action="Bind searched-symbol quant projection acceptance before claiming full radar replacement.",
+        ),
+        _candidate_worker_execution_request_row(
+            "target_worker_routes_declared",
+            "passed_target_routes_declared",
+            passed=True,
+            local_blocker=False,
+            production_blocker=False,
+            evidence="future POST /api/candidate-radar/full-pool-worker-scan and future POST /api/candidate-radar/deep-scan-worker",
+            next_action="Implement future worker routes only after runtime worker readiness is accepted.",
+        ),
+        _candidate_worker_execution_request_row(
+            "worker_execution_still_pending",
+            "passed_request_only",
+            passed=True,
+            local_blocker=False,
+            production_blocker=True,
+            evidence="Request ticket does not create or execute any worker task.",
+            next_action="Keep actual full-pool/deep-scan execution as a separate worker-backed task.",
+        ),
+        _candidate_worker_execution_request_row(
+            "no_worker_provider_model_trade_secret_boundary",
+            "passed_no_side_effects",
+            passed=True,
+            local_blocker=False,
+            production_blocker=False,
+            evidence="No worker start, provider/model call, GitHub probe, trade, action mutation, or secret exposure.",
+            next_action="Preserve this boundary while adding future worker execution evidence.",
+        ),
+    ]
+    local_blockers = [row["criterion"] for row in rows if row.get("local_blocker")]
+    production_blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
+    if not explicit_request:
+        status = "candidate_radar_worker_execution_request_missing"
+        allowed_next_step = "create_button_gated_worker_execution_request"
+    elif not operator_approved:
+        status = "candidate_radar_worker_execution_request_blocked_operator_approval_required"
+        allowed_next_step = "rerun_with_operator_approval"
+    elif not worker_recipe_ready:
+        status = "candidate_radar_worker_execution_request_blocked_worker_recipe_required"
+        allowed_next_step = "restore_worker_execution_recipe"
+    elif not requested_scope_hash:
+        status = "candidate_radar_worker_execution_request_blocked_scope_hash_required"
+        allowed_next_step = "bind_latest_worker_execution_scope_hash"
+    elif not scope_hash_matches:
+        status = "candidate_radar_worker_execution_request_blocked_scope_hash_mismatch"
+        allowed_next_step = "rerun_against_latest_worker_execution_scope_hash"
+    elif not (full_pool_local_visible and deep_scan_local_visible):
+        status = "candidate_radar_worker_execution_request_blocked_local_receipts_required"
+        allowed_next_step = "run_local_full_pool_and_deep_scan_review_receipts"
+    elif not provider_scope_visible:
+        status = "candidate_radar_worker_execution_request_blocked_provider_parity_scope_required"
+        allowed_next_step = "run_provider_parity_dry_run_scope_ticket"
+    else:
+        status = "candidate_radar_worker_execution_request_ready_manual_worker_task_pending"
+        allowed_next_step = "manual_future_worker_task_implementation_after_runtime_readiness"
+    local_ready = explicit_request and operator_approved and not local_blockers
+    receipt = {
+        "schema_version": CANDIDATE_WORKER_EXECUTION_REQUEST_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_candidate_radar_worker_execution_request_no_worker_start",
+        "mode": "button_gated_local_worker_execution_request",
+        "ltg": "LTG-13",
+        "route": CANDIDATE_WORKER_EXECUTION_REQUEST_ROUTE,
+        "task_type": CANDIDATE_WORKER_EXECUTION_REQUEST_TASK_TYPE,
+        "request_task_id": task_id or "",
+        "explicit_worker_execution_request_done": explicit_request,
+        "operator_approved": operator_approved,
+        "local_execution_request_ready": local_ready,
+        "ready_for_manual_worker_task_submission": local_ready,
+        "worker_execution_recipe_ready": worker_recipe_ready,
+        "worker_execution_scope_hash": expected_scope_hash,
+        "worker_execution_scope_hash_short": expected_scope_hash[:16] if expected_scope_hash else "",
+        "requested_worker_execution_scope_hash": requested_scope_hash,
+        "requested_worker_execution_scope_hash_matches_latest": scope_hash_matches,
+        "local_full_pool_receipt_visible": full_pool_local_visible,
+        "local_deep_scan_review_visible": deep_scan_local_visible,
+        "provider_parity_scope_ticket_visible": provider_scope_visible,
+        "quant_projection_scope_ticket_visible": quant_scope_visible,
+        "provider_parity_scope_hash": provider_parity.get("acceptance_scope_hash") or "",
+        "provider_parity_scope_hash_short": provider_parity.get("acceptance_scope_hash_short") or "",
+        "quant_projection_scope_hash": quant_dry_run.get("acceptance_scope_hash") or "",
+        "quant_projection_scope_hash_short": quant_dry_run.get("acceptance_scope_hash_short") or "",
+        "target_worker_full_pool_route": "future POST /api/candidate-radar/full-pool-worker-scan",
+        "target_worker_deep_scan_route": "future POST /api/candidate-radar/deep-scan-worker",
+        "target_worker_full_pool_task_type": "future_run_candidate_radar_full_pool_worker_scan",
+        "target_worker_deep_scan_task_type": "future_run_candidate_radar_deep_scan_worker",
+        "allowed_next_step": allowed_next_step,
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "blocking_criteria": local_blockers,
+        "production_blockers": production_blockers,
+        "worker_task_created": False,
+        "worker_task_executed": False,
+        "worker_execution_implemented": False,
+        "worker_started": False,
+        "full_pool_scan_done": False,
+        "deep_scan_done": False,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "provider_model_task_dispatched": False,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "legacy_fallback_required": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+        "not_allowed_next_steps": [
+            "create worker task from execution request",
+            "start worker from execution request",
+            "run full-pool scan from execution request",
+            "run deep-scan from execution request",
+            "call Tushare/DeepSeek/GitHub from execution request",
+            "retire legacy radar fallback from execution request",
+            "treat execution request as production radar replacement",
+            "turn candidate rows into buy instructions",
+        ],
+        "row_count": len(rows),
+        "rows": rows,
+        "note": "This local request ticket binds Candidate Radar worker execution scope for a future task. It does not start workers, run full/deep scans, call providers/models, retire legacy fallback, or complete production replacement.",
+    }
+    return receipt, rows
+
+
+def _attach_candidate_radar_worker_execution_request(packet: Mapping[str, Any]) -> dict[str, Any]:
+    view = dict(packet)
+    existing = _as_dict(view.get("candidate_radar_worker_execution_request_receipt"))
+    if existing.get("schema_version") == CANDIDATE_WORKER_EXECUTION_REQUEST_SCHEMA_VERSION:
+        receipt = dict(existing)
+        rows = [row for row in _as_list(view.get("candidate_radar_worker_execution_request_rows")) if isinstance(row, dict)]
+        if not rows:
+            rows = [row for row in _as_list(receipt.get("rows")) if isinstance(row, dict)]
+    else:
+        receipt, rows = _candidate_radar_worker_execution_request(view)
+    counts = dict(_as_dict(view.get("counts")))
+    counts["candidate_radar_worker_execution_request_row_count"] = len(rows)
+    counts["candidate_radar_worker_execution_request_local_blocker_count"] = receipt.get("local_blocker_count", 0)
+    counts["candidate_radar_worker_execution_request_production_blocker_count"] = receipt.get(
+        "production_blocker_count", 0
+    )
+    counts["candidate_radar_worker_execution_request_ready"] = receipt.get("local_execution_request_ready") is True
+    policy = dict(_as_dict(view.get("policy")))
+    policy["candidate_radar_worker_execution_request_is_button_gated"] = True
+    policy["candidate_radar_worker_execution_request_is_local"] = True
+    policy["candidate_radar_worker_execution_request_does_not_start_worker"] = True
+    policy["candidate_radar_worker_execution_request_is_not_production_replacement"] = True
+    policy["candidate_radar_worker_execution_request_keeps_external_calls_false"] = True
+    ledger = _as_list(view.get("call_ledger"))
+    ledger.append(
+        _candidate_call_ledger_row(
+            api="local_candidate_radar_worker_execution_request",
+            source_snapshot="candidate_radar_packet",
+            row_count=len(rows),
+            call_status=str(receipt.get("status") or "candidate_radar_worker_execution_request_missing"),
+        )
+    )
+    view["counts"] = counts
+    view["policy"] = policy
+    view["call_ledger"] = ledger
+    view["candidate_radar_worker_execution_request_receipt"] = receipt
+    view["candidate_radar_worker_execution_request_rows"] = rows
+    return view
+
+
 def _candidate_radar_next_execution_recipe_row(
     phase: str,
     status: str,
@@ -5604,6 +5945,7 @@ def _candidate_radar_next_execution_recipe(
     promotion = _as_dict(packet.get("candidate_radar_promotion_blocker_audit"))
     activation = _as_dict(packet.get("candidate_radar_production_activation_receipt"))
     worker_recipe = _as_dict(packet.get("candidate_radar_worker_execution_recipe"))
+    worker_request = _as_dict(packet.get("candidate_radar_worker_execution_request_receipt"))
     policy = _as_dict(packet.get("policy"))
     counts = _as_dict(packet.get("counts"))
     candidate_count = int(counts.get("candidate_count") or 0)
@@ -5626,6 +5968,7 @@ def _candidate_radar_next_execution_recipe(
     quant_ticket_visible = bool(quant_dry_run.get("acceptance_scope_hash_short"))
     browser_review_ready = bool(browser_review.get("local_browser_qa_review_ready"))
     worker_recipe_ready = worker_recipe.get("local_worker_execution_recipe_ready") is True
+    worker_request_ready = worker_request.get("local_execution_request_ready") is True
     rows = [
         _candidate_radar_next_execution_recipe_row(
             "cache_render_boundary",
@@ -5738,12 +6081,23 @@ def _candidate_radar_next_execution_recipe(
             recommended_order=11,
         ),
         _candidate_radar_next_execution_recipe_row(
+            "worker_execution_request_visible",
+            "worker_request_visible" if worker_request_ready else "pending_worker_execution_request",
+            worker_request_ready,
+            evidence=(
+                f"worker_request_status={worker_request.get('status')}; "
+                f"scope_hash_match={worker_request.get('requested_worker_execution_scope_hash_matches_latest')}"
+            ),
+            required_before_fast_scan=False,
+            recommended_order=12,
+        ),
+        _candidate_radar_next_execution_recipe_row(
             "browser_qa_review_required",
             "local_review_ready" if browser_review_ready else "pending_browser_qa_review",
             browser_review_ready,
             evidence=f"browser_review_status={browser_review.get('status')}; ready={browser_review_ready}",
             required_before_fast_scan=False,
-            recommended_order=12,
+            recommended_order=13,
         ),
         _candidate_radar_next_execution_recipe_row(
             "production_promotion_boundary",
@@ -5754,7 +6108,7 @@ def _candidate_radar_next_execution_recipe(
                 f"activation_status={activation.get('status')}"
             ),
             required_before_fast_scan=False,
-            recommended_order=13,
+            recommended_order=14,
         ),
     ]
     blocking_rows = [row for row in rows if row["required_before_fast_scan"] and not row["passed"]]
@@ -5783,6 +6137,7 @@ def _candidate_radar_next_execution_recipe(
         or "future POST /api/candidate-radar/full-pool-worker-scan",
         "recommended_worker_deep_scan_route": worker_recipe.get("recommended_worker_deep_scan_route")
         or "future POST /api/candidate-radar/deep-scan-worker",
+        "worker_execution_request_route": CANDIDATE_WORKER_EXECUTION_REQUEST_ROUTE,
         "provider_parity_dry_run_route": "POST /api/candidate-radar/provider-parity-dry-run",
         "quant_projection_acceptance_dry_run_route": "POST /api/candidate-radar/quant-projection-acceptance-dry-run",
         "browser_qa_review_route": "POST /api/candidate-radar/browser-qa-review",
@@ -5796,6 +6151,7 @@ def _candidate_radar_next_execution_recipe(
             "run button-gated full-pool local scan when universe is larger",
             "run button-gated deep-scan local review for parity gaps",
             "review worker execution recipe before any full-pool/deep-scan production task",
+            "create a worker execution request ticket bound to the current worker recipe hash",
             "run provider parity and quant projection dry-runs before real provider/model acceptance",
             "run browser QA runner and button-gated review",
             "use promotion/activation audits before retiring legacy fallback",
@@ -5921,6 +6277,7 @@ def _candidate_radar_durable_evidence_recipe(
     full_pool_receipt = _as_dict(packet.get("full_pool_local_execution_receipt"))
     deep_scan_receipt = _as_dict(packet.get("deep_scan_local_review_receipt"))
     worker_recipe = _as_dict(packet.get("candidate_radar_worker_execution_recipe"))
+    worker_request = _as_dict(packet.get("candidate_radar_worker_execution_request_receipt"))
     provider_parity_dry_run = _as_dict(packet.get("provider_parity_dry_run_receipt"))
     quant_dry_run = _as_dict(packet.get("search_quant_projection_acceptance_dry_run_receipt"))
     promotion = _as_dict(packet.get("candidate_radar_promotion_blocker_audit"))
@@ -5948,6 +6305,7 @@ def _candidate_radar_durable_evidence_recipe(
         deep_scan_receipt.get("schema_version") == "candidate_radar_deep_scan_local_review_receipt.v1"
     )
     worker_recipe_visible = worker_recipe.get("local_worker_execution_recipe_ready") is True
+    worker_request_visible = worker_request.get("local_execution_request_ready") is True
     provider_ticket_visible = bool(provider_parity_dry_run.get("acceptance_scope_hash_short"))
     quant_ticket_visible = bool(quant_dry_run.get("acceptance_scope_hash_short"))
     full_pool_worker_done = activation.get("full_pool_scan_done") is True
@@ -6061,6 +6419,17 @@ def _candidate_radar_durable_evidence_recipe(
             recommended_order=8,
         ),
         _candidate_radar_durable_evidence_recipe_row(
+            "worker_execution_request_visible",
+            "durable_evidence",
+            "scope_request_visible" if worker_request_visible else "pending_worker_execution_request",
+            passed=worker_request_visible,
+            local_surface_required=False,
+            production_blocker=not worker_request_visible,
+            evidence=f"worker_request_status={worker_request.get('status')}; scope={worker_request.get('worker_execution_scope_hash_short') or 'missing'}",
+            next_action="Create a button-gated worker execution request before implementing the future worker-backed radar scan.",
+            recommended_order=9,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
             "provider_parity_scope_ticket_required",
             "durable_evidence",
             "scope_ticket_visible" if provider_ticket_visible else "pending_provider_parity_dry_run",
@@ -6069,7 +6438,7 @@ def _candidate_radar_durable_evidence_recipe(
             production_blocker=not provider_ticket_visible,
             evidence=f"provider_parity_status={provider_parity_dry_run.get('status')}; scope={provider_parity_dry_run.get('acceptance_scope_hash_short') or 'missing'}",
             next_action="Create a user-approved provider parity dry-run scope ticket before any real provider-backed radar acceptance.",
-            recommended_order=9,
+            recommended_order=10,
         ),
         _candidate_radar_durable_evidence_recipe_row(
             "quant_projection_scope_ticket_required",
@@ -6080,7 +6449,7 @@ def _candidate_radar_durable_evidence_recipe(
             production_blocker=not quant_ticket_visible,
             evidence=f"quant_dry_run_status={quant_dry_run.get('status')}; scope={quant_dry_run.get('acceptance_scope_hash_short') or 'missing'}",
             next_action="Bind searched-symbol Tushare/DeepSeek acceptance to a user-approved dry-run scope.",
-            recommended_order=10,
+            recommended_order=11,
         ),
         _candidate_radar_durable_evidence_recipe_row(
             "worker_full_pool_execution_evidence_required",
@@ -6091,7 +6460,7 @@ def _candidate_radar_durable_evidence_recipe(
             production_blocker=not full_pool_worker_done,
             evidence=f"full_pool_scan_done={full_pool_worker_done}",
             next_action="Run future worker-backed full-pool task and attach durable task/call/coverage evidence.",
-            recommended_order=11,
+            recommended_order=12,
         ),
         _candidate_radar_durable_evidence_recipe_row(
             "worker_deep_scan_execution_evidence_required",
@@ -6102,7 +6471,7 @@ def _candidate_radar_durable_evidence_recipe(
             production_blocker=not deep_scan_worker_done,
             evidence=f"deep_scan_done={deep_scan_worker_done}",
             next_action="Run future worker-backed deep scan with provider/model boundaries and safe failure rows.",
-            recommended_order=12,
+            recommended_order=13,
         ),
         _candidate_radar_durable_evidence_recipe_row(
             "provider_backed_parity_call_ledger_required",
@@ -6113,7 +6482,7 @@ def _candidate_radar_durable_evidence_recipe(
             production_blocker=not provider_backed_done,
             evidence=f"provider_backed_acceptance_done={provider_backed_done}",
             next_action="Record real provider call ledger rows for selected radar signal groups before promotion.",
-            recommended_order=13,
+            recommended_order=14,
         ),
         _candidate_radar_durable_evidence_recipe_row(
             "browser_visual_performance_evidence_required",
@@ -6124,7 +6493,7 @@ def _candidate_radar_durable_evidence_recipe(
             production_blocker=not browser_visual_perf_done,
             evidence=f"local_reviewed={local_browser_visual_perf_reviewed}; visual={browser_evidence.get('candidate_visual_qa_evidence_passed')}; perf={browser_evidence.get('candidate_browser_performance_evidence_passed')}; review={browser_review.get('local_browser_qa_review_ready')}; durable_promotion=false",
             next_action="Run and review browser visual/performance evidence before claiming no-stall radar replacement.",
-            recommended_order=14,
+            recommended_order=15,
         ),
         _candidate_radar_durable_evidence_recipe_row(
             "deepseek_model_ledger_if_enabled_required",
@@ -6135,7 +6504,7 @@ def _candidate_radar_durable_evidence_recipe(
             production_blocker=True,
             evidence="DeepSeek is not called by the recipe; future deep research must include model ledger, sanitizer, hashes, token usage, and parse_failed discard.",
             next_action="Only attach DeepSeek evidence from explicit button/task execution, never from render.",
-            recommended_order=15,
+            recommended_order=16,
         ),
         _candidate_radar_durable_evidence_recipe_row(
             "legacy_retirement_review_required",
@@ -6146,7 +6515,7 @@ def _candidate_radar_durable_evidence_recipe(
             production_blocker=not legacy_retirement_ready,
             evidence=f"legacy_retirement_ready={legacy_retirement_ready}",
             next_action="Keep Streamlit radar fallback until worker/provider/browser promotion clears.",
-            recommended_order=16,
+            recommended_order=17,
         ),
         _candidate_radar_durable_evidence_recipe_row(
             "production_promotion_review_required",
@@ -6157,7 +6526,7 @@ def _candidate_radar_durable_evidence_recipe(
             production_blocker=not promotion_ready,
             evidence=f"promotion_ready={promotion_ready}; blockers={promotion.get('blocking_promotion_count')}",
             next_action="Promote only after direct worker/provider/browser/model evidence and redaction review.",
-            recommended_order=17,
+            recommended_order=18,
         ),
         _candidate_radar_durable_evidence_recipe_row(
             "no_trade_action_secret_boundary",
@@ -6168,7 +6537,7 @@ def _candidate_radar_durable_evidence_recipe(
             production_blocker=not no_trade_boundary,
             evidence="Candidate Radar does not execute trades, mutate action/holdings, expose secrets, or turn candidates into buy instructions.",
             next_action="Keep radar outputs research-only even after production evidence improves.",
-            recommended_order=18,
+            recommended_order=19,
         ),
     ]
     local_blockers = [row["evidence_key"] for row in rows if row["local_surface_required"] and not row["passed"]]
@@ -6206,6 +6575,7 @@ def _candidate_radar_durable_evidence_recipe(
         "missing_durable_evidence": durable_blockers,
         "required_evidence": [
             "user-approved provider parity scope ticket",
+            "button-gated worker execution request ticket bound to the worker recipe hash",
             "searched-symbol quant projection scope ticket when used",
             "worker-backed full-pool execution task evidence",
             "worker-backed deep-scan execution task evidence",
@@ -7504,6 +7874,7 @@ def _build_candidate_radar_packet(
     raw_snapshot = snapshot if isinstance(snapshot, Mapping) else {}
     safe_snapshot = _safe_value(snapshot)
     snapshot_map = safe_snapshot if isinstance(safe_snapshot, dict) else {}
+    previous_map = _as_dict(previous_packet)
     radar_packet = _as_dict(snapshot_map.get("radar_packet") or snapshot_map.get("command_center_radar_packet"))
     candidates = _as_list(snapshot_map.get("next_ticket_candidates")) or _as_list(radar_packet.get("top_candidates"))
     candidate_input_count = max(_raw_candidate_input_count(raw_snapshot), len(candidates))
@@ -7583,10 +7954,37 @@ def _build_candidate_radar_packet(
         legacy_parity_acceptance=legacy_parity_acceptance_receipt,
         coverage=coverage,
     )
+    previous_full_pool_receipt = _as_dict(previous_map.get("full_pool_local_execution_receipt"))
+    if (
+        previous_full_pool_receipt.get("schema_version") == "candidate_radar_full_pool_local_execution_receipt.v1"
+        and previous_full_pool_receipt.get("status") != "full_pool_local_execution_not_run"
+        and scan_mode != "full_pool_local_scan"
+    ):
+        full_pool_local_execution_receipt = previous_full_pool_receipt
+        full_pool_local_execution_rows = [
+            row for row in _as_list(previous_map.get("full_pool_local_execution_rows")) if isinstance(row, dict)
+        ] or [row for row in _as_list(previous_full_pool_receipt.get("rows")) if isinstance(row, dict)]
+    previous_deep_scan_receipt = _as_dict(previous_map.get("deep_scan_local_review_receipt"))
+    if (
+        previous_deep_scan_receipt.get("schema_version") == "candidate_radar_deep_scan_local_review_receipt.v1"
+        and previous_deep_scan_receipt.get("status") != "deep_scan_local_review_not_run"
+        and scan_mode != "deep_scan_local_review"
+    ):
+        deep_scan_local_review_receipt = previous_deep_scan_receipt
+        deep_scan_local_review_rows = [
+            row for row in _as_list(previous_map.get("deep_scan_local_review_rows")) if isinstance(row, dict)
+        ] or [row for row in _as_list(previous_deep_scan_receipt.get("rows")) if isinstance(row, dict)]
     search_quant_projection_receipt = _as_dict(snapshot_map.get("search_quant_projection_receipt"))
     search_quant_projection_rows = [
         row for row in _as_list(snapshot_map.get("search_quant_projection_rows")) if isinstance(row, dict)
     ]
+    if not search_quant_projection_receipt:
+        previous_quant_receipt = _as_dict(previous_map.get("search_quant_projection_receipt"))
+        if previous_quant_receipt.get("schema_version") == QUANT_PROJECTION_SCHEMA_VERSION:
+            search_quant_projection_receipt = previous_quant_receipt
+            search_quant_projection_rows = [
+                row for row in _as_list(previous_map.get("search_quant_projection_rows")) if isinstance(row, dict)
+            ] or [row for row in _as_list(previous_quant_receipt.get("rows")) if isinstance(row, dict)]
     search_quant_projection_activation_receipt, search_quant_projection_activation_rows = (
         _quant_projection_activation_receipt(search_quant_projection_receipt)
     )
@@ -7603,6 +8001,20 @@ def _build_candidate_radar_packet(
         for row in _as_list(snapshot_map.get("search_quant_projection_credential_presence_rows"))
         if isinstance(row, dict)
     ]
+    if not search_quant_projection_acceptance_dry_run_receipt:
+        previous_quant_dry_run_receipt = _as_dict(previous_map.get("search_quant_projection_acceptance_dry_run_receipt"))
+        if previous_quant_dry_run_receipt.get("schema_version") == QUANT_PROJECTION_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION:
+            search_quant_projection_acceptance_dry_run_receipt = previous_quant_dry_run_receipt
+            search_quant_projection_acceptance_dry_run_rows = [
+                row
+                for row in _as_list(previous_map.get("search_quant_projection_acceptance_dry_run_rows"))
+                if isinstance(row, dict)
+            ] or [row for row in _as_list(previous_quant_dry_run_receipt.get("rows")) if isinstance(row, dict)]
+            search_quant_projection_credential_presence_rows = [
+                row
+                for row in _as_list(previous_map.get("search_quant_projection_credential_presence_rows"))
+                if isinstance(row, dict)
+            ]
     provider_parity_dry_run_receipt = _as_dict(snapshot_map.get("provider_parity_dry_run_receipt"))
     provider_parity_dry_run_rows = [
         row for row in _as_list(snapshot_map.get("provider_parity_dry_run_rows")) if isinstance(row, dict)
@@ -7610,6 +8022,18 @@ def _build_candidate_radar_packet(
     provider_parity_credential_presence_rows = [
         row for row in _as_list(snapshot_map.get("provider_parity_credential_presence_rows")) if isinstance(row, dict)
     ]
+    if not provider_parity_dry_run_receipt:
+        previous_provider_receipt = _as_dict(previous_map.get("provider_parity_dry_run_receipt"))
+        if previous_provider_receipt.get("schema_version") == CANDIDATE_PROVIDER_PARITY_DRY_RUN_SCHEMA_VERSION:
+            provider_parity_dry_run_receipt = previous_provider_receipt
+            provider_parity_dry_run_rows = [
+                row for row in _as_list(previous_map.get("provider_parity_dry_run_rows")) if isinstance(row, dict)
+            ] or [row for row in _as_list(previous_provider_receipt.get("rows")) if isinstance(row, dict)]
+            provider_parity_credential_presence_rows = [
+                row
+                for row in _as_list(previous_map.get("provider_parity_credential_presence_rows"))
+                if isinstance(row, dict)
+            ]
     counts["full_pool_local_execution_row_count"] = full_pool_local_execution_receipt["row_count"]
     counts["full_pool_local_execution_candidate_count"] = full_pool_local_execution_receipt["normalized_candidate_count"]
     counts["full_pool_local_execution_production_blocker_count"] = full_pool_local_execution_receipt[
@@ -8652,6 +9076,107 @@ def run_candidate_provider_parity_dry_run_task(payload: Any = None) -> dict[str,
         warning="candidate_radar_provider_parity_dry_run_ready_no_external_call",
     ) or task
 
+
+
+def run_candidate_worker_execution_request_task(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        CANDIDATE_WORKER_EXECUTION_REQUEST_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="candidate_radar_worker_execution_request_queued",
+        warnings=[
+            "下一票雷达 worker execution request 只生成本地申请票据；不会启动 worker、不会扫描全市场。",
+            "request ticket 不调用 Tushare、DeepSeek 或 GitHub，不执行真实交易，不修改 strategy action。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.25,
+        current_step="building_candidate_radar_worker_execution_request",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = read_candidate_radar_cache()
+    receipt, receipt_rows = _candidate_radar_worker_execution_request(
+        packet,
+        payload_safe=payload_safe,
+        explicit_request=True,
+        task_id=str(task["task_id"]),
+    )
+    request_params_safe = {
+        "operator_approved": receipt.get("operator_approved"),
+        "worker_execution_scope_hash_short": receipt.get("worker_execution_scope_hash_short"),
+        "requested_worker_execution_scope_hash_matches_latest": receipt.get(
+            "requested_worker_execution_scope_hash_matches_latest"
+        ),
+        "local_execution_request_ready": receipt.get("local_execution_request_ready"),
+        "provider_parity_scope_ticket_visible": receipt.get("provider_parity_scope_ticket_visible"),
+        "quant_projection_scope_ticket_visible": receipt.get("quant_projection_scope_ticket_visible"),
+        "external_sources_allowed": False,
+        "worker_started": False,
+        "worker_task_created": False,
+        "worker_task_executed": False,
+        "full_pool_scan_done": False,
+        "deep_scan_done": False,
+    }
+    ledger = _candidate_call_ledger_row(
+        api="local_candidate_radar_worker_execution_request",
+        source_snapshot="candidate_radar_cache",
+        row_count=len(receipt_rows),
+        call_status=str(receipt.get("status") or "candidate_radar_worker_execution_request_recorded"),
+        request_params_safe=request_params_safe,
+    )
+    packet["task_id"] = task["task_id"]
+    packet["candidate_radar_worker_execution_request_completed_at"] = _now_iso()
+    packet["candidate_radar_worker_execution_request_receipt"] = receipt
+    packet["candidate_radar_worker_execution_request_rows"] = receipt_rows
+    packet_counts = _as_dict(packet.get("counts"))
+    packet_counts["candidate_radar_worker_execution_request_row_count"] = len(receipt_rows)
+    packet_counts["candidate_radar_worker_execution_request_local_blocker_count"] = receipt.get(
+        "local_blocker_count", 0
+    )
+    packet_counts["candidate_radar_worker_execution_request_production_blocker_count"] = receipt.get(
+        "production_blocker_count", 0
+    )
+    packet_counts["candidate_radar_worker_execution_request_ready"] = receipt.get("local_execution_request_ready") is True
+    packet["counts"] = packet_counts
+    packet_policy = _as_dict(packet.get("policy"))
+    packet_policy["candidate_radar_worker_execution_request_is_button_gated"] = True
+    packet_policy["candidate_radar_worker_execution_request_is_local"] = True
+    packet_policy["candidate_radar_worker_execution_request_does_not_start_worker"] = True
+    packet_policy["candidate_radar_worker_execution_request_is_not_production_replacement"] = True
+    packet_policy["candidate_radar_worker_execution_request_keeps_external_calls_false"] = True
+    packet["policy"] = packet_policy
+    packet["call_ledger"] = [ledger]
+    packet["warnings"] = [
+        "下一票雷达 worker execution request 已写入本地申请票据；真实 worker full-pool/deep-scan、provider parity、DeepSeek 和 production replacement 仍未执行。"
+    ] + [warning for warning in _as_list(packet.get("warnings")) if "worker execution request" not in str(warning)]
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
+    except Exception:
+        ledger["call_status"] = "worker_execution_request_storage_write_failed"
+        ledger["error_message_safe"] = "candidate_radar_worker_execution_request_sqlite_write_failed"
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="candidate_radar_worker_execution_request_storage_write_failed",
+            error_message_safe="candidate_radar_worker_execution_request_sqlite_write_failed",
+            call_ledger=[ledger],
+            warning="candidate_radar_worker_execution_request_failed_no_external_call",
+        ) or task
+
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="candidate_radar_worker_execution_request_ready",
+        call_ledger=[ledger],
+        warning="candidate_radar_worker_execution_request_ready_no_external_call",
+    ) or task
 
 
 def run_candidate_full_pool_plan_task(payload: Any = None) -> dict[str, Any]:

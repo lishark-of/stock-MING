@@ -69,6 +69,16 @@
 - `/api/strategy/cache`
 - `/api/position/cache`
 - `/api/candidate-radar/cache`
+- `POST /api/candidate-radar/scan-quick`
+- `POST /api/candidate-radar/full-pool-plan`
+- `POST /api/candidate-radar/full-pool-local-scan`
+- `POST /api/candidate-radar/deep-scan-plan`
+- `POST /api/candidate-radar/deep-scan-local-review`
+- `POST /api/candidate-radar/provider-parity-dry-run`
+- `POST /api/candidate-radar/worker-execution-request`
+- `POST /api/candidate-radar/browser-qa-review`
+- `POST /api/candidate-radar/quant-projection`
+- `POST /api/candidate-radar/quant-projection-acceptance-dry-run`
 - `/api/risk/cache`
 - `/api/trade-review/cache`
 - `/api/quant/cache`
@@ -113,6 +123,8 @@ Candidate Radar 现在还输出 `candidate_radar_production_activation_receipt` 
 Candidate Radar 现在还输出 `candidate_radar_durable_evidence_recipe` 和 rows。该 recipe 只固定生产替代所需的直接证据缺口：provider parity scope ticket、searched-symbol quant projection ticket、worker full-pool/deep-scan evidence、provider-backed parity call ledger、browser visual/performance evidence、可选 DeepSeek model ledger、legacy retirement review、production promotion review 和 no-trade/no-action/no-secret boundary；它不执行扫描、不启动 worker、不调用 Tushare/DeepSeek/GitHub、不退掉 legacy fallback，也不证明 production radar replacement complete。
 
 Candidate Radar 现在还提供 `POST /api/candidate-radar/deep-scan-local-review`，写入 `deep_scan_local_review_receipt` 和 `deep_scan_local_review_rows`。该任务只做本地候选证据、trigger/invalidation、legacy parity、provider/freshness 缺口和交易隔离审查；它不执行 DeepSeek/model deep research、不刷新 Tushare/provider、不运行 worker deep-scan、不生成买入指令，并继续保持 `deep_scan_done=false`、`provider_backed_acceptance_done=false`、`worker_backed_execution_done=false`、`legacy_retirement_ready=false` 和 `legacy_fallback_required=true`。
+
+Candidate Radar 现在还提供 `POST /api/candidate-radar/worker-execution-request`，写入 `candidate_radar_worker_execution_request_receipt` 和 rows。该任务只把 operator approval、worker recipe scope hash、local full-pool/deep-scan receipts、provider parity scope ticket、可选 quant projection scope ticket 和 future worker routes 绑定成本地 execution-request ticket；它不创建 worker task、不启动 Redis/Celery、不运行 full-pool/deep-scan、不调用 Tushare/DeepSeek/GitHub、不执行交易、不修改 `strategy action`，也不证明 production radar replacement complete。
 
 `/api/risk/cache` 已接入风险护栏 / 安全线只读迁移：读取本地 `risk_alerts`、`safety_line`、`execution_guardrail_overview`、`legacy_decision_chain_summary`、`strategy_prerequisite_recovery_ledger`、`position_risk_budget` 和 `risk_breakdown`，输出禁止事项、降风险条件、数据缺口、执行阻断和调用血缘；不调用 Tushare/DeepSeek/GitHub、不运行回测、不执行真实交易、不修改持仓或 `strategy_execution_packet.action`，也不清除风险标记。该 cache 还输出 `trade_isolation_audit`、`trade_isolation_rows` 和 `trade_isolation_boundary_rows`，用本地 task catalog 与前端边界合同审计全部已知 POST 路由不执行交易、不改 action、按钮门控且具备 call ledger；`trade_isolation_release_receipt` 进一步把研究客户端 release-only、禁止 broker/order/model-to-order/frontend-submit-trade 捷径、真实交易另立项目缺失证据、no-provider/no-trade/no-action 边界列成收据。该审计和收据不创建任务、不接入券商或订单接口、不批准真实交易，未来真实交易集成仍必须另立项目和审批。`scripts/trade_isolation_contract.py` 已接入本地 push gate，把 `real_trading_connected=false`、`broker_adapter_connected=false`、`order_endpoint_present=false`、`trade_execution_api_enabled=false`、`trade_isolation_release_receipt_ready=true` 和 `future_real_trading_requires_separate_project=true` 变成 release 前本地守门项。
 

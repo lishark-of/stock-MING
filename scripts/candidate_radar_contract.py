@@ -30,6 +30,7 @@ REQUIRED_TASK_TYPES = {
     "run_candidate_radar_quant_projection",
     "run_candidate_radar_quant_projection_acceptance_dry_run",
     "run_candidate_radar_provider_parity_dry_run",
+    "run_candidate_radar_worker_execution_request",
     "run_candidate_radar_full_pool_plan",
     "run_candidate_radar_full_pool_local_scan",
     "run_candidate_radar_deep_scan_plan",
@@ -352,6 +353,34 @@ def build_contract() -> dict[str, Any]:
         for row in _list(cache_packet.get("candidate_radar_worker_execution_rows"))
         if isinstance(row, dict)
     }
+    request_packet = dict(cache_packet)
+    request_packet["full_pool_local_execution_receipt"] = _dict(local_universe_packet.get("full_pool_local_execution_receipt"))
+    request_packet["full_pool_local_execution_rows"] = _list(local_universe_packet.get("full_pool_local_execution_rows"))
+    request_packet["deep_scan_local_review_receipt"] = _dict(local_deep_review_packet.get("deep_scan_local_review_receipt"))
+    request_packet["deep_scan_local_review_rows"] = _list(local_deep_review_packet.get("deep_scan_local_review_rows"))
+    request_packet["provider_parity_dry_run_receipt"] = provider_parity_receipt
+    request_packet["provider_parity_dry_run_rows"] = provider_parity_rows
+    request_packet["search_quant_projection_acceptance_dry_run_receipt"] = dry_run_receipt
+    request_packet["search_quant_projection_acceptance_dry_run_rows"] = dry_run_rows
+    request_packet = candidate_service._attach_candidate_radar_worker_execution_recipe(request_packet)
+    worker_execution_request, worker_execution_request_rows_list = (
+        candidate_service._candidate_radar_worker_execution_request(
+            request_packet,
+            payload_safe={
+                "operator_approved": True,
+                "worker_execution_scope_hash": _dict(
+                    request_packet.get("candidate_radar_worker_execution_recipe")
+                ).get("worker_execution_scope_hash"),
+            },
+            explicit_request=True,
+            task_id="local-contract-request",
+        )
+    )
+    worker_execution_request_rows = {
+        str(row.get("criterion") or ""): row
+        for row in worker_execution_request_rows_list
+        if isinstance(row, dict)
+    }
     durable_evidence_recipe = _dict(cache_packet.get("candidate_radar_durable_evidence_recipe"))
     durable_evidence_rows = {
         str(row.get("evidence_key") or ""): row
@@ -533,6 +562,24 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_candidate_radar_provider_parity_dry_run"].get("production_radar_replacement_complete") is False
             and task_rows["run_candidate_radar_provider_parity_dry_run"].get("page_render_starts_full_pool") is False
             and task_rows["run_candidate_radar_provider_parity_dry_run"].get("page_render_starts_deep_scan") is False
+            and task_rows["run_candidate_radar_worker_execution_request"].get("route")
+            == "POST /api/candidate-radar/worker-execution-request"
+            and task_rows["run_candidate_radar_worker_execution_request"].get("local_execution_request_only") is True
+            and task_rows["run_candidate_radar_worker_execution_request"].get("requires_worker_execution_recipe") is True
+            and task_rows["run_candidate_radar_worker_execution_request"].get("requires_worker_execution_scope_hash")
+            is True
+            and task_rows["run_candidate_radar_worker_execution_request"].get("requires_provider_parity_scope_ticket")
+            is True
+            and task_rows["run_candidate_radar_worker_execution_request"].get("creates_worker_task") is False
+            and task_rows["run_candidate_radar_worker_execution_request"].get("worker_task_executed_by_request")
+            is False
+            and task_rows["run_candidate_radar_worker_execution_request"].get("worker_started") is False
+            and task_rows["run_candidate_radar_worker_execution_request"].get("full_pool_scan_done") is False
+            and task_rows["run_candidate_radar_worker_execution_request"].get("deep_scan_done") is False
+            and task_rows["run_candidate_radar_worker_execution_request"].get("tushare_called") is False
+            and task_rows["run_candidate_radar_worker_execution_request"].get("deepseek_called") is False
+            and task_rows["run_candidate_radar_worker_execution_request"].get("production_radar_replacement_complete")
+            is False
             and task_rows["run_candidate_radar_full_pool_plan"].get("route") == "POST /api/candidate-radar/full-pool-plan"
             and task_rows["run_candidate_radar_full_pool_plan"].get("plan_only") is True
             and task_rows["run_candidate_radar_full_pool_plan"].get("full_pool_scan_done") is False
@@ -579,6 +626,8 @@ def build_contract() -> dict[str, Any]:
             == "future POST /api/candidate-radar/full-pool-worker-scan"
             and next_execution_recipe.get("recommended_worker_deep_scan_route")
             == "future POST /api/candidate-radar/deep-scan-worker"
+            and next_execution_recipe.get("worker_execution_request_route")
+            == "POST /api/candidate-radar/worker-execution-request"
             and next_execution_recipe.get("provider_parity_dry_run_route")
             == "POST /api/candidate-radar/provider-parity-dry-run"
             and next_execution_recipe.get("quant_projection_acceptance_dry_run_route")
@@ -593,6 +642,8 @@ def build_contract() -> dict[str, Any]:
             and "run button-gated quick/watchlist/custom scan"
             in _list(next_execution_recipe.get("recommended_execution_order"))
             and "review worker execution recipe before any full-pool/deep-scan production task"
+            in _list(next_execution_recipe.get("recommended_execution_order"))
+            and "create a worker execution request ticket bound to the current worker recipe hash"
             in _list(next_execution_recipe.get("recommended_execution_order"))
             and "scan market from GET cache or React render" in _list(next_execution_recipe.get("not_allowed_next_steps"))
             and "treat quick scan as production radar replacement"
@@ -628,6 +679,8 @@ def build_contract() -> dict[str, Any]:
             and _dict(next_execution_rows.get("fast_scan_task_pipeline_ready")).get("required_before_fast_scan") is True
             and _dict(next_execution_rows.get("worker_execution_recipe_visible")).get("status")
             == "worker_recipe_visible"
+            and _dict(next_execution_rows.get("worker_execution_request_visible")).get("status")
+            == "pending_worker_execution_request"
             and _dict(next_execution_rows.get("production_promotion_boundary")).get("status")
             == "promotion_blocked_visible"
             and policy.get("candidate_radar_next_execution_recipe_is_local") is True
@@ -645,6 +698,8 @@ def build_contract() -> dict[str, Any]:
             == "candidate_radar_worker_execution_recipe_ready_production_pending"
             and worker_execution_recipe.get("scope") == "local_candidate_radar_worker_execution_recipe_no_worker_start"
             and worker_execution_recipe.get("local_worker_execution_recipe_ready") is True
+            and len(str(worker_execution_recipe.get("worker_execution_scope_hash") or "")) == 64
+            and len(str(worker_execution_recipe.get("worker_execution_scope_hash_short") or "")) == 16
             and worker_execution_recipe.get("ready_to_start_worker_from_cache") is False
             and worker_execution_recipe.get("requires_explicit_user_action") is True
             and worker_execution_recipe.get("recommended_worker_full_pool_route")
@@ -718,6 +773,68 @@ def build_contract() -> dict[str, Any]:
             "Candidate Radar worker execution recipe must make the future full-pool/deep-scan worker path explicit while starting no worker, calling no providers/models, and preserving legacy/no-trade boundaries.",
         ),
         _row(
+            "candidate_radar_worker_execution_request_is_scope_bound_ticket_only",
+            worker_execution_request.get("schema_version")
+            == candidate_service.CANDIDATE_WORKER_EXECUTION_REQUEST_SCHEMA_VERSION
+            and worker_execution_request.get("status")
+            == "candidate_radar_worker_execution_request_ready_manual_worker_task_pending"
+            and worker_execution_request.get("scope") == "local_candidate_radar_worker_execution_request_no_worker_start"
+            and worker_execution_request.get("route") == "POST /api/candidate-radar/worker-execution-request"
+            and worker_execution_request.get("task_type") == "run_candidate_radar_worker_execution_request"
+            and worker_execution_request.get("explicit_worker_execution_request_done") is True
+            and worker_execution_request.get("operator_approved") is True
+            and worker_execution_request.get("local_execution_request_ready") is True
+            and worker_execution_request.get("ready_for_manual_worker_task_submission") is True
+            and worker_execution_request.get("worker_execution_recipe_ready") is True
+            and worker_execution_request.get("requested_worker_execution_scope_hash_matches_latest") is True
+            and len(str(worker_execution_request.get("worker_execution_scope_hash") or "")) == 64
+            and worker_execution_request.get("local_full_pool_receipt_visible") is True
+            and worker_execution_request.get("local_deep_scan_review_visible") is True
+            and worker_execution_request.get("provider_parity_scope_ticket_visible") is True
+            and worker_execution_request.get("quant_projection_scope_ticket_visible") is True
+            and worker_execution_request.get("target_worker_full_pool_route")
+            == "future POST /api/candidate-radar/full-pool-worker-scan"
+            and worker_execution_request.get("target_worker_deep_scan_route")
+            == "future POST /api/candidate-radar/deep-scan-worker"
+            and worker_execution_request.get("worker_task_created") is False
+            and worker_execution_request.get("worker_task_executed") is False
+            and worker_execution_request.get("worker_execution_implemented") is False
+            and worker_execution_request.get("worker_started") is False
+            and worker_execution_request.get("full_pool_scan_done") is False
+            and worker_execution_request.get("deep_scan_done") is False
+            and worker_execution_request.get("provider_execution_implemented") is False
+            and worker_execution_request.get("model_execution_implemented") is False
+            and worker_execution_request.get("production_radar_replacement_complete") is False
+            and worker_execution_request.get("legacy_retirement_ready") is False
+            and "create worker task from execution request"
+            in _list(worker_execution_request.get("not_allowed_next_steps"))
+            and "call Tushare/DeepSeek/GitHub from execution request"
+            in _list(worker_execution_request.get("not_allowed_next_steps"))
+            and _flag_false(
+                worker_execution_request,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and worker_execution_request.get("does_not_execute_trades") is True
+            and worker_execution_request.get("does_not_modify_strategy_action") is True
+            and worker_execution_request.get("does_not_modify_holdings") is True
+            and worker_execution_request.get("candidate_is_not_buy_instruction") is True
+            and int(worker_execution_request.get("row_count") or 0) == len(worker_execution_request_rows)
+            and _dict(worker_execution_request_rows.get("worker_execution_scope_hash_bound")).get("passed") is True
+            and _dict(worker_execution_request_rows.get("worker_execution_still_pending")).get("production_blocker")
+            is True
+            and _dict(worker_execution_request_rows.get("no_worker_provider_model_trade_secret_boundary")).get(
+                "status"
+            )
+            == "passed_no_side_effects"
+            and "candidate_radar_worker_execution_request_receipt" in candidate_frontend
+            and "雷达 worker 执行申请" in candidate_frontend,
+            "Candidate Radar worker execution request must bind the current worker recipe and local receipts while creating no worker task, running no scan, calling no provider/model, and preserving legacy/no-trade boundaries.",
+        ),
+        _row(
             "candidate_radar_durable_evidence_recipe_is_local_production_pending",
             durable_evidence_recipe.get("schema_version")
             == candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_SCHEMA_VERSION
@@ -753,6 +870,8 @@ def build_contract() -> dict[str, Any]:
             and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) >= 9
             and "user-approved provider parity scope ticket"
             in _list(durable_evidence_recipe.get("required_evidence"))
+            and "button-gated worker execution request ticket bound to the worker recipe hash"
+            in _list(durable_evidence_recipe.get("required_evidence"))
             and "worker-backed full-pool execution task evidence"
             in _list(durable_evidence_recipe.get("required_evidence"))
             and "DeepSeek model ledger and sanitizer evidence when enabled"
@@ -766,6 +885,8 @@ def build_contract() -> dict[str, Any]:
             and _dict(durable_evidence_rows.get("cache_render_boundary_visible")).get("passed") is True
             and _dict(durable_evidence_rows.get("quick_scan_task_pipeline_visible")).get("passed") is True
             and _dict(durable_evidence_rows.get("worker_execution_recipe_visible")).get("passed") is True
+            and _dict(durable_evidence_rows.get("worker_execution_request_visible")).get("production_blocker")
+            is True
             and _dict(durable_evidence_rows.get("provider_parity_scope_ticket_required")).get("production_blocker")
             is True
             and _dict(durable_evidence_rows.get("quant_projection_scope_ticket_required")).get("production_blocker")
