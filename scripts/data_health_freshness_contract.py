@@ -477,6 +477,8 @@ def build_contract() -> dict[str, Any]:
         row for row in _as_list(packet.get("freshness_durable_evidence_rows")) if isinstance(row, dict)
     ]
     durable_evidence_keys = {str(row.get("evidence_key") or "") for row in durable_evidence_rows}
+    durable_evidence_rows_by_key = {str(row.get("evidence_key") or ""): row for row in durable_evidence_rows}
+    producer_durable_row = _as_dict(durable_evidence_rows_by_key.get("current_evidence_producer_coverage"))
     current = _get(packet, "current_evidence_freshness_qa_contract")
     surfaces = _get(packet, "current_evidence_decision_surface_audit")
     producers = _get(packet, "current_evidence_producer_coverage_audit")
@@ -735,6 +737,12 @@ def build_contract() -> dict[str, Any]:
             and durable_evidence_recipe.get("real_trade_cal_long_window_validation_done") is False
             and durable_evidence_recipe.get("provider_execution_implemented") is False
             and durable_evidence_recipe.get("provider_refresh_called_by_recipe") is False
+            and durable_evidence_recipe.get("producer_generation_contract_status")
+            == "producer_generation_contract_ready_current_cache_refresh_pending"
+            and durable_evidence_recipe.get("producer_generation_contract_ready") is True
+            and durable_evidence_recipe.get("producer_generation_current_cache_refresh_pending") is True
+            and durable_evidence_recipe.get("producer_generation_is_not_provider_acceptance") is True
+            and durable_evidence_recipe.get("producer_generation_ready_is_not_completion") is True
             and durable_evidence_keys == REQUIRED_FRESHNESS_DURABLE_EVIDENCE_KEYS
             and len(durable_evidence_rows) == len(REQUIRED_FRESHNESS_DURABLE_EVIDENCE_KEYS)
             and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) > 0
@@ -771,6 +779,18 @@ def build_contract() -> dict[str, Any]:
             and all(row.get("does_not_execute_trades") is True for row in durable_evidence_rows)
             and all(row.get("does_not_modify_strategy_action") is True for row in durable_evidence_rows)
             and all(row.get("contains_secret") is False for row in durable_evidence_rows)
+            and producer_durable_row.get("current_status")
+            == "producer_generation_ready_current_cache_refresh_pending"
+            and producer_durable_row.get("producer_generation_contract_ready") is True
+            and producer_durable_row.get("producer_generation_current_cache_refresh_pending") is True
+            and producer_durable_row.get("producer_generation_writes_snapshot_cache") is False
+            and producer_durable_row.get("producer_generation_calls_provider") is False
+            and producer_durable_row.get("producer_generation_is_not_provider_acceptance") is True
+            and producer_durable_row.get("producer_generation_ready_is_not_completion") is True
+            and "current cache refresh with generated producer freshness context"
+            in _as_list(producer_durable_row.get("missing_evidence"))
+            and "provider-backed trade_cal acceptance evidence"
+            in _as_list(producer_durable_row.get("missing_evidence"))
             and _as_list(durable_evidence_recipe.get("call_ledger"))
             and _as_dict(_as_list(durable_evidence_recipe.get("call_ledger"))[0]).get("api")
             == "local_freshness_durable_evidence_recipe"

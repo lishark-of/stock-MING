@@ -8935,6 +8935,37 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         durable_rows = payload["freshness_durable_evidence_rows"]
         self.assertEqual({row["evidence_key"] for row in durable_rows}, required_durable_keys)
+        durable_rows_by_key = {row["evidence_key"]: row for row in durable_rows}
+        self.assertEqual(
+            durable_rows_by_key["current_evidence_producer_coverage"]["current_status"],
+            "producer_generation_ready_current_cache_refresh_pending",
+        )
+        self.assertTrue(
+            durable_rows_by_key["current_evidence_producer_coverage"]["producer_generation_contract_ready"]
+        )
+        self.assertTrue(
+            durable_rows_by_key["current_evidence_producer_coverage"][
+                "producer_generation_current_cache_refresh_pending"
+            ]
+        )
+        self.assertFalse(
+            durable_rows_by_key["current_evidence_producer_coverage"]["producer_generation_writes_snapshot_cache"]
+        )
+        self.assertFalse(
+            durable_rows_by_key["current_evidence_producer_coverage"]["producer_generation_calls_provider"]
+        )
+        self.assertTrue(
+            durable_rows_by_key["current_evidence_producer_coverage"][
+                "producer_generation_is_not_provider_acceptance"
+            ]
+        )
+        self.assertTrue(
+            durable_rows_by_key["current_evidence_producer_coverage"]["producer_generation_ready_is_not_completion"]
+        )
+        self.assertIn(
+            "current cache refresh with generated producer freshness context",
+            durable_rows_by_key["current_evidence_producer_coverage"]["missing_evidence"],
+        )
         for row in durable_rows:
             self.assertEqual(row["scope"], "freshness_durable_evidence_recipe")
             self.assertFalse(row["provider_backed_trade_cal_acceptance_done"])
@@ -20660,6 +20691,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(durable_recipe["real_trade_cal_long_window_validation_done"])
         self.assertFalse(durable_recipe["provider_execution_implemented"])
         self.assertFalse(durable_recipe["provider_refresh_called_by_recipe"])
+        self.assertEqual(
+            durable_recipe["producer_generation_contract_status"],
+            "producer_generation_contract_ready_current_cache_refresh_pending",
+        )
+        self.assertTrue(durable_recipe["producer_generation_contract_ready"])
+        self.assertTrue(durable_recipe["producer_generation_current_cache_refresh_pending"])
+        self.assertTrue(durable_recipe["producer_generation_is_not_provider_acceptance"])
+        self.assertTrue(durable_recipe["producer_generation_ready_is_not_completion"])
         self.assertEqual(durable_recipe["row_count"], len(required_durable_keys))
         self.assertGreater(durable_recipe["durable_evidence_blocker_count"], 0)
         self.assertEqual(set(durable_rows), required_durable_keys)
@@ -20673,6 +20712,41 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("treat local trade_cal artifact as provider acceptance", durable_recipe["not_allowed_next_steps"])
         self.assertIn("set production_freshness_gate_complete from cache/render", durable_recipe["not_allowed_next_steps"])
         self.assertEqual(durable_rows["local_freshness_matrix_regression"]["current_status"], "local_verified")
+        self.assertEqual(
+            durable_rows["current_evidence_producer_coverage"]["current_status"],
+            "producer_generation_ready_current_cache_refresh_pending",
+        )
+        self.assertTrue(durable_rows["current_evidence_producer_coverage"]["local_prerequisite_visible"])
+        self.assertTrue(durable_rows["current_evidence_producer_coverage"]["production_blocker"])
+        self.assertTrue(durable_rows["current_evidence_producer_coverage"]["direct_evidence_required"])
+        self.assertTrue(
+            durable_rows["current_evidence_producer_coverage"]["producer_generation_contract_ready"]
+        )
+        self.assertTrue(
+            durable_rows["current_evidence_producer_coverage"][
+                "producer_generation_current_cache_refresh_pending"
+            ]
+        )
+        self.assertFalse(
+            durable_rows["current_evidence_producer_coverage"]["producer_generation_writes_snapshot_cache"]
+        )
+        self.assertFalse(durable_rows["current_evidence_producer_coverage"]["producer_generation_calls_provider"])
+        self.assertTrue(
+            durable_rows["current_evidence_producer_coverage"][
+                "producer_generation_is_not_provider_acceptance"
+            ]
+        )
+        self.assertTrue(
+            durable_rows["current_evidence_producer_coverage"]["producer_generation_ready_is_not_completion"]
+        )
+        self.assertIn(
+            "current cache refresh with generated producer freshness context",
+            durable_rows["current_evidence_producer_coverage"]["missing_evidence"],
+        )
+        self.assertIn(
+            "provider-backed trade_cal acceptance evidence",
+            durable_rows["current_evidence_producer_coverage"]["missing_evidence"],
+        )
         self.assertTrue(durable_rows["explicit_provider_trade_cal_task"]["direct_evidence_required"])
         self.assertTrue(durable_rows["safe_provider_call_ledger"]["production_blocker"])
         self.assertTrue(durable_rows["provider_freshness_replay"]["production_blocker"])
