@@ -145,6 +145,8 @@ Migration Status 现在还会从本地静态 Streamlit legacy contract 观察 `s
 
 Migration Status 现在还会从本地 release gate 静态 helper 观察 `release_gate_stage_scope_manifest`，并以 `ltg_stage_scope_observed_rows` 展示 LTG-11 的八个 release-gate 证据阶段。该观察只显示本地 push gate 合同、fresh local gate run 缺口、secret/artifact allowlist review、CI mirror workflow、matching remote Actions status、failure-email triage、release report artifact policy 和 explicit push approval boundary；不运行 `scripts/push_gate_3_0.sh`、不调用 GitHub API、不读取远端 Actions log、不 push、不调用 Tushare/DeepSeek、不执行交易，也不证明最新 CI 已绿或 release gate complete。
 
+Migration Status 现在还会从本地静态 Trade isolation contract 观察 `trade_isolation_stage_scope_manifest`，并以 `ltg_stage_scope_observed_rows` 展示 LTG-12 的真实交易隔离阶段清单。该观察只显示当前 research-client no-broker/no-order/no-frontend-trade/no-model-action-mutation 边界，以及未来真实交易必须另立项目、完成 broker adapter design review、order endpoint security review、paper/simulated trade sandbox 和 operator approval 的缺口；不连接券商、不创建订单端点、不提交订单、不批准 paper trading、不调用 Tushare/DeepSeek/GitHub、不修改 holdings/action，也不证明 production trading terminal complete。
+
 Migration Status 现在会从本地 Candidate Radar cache 观察 `candidate_radar_production_stage_scope_manifest`，并以 `ltg_stage_scope_observed_rows` 展示在 14 个长期目标总览中。该观察只读本地 cache，不创建任务、不刷新数据、不调用 Tushare/DeepSeek/GitHub、不执行交易，也不证明 LTG-13 production radar replacement complete。
 
 Migration Status 现在也会从本地静态 motion contract 观察 `motion_production_stage_scope_manifest`，把 LTG-14 的动效生产阶段清单并入 `ltg_stage_scope_observed_rows`。该观察不打开浏览器、不运行 motion runner、不写截图/视频、不读取 GitHub Actions、不调用 Tushare/DeepSeek/GitHub、不修改 packet/action/price/position，也不证明 production motion complete。

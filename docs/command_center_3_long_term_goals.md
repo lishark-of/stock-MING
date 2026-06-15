@@ -1350,6 +1350,7 @@ Add release gate readiness audit
 - `GET /api/risk/cache` now exposes `trade_isolation_release_receipt` and rows: a local LTG-12 release receipt that allows research-client release only while keeping `ready_for_real_trading_integration=false`, `real_trading_connected=false`, `broker_adapter_connected=false`, `order_endpoint_present=false`, `trade_execution_api_enabled=false`, and `future_real_trading_requires_separate_project=true`.
 - `scripts/trade_isolation_contract.py` is now part of the local push gate. It reads only local risk cache, task catalog, frontend source contracts, and the push-gate script, then keeps `real_trading_connected=false`, `broker_adapter_connected=false`, `order_endpoint_present=false`, and `trade_execution_api_enabled=false` auditable.
 - `scripts/trade_isolation_contract.py` now exposes a `trade_isolation_stage_scope_manifest` for the future real-trading path. It keeps the current app in research-client mode while listing the future stages that must be proven separately: no-broker boundary, no-order task catalog, no frontend trade controls, no model/provider action mutation, separate project decision, broker adapter design review, order endpoint security review, and paper/simulated trade sandbox.
+- Migration Status now observes the LTG-12 `trade_isolation_stage_scope_manifest` from the local static trade-isolation contract and surfaces it in `ltg_stage_scope_observed_rows`. This completes 14/14 local stage-scope visibility while keeping the strict closeout at `0/14`: it shows current no-broker/no-order/no-frontend-trade/no-model-action-mutation boundaries and future real-trading project blockers without connecting broker/order APIs, submitting orders, approving paper trading, calling Tushare/DeepSeek/GitHub, or treating the release receipt as trading approval.
 
 ### Gaps
 
@@ -1358,6 +1359,7 @@ Add release gate readiness audit
 - The audit proves current Command Center 3 cache/task/frontend contracts, not a future broker/order integration design.
 - The release receipt is not real-trading approval; it only records that the current research client remains isolated from broker/order execution.
 - The push-gate contract is local and static; it blocks accidental boundary regression but does not prove broker integration safety, simulated trading, order routing, or production trade compliance.
+- `ltg_stage_scope_observed_rows` showing LTG-12 only proves the global migration status can observe the local trade-isolation stage manifest. It does not approve a real-trading project, design a broker adapter, create an order endpoint, enable frontend trade controls, run a paper-trading sandbox, or make Command Center 3 a production trading terminal.
 - The desired boundary is not an absolute forever-ban; it is a run-mode split. Research/cache/render/manual-review modes stay active, while any future execution mode must remain unavailable until the separate stage evidence exists.
 
 ### Implementation Phases

@@ -134,7 +134,7 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "真实交易链路继续保持隔离",
         "completion_bucket": "mostly_stable_guardrail",
         "completion_estimate": "80%-90%",
-        "current_state": "research/cache/task/frontend paths keep no-order, no-broker, no-action-mutation, and no-real-trade boundaries visible.",
+        "current_state": "research/cache/task/frontend paths keep no-order, no-broker, no-action-mutation, no-real-trade boundaries, release receipt, and trade-isolation stage-scope manifest visible.",
         "not_complete_because": "trade isolation is a permanent release invariant, not a one-time feature that can be closed.",
         "next_step": "Continue proving no real trading and no strategy-action mutation in every new task, provider, model, radar, and UI path.",
         "production_complete": False,
@@ -1481,6 +1481,122 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "github_called": False,
                 "does_not_execute_trades": True,
                 "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observation_failure_is_not_completion",
+            }
+        )
+    try:
+        from scripts import trade_isolation_contract
+
+        isolation_contract = trade_isolation_contract.build_contract()
+        if not isinstance(isolation_contract, dict):
+            isolation_contract = {}
+        observed = isolation_contract.get("observed")
+        observed = observed if isinstance(observed, dict) else {}
+        stage_rows = isolation_contract.get("trade_isolation_stage_scope_rows")
+        stage_rows = stage_rows if isinstance(stage_rows, list) else []
+        row_count = int(observed.get("trade_isolation_stage_scope_count") or len(stage_rows) or 0)
+        pending_count = int(
+            observed.get("trade_isolation_stage_scope_pending_count")
+            or sum(
+                1
+                for row in stage_rows
+                if isinstance(row, dict)
+                and row.get("target_status") == "separate_real_trading_project_evidence_required"
+            )
+        )
+        local_evidence_count = sum(
+            1
+            for row in stage_rows
+            if isinstance(row, dict) and row.get("current_status") == "current_research_client_isolated"
+        )
+        rows.append(
+            {
+                "id": "LTG-12",
+                "goal": "真实交易链路继续保持隔离",
+                "stage_scope_manifest": "trade_isolation_stage_scope_manifest",
+                "status": "observed_in_trade_isolation_static_contract"
+                if stage_rows
+                else "missing_from_trade_isolation_static_contract",
+                "observed_source": "scripts/trade_isolation_contract.build_contract local static contract",
+                "cache_status": str(isolation_contract.get("status") or "missing"),
+                "cache_mode": "local_static_contract",
+                "row_count": row_count,
+                "pending_stage_count": pending_count,
+                "local_evidence_stage_count": local_evidence_count,
+                "production_blocker_count": pending_count,
+                "trade_isolation_release_receipt_ready": isolation_contract.get(
+                    "trade_isolation_release_receipt_ready"
+                )
+                is True,
+                "trade_isolation_release_receipt_status": isolation_contract.get(
+                    "trade_isolation_release_receipt_status"
+                ),
+                "ready_for_real_trading_integration": False,
+                "real_trading_connected": False,
+                "broker_adapter_connected": isolation_contract.get("broker_adapter_connected") is True,
+                "order_endpoint_present": isolation_contract.get("order_endpoint_present") is True,
+                "trade_execution_api_enabled": False,
+                "order_route_present": False,
+                "frontend_trade_controls_present": False,
+                "model_or_provider_can_modify_action": False,
+                "strategy_action_mutated_by_contract": False,
+                "paper_trading_sandbox_ready": False,
+                "separate_project_approved": False,
+                "future_real_trading_requires_separate_project": True,
+                "release_receipt_is_trading_approval": False,
+                "broker_called": False,
+                "order_submitted": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_modify_holdings": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observed_local_static_trade_isolation_not_real_trading_integration",
+            }
+        )
+    except Exception:
+        rows.append(
+            {
+                "id": "LTG-12",
+                "goal": "真实交易链路继续保持隔离",
+                "stage_scope_manifest": "trade_isolation_stage_scope_manifest",
+                "status": "local_observation_failed_safe_fallback",
+                "observed_source": "scripts/trade_isolation_contract.build_contract local static contract",
+                "error_message_safe": "trade_isolation_stage_scope_observation_failed",
+                "row_count": 0,
+                "pending_stage_count": 0,
+                "local_evidence_stage_count": 0,
+                "production_blocker_count": 0,
+                "trade_isolation_release_receipt_ready": False,
+                "trade_isolation_release_receipt_status": "",
+                "ready_for_real_trading_integration": False,
+                "real_trading_connected": False,
+                "broker_adapter_connected": False,
+                "order_endpoint_present": False,
+                "trade_execution_api_enabled": False,
+                "order_route_present": False,
+                "frontend_trade_controls_present": False,
+                "model_or_provider_can_modify_action": False,
+                "strategy_action_mutated_by_contract": False,
+                "paper_trading_sandbox_ready": False,
+                "separate_project_approved": False,
+                "future_real_trading_requires_separate_project": True,
+                "release_receipt_is_trading_approval": False,
+                "broker_called": False,
+                "order_submitted": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_modify_holdings": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
                 "evidence_boundary": "observation_failure_is_not_completion",
