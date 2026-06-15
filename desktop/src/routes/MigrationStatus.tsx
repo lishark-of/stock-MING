@@ -56,6 +56,20 @@ export default function MigrationStatus() {
           : "迁移原则";
     return { index: index + 1, category, principle: text };
   });
+  const ltgAcceptanceRunwayRows = longTermGoalRows.map((row) => {
+    const id = String(row.id ?? "");
+    const priorityStep = longTermNextPriority.find((item) => String(item).includes(id));
+    return {
+      id,
+      priority: priorityStep ?? "ongoing",
+      goal: row.goal,
+      bucket: row.completion_bucket,
+      completion_estimate: row.completion_estimate,
+      observed_pending: Number(row.observed_stage_scope_pending_count ?? 0),
+      next_step: row.next_step,
+      can_close_goal: row.production_complete === true || row.observed_stage_scope_can_close_goal === true
+    };
+  });
   const refreshMigrationStatus = () => void getMigrationStatus().then((res) => {
     setPacket(res.data);
     setCacheEnvelopeLedger(res.call_ledger ?? []);
@@ -121,6 +135,9 @@ export default function MigrationStatus() {
           { label: "later polish", value: Number(longTermBucketCounts.later_polish_goal ?? 0) }
         ]}
       />
+      <h3>14 LTG acceptance runway</h3>
+      <p className="risk-note">这张表把每个长期目标的优先级、下一步验收动作和 observed pending 数集中到一处；它只读已有 roadmap/cache 合同，不创建任务、不调用外部服务，也不能关闭目标。</p>
+      <DataLineageTable rows={ltgAcceptanceRunwayRows} />
       <DataLineageTable rows={longTermGoalRows} />
       <h3>LTG-13 下一票雷达 promotion dry-run</h3>
       <p className="risk-note">这里单独展示下一票雷达的本地 promotion dry-run：它只说明本地审查票据是否可见、是否进入 local review、还有多少生产证据 blocker；不能关闭 LTG-13。</p>
