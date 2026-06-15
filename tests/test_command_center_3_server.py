@@ -300,12 +300,32 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(migration["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["ltg_acceptance_runway_rows"]), 14)
+        self.assertEqual(len(migration["ltg_next_acceptance_action_rows"]), 4)
         runway_rows = {row["id"]: row for row in migration["ltg_acceptance_runway_rows"]}
+        action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
         self.assertIn("P1", runway_rows["LTG-01"]["priority"])
         self.assertIn("trade_cal freshness", runway_rows["LTG-01"]["priority"])
         self.assertIn("P2", runway_rows["LTG-02"]["priority"])
         self.assertIn("P3", runway_rows["LTG-03"]["priority"])
         self.assertIn("P3", runway_rows["LTG-13"]["priority"])
+        self.assertEqual(
+            action_rows["p1_trade_cal_provider_acceptance"]["first_allowed_route"],
+            "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
+        )
+        self.assertEqual(
+            action_rows["p2_tushare_target_sample_acceptance"]["future_provider_route"],
+            "POST /api/tasks/refresh-tushare-facts",
+        )
+        self.assertEqual(
+            action_rows["p3_factor_small_pool_provider_validation"]["target_acceptance_mode"],
+            "provider_backed_factor_small_pool_validation",
+        )
+        self.assertIn("LTG-13", action_rows["p3_candidate_radar_provider_worker_promotion"]["ltg_ids"])
+        self.assertTrue(all(row["requires_explicit_user_confirmation"] is True for row in migration["ltg_next_acceptance_action_rows"]))
+        self.assertTrue(all(row["creates_task_from_get"] is False for row in migration["ltg_next_acceptance_action_rows"]))
+        self.assertTrue(all(row["creates_task_from_render"] is False for row in migration["ltg_next_acceptance_action_rows"]))
+        self.assertTrue(all(row["external_calls_triggered"] is False for row in migration["ltg_next_acceptance_action_rows"]))
+        self.assertTrue(all(row["does_not_execute_trades"] is True for row in migration["ltg_next_acceptance_action_rows"]))
         self.assertTrue(all(row["can_close_goal"] is False for row in migration["ltg_acceptance_runway_rows"]))
         self.assertTrue(all(row["cache_only"] is True for row in migration["ltg_acceptance_runway_rows"]))
         self.assertTrue(all(row["external_calls_triggered"] is False for row in migration["ltg_acceptance_runway_rows"]))
@@ -18333,11 +18353,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_acceptance_runway_rows"]), 14)
+        self.assertEqual(len(migration["data"]["ltg_next_acceptance_action_rows"]), 4)
         self.assertEqual(len(migration["data"]["ltg_stage_scope_observed_rows"]), 14)
         runway_rows = {row["id"]: row for row in migration["data"]["ltg_acceptance_runway_rows"]}
+        action_rows = {row["queue_id"]: row for row in migration["data"]["ltg_next_acceptance_action_rows"]}
         self.assertIn("P1", runway_rows["LTG-01"]["priority"])
         self.assertIn("P2", runway_rows["LTG-02"]["priority"])
         self.assertIn("P3", runway_rows["LTG-03"]["priority"])
+        self.assertIn("LTG-01", action_rows["p1_trade_cal_provider_acceptance"]["ltg_ids"])
+        self.assertFalse(action_rows["p1_trade_cal_provider_acceptance"]["creates_task_from_get"])
+        self.assertFalse(action_rows["p2_tushare_target_sample_acceptance"]["external_calls_triggered"])
+        self.assertTrue(action_rows["p3_candidate_radar_provider_worker_promotion"]["does_not_modify_strategy_action"])
         self.assertFalse(runway_rows["LTG-01"]["can_close_goal"])
         self.assertFalse(runway_rows["LTG-02"]["external_calls_triggered"])
         self.assertFalse(runway_rows["LTG-03"]["tushare_called"])

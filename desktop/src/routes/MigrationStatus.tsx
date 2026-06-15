@@ -40,6 +40,7 @@ export default function MigrationStatus() {
   const linkageReviewRows = postLinkageReviewRows.length ? postLinkageReviewRows : latestLinkageReviewRows;
   const principles = Array.isArray(packet.principles) ? packet.principles : [];
   const packetAcceptanceRunwayRows = (packet.ltg_acceptance_runway_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const ltgNextAcceptanceActionRows = (packet.ltg_next_acceptance_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const policy = packet.api_policy as Record<string, unknown> | undefined;
   const baselinePolicy = packet.baseline_policy as Record<string, unknown> | undefined;
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
@@ -144,6 +145,9 @@ export default function MigrationStatus() {
       <h3>14 LTG acceptance runway</h3>
       <p className="risk-note">这张表把每个长期目标的优先级、下一步验收动作和 observed pending 数集中到一处；它只读已有 roadmap/cache 合同，不创建任务、不调用外部服务，也不能关闭目标。</p>
       <DataLineageTable rows={ltgAcceptanceRunwayRows} />
+      <h3>LTG next acceptance action queue</h3>
+      <p className="risk-note">这里集中显示 P1/P2/P3 的下一步显式验收路径：只读展示允许的 POST 路由、未来 provider/worker 证据和禁止事项；GET cache 和页面渲染不会创建任务或调用外部服务。</p>
+      <DataLineageTable rows={ltgNextAcceptanceActionRows} />
       <DataLineageTable rows={longTermGoalRows} />
       <h3>LTG-13 下一票雷达 promotion dry-run</h3>
       <p className="risk-note">这里单独展示下一票雷达的本地 promotion dry-run：它只说明本地审查票据是否可见、是否进入 local review、还有多少生产证据 blocker；不能关闭 LTG-13。</p>

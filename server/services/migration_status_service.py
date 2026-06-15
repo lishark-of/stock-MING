@@ -285,6 +285,113 @@ LTG_NEXT_PRIORITY_ORDER = [
     "P8 LTG-14 motion clarity promotion",
 ]
 
+LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
+    {
+        "queue_id": "p1_trade_cal_provider_acceptance",
+        "priority": "P1",
+        "ltg_ids": ["LTG-01", "LTG-02"],
+        "action_label": "Run user-approved trade_cal provider acceptance",
+        "mode_layer": "button_task_then_provider_execution",
+        "current_phase": "scope_ticket_and_execution_request_required",
+        "first_allowed_route": "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
+        "second_allowed_route": "POST /api/data-health/trade-cal-provider-acceptance-execution-request",
+        "future_provider_route": "POST /api/tasks/refresh-tushare-facts",
+        "target_acceptance_mode": "provider_backed_trade_cal_long_window",
+        "required_evidence": [
+            "approved dry-run scope hash",
+            "bound execution-request ticket",
+            "safe Tushare call ledger",
+            "730-day trade_cal schema/window evidence",
+            "provider-backed freshness replay",
+            "promotion review",
+        ],
+        "not_allowed_next_steps": [
+            "call Tushare from GET cache",
+            "call Tushare from React render",
+            "treat local trade_cal artifact as provider acceptance",
+            "mark LTG-01 or LTG-02 complete from a dry-run",
+        ],
+    },
+    {
+        "queue_id": "p2_tushare_target_sample_acceptance",
+        "priority": "P2",
+        "ltg_ids": ["LTG-02"],
+        "action_label": "Run staged Tushare target-sample acceptance",
+        "mode_layer": "button_task_then_provider_execution",
+        "current_phase": "target_sample_execution_request_required",
+        "first_allowed_route": "POST /api/tasks/tushare-provider-target-sample-execution-request",
+        "second_allowed_route": "",
+        "future_provider_route": "POST /api/tasks/refresh-tushare-facts",
+        "target_acceptance_mode": "provider_target_sample_acceptance",
+        "required_evidence": [
+            "selected interface groups",
+            "scope-bound execution-request ticket",
+            "safe provider call ledger per selected API",
+            "row_count/data_date/local_fetched_at/call_status",
+            "permission/no_record/empty_window/parse/stale failure-mode rows",
+            "storage or no-storage promotion review",
+        ],
+        "not_allowed_next_steps": [
+            "mark unselected APIs verified",
+            "treat matrix-only rows as provider acceptance",
+            "hide permission or empty-window outcomes",
+            "expose token/key material",
+        ],
+    },
+    {
+        "queue_id": "p3_factor_small_pool_provider_validation",
+        "priority": "P3",
+        "ltg_ids": ["LTG-03"],
+        "action_label": "Run provider-backed Factor Test Lab small-pool validation",
+        "mode_layer": "button_task_then_provider_execution",
+        "current_phase": "small_pool_scope_ticket_and_execution_request_required",
+        "first_allowed_route": "POST /api/factor-quant/provider-small-pool-dry-run",
+        "second_allowed_route": "POST /api/factor-quant/provider-small-pool-execution-request",
+        "future_provider_route": "future explicit provider-backed factor validation task",
+        "target_acceptance_mode": "provider_backed_factor_small_pool_validation",
+        "required_evidence": [
+            "approved small-pool scope hash",
+            "safe provider call ledger",
+            "multi-horizon forward returns",
+            "rolling IC/Rank IC/ICIR",
+            "cost and turnover evidence",
+            "neutralization and PIT/bias controls",
+        ],
+        "not_allowed_next_steps": [
+            "enter strategy action",
+            "treat light metrics as production validation",
+            "call Tushare from GET cache",
+            "turn backtest metrics into trade advice",
+        ],
+    },
+    {
+        "queue_id": "p3_candidate_radar_provider_worker_promotion",
+        "priority": "P3",
+        "ltg_ids": ["LTG-13"],
+        "action_label": "Bind Candidate Radar provider/model/worker promotion evidence",
+        "mode_layer": "button_task_then_worker_or_provider_execution",
+        "current_phase": "promotion_scope_ticket_and_direct_evidence_required",
+        "first_allowed_route": "POST /api/candidate-radar/quant-projection-acceptance-dry-run",
+        "second_allowed_route": "POST /api/candidate-radar/quant-projection-execution-request",
+        "future_provider_route": "future explicit worker/provider/model radar execution tasks",
+        "target_acceptance_mode": "provider_worker_backed_radar_replacement",
+        "required_evidence": [
+            "legacy no-feature-loss parity",
+            "real Tushare light call ledger",
+            "optional DeepSeek model ledger when enabled",
+            "worker full-pool/deep-scan evidence",
+            "browser performance and visual proof",
+            "legacy retirement review",
+        ],
+        "not_allowed_next_steps": [
+            "run full-pool/deep-scan from render",
+            "hide provider or freshness gaps",
+            "generate buy/sell candidates from local-only evidence",
+            "retire legacy radar before parity evidence",
+        ],
+    },
+]
+
 
 def _enrich_long_term_goal_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     enriched_rows: list[dict[str, Any]] = []
@@ -381,6 +488,59 @@ def _build_ltg_acceptance_runway_rows(rows: list[dict[str, Any]]) -> list[dict[s
             }
         )
     return runway_rows
+
+
+def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows_by_id = {str(row.get("id") or ""): row for row in rows}
+    action_rows: list[dict[str, Any]] = []
+    for index, action in enumerate(LTG_NEXT_ACCEPTANCE_ACTION_QUEUE, start=1):
+        ltg_ids = [str(item) for item in action["ltg_ids"]]
+        linked_rows = [rows_by_id[goal_id] for goal_id in ltg_ids if goal_id in rows_by_id]
+        action_rows.append(
+            {
+                "queue_order": index,
+                "queue_id": action["queue_id"],
+                "priority": action["priority"],
+                "ltg_ids": ltg_ids,
+                "linked_goal_count": len(linked_rows),
+                "action_label": action["action_label"],
+                "mode_layer": action["mode_layer"],
+                "current_phase": action["current_phase"],
+                "first_allowed_route": action["first_allowed_route"],
+                "second_allowed_route": action["second_allowed_route"],
+                "future_provider_route": action["future_provider_route"],
+                "target_acceptance_mode": action["target_acceptance_mode"],
+                "required_evidence": list(action["required_evidence"]),
+                "required_evidence_count": len(action["required_evidence"]),
+                "not_allowed_next_steps": list(action["not_allowed_next_steps"]),
+                "not_allowed_next_step_count": len(action["not_allowed_next_steps"]),
+                "max_linked_observed_pending": max(
+                    (int(row.get("observed_stage_scope_pending_count") or 0) for row in linked_rows),
+                    default=0,
+                ),
+                "linked_completion_estimates": [
+                    f"{row.get('id')}:{row.get('completion_estimate')}" for row in linked_rows
+                ],
+                "linked_buckets": [str(row.get("completion_bucket") or "") for row in linked_rows],
+                "requires_explicit_user_confirmation": True,
+                "creates_task_from_get": False,
+                "creates_task_from_render": False,
+                "cache_only": True,
+                "provider_execution_implemented": False,
+                "model_execution_implemented": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_goal": False,
+                "production_complete": False,
+                "evidence_boundary": "next_acceptance_action_queue_is_read_only_not_task_execution",
+            }
+        )
+    return action_rows
 
 
 def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
@@ -2477,6 +2637,7 @@ def build_migration_status() -> dict[str, Any]:
     )
     long_term_goal_summary = _build_long_term_goal_summary(long_term_goal_rows)
     ltg_acceptance_runway_rows = _build_ltg_acceptance_runway_rows(long_term_goal_rows)
+    ltg_next_acceptance_action_rows = _build_ltg_next_acceptance_action_rows(long_term_goal_rows)
     tushare_deepseek_linkage_rows = _build_tushare_deepseek_linkage_rows()
     tushare_deepseek_mode_layer_rows = _build_tushare_deepseek_mode_layer_rows()
     tushare_deepseek_linkage_review = _build_tushare_deepseek_linkage_review(
@@ -2496,6 +2657,7 @@ def build_migration_status() -> dict[str, Any]:
         "long_term_goal_summary": long_term_goal_summary,
         "long_term_goal_rows": long_term_goal_rows,
         "ltg_acceptance_runway_rows": ltg_acceptance_runway_rows,
+        "ltg_next_acceptance_action_rows": ltg_next_acceptance_action_rows,
         "ltg_stage_scope_observed_rows": ltg_stage_scope_observed_rows,
         "tushare_deepseek_linkage_review": tushare_deepseek_linkage_review,
         "tushare_deepseek_linkage_rows": tushare_deepseek_linkage_rows,
