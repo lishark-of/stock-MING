@@ -22,7 +22,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from server.services import data_health_service, task_service  # noqa: E402
+from server.services import data_health_service, packet_service, task_service, tushare_task_service  # noqa: E402
+from storage.sqlite_meta import SQLiteMetaStore  # noqa: E402
 
 
 CONTRACT_KEYS = [
@@ -38,6 +39,7 @@ CONTRACT_KEYS = [
     "latest_trade_cal_provider_acceptance_dry_run",
     "trade_cal_provider_acceptance_next_execution_recipe",
     "latest_trade_cal_provider_acceptance_execution_request",
+    "latest_tushare_provider_target_sample_execution_request",
     "current_evidence_freshness_qa_contract",
     "current_evidence_decision_surface_audit",
     "current_evidence_producer_coverage_audit",
@@ -169,11 +171,16 @@ def _freshness_production_stage_scope_rows() -> list[dict[str, Any]]:
 
 def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
     original_token = os.environ.get("TUSHARE_TOKEN")
+    original_packet_path = packet_service.SQLITE_META_PATH
     original_meta_path = task_service.SQLITE_META_PATH
+    original_tushare_task_path = tushare_task_service.SQLITE_META_PATH
     fake_token = "TS_OK"
     try:
         with tempfile.TemporaryDirectory(prefix="stock_ming_data_health_contract_") as temp_dir:
-            task_service.SQLITE_META_PATH = Path(temp_dir) / "meta.sqlite"
+            db_path = Path(temp_dir) / "meta.sqlite"
+            packet_service.SQLITE_META_PATH = db_path
+            task_service.SQLITE_META_PATH = db_path
+            tushare_task_service.SQLITE_META_PATH = db_path
             task_service.clear_task_statuses_for_tests(clear_persisted=True)
 
             os.environ["TUSHARE_TOKEN"] = fake_token
@@ -214,6 +221,72 @@ def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
                 }
             )
 
+            target_sample_scope_hash = "targetsampledeadbeef0011223344556677"
+            target_sample_scope_hash_short = target_sample_scope_hash[:16]
+            SQLiteMetaStore(db_path).write_packet(
+                "command_center_tushare_refresh_packet",
+                {
+                    "packet_key": "command_center_tushare_refresh_packet",
+                    "schema_version": "command_center_tushare_refresh_packet.v1",
+                    "status": "local_contract_target_sample_execution_recipe_fixture",
+                    "selected_apis": ["margin_detail"],
+                    "call_ledger": [
+                        {
+                            "api": "local_contract_target_sample_execution_recipe_fixture",
+                            "external": False,
+                            "external_calls_triggered": False,
+                            "tushare_called": False,
+                            "deepseek_called": False,
+                            "github_called": False,
+                            "does_not_execute_trades": True,
+                            "does_not_modify_strategy_action": True,
+                        }
+                    ],
+                    "provider_target_sample_execution_recipe": {
+                        "schema_version": "tushare_provider_target_sample_execution_recipe.v1",
+                        "status": "target_sample_execution_recipe_ready_user_confirmation_required",
+                        "scope": "local_contract_target_sample_execution_recipe_no_provider",
+                        "recipe_ready_for_user_confirmation": True,
+                        "provider_task_created_by_recipe": False,
+                        "recipe_external_calls_triggered": False,
+                        "tushare_called_by_recipe": False,
+                        "execution_recipe_scope_hash": target_sample_scope_hash,
+                        "execution_recipe_scope_hash_short": target_sample_scope_hash_short,
+                        "requested_targets": ["margin_financing"],
+                        "rows": [
+                            {
+                                "target": "margin_financing",
+                                "requested_for_execution_recipe": True,
+                                "selected_apis": ["margin_detail"],
+                                "status": "ready",
+                                "external_calls_triggered": False,
+                                "tushare_called": False,
+                                "deepseek_called": False,
+                                "github_called": False,
+                            }
+                        ],
+                    },
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                },
+            )
+            target_sample_execution_request = tushare_task_service.run_tushare_provider_target_sample_execution_request(
+                {
+                    "operator_approved": True,
+                    "execution_recipe_scope_hash": target_sample_scope_hash_short,
+                    "target_sample_acceptance_groups": ["margin_financing"],
+                    "apis": ["margin_detail"],
+                    "ts_code": "002008.SZ",
+                    "trade_date": "20260610",
+                    "token": "SHOULD_DROP",
+                }
+            )
+            latest_after_target_sample_execution_request_cache = data_health_service.read_data_health_timeline_cache()
+
             missing_approval = data_health_service.run_trade_cal_provider_acceptance_dry_run(
                 {
                     "apis": ["trade_cal"],
@@ -253,6 +326,10 @@ def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
                 "execution_request": execution_request,
                 "latest_after_execution_request_cache": latest_after_execution_request_cache,
                 "execution_request_mismatch": execution_request_mismatch,
+                "target_sample_execution_request": target_sample_execution_request,
+                "latest_after_target_sample_execution_request_cache": (
+                    latest_after_target_sample_execution_request_cache
+                ),
                 "_fake_token": {"value": fake_token},
             }
     finally:
@@ -261,7 +338,9 @@ def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
         else:
             os.environ["TUSHARE_TOKEN"] = original_token
         task_service.clear_task_statuses_for_tests(clear_persisted=False)
+        packet_service.SQLITE_META_PATH = original_packet_path
         task_service.SQLITE_META_PATH = original_meta_path
+        tushare_task_service.SQLITE_META_PATH = original_tushare_task_path
 
 
 def build_contract() -> dict[str, Any]:
@@ -273,6 +352,7 @@ def build_contract() -> dict[str, Any]:
     dry_missing_credentials = dry_run_cases["missing_credentials"]
     execution_request = dry_run_cases["execution_request"]
     execution_request_mismatch = dry_run_cases["execution_request_mismatch"]
+    target_sample_execution_request = dry_run_cases["target_sample_execution_request"]
     dry_ready_payload = _as_dict(dry_ready.get("payload_safe"))
     dry_ready_receipt = _as_dict(dry_ready_payload.get("trade_cal_provider_acceptance_dry_run_receipt"))
     dry_ready_rows = {
@@ -312,6 +392,38 @@ def build_contract() -> dict[str, Any]:
     )
     latest_after_execution_request_counts = _get(latest_after_execution_request_cache, "counts")
     latest_after_execution_request_policy = _get(latest_after_execution_request_cache, "policy")
+    target_sample_execution_request_payload = _as_dict(target_sample_execution_request.get("payload_safe"))
+    target_sample_execution_request_receipt = _as_dict(
+        target_sample_execution_request_payload.get("provider_target_sample_execution_request_receipt")
+    )
+    target_sample_execution_request_rows = {
+        str(row.get("criterion") or ""): row
+        for row in _as_list(
+            target_sample_execution_request_payload.get("provider_target_sample_execution_request_rows")
+        )
+        if isinstance(row, dict)
+    }
+    target_sample_execution_request_ledger = [
+        _as_dict(row) for row in _as_list(target_sample_execution_request.get("call_ledger"))
+    ]
+    latest_after_target_sample_execution_request_cache = _as_dict(
+        dry_run_cases.get("latest_after_target_sample_execution_request_cache")
+    )
+    latest_after_target_sample_execution_request = _get(
+        latest_after_target_sample_execution_request_cache,
+        "latest_tushare_provider_target_sample_execution_request",
+    )
+    latest_after_target_sample_execution_request_rows = _as_list(
+        latest_after_target_sample_execution_request_cache.get(
+            "latest_tushare_provider_target_sample_execution_request_rows"
+        )
+    )
+    latest_after_target_sample_execution_request_counts = _get(
+        latest_after_target_sample_execution_request_cache, "counts"
+    )
+    latest_after_target_sample_execution_request_policy = _get(
+        latest_after_target_sample_execution_request_cache, "policy"
+    )
     execution_request_mismatch_receipt = _as_dict(
         _as_dict(execution_request_mismatch.get("payload_safe")).get(
             "trade_cal_provider_acceptance_execution_request_receipt"
@@ -340,6 +452,10 @@ def build_contract() -> dict[str, Any]:
             "execution_request": execution_request,
             "latest_after_execution_request_cache": latest_after_execution_request_cache,
             "execution_request_mismatch": execution_request_mismatch,
+            "target_sample_execution_request": target_sample_execution_request,
+            "latest_after_target_sample_execution_request_cache": (
+                latest_after_target_sample_execution_request_cache
+            ),
         }
     )
     fake_token = str(_as_dict(dry_run_cases.get("_fake_token")).get("value") or "")
@@ -909,6 +1025,147 @@ def build_contract() -> dict[str, Any]:
             and "SHOULD_DROP" not in dry_run_serialized
             and "TUSHARE_TOKEN" not in dry_run_serialized,
             "GET Data Health cache may replay the latest local execution request metadata, but it must not create a task, call providers, leak credentials, or claim provider-backed acceptance.",
+        ),
+        _row(
+            "tushare_target_sample_execution_request_binds_scope_without_provider_call",
+            target_sample_execution_request.get("status") == "success"
+            and target_sample_execution_request.get("task_type")
+            == "run_tushare_provider_target_sample_execution_request"
+            and target_sample_execution_request.get("current_step")
+            == "tushare_provider_target_sample_execution_request_ready"
+            and target_sample_execution_request_receipt.get("schema_version")
+            == "tushare_provider_target_sample_execution_request.v1"
+            and target_sample_execution_request_receipt.get("status")
+            == "target_sample_execution_request_ready_manual_provider_task_pending"
+            and target_sample_execution_request_receipt.get("route")
+            == "POST /api/tasks/tushare-provider-target-sample-execution-request"
+            and target_sample_execution_request_receipt.get("target_post_task_route")
+            == "POST /api/tasks/refresh-tushare-facts"
+            and target_sample_execution_request_receipt.get("target_task_type") == "refresh_tushare_facts"
+            and target_sample_execution_request_receipt.get("target_acceptance_mode")
+            == "provider_target_sample_acceptance"
+            and target_sample_execution_request_receipt.get("selected_apis") == ["margin_detail"]
+            and target_sample_execution_request_receipt.get("requested_targets") == ["margin_financing"]
+            and target_sample_execution_request_receipt.get("local_execution_request_ready") is True
+            and target_sample_execution_request_receipt.get("ready_for_manual_provider_task_submission") is True
+            and target_sample_execution_request_receipt.get("ready_to_execute_from_cache") is False
+            and target_sample_execution_request_receipt.get("execution_recipe_scope_hash_matches_latest") is True
+            and target_sample_execution_request_receipt.get("operator_confirmation_recorded") is True
+            and target_sample_execution_request_receipt.get("creates_provider_task") is False
+            and target_sample_execution_request_receipt.get("provider_task_executed_by_request") is False
+            and target_sample_execution_request_receipt.get("provider_execution_implemented") is False
+            and target_sample_execution_request_receipt.get("provider_call_ledger_evidence_done") is False
+            and target_sample_execution_request_receipt.get("provider_backed_target_sample_acceptance_done") is False
+            and target_sample_execution_request_receipt.get("full_interface_acceptance_done") is False
+            and target_sample_execution_request_receipt.get("production_tushare_pipeline_complete") is False
+            and target_sample_execution_request_rows.get("execution_recipe_scope_hash_bound", {}).get("status")
+            == "passed"
+            and target_sample_execution_request_rows.get("provider_task_still_pending", {}).get("status")
+            == "passed"
+            and target_sample_execution_request_ledger
+            and target_sample_execution_request_ledger[0].get("api")
+            == "local_tushare_provider_target_sample_execution_request"
+            and target_sample_execution_request_ledger[0].get("external") is False
+            and _flag_false(
+                target_sample_execution_request,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and target_sample_execution_request.get("does_not_execute_trades") is True
+            and target_sample_execution_request.get("does_not_modify_strategy_action") is True,
+            "The Tushare target-sample execution-request ticket must bind a local recipe scope and remain a local request artifact; it cannot create provider tasks, call Tushare, or promote LTG-02 production completion.",
+        ),
+        _row(
+            "latest_tushare_target_sample_execution_request_cache_lookup_is_local_read_only",
+            latest_after_target_sample_execution_request_cache.get("mode") == "cache_only"
+            and latest_after_target_sample_execution_request_cache.get("read_only") is True
+            and latest_after_target_sample_execution_request.get("schema_version")
+            == "data_health_latest_tushare_provider_target_sample_execution_request.v1"
+            and latest_after_target_sample_execution_request.get("status")
+            == "latest_tushare_provider_target_sample_execution_request_visible"
+            and latest_after_target_sample_execution_request.get("scope")
+            == "local_task_status_lookup_no_provider_execution"
+            and latest_after_target_sample_execution_request.get("latest_task_found") is True
+            and latest_after_target_sample_execution_request.get("receipt_visible") is True
+            and latest_after_target_sample_execution_request.get("latest_task_id")
+            == target_sample_execution_request.get("task_id")
+            and latest_after_target_sample_execution_request.get("execution_request_status")
+            == target_sample_execution_request_receipt.get("status")
+            and latest_after_target_sample_execution_request.get("target_post_task_route")
+            == "POST /api/tasks/refresh-tushare-facts"
+            and latest_after_target_sample_execution_request.get("target_task_type") == "refresh_tushare_facts"
+            and latest_after_target_sample_execution_request.get("target_acceptance_mode")
+            == "provider_target_sample_acceptance"
+            and latest_after_target_sample_execution_request.get("requested_targets") == ["margin_financing"]
+            and latest_after_target_sample_execution_request.get("selected_apis") == ["margin_detail"]
+            and latest_after_target_sample_execution_request.get("execution_recipe_scope_hash_matches_latest")
+            is True
+            and latest_after_target_sample_execution_request.get("local_execution_request_ready") is True
+            and latest_after_target_sample_execution_request.get("ready_for_manual_provider_task_submission")
+            is True
+            and latest_after_target_sample_execution_request.get("creates_provider_task") is False
+            and latest_after_target_sample_execution_request.get("provider_task_created") is False
+            and latest_after_target_sample_execution_request.get("provider_task_executed_by_request") is False
+            and latest_after_target_sample_execution_request.get("provider_execution_implemented") is False
+            and latest_after_target_sample_execution_request.get("provider_call_ledger_evidence_done") is False
+            and latest_after_target_sample_execution_request.get("provider_backed_target_sample_acceptance_done")
+            is False
+            and latest_after_target_sample_execution_request.get("full_interface_acceptance_done") is False
+            and latest_after_target_sample_execution_request.get("production_tushare_pipeline_complete") is False
+            and latest_after_target_sample_execution_request.get("cache_get_creates_task") is False
+            and latest_after_target_sample_execution_request.get("cache_get_external_calls") is False
+            and _flag_false(
+                latest_after_target_sample_execution_request,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and int(
+                latest_after_target_sample_execution_request_counts.get(
+                    "latest_tushare_provider_target_sample_execution_request_found"
+                )
+                or 0
+            )
+            == 1
+            and int(
+                latest_after_target_sample_execution_request_counts.get(
+                    "latest_tushare_provider_target_sample_execution_request_row_count"
+                )
+                or 0
+            )
+            == len(latest_after_target_sample_execution_request_rows)
+            and latest_after_target_sample_execution_request_policy.get(
+                "latest_tushare_provider_target_sample_execution_request_lookup_is_local"
+            )
+            is True
+            and latest_after_target_sample_execution_request_policy.get(
+                "latest_tushare_provider_target_sample_execution_request_lookup_creates_task"
+            )
+            is False
+            and latest_after_target_sample_execution_request_policy.get(
+                "latest_tushare_provider_target_sample_execution_request_lookup_calls_provider"
+            )
+            is False
+            and latest_after_target_sample_execution_request_policy.get(
+                "latest_tushare_provider_target_sample_execution_request_is_not_acceptance"
+            )
+            is True
+            and latest_after_target_sample_execution_request_policy.get(
+                "latest_tushare_provider_target_sample_execution_request_creates_provider_task"
+            )
+            is False
+            and latest_after_target_sample_execution_request_policy.get(
+                "tushare_provider_target_sample_execution_request_requires_bound_scope_hash"
+            )
+            is True
+            and fake_token not in dry_run_serialized
+            and "SHOULD_DROP" not in dry_run_serialized
+            and "TUSHARE_TOKEN" not in dry_run_serialized,
+            "GET Data Health cache may replay the latest local Tushare target-sample execution request metadata, but it must not create a task, call providers, leak credentials, or claim provider-backed LTG-02 acceptance.",
         ),
         _row(
             "trade_cal_execution_request_blocks_scope_mismatch",

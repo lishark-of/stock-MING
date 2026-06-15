@@ -34,7 +34,7 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "Tushare 全接口生产流水线",
         "completion_bucket": "real_validation_required",
         "completion_estimate": "35%-45%",
-        "current_state": "daily / daily_basic / moneyflow light path has real evidence; trade_cal has local dry-run and bound execution-request pre-provider tickets; extended interfaces have matrix, local QA, runbook, dry-run contracts, target-sample execution recipe, a scope-bound target-sample execution-request ticket, production stage-scope manifest, and durable evidence recipe.",
+        "current_state": "daily / daily_basic / moneyflow light path has real evidence; trade_cal has local dry-run and bound execution-request pre-provider tickets; extended interfaces have matrix, local QA, runbook, dry-run contracts, target-sample execution recipe, a scope-bound target-sample execution-request ticket, latest target-sample request cache visibility, production stage-scope manifest, and durable evidence recipe.",
         "not_complete_because": "full-interface provider-backed samples and promotion evidence are incomplete.",
         "next_step": "Use the scope-bound target-sample execution-request ticket to validate future explicit POST provider task runs, starting with trade_cal and then staged market-evidence domains.",
         "production_complete": False,

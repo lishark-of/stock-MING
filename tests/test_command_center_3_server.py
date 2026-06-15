@@ -274,6 +274,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("dry-run scope ticket", migration_goals["LTG-01"]["next_evidence_required"])
         self.assertEqual(migration_goals["LTG-02"]["stage_scope_manifest"], "tushare_production_stage_scope_manifest")
         self.assertIn("production stage-scope manifest", migration_goals["LTG-02"]["current_state"])
+        self.assertIn("latest target-sample request cache visibility", migration_goals["LTG-02"]["current_state"])
         self.assertIn("durable evidence recipe", migration_goals["LTG-02"]["current_state"])
         self.assertIn("provider target samples", migration_goals["LTG-02"]["next_evidence_required"])
         self.assertEqual(migration_goals["LTG-03"]["completion_estimate"], "45%-55%")
@@ -7407,6 +7408,67 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(task["does_not_modify_strategy_action"])
         self.assertNotIn("token", json.dumps(task["payload_safe"], ensure_ascii=False).lower())
         self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+
+        data_health_cache = data_health_service.read_data_health_timeline_cache()
+        latest = data_health_cache["latest_tushare_provider_target_sample_execution_request"]
+        latest_rows = data_health_cache["latest_tushare_provider_target_sample_execution_request_rows"]
+        latest_policy = data_health_cache["policy"]
+        latest_counts = data_health_cache["counts"]
+        self.assertEqual(
+            latest["schema_version"],
+            "data_health_latest_tushare_provider_target_sample_execution_request.v1",
+        )
+        self.assertEqual(latest["status"], "latest_tushare_provider_target_sample_execution_request_visible")
+        self.assertEqual(latest["scope"], "local_task_status_lookup_no_provider_execution")
+        self.assertTrue(latest["latest_task_found"])
+        self.assertTrue(latest["receipt_visible"])
+        self.assertEqual(latest["latest_task_id"], task["task_id"])
+        self.assertEqual(latest["execution_request_status"], receipt["status"])
+        self.assertEqual(latest["target_post_task_route"], "POST /api/tasks/refresh-tushare-facts")
+        self.assertEqual(latest["target_task_type"], "refresh_tushare_facts")
+        self.assertEqual(latest["target_acceptance_mode"], "provider_target_sample_acceptance")
+        self.assertEqual(latest["requested_targets"], ["margin_financing"])
+        self.assertEqual(latest["selected_apis"], ["margin_detail"])
+        self.assertTrue(latest["execution_recipe_scope_hash_matches_latest"])
+        self.assertTrue(latest["operator_confirmation_recorded"])
+        self.assertTrue(latest["local_execution_request_ready"])
+        self.assertTrue(latest["ready_for_manual_provider_task_submission"])
+        self.assertFalse(latest["ready_to_execute_from_cache"])
+        self.assertFalse(latest["creates_provider_task"])
+        self.assertFalse(latest["provider_task_created"])
+        self.assertFalse(latest["provider_task_executed_by_request"])
+        self.assertFalse(latest["provider_execution_implemented"])
+        self.assertFalse(latest["provider_call_ledger_evidence_done"])
+        self.assertFalse(latest["provider_backed_target_sample_acceptance_done"])
+        self.assertFalse(latest["full_interface_acceptance_done"])
+        self.assertFalse(latest["production_tushare_pipeline_complete"])
+        self.assertFalse(latest["cache_get_creates_task"])
+        self.assertFalse(latest["cache_get_external_calls"])
+        self.assertFalse(latest["react_render_external_calls"])
+        self.assertFalse(latest["external_calls_triggered"])
+        self.assertFalse(latest["tushare_called"])
+        self.assertFalse(latest["deepseek_called"])
+        self.assertFalse(latest["github_called"])
+        self.assertFalse(latest["contains_secret"])
+        self.assertTrue(latest["does_not_execute_trades"])
+        self.assertTrue(latest["does_not_modify_strategy_action"])
+        self.assertEqual(latest_counts["latest_tushare_provider_target_sample_execution_request_found"], 1)
+        self.assertEqual(
+            latest_counts["latest_tushare_provider_target_sample_execution_request_row_count"],
+            len(latest_rows),
+        )
+        self.assertEqual(
+            latest_counts["latest_tushare_provider_target_sample_execution_request_blocking_row_count"],
+            0,
+        )
+        self.assertTrue(latest_policy["latest_tushare_provider_target_sample_execution_request_lookup_is_local"])
+        self.assertFalse(latest_policy["latest_tushare_provider_target_sample_execution_request_lookup_creates_task"])
+        self.assertFalse(latest_policy["latest_tushare_provider_target_sample_execution_request_lookup_calls_provider"])
+        self.assertTrue(latest_policy["latest_tushare_provider_target_sample_execution_request_is_not_acceptance"])
+        self.assertFalse(latest_policy["latest_tushare_provider_target_sample_execution_request_creates_provider_task"])
+        self.assertFalse(latest_policy["tushare_provider_target_sample_execution_request_route_calls_provider"])
+        self.assertTrue(latest_policy["tushare_provider_target_sample_execution_request_requires_bound_scope_hash"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(data_health_cache, ensure_ascii=False))
 
     def test_tushare_target_sample_acceptance_supports_multiple_review_ready_domains_without_promotion(self):
         db_path = self._with_meta_store()
@@ -16242,6 +16304,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("dry-run scope ticket", migration_goals["LTG-01"]["next_evidence_required"])
         self.assertEqual(migration_goals["LTG-02"]["stage_scope_manifest"], "tushare_production_stage_scope_manifest")
         self.assertIn("production stage-scope manifest", migration_goals["LTG-02"]["current_state"])
+        self.assertIn("latest target-sample request cache visibility", migration_goals["LTG-02"]["current_state"])
         self.assertIn("provider target samples", migration_goals["LTG-02"]["next_evidence_required"])
         self.assertEqual(migration_goals["LTG-03"]["completion_estimate"], "45%-55%")
         self.assertEqual(

@@ -7,7 +7,7 @@ import os
 from collections.abc import Mapping
 from typing import Any
 
-from server.services import packet_service, task_service
+from server.services import packet_service, task_service, tushare_task_service
 
 
 PACKET_KEY = "command_center_3_data_health_timeline_cache"
@@ -2045,6 +2045,153 @@ def _latest_trade_cal_provider_acceptance_execution_request_from_tasks() -> tupl
     return latest_receipt, row_list
 
 
+def _latest_tushare_provider_target_sample_execution_request_from_tasks() -> tuple[
+    dict[str, Any],
+    list[dict[str, Any]],
+]:
+    latest_task = next(
+        (
+            task
+            for task in task_service.list_task_statuses()
+            if str(task.get("task_type") or "")
+            == tushare_task_service.PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_TASK_TYPE
+        ),
+        None,
+    )
+    if not latest_task:
+        return (
+            {
+                "schema_version": "data_health_latest_tushare_provider_target_sample_execution_request.v1",
+                "status": "no_tushare_provider_target_sample_execution_request_task_found",
+                "scope": "local_task_status_lookup_no_provider_execution",
+                "execution_request_status": "no_tushare_provider_target_sample_execution_request_task_found",
+                "latest_task_found": False,
+                "route": tushare_task_service.PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_ROUTE,
+                "task_type": tushare_task_service.PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_TASK_TYPE,
+                "target_post_task_route": "POST /api/tasks/refresh-tushare-facts",
+                "target_task_type": "refresh_tushare_facts",
+                "target_acceptance_mode": tushare_task_service.PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE,
+                "latest_task_id": None,
+                "latest_task_status": None,
+                "latest_task_current_step": None,
+                "latest_execution_recipe_scope_hash_short": "",
+                "requested_execution_recipe_scope_hash_short": "",
+                "execution_recipe_scope_hash_matches_latest": False,
+                "operator_confirmation_recorded": False,
+                "receipt_visible": False,
+                "requested_targets": [],
+                "selected_apis": [],
+                "row_count": 0,
+                "blocking_row_count": 0,
+                "local_execution_request_ready": False,
+                "ready_for_manual_provider_task_submission": False,
+                "ready_to_execute_from_cache": False,
+                "creates_provider_task": False,
+                "provider_task_created": False,
+                "provider_execution_implemented": False,
+                "provider_task_executed_by_request": False,
+                "provider_call_ledger_evidence_done": False,
+                "provider_backed_target_sample_acceptance_done": False,
+                "full_interface_acceptance_done": False,
+                "production_tushare_pipeline_complete": False,
+                "cache_get_creates_task": False,
+                "cache_get_external_calls": False,
+                "react_render_external_calls": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+            [],
+        )
+    payload_safe = latest_task.get("payload_safe") if isinstance(latest_task.get("payload_safe"), dict) else {}
+    receipt = payload_safe.get("provider_target_sample_execution_request_receipt")
+    rows = payload_safe.get("provider_target_sample_execution_request_rows")
+    receipt_safe = _safe_value(receipt) if isinstance(receipt, dict) else {}
+    row_safe = _safe_value(rows) if isinstance(rows, list) else []
+    receipt_map = receipt_safe if isinstance(receipt_safe, dict) else {}
+    row_list = row_safe if isinstance(row_safe, list) else []
+    task_summary = {
+        "task_id": latest_task.get("task_id"),
+        "task_type": latest_task.get("task_type"),
+        "task_status": latest_task.get("status"),
+        "current_step": latest_task.get("current_step"),
+        "created_at": latest_task.get("created_at"),
+        "updated_at": latest_task.get("updated_at"),
+        "finished_at": latest_task.get("finished_at"),
+        "storage_source": latest_task.get("storage_source"),
+        "call_ledger_count": len(latest_task.get("call_ledger") or []),
+        "task_log_count": len(latest_task.get("task_log") or []),
+    }
+    latest_receipt = {
+        "schema_version": "data_health_latest_tushare_provider_target_sample_execution_request.v1",
+        "status": "latest_tushare_provider_target_sample_execution_request_visible",
+        "scope": "local_task_status_lookup_no_provider_execution",
+        "latest_task_found": True,
+        "receipt_visible": bool(receipt_map),
+        "route": tushare_task_service.PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_ROUTE,
+        "task_type": tushare_task_service.PROVIDER_TARGET_SAMPLE_EXECUTION_REQUEST_TASK_TYPE,
+        "target_post_task_route": receipt_map.get("target_post_task_route") or "POST /api/tasks/refresh-tushare-facts",
+        "target_task_type": receipt_map.get("target_task_type") or "refresh_tushare_facts",
+        "target_acceptance_mode": (
+            receipt_map.get("target_acceptance_mode")
+            or tushare_task_service.PROVIDER_TARGET_SAMPLE_ACCEPTANCE_MODE
+        ),
+        "latest_task": task_summary,
+        "latest_task_id": latest_task.get("task_id"),
+        "latest_task_status": latest_task.get("status"),
+        "latest_task_current_step": latest_task.get("current_step"),
+        "execution_request_status": receipt_map.get("status") or "missing_receipt",
+        "latest_execution_recipe_status": receipt_map.get("latest_execution_recipe_status") or "",
+        "latest_execution_recipe_ready_for_user_confirmation": (
+            receipt_map.get("latest_execution_recipe_ready_for_user_confirmation") is True
+        ),
+        "latest_execution_recipe_scope_hash_short": (
+            receipt_map.get("latest_execution_recipe_scope_hash_short") or ""
+        ),
+        "requested_execution_recipe_scope_hash_short": (
+            receipt_map.get("requested_execution_recipe_scope_hash_short") or ""
+        ),
+        "execution_recipe_scope_hash_matches_latest": (
+            receipt_map.get("execution_recipe_scope_hash_matches_latest") is True
+        ),
+        "operator_confirmation_recorded": receipt_map.get("operator_confirmation_recorded") is True,
+        "requested_targets": list(receipt_map.get("requested_targets") or []),
+        "selected_apis": list(receipt_map.get("selected_apis") or []),
+        "local_execution_request_ready": receipt_map.get("local_execution_request_ready") is True,
+        "ready_for_manual_provider_task_submission": (
+            receipt_map.get("ready_for_manual_provider_task_submission") is True
+        ),
+        "ready_to_execute_from_cache": False,
+        "creates_provider_task": False,
+        "provider_task_created": False,
+        "provider_execution_implemented": False,
+        "provider_task_executed_by_request": False,
+        "provider_call_ledger_evidence_done": False,
+        "provider_backed_target_sample_acceptance_done": False,
+        "full_interface_acceptance_done": False,
+        "production_tushare_pipeline_complete": False,
+        "allowed_next_step": receipt_map.get("allowed_next_step") or "",
+        "blocking_row_count": int(receipt_map.get("blocking_criterion_count") or 0),
+        "row_count": len(row_list),
+        "cache_get_creates_task": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "receipt": receipt_map,
+    }
+    return latest_receipt, row_list
+
+
 def _first_value(snapshot: Mapping[str, Any], *keys: str) -> Any:
     for key in keys:
         value = snapshot.get(key)
@@ -3487,6 +3634,10 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         latest_trade_cal_provider_acceptance_execution_request,
         latest_trade_cal_provider_acceptance_execution_request_rows,
     ) = _latest_trade_cal_provider_acceptance_execution_request_from_tasks()
+    (
+        latest_tushare_provider_target_sample_execution_request,
+        latest_tushare_provider_target_sample_execution_request_rows,
+    ) = _latest_tushare_provider_target_sample_execution_request_from_tasks()
     freshness_durable_evidence_recipe = _freshness_durable_evidence_recipe(
         freshness_acceptance_summary=freshness_acceptance_summary,
         trade_cal_physical=trade_cal_physical_validation,
@@ -3571,6 +3722,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "latest_trade_cal_provider_acceptance_dry_run",
             "trade_cal_provider_acceptance_next_execution_recipe",
             "latest_trade_cal_provider_acceptance_execution_request",
+            "latest_tushare_provider_target_sample_execution_request",
             "freshness_durable_evidence_recipe",
             "current_evidence_freshness_qa_contract",
             "current_evidence_decision_surface_audit",
@@ -3622,6 +3774,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         ),
         "latest_trade_cal_provider_acceptance_execution_request_rows": (
             latest_trade_cal_provider_acceptance_execution_request_rows
+        ),
+        "latest_tushare_provider_target_sample_execution_request": (
+            latest_tushare_provider_target_sample_execution_request
+        ),
+        "latest_tushare_provider_target_sample_execution_request_rows": (
+            latest_tushare_provider_target_sample_execution_request_rows
         ),
         "freshness_durable_evidence_recipe": freshness_durable_evidence_recipe,
         "freshness_durable_evidence_rows": freshness_durable_evidence_rows,
@@ -3711,6 +3869,17 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "latest_trade_cal_provider_acceptance_execution_request_blocking_row_count": int(
                 latest_trade_cal_provider_acceptance_execution_request.get("blocking_row_count") or 0
             ),
+            "latest_tushare_provider_target_sample_execution_request_found": (
+                1
+                if latest_tushare_provider_target_sample_execution_request.get("latest_task_found") is True
+                else 0
+            ),
+            "latest_tushare_provider_target_sample_execution_request_row_count": len(
+                latest_tushare_provider_target_sample_execution_request_rows
+            ),
+            "latest_tushare_provider_target_sample_execution_request_blocking_row_count": int(
+                latest_tushare_provider_target_sample_execution_request.get("blocking_row_count") or 0
+            ),
             "freshness_durable_evidence_row_count": len(freshness_durable_evidence_rows),
             "freshness_durable_evidence_blocker_count": int(
                 freshness_durable_evidence_recipe.get("durable_evidence_blocker_count") or 0
@@ -3798,6 +3967,13 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "latest_trade_cal_provider_acceptance_execution_request_creates_provider_task": False,
             "trade_cal_provider_acceptance_execution_request_route_calls_provider": False,
             "trade_cal_provider_acceptance_execution_request_requires_bound_scope_hash": True,
+            "latest_tushare_provider_target_sample_execution_request_lookup_is_local": True,
+            "latest_tushare_provider_target_sample_execution_request_lookup_creates_task": False,
+            "latest_tushare_provider_target_sample_execution_request_lookup_calls_provider": False,
+            "latest_tushare_provider_target_sample_execution_request_is_not_acceptance": True,
+            "latest_tushare_provider_target_sample_execution_request_creates_provider_task": False,
+            "tushare_provider_target_sample_execution_request_route_calls_provider": False,
+            "tushare_provider_target_sample_execution_request_requires_bound_scope_hash": True,
             "freshness_durable_evidence_recipe_is_local": True,
             "freshness_durable_evidence_recipe_calls_provider": False,
             "freshness_durable_evidence_recipe_creates_task": False,
@@ -3929,6 +4105,31 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 ),
                 "latest_trade_cal_provider_acceptance_execution_request_blocking_row_count": int(
                     latest_trade_cal_provider_acceptance_execution_request.get("blocking_row_count") or 0
+                ),
+                "latest_tushare_provider_target_sample_execution_request_status": (
+                    latest_tushare_provider_target_sample_execution_request.get("execution_request_status")
+                ),
+                "latest_tushare_provider_target_sample_execution_request_task_id": (
+                    latest_tushare_provider_target_sample_execution_request.get("latest_task_id")
+                ),
+                "latest_tushare_provider_target_sample_execution_request_found": bool(
+                    latest_tushare_provider_target_sample_execution_request.get("latest_task_found")
+                ),
+                "latest_tushare_provider_target_sample_execution_request_ready_for_manual_provider_task_submission": bool(
+                    latest_tushare_provider_target_sample_execution_request.get(
+                        "ready_for_manual_provider_task_submission"
+                    )
+                ),
+                "latest_tushare_provider_target_sample_execution_request_scope_hash_matches": bool(
+                    latest_tushare_provider_target_sample_execution_request.get(
+                        "execution_recipe_scope_hash_matches_latest"
+                    )
+                ),
+                "latest_tushare_provider_target_sample_execution_request_row_count": len(
+                    latest_tushare_provider_target_sample_execution_request_rows
+                ),
+                "latest_tushare_provider_target_sample_execution_request_blocking_row_count": int(
+                    latest_tushare_provider_target_sample_execution_request.get("blocking_row_count") or 0
                 ),
                 "freshness_durable_evidence_recipe_status": freshness_durable_evidence_recipe.get("status"),
                 "freshness_durable_evidence_blocker_count": int(
