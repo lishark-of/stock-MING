@@ -100,3 +100,9 @@ def review_candidate_radar_browser_qa(payload: dict[str, Any] | None = None) -> 
 def review_candidate_radar_production_replacement(payload: dict[str, Any] | None = None) -> dict:
     task = candidate_service.run_candidate_production_replacement_review_task(payload)
     return task_envelope(task)
+
+
+@router.post("/production-promotion-dry-run")
+def dry_run_candidate_radar_production_promotion(payload: dict[str, Any] | None = None) -> dict:
+    task = candidate_service.run_candidate_production_promotion_dry_run_task(payload)
+    return task_envelope(task)

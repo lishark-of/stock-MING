@@ -41,6 +41,7 @@ REQUIRED_TASK_TYPES = {
     "run_candidate_radar_deep_scan_local_review",
     "run_candidate_radar_browser_qa_review",
     "run_candidate_radar_production_replacement_review",
+    "run_candidate_radar_production_promotion_dry_run",
 }
 REQUIRED_NO_FEATURE_LOSS_GAPS = {
     "browser_performance_trace_pending",
@@ -461,6 +462,28 @@ def build_contract() -> dict[str, Any]:
         for row in production_replacement_review_rows_list
         if isinstance(row, dict)
     }
+    production_review_packet["candidate_radar_production_replacement_review_receipt"] = production_replacement_review
+    production_review_packet["candidate_radar_production_replacement_review_rows"] = (
+        production_replacement_review_rows_list
+    )
+    production_promotion_dry_run, production_promotion_dry_run_rows_list = (
+        candidate_service._candidate_radar_production_promotion_dry_run_receipt(
+            production_review_packet,
+            payload_safe={
+                "operator_approved": True,
+                "review_scope_hash": production_replacement_review.get("review_scope_hash"),
+                "requested_by": "local_contract",
+            },
+            explicit_dry_run=True,
+            task_id="local-contract-production-promotion-dry-run",
+            created_at=now,
+        )
+    )
+    production_promotion_dry_run_rows = {
+        str(row.get("criterion") or ""): row
+        for row in production_promotion_dry_run_rows_list
+        if isinstance(row, dict)
+    }
     durable_evidence_recipe = _dict(cache_packet.get("candidate_radar_durable_evidence_recipe"))
     durable_evidence_rows = {
         str(row.get("evidence_key") or ""): row
@@ -775,6 +798,46 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_candidate_radar_production_replacement_review"].get("legacy_retirement_ready")
             is False,
             "Candidate radar scan modes must stay button-gated local tasks; full-pool/deep-scan entries are plan-only, browser QA review reads local artifacts only, and production replacement review remains local evidence.",
+        ),
+        _row(
+            "candidate_radar_production_promotion_dry_run_task_is_button_gated_local_only",
+            task_rows["run_candidate_radar_production_promotion_dry_run"].get("route")
+            == "POST /api/candidate-radar/production-promotion-dry-run"
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get("local_dry_run_only") is True
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get(
+                "requires_production_replacement_review"
+            )
+            is True
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get(
+                "requires_production_replacement_review_scope_hash"
+            )
+            is True
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get("requires_operator_approval")
+            is True
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get("creates_worker_task") is False
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get("worker_started") is False
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get("creates_provider_model_task")
+            is False
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get("provider_execution_implemented")
+            is False
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get("model_execution_implemented")
+            is False
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get("production_radar_replacement_complete")
+            is False
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get("legacy_retirement_ready") is False
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get("tushare_called") is False
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get("deepseek_called") is False
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get("github_called") is False
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get("cache_get_external_calls") is False
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get("page_render_external_calls") is False
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get("does_not_execute_trades") is True
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get(
+                "does_not_modify_strategy_action"
+            )
+            is True
+            and task_rows["run_candidate_radar_production_promotion_dry_run"].get("candidate_is_not_buy_instruction")
+            is True,
+            "Candidate Radar production promotion dry-run must be a button-gated local scope ticket that does not start workers, providers, models, GitHub, trades, or production replacement.",
         ),
         _row(
             "candidate_radar_next_execution_recipe_is_local_fast_scan_path",
@@ -1184,6 +1247,82 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_production_replacement_review_receipt" in candidate_frontend
             and "雷达生产替代审查" in candidate_frontend,
             "Candidate Radar production replacement review must summarize local fast-scan/no-loss/worker/provider/browser evidence while staying production-blocked, no-external, no-trade, and legacy-fallback-safe.",
+        ),
+        _row(
+            "candidate_radar_production_promotion_dry_run_is_scope_bound_local_only",
+            production_promotion_dry_run.get("schema_version")
+            == candidate_service.CANDIDATE_PRODUCTION_PROMOTION_DRY_RUN_SCHEMA_VERSION
+            and production_promotion_dry_run.get("status")
+            == "candidate_radar_production_promotion_dry_run_ready_production_still_blocked"
+            and production_promotion_dry_run.get("scope")
+            == "button_gated_local_candidate_radar_production_promotion_dry_run_no_external_call"
+            and production_promotion_dry_run.get("route")
+            == "POST /api/candidate-radar/production-promotion-dry-run"
+            and production_promotion_dry_run.get("task_type")
+            == "run_candidate_radar_production_promotion_dry_run"
+            and production_promotion_dry_run.get("explicit_promotion_dry_run_task_done") is True
+            and production_promotion_dry_run.get("operator_approved") is True
+            and production_promotion_dry_run.get("ready_for_local_promotion_review") is True
+            and production_promotion_dry_run.get("ready_to_mark_production_radar_replacement_complete") is False
+            and production_promotion_dry_run.get("production_radar_replacement_complete") is False
+            and production_promotion_dry_run.get("legacy_retirement_ready") is False
+            and production_promotion_dry_run.get("legacy_fallback_required") is True
+            and production_promotion_dry_run.get("production_replacement_review_ready") is True
+            and production_promotion_dry_run.get("requested_review_scope_hash_matches_latest") is True
+            and len(str(production_promotion_dry_run.get("production_replacement_review_scope_hash") or "")) == 64
+            and len(str(production_promotion_dry_run.get("promotion_scope_hash") or "")) == 64
+            and production_promotion_dry_run.get("promotion_scope_hash_input_includes_secret") is False
+            and production_promotion_dry_run.get("worker_full_pool_execution_done") is False
+            and production_promotion_dry_run.get("worker_deep_scan_execution_done") is False
+            and production_promotion_dry_run.get("provider_backed_acceptance_done") is False
+            and production_promotion_dry_run.get("deepseek_model_ledger_complete") is False
+            and production_promotion_dry_run.get("browser_visual_performance_promoted") is False
+            and production_promotion_dry_run.get("durable_evidence_complete") is False
+            and int(production_promotion_dry_run.get("local_blocker_count") or 0) == 0
+            and int(production_promotion_dry_run.get("production_blocker_count") or 0) >= 7
+            and int(production_promotion_dry_run.get("row_count") or 0) == len(production_promotion_dry_run_rows)
+            and _dict(production_promotion_dry_run_rows.get("worker_full_pool_execution_evidence_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(production_promotion_dry_run_rows.get("worker_deep_scan_execution_evidence_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(production_promotion_dry_run_rows.get("provider_backed_parity_call_ledger_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(production_promotion_dry_run_rows.get("deepseek_model_ledger_if_enabled_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(production_promotion_dry_run_rows.get("production_completion_stays_blocked")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(production_promotion_dry_run_rows.get("no_provider_model_trade_secret_boundary")).get("passed")
+            is True
+            and _flag_false(
+                production_promotion_dry_run,
+                "cache_get_external_calls",
+                "react_render_external_calls",
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "worker_started",
+                "creates_worker_task",
+                "creates_provider_model_task",
+                "contains_secret",
+            )
+            and production_promotion_dry_run.get("does_not_execute_trades") is True
+            and production_promotion_dry_run.get("does_not_modify_strategy_action") is True
+            and production_promotion_dry_run.get("does_not_modify_holdings") is True
+            and production_promotion_dry_run.get("candidate_is_not_buy_instruction") is True
+            and "candidate_radar_production_promotion_dry_run_receipt" in candidate_frontend
+            and "雷达 production promotion dry-run" in candidate_frontend,
+            "Candidate Radar production promotion dry-run must only bind the latest replacement-review scope for human review while direct worker/provider/model/browser/legacy evidence remains production-blocking.",
         ),
         _row(
             "candidate_radar_durable_evidence_recipe_is_local_production_pending",
@@ -2070,6 +2209,8 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_deep_scan_worker_fallback.v1" in this_script
             and "candidate_radar_durable_evidence_recipe.v1" in this_script
             and "candidate_radar_production_replacement_review.v1" in this_script
+            and "candidate_radar_production_promotion_dry_run.v1" in this_script
+            and "production-promotion-dry-run" in this_script
             and "candidate_is_not_buy_instruction" in this_script
             and ("request" + "s") not in this_script
             and ("ht" + "tpx") not in this_script
@@ -2139,6 +2280,13 @@ def build_contract() -> dict[str, Any]:
         )
         is True,
         "candidate_radar_production_replacement_review_blocker_count": production_replacement_review.get(
+            "production_blocker_count"
+        ),
+        "candidate_radar_production_promotion_dry_run_ready": production_promotion_dry_run.get(
+            "ready_for_local_promotion_review"
+        )
+        is True,
+        "candidate_radar_production_promotion_dry_run_blocker_count": production_promotion_dry_run.get(
             "production_blocker_count"
         ),
         "cache_only": True,
@@ -2212,6 +2360,13 @@ def build_contract() -> dict[str, Any]:
                 "local_review_ready"
             ),
             "candidate_radar_production_replacement_review_blocker_count": production_replacement_review.get(
+                "production_blocker_count"
+            ),
+            "candidate_radar_production_promotion_dry_run_status": production_promotion_dry_run.get("status"),
+            "candidate_radar_production_promotion_dry_run_ready": production_promotion_dry_run.get(
+                "ready_for_local_promotion_review"
+            ),
+            "candidate_radar_production_promotion_dry_run_blocker_count": production_promotion_dry_run.get(
                 "production_blocker_count"
             ),
             "result_delta_status": result_delta.get("status"),
