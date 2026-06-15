@@ -74,7 +74,7 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "Worker / Celery / Redis 生产化",
         "completion_bucket": "productionization_required",
         "completion_estimate": "35%-45%",
-        "current_state": "local fallback, task lifecycle, explicit synthetic healthcheck, button-gated activation review task receipts, production evidence plan scope tickets, scope-bound runtime QA execution request tickets, local runtime QA dry-run receipts, runtime QA execution recipe, durable evidence recipe, readiness/activation receipts, scheduler default-off policy, and worker contracts exist.",
+        "current_state": "local fallback, task lifecycle, explicit synthetic healthcheck, button-gated activation review task receipts, production evidence plan scope tickets, scope-bound runtime QA execution request tickets, local runtime QA dry-run receipts, runtime QA execution recipe, durable evidence recipe, runtime evidence stage-scope manifest, readiness/activation receipts, scheduler default-off policy, and worker contracts exist.",
         "not_complete_because": "real Celery/Redis process orchestration, broker healthcheck, runtime queue binding, synthetic round-trip dispatch, cross-process control proof, append-only worker log proof, runtime QA task execution, fallback rollback proof, durable evidence promotion, and production scheduler activation are pending; dry-run receipts do not create or execute runtime QA tasks.",
         "next_step": "Run a separate runtime QA task only after manual approval, request-ticket review, and dry-run receipt review, then promote only with durable evidence rows reviewed; keep Celery/Redis start, broker ping, task dispatch, provider/model calls, and scheduler enablement out of cache reads.",
         "production_complete": False,
@@ -777,6 +777,101 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "writes_parquet_on_get": False,
                 "writes_parquet_by_contract": False,
                 "reads_row_payloads": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observation_failure_is_not_completion",
+            }
+        )
+    try:
+        from scripts import worker_contract
+
+        evidence_scope = list(worker_contract.REQUIRED_RUNTIME_EVIDENCE_STAGES)
+        stage_rows = worker_contract._worker_runtime_evidence_stage_scope_rows(evidence_scope)
+        stage_rows = stage_rows if isinstance(stage_rows, list) else []
+        row_count = len(stage_rows)
+        pending_count = sum(
+            1
+            for row in stage_rows
+            if isinstance(row, dict) and row.get("production_worker_complete") is False
+        )
+        local_evidence_count = sum(
+            1
+            for row in stage_rows
+            if isinstance(row, dict) and row.get("selected_by_evidence_plan_scope") is True
+        )
+        rows.append(
+            {
+                "id": "LTG-06",
+                "goal": "Worker / Celery / Redis 生产化",
+                "stage_scope_manifest": "worker_runtime_evidence_stage_scope_manifest",
+                "status": "observed_in_worker_static_contract"
+                if stage_rows
+                else "missing_from_worker_static_contract",
+                "observed_source": "scripts/worker_contract._worker_runtime_evidence_stage_scope_rows local static contract",
+                "cache_status": "worker_static_contract",
+                "cache_mode": "local_static_contract",
+                "row_count": row_count,
+                "pending_stage_count": pending_count,
+                "local_evidence_stage_count": local_evidence_count,
+                "production_blocker_count": pending_count,
+                "worker_started": False,
+                "celery_worker_started": False,
+                "redis_pinged": False,
+                "scheduler_started": False,
+                "task_dispatched": False,
+                "provider_model_task_dispatched": False,
+                "healthcheck_executed": False,
+                "runtime_qa_executed": False,
+                "task_log_persistence_verified": False,
+                "append_only_worker_log_verified": False,
+                "cross_process_task_control_verified": False,
+                "activation_ready": False,
+                "production_worker_complete": False,
+                "cache_get_external_calls": False,
+                "react_render_external_calls": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observed_local_static_worker_runtime_stage_scope_not_production_completion",
+            }
+        )
+    except Exception:
+        rows.append(
+            {
+                "id": "LTG-06",
+                "goal": "Worker / Celery / Redis 生产化",
+                "stage_scope_manifest": "worker_runtime_evidence_stage_scope_manifest",
+                "status": "local_observation_failed_safe_fallback",
+                "observed_source": "scripts/worker_contract._worker_runtime_evidence_stage_scope_rows local static contract",
+                "error_message_safe": "worker_stage_scope_observation_failed",
+                "row_count": 0,
+                "pending_stage_count": 0,
+                "local_evidence_stage_count": 0,
+                "production_blocker_count": 0,
+                "worker_started": False,
+                "celery_worker_started": False,
+                "redis_pinged": False,
+                "scheduler_started": False,
+                "task_dispatched": False,
+                "provider_model_task_dispatched": False,
+                "healthcheck_executed": False,
+                "runtime_qa_executed": False,
+                "task_log_persistence_verified": False,
+                "append_only_worker_log_verified": False,
+                "cross_process_task_control_verified": False,
+                "activation_ready": False,
+                "production_worker_complete": False,
                 "external_calls_triggered": False,
                 "tushare_called": False,
                 "deepseek_called": False,
