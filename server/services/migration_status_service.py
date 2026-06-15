@@ -114,9 +114,9 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "Streamlit 完全退出普通主流程",
         "completion_bucket": "dependent_retirement_goal",
         "completion_estimate": "40%-50%",
-        "current_state": "Streamlit is marked legacy/admin/debug; retirement readiness and fallback dependency receipts exist.",
-        "not_complete_because": "React/Tauri parity, no-feature-cut acceptance, and fallback retirement review are not complete.",
-        "next_step": "Retire ordinary Streamlit entry points only after React/Tauri covers daily workflow and fallback blockers are clear.",
+        "current_state": "Streamlit is marked legacy/admin/debug; primary-workflow exit audit, fallback dependency contract, retirement readiness receipt, durable evidence recipe, and retirement stage-scope manifest exist.",
+        "not_complete_because": "React/Tauri ordinary workflow parity, Candidate Radar parity, provider-backed parity, browser/performance QA, admin/debug retention decision, no-feature-cut acceptance, fallback retirement review, and app.py removal-or-retention review are not complete.",
+        "next_step": "Run explicit replacement parity and Streamlit fallback retirement reviews only after React/Tauri covers daily workflow, Candidate Radar parity is proven, and fallback blockers are clear.",
         "production_complete": False,
     },
     {
@@ -1250,6 +1250,128 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "github_called": False,
                 "does_not_execute_trades": True,
                 "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observation_failure_is_not_completion",
+            }
+        )
+    try:
+        from scripts import streamlit_legacy_contract
+
+        streamlit_contract = streamlit_legacy_contract.build_contract()
+        if not isinstance(streamlit_contract, dict):
+            streamlit_contract = {}
+        observed = streamlit_contract.get("observed")
+        observed = observed if isinstance(observed, dict) else {}
+        stage_rows = streamlit_contract.get("streamlit_retirement_stage_scope_rows")
+        stage_rows = stage_rows if isinstance(stage_rows, list) else []
+        row_count = int(observed.get("streamlit_retirement_stage_scope_count") or len(stage_rows) or 0)
+        pending_count = int(
+            observed.get("streamlit_retirement_stage_scope_pending_count")
+            or sum(
+                1
+                for row in stage_rows
+                if isinstance(row, dict) and row.get("full_streamlit_removal_ready") is False
+            )
+        )
+        local_evidence_count = sum(
+            1
+            for row in stage_rows
+            if isinstance(row, dict) and row.get("current_status") == "local_exit_audit_or_dependency_contract_only"
+        )
+        rows.append(
+            {
+                "id": "LTG-10",
+                "goal": "Streamlit 完全退出普通主流程",
+                "stage_scope_manifest": "streamlit_retirement_stage_scope_manifest",
+                "status": "observed_in_streamlit_legacy_static_contract"
+                if stage_rows
+                else "missing_from_streamlit_legacy_static_contract",
+                "observed_source": "scripts/streamlit_legacy_contract.build_contract local static contract",
+                "cache_status": str(streamlit_contract.get("status") or "missing"),
+                "cache_mode": "local_static_contract",
+                "row_count": row_count,
+                "pending_stage_count": pending_count,
+                "local_evidence_stage_count": local_evidence_count,
+                "production_blocker_count": pending_count,
+                "ordinary_workflow_exit_complete": streamlit_contract.get("ordinary_workflow_exit_complete")
+                is True,
+                "streamlit_fallback_removal_ready": streamlit_contract.get("streamlit_fallback_removal_ready")
+                is True,
+                "full_streamlit_removal_ready": streamlit_contract.get("full_streamlit_removal_ready") is True,
+                "streamlit_fallback_retained": streamlit_contract.get("streamlit_fallback_retained") is True,
+                "legacy_fallback_required": streamlit_contract.get("legacy_fallback_required") is True,
+                "feature_parity_required_before_removal": streamlit_contract.get(
+                    "feature_parity_required_before_removal"
+                )
+                is True,
+                "no_feature_cut_allowed": streamlit_contract.get("no_feature_cut_allowed") is True,
+                "streamlit_retirement_durable_evidence_complete": streamlit_contract.get(
+                    "streamlit_retirement_durable_evidence_complete"
+                )
+                is True,
+                "replacement_parity_complete": False,
+                "candidate_radar_parity_complete": False,
+                "provider_backed_parity_done": False,
+                "browser_performance_qa_done": False,
+                "admin_debug_retention_decision_done": False,
+                "fallback_removed_by_contract": False,
+                "app_py_deleted_by_contract": False,
+                "streamlit_opened_by_contract": False,
+                "legacy_tools_run_by_contract": False,
+                "tasks_created_by_contract": False,
+                "provider_model_task_dispatched_by_contract": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_modify_holdings": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observed_local_static_streamlit_stage_scope_not_retirement_completion",
+            }
+        )
+    except Exception:
+        rows.append(
+            {
+                "id": "LTG-10",
+                "goal": "Streamlit 完全退出普通主流程",
+                "stage_scope_manifest": "streamlit_retirement_stage_scope_manifest",
+                "status": "local_observation_failed_safe_fallback",
+                "observed_source": "scripts/streamlit_legacy_contract.build_contract local static contract",
+                "error_message_safe": "streamlit_stage_scope_observation_failed",
+                "row_count": 0,
+                "pending_stage_count": 0,
+                "local_evidence_stage_count": 0,
+                "production_blocker_count": 0,
+                "ordinary_workflow_exit_complete": False,
+                "streamlit_fallback_removal_ready": False,
+                "full_streamlit_removal_ready": False,
+                "streamlit_fallback_retained": True,
+                "legacy_fallback_required": True,
+                "feature_parity_required_before_removal": True,
+                "no_feature_cut_allowed": True,
+                "streamlit_retirement_durable_evidence_complete": False,
+                "replacement_parity_complete": False,
+                "candidate_radar_parity_complete": False,
+                "provider_backed_parity_done": False,
+                "browser_performance_qa_done": False,
+                "admin_debug_retention_decision_done": False,
+                "fallback_removed_by_contract": False,
+                "app_py_deleted_by_contract": False,
+                "streamlit_opened_by_contract": False,
+                "legacy_tools_run_by_contract": False,
+                "tasks_created_by_contract": False,
+                "provider_model_task_dispatched_by_contract": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_modify_holdings": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
                 "evidence_boundary": "observation_failure_is_not_completion",
