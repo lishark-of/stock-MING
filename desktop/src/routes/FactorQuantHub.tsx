@@ -308,6 +308,8 @@ export default function FactorQuantHub() {
           { label: "small-pool dry-run", value: factorTestProviderSmallPoolDryRun.status ?? "not_run", tone: factorTestProviderSmallPoolDryRun.preflight_ready_for_user_approved_real_task === true ? "good" : "warn" },
           { label: "small-pool recipe", value: factorTestProviderSmallPoolExecutionRecipe.status ?? "missing", tone: factorTestProviderSmallPoolExecutionRecipe.local_recipe_ready === true ? "good" : "warn" },
           { label: "recipe phases", value: factorTestProviderSmallPoolExecutionRecipe.pending_phase_count ?? 0, tone: Number(factorTestProviderSmallPoolExecutionRecipe.pending_phase_count ?? 0) > 0 ? "warn" : "neutral" },
+          { label: "request ticket", value: factorTestProviderSmallPoolExecutionRequest.status ?? "missing", tone: factorTestProviderSmallPoolExecutionRequest.local_execution_request_ready === true ? "good" : "warn" },
+          { label: "request blockers", value: factorTestProviderSmallPoolExecutionRequest.blocking_criterion_count ?? 0, tone: Number(factorTestProviderSmallPoolExecutionRequest.blocking_criterion_count ?? 0) > 0 ? "warn" : "good" },
           { label: "dry-run blockers", value: factorTestProviderSmallPoolDryRun.blocking_criterion_count ?? 0, tone: Number(factorTestProviderSmallPoolDryRun.blocking_criterion_count ?? 0) > 0 ? "warn" : "good" },
           { label: "research pass", value: factorTestQuality.research_pass_count ?? 0 },
           { label: "watchlist", value: factorTestQuality.watchlist_count ?? 0 },
