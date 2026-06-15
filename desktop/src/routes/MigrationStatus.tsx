@@ -130,6 +130,10 @@ export default function MigrationStatus() {
       <p className="risk-note">严格关闭数保持 {String(longTermGoalSummary.strict_closeout ?? "0/14")}；scaffold / preflight / mock / matrix / sanitizer / dry-run / local receipt 不能作为生产完成证据。</p>
       <MetricGrid
         items={[
+          { label: "strict closeout", value: String(longTermGoalSummary.strict_closeout ?? "0/14"), tone: Number(longTermGoalSummary.strict_closeout_done_count ?? 0) === 0 ? "warn" : "good" },
+          { label: "goals closed", value: Number(longTermGoalSummary.strict_closeout_done_count ?? 0) },
+          { label: "goals total", value: Number(longTermGoalSummary.strict_closeout_total_count ?? 14) },
+          { label: "goals remaining", value: Number(longTermGoalSummary.strict_closeout_remaining_count ?? 14), tone: Number(longTermGoalSummary.strict_closeout_remaining_count ?? 14) ? "warn" : "good" },
           { label: "mostly stable guardrails", value: Number(longTermBucketCounts.mostly_stable_guardrail ?? 0) },
           { label: "real validation required", value: Number(longTermBucketCounts.real_validation_required ?? 0) },
           { label: "productionization required", value: Number(longTermBucketCounts.productionization_required ?? 0) },

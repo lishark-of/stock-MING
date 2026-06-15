@@ -311,6 +311,8 @@ def _build_long_term_goal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     for row in rows:
         bucket = str(row["completion_bucket"])
         bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
+    goal_count = len(rows)
+    production_complete_count = sum(1 for row in rows if row.get("production_complete") is True)
     stage_scope_manifest_count = sum(1 for row in rows if row.get("has_stage_scope_manifest") is True)
     observed_stage_scope_manifest_count = sum(
         1 for row in rows if row.get("observed_stage_scope_manifest_status")
@@ -321,10 +323,14 @@ def _build_long_term_goal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if row.get("observed_stage_scope_manifest_status")
     )
     return {
-        "goal_count": len(rows),
-        "closed_count": sum(1 for row in rows if row.get("production_complete") is True),
-        "production_complete_count": sum(1 for row in rows if row.get("production_complete") is True),
-        "strict_closeout": "0/14",
+        "goal_count": goal_count,
+        "closed_count": production_complete_count,
+        "production_complete_count": production_complete_count,
+        "strict_closeout": f"{production_complete_count}/{goal_count}",
+        "strict_closeout_done_count": production_complete_count,
+        "strict_closeout_total_count": goal_count,
+        "strict_closeout_remaining_count": goal_count - production_complete_count,
+        "strict_closeout_can_close_from_local_contracts": False,
         "stage_scope_manifest_count": stage_scope_manifest_count,
         "stage_scope_manifest_pending_count": sum(
             1 for row in rows if row.get("stage_scope_manifest_status") == "present_pending_production_evidence"
