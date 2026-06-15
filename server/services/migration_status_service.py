@@ -424,6 +424,94 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             }
         )
     try:
+        from scripts import tushare_acceptance_contract
+
+        stage_rows = tushare_acceptance_contract._tushare_production_stage_scope_rows()
+        stage_rows = stage_rows if isinstance(stage_rows, list) else []
+        row_count = len(stage_rows)
+        pending_count = sum(
+            1
+            for row in stage_rows
+            if isinstance(row, dict) and row.get("production_tushare_pipeline_complete") is False
+        )
+        local_evidence_count = sum(
+            1 for row in stage_rows if isinstance(row, dict) and row.get("local_stage_evidence_present") is True
+        )
+        rows.append(
+            {
+                "id": "LTG-02",
+                "goal": "Tushare 全接口生产流水线",
+                "stage_scope_manifest": "tushare_production_stage_scope_manifest",
+                "status": "observed_in_tushare_acceptance_static_contract"
+                if stage_rows
+                else "missing_from_tushare_acceptance_static_contract",
+                "observed_source": "scripts/tushare_acceptance_contract._tushare_production_stage_scope_rows local static contract",
+                "cache_status": "tushare_acceptance_static_contract",
+                "cache_mode": "local_static_contract",
+                "row_count": row_count,
+                "pending_stage_count": pending_count,
+                "local_evidence_stage_count": local_evidence_count,
+                "production_blocker_count": pending_count,
+                "provider_backed_acceptance_done": False,
+                "production_tushare_pipeline_complete": False,
+                "full_interface_acceptance_done": False,
+                "real_provider_sample_still_required": True,
+                "provider_promotion_still_required": True,
+                "provider_execution_implemented": False,
+                "provider_call_ledger_evidence_done": False,
+                "full_interface_selection_done": False,
+                "failure_mode_evidence_done": False,
+                "request_parameter_provider_window_done": False,
+                "parquet_promotion_done": False,
+                "cache_get_external_calls": False,
+                "react_render_external_calls": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observed_local_static_tushare_stage_scope_not_production_completion",
+            }
+        )
+    except Exception:
+        rows.append(
+            {
+                "id": "LTG-02",
+                "goal": "Tushare 全接口生产流水线",
+                "stage_scope_manifest": "tushare_production_stage_scope_manifest",
+                "status": "local_observation_failed_safe_fallback",
+                "observed_source": "scripts/tushare_acceptance_contract._tushare_production_stage_scope_rows local static contract",
+                "error_message_safe": "tushare_stage_scope_observation_failed",
+                "row_count": 0,
+                "pending_stage_count": 0,
+                "local_evidence_stage_count": 0,
+                "production_blocker_count": 0,
+                "provider_backed_acceptance_done": False,
+                "production_tushare_pipeline_complete": False,
+                "full_interface_acceptance_done": False,
+                "real_provider_sample_still_required": True,
+                "provider_promotion_still_required": True,
+                "provider_execution_implemented": False,
+                "provider_call_ledger_evidence_done": False,
+                "full_interface_selection_done": False,
+                "failure_mode_evidence_done": False,
+                "request_parameter_provider_window_done": False,
+                "parquet_promotion_done": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observation_failure_is_not_completion",
+            }
+        )
+    try:
         from server.services import candidate_service
 
         candidate_packet = candidate_service.read_candidate_radar_cache()
