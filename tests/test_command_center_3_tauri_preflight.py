@@ -4,6 +4,7 @@ import unittest
 
 
 SCRIPT = Path("scripts/check_tauri_env.sh")
+LAUNCHER = Path("scripts/start_command_center_3.command")
 
 
 class CommandCenter3TauriPreflightTests(unittest.TestCase):
@@ -62,6 +63,23 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("real_trading_triggered=false", output)
         self.assertIn("frontend_uses_fastapi_only=true", output)
         self.assertIn("tauri_package_build_required_for_production=true", output)
+
+    def test_command_center_3_launcher_is_manual_local_dev_only(self):
+        source = LAUNCHER.read_text(encoding="utf-8")
+
+        self.assertTrue(LAUNCHER.exists())
+        self.assertIn("Command Center 3.0 local launcher", source)
+        self.assertIn("scripts/dev_server.sh", source)
+        self.assertIn("npm run dev", source)
+        self.assertIn("VITE_API_BASE_URL", source)
+        self.assertIn("STOCK_MING_ALLOW_SYSTEM_PYTHON", source)
+        self.assertIn("desktop/node_modules", source)
+        self.assertIn(".stock_ming_3/logs", source)
+        self.assertIn('open "$VITE_URL"', source)
+        self.assertIn("no Tushare, DeepSeek, GitHub, or trading call", source)
+        self.assertNotIn("TUSHARE_TOKEN", source)
+        self.assertNotIn("DEEPSEEK_API_KEY", source)
+        self.assertNotIn("GITHUB_TOKEN", source)
 
 
 if __name__ == "__main__":

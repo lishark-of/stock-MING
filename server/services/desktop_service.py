@@ -18,6 +18,7 @@ FRONTEND_PAGE_STATE_BANNER = DESKTOP_ROOT / "src" / "components" / "PageStateBan
 FRONTEND_BACKEND_OFFLINE_NOTICE = DESKTOP_ROOT / "src" / "components" / "BackendOfflineNotice.tsx"
 FRONTEND_STYLES = DESKTOP_ROOT / "src" / "styles.css"
 ROOT_GITIGNORE = PROJECT_ROOT / ".gitignore"
+COMMAND_CENTER_3_LAUNCHER = PROJECT_ROOT / "scripts" / "start_command_center_3.command"
 TAURI_PACKAGE_DURABLE_EVIDENCE_SCHEMA_VERSION = "tauri_package_durable_evidence_recipe.v1"
 TAURI_PACKAGE_DURABLE_EVIDENCE_KEYS = (
     "preflight_cache_boundary_visible",
@@ -418,6 +419,17 @@ def _api_base_summary(api_base: str) -> dict[str, Any]:
 def _dev_launch_plan(api_base: str) -> list[dict[str, Any]]:
     return [
         {
+            "step": "shortcut",
+            "name": "双击 Command Center 3.0 本地入口",
+            "command": "scripts/start_command_center_3.command",
+            "required_for": "开发/日常本地入口：启动 FastAPI、Vite 并打开本地 3.0 页面",
+            "manual": True,
+            "external_calls_triggered": False,
+            "loads_token_or_key": False,
+            "starts_when_user_runs": True,
+            "production_package_complete": False,
+        },
+        {
             "step": "1",
             "name": "启动 FastAPI 后端",
             "command": "scripts/dev_server.sh",
@@ -425,6 +437,7 @@ def _dev_launch_plan(api_base: str) -> list[dict[str, Any]]:
             "manual": True,
             "external_calls_triggered": False,
             "loads_token_or_key": False,
+            "starts_when_user_runs": True,
         },
         {
             "step": "2",
@@ -434,6 +447,7 @@ def _dev_launch_plan(api_base: str) -> list[dict[str, Any]]:
             "manual": True,
             "external_calls_triggered": False,
             "loads_token_or_key": False,
+            "starts_when_user_runs": True,
         },
         {
             "step": "3",
@@ -443,6 +457,7 @@ def _dev_launch_plan(api_base: str) -> list[dict[str, Any]]:
             "manual": True,
             "external_calls_triggered": False,
             "loads_token_or_key": False,
+            "starts_when_user_runs": True,
         },
         {
             "step": "check",
@@ -452,8 +467,91 @@ def _dev_launch_plan(api_base: str) -> list[dict[str, Any]]:
             "manual": True,
             "external_calls_triggered": False,
             "loads_token_or_key": False,
+            "starts_when_user_runs": False,
         },
     ]
+
+
+def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
+    source = _read_source_safe(COMMAND_CENTER_3_LAUNCHER)
+    required_markers = (
+        "Command Center 3.0 local launcher",
+        "scripts/dev_server.sh",
+        "npm run dev",
+        "VITE_API_BASE_URL",
+        "STOCK_MING_ALLOW_SYSTEM_PYTHON",
+        "desktop/node_modules",
+        ".stock_ming_3/logs",
+        "open \"$VITE_URL\"",
+        "no Tushare, DeepSeek, GitHub, or trading call",
+    )
+    marker_rows = [
+        {
+            "criterion": marker,
+            "status": "passed" if marker in source else "blocked",
+            "passed": marker in source,
+            "evidence": _path_label(COMMAND_CENTER_3_LAUNCHER),
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "loads_token_or_key": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+        for marker in required_markers
+    ]
+    local_ready = COMMAND_CENTER_3_LAUNCHER.exists() and all(row["passed"] for row in marker_rows)
+    return {
+        "schema_version": "command_center_3_local_launcher_contract.v1",
+        "status": "local_launcher_ready_dev_only" if local_ready else "local_launcher_contract_blocked",
+        "scope": "manual_local_dev_launcher_not_production_package",
+        "ltg": "LTG-09",
+        "launcher_path": _path_label(COMMAND_CENTER_3_LAUNCHER),
+        "launcher_exists": COMMAND_CENTER_3_LAUNCHER.exists(),
+        "launcher_executable": os.access(COMMAND_CENTER_3_LAUNCHER, os.X_OK),
+        "desktop_shortcut_target_name": "stock-MING Command Center 3.command",
+        "desktop_shortcut_install_command": "ln -sf scripts/start_command_center_3.command ~/Desktop/stock-MING\\ Command\\ Center\\ 3.command",
+        "api_base": api_base,
+        "vite_url": "http://127.0.0.1:5173",
+        "uses_project_venv_first": "PROJECT_ROOT}/.venv/bin/python" in source,
+        "allows_system_python_only_when_explicit": "STOCK_MING_ALLOW_SYSTEM_PYTHON" in source,
+        "requires_node_modules": "desktop/node_modules" in source,
+        "starts_fastapi_when_user_runs": "scripts/dev_server.sh" in source,
+        "starts_vite_when_user_runs": "npm run dev" in source,
+        "opens_local_browser_when_user_runs": 'open "$VITE_URL"' in source,
+        "writes_ignored_local_logs_when_user_runs": ".stock_ming_3/logs" in source,
+        "cache_get_starts_launcher": False,
+        "cache_get_starts_fastapi": False,
+        "cache_get_starts_vite": False,
+        "production_package_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "loads_token_or_key": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "rows": marker_rows,
+        "row_count": len(marker_rows),
+        "call_ledger": [
+            {
+                "api": "local_command_center_3_launcher_contract",
+                "source": _path_label(COMMAND_CENTER_3_LAUNCHER),
+                "row_count": len(marker_rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_launcher_contract",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This contract exposes a manual local Command Center 3.0 dev launcher. It does not run the launcher from GET cache and is not Tauri production package evidence.",
+    }
 
 
 def _production_launch_plan(api_base: str) -> list[dict[str, Any]]:
@@ -1601,6 +1699,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         _file_row(DESKTOP_ROOT / "src-tauri" / "Cargo.lock", "cargo_lock", "Reproducible Rust dependency lockfile"),
         _file_row(DESKTOP_ROOT / "src-tauri" / "src" / "main.rs", "tauri_main", "Tauri app entry"),
         _file_row(DESKTOP_ROOT / "src-tauri" / "icons" / "icon.png", "tauri_icon", "Tauri desktop window and app icon"),
+        _file_row(COMMAND_CENTER_3_LAUNCHER, "command_center_3_launcher", "Manual local Command Center 3.0 launcher"),
         _file_row(DESKTOP_ROOT / "node_modules", "node_modules", "Installed frontend dependencies"),
         _file_row(DESKTOP_ROOT / "dist", "dist", "Vite build output, should not be committed"),
     ]
@@ -1619,6 +1718,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     tauri_dev_ready = vite_dev_ready and rust_ready
     api_base = os.getenv("VITE_API_BASE_URL") or "http://127.0.0.1:8710"
     api_base_info = _api_base_summary(api_base)
+    desktop_launcher_contract = _desktop_launcher_contract(api_base)
     production_runtime_contract = _production_runtime_contract(api_base_info, tauri_config)
     tauri_build_artifact = _tauri_build_artifact_summary()
     backend_offline_ux_contract = _backend_offline_ux_contract(api_base_info)
@@ -1692,6 +1792,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "loaded_at": _now_iso(),
         "api_base": api_base,
         "api_base_info": api_base_info,
+        "desktop_launcher_contract": desktop_launcher_contract,
+        "desktop_launcher_rows": desktop_launcher_contract["rows"],
         "dev_launch_plan": _dev_launch_plan(api_base),
         "production_launch_plan": _production_launch_plan(api_base),
         "package_json": package_summary,
@@ -1717,6 +1819,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "required_file_ready_count": file_ready_count,
             "command_count": len(command_rows),
             "command_ready_count": sum(1 for row in command_rows if row["available"]),
+            "desktop_launcher_row_count": desktop_launcher_contract["row_count"],
+            "desktop_launcher_ready": 1 if desktop_launcher_contract["status"] == "local_launcher_ready_dev_only" else 0,
             "packaged_runtime_qa_matrix_count": packaged_runtime_qa_contract["qa_matrix_count"],
             "packaged_runtime_pending_qa_count": packaged_runtime_qa_contract["pending_qa_count"],
             "tauri_release_manifest_row_count": tauri_release_manifest_contract["row_count"],
@@ -1740,6 +1844,9 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "fastapi_dev_server_started": False,
             "api_base_is_localhost": api_base_info["is_localhost"],
             "api_health_endpoint": api_base_info["expected_health_endpoint"],
+            "desktop_launcher_ready": desktop_launcher_contract["status"] == "local_launcher_ready_dev_only",
+            "desktop_launcher_executable": desktop_launcher_contract["launcher_executable"],
+            "desktop_launcher_path": desktop_launcher_contract["launcher_path"],
             "backend_autostart_configured": False,
             "production_package_build_attempted": False,
             "production_package_build_artifact_detected": tauri_build_artifact["binary_exists"],
@@ -1779,6 +1886,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "api_base_must_be_localhost": True,
             "production_runtime_contract_is_path_only": True,
             "packaged_runtime_qa_contract_is_static": True,
+            "desktop_launcher_contract_is_local": True,
+            "desktop_launcher_contract_is_manual_dev_only": True,
+            "desktop_launcher_contract_is_not_production_package": True,
+            "desktop_launcher_contract_does_not_run_from_get_cache": True,
             "tauri_release_manifest_contract_is_local": True,
             "tauri_release_manifest_contract_is_not_build": True,
             "tauri_release_manifest_contract_is_not_runtime_execution": True,
@@ -1807,6 +1918,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             }
         ]
         + tauri_release_manifest_contract["call_ledger"]
+        + desktop_launcher_contract["call_ledger"]
         + production_package_readiness_receipt["call_ledger"],
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -1819,6 +1931,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "GET /api/desktop/preflight-cache 只读检查本地 React/Tauri scaffold；不会运行 npm install、npm build、cargo 或 Tauri。",
             "Rust/Cargo 缺失不阻断 Vite 前端；只有 Tauri dev/build 需要 Rust 工具链。",
             "Tauri 开发模式当前不自动拉起 FastAPI；请先运行 scripts/dev_server.sh，再启动 Vite 或 Tauri dev。",
+            "scripts/start_command_center_3.command 是手动双击入口：仅在用户运行时启动本地 FastAPI/Vite 并打开本地页面；GET preflight 不会运行它。",
             "桌面壳预检不读取 token/key，不调用 Tushare、DeepSeek、GitHub，不执行真实交易。",
         ],
     }

@@ -383,6 +383,44 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(desktop["api_base_info"]["expected_health_endpoint"], "http://127.0.0.1:8710/health")
         self.assertTrue(desktop["api_base_info"]["frontend_uses_fastapi_only"])
         self.assertTrue(desktop["api_base_info"]["does_not_autostart_backend"])
+        launcher = desktop["desktop_launcher_contract"]
+        launcher_rows = {row["criterion"]: row for row in desktop["desktop_launcher_rows"]}
+        self.assertEqual(launcher["schema_version"], "command_center_3_local_launcher_contract.v1")
+        self.assertEqual(launcher["status"], "local_launcher_ready_dev_only")
+        self.assertEqual(launcher["scope"], "manual_local_dev_launcher_not_production_package")
+        self.assertEqual(launcher["launcher_path"], "scripts/start_command_center_3.command")
+        self.assertEqual(launcher["desktop_shortcut_target_name"], "stock-MING Command Center 3.command")
+        self.assertTrue(launcher["launcher_exists"])
+        self.assertTrue(launcher["uses_project_venv_first"])
+        self.assertTrue(launcher["allows_system_python_only_when_explicit"])
+        self.assertTrue(launcher["requires_node_modules"])
+        self.assertTrue(launcher["starts_fastapi_when_user_runs"])
+        self.assertTrue(launcher["starts_vite_when_user_runs"])
+        self.assertTrue(launcher["opens_local_browser_when_user_runs"])
+        self.assertTrue(launcher["writes_ignored_local_logs_when_user_runs"])
+        self.assertFalse(launcher["cache_get_starts_launcher"])
+        self.assertFalse(launcher["cache_get_starts_fastapi"])
+        self.assertFalse(launcher["cache_get_starts_vite"])
+        self.assertFalse(launcher["production_package_complete"])
+        self.assertFalse(launcher["external_calls_triggered"])
+        self.assertFalse(launcher["tushare_called"])
+        self.assertFalse(launcher["deepseek_called"])
+        self.assertFalse(launcher["github_called"])
+        self.assertFalse(launcher["loads_token_or_key"])
+        self.assertFalse(launcher["contains_secret"])
+        self.assertTrue(launcher["does_not_execute_trades"])
+        self.assertTrue(launcher["does_not_modify_strategy_action"])
+        self.assertTrue(all(row["passed"] for row in launcher_rows.values()))
+        self.assertEqual(launcher["call_ledger"][0]["api"], "local_command_center_3_launcher_contract")
+        self.assertIn("local_command_center_3_launcher_contract", {row["api"] for row in desktop["call_ledger"]})
+        self.assertEqual(desktop["counts"]["desktop_launcher_row_count"], launcher["row_count"])
+        self.assertEqual(desktop["counts"]["desktop_launcher_ready"], 1)
+        self.assertTrue(desktop["runtime"]["desktop_launcher_ready"])
+        self.assertEqual(desktop["runtime"]["desktop_launcher_path"], "scripts/start_command_center_3.command")
+        self.assertTrue(desktop["policy"]["desktop_launcher_contract_is_local"])
+        self.assertTrue(desktop["policy"]["desktop_launcher_contract_is_manual_dev_only"])
+        self.assertTrue(desktop["policy"]["desktop_launcher_contract_is_not_production_package"])
+        self.assertTrue(desktop["policy"]["desktop_launcher_contract_does_not_run_from_get_cache"])
         self.assertEqual(desktop["runtime"]["api_health_endpoint"], "http://127.0.0.1:8710/health")
         self.assertFalse(desktop["runtime"]["backend_autostart_configured"])
         self.assertFalse(desktop["runtime"]["production_package_build_attempted"])
@@ -817,7 +855,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(desktop["runtime"]["production_runtime_log_paths_declared"])
         self.assertFalse(desktop["runtime"]["production_runtime_reads_config_values"])
         self.assertFalse(desktop["runtime"]["production_runtime_writes_log_files"])
-        self.assertEqual([row["command"] for row in desktop["dev_launch_plan"][:3]], [
+        self.assertEqual([row["command"] for row in desktop["dev_launch_plan"][:4]], [
+            "scripts/start_command_center_3.command",
             "scripts/dev_server.sh",
             "cd desktop && npm run dev",
             "cd desktop && npm run tauri dev",
@@ -835,6 +874,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(desktop["call_ledger"][0]["api"], "local_desktop_shell_preflight_cache")
         file_labels = {row["label"] for row in desktop["file_rows"]}
         self.assertIn("react_app", file_labels)
+        self.assertIn("command_center_3_launcher", file_labels)
         self.assertIn("tauri_config", file_labels)
         self.assertIn("cargo_toml", file_labels)
         self.assertIn("cargo_lock", file_labels)

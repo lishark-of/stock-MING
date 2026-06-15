@@ -27,6 +27,7 @@ export default function DesktopShellPreflight() {
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const apiBaseInfo = (cache.api_base_info as Record<string, unknown> | undefined) ?? {};
+  const desktopLauncherContract = (cache.desktop_launcher_contract as Record<string, unknown> | undefined) ?? {};
   const tauriBuildArtifact = (cache.tauri_build_artifact as Record<string, unknown> | undefined) ?? {};
   const productionReadiness = (cache.production_readiness as Record<string, unknown> | undefined) ?? {};
   const productionRuntimeContract = (cache.production_runtime_contract as Record<string, unknown> | undefined) ?? {};
@@ -37,6 +38,7 @@ export default function DesktopShellPreflight() {
   const productionPackageReadinessReceipt = (cache.production_package_readiness_receipt as Record<string, unknown> | undefined) ?? {};
   const tauriPackageDurableEvidenceRecipe = (cache.tauri_package_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
   const devLaunchPlan = rows(cache.dev_launch_plan);
+  const desktopLauncherRows = rows(cache.desktop_launcher_rows);
   const productionLaunchPlan = rows(cache.production_launch_plan);
   const productionRuntimeRows = rows(cache.production_runtime_contract_rows);
   const backendOfflineUxRows = rows(cache.backend_offline_ux_rows);
@@ -60,6 +62,8 @@ export default function DesktopShellPreflight() {
           { label: "mode", value: cache.mode as string | undefined },
           { label: "API base", value: String(cache.api_base ?? "--") },
           { label: "API localhost", value: apiBaseInfo.is_localhost === true ? "yes" : "check", tone: apiBaseInfo.is_localhost === true ? "good" : "warn" },
+          { label: "3.0 launcher", value: desktopLauncherContract.status as string | undefined, tone: desktopLauncherContract.status === "local_launcher_ready_dev_only" ? "good" : "warn" },
+          { label: "launcher executable", value: desktopLauncherContract.launcher_executable === true ? "yes" : "check", tone: desktopLauncherContract.launcher_executable === true ? "good" : "warn" },
           { label: "required files", value: `${String(counts.required_file_ready_count ?? 0)} / ${String(counts.required_file_count ?? 0)}` },
           { label: "Node/npm", value: runtime.node_ready === true ? "ready" : "missing", tone: runtime.node_ready === true ? "good" : "warn" },
           { label: "Rust/Cargo", value: runtime.rust_ready === true ? "ready" : "missing", tone: runtime.rust_ready === true ? "good" : "warn" },
@@ -102,6 +106,7 @@ export default function DesktopShellPreflight() {
           <p>不会调用 Tushare、DeepSeek 或 GitHub，不读取 token/key，不执行真实交易，不修改 strategy action。</p>
           <p>Rust/Cargo 缺失只影响 Tauri dev/build；Vite 前端和 FastAPI cache API 仍可继续推进。</p>
           <p>开发模式当前不会自动拉起 FastAPI：先运行 scripts/dev_server.sh，再运行 Vite 或 Tauri dev。</p>
+          <p>3.0 双击入口是 scripts/start_command_center_3.command；只有用户手动运行时才启动本地 FastAPI/Vite。</p>
         </PacketCard>
 
         <PacketCard title="预检策略" subtitle="cache API 永不外联；构建命令必须人工触发" status="policy">
@@ -120,6 +125,20 @@ export default function DesktopShellPreflight() {
 
       <PacketCard title="开发启动顺序" subtitle="手动启动 FastAPI、Vite、Tauri；预检页不执行命令" status="manual">
         <DataLineageTable rows={devLaunchPlan} />
+      </PacketCard>
+
+      <PacketCard title="Command Center 3.0 本地快捷入口" subtitle="手动双击入口；不是 production packaged app" status={String(desktopLauncherContract.status ?? "local_launcher_contract_missing")}>
+        <p>schema_version: {String(desktopLauncherContract.schema_version ?? "command_center_3_local_launcher_contract.v1")}</p>
+        <p>scope: {String(desktopLauncherContract.scope ?? "manual_local_dev_launcher_not_production_package")}</p>
+        <p>launcher_path: {String(desktopLauncherContract.launcher_path ?? "scripts/start_command_center_3.command")}</p>
+        <p>desktop_shortcut_target_name: {String(desktopLauncherContract.desktop_shortcut_target_name ?? "stock-MING Command Center 3.command")}</p>
+        <p>uses_project_venv_first / allows_system_python_only_when_explicit: {String(desktopLauncherContract.uses_project_venv_first ?? false)} / {String(desktopLauncherContract.allows_system_python_only_when_explicit ?? false)}</p>
+        <p>starts_fastapi_when_user_runs / starts_vite_when_user_runs / opens_local_browser_when_user_runs: {String(desktopLauncherContract.starts_fastapi_when_user_runs ?? false)} / {String(desktopLauncherContract.starts_vite_when_user_runs ?? false)} / {String(desktopLauncherContract.opens_local_browser_when_user_runs ?? false)}</p>
+        <p>cache_get_starts_launcher / cache_get_starts_fastapi / cache_get_starts_vite: {String(desktopLauncherContract.cache_get_starts_launcher ?? false)} / {String(desktopLauncherContract.cache_get_starts_fastapi ?? false)} / {String(desktopLauncherContract.cache_get_starts_vite ?? false)}</p>
+        <p>production_package_complete: {String(desktopLauncherContract.production_package_complete ?? false)}</p>
+        <p>external_calls_triggered / tushare_called / deepseek_called / github_called: {String(desktopLauncherContract.external_calls_triggered ?? false)} / {String(desktopLauncherContract.tushare_called ?? false)} / {String(desktopLauncherContract.deepseek_called ?? false)} / {String(desktopLauncherContract.github_called ?? false)}</p>
+        <DataLineageTable rows={desktopLauncherRows} />
+        <DataLineageTable rows={rows(desktopLauncherContract.call_ledger)} />
       </PacketCard>
 
       <PacketCard title="生产打包路线" subtitle="只展示命令顺序；本页不运行 build 或 Tauri" status="manual">
