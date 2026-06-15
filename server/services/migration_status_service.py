@@ -336,6 +336,7 @@ def _build_long_term_goal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     try:
         from server.services import candidate_service
 
@@ -360,7 +361,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             or counts.get("candidate_radar_production_stage_scope_local_evidence_count")
             or 0
         )
-        return [
+        rows.append(
             {
                 "id": "LTG-13",
                 "goal": "下一票雷达快扫生产化",
@@ -391,9 +392,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "can_close_from_observed_row": False,
                 "evidence_boundary": "observed_local_cache_stage_scope_manifest_not_production_completion",
             }
-        ]
+        )
     except Exception:
-        return [
+        rows.append(
             {
                 "id": "LTG-13",
                 "goal": "下一票雷达快扫生产化",
@@ -417,7 +418,85 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "can_close_from_observed_row": False,
                 "evidence_boundary": "observation_failure_is_not_completion",
             }
-        ]
+        )
+    try:
+        from scripts import motion_viewport_qa_contract
+
+        motion_contract = motion_viewport_qa_contract.build_contract()
+        if not isinstance(motion_contract, dict):
+            motion_contract = {}
+        stage_rows = motion_contract.get("motion_production_stage_scope_rows")
+        stage_rows = stage_rows if isinstance(stage_rows, list) else []
+        row_count = int(motion_contract.get("motion_production_stage_scope_count") or len(stage_rows) or 0)
+        pending_count = int(
+            motion_contract.get("motion_production_stage_scope_pending_count")
+            or sum(1 for row in stage_rows if isinstance(row, dict) and row.get("production_motion_complete") is False)
+        )
+        local_evidence_count = sum(
+            1 for row in stage_rows if isinstance(row, dict) and row.get("local_stage_evidence_present") is True
+        )
+        rows.append(
+            {
+                "id": "LTG-14",
+                "goal": "App 动效与可视化清晰度生产化",
+                "stage_scope_manifest": "motion_production_stage_scope_manifest",
+                "status": "observed_in_motion_viewport_static_contract"
+                if stage_rows
+                else "missing_from_motion_viewport_static_contract",
+                "observed_source": "scripts/motion_viewport_qa_contract.build_contract local static contract",
+                "cache_status": str(motion_contract.get("status") or "missing"),
+                "cache_mode": "local_static_contract",
+                "row_count": row_count,
+                "pending_stage_count": pending_count,
+                "local_evidence_stage_count": local_evidence_count,
+                "production_blocker_count": pending_count,
+                "production_motion_complete": motion_contract.get("production_motion_complete") is True,
+                "visual_qa_complete": motion_contract.get("visual_qa_complete") is True,
+                "browser_performance_verified": motion_contract.get("browser_performance_verified") is True,
+                "browser_visual_qa_promoted": False,
+                "browser_performance_promoted": False,
+                "durable_ci_evidence_complete": False,
+                "browser_runner_executed_by_contract": False,
+                "local_artifact_reviewed_for_production": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observed_local_static_motion_stage_scope_not_production_completion",
+            }
+        )
+    except Exception:
+        rows.append(
+            {
+                "id": "LTG-14",
+                "goal": "App 动效与可视化清晰度生产化",
+                "stage_scope_manifest": "motion_production_stage_scope_manifest",
+                "status": "local_observation_failed_safe_fallback",
+                "observed_source": "scripts/motion_viewport_qa_contract.build_contract local static contract",
+                "error_message_safe": "motion_stage_scope_observation_failed",
+                "row_count": 0,
+                "pending_stage_count": 0,
+                "local_evidence_stage_count": 0,
+                "production_blocker_count": 0,
+                "production_motion_complete": False,
+                "visual_qa_complete": False,
+                "browser_performance_verified": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observation_failure_is_not_completion",
+            }
+        )
+    return rows
 
 
 def _merge_ltg_stage_scope_observations(
@@ -799,7 +878,7 @@ def build_migration_status() -> dict[str, Any]:
         ],
         "warnings": [
             "GET /api/migration/status 只读展示用户提供的长期迁移基线；不会重新估算、外联或触发任务。",
-            "LTG stage-scope observed rows 只读取本地 cache 里的阶段清单；它们不是生产完成证据。",
+            "LTG stage-scope observed rows 只读取本地 cache 或静态合同里的阶段清单；它们不是生产完成证据。",
             "14 个长期目标严格关闭数仍为 0/14；scaffold / preflight / mock / matrix / sanitizer / dry-run / local receipt 不能作为生产完成证据。",
             "Tushare / DeepSeek 联动按四层审查：cache/render 安静、POST task 门控、task 内真实 provider/model execution、production promotion ledger；真实执行与生产提升仍需后续显式验收。",
             "进度表用于规划判断，不代表自动完成迁移；后续阶段仍需逐项实现和测试。",

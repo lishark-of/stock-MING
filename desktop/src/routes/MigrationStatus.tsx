@@ -92,7 +92,7 @@ export default function MigrationStatus() {
       />
       <DataLineageTable rows={longTermGoalRows} />
       <h3>LTG stage-scope observed rows</h3>
-      <p className="risk-note">这些 observed rows 只读取本地 cache 里的阶段清单，用来让长期目标总览对齐具体页面证据；它们不是生产完成证据。</p>
+      <p className="risk-note">这些 observed rows 只读取本地 cache 或静态合同里的阶段清单，用来让长期目标总览对齐具体页面证据；它们不是生产完成证据。</p>
       <DataLineageTable rows={ltgStageScopeObservedRows} />
       <h3>Tushare / DeepSeek 联动审查</h3>
       <p className="risk-note">按四层审查：cache/render 安静、POST task 门控、task 内真实 provider/model execution、production promotion ledger；真实执行仍需后续显式验收。</p>

@@ -978,7 +978,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("observed manifests", migration_source)
         self.assertIn("observed pending", migration_source)
         self.assertIn("LTG stage-scope observed rows", migration_source)
-        self.assertIn("这些 observed rows 只读取本地 cache", migration_source)
+        self.assertIn("这些 observed rows 只读取本地 cache 或静态合同", migration_source)
         self.assertIn("tushare_deepseek_linkage_review", migration_source)
         self.assertIn("tushare_deepseek_linkage_rows", migration_source)
         self.assertIn("tushare_deepseek_mode_layer_rows", migration_source)

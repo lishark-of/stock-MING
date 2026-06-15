@@ -125,6 +125,8 @@ Candidate Radar 现在还输出 `candidate_radar_durable_evidence_recipe` 和 ro
 
 Migration Status 现在会从本地 Candidate Radar cache 观察 `candidate_radar_production_stage_scope_manifest`，并以 `ltg_stage_scope_observed_rows` 展示在 14 个长期目标总览中。该观察只读本地 cache，不创建任务、不刷新数据、不调用 Tushare/DeepSeek/GitHub、不执行交易，也不证明 LTG-13 production radar replacement complete。
 
+Migration Status 现在也会从本地静态 motion contract 观察 `motion_production_stage_scope_manifest`，把 LTG-14 的动效生产阶段清单并入 `ltg_stage_scope_observed_rows`。该观察不打开浏览器、不运行 motion runner、不写截图/视频、不读取 GitHub Actions、不调用 Tushare/DeepSeek/GitHub、不修改 packet/action/price/position，也不证明 production motion complete。
+
 Candidate Radar 现在还提供 `POST /api/candidate-radar/deep-scan-local-review`，写入 `deep_scan_local_review_receipt` 和 `deep_scan_local_review_rows`。该任务只做本地候选证据、trigger/invalidation、legacy parity、provider/freshness 缺口和交易隔离审查；它不执行 DeepSeek/model deep research、不刷新 Tushare/provider、不运行 worker deep-scan、不生成买入指令，并继续保持 `deep_scan_done=false`、`provider_backed_acceptance_done=false`、`worker_backed_execution_done=false`、`legacy_retirement_ready=false` 和 `legacy_fallback_required=true`。
 
 Candidate Radar 现在还提供 `POST /api/candidate-radar/worker-execution-request`，写入 `candidate_radar_worker_execution_request_receipt` 和 rows。该任务只把 operator approval、worker recipe scope hash、local full-pool/deep-scan receipts、provider parity scope ticket、可选 quant projection scope ticket 和 future worker routes 绑定成本地 execution-request ticket；它不创建 worker task、不启动 Redis/Celery、不运行 full-pool/deep-scan、不调用 Tushare/DeepSeek/GitHub、不执行交易、不修改 `strategy action`，也不证明 production radar replacement complete。
