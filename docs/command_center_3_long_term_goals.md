@@ -177,7 +177,7 @@ Progress summary as of 2026-06-16: the Command Center 3.0 migration foundation i
 | Dependent retirement goal | 1 | LTG-10 | Streamlit can only exit ordinary workflow after React/Tauri parity and fallback safety are proven. |
 | Later polish goal | 1 | LTG-14 | Motion clarity should continue after core data, worker, desktop, and radar validation are stable. |
 
-Migration Status now includes a read-only `14 LTG acceptance runway` view. It derives each LTG row's priority, completion bucket, completion estimate, observed pending count, next step, and closeability from the existing roadmap/cache payloads so the next P1/P2/P3 acceptance work is visible without rereading the full document. This runway does not create tasks, call providers/models/GitHub, execute trades, mutate actions, or close any LTG; it is a planning and audit surface only.
+Migration Status now includes a read-only `14 LTG acceptance runway` view backed by `GET /api/migration/status` field `ltg_acceptance_runway_rows`. It derives each LTG row's priority, completion bucket, completion estimate, observed pending count, next step, and closeability from the existing roadmap/cache payloads so the next P1/P2/P3 acceptance work is visible without rereading the full document. This runway does not create tasks, call providers/models/GitHub, execute trades, mutate actions, or close any LTG; it is a planning and audit surface only.
 
 Quota guidance while weekly budget is low: do not start broad new development when the remaining weekly quota is around 20%. Prefer final push-gate review, user-confirmed push, and short documentation handoff. Resume P1/P2/P3 validation work after quota resets or when a narrow acceptance run is explicitly requested.
 

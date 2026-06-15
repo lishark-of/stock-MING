@@ -295,6 +295,23 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(migration["long_term_goal_summary"]["goals_with_next_evidence_count"], 14)
         self.assertEqual(migration["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
+        self.assertEqual(len(migration["ltg_acceptance_runway_rows"]), 14)
+        runway_rows = {row["id"]: row for row in migration["ltg_acceptance_runway_rows"]}
+        self.assertIn("P1", runway_rows["LTG-01"]["priority"])
+        self.assertIn("trade_cal freshness", runway_rows["LTG-01"]["priority"])
+        self.assertIn("P2", runway_rows["LTG-02"]["priority"])
+        self.assertIn("P3", runway_rows["LTG-03"]["priority"])
+        self.assertIn("P3", runway_rows["LTG-13"]["priority"])
+        self.assertTrue(all(row["can_close_goal"] is False for row in migration["ltg_acceptance_runway_rows"]))
+        self.assertTrue(all(row["cache_only"] is True for row in migration["ltg_acceptance_runway_rows"]))
+        self.assertTrue(all(row["external_calls_triggered"] is False for row in migration["ltg_acceptance_runway_rows"]))
+        self.assertTrue(all(row["does_not_execute_trades"] is True for row in migration["ltg_acceptance_runway_rows"]))
+        self.assertTrue(
+            all(
+                row["evidence_boundary"] == "acceptance_runway_is_planning_surface_not_production_completion"
+                for row in migration["ltg_acceptance_runway_rows"]
+            )
+        )
         self.assertTrue(all(row["production_complete"] is False for row in migration["long_term_goal_rows"]))
         self.assertTrue(all(row["has_stage_scope_manifest"] is True for row in migration["long_term_goal_rows"]))
         self.assertTrue(
@@ -18307,7 +18324,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 121)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
+        self.assertEqual(len(migration["data"]["ltg_acceptance_runway_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_stage_scope_observed_rows"]), 14)
+        runway_rows = {row["id"]: row for row in migration["data"]["ltg_acceptance_runway_rows"]}
+        self.assertIn("P1", runway_rows["LTG-01"]["priority"])
+        self.assertIn("P2", runway_rows["LTG-02"]["priority"])
+        self.assertIn("P3", runway_rows["LTG-03"]["priority"])
+        self.assertFalse(runway_rows["LTG-01"]["can_close_goal"])
+        self.assertFalse(runway_rows["LTG-02"]["external_calls_triggered"])
+        self.assertFalse(runway_rows["LTG-03"]["tushare_called"])
+        self.assertTrue(runway_rows["LTG-13"]["does_not_modify_strategy_action"])
+        self.assertEqual(
+            runway_rows["LTG-14"]["evidence_boundary"],
+            "acceptance_runway_is_planning_surface_not_production_completion",
+        )
         self.assertTrue(all(row["production_complete"] is False for row in migration["data"]["long_term_goal_rows"]))
         self.assertTrue(all(row["has_stage_scope_manifest"] is True for row in migration["data"]["long_term_goal_rows"]))
         self.assertTrue(

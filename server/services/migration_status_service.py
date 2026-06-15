@@ -273,6 +273,18 @@ TARGET_STACK = [
     "Existing Python quant core reused, not rewritten",
 ]
 
+LTG_NEXT_PRIORITY_ORDER = [
+    "P0 push gate / local status honesty",
+    "P1 LTG-01 trade_cal freshness provider acceptance",
+    "P2 LTG-02 Tushare staged provider samples",
+    "P3 LTG-03/LTG-13 small-pool factor and radar validation",
+    "P4 LTG-05/LTG-06 storage and worker productionization",
+    "P5 LTG-07/LTG-08 DeepSeek and ECharts promotion",
+    "P6 LTG-09 Tauri package",
+    "P7 LTG-10 Streamlit retirement",
+    "P8 LTG-14 motion clarity promotion",
+]
+
 
 def _enrich_long_term_goal_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     enriched_rows: list[dict[str, Any]] = []
@@ -327,19 +339,42 @@ def _build_long_term_goal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "production_acceptance_estimate": "about_25_to_35_percent",
         "bucket_counts": bucket_counts,
         "bucket_meanings": dict(LONG_TERM_GOAL_BUCKETS),
-        "next_priority_order": [
-            "P0 push gate / local status honesty",
-            "P1 LTG-01 trade_cal freshness provider acceptance",
-            "P2 LTG-02 Tushare staged provider samples",
-            "P3 LTG-03/LTG-13 small-pool factor and radar validation",
-            "P4 LTG-05/LTG-06 storage and worker productionization",
-            "P5 LTG-07/LTG-08 DeepSeek and ECharts promotion",
-            "P6 LTG-09 Tauri package",
-            "P7 LTG-10 Streamlit retirement",
-            "P8 LTG-14 motion clarity promotion",
-        ],
+        "next_priority_order": list(LTG_NEXT_PRIORITY_ORDER),
         "no_goal_may_close_from": ["scaffold", "preflight", "mock", "matrix", "sanitizer", "dry_run", "local_receipt"],
     }
+
+
+def _build_ltg_acceptance_runway_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    runway_rows: list[dict[str, Any]] = []
+    for row in rows:
+        goal_id = str(row.get("id") or "")
+        priority = next((item for item in LTG_NEXT_PRIORITY_ORDER if goal_id in item), "ongoing")
+        runway_rows.append(
+            {
+                "id": goal_id,
+                "priority": priority,
+                "goal": row.get("goal"),
+                "bucket": row.get("completion_bucket"),
+                "completion_estimate": row.get("completion_estimate"),
+                "observed_pending": int(row.get("observed_stage_scope_pending_count") or 0),
+                "next_step": row.get("next_step"),
+                "can_close_goal": False,
+                "production_complete": row.get("production_complete") is True,
+                "observed_stage_scope_manifest_status": row.get("observed_stage_scope_manifest_status"),
+                "next_evidence_required_count": int(row.get("next_evidence_required_count") or 0),
+                "source": "long_term_goal_rows_and_ltg_stage_scope_observed_rows",
+                "cache_only": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "evidence_boundary": "acceptance_runway_is_planning_surface_not_production_completion",
+            }
+        )
+    return runway_rows
 
 
 def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
@@ -2435,6 +2470,7 @@ def build_migration_status() -> dict[str, Any]:
         ltg_stage_scope_observed_rows,
     )
     long_term_goal_summary = _build_long_term_goal_summary(long_term_goal_rows)
+    ltg_acceptance_runway_rows = _build_ltg_acceptance_runway_rows(long_term_goal_rows)
     tushare_deepseek_linkage_rows = _build_tushare_deepseek_linkage_rows()
     tushare_deepseek_mode_layer_rows = _build_tushare_deepseek_mode_layer_rows()
     tushare_deepseek_linkage_review = _build_tushare_deepseek_linkage_review(
@@ -2453,6 +2489,7 @@ def build_migration_status() -> dict[str, Any]:
         "progress_baseline": [dict(item) for item in MIGRATION_PROGRESS_BASELINE],
         "long_term_goal_summary": long_term_goal_summary,
         "long_term_goal_rows": long_term_goal_rows,
+        "ltg_acceptance_runway_rows": ltg_acceptance_runway_rows,
         "ltg_stage_scope_observed_rows": ltg_stage_scope_observed_rows,
         "tushare_deepseek_linkage_review": tushare_deepseek_linkage_review,
         "tushare_deepseek_linkage_rows": tushare_deepseek_linkage_rows,

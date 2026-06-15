@@ -39,6 +39,7 @@ export default function MigrationStatus() {
   const linkageReviewReceipt = Object.keys(postLinkageReviewReceipt).length ? postLinkageReviewReceipt : latestTushareDeepseekLinkageReview;
   const linkageReviewRows = postLinkageReviewRows.length ? postLinkageReviewRows : latestLinkageReviewRows;
   const principles = Array.isArray(packet.principles) ? packet.principles : [];
+  const packetAcceptanceRunwayRows = (packet.ltg_acceptance_runway_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const policy = packet.api_policy as Record<string, unknown> | undefined;
   const baselinePolicy = packet.baseline_policy as Record<string, unknown> | undefined;
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
@@ -56,7 +57,7 @@ export default function MigrationStatus() {
           : "迁移原则";
     return { index: index + 1, category, principle: text };
   });
-  const ltgAcceptanceRunwayRows = longTermGoalRows.map((row) => {
+  const localAcceptanceRunwayRows = longTermGoalRows.map((row) => {
     const id = String(row.id ?? "");
     const priorityStep = longTermNextPriority.find((item) => String(item).includes(id));
     return {
@@ -70,6 +71,7 @@ export default function MigrationStatus() {
       can_close_goal: row.production_complete === true || row.observed_stage_scope_can_close_goal === true
     };
   });
+  const ltgAcceptanceRunwayRows = packetAcceptanceRunwayRows.length ? packetAcceptanceRunwayRows : localAcceptanceRunwayRows;
   const refreshMigrationStatus = () => void getMigrationStatus().then((res) => {
     setPacket(res.data);
     setCacheEnvelopeLedger(res.call_ledger ?? []);
