@@ -281,6 +281,13 @@ export function postProducerCacheRefreshExecutionRequest(payload: Record<string,
   });
 }
 
+export function postProducerCacheRefresh(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/data-health/producer-cache-refresh", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getDesktopPreflightCache() {
   return request<Record<string, unknown>>("/api/desktop/preflight-cache");
 }

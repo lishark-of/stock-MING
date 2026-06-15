@@ -40,6 +40,7 @@ CONTRACT_KEYS = [
     "trade_cal_provider_acceptance_next_execution_recipe",
     "latest_trade_cal_provider_acceptance_execution_request",
     "latest_producer_cache_refresh_execution_request",
+    "latest_producer_cache_refresh",
     "latest_tushare_provider_target_sample_execution_request",
     "current_evidence_freshness_qa_contract",
     "current_evidence_decision_surface_audit",
@@ -174,6 +175,7 @@ def _freshness_production_stage_scope_rows() -> list[dict[str, Any]]:
 
 def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
     original_token = os.environ.get("TUSHARE_TOKEN")
+    original_snapshot_path = packet_service.SNAPSHOT_CACHE_PATH
     original_packet_path = packet_service.SQLITE_META_PATH
     original_meta_path = task_service.SQLITE_META_PATH
     original_tushare_task_path = tushare_task_service.SQLITE_META_PATH
@@ -181,6 +183,47 @@ def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
     try:
         with tempfile.TemporaryDirectory(prefix="stock_ming_data_health_contract_") as temp_dir:
             db_path = Path(temp_dir) / "meta.sqlite"
+            snapshot_path = Path(temp_dir) / "command_center_latest.json"
+            now = "2026-06-16T10:02:00"
+            trade_date = "20260615"
+            snapshot_path.write_text(
+                json.dumps(
+                    {
+                        "command_center_decision_packet": {
+                            "status": "ready",
+                            "overall_action": "等待",
+                            "updated_at": now,
+                        },
+                        "command_center_market_packet": {
+                            "status": "ready",
+                            "data_status": "ready",
+                            "trade_date": trade_date,
+                            "summary": "local producer cache refresh contract sample",
+                        },
+                        "radar_scan_status": "completed",
+                        "radar_scan_results": {
+                            "trade_date": trade_date,
+                            "generated_at": now,
+                            "rule_rows": [
+                                {
+                                    "candidate": {"ticker": "300750.SZ", "name": "宁德时代"},
+                                    "score": {"total_score": 82, "battle_state": "等验证"},
+                                }
+                            ],
+                        },
+                        "command_center_moneyflow_packet": {
+                            "status": "ready",
+                            "data_status": "ready",
+                            "trade_date": trade_date,
+                            "summary": "local producer cache refresh contract sample",
+                        },
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            packet_service.SNAPSHOT_CACHE_PATH = snapshot_path
             packet_service.SQLITE_META_PATH = db_path
             task_service.SQLITE_META_PATH = db_path
             tushare_task_service.SQLITE_META_PATH = db_path
@@ -289,6 +332,27 @@ def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
                 }
             )
             latest_after_target_sample_execution_request_cache = data_health_service.read_data_health_timeline_cache()
+            producer_ready_cache = data_health_service.read_data_health_timeline_cache()
+            producer_readiness = _get(producer_ready_cache, "current_evidence_producer_cache_refresh_readiness")
+            producer_execution_request = data_health_service.run_producer_cache_refresh_execution_request(
+                {
+                    "approved_by_user": True,
+                    "readiness_scope_hash_short": producer_readiness.get("readiness_scope_hash_short"),
+                    "producer_keys": producer_readiness.get("producer_keys"),
+                    "requested_by": "contract",
+                    "token": "SHOULD_DROP",
+                }
+            )
+            producer_refresh = data_health_service.run_producer_cache_refresh(
+                {
+                    "approved_by_user": True,
+                    "readiness_scope_hash_short": producer_readiness.get("readiness_scope_hash_short"),
+                    "producer_keys": producer_readiness.get("producer_keys"),
+                    "requested_by": "contract",
+                    "token": "SHOULD_DROP",
+                }
+            )
+            latest_after_producer_refresh_cache = data_health_service.read_data_health_timeline_cache()
 
             missing_approval = data_health_service.run_trade_cal_provider_acceptance_dry_run(
                 {
@@ -333,6 +397,9 @@ def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
                 "latest_after_target_sample_execution_request_cache": (
                     latest_after_target_sample_execution_request_cache
                 ),
+                "producer_execution_request": producer_execution_request,
+                "producer_refresh": producer_refresh,
+                "latest_after_producer_refresh_cache": latest_after_producer_refresh_cache,
                 "_fake_token": {"value": fake_token},
             }
     finally:
@@ -341,6 +408,7 @@ def _run_trade_cal_dry_run_contract_cases() -> dict[str, dict[str, Any]]:
         else:
             os.environ["TUSHARE_TOKEN"] = original_token
         task_service.clear_task_statuses_for_tests(clear_persisted=False)
+        packet_service.SNAPSHOT_CACHE_PATH = original_snapshot_path
         packet_service.SQLITE_META_PATH = original_packet_path
         task_service.SQLITE_META_PATH = original_meta_path
         tushare_task_service.SQLITE_META_PATH = original_tushare_task_path
@@ -459,6 +527,9 @@ def build_contract() -> dict[str, Any]:
             "latest_after_target_sample_execution_request_cache": (
                 latest_after_target_sample_execution_request_cache
             ),
+            "producer_execution_request": dry_run_cases.get("producer_execution_request"),
+            "producer_refresh": dry_run_cases.get("producer_refresh"),
+            "latest_after_producer_refresh_cache": dry_run_cases.get("latest_after_producer_refresh_cache"),
         }
     )
     fake_token = str(_as_dict(dry_run_cases.get("_fake_token")).get("value") or "")
@@ -498,6 +569,30 @@ def build_contract() -> dict[str, Any]:
         for row in _as_list(packet.get("latest_producer_cache_refresh_execution_request_rows"))
         if isinstance(row, dict)
     ]
+    latest_producer_cache_refresh = _get(packet, "latest_producer_cache_refresh")
+    latest_producer_cache_refresh_rows = [
+        row
+        for row in _as_list(packet.get("latest_producer_cache_refresh_rows"))
+        if isinstance(row, dict)
+    ]
+    producer_refresh = _as_dict(dry_run_cases.get("producer_refresh"))
+    producer_refresh_payload = _as_dict(producer_refresh.get("payload_safe"))
+    producer_refresh_receipt = _as_dict(producer_refresh_payload.get("producer_cache_refresh_receipt"))
+    producer_refresh_rows = [
+        row
+        for row in _as_list(producer_refresh_payload.get("producer_cache_refresh_rows"))
+        if isinstance(row, dict)
+    ]
+    producer_refresh_ledger = [_as_dict(row) for row in _as_list(producer_refresh.get("call_ledger"))]
+    latest_after_producer_refresh_cache = _as_dict(dry_run_cases.get("latest_after_producer_refresh_cache"))
+    latest_after_producer_refresh = _get(latest_after_producer_refresh_cache, "latest_producer_cache_refresh")
+    latest_after_producer_refresh_rows = [
+        row
+        for row in _as_list(latest_after_producer_refresh_cache.get("latest_producer_cache_refresh_rows"))
+        if isinstance(row, dict)
+    ]
+    latest_after_producer_refresh_counts = _get(latest_after_producer_refresh_cache, "counts")
+    latest_after_producer_refresh_policy = _get(latest_after_producer_refresh_cache, "policy")
     policy = _get(packet, "policy")
     counts = _get(packet, "counts")
     production_stage_scope_rows = _freshness_production_stage_scope_rows()
@@ -1460,6 +1555,105 @@ def build_contract() -> dict[str, Any]:
             and policy.get("latest_producer_cache_refresh_execution_request_is_not_cache_refresh") is True
             and policy.get("latest_producer_cache_refresh_execution_request_is_not_provider_acceptance") is True,
             "Latest producer cache-refresh execution-request lookup must remain cache-only task metadata replay: no task creation, no cache write, no provider/model/GitHub call, and no production freshness promotion.",
+        ),
+        _row(
+            "producer_cache_refresh_lookup_is_local_no_get_write",
+            latest_producer_cache_refresh.get("schema_version")
+            == "data_health_latest_producer_cache_refresh.v1"
+            and latest_producer_cache_refresh.get("scope")
+            == "local_task_status_lookup_no_cache_write_no_provider_execution"
+            and latest_producer_cache_refresh.get("status")
+            in {"no_producer_cache_refresh_task_found", "latest_producer_cache_refresh_visible"}
+            and latest_producer_cache_refresh.get("cache_get_creates_task") is False
+            and latest_producer_cache_refresh.get("cache_get_writes_snapshot_cache") is False
+            and latest_producer_cache_refresh.get("cache_get_writes_local_sqlite_packets") is False
+            and latest_producer_cache_refresh.get("cache_get_external_calls") is False
+            and latest_producer_cache_refresh.get("does_not_refresh_provider") is True
+            and latest_producer_cache_refresh.get("provider_backed_long_window_acceptance_done") is False
+            and latest_producer_cache_refresh.get("production_freshness_gate_complete") is False
+            and _flag_false(
+                latest_producer_cache_refresh,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and all(row.get("writes_snapshot_cache") is False for row in latest_producer_cache_refresh_rows)
+            and all(row.get("external_calls_triggered") is False for row in latest_producer_cache_refresh_rows)
+            and all(row.get("tushare_called") is False for row in latest_producer_cache_refresh_rows)
+            and all(row.get("deepseek_called") is False for row in latest_producer_cache_refresh_rows)
+            and all(row.get("github_called") is False for row in latest_producer_cache_refresh_rows)
+            and policy.get("latest_producer_cache_refresh_lookup_is_local") is True
+            and policy.get("latest_producer_cache_refresh_lookup_creates_task") is False
+            and policy.get("latest_producer_cache_refresh_lookup_writes_snapshot_cache") is False
+            and policy.get("latest_producer_cache_refresh_lookup_writes_local_sqlite_packets") is False
+            and policy.get("latest_producer_cache_refresh_lookup_calls_provider") is False
+            and policy.get("producer_cache_refresh_route_is_button_gated") is True
+            and policy.get("producer_cache_refresh_route_requires_execution_request") is True
+            and policy.get("producer_cache_refresh_route_calls_provider") is False
+            and policy.get("producer_cache_refresh_route_writes_parquet") is False
+            and policy.get("producer_cache_refresh_route_is_not_provider_acceptance") is True,
+            "Latest producer cache-refresh lookup must be GET-only metadata replay. The POST route may write local SQLite packets, but cache GET must not write, call providers, or promote production freshness.",
+        ),
+        _row(
+            "producer_cache_refresh_task_writes_local_sqlite_only",
+            producer_refresh_receipt.get("schema_version")
+            == "data_health_current_evidence_producer_cache_refresh.v1"
+            and producer_refresh_receipt.get("status")
+            == "producer_cache_refresh_completed_local_sqlite_only"
+            and producer_refresh_receipt.get("route") == "POST /api/data-health/producer-cache-refresh"
+            and producer_refresh_receipt.get("local_cache_refresh_executed") is True
+            and producer_refresh_receipt.get("writes_snapshot_cache") is False
+            and producer_refresh_receipt.get("writes_local_sqlite_packets") is True
+            and int(producer_refresh_receipt.get("local_sqlite_packet_write_count") or 0) == 3
+            and set(_as_list(producer_refresh_receipt.get("written_packet_keys")))
+            == {
+                "command_center_3_candidate_radar_cache",
+                "command_center_evidence_radar_packet",
+                "market_packet",
+            }
+            and producer_refresh_receipt.get("does_not_refresh_provider") is True
+            and producer_refresh_receipt.get("provider_backed_long_window_acceptance_done") is False
+            and producer_refresh_receipt.get("production_freshness_gate_complete") is False
+            and _flag_false(
+                producer_refresh_receipt,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "credential_values_read",
+                "credential_values_exposed",
+                "env_key_names_included",
+            )
+            and all(row.get("writes_snapshot_cache") is False for row in producer_refresh_rows)
+            and all(row.get("external_calls_triggered") is False for row in producer_refresh_rows)
+            and all(row.get("tushare_called") is False for row in producer_refresh_rows)
+            and all(row.get("deepseek_called") is False for row in producer_refresh_rows)
+            and all(row.get("github_called") is False for row in producer_refresh_rows)
+            and all(row.get("external_calls_triggered") is False for row in producer_refresh_ledger)
+            and all(row.get("tushare_called") is False for row in producer_refresh_ledger)
+            and all(row.get("deepseek_called") is False for row in producer_refresh_ledger)
+            and all(row.get("github_called") is False for row in producer_refresh_ledger)
+            and latest_after_producer_refresh.get("status") == "latest_producer_cache_refresh_visible"
+            and latest_after_producer_refresh.get("refresh_status")
+            == "producer_cache_refresh_completed_local_sqlite_only"
+            and latest_after_producer_refresh.get("local_cache_refresh_executed") is True
+            and latest_after_producer_refresh.get("cache_get_writes_local_sqlite_packets") is False
+            and latest_after_producer_refresh.get("writes_local_sqlite_packets") is True
+            and int(latest_after_producer_refresh.get("local_sqlite_packet_write_count") or 0) == 3
+            and int(latest_after_producer_refresh_counts.get("current_evidence_producer_cache_refresh_required_count") or 0)
+            == 0
+            and latest_after_producer_refresh_policy.get("latest_producer_cache_refresh_lookup_writes_local_sqlite_packets")
+            is False
+            and latest_after_producer_refresh_policy.get("producer_cache_refresh_route_calls_provider") is False
+            and all(row.get("writes_snapshot_cache") is False for row in latest_after_producer_refresh_rows)
+            and all(row.get("external_calls_triggered") is False for row in latest_after_producer_refresh_rows)
+            and all(row.get("tushare_called") is False for row in latest_after_producer_refresh_rows)
+            and all(row.get("deepseek_called") is False for row in latest_after_producer_refresh_rows)
+            and all(row.get("github_called") is False for row in latest_after_producer_refresh_rows)
+            and fake_token not in dry_run_serialized
+            and "SHOULD_DROP" not in dry_run_serialized,
+            "Explicit producer cache refresh must require the request ticket, write only three local SQLite producer packets, become visible through GET metadata replay, and keep provider/model/GitHub/trade/action/secret boundaries closed.",
         ),
         _row(
             "freshness_production_stage_scope_manifest_is_complete_and_pending",

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   getDataHealthCache,
+  postProducerCacheRefresh,
   postProducerCacheRefreshExecutionRequest,
   postTradeCalProviderAcceptanceDryRun,
   postTradeCalProviderAcceptanceExecutionRequest,
@@ -31,6 +32,8 @@ export default function DataHealthTimeline() {
   const [tradeCalExecutionRequestError, setTradeCalExecutionRequestError] = useState("");
   const [producerCacheRefreshRequestReceipt, setProducerCacheRefreshRequestReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [producerCacheRefreshRequestError, setProducerCacheRefreshRequestError] = useState("");
+  const [producerCacheRefreshReceipt, setProducerCacheRefreshReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [producerCacheRefreshError, setProducerCacheRefreshError] = useState("");
 
   useEffect(() => {
     void getDataHealthCache().then((res) => {
@@ -105,6 +108,25 @@ export default function DataHealthTimeline() {
     });
   }
 
+  function launchProducerCacheRefresh() {
+    const scopeHash = String(producerCacheRefreshRequest.requested_scope_hash_short ?? producerCacheRefreshReadiness.readiness_scope_hash_short ?? "");
+    setProducerCacheRefreshError("");
+    void postProducerCacheRefresh({
+      approved_by_user: true,
+      readiness_scope_hash_short: scopeHash,
+      producer_keys: producerCacheRefreshReadiness.producer_keys ?? ["candidate_radar", "a_share_evidence_radar", "market_context"],
+      requested_by: "command_center_3_data_health",
+      source: "data_health_page"
+    }).then((res) => {
+      setProducerCacheRefreshReceipt(res);
+      if (!res.ok) {
+        setProducerCacheRefreshError(String(res.error ?? "producer_cache_refresh_failed"));
+      }
+    }).catch((err: unknown) => {
+      setProducerCacheRefreshError(err instanceof Error ? err.message : String(err));
+    });
+  }
+
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const visibility = (cache.data_health_visibility_summary as Record<string, unknown> | undefined) ?? {};
@@ -135,6 +157,12 @@ export default function DataHealthTimeline() {
   const postProducerCacheRefreshRequestReceipt = producerCacheRefreshRequestPayload.producer_cache_refresh_execution_request_receipt as Record<string, unknown> | undefined;
   const producerCacheRefreshRequest = postProducerCacheRefreshRequestReceipt ?? latestProducerCacheRefreshRequestReceipt ?? latestProducerCacheRefreshRequest;
   const producerCacheRefreshRequestRows = rows(producerCacheRefreshRequestPayload.producer_cache_refresh_execution_request_rows ?? cache.latest_producer_cache_refresh_execution_request_rows);
+  const latestProducerCacheRefresh = (cache.latest_producer_cache_refresh as Record<string, unknown> | undefined) ?? {};
+  const latestProducerCacheRefreshReceipt = latestProducerCacheRefresh.receipt as Record<string, unknown> | undefined;
+  const producerCacheRefreshPayload = (producerCacheRefreshReceipt?.data?.task?.payload_safe as Record<string, unknown> | undefined) ?? {};
+  const postProducerCacheRefreshReceipt = producerCacheRefreshPayload.producer_cache_refresh_receipt as Record<string, unknown> | undefined;
+  const producerCacheRefresh = postProducerCacheRefreshReceipt ?? latestProducerCacheRefreshReceipt ?? latestProducerCacheRefresh;
+  const producerCacheRefreshRows = rows(producerCacheRefreshPayload.producer_cache_refresh_rows ?? cache.latest_producer_cache_refresh_rows);
   const tradeCalDryRunPayload = (tradeCalDryRunReceipt?.data?.task?.payload_safe as Record<string, unknown> | undefined) ?? {};
   const postTradeCalDryRunReceipt = tradeCalDryRunPayload.trade_cal_provider_acceptance_dry_run_receipt as Record<string, unknown> | undefined;
   const tradeCalDryRun = postTradeCalDryRunReceipt ?? latestTradeCalDryRunReceipt ?? latestTradeCalDryRun;
@@ -207,6 +235,8 @@ export default function DataHealthTimeline() {
           { label: "refresh required", value: counts.current_evidence_producer_cache_refresh_required_count as number | undefined },
           { label: "refresh request", value: latestProducerCacheRefreshRequest.latest_task_found === true ? "可见" : "未运行", tone: latestProducerCacheRefreshRequest.latest_task_found === true ? "good" : "neutral" },
           { label: "request blockers", value: counts.latest_producer_cache_refresh_execution_request_blocking_row_count as number | undefined, tone: Number(counts.latest_producer_cache_refresh_execution_request_blocking_row_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "local refresh", value: latestProducerCacheRefresh.latest_task_found === true ? "可见" : "未运行", tone: latestProducerCacheRefresh.local_cache_refresh_executed === true ? "good" : "neutral" },
+          { label: "written packets", value: counts.latest_producer_cache_refresh_written_packet_count as number | undefined },
           { label: "样本类型", value: freshnessSample.fixture_is_synthetic === true ? "fixture" : "unknown", tone: freshnessSample.fixture_is_synthetic === true ? "warn" : "neutral" },
           { label: "stale 边界", value: freshnessAcceptance.stale_expired_historical_unknown_are_research_only === true ? "research-only" : "需检查", tone: freshnessAcceptance.stale_expired_historical_unknown_are_research_only === true ? "good" : "bad" },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
@@ -282,9 +312,10 @@ export default function DataHealthTimeline() {
         <DataLineageTable rows={rows(cache.current_evidence_producer_generation_rows)} />
       </PacketCard>
 
-      <PacketCard title="Producer cache refresh 请求 ticket" subtitle="按钮生成本地 execution-request；绑定 readiness hash，不写 cache、不创建刷新任务" status={String(producerCacheRefreshRequest.status ?? producerCacheRefreshRequest.execution_request_status ?? "not_run")}>
+      <PacketCard title="Producer cache refresh" subtitle="两步按钮门控：先绑定 execution-request，再本地写 SQLite producer packets" status={String(producerCacheRefresh.status ?? producerCacheRefreshRequest.status ?? producerCacheRefreshRequest.execution_request_status ?? "not_run")}>
         <div className="actions">
           <button onClick={launchProducerCacheRefreshExecutionRequest}>生成 producer refresh 请求 ticket</button>
+          <button onClick={launchProducerCacheRefresh}>执行本地 producer refresh</button>
         </div>
         <p>readiness status: {String(producerCacheRefreshReadiness.status ?? "--")}</p>
         <p>readiness scope hash: {String(producerCacheRefreshReadiness.readiness_scope_hash_short ?? "--")}</p>
@@ -293,17 +324,26 @@ export default function DataHealthTimeline() {
         <p>scope_hash_matches_readiness: {String(producerCacheRefreshRequest.scope_hash_matches_readiness === true)}</p>
         <p>ready_for_manual_local_refresh_task_submission: {String(producerCacheRefreshRequest.ready_for_manual_local_refresh_task_submission === true)}</p>
         <p>writes_snapshot_cache / creates_task / executes_local_refresh: {String(producerCacheRefreshRequest.writes_snapshot_cache ?? false)} / {String(producerCacheRefreshRequest.creates_task ?? false)} / {String(producerCacheRefreshRequest.executes_local_refresh ?? false)}</p>
+        <p>local refresh status: {String(producerCacheRefresh.status ?? producerCacheRefresh.refresh_status ?? "not_run")}</p>
+        <p>local_cache_refresh_executed / local_sqlite_packet_write_count: {String(producerCacheRefresh.local_cache_refresh_executed ?? false)} / {String(producerCacheRefresh.local_sqlite_packet_write_count ?? 0)}</p>
+        <p>written_packet_keys: {Array.isArray(producerCacheRefresh.written_packet_keys) ? producerCacheRefresh.written_packet_keys.join(", ") : "--"}</p>
+        <p>refresh writes_snapshot_cache / writes_local_sqlite_packets: {String(producerCacheRefresh.writes_snapshot_cache ?? false)} / {String(producerCacheRefresh.writes_local_sqlite_packets ?? false)}</p>
         <p>tushare_called / deepseek_called / github_called: {String(producerCacheRefreshRequest.tushare_called ?? false)} / {String(producerCacheRefreshRequest.deepseek_called ?? false)} / {String(producerCacheRefreshRequest.github_called ?? false)}</p>
         <p>provider_backed_long_window_acceptance_done / production_freshness_gate_complete: {String(producerCacheRefreshRequest.provider_backed_long_window_acceptance_done ?? false)} / {String(producerCacheRefreshRequest.production_freshness_gate_complete ?? false)}</p>
         <p>allowed_next_step: {String(producerCacheRefreshRequest.allowed_next_step ?? "--")}</p>
-        <p>GET cache 只读取 latest request metadata；该 ticket 不刷新当前 cache、不构建缺失 packet、不证明 provider-backed freshness。</p>
+        <p>GET cache 只读取 latest request / refresh metadata；local refresh 只写本地 SQLite producer packets，不调用 provider，不证明 provider-backed freshness。</p>
         {producerCacheRefreshRequestError ? <p className="risk-note">{producerCacheRefreshRequestError}</p> : null}
+        {producerCacheRefreshError ? <p className="risk-note">{producerCacheRefreshError}</p> : null}
         <TaskLaunchReceipt receipt={producerCacheRefreshRequestReceipt} />
+        <TaskLaunchReceipt receipt={producerCacheRefreshReceipt} />
         <DataLineageTable rows={objectRow(producerCacheRefreshReadiness)} />
         <DataLineageTable rows={rows(cache.current_evidence_producer_cache_refresh_rows)} />
         <DataLineageTable rows={objectRow(producerCacheRefreshRequest)} />
         <DataLineageTable rows={producerCacheRefreshRequestRows} />
+        <DataLineageTable rows={objectRow(producerCacheRefresh)} />
+        <DataLineageTable rows={producerCacheRefreshRows} />
         <JsonDetails title="latest producer cache refresh execution request raw" data={latestProducerCacheRefreshRequest} />
+        <JsonDetails title="latest producer cache refresh raw" data={latestProducerCacheRefresh} />
       </PacketCard>
 
       <PacketCard title="Trade_cal 本地文件验收" subtitle="只读已有 Parquet/DuckDB cache；不是页面启动外联" status={String(tradeCalPhysical.status ?? "local_trade_cal_validation")}>

@@ -24,7 +24,7 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "A 股交易日历级 freshness 生产化",
         "completion_bucket": "real_validation_required",
         "completion_estimate": "45%-55%",
-        "current_state": "freshness gate MVP, local matrix, synthetic long-window replay, local trade_cal artifact audit, provider-acceptance runbook, dry-run scope ticket path, bound execution-request ticket, next execution recipe, and durable evidence recipe exist.",
+        "current_state": "freshness gate MVP, local matrix, synthetic long-window replay, local trade_cal artifact audit, provider-acceptance runbook, dry-run scope ticket path, bound execution-request ticket, local SQLite-only producer cache refresh task, next execution recipe, and durable evidence recipe exist.",
         "not_complete_because": "provider-backed long-window trade_cal acceptance and promotion evidence are still pending.",
         "next_step": "Run the dry-run scope ticket, generate a bound execution-request ticket, then execute an explicit provider-backed trade_cal acceptance task when approved and promote only with safe call-ledger and freshness replay evidence.",
         "production_complete": False,
