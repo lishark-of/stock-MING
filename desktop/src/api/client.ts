@@ -539,3 +539,10 @@ export function runWorkerProductionEvidencePlan(payload: Record<string, unknown>
     body: JSON.stringify(payload)
   });
 }
+
+export function runWorkerRuntimeQaExecutionRequest(payload: Record<string, unknown> = {}) {
+  return request<Record<string, unknown>>("/api/worker/runtime-qa-execution-request", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}

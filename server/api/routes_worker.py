@@ -33,3 +33,9 @@ def run_worker_activation_review(payload: dict[str, Any] | None = None) -> dict:
 def run_worker_production_evidence_plan(payload: dict[str, Any] | None = None) -> dict:
     packet = worker_service.run_worker_production_evidence_plan(payload or {})
     return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
+
+
+@router.post("/runtime-qa-execution-request")
+def run_worker_runtime_qa_execution_request(payload: dict[str, Any] | None = None) -> dict:
+    packet = worker_service.run_worker_runtime_qa_execution_request(payload or {})
+    return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))

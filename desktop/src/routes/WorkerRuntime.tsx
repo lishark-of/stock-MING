@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { getWorkerRuntimeCache, runWorkerActivationReview, runWorkerProductionEvidencePlan, runWorkerSyntheticHealthcheck } from "../api/client";
+import {
+  getWorkerRuntimeCache,
+  runWorkerActivationReview,
+  runWorkerProductionEvidencePlan,
+  runWorkerRuntimeQaExecutionRequest,
+  runWorkerSyntheticHealthcheck
+} from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -23,6 +29,9 @@ export default function WorkerRuntime() {
   const [productionEvidencePlanResult, setProductionEvidencePlanResult] = useState<Record<string, unknown>>({});
   const [productionEvidencePlanRunning, setProductionEvidencePlanRunning] = useState(false);
   const [productionEvidencePlanError, setProductionEvidencePlanError] = useState("");
+  const [runtimeQaExecutionRequestResult, setRuntimeQaExecutionRequestResult] = useState<Record<string, unknown>>({});
+  const [runtimeQaExecutionRequestRunning, setRuntimeQaExecutionRequestRunning] = useState(false);
+  const [runtimeQaExecutionRequestError, setRuntimeQaExecutionRequestError] = useState("");
 
   const refreshCache = () => {
     return getWorkerRuntimeCache().then((res) => {
@@ -118,6 +127,12 @@ export default function WorkerRuntime() {
   const workerRuntimeQaExecutionRows =
     (productionReadiness.worker_runtime_qa_execution_recipe_rows as Array<Record<string, unknown>> | undefined) ??
     ((cache.worker_runtime_qa_execution_recipe_rows as Array<Record<string, unknown>> | undefined) ?? []);
+  const workerRuntimeQaExecutionRequest =
+    (productionReadiness.worker_runtime_qa_execution_request_receipt as Record<string, unknown> | undefined) ??
+    ((cache.worker_runtime_qa_execution_request_receipt as Record<string, unknown> | undefined) ?? {});
+  const workerRuntimeQaExecutionRequestRows =
+    (productionReadiness.worker_runtime_qa_execution_request_rows as Array<Record<string, unknown>> | undefined) ??
+    ((cache.worker_runtime_qa_execution_request_rows as Array<Record<string, unknown>> | undefined) ?? []);
   const workerRuntimeDurableEvidenceRecipe =
     (productionReadiness.worker_runtime_durable_evidence_recipe as Record<string, unknown> | undefined) ??
     ((cache.worker_runtime_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {});
@@ -131,6 +146,25 @@ export default function WorkerRuntime() {
   const visibleProductionEvidencePlan = Object.keys(productionEvidencePlanResult).length
     ? ((productionEvidencePlanResult.worker_production_evidence_plan_receipt as Record<string, unknown> | undefined) ?? productionEvidencePlanResult)
     : workerProductionEvidencePlanReceipt;
+  const visibleRuntimeQaExecutionRequest = Object.keys(runtimeQaExecutionRequestResult).length
+    ? ((runtimeQaExecutionRequestResult.worker_runtime_qa_execution_request_receipt as Record<string, unknown> | undefined) ?? runtimeQaExecutionRequestResult)
+    : workerRuntimeQaExecutionRequest;
+  const launchRuntimeQaExecutionRequest = () => {
+    setRuntimeQaExecutionRequestRunning(true);
+    setRuntimeQaExecutionRequestError("");
+    void runWorkerRuntimeQaExecutionRequest({
+      requested_from: "worker_runtime_page",
+      operator_approved: true,
+      evidence_plan_scope_hash: String(visibleProductionEvidencePlan.scope_ticket_sha256 ?? ""),
+      runtime_qa_scope_hash: String(workerRuntimeQaExecutionRecipe.runtime_qa_scope_hash ?? "")
+    })
+      .then((res) => {
+        setRuntimeQaExecutionRequestResult(res.data);
+        return refreshCache();
+      })
+      .catch((err: unknown) => setRuntimeQaExecutionRequestError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setRuntimeQaExecutionRequestRunning(false));
+  };
   const workerPacketEvidenceRows = [
     {
       packet: "synthetic_healthcheck",
@@ -184,6 +218,25 @@ export default function WorkerRuntime() {
         cache.worker_production_evidence_plan_source_packet_present ??
         false,
       cache_get_initializes_meta_store: workerProductionEvidencePlanReceipt.cache_get_initializes_meta_store ?? false,
+      worker_started: false,
+      redis_pinged: false,
+      task_dispatched_by_get: false,
+      external_calls_triggered: false
+    },
+    {
+      packet: "runtime_qa_execution_request",
+      route: "POST /api/worker/runtime-qa-execution-request",
+      source_packet_read_status:
+        workerRuntimeQaExecutionRequest.source_packet_read_status ??
+        productionReadiness.worker_runtime_qa_execution_request_source_packet_read_status ??
+        cache.worker_runtime_qa_execution_request_source_packet_read_status ??
+        "meta_missing",
+      source_packet_present:
+        workerRuntimeQaExecutionRequest.source_packet_present ??
+        productionReadiness.worker_runtime_qa_execution_request_source_packet_present ??
+        cache.worker_runtime_qa_execution_request_source_packet_present ??
+        false,
+      cache_get_initializes_meta_store: workerRuntimeQaExecutionRequest.cache_get_initializes_meta_store ?? false,
       worker_started: false,
       redis_pinged: false,
       task_dispatched_by_get: false,
@@ -247,6 +300,7 @@ export default function WorkerRuntime() {
           { label: "review task blockers", value: visibleActivationReview.production_blocker_count ?? counts.worker_activation_review_task_production_blocker_count, tone: Number(visibleActivationReview.production_blocker_count ?? counts.worker_activation_review_task_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "evidence plan", value: visibleProductionEvidencePlan.evidence_plan_ready === true ? "ready" : "pending", tone: visibleProductionEvidencePlan.evidence_plan_ready === true ? "good" : "warn" },
           { label: "runtime QA gaps", value: visibleProductionEvidencePlan.production_blocker_count ?? counts.worker_production_evidence_plan_production_blocker_count, tone: Number(visibleProductionEvidencePlan.production_blocker_count ?? counts.worker_production_evidence_plan_production_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "runtime request", value: visibleRuntimeQaExecutionRequest.local_execution_request_ready === true ? "ready" : "pending", tone: visibleRuntimeQaExecutionRequest.local_execution_request_ready === true ? "good" : "warn" },
           { label: "runtime recipe", value: String(workerRuntimeQaExecutionRecipe.status ?? "missing"), tone: workerRuntimeQaExecutionRecipe.local_recipe_ready === true ? "good" : "warn" },
           { label: "runtime phases", value: counts.worker_runtime_qa_execution_recipe_pending_phase_count ?? workerRuntimeQaExecutionRecipe.pending_phase_count ?? workerRuntimeQaExecutionRows.length, tone: Number(counts.worker_runtime_qa_execution_recipe_pending_phase_count ?? workerRuntimeQaExecutionRecipe.pending_phase_count ?? workerRuntimeQaExecutionRows.length) > 0 ? "warn" : "good" },
           { label: "durable evidence", value: String(workerRuntimeDurableEvidenceRecipe.status ?? "missing"), tone: workerRuntimeDurableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
@@ -373,8 +427,8 @@ export default function WorkerRuntime() {
       </PacketCard>
 
       <PacketCard title="Worker persisted packet evidence" subtitle="只读展示显式 POST 证据包读取状态；证据缺失时不初始化 SQLite meta" status="packet_reader_no_init">
-        <p>synthetic / activation / evidence plan source: {String(workerPacketEvidenceRows[0].source_packet_read_status)} / {String(workerPacketEvidenceRows[1].source_packet_read_status)} / {String(workerPacketEvidenceRows[2].source_packet_read_status)}</p>
-        <p>source_packet_present: {String(workerPacketEvidenceRows[0].source_packet_present)} / {String(workerPacketEvidenceRows[1].source_packet_present)} / {String(workerPacketEvidenceRows[2].source_packet_present)}</p>
+        <p>synthetic / activation / evidence plan / request source: {String(workerPacketEvidenceRows[0].source_packet_read_status)} / {String(workerPacketEvidenceRows[1].source_packet_read_status)} / {String(workerPacketEvidenceRows[2].source_packet_read_status)} / {String(workerPacketEvidenceRows[3].source_packet_read_status)}</p>
+        <p>source_packet_present: {String(workerPacketEvidenceRows[0].source_packet_present)} / {String(workerPacketEvidenceRows[1].source_packet_present)} / {String(workerPacketEvidenceRows[2].source_packet_present)} / {String(workerPacketEvidenceRows[3].source_packet_present)}</p>
         <p>这张表只说明 cache 读取显式 POST 留下的 packet，不启动 worker、不 ping Redis、不派发任务、不调用 Tushare/DeepSeek/GitHub。</p>
         <DataLineageTable rows={workerPacketEvidenceRows} />
       </PacketCard>
@@ -455,9 +509,43 @@ export default function WorkerRuntime() {
         <DataLineageTable rows={rows(productionReadiness.worker_production_evidence_plan_rows ?? cache.worker_production_evidence_plan_rows ?? visibleProductionEvidencePlan.rows)} />
       </PacketCard>
 
+      <PacketCard title="Worker runtime QA execution request" subtitle="POST /api/worker/runtime-qa-execution-request：绑定 evidence plan 与 runtime recipe scope；不启动进程" status={String(visibleRuntimeQaExecutionRequest.status ?? "worker_runtime_qa_execution_request_missing")}>
+        <div className="actions">
+          <button
+            onClick={launchRuntimeQaExecutionRequest}
+            disabled={
+              runtimeQaExecutionRequestRunning ||
+              productionEvidencePlanRunning ||
+              activationReviewRunning ||
+              healthcheckRunning ||
+              !visibleProductionEvidencePlan.scope_ticket_sha256 ||
+              !workerRuntimeQaExecutionRecipe.runtime_qa_scope_hash
+            }
+          >
+            {runtimeQaExecutionRequestRunning ? "生成中" : "生成 runtime QA request"}
+          </button>
+        </div>
+        {runtimeQaExecutionRequestError ? <p className="risk-note">runtime_qa_execution_request_error: {runtimeQaExecutionRequestError}</p> : null}
+        <p>schema_version: {String(visibleRuntimeQaExecutionRequest.schema_version ?? "worker_runtime_qa_execution_request_receipt.v1")}</p>
+        <p>scope: {String(visibleRuntimeQaExecutionRequest.scope ?? "button_gated_worker_runtime_qa_execution_request_no_process_start")}</p>
+        <p>explicit_execution_request_done / operator_approved: {String(visibleRuntimeQaExecutionRequest.explicit_execution_request_done === true)} / {String(visibleRuntimeQaExecutionRequest.operator_approved === true)}</p>
+        <p>local_execution_request_ready / ready_for_manual_runtime_qa_task_submission: {String(visibleRuntimeQaExecutionRequest.local_execution_request_ready === true)} / {String(visibleRuntimeQaExecutionRequest.ready_for_manual_runtime_qa_task_submission === true)}</p>
+        <p>evidence_plan_ready / recipe_ready: {String(visibleRuntimeQaExecutionRequest.production_evidence_plan_ready === true)} / {String(visibleRuntimeQaExecutionRequest.runtime_qa_execution_recipe_ready === true)}</p>
+        <p>evidence_plan_scope_hash_short / runtime_qa_scope_hash_short: {String(visibleRuntimeQaExecutionRequest.production_evidence_plan_scope_hash_short ?? "")} / {String(visibleRuntimeQaExecutionRequest.runtime_qa_scope_hash_short ?? "")}</p>
+        <p>requested hash matches: {String(visibleRuntimeQaExecutionRequest.requested_evidence_plan_scope_hash_matches_latest === true)} / {String(visibleRuntimeQaExecutionRequest.requested_runtime_qa_scope_hash_matches_latest === true)}</p>
+        <p>target: {String(visibleRuntimeQaExecutionRequest.target_worker_task_route ?? "future POST /api/worker/runtime-qa-execution")} / {String(visibleRuntimeQaExecutionRequest.target_worker_task_type ?? "run_worker_runtime_qa_execution")}</p>
+        <p>runtime_qa_task_created / runtime_qa_task_executed: {String(visibleRuntimeQaExecutionRequest.runtime_qa_task_created === true)} / {String(visibleRuntimeQaExecutionRequest.runtime_qa_task_executed === true)}</p>
+        <p>worker_started / redis_pinged / scheduler_started / task_dispatched: {String(visibleRuntimeQaExecutionRequest.worker_started === true)} / {String(visibleRuntimeQaExecutionRequest.redis_pinged === true)} / {String(visibleRuntimeQaExecutionRequest.scheduler_started === true)} / {String(visibleRuntimeQaExecutionRequest.task_dispatched === true)}</p>
+        <p>external_calls_triggered / tushare_called / deepseek_called / github_called: {String(visibleRuntimeQaExecutionRequest.external_calls_triggered === true)} / {String(visibleRuntimeQaExecutionRequest.tushare_called === true)} / {String(visibleRuntimeQaExecutionRequest.deepseek_called === true)} / {String(visibleRuntimeQaExecutionRequest.github_called === true)}</p>
+        <p>not_allowed_next_steps: {Array.isArray(visibleRuntimeQaExecutionRequest.not_allowed_next_steps) ? visibleRuntimeQaExecutionRequest.not_allowed_next_steps.join(" / ") : "start Celery from execution request / ping Redis from execution request / mark_production_worker_complete_from_execution_request"}</p>
+        <p>该 request 只绑定后续 runtime QA scope；不会创建或执行 runtime QA task，不能当作 production worker complete。</p>
+        <DataLineageTable rows={rows(productionReadiness.worker_runtime_qa_execution_request_rows ?? cache.worker_runtime_qa_execution_request_rows ?? visibleRuntimeQaExecutionRequest.rows)} />
+      </PacketCard>
+
       <PacketCard title="Worker runtime QA execution recipe" subtitle="LTG-06 runtime QA 执行顺序 recipe；只读、不启动 Celery、不 ping Redis、不派发任务" status={String(workerRuntimeQaExecutionRecipe.status ?? "missing")}>
         <p>schema_version: {String(workerRuntimeQaExecutionRecipe.schema_version ?? "worker_runtime_qa_execution_recipe.v1")}</p>
         <p>scope: {String(workerRuntimeQaExecutionRecipe.scope ?? "local_worker_runtime_qa_execution_recipe_no_process_start")}</p>
+        <p>runtime_qa_scope_hash_short: {String(workerRuntimeQaExecutionRecipe.runtime_qa_scope_hash_short ?? "")}</p>
         <p>local_recipe_ready / runtime_qa_done: {String(workerRuntimeQaExecutionRecipe.local_recipe_ready ?? false)} / {String(workerRuntimeQaExecutionRecipe.runtime_qa_done ?? false)}</p>
         <p>production_worker_complete: {String(workerRuntimeQaExecutionRecipe.production_worker_complete ?? false)}</p>
         <p>worker_started / redis_pinged / scheduler_started / task_dispatched: {String(workerRuntimeQaExecutionRecipe.worker_started ?? false)} / {String(workerRuntimeQaExecutionRecipe.redis_pinged ?? false)} / {String(workerRuntimeQaExecutionRecipe.scheduler_started ?? false)} / {String(workerRuntimeQaExecutionRecipe.task_dispatched ?? false)}</p>
@@ -544,6 +632,7 @@ export default function WorkerRuntime() {
         <JsonDetails title="worker production activation receipt raw" data={workerProductionActivationReceipt} />
         <JsonDetails title="worker activation review task raw" data={visibleActivationReview} />
         <JsonDetails title="worker production evidence plan raw" data={visibleProductionEvidencePlan} />
+        <JsonDetails title="worker runtime QA execution request raw" data={visibleRuntimeQaExecutionRequest} />
       </PacketCard>
     </>
   );

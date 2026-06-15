@@ -103,6 +103,16 @@ REQUIRED_PRODUCTION_EVIDENCE_PLAN_CRITERIA = {
     "no_trade_no_action_boundary",
     "production_worker_completion_stays_blocked",
 }
+REQUIRED_RUNTIME_QA_EXECUTION_REQUEST_CRITERIA = {
+    "explicit_post_execution_request_done",
+    "operator_approval_recorded",
+    "production_evidence_plan_ready",
+    "runtime_qa_execution_recipe_ready",
+    "evidence_plan_scope_hash_bound",
+    "runtime_qa_scope_hash_bound",
+    "manual_runtime_qa_still_pending",
+    "no_process_provider_trade_secret_boundary",
+}
 
 REQUIRED_READINESS_RECEIPT_CRITERIA = {
     "local_worker_contracts_visible",
@@ -145,6 +155,7 @@ REQUIRED_RUNTIME_DURABLE_EVIDENCE_KEYS = (
     "activation_receipt_visible",
     "production_evidence_plan_visible",
     "runtime_qa_execution_recipe_ready",
+    "runtime_qa_execution_request_visible",
     "celery_process_evidence_required",
     "redis_broker_reachability_evidence_required",
     "queue_round_trip_evidence_required",
@@ -157,6 +168,7 @@ REQUIRED_RUNTIME_DURABLE_EVIDENCE_KEYS = (
     "no_process_provider_trade_secret_boundary",
 )
 REQUIRED_RUNTIME_DURABLE_EVIDENCE_MISSING_KEYS = (
+    "runtime_qa_execution_request_visible",
     "celery_process_evidence_required",
     "redis_broker_reachability_evidence_required",
     "queue_round_trip_evidence_required",
@@ -318,6 +330,11 @@ def build_contract() -> dict[str, Any]:
         row for row in _list(packet.get("worker_runtime_qa_execution_recipe_rows")) if isinstance(row, dict)
     ]
     runtime_qa_recipe_phases = {str(row.get("phase") or "") for row in runtime_qa_recipe_rows}
+    runtime_qa_request = _dict(packet.get("worker_runtime_qa_execution_request_receipt"))
+    runtime_qa_request_rows = [
+        row for row in _list(packet.get("worker_runtime_qa_execution_request_rows")) if isinstance(row, dict)
+    ]
+    runtime_qa_request_criteria = {str(row.get("criterion") or "") for row in runtime_qa_request_rows}
     runtime_durable_recipe = _dict(packet.get("worker_runtime_durable_evidence_recipe"))
     runtime_durable_rows = [
         row for row in _list(packet.get("worker_runtime_durable_evidence_rows")) if isinstance(row, dict)
@@ -543,15 +560,19 @@ def build_contract() -> dict[str, Any]:
             synthetic_healthcheck.get("source_packet_read_status") in ALLOWED_WORKER_PACKET_READ_STATUSES
             and activation_review_task.get("source_packet_read_status") in ALLOWED_WORKER_PACKET_READ_STATUSES
             and production_evidence_plan.get("source_packet_read_status") in ALLOWED_WORKER_PACKET_READ_STATUSES
+            and runtime_qa_request.get("source_packet_read_status") in ALLOWED_WORKER_PACKET_READ_STATUSES
             and isinstance(synthetic_healthcheck.get("source_packet_present"), bool)
             and isinstance(activation_review_task.get("source_packet_present"), bool)
             and isinstance(production_evidence_plan.get("source_packet_present"), bool)
+            and isinstance(runtime_qa_request.get("source_packet_present"), bool)
             and synthetic_healthcheck.get("cache_get_initializes_meta_store") is False
             and activation_review_task.get("cache_get_initializes_meta_store") is False
             and production_evidence_plan.get("cache_get_initializes_meta_store") is False
+            and runtime_qa_request.get("cache_get_initializes_meta_store") is False
             and _flag_false(synthetic_healthcheck, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
             and _flag_false(activation_review_task, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
-            and _flag_false(production_evidence_plan, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called"),
+            and _flag_false(production_evidence_plan, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and _flag_false(runtime_qa_request, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called"),
             "Worker persisted-packet readers must expose source read status for explicit POST evidence without initializing meta storage, calling providers, starting workers, or dispatching tasks.",
         ),
         _row(
@@ -687,6 +708,98 @@ def build_contract() -> dict[str, Any]:
             and policy.get("worker_production_evidence_plan_is_not_process_start") is True
             and policy.get("worker_production_evidence_plan_is_not_production_completion") is True,
             "Worker production evidence plan may create a later runtime-QA scope ticket, but it must not start processes, ping Redis, dispatch tasks, call providers/models, execute trades, or claim production worker completion.",
+        ),
+        _row(
+            "runtime_qa_execution_request_is_scope_bound_ticket_only",
+            "POST /api/worker/runtime-qa-execution-request"
+            in _dict(catalog.get("route_coverage")).get("known_post_routes", [])
+            and runtime_qa_request.get("schema_version") == "worker_runtime_qa_execution_request_receipt.v1"
+            and runtime_qa_request.get("status")
+            in {
+                "worker_runtime_qa_execution_request_missing",
+                "worker_runtime_qa_execution_request_blocked_operator_approval_required",
+                "worker_runtime_qa_execution_request_blocked_evidence_plan_required",
+                "worker_runtime_qa_execution_request_blocked_recipe_not_ready",
+                "worker_runtime_qa_execution_request_blocked_scope_hash_required",
+                "worker_runtime_qa_execution_request_blocked_scope_hash_mismatch",
+                "worker_runtime_qa_execution_request_ready_manual_runtime_qa_pending",
+            }
+            and runtime_qa_request.get("scope")
+            == "button_gated_worker_runtime_qa_execution_request_no_process_start"
+            and runtime_qa_request.get("mode") == "button_gated_local_runtime_qa_execution_request"
+            and runtime_qa_request.get("button_gated") is True
+            and runtime_qa_request.get("local_execution_request_only") is True
+            and runtime_qa_request.get("ready_to_mark_production_worker_complete") is False
+            and runtime_qa_request.get("production_worker_complete") is False
+            and runtime_qa_request.get("activation_ready") is False
+            and runtime_qa_request.get("target_worker_task_route") == "future POST /api/worker/runtime-qa-execution"
+            and runtime_qa_request.get("target_worker_task_type") == "run_worker_runtime_qa_execution"
+            and REQUIRED_RUNTIME_QA_EXECUTION_REQUEST_CRITERIA.issubset(runtime_qa_request_criteria)
+            and (
+                (
+                    runtime_qa_request.get("status")
+                    == "worker_runtime_qa_execution_request_ready_manual_runtime_qa_pending"
+                    and runtime_qa_request.get("local_execution_request_ready") is True
+                    and runtime_qa_request.get("ready_for_manual_runtime_qa_task_submission") is True
+                    and runtime_qa_request.get("requested_evidence_plan_scope_hash_matches_latest") is True
+                    and runtime_qa_request.get("requested_runtime_qa_scope_hash_matches_latest") is True
+                    and _is_sha256(runtime_qa_request.get("production_evidence_plan_scope_hash"))
+                    and _is_sha256(runtime_qa_request.get("runtime_qa_scope_hash"))
+                    and int(runtime_qa_request.get("local_blocker_count") or 0) == 0
+                )
+                or (
+                    runtime_qa_request.get("status")
+                    != "worker_runtime_qa_execution_request_ready_manual_runtime_qa_pending"
+                    and runtime_qa_request.get("local_execution_request_ready") is False
+                    and int(runtime_qa_request.get("local_blocker_count") or 0) > 0
+                )
+            )
+            and "treat_execution_request_as_runtime_qa_execution"
+            in _list(runtime_qa_request.get("not_allowed_next_steps"))
+            and "start Celery from execution request" in _list(runtime_qa_request.get("not_allowed_next_steps"))
+            and "ping Redis from execution request" in _list(runtime_qa_request.get("not_allowed_next_steps"))
+            and "dispatch worker task from execution request" in _list(runtime_qa_request.get("not_allowed_next_steps"))
+            and "mark_production_worker_complete_from_execution_request"
+            in _list(runtime_qa_request.get("not_allowed_next_steps"))
+            and runtime_qa_request.get("runtime_qa_task_created") is False
+            and runtime_qa_request.get("runtime_qa_task_executed") is False
+            and runtime_qa_request.get("runtime_qa_execution_implemented") is False
+            and runtime_qa_request.get("worker_started") is False
+            and runtime_qa_request.get("redis_pinged") is False
+            and runtime_qa_request.get("scheduler_started") is False
+            and runtime_qa_request.get("task_dispatched") is False
+            and runtime_qa_request.get("provider_model_task_dispatched") is False
+            and runtime_qa_request.get("healthcheck_executed") is False
+            and _flag_false(
+                runtime_qa_request,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and runtime_qa_request.get("does_not_execute_trades") is True
+            and runtime_qa_request.get("does_not_modify_strategy_action") is True
+            and runtime_qa_request.get("contains_secret") is False
+            and all(row.get("worker_started") is False for row in runtime_qa_request_rows)
+            and all(row.get("redis_pinged") is False for row in runtime_qa_request_rows)
+            and all(row.get("scheduler_started") is False for row in runtime_qa_request_rows)
+            and all(row.get("task_dispatched") is False for row in runtime_qa_request_rows)
+            and all(row.get("runtime_qa_task_created") is False for row in runtime_qa_request_rows)
+            and all(row.get("runtime_qa_executed") is False for row in runtime_qa_request_rows)
+            and all(row.get("external_calls_triggered") is False for row in runtime_qa_request_rows)
+            and all(row.get("tushare_called") is False for row in runtime_qa_request_rows)
+            and all(row.get("deepseek_called") is False for row in runtime_qa_request_rows)
+            and all(row.get("github_called") is False for row in runtime_qa_request_rows)
+            and all(row.get("does_not_execute_trades") is True for row in runtime_qa_request_rows)
+            and all(row.get("does_not_modify_strategy_action") is True for row in runtime_qa_request_rows)
+            and all(row.get("contains_secret") is False for row in runtime_qa_request_rows)
+            and _list(runtime_qa_request.get("call_ledger"))
+            and _dict(_list(runtime_qa_request.get("call_ledger"))[0]).get("api")
+            == "local_worker_runtime_qa_execution_request"
+            and policy.get("worker_runtime_qa_execution_request_is_button_gated") is True
+            and policy.get("worker_runtime_qa_execution_request_is_not_process_start") is True
+            and policy.get("worker_runtime_qa_execution_request_is_not_production_completion") is True,
+            "Worker runtime QA execution request may bind operator approval and scope hashes for a future runtime QA task, but it must not create or execute that task, start processes, ping Redis, dispatch work, call providers/models, trade, mutate action, expose secrets, or claim production completion.",
         ),
         _row(
             "runtime_qa_execution_recipe_is_local_pending",
@@ -925,6 +1038,7 @@ def build_contract() -> dict[str, Any]:
             and "worker_production_activation_receipt.v1" in this_script
             and "worker_activation_review_task_receipt.v1" in this_script
             and "worker_production_evidence_plan_receipt.v1" in this_script
+            and "worker_runtime_qa_execution_request_receipt.v1" in this_script
             and "worker_runtime_qa_execution_recipe.v1" in this_script
             and "worker_runtime_durable_evidence_recipe.v1" in this_script
             and "worker_queue_routing_contract.v1" in this_script
@@ -933,6 +1047,7 @@ def build_contract() -> dict[str, Any]:
             and "production_activation_receipt_keeps_worker_blocked" in this_script
             and "activation_review_task_is_button_gated_no_process_start" in this_script
             and "production_evidence_plan_is_scope_ticket_only" in this_script
+            and "runtime_qa_execution_request_is_scope_bound_ticket_only" in this_script
             and "runtime_qa_execution_recipe_is_local_pending" in this_script
             and "runtime_durable_evidence_recipe_is_local_pending" in this_script
             and "worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending" in this_script
@@ -972,6 +1087,8 @@ def build_contract() -> dict[str, Any]:
         "worker_activation_review_task_status": activation_review_task.get("status"),
         "worker_production_evidence_plan_ready": production_evidence_plan.get("evidence_plan_ready") is True,
         "worker_production_evidence_plan_status": production_evidence_plan.get("status"),
+        "worker_runtime_qa_execution_request_ready": runtime_qa_request.get("local_execution_request_ready") is True,
+        "worker_runtime_qa_execution_request_status": runtime_qa_request.get("status"),
         "worker_runtime_qa_execution_recipe_ready": runtime_qa_recipe.get("local_recipe_ready") is True,
         "worker_runtime_qa_execution_recipe_status": runtime_qa_recipe.get("status"),
         "worker_runtime_durable_evidence_recipe_ready": runtime_durable_recipe.get("local_recipe_ready") is True,
@@ -1045,6 +1162,15 @@ def build_contract() -> dict[str, Any]:
             "worker_production_evidence_plan_source_packet_present": production_evidence_plan.get(
                 "source_packet_present"
             ),
+            "worker_runtime_qa_execution_request_status": runtime_qa_request.get("status"),
+            "worker_runtime_qa_execution_request_ready": runtime_qa_request.get("local_execution_request_ready"),
+            "worker_runtime_qa_execution_request_row_count": len(runtime_qa_request_rows),
+            "worker_runtime_qa_execution_request_source_packet_read_status": runtime_qa_request.get(
+                "source_packet_read_status"
+            ),
+            "worker_runtime_qa_execution_request_source_packet_present": runtime_qa_request.get(
+                "source_packet_present"
+            ),
             "worker_runtime_qa_execution_recipe_status": runtime_qa_recipe.get("status"),
             "worker_runtime_qa_execution_recipe_ready": runtime_qa_recipe.get("local_recipe_ready"),
             "worker_runtime_qa_execution_phase_count": len(runtime_qa_recipe_rows),
@@ -1072,6 +1198,7 @@ def build_contract() -> dict[str, Any]:
             "scheduler_auto_task_count": dispatch_summary.get("scheduler_auto_task_count"),
             "cache_get_external_call_count": dispatch_summary.get("cache_get_external_call_count"),
         },
+        "worker_runtime_qa_execution_request_rows": runtime_qa_request_rows,
         "worker_runtime_qa_execution_recipe_rows": runtime_qa_recipe_rows,
         "worker_runtime_durable_evidence_rows": runtime_durable_rows,
         "worker_runtime_evidence_stage_scope_rows": worker_runtime_evidence_stage_scope_rows,
