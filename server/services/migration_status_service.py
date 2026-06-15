@@ -54,7 +54,7 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "Factor 全市场 / 股票池研究",
         "completion_bucket": "real_validation_required",
         "completion_estimate": "30%-40%",
-        "current_state": "watchlist/custom/full-pool contracts, local read-plan receipts, readiness/activation receipts, local rank/zscore sufficiency audit, worker-batch dry-run scope ticket, worker-batch execution recipe, bound execution-request ticket, and durable evidence recipe exist.",
+        "current_state": "watchlist/custom/full-pool contracts, local read-plan receipts, readiness/activation receipts, local rank/zscore sufficiency audit, worker-batch dry-run scope ticket, worker stage-scope manifest, worker-batch execution recipe, bound execution-request ticket, and durable evidence recipe exist.",
         "not_complete_because": "worker-backed batch execution, durable task logs, cross-sectional rank/zscore, neutralization, factor combination research, result persistence, and full-pool validation are pending.",
         "next_step": "Implement a separate explicit worker-backed batch research task bound to the safe scope ticket, execution-request ticket, and execution recipe after storage/worker readiness is stronger.",
         "production_complete": False,
@@ -599,6 +599,94 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "pit_bias_controls_done": False,
                 "full_market_promotion_done": False,
                 "metrics_remain_research_only": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observation_failure_is_not_completion",
+            }
+        )
+    try:
+        from scripts import factor_universe_contract
+        from server.services import factor_service
+
+        required_stages = list(factor_service.FACTOR_UNIVERSE_WORKER_BATCH_REQUIRED_STAGES)
+        stage_rows = factor_universe_contract._worker_stage_scope_rows(required_stages, required_stages)
+        stage_rows = stage_rows if isinstance(stage_rows, list) else []
+        row_count = len(stage_rows)
+        pending_count = sum(
+            1
+            for row in stage_rows
+            if isinstance(row, dict) and row.get("worker_execution_implemented") is False
+        )
+        local_evidence_count = sum(
+            1 for row in stage_rows if isinstance(row, dict) and row.get("selected_by_worker_dry_run_scope") is True
+        )
+        rows.append(
+            {
+                "id": "LTG-04",
+                "goal": "Factor 全市场 / 股票池研究",
+                "stage_scope_manifest": "factor_universe_worker_batch_stage_scope_manifest",
+                "status": "observed_in_factor_universe_static_contract"
+                if stage_rows
+                else "missing_from_factor_universe_static_contract",
+                "observed_source": "scripts/factor_universe_contract._worker_stage_scope_rows local static contract",
+                "cache_status": "factor_universe_static_contract",
+                "cache_mode": "local_static_contract",
+                "row_count": row_count,
+                "pending_stage_count": pending_count,
+                "local_evidence_stage_count": local_evidence_count,
+                "production_blocker_count": pending_count,
+                "worker_execution_implemented": False,
+                "worker_batch_executed": False,
+                "large_universe_pipeline_done": False,
+                "cross_sectional_rank_zscore_done": False,
+                "neutralization_done": False,
+                "factor_combination_research_done": False,
+                "full_pool_validation_done": False,
+                "production_factor_universe_complete": False,
+                "page_render_starts_full_pool": False,
+                "frontend_computes_rank_zscore": False,
+                "cache_get_external_calls": False,
+                "react_render_external_calls": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observed_local_static_factor_universe_stage_scope_not_production_completion",
+            }
+        )
+    except Exception:
+        rows.append(
+            {
+                "id": "LTG-04",
+                "goal": "Factor 全市场 / 股票池研究",
+                "stage_scope_manifest": "factor_universe_worker_batch_stage_scope_manifest",
+                "status": "local_observation_failed_safe_fallback",
+                "observed_source": "scripts/factor_universe_contract._worker_stage_scope_rows local static contract",
+                "error_message_safe": "factor_universe_stage_scope_observation_failed",
+                "row_count": 0,
+                "pending_stage_count": 0,
+                "local_evidence_stage_count": 0,
+                "production_blocker_count": 0,
+                "worker_execution_implemented": False,
+                "worker_batch_executed": False,
+                "large_universe_pipeline_done": False,
+                "cross_sectional_rank_zscore_done": False,
+                "neutralization_done": False,
+                "factor_combination_research_done": False,
+                "full_pool_validation_done": False,
+                "production_factor_universe_complete": False,
+                "page_render_starts_full_pool": False,
+                "frontend_computes_rank_zscore": False,
                 "external_calls_triggered": False,
                 "tushare_called": False,
                 "deepseek_called": False,
