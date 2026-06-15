@@ -5152,6 +5152,67 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(durable_recipe["contains_secret"])
         self.assertTrue(durable_recipe["does_not_execute_trades"])
         self.assertTrue(durable_recipe["does_not_modify_strategy_action"])
+        stage_manifest = packet["candidate_radar_production_stage_scope_manifest"]
+        stage_rows = {row["stage_key"]: row for row in packet["candidate_radar_production_stage_scope_rows"]}
+        self.assertEqual(
+            stage_manifest["schema_version"],
+            "candidate_radar_production_stage_scope_manifest.v1",
+        )
+        self.assertEqual(
+            stage_manifest["status"],
+            "candidate_radar_production_stage_scope_manifest_ready_production_pending",
+        )
+        self.assertEqual(
+            stage_manifest["scope"],
+            "local_candidate_radar_production_stage_scope_manifest_no_execution",
+        )
+        self.assertTrue(stage_manifest["local_manifest_ready"])
+        self.assertFalse(stage_manifest["production_radar_replacement_complete"])
+        self.assertFalse(stage_manifest["legacy_retirement_ready"])
+        self.assertTrue(stage_manifest["legacy_fallback_required"])
+        self.assertFalse(stage_manifest["full_pool_scan_done"])
+        self.assertFalse(stage_manifest["deep_scan_done"])
+        self.assertFalse(stage_manifest["provider_backed_acceptance_done"])
+        self.assertFalse(stage_manifest["worker_backed_execution_done"])
+        self.assertFalse(stage_manifest["browser_visual_delta_qa_done"])
+        self.assertFalse(stage_manifest["durable_ci_evidence_complete"])
+        self.assertFalse(stage_manifest["external_calls_triggered"])
+        self.assertFalse(stage_manifest["tushare_called"])
+        self.assertFalse(stage_manifest["deepseek_called"])
+        self.assertFalse(stage_manifest["github_called"])
+        self.assertFalse(stage_manifest["contains_secret"])
+        self.assertTrue(stage_manifest["does_not_execute_trades"])
+        self.assertTrue(stage_manifest["does_not_modify_strategy_action"])
+        self.assertTrue(stage_manifest["candidate_is_not_buy_instruction"])
+        self.assertEqual(set(stage_rows), set(candidate_service.CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS))
+        self.assertEqual(
+            stage_manifest["stage_key_count"],
+            len(candidate_service.CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS),
+        )
+        self.assertEqual(
+            stage_manifest["pending_stage_count"],
+            len(candidate_service.CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS),
+        )
+        self.assertEqual(
+            packet["counts"]["candidate_radar_production_stage_scope_count"],
+            stage_manifest["row_count"],
+        )
+        self.assertEqual(
+            packet["counts"]["candidate_radar_production_stage_scope_pending_count"],
+            stage_manifest["pending_stage_count"],
+        )
+        self.assertTrue(packet["policy"]["candidate_radar_production_stage_scope_manifest_is_local"])
+        self.assertTrue(packet["policy"]["candidate_radar_production_stage_scope_manifest_is_not_execution"])
+        self.assertTrue(packet["policy"]["candidate_radar_production_stage_scope_manifest_is_not_production_replacement"])
+        self.assertTrue(
+            packet["policy"]["candidate_radar_production_stage_scope_requires_worker_provider_browser_ci_evidence"]
+        )
+        self.assertTrue(stage_rows["cache_render_boundary"]["local_stage_evidence_present"])
+        self.assertFalse(stage_rows["worker_full_pool_execution"]["worker_backed_execution_done"])
+        self.assertFalse(stage_rows["provider_parity_acceptance"]["provider_backed_acceptance_done"])
+        self.assertTrue(
+            any(row["api"] == "local_candidate_radar_production_stage_scope_manifest" for row in packet["call_ledger"])
+        )
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])

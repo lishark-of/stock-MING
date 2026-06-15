@@ -85,6 +85,37 @@ CANDIDATE_RADAR_DURABLE_EVIDENCE_LABELS = {
     "production_promotion_review_required": "Production promotion review is required",
     "no_trade_action_secret_boundary": "No trade/action/secret boundary is preserved",
 }
+CANDIDATE_RADAR_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION = "candidate_radar_production_stage_scope_manifest.v1"
+CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS = (
+    "cache_render_boundary",
+    "quick_scan_task_pipeline",
+    "local_full_pool_execution_receipt",
+    "local_deep_scan_review_receipt",
+    "worker_full_pool_execution",
+    "worker_deep_scan_execution",
+    "provider_parity_acceptance",
+    "search_quant_provider_model_acceptance",
+    "browser_visual_performance_promotion",
+    "legacy_retirement_review",
+)
+CANDIDATE_RADAR_PRODUCTION_STAGE_LABELS = {
+    "cache_render_boundary": "cache render stays read-only and scan-silent",
+    "quick_scan_task_pipeline": "quick radar scan runs through explicit task pipeline",
+    "local_full_pool_execution_receipt": "local full-pool-like receipt stays local evidence",
+    "local_deep_scan_review_receipt": "local deep-scan review stays local evidence",
+    "worker_full_pool_execution": "worker-backed full-pool execution evidence is required",
+    "worker_deep_scan_execution": "worker-backed deep-scan execution evidence is required",
+    "provider_parity_acceptance": "provider-backed legacy signal parity is required",
+    "search_quant_provider_model_acceptance": "searched-symbol provider/model projection evidence is required",
+    "browser_visual_performance_promotion": "browser visual and performance promotion is required",
+    "legacy_retirement_review": "legacy radar retirement review is required",
+}
+LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS = {
+    "cache_render_boundary",
+    "quick_scan_task_pipeline",
+    "local_full_pool_execution_receipt",
+    "local_deep_scan_review_receipt",
+}
 CANDIDATE_TUSHARE_ACCEPTANCE_ENV_KEYS = ("TUSHARE_TOKEN",)
 CANDIDATE_DEEPSEEK_ACCEPTANCE_ENV_KEYS = ("DEEPSEEK_API_KEY", "DEEPSEEK_TOKEN_1", "DEEPSEEK_TOKEN_2")
 PERSISTED_TASK_SCAN_MODES = LOCAL_POOL_SCAN_MODES | {
@@ -4827,6 +4858,7 @@ def _attach_no_feature_loss_acceptance_contract(packet: Mapping[str, Any]) -> di
     view = _attach_candidate_radar_worker_execution_request(view)
     view = _attach_candidate_radar_next_execution_recipe(view)
     view = _attach_candidate_radar_durable_evidence_recipe(view)
+    view = _attach_candidate_radar_production_stage_scope_manifest(view)
     return view
 
 
@@ -6992,6 +7024,146 @@ def _attach_candidate_radar_durable_evidence_recipe(packet: Mapping[str, Any]) -
     view["warnings"] = warnings
     view["candidate_radar_durable_evidence_recipe"] = contract
     view["candidate_radar_durable_evidence_rows"] = rows
+    return view
+
+
+def _candidate_radar_production_stage_scope_manifest() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    missing_evidence = [
+        "worker full-pool execution evidence",
+        "worker deep-scan execution evidence",
+        "provider-backed parity call ledger",
+        "optional model ledger when enabled",
+        "browser visual and performance promotion",
+        "durable release evidence",
+        "legacy retirement review",
+    ]
+    rows = [
+        {
+            "schema_version": CANDIDATE_RADAR_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION,
+            "stage_key": stage_key,
+            "stage_label": CANDIDATE_RADAR_PRODUCTION_STAGE_LABELS[stage_key],
+            "scope": "candidate_radar_production_stage_scope_manifest",
+            "current_status": (
+                "local_evidence_ready_production_pending"
+                if stage_key in LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS
+                else "direct_evidence_pending"
+            ),
+            "target_status": "production_replacement_direct_evidence_required",
+            "local_stage_evidence_present": stage_key in LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS,
+            "required_before_production_replacement": True,
+            "production_radar_replacement_complete": False,
+            "legacy_retirement_ready": False,
+            "legacy_fallback_required": True,
+            "full_pool_scan_done": False,
+            "deep_scan_done": False,
+            "provider_backed_acceptance_done": False,
+            "worker_backed_execution_done": False,
+            "browser_performance_trace_done": False,
+            "browser_visual_delta_qa_done": False,
+            "durable_ci_evidence_complete": False,
+            "provider_execution_implemented": False,
+            "model_execution_implemented": False,
+            "page_render_starts_full_pool": False,
+            "page_render_starts_deep_scan": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+            "contains_secret": False,
+            "missing_evidence": missing_evidence,
+        }
+        for stage_key in CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS
+    ]
+    pending_count = sum(
+        1
+        for row in rows
+        if row["target_status"] == "production_replacement_direct_evidence_required"
+        and row["production_radar_replacement_complete"] is False
+    )
+    local_evidence_count = sum(1 for row in rows if row["local_stage_evidence_present"] is True)
+    manifest = {
+        "schema_version": CANDIDATE_RADAR_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION,
+        "status": "candidate_radar_production_stage_scope_manifest_ready_production_pending",
+        "scope": "local_candidate_radar_production_stage_scope_manifest_no_execution",
+        "ltg": "LTG-13",
+        "local_manifest_ready": True,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "legacy_fallback_required": True,
+        "full_pool_scan_done": False,
+        "deep_scan_done": False,
+        "provider_backed_acceptance_done": False,
+        "worker_backed_execution_done": False,
+        "browser_performance_trace_done": False,
+        "browser_visual_delta_qa_done": False,
+        "durable_ci_evidence_complete": False,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "page_render_starts_full_pool": False,
+        "page_render_starts_deep_scan": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+        "stage_keys": list(CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS),
+        "row_count": len(rows),
+        "stage_key_count": len(CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS),
+        "pending_stage_count": pending_count,
+        "local_evidence_stage_count": local_evidence_count,
+        "production_blocker_count": pending_count,
+        "missing_evidence": missing_evidence,
+        "not_allowed_next_steps": [
+            "treat_stage_scope_manifest_as_worker_execution",
+            "treat_stage_scope_manifest_as_provider_parity_acceptance",
+            "treat_stage_scope_manifest_as_browser_or_ci_promotion",
+            "retire_legacy_radar_from_stage_scope_manifest",
+            "call_provider_model_or_github_from_get_cache_or_render",
+            "mark_candidate_as_buy_instruction",
+        ],
+        "note": "This is a local pending production-stage manifest. It does not run scans, create worker tasks, call providers/models, promote browser artifacts, retire legacy radar, or complete production replacement.",
+    }
+    return manifest, rows
+
+
+def _attach_candidate_radar_production_stage_scope_manifest(packet: Mapping[str, Any]) -> dict[str, Any]:
+    view = dict(packet)
+    manifest, rows = _candidate_radar_production_stage_scope_manifest()
+    counts = dict(_as_dict(view.get("counts")))
+    counts["candidate_radar_production_stage_scope_count"] = manifest["row_count"]
+    counts["candidate_radar_production_stage_scope_pending_count"] = manifest["pending_stage_count"]
+    counts["candidate_radar_production_stage_scope_local_evidence_count"] = manifest["local_evidence_stage_count"]
+    counts["candidate_radar_production_stage_scope_production_blocker_count"] = manifest["production_blocker_count"]
+    policy = dict(_as_dict(view.get("policy")))
+    policy["candidate_radar_production_stage_scope_manifest_is_local"] = True
+    policy["candidate_radar_production_stage_scope_manifest_is_not_execution"] = True
+    policy["candidate_radar_production_stage_scope_manifest_is_not_production_replacement"] = True
+    policy["candidate_radar_production_stage_scope_requires_worker_provider_browser_ci_evidence"] = True
+    ledger = _as_list(view.get("call_ledger"))
+    ledger.append(
+        _candidate_call_ledger_row(
+            api="local_candidate_radar_production_stage_scope_manifest",
+            source_snapshot="candidate_radar_packet",
+            row_count=len(rows),
+            call_status=manifest["status"],
+        )
+    )
+    warnings = [str(item) for item in _as_list(view.get("warnings"))]
+    warning = "Candidate Radar production stage-scope manifest 只列出生产替代剩余阶段；不会运行 worker、调用 Tushare/DeepSeek/GitHub、退掉 legacy 或完成生产替代。"
+    if warning not in warnings:
+        warnings.append(warning)
+    view["counts"] = counts
+    view["policy"] = policy
+    view["call_ledger"] = ledger
+    view["warnings"] = warnings
+    view["candidate_radar_production_stage_scope_manifest"] = manifest
+    view["candidate_radar_production_stage_scope_rows"] = rows
     return view
 
 
