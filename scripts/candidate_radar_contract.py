@@ -37,6 +37,7 @@ REQUIRED_TASK_TYPES = {
     "run_candidate_radar_deep_scan_plan",
     "run_candidate_radar_deep_scan_local_review",
     "run_candidate_radar_browser_qa_review",
+    "run_candidate_radar_production_replacement_review",
 }
 REQUIRED_NO_FEATURE_LOSS_GAPS = {
     "browser_performance_trace_pending",
@@ -395,6 +396,30 @@ def build_contract() -> dict[str, Any]:
         for row in worker_execution_request_rows_list
         if isinstance(row, dict)
     }
+    production_review_packet = dict(request_packet)
+    production_review_packet["candidate_radar_worker_execution_request_receipt"] = worker_execution_request
+    production_review_packet["candidate_radar_worker_execution_request_rows"] = worker_execution_request_rows_list
+    production_review_packet["search_quant_projection_execution_request_receipt"] = quant_execution_request
+    production_review_packet["search_quant_projection_execution_request_rows"] = quant_execution_request_rows_list
+    production_review_packet = candidate_service._attach_candidate_radar_next_execution_recipe(production_review_packet)
+    production_review_packet = candidate_service._attach_candidate_radar_durable_evidence_recipe(production_review_packet)
+    production_review_packet = candidate_service._attach_candidate_radar_production_stage_scope_manifest(
+        production_review_packet
+    )
+    production_replacement_review, production_replacement_review_rows_list = (
+        candidate_service._candidate_radar_production_replacement_review(
+            production_review_packet,
+            payload_safe={"approved_by_user": True, "reviewer": "local_contract"},
+            explicit_review=True,
+            task_id="local-contract-production-review",
+            reviewed_at=now,
+        )
+    )
+    production_replacement_review_rows = {
+        str(row.get("review_key") or ""): row
+        for row in production_replacement_review_rows_list
+        if isinstance(row, dict)
+    }
     durable_evidence_recipe = _dict(cache_packet.get("candidate_radar_durable_evidence_recipe"))
     durable_evidence_rows = {
         str(row.get("evidence_key") or ""): row
@@ -647,8 +672,29 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_candidate_radar_browser_qa_review"].get("browser_qa_review_only") is True
             and task_rows["run_candidate_radar_browser_qa_review"].get("opens_browser") is False
             and task_rows["run_candidate_radar_browser_qa_review"].get("writes_artifacts") is False
-            and task_rows["run_candidate_radar_browser_qa_review"].get("production_radar_replacement_complete") is False,
-            "Candidate radar scan modes must stay button-gated local tasks; full-pool/deep-scan entries are plan-only and browser QA review reads local artifacts only.",
+            and task_rows["run_candidate_radar_browser_qa_review"].get("production_radar_replacement_complete") is False
+            and task_rows["run_candidate_radar_production_replacement_review"].get("route")
+            == "POST /api/candidate-radar/production-replacement-review"
+            and task_rows["run_candidate_radar_production_replacement_review"].get("local_review_only") is True
+            and task_rows["run_candidate_radar_production_replacement_review"].get("requires_no_feature_loss_surface")
+            is True
+            and task_rows["run_candidate_radar_production_replacement_review"].get("requires_worker_execution_request")
+            is True
+            and task_rows["run_candidate_radar_production_replacement_review"].get("requires_browser_qa_review") is True
+            and task_rows["run_candidate_radar_production_replacement_review"].get("creates_worker_task") is False
+            and task_rows["run_candidate_radar_production_replacement_review"].get("worker_started") is False
+            and task_rows["run_candidate_radar_production_replacement_review"].get("creates_provider_model_task")
+            is False
+            and task_rows["run_candidate_radar_production_replacement_review"].get("tushare_called") is False
+            and task_rows["run_candidate_radar_production_replacement_review"].get("deepseek_called") is False
+            and task_rows["run_candidate_radar_production_replacement_review"].get("github_called") is False
+            and task_rows["run_candidate_radar_production_replacement_review"].get(
+                "production_radar_replacement_complete"
+            )
+            is False
+            and task_rows["run_candidate_radar_production_replacement_review"].get("legacy_retirement_ready")
+            is False,
+            "Candidate radar scan modes must stay button-gated local tasks; full-pool/deep-scan entries are plan-only, browser QA review reads local artifacts only, and production replacement review remains local evidence.",
         ),
         _row(
             "candidate_radar_next_execution_recipe_is_local_fast_scan_path",
@@ -877,6 +923,76 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_worker_execution_request_receipt" in candidate_frontend
             and "雷达 worker 执行申请" in candidate_frontend,
             "Candidate Radar worker execution request must bind the current worker recipe and local receipts while creating no worker task, running no scan, calling no provider/model, and preserving legacy/no-trade boundaries.",
+        ),
+        _row(
+            "candidate_radar_production_replacement_review_is_local_production_blocked",
+            production_replacement_review.get("schema_version")
+            == candidate_service.CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_SCHEMA_VERSION
+            and production_replacement_review.get("status")
+            == "candidate_radar_production_replacement_review_ready_production_blocked"
+            and production_replacement_review.get("scope")
+            == "button_gated_local_candidate_radar_production_replacement_review_no_external_call"
+            and production_replacement_review.get("route")
+            == "POST /api/candidate-radar/production-replacement-review"
+            and production_replacement_review.get("task_type")
+            == "run_candidate_radar_production_replacement_review"
+            and production_replacement_review.get("explicit_review_task_done") is True
+            and production_replacement_review.get("local_review_ready") is True
+            and production_replacement_review.get("ready_for_production_replacement") is False
+            and production_replacement_review.get("production_radar_replacement_complete") is False
+            and production_replacement_review.get("legacy_retirement_ready") is False
+            and production_replacement_review.get("legacy_fallback_required") is True
+            and production_replacement_review.get("fast_scan_ready") is True
+            and production_replacement_review.get("no_feature_loss_local_surface_ready") is True
+            and production_replacement_review.get("legacy_parity_receipt_ready") is True
+            and production_replacement_review.get("local_full_pool_receipt_visible") is True
+            and production_replacement_review.get("local_deep_scan_review_visible") is True
+            and production_replacement_review.get("provider_parity_scope_ticket_visible") is True
+            and production_replacement_review.get("worker_execution_request_visible") is True
+            and production_replacement_review.get("quant_projection_execution_request_visible") is True
+            and production_replacement_review.get("worker_full_pool_execution_done") is False
+            and production_replacement_review.get("worker_deep_scan_execution_done") is False
+            and production_replacement_review.get("provider_backed_acceptance_done") is False
+            and production_replacement_review.get("deepseek_model_ledger_complete") is False
+            and production_replacement_review.get("browser_visual_performance_promoted") is False
+            and production_replacement_review.get("durable_evidence_complete") is False
+            and int(production_replacement_review.get("row_count") or 0) == len(production_replacement_review_rows)
+            and int(production_replacement_review.get("production_blocker_count") or 0) >= 3
+            and len(str(production_replacement_review.get("review_scope_hash") or "")) == 64
+            and production_replacement_review.get("review_scope_hash_input_includes_secret") is False
+            and "worker-backed full-pool execution evidence"
+            in _list(production_replacement_review.get("required_before_production_replacement"))
+            and "treat production replacement review as production completion"
+            in _list(production_replacement_review.get("not_allowed_next_steps"))
+            and "retire legacy radar fallback from local review"
+            in _list(production_replacement_review.get("not_allowed_next_steps"))
+            and _dict(production_replacement_review_rows.get("direct_worker_provider_browser_evidence_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(production_replacement_review_rows.get("legacy_retirement_stays_blocked")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(production_replacement_review_rows.get("no_trade_action_secret_boundary")).get("passed")
+            is True
+            and _flag_false(
+                production_replacement_review,
+                "cache_get_external_calls",
+                "react_render_external_calls",
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and production_replacement_review.get("does_not_execute_trades") is True
+            and production_replacement_review.get("does_not_modify_strategy_action") is True
+            and production_replacement_review.get("does_not_modify_holdings") is True
+            and production_replacement_review.get("candidate_is_not_buy_instruction") is True
+            and "candidate_radar_production_replacement_review_receipt" in candidate_frontend
+            and "雷达生产替代审查" in candidate_frontend,
+            "Candidate Radar production replacement review must summarize local fast-scan/no-loss/worker/provider/browser evidence while staying production-blocked, no-external, no-trade, and legacy-fallback-safe.",
         ),
         _row(
             "candidate_radar_durable_evidence_recipe_is_local_production_pending",
@@ -1760,6 +1876,7 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_production_activation_receipt.v1" in this_script
             and "candidate_radar_worker_execution_recipe.v1" in this_script
             and "candidate_radar_durable_evidence_recipe.v1" in this_script
+            and "candidate_radar_production_replacement_review.v1" in this_script
             and "candidate_is_not_buy_instruction" in this_script
             and ("request" + "s") not in this_script
             and ("ht" + "tpx") not in this_script
@@ -1815,6 +1932,13 @@ def build_contract() -> dict[str, Any]:
         "candidate_radar_durable_evidence_recipe_ready": durable_evidence_recipe.get("local_recipe_ready") is True,
         "candidate_radar_durable_evidence_blocker_count": durable_evidence_recipe.get(
             "durable_evidence_blocker_count"
+        ),
+        "candidate_radar_production_replacement_review_ready": production_replacement_review.get(
+            "local_review_ready"
+        )
+        is True,
+        "candidate_radar_production_replacement_review_blocker_count": production_replacement_review.get(
+            "production_blocker_count"
         ),
         "cache_only": True,
         "external_calls_triggered": False,
@@ -1874,6 +1998,13 @@ def build_contract() -> dict[str, Any]:
                 "durable_evidence_blocker_count"
             ),
             "candidate_radar_durable_evidence_missing": durable_evidence_recipe.get("missing_durable_evidence"),
+            "candidate_radar_production_replacement_review_status": production_replacement_review.get("status"),
+            "candidate_radar_production_replacement_review_ready": production_replacement_review.get(
+                "local_review_ready"
+            ),
+            "candidate_radar_production_replacement_review_blocker_count": production_replacement_review.get(
+                "production_blocker_count"
+            ),
             "result_delta_status": result_delta.get("status"),
             "priority_explanation_status": priority_explanation.get("status"),
             "priority_explanation_gap_count": priority_explanation.get("explanation_gap_count"),

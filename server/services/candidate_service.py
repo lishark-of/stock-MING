@@ -40,6 +40,9 @@ PROVIDER_PARITY_DEFAULT_CANDIDATE_LIMIT = 20
 CANDIDATE_WORKER_EXECUTION_REQUEST_SCHEMA_VERSION = "candidate_radar_worker_execution_request.v1"
 CANDIDATE_WORKER_EXECUTION_REQUEST_TASK_TYPE = "run_candidate_radar_worker_execution_request"
 CANDIDATE_WORKER_EXECUTION_REQUEST_ROUTE = "POST /api/candidate-radar/worker-execution-request"
+CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_SCHEMA_VERSION = "candidate_radar_production_replacement_review.v1"
+CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_TASK_TYPE = "run_candidate_radar_production_replacement_review"
+CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_ROUTE = "POST /api/candidate-radar/production-replacement-review"
 CANDIDATE_RADAR_DURABLE_EVIDENCE_SCHEMA_VERSION = "candidate_radar_durable_evidence_recipe.v1"
 CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS = (
     "cache_render_boundary_visible",
@@ -124,6 +127,7 @@ PERSISTED_TASK_SCAN_MODES = LOCAL_POOL_SCAN_MODES | {
     "provider_parity_dry_run",
     "worker_execution_request",
     "quant_projection_execution_request",
+    "production_replacement_review",
 }
 FAST_SCAN_DISPLAY_CANDIDATE_LIMIT = 120
 FAST_SCAN_LOCAL_POOL_INPUT_LIMIT = 50
@@ -4859,6 +4863,7 @@ def _attach_no_feature_loss_acceptance_contract(packet: Mapping[str, Any]) -> di
     view = _attach_candidate_radar_next_execution_recipe(view)
     view = _attach_candidate_radar_durable_evidence_recipe(view)
     view = _attach_candidate_radar_production_stage_scope_manifest(view)
+    view = _attach_candidate_radar_production_replacement_review(view)
     return view
 
 
@@ -7164,6 +7169,444 @@ def _attach_candidate_radar_production_stage_scope_manifest(packet: Mapping[str,
     view["warnings"] = warnings
     view["candidate_radar_production_stage_scope_manifest"] = manifest
     view["candidate_radar_production_stage_scope_rows"] = rows
+    return view
+
+
+def _candidate_radar_production_replacement_review_row(
+    review_key: str,
+    category: str,
+    status: str,
+    *,
+    passed: bool,
+    local_review_required: bool,
+    production_blocker: bool,
+    evidence: str,
+    next_action: str,
+    recommended_order: int,
+) -> dict[str, Any]:
+    return {
+        "schema_version": CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_SCHEMA_VERSION,
+        "review_key": review_key,
+        "category": category,
+        "status": status,
+        "passed": bool(passed),
+        "local_review_required": bool(local_review_required),
+        "production_blocker": bool(production_blocker),
+        "recommended_order": int(recommended_order),
+        "evidence": evidence,
+        "next_action": next_action,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+    }
+
+
+def _candidate_radar_production_replacement_review(
+    packet: Mapping[str, Any],
+    *,
+    payload_safe: Mapping[str, Any] | None = None,
+    explicit_review: bool = False,
+    task_id: str | None = None,
+    reviewed_at: str | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    payload = _as_dict(payload_safe)
+    policy = _as_dict(packet.get("policy"))
+    task_pipeline = _as_dict(packet.get("fast_scan_task_pipeline_contract"))
+    legacy_receipt = _as_dict(packet.get("legacy_parity_acceptance_receipt"))
+    no_loss = _as_dict(packet.get("no_feature_loss_acceptance_contract"))
+    result_delta = _as_dict(packet.get("result_delta_clarity_contract"))
+    full_pool_receipt = _as_dict(packet.get("full_pool_local_execution_receipt"))
+    deep_scan_receipt = _as_dict(packet.get("deep_scan_local_review_receipt"))
+    provider_parity = _as_dict(packet.get("provider_parity_dry_run_receipt"))
+    quant_request = _as_dict(packet.get("search_quant_projection_execution_request_receipt"))
+    worker_recipe = _as_dict(packet.get("candidate_radar_worker_execution_recipe"))
+    worker_request = _as_dict(packet.get("candidate_radar_worker_execution_request_receipt"))
+    browser_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
+    durable_recipe = _as_dict(packet.get("candidate_radar_durable_evidence_recipe"))
+    stage_manifest = _as_dict(packet.get("candidate_radar_production_stage_scope_manifest"))
+    promotion = _as_dict(packet.get("candidate_radar_promotion_blocker_audit"))
+
+    cache_render_safe = bool(
+        packet.get("cache_only") is True
+        and packet.get("read_only") is True
+        and policy.get("does_not_scan_market") is True
+        and policy.get("does_not_call_tushare") is True
+        and policy.get("does_not_call_deepseek") is True
+        and policy.get("does_not_call_github") is True
+    )
+    quick_pipeline_ready = task_pipeline.get("local_task_pipeline_ready") is True
+    legacy_ready = legacy_receipt.get("local_acceptance_receipt_ready") is True
+    no_loss_ready = no_loss.get("local_no_feature_loss_contract_ready") is True
+    result_delta_ready = result_delta.get("local_result_delta_clarity_ready") is True
+    local_full_pool_visible = (
+        full_pool_receipt.get("schema_version") == "candidate_radar_full_pool_local_execution_receipt.v1"
+    )
+    local_deep_review_visible = (
+        deep_scan_receipt.get("schema_version") == "candidate_radar_deep_scan_local_review_receipt.v1"
+    )
+    provider_ticket_visible = bool(provider_parity.get("acceptance_scope_hash_short"))
+    quant_request_visible = quant_request.get("local_execution_request_ready") is True
+    worker_recipe_ready = worker_recipe.get("local_worker_execution_recipe_ready") is True
+    worker_request_ready = worker_request.get("local_execution_request_ready") is True
+    browser_review_ready = browser_review.get("local_browser_qa_review_ready") is True
+    durable_recipe_ready = durable_recipe.get("local_recipe_ready") is True
+    stage_manifest_ready = stage_manifest.get("local_manifest_ready") is True
+    safety_ready = bool(
+        packet.get("does_not_execute_trades") is True
+        and packet.get("does_not_modify_strategy_action") is True
+        and packet.get("external_calls_triggered") is not True
+        and packet.get("tushare_called") is not True
+        and packet.get("deepseek_called") is not True
+        and packet.get("github_called") is not True
+        and packet.get("contains_secret") is not True
+    )
+
+    rows = [
+        _candidate_radar_production_replacement_review_row(
+            "explicit_post_review_task",
+            "review_gate",
+            "passed_button_gated_review" if explicit_review else "pending_explicit_review",
+            passed=explicit_review,
+            local_review_required=True,
+            production_blocker=False,
+            evidence=f"route={CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_ROUTE}; task_id={task_id or '--'}",
+            next_action="Run this review from an explicit button/POST task before judging Candidate Radar replacement readiness.",
+            recommended_order=1,
+        ),
+        _candidate_radar_production_replacement_review_row(
+            "cache_render_readonly_boundary",
+            "local_surface",
+            "passed_no_scan_on_render" if cache_render_safe else "blocked_render_boundary",
+            passed=cache_render_safe,
+            local_review_required=True,
+            production_blocker=not cache_render_safe,
+            evidence=f"cache_only={packet.get('cache_only')}; read_only={packet.get('read_only')}; does_not_scan_market={policy.get('does_not_scan_market')}",
+            next_action="Keep GET cache and React render read-only and scan-silent.",
+            recommended_order=2,
+        ),
+        _candidate_radar_production_replacement_review_row(
+            "quick_scan_task_pipeline_visible",
+            "local_surface",
+            "passed_task_pipeline_visible" if quick_pipeline_ready else "blocked_task_pipeline",
+            passed=quick_pipeline_ready,
+            local_review_required=True,
+            production_blocker=not quick_pipeline_ready,
+            evidence=f"status={task_pipeline.get('status')}; blockers={task_pipeline.get('local_blocker_count')}",
+            next_action="Keep quick/watchlist/custom scan behind explicit POST task/status flow.",
+            recommended_order=3,
+        ),
+        _candidate_radar_production_replacement_review_row(
+            "no_feature_loss_surface_visible",
+            "local_surface",
+            "passed_no_feature_loss_visible" if no_loss_ready else "blocked_no_feature_loss_surface",
+            passed=no_loss_ready,
+            local_review_required=True,
+            production_blocker=not no_loss_ready,
+            evidence=f"status={no_loss.get('status')}; visible_gaps={no_loss.get('visible_gap_count')}",
+            next_action="Keep no-feature-loss gaps visible before retiring legacy radar.",
+            recommended_order=4,
+        ),
+        _candidate_radar_production_replacement_review_row(
+            "legacy_parity_receipt_visible",
+            "local_surface",
+            "passed_legacy_parity_visible" if legacy_ready else "blocked_legacy_parity_receipt",
+            passed=legacy_ready,
+            local_review_required=True,
+            production_blocker=not legacy_ready,
+            evidence=f"status={legacy_receipt.get('status')}; production_blockers={legacy_receipt.get('production_blocker_count')}",
+            next_action="Do not treat gap_reported legacy rows as no-feature-loss completion.",
+            recommended_order=5,
+        ),
+        _candidate_radar_production_replacement_review_row(
+            "local_full_pool_receipt_visible",
+            "local_surface",
+            "passed_local_full_pool_receipt" if local_full_pool_visible else "pending_local_full_pool_receipt",
+            passed=local_full_pool_visible,
+            local_review_required=False,
+            production_blocker=False,
+            evidence=f"status={full_pool_receipt.get('status')}; production_full_pool_scan_done={full_pool_receipt.get('production_full_pool_scan_done')}",
+            next_action="Keep local full-pool receipt separate from worker/provider-backed full-pool acceptance.",
+            recommended_order=6,
+        ),
+        _candidate_radar_production_replacement_review_row(
+            "local_deep_scan_review_visible",
+            "local_surface",
+            "passed_local_deep_review" if local_deep_review_visible else "pending_local_deep_review",
+            passed=local_deep_review_visible,
+            local_review_required=False,
+            production_blocker=False,
+            evidence=f"status={deep_scan_receipt.get('status')}; deep_scan_done={deep_scan_receipt.get('deep_scan_done')}",
+            next_action="Keep local deep review separate from real DeepSeek/provider-backed deep scan.",
+            recommended_order=7,
+        ),
+        _candidate_radar_production_replacement_review_row(
+            "result_delta_clarity_visible",
+            "local_surface",
+            "passed_result_delta_visible" if result_delta_ready else "pending_result_delta_clarity",
+            passed=result_delta_ready,
+            local_review_required=False,
+            production_blocker=False,
+            evidence=f"status={result_delta.get('status')}; previous_cache_diff_done={result_delta.get('previous_cache_diff_done')}",
+            next_action="Use result deltas for clarity, not as browser visual QA replacement.",
+            recommended_order=8,
+        ),
+        _candidate_radar_production_replacement_review_row(
+            "provider_parity_scope_ticket_visible",
+            "acceptance_ticket",
+            "scope_ticket_visible" if provider_ticket_visible else "pending_provider_parity_dry_run",
+            passed=provider_ticket_visible,
+            local_review_required=False,
+            production_blocker=not provider_ticket_visible,
+            evidence=f"status={provider_parity.get('status')}; scope={provider_parity.get('acceptance_scope_hash_short') or 'missing'}",
+            next_action="Run a user-approved provider parity dry-run before any real provider-backed parity task.",
+            recommended_order=9,
+        ),
+        _candidate_radar_production_replacement_review_row(
+            "worker_execution_request_visible",
+            "acceptance_ticket",
+            "worker_request_visible" if worker_request_ready else "pending_worker_execution_request",
+            passed=worker_request_ready,
+            local_review_required=False,
+            production_blocker=not worker_request_ready,
+            evidence=f"recipe_ready={worker_recipe_ready}; request_status={worker_request.get('status')}; scope_match={worker_request.get('requested_worker_execution_scope_hash_matches_latest')}",
+            next_action="Bind worker full-pool/deep-scan execution to the current worker recipe hash before future execution.",
+            recommended_order=10,
+        ),
+        _candidate_radar_production_replacement_review_row(
+            "quant_projection_execution_request_visible",
+            "acceptance_ticket",
+            "quant_request_visible" if quant_request_visible else "pending_quant_projection_execution_request",
+            passed=quant_request_visible,
+            local_review_required=False,
+            production_blocker=not quant_request_visible,
+            evidence=f"status={quant_request.get('status')}; scope_match={quant_request.get('requested_acceptance_scope_hash_matches_latest')}",
+            next_action="Bind searched-symbol provider/model execution to a prior dry-run scope before future Tushare/DeepSeek execution.",
+            recommended_order=11,
+        ),
+        _candidate_radar_production_replacement_review_row(
+            "browser_qa_review_visible",
+            "acceptance_ticket",
+            "local_browser_review_ready" if browser_review_ready else "pending_browser_qa_review",
+            passed=browser_review_ready,
+            local_review_required=False,
+            production_blocker=not browser_review_ready,
+            evidence=f"status={browser_review.get('status')}; local_browser_qa_review_ready={browser_review_ready}",
+            next_action="Attach browser visual/performance review evidence for #candidates before production replacement.",
+            recommended_order=12,
+        ),
+        _candidate_radar_production_replacement_review_row(
+            "durable_evidence_recipe_visible",
+            "acceptance_ticket",
+            "durable_recipe_visible" if durable_recipe_ready else "pending_durable_recipe",
+            passed=durable_recipe_ready,
+            local_review_required=True,
+            production_blocker=not durable_recipe_ready,
+            evidence=f"status={durable_recipe.get('status')}; blockers={durable_recipe.get('durable_evidence_blocker_count')}",
+            next_action="Use durable evidence recipe as the checklist, not as production completion.",
+            recommended_order=13,
+        ),
+        _candidate_radar_production_replacement_review_row(
+            "production_stage_scope_manifest_visible",
+            "acceptance_ticket",
+            "stage_manifest_visible" if stage_manifest_ready else "pending_stage_manifest",
+            passed=stage_manifest_ready,
+            local_review_required=True,
+            production_blocker=not stage_manifest_ready,
+            evidence=f"status={stage_manifest.get('status')}; pending={stage_manifest.get('pending_stage_count')}",
+            next_action="Keep stage-scope pending until direct worker/provider/browser/model evidence exists.",
+            recommended_order=14,
+        ),
+        _candidate_radar_production_replacement_review_row(
+            "direct_worker_provider_browser_evidence_required",
+            "production_evidence",
+            "pending_direct_evidence",
+            passed=False,
+            local_review_required=False,
+            production_blocker=True,
+            evidence=(
+                f"full_pool={durable_recipe.get('full_pool_scan_done')}; deep_scan={durable_recipe.get('deep_scan_done')}; "
+                f"provider={durable_recipe.get('provider_backed_acceptance_done')}; browser={durable_recipe.get('browser_visual_performance_reviewed')}"
+            ),
+            next_action="Collect real worker full-pool/deep-scan, provider call ledger, optional model ledger, and browser performance promotion evidence.",
+            recommended_order=15,
+        ),
+        _candidate_radar_production_replacement_review_row(
+            "legacy_retirement_stays_blocked",
+            "production_boundary",
+            "blocked_legacy_retirement",
+            passed=False,
+            local_review_required=False,
+            production_blocker=True,
+            evidence=f"promotion_ready={promotion.get('promotion_ready')}; legacy_retirement_ready={stage_manifest.get('legacy_retirement_ready')}",
+            next_action="Keep Streamlit/legacy radar fallback until production promotion review clears.",
+            recommended_order=16,
+        ),
+        _candidate_radar_production_replacement_review_row(
+            "no_trade_action_secret_boundary",
+            "safety",
+            "passed_research_only_secret_safe" if safety_ready else "blocked_safety_boundary",
+            passed=safety_ready,
+            local_review_required=True,
+            production_blocker=not safety_ready,
+            evidence="Candidate Radar review does not call external providers/models, expose secrets, execute trades, or mutate strategy action.",
+            next_action="Preserve research-only boundaries in every future radar execution task.",
+            recommended_order=17,
+        ),
+    ]
+
+    local_blockers = [row["review_key"] for row in rows if row["local_review_required"] and not row["passed"]]
+    production_blockers = [row["review_key"] for row in rows if row["production_blocker"] and not row["passed"]]
+    local_ready = explicit_review and not local_blockers
+    scope_input = {
+        "schema_version": CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_SCHEMA_VERSION,
+        "task_pipeline_status": task_pipeline.get("status"),
+        "legacy_status": legacy_receipt.get("status"),
+        "no_loss_status": no_loss.get("status"),
+        "provider_scope": provider_parity.get("acceptance_scope_hash_short"),
+        "worker_scope": worker_request.get("worker_execution_scope_hash_short"),
+        "quant_scope": quant_request.get("acceptance_scope_hash_short"),
+        "browser_status": browser_review.get("status"),
+        "production_blockers": production_blockers,
+    }
+    serialized = json.dumps(_safe_value(scope_input), ensure_ascii=False, sort_keys=True, default=str)
+    review_scope_hash = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    reviewer = _safe_text(payload.get("reviewer") or payload.get("requested_by") or "local_operator", limit=80)
+    receipt = {
+        "schema_version": CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_SCHEMA_VERSION,
+        "status": (
+            "candidate_radar_production_replacement_review_ready_production_blocked"
+            if local_ready
+            else "candidate_radar_production_replacement_review_blocked_local_review"
+        ),
+        "scope": "button_gated_local_candidate_radar_production_replacement_review_no_external_call",
+        "ltg": "LTG-13",
+        "route": CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_ROUTE,
+        "task_type": CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_TASK_TYPE,
+        "explicit_review_task_done": bool(explicit_review),
+        "task_id": task_id,
+        "reviewer": reviewer,
+        "reviewed_at": reviewed_at,
+        "local_review_ready": local_ready,
+        "ready_for_production_replacement": False,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "legacy_fallback_required": True,
+        "fast_scan_ready": quick_pipeline_ready and no_loss_ready,
+        "no_feature_loss_local_surface_ready": no_loss_ready,
+        "legacy_parity_receipt_ready": legacy_ready,
+        "local_full_pool_receipt_visible": local_full_pool_visible,
+        "local_deep_scan_review_visible": local_deep_review_visible,
+        "provider_parity_scope_ticket_visible": provider_ticket_visible,
+        "worker_execution_request_visible": worker_request_ready,
+        "quant_projection_execution_request_visible": quant_request_visible,
+        "browser_qa_review_visible": browser_review_ready,
+        "durable_evidence_recipe_visible": durable_recipe_ready,
+        "stage_scope_manifest_visible": stage_manifest_ready,
+        "worker_full_pool_execution_done": False,
+        "worker_deep_scan_execution_done": False,
+        "provider_backed_acceptance_done": False,
+        "deepseek_model_ledger_complete": False,
+        "browser_visual_performance_promoted": False,
+        "durable_evidence_complete": False,
+        "row_count": len(rows),
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "local_blockers": local_blockers,
+        "production_blockers": production_blockers,
+        "review_scope_hash": review_scope_hash,
+        "review_scope_hash_short": review_scope_hash[:16],
+        "review_scope_hash_algorithm": "sha256",
+        "review_scope_hash_input_includes_secret": False,
+        "required_before_production_replacement": [
+            "worker-backed full-pool execution evidence",
+            "worker-backed deep-scan execution evidence",
+            "provider-backed radar parity call ledger",
+            "searched-symbol Tushare/DeepSeek ledger when enabled",
+            "browser visual/performance promotion evidence",
+            "legacy retirement review",
+            "production promotion and redaction review",
+        ],
+        "not_allowed_next_steps": [
+            "treat production replacement review as production completion",
+            "retire legacy radar fallback from local review",
+            "treat local full-pool receipt as worker full-pool execution",
+            "treat local deep review as provider/model deep scan",
+            "call Tushare/DeepSeek/GitHub from GET cache or render",
+            "turn candidate rows into buy/sell instructions",
+            "store raw token/key in packet, cache, ledger, log, or frontend",
+        ],
+        "allowed_next_step": "run_user_approved_worker_provider_browser_acceptance_tasks",
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "candidate_is_not_buy_instruction": True,
+        "rows": rows,
+        "note": "This is a button-gated local production-replacement review receipt for LTG-13. It organizes direct evidence still needed for Candidate Radar replacement, but it does not run scans, start workers, call Tushare/DeepSeek/GitHub, retire legacy radar, or complete production replacement.",
+    }
+    return receipt, rows
+
+
+def _attach_candidate_radar_production_replacement_review(packet: Mapping[str, Any]) -> dict[str, Any]:
+    view = dict(packet)
+    persisted_receipt = _as_dict(view.get("candidate_radar_production_replacement_review_receipt"))
+    explicit_review = persisted_receipt.get("explicit_review_task_done") is True
+    receipt, rows = _candidate_radar_production_replacement_review(
+        view,
+        payload_safe={},
+        explicit_review=explicit_review,
+        task_id=str(persisted_receipt.get("task_id") or view.get("task_id") or "") if explicit_review else None,
+        reviewed_at=str(
+            persisted_receipt.get("reviewed_at")
+            or view.get("candidate_radar_production_replacement_review_completed_at")
+            or ""
+        )
+        if explicit_review
+        else None,
+    )
+    counts = dict(_as_dict(view.get("counts")))
+    counts["candidate_radar_production_replacement_review_row_count"] = receipt["row_count"]
+    counts["candidate_radar_production_replacement_review_local_blocker_count"] = receipt["local_blocker_count"]
+    counts["candidate_radar_production_replacement_review_production_blocker_count"] = receipt[
+        "production_blocker_count"
+    ]
+    counts["candidate_radar_production_replacement_review_ready"] = receipt["local_review_ready"]
+    policy = dict(_as_dict(view.get("policy")))
+    policy["candidate_radar_production_replacement_review_is_button_gated"] = explicit_review
+    policy["candidate_radar_production_replacement_review_is_local"] = True
+    policy["candidate_radar_production_replacement_review_calls_provider_or_model"] = False
+    policy["candidate_radar_production_replacement_review_is_not_production_replacement"] = True
+    policy["candidate_radar_production_replacement_review_requires_direct_worker_provider_browser_evidence"] = True
+    ledger = _as_list(view.get("call_ledger"))
+    ledger.append(
+        _candidate_call_ledger_row(
+            api="local_candidate_radar_production_replacement_review_preview",
+            source_snapshot="candidate_radar_packet",
+            row_count=len(rows),
+            call_status=receipt["status"],
+        )
+    )
+    warnings = [str(item) for item in _as_list(view.get("warnings"))]
+    warning = "Candidate Radar production replacement review 只审查本地迁移证据和缺口；不会运行扫描、启动 worker、调用 Tushare/DeepSeek/GitHub、退掉 legacy 或完成生产替代。"
+    if warning not in warnings:
+        warnings.append(warning)
+    view["counts"] = counts
+    view["policy"] = policy
+    view["call_ledger"] = ledger
+    view["warnings"] = warnings
+    view["candidate_radar_production_replacement_review_receipt"] = receipt
+    view["candidate_radar_production_replacement_review_rows"] = rows
     return view
 
 
@@ -10293,4 +10736,113 @@ def run_candidate_browser_qa_review_task(payload: Any = None) -> dict[str, Any]:
         current_step="candidate_radar_browser_qa_review_ready",
         call_ledger=[ledger],
         warning="candidate_radar_browser_qa_review_ready_no_external_call",
+    ) or task
+
+
+def run_candidate_production_replacement_review_task(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="candidate_radar_production_replacement_review_queued",
+        warnings=[
+            "下一票雷达 production replacement review 只审查本地迁移证据；不会启动 worker、不会调用 Tushare、DeepSeek 或 GitHub。",
+            "review 收据不代表生产雷达替代完成，不退掉 legacy fallback，不生成买入指令，不修改 strategy action。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.25,
+        current_step="building_candidate_radar_production_replacement_review",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = read_candidate_radar_cache()
+    reviewed_at = _now_iso()
+    receipt, receipt_rows = _candidate_radar_production_replacement_review(
+        packet,
+        payload_safe=payload_safe,
+        explicit_review=True,
+        task_id=str(task["task_id"]),
+        reviewed_at=reviewed_at,
+    )
+    request_params_safe = {
+        "review_scope": "candidate_radar_production_replacement_local_review",
+        "operator_approved": _coerce_bool(
+            payload_safe.get("operator_approved") or payload_safe.get("approved_by_user") or payload_safe.get("approved"),
+            False,
+        ),
+        "reviewer": receipt.get("reviewer"),
+        "review_scope_hash_short": receipt.get("review_scope_hash_short"),
+        "local_review_ready": receipt.get("local_review_ready"),
+        "production_blocker_count": receipt.get("production_blocker_count"),
+        "external_sources_allowed": False,
+        "worker_started": False,
+        "worker_task_created": False,
+        "worker_task_executed": False,
+        "provider_model_task_created": False,
+        "provider_model_task_dispatched": False,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+    }
+    ledger = _candidate_call_ledger_row(
+        api="local_candidate_radar_production_replacement_review",
+        source_snapshot="candidate_radar_cache",
+        row_count=len(receipt_rows),
+        call_status=str(receipt.get("status") or "candidate_radar_production_replacement_review_recorded"),
+        request_params_safe=request_params_safe,
+    )
+    packet["task_id"] = task["task_id"]
+    packet["scan_mode"] = "production_replacement_review"
+    packet["candidate_radar_production_replacement_review_completed_at"] = reviewed_at
+    packet["candidate_radar_production_replacement_review_receipt"] = receipt
+    packet["candidate_radar_production_replacement_review_rows"] = receipt_rows
+    counts = _as_dict(packet.get("counts"))
+    counts["candidate_radar_production_replacement_review_row_count"] = receipt["row_count"]
+    counts["candidate_radar_production_replacement_review_local_blocker_count"] = receipt["local_blocker_count"]
+    counts["candidate_radar_production_replacement_review_production_blocker_count"] = receipt[
+        "production_blocker_count"
+    ]
+    counts["candidate_radar_production_replacement_review_ready"] = receipt["local_review_ready"]
+    packet["counts"] = counts
+    policy = _as_dict(packet.get("policy"))
+    policy["candidate_radar_production_replacement_review_is_button_gated"] = True
+    policy["candidate_radar_production_replacement_review_is_local"] = True
+    policy["candidate_radar_production_replacement_review_does_not_call_provider_or_model"] = True
+    policy["candidate_radar_production_replacement_review_does_not_start_worker"] = True
+    policy["candidate_radar_production_replacement_review_is_not_production_replacement"] = True
+    packet["policy"] = policy
+    packet["call_ledger"] = [ledger]
+    packet["warnings"] = [
+        "下一票雷达 production replacement review 已写入本地审查收据；真实 worker/provider/model/browser promotion 和 legacy retirement 仍未执行。"
+    ] + [
+        warning
+        for warning in _as_list(packet.get("warnings"))
+        if "production replacement review" not in str(warning)
+    ]
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
+    except Exception:
+        ledger["call_status"] = "production_replacement_review_storage_write_failed"
+        ledger["error_message_safe"] = "candidate_radar_production_replacement_review_sqlite_write_failed"
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="candidate_radar_production_replacement_review_storage_write_failed",
+            error_message_safe="candidate_radar_production_replacement_review_sqlite_write_failed",
+            call_ledger=[ledger],
+            warning="candidate_radar_production_replacement_review_failed_no_external_call",
+        ) or task
+
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="candidate_radar_production_replacement_review_ready",
+        call_ledger=[ledger],
+        warning="candidate_radar_production_replacement_review_ready_no_external_call",
     ) or task

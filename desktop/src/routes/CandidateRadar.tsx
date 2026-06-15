@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getBootstrapStatus, getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
+import { getBootstrapStatus, getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -150,6 +150,7 @@ export default function CandidateRadar() {
   const nextExecutionRecipe = (cache.candidate_radar_next_execution_recipe as Record<string, unknown> | undefined) ?? {};
   const workerExecutionRecipe = (cache.candidate_radar_worker_execution_recipe as Record<string, unknown> | undefined) ?? {};
   const workerExecutionRequest = (cache.candidate_radar_worker_execution_request_receipt as Record<string, unknown> | undefined) ?? {};
+  const productionReplacementReview = (cache.candidate_radar_production_replacement_review_receipt as Record<string, unknown> | undefined) ?? {};
   const launchQuantProjectionExecutionRequest = () =>
     void postCandidateRadarQuantProjectionExecutionRequest({
       scan_mode: "quant_projection_execution_request",
@@ -166,6 +167,15 @@ export default function CandidateRadar() {
       operator_approved: true,
       worker_execution_scope_hash: String(workerExecutionRecipe.worker_execution_scope_hash ?? ""),
       requested_by: "candidate_radar_page"
+    }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
+  const launchProductionReplacementReview = () =>
+    void postCandidateRadarProductionReplacementReview({
+      review_scope: "candidate_radar_production_replacement_local_review",
+      approved_by_user: true,
+      reviewer: "candidate_radar_page"
     }).then((res) => {
       setTaskReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
@@ -215,6 +225,7 @@ export default function CandidateRadar() {
   const nextExecutionRecipeRows = rows(cache.candidate_radar_next_execution_rows);
   const workerExecutionRows = rows(cache.candidate_radar_worker_execution_rows);
   const workerExecutionRequestRows = rows(cache.candidate_radar_worker_execution_request_rows);
+  const productionReplacementReviewRows = rows(cache.candidate_radar_production_replacement_review_rows);
   const durableEvidenceRows = rows(cache.candidate_radar_durable_evidence_rows);
   const productionStageScopeRows = rows(cache.candidate_radar_production_stage_scope_rows);
   const resultDeltaClarityRows = rows(cache.result_delta_clarity_rows);
@@ -316,6 +327,8 @@ export default function CandidateRadar() {
           { label: "worker recipe blockers", value: counts.candidate_radar_worker_execution_recipe_production_blocker_count as number | undefined, tone: Number(counts.candidate_radar_worker_execution_recipe_production_blocker_count ?? 0) ? "warn" : "good" },
           { label: "worker request", value: String(workerExecutionRequest.status ?? "missing"), tone: workerExecutionRequest.local_execution_request_ready === true ? "good" : "warn" },
           { label: "request blockers", value: counts.candidate_radar_worker_execution_request_local_blocker_count as number | undefined, tone: Number(counts.candidate_radar_worker_execution_request_local_blocker_count ?? 0) ? "warn" : "good" },
+          { label: "replacement review", value: String(productionReplacementReview.status ?? "missing"), tone: productionReplacementReview.local_review_ready === true ? "good" : "warn" },
+          { label: "review blockers", value: counts.candidate_radar_production_replacement_review_production_blocker_count as number | undefined, tone: Number(counts.candidate_radar_production_replacement_review_production_blocker_count ?? 0) ? "warn" : "good" },
           { label: "durable recipe", value: String(durableEvidenceRecipe.status ?? "missing"), tone: durableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
           { label: "durable blockers", value: counts.candidate_radar_durable_evidence_blocker_count as number | undefined, tone: Number(counts.candidate_radar_durable_evidence_blocker_count ?? 0) ? "warn" : "good" },
           { label: "stage manifest", value: String(productionStageScopeManifest.status ?? "missing"), tone: productionStageScopeManifest.local_manifest_ready === true ? "good" : "warn" },
@@ -667,6 +680,22 @@ export default function CandidateRadar() {
         <p>not_allowed_next_steps: {Array.isArray(workerExecutionRequest.not_allowed_next_steps) ? workerExecutionRequest.not_allowed_next_steps.join(" / ") : "create worker task / start worker / run full-pool or deep-scan / call provider/model / retire legacy fallback"}</p>
         <DataLineageTable rows={objectRow(workerExecutionRequest)} />
         <DataLineageTable rows={workerExecutionRequestRows} />
+      </PacketCard>
+
+      <PacketCard title="雷达生产替代审查" subtitle="POST /api/candidate-radar/production-replacement-review；汇总快扫、不降能、worker/provider/browser 缺口，不执行外部任务" status={String(productionReplacementReview.status ?? "missing")}>
+        <div className="actions">
+          <button onClick={launchProductionReplacementReview}>生成 production replacement review</button>
+        </div>
+        <p>local_review_ready: {String(productionReplacementReview.local_review_ready === true)}；ready_for_production_replacement: {String(productionReplacementReview.ready_for_production_replacement === true)}</p>
+        <p>production_radar_replacement_complete: {String(productionReplacementReview.production_radar_replacement_complete === true)}；legacy_retirement_ready: {String(productionReplacementReview.legacy_retirement_ready === true)}；legacy_fallback_required: {String(productionReplacementReview.legacy_fallback_required !== false)}</p>
+        <p>fast_scan_ready: {String(productionReplacementReview.fast_scan_ready === true)}；no_feature_loss_local_surface_ready: {String(productionReplacementReview.no_feature_loss_local_surface_ready === true)}；legacy_parity_receipt_ready: {String(productionReplacementReview.legacy_parity_receipt_ready === true)}</p>
+        <p>local full/deep: {String(productionReplacementReview.local_full_pool_receipt_visible === true)} / {String(productionReplacementReview.local_deep_scan_review_visible === true)}；provider scope / worker request / quant request / browser review: {String(productionReplacementReview.provider_parity_scope_ticket_visible === true)} / {String(productionReplacementReview.worker_execution_request_visible === true)} / {String(productionReplacementReview.quant_projection_execution_request_visible === true)} / {String(productionReplacementReview.browser_qa_review_visible === true)}</p>
+        <p>worker full/deep / provider backed / DeepSeek ledger / browser promoted: {String(productionReplacementReview.worker_full_pool_execution_done === true)} / {String(productionReplacementReview.worker_deep_scan_execution_done === true)} / {String(productionReplacementReview.provider_backed_acceptance_done === true)} / {String(productionReplacementReview.deepseek_model_ledger_complete === true)} / {String(productionReplacementReview.browser_visual_performance_promoted === true)}</p>
+        <p>local_blocker_count / production_blocker_count: {String(productionReplacementReview.local_blocker_count ?? 0)} / {String(productionReplacementReview.production_blocker_count ?? 0)}；review_scope_hash_short: {String(productionReplacementReview.review_scope_hash_short ?? "--")}</p>
+        <p>tushare_called / deepseek_called / github_called: {String(productionReplacementReview.tushare_called === true)} / {String(productionReplacementReview.deepseek_called === true)} / {String(productionReplacementReview.github_called === true)}</p>
+        <p>这个审查只把 3.0 雷达迁移能不能退旧模块讲清楚：本地快扫可以 ready，但生产替代仍要真实 worker 全池/深扫、provider call ledger、可选 DeepSeek model ledger、浏览器性能和 legacy retirement review。</p>
+        <DataLineageTable rows={objectRow(productionReplacementReview)} />
+        <DataLineageTable rows={productionReplacementReviewRows} />
       </PacketCard>
 
       <PacketCard title="雷达耐久证据配方" subtitle="candidate_radar_durable_evidence_recipe；生产替代前的直接证据清单，不运行扫描、不外联" status={String(durableEvidenceRecipe.status ?? "missing")}>
