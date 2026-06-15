@@ -63,6 +63,8 @@ export default function LegacyTools() {
   const fallbackDependencyRows = rows(cache.streamlit_fallback_dependency_rows);
   const streamlitRetirementReadinessReceipt = (cache.streamlit_retirement_readiness_receipt as Record<string, unknown> | undefined) ?? {};
   const streamlitRetirementReadinessRows = rows(cache.streamlit_retirement_readiness_rows);
+  const streamlitRetirementDurableEvidenceRecipe = (cache.streamlit_retirement_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
+  const streamlitRetirementDurableEvidenceRows = rows(cache.streamlit_retirement_durable_evidence_rows);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
   const empty = !loading && !error && !Object.keys(cache).length;
@@ -96,6 +98,8 @@ export default function LegacyTools() {
             { label: "ordinary deps", value: fallbackDependencyContract.ordinary_fallback_dependency_count ?? counts.ordinary_fallback_dependency_count, tone: Number(fallbackDependencyContract.ordinary_fallback_dependency_count ?? counts.ordinary_fallback_dependency_count ?? 0) > 0 ? "warn" : "good" },
             { label: "retirement receipt", value: streamlitRetirementReadinessReceipt.local_receipt_ready === true ? "ready" : "review", tone: streamlitRetirementReadinessReceipt.local_receipt_ready === true ? "good" : "warn" },
             { label: "retirement blockers", value: streamlitRetirementReadinessReceipt.blocking_criterion_count ?? counts.streamlit_retirement_readiness_blocker_count, tone: Number(streamlitRetirementReadinessReceipt.blocking_criterion_count ?? counts.streamlit_retirement_readiness_blocker_count ?? 0) > 0 ? "warn" : "good" },
+            { label: "durable recipe", value: streamlitRetirementDurableEvidenceRecipe.local_recipe_ready === true ? "ready" : "review", tone: streamlitRetirementDurableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
+            { label: "durable blockers", value: streamlitRetirementDurableEvidenceRecipe.production_blocker_count ?? counts.streamlit_retirement_durable_evidence_blocker_count, tone: Number(streamlitRetirementDurableEvidenceRecipe.production_blocker_count ?? counts.streamlit_retirement_durable_evidence_blocker_count ?? 0) > 0 ? "warn" : "good" },
             { label: "普通主流程", value: "迁往 React/Tauri", tone: "good" },
             { label: "自动外联", value: "禁止", tone: "good" },
             { label: "真实交易", value: "禁止", tone: "good" },
@@ -168,6 +172,24 @@ export default function LegacyTools() {
         <DataLineageTable rows={rows(streamlitRetirementReadinessReceipt.call_ledger)} />
       </PacketCard>
 
+      <PacketCard title="Streamlit retirement durable evidence recipe" subtitle="LTG-10 证据配方；列明真正退出普通主流程前必须补齐的直接证据" status={String(streamlitRetirementDurableEvidenceRecipe.status ?? "streamlit_retirement_durable_evidence_recipe_ready_fallback_blocked")}>
+        <p>schema_version: {String(streamlitRetirementDurableEvidenceRecipe.schema_version ?? "streamlit_retirement_durable_evidence_recipe.v1")}</p>
+        <p>scope: {String(streamlitRetirementDurableEvidenceRecipe.scope ?? "local_streamlit_retirement_durable_evidence_recipe_no_streamlit_execution")}</p>
+        <p>local_recipe_ready: {String(streamlitRetirementDurableEvidenceRecipe.local_recipe_ready ?? true)}</p>
+        <p>durable_evidence_complete / durable_promotion_ready: {String(streamlitRetirementDurableEvidenceRecipe.durable_evidence_complete ?? false)} / {String(streamlitRetirementDurableEvidenceRecipe.durable_promotion_ready ?? false)}</p>
+        <p>ordinary_workflow_exit_complete / streamlit_fallback_removal_ready / full_streamlit_removal_ready: {String(streamlitRetirementDurableEvidenceRecipe.ordinary_workflow_exit_complete ?? false)} / {String(streamlitRetirementDurableEvidenceRecipe.streamlit_fallback_removal_ready ?? false)} / {String(streamlitRetirementDurableEvidenceRecipe.full_streamlit_removal_ready ?? false)}</p>
+        <p>streamlit_fallback_retained / legacy_fallback_required: {String(streamlitRetirementDurableEvidenceRecipe.streamlit_fallback_retained ?? true)} / {String(streamlitRetirementDurableEvidenceRecipe.legacy_fallback_required ?? true)}</p>
+        <p>production_blocker_count: {String(streamlitRetirementDurableEvidenceRecipe.production_blocker_count ?? 0)}</p>
+        <p>blocking_evidence_keys: {Array.isArray(streamlitRetirementDurableEvidenceRecipe.blocking_evidence_keys) ? streamlitRetirementDurableEvidenceRecipe.blocking_evidence_keys.join(" / ") : "ordinary_workflow_replacement_parity / candidate_radar_no_feature_loss_acceptance / provider_backed_parity_acceptance / browser_performance_visual_qa / admin_debug_retention_decision / fallback_retirement_change_review / app_py_removal_or_retention_decision / production_promotion_approval"}</p>
+        <p>allowed_next_step: {String(streamlitRetirementDurableEvidenceRecipe.allowed_next_step ?? "collect_direct_replacement_parity_browser_provider_and_retirement_review_evidence")}</p>
+        <p>not_allowed_next_steps: {Array.isArray(streamlitRetirementDurableEvidenceRecipe.not_allowed_next_steps) ? streamlitRetirementDurableEvidenceRecipe.not_allowed_next_steps.join(" / ") : "treat durable recipe as Streamlit retirement completion / remove fallback before ordinary workflow parity is proven / delete app.py before explicit retention or removal decision / open Streamlit from GET cache or page render"}</p>
+        <p>streamlit_opened_by_recipe / legacy_tools_run_by_recipe / tasks_created_by_recipe: {String(streamlitRetirementDurableEvidenceRecipe.streamlit_opened_by_recipe ?? false)} / {String(streamlitRetirementDurableEvidenceRecipe.legacy_tools_run_by_recipe ?? false)} / {String(streamlitRetirementDurableEvidenceRecipe.tasks_created_by_recipe ?? false)}</p>
+        <p>fallback_removed_by_recipe / app_py_deleted_by_recipe: {String(streamlitRetirementDurableEvidenceRecipe.fallback_removed_by_recipe ?? false)} / {String(streamlitRetirementDurableEvidenceRecipe.app_py_deleted_by_recipe ?? false)}</p>
+        <p>external_calls_triggered / tushare_called / deepseek_called / github_called: {String(streamlitRetirementDurableEvidenceRecipe.external_calls_triggered ?? false)} / {String(streamlitRetirementDurableEvidenceRecipe.tushare_called ?? false)} / {String(streamlitRetirementDurableEvidenceRecipe.deepseek_called ?? false)} / {String(streamlitRetirementDurableEvidenceRecipe.github_called ?? false)}</p>
+        <DataLineageTable rows={streamlitRetirementDurableEvidenceRows} />
+        <DataLineageTable rows={rows(streamlitRetirementDurableEvidenceRecipe.call_ledger)} />
+      </PacketCard>
+
       <PacketCard title="允许用途" subtitle="回退和调试可保留，普通主流程逐步迁出" status="guarded">
         <DataLineageTable rows={LEGACY_ALLOWED_USES} />
       </PacketCard>
@@ -219,6 +241,7 @@ export default function LegacyTools() {
       <PacketCard title="原始 legacy bridge cache payload" subtitle="调试用 JSON；不含 token/key/错误堆栈" status="safe">
         <JsonDetails title="legacy bridge cache raw" data={cache} />
         <JsonDetails title="streamlit retirement readiness receipt raw" data={streamlitRetirementReadinessReceipt} />
+        <JsonDetails title="streamlit retirement durable evidence recipe raw" data={streamlitRetirementDurableEvidenceRecipe} />
       </PacketCard>
     </>
   );

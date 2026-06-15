@@ -66,6 +66,18 @@ REQUIRED_STREAMLIT_RETIREMENT_STAGES = {
     "fallback_retirement_review",
     "app_py_removal_or_retention_review",
 }
+REQUIRED_STREAMLIT_DURABLE_EVIDENCE_KEYS = {
+    "route_inventory_primary_entry",
+    "ordinary_workflow_replacement_parity",
+    "candidate_radar_no_feature_loss_acceptance",
+    "provider_backed_parity_acceptance",
+    "browser_performance_visual_qa",
+    "admin_debug_retention_decision",
+    "fallback_retirement_change_review",
+    "app_py_removal_or_retention_decision",
+    "legacy_guardrail_regression_review",
+    "production_promotion_approval",
+}
 STREAMLIT_RETIREMENT_STAGE_LABELS = {
     "route_inventory_primary_entry": "route inventory and primary-entry contract",
     "ordinary_workflow_replacement_parity": "ordinary workflow replacement parity",
@@ -173,6 +185,11 @@ def build_contract() -> dict[str, Any]:
         row for row in _list(packet.get("streamlit_retirement_readiness_rows")) if isinstance(row, dict)
     ]
     retirement_receipt_criteria = {str(row.get("criterion") or "") for row in retirement_receipt_rows}
+    durable_evidence_recipe = _dict(packet.get("streamlit_retirement_durable_evidence_recipe"))
+    durable_evidence_rows = [
+        row for row in _list(packet.get("streamlit_retirement_durable_evidence_rows")) if isinstance(row, dict)
+    ]
+    durable_evidence_keys = {str(row.get("evidence_key") or "") for row in durable_evidence_rows}
     source_summary = _dict(exit_audit.get("source_summary"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     route_source = _read_script("desktop/src/routes/LegacyTools.tsx")
@@ -354,13 +371,83 @@ def build_contract() -> dict[str, Any]:
             "Streamlit retirement stage rows must enumerate every replacement/parity/retirement evidence stage without opening Streamlit, running legacy tools, creating tasks, removing fallback, deleting app.py, calling providers, trading, or claiming retirement completion.",
         ),
         _row(
+            "streamlit_retirement_durable_evidence_recipe_is_local_fallback_blocked",
+            durable_evidence_recipe.get("schema_version") == "streamlit_retirement_durable_evidence_recipe.v1"
+            and durable_evidence_recipe.get("status")
+            == "streamlit_retirement_durable_evidence_recipe_ready_fallback_blocked"
+            and durable_evidence_recipe.get("scope")
+            == "local_streamlit_retirement_durable_evidence_recipe_no_streamlit_execution"
+            and durable_evidence_recipe.get("local_recipe_ready") is True
+            and durable_evidence_recipe.get("durable_evidence_complete") is False
+            and durable_evidence_recipe.get("durable_promotion_ready") is False
+            and durable_evidence_recipe.get("ordinary_workflow_exit_complete") is False
+            and durable_evidence_recipe.get("streamlit_fallback_removal_ready") is False
+            and durable_evidence_recipe.get("full_streamlit_removal_ready") is False
+            and durable_evidence_recipe.get("streamlit_fallback_retained") is True
+            and durable_evidence_recipe.get("legacy_fallback_required") is True
+            and durable_evidence_recipe.get("feature_parity_required_before_removal") is True
+            and durable_evidence_recipe.get("no_feature_cut_allowed") is True
+            and durable_evidence_recipe.get("allowed_next_step")
+            == "collect_direct_replacement_parity_browser_provider_and_retirement_review_evidence"
+            and "treat durable recipe as Streamlit retirement completion"
+            in _list(durable_evidence_recipe.get("not_allowed_next_steps"))
+            and "remove fallback before ordinary workflow parity is proven"
+            in _list(durable_evidence_recipe.get("not_allowed_next_steps"))
+            and "delete app.py before explicit retention or removal decision"
+            in _list(durable_evidence_recipe.get("not_allowed_next_steps"))
+            and durable_evidence_keys == REQUIRED_STREAMLIT_DURABLE_EVIDENCE_KEYS
+            and len(durable_evidence_rows) == len(REQUIRED_STREAMLIT_DURABLE_EVIDENCE_KEYS)
+            and int(durable_evidence_recipe.get("production_blocker_count") or 0) > 0
+            and int(durable_evidence_recipe.get("production_blocker_count") or 0)
+            == sum(1 for row in durable_evidence_rows if row.get("production_blocker") is True)
+            and "candidate_radar_no_feature_loss_acceptance"
+            in set(durable_evidence_recipe.get("blocking_evidence_keys") or [])
+            and "production_promotion_approval"
+            in set(durable_evidence_recipe.get("blocking_evidence_keys") or [])
+            and all(
+                row.get("scope") == "streamlit_retirement_durable_evidence_recipe"
+                for row in durable_evidence_rows
+            )
+            and all(row.get("ordinary_workflow_exit_complete") is False for row in durable_evidence_rows)
+            and all(row.get("streamlit_fallback_removal_ready") is False for row in durable_evidence_rows)
+            and all(row.get("full_streamlit_removal_ready") is False for row in durable_evidence_rows)
+            and all(row.get("streamlit_fallback_retained") is True for row in durable_evidence_rows)
+            and all(row.get("fallback_removed_by_recipe") is False for row in durable_evidence_rows)
+            and all(row.get("app_py_deleted_by_recipe") is False for row in durable_evidence_rows)
+            and all(row.get("streamlit_opened_by_recipe") is False for row in durable_evidence_rows)
+            and all(row.get("legacy_tools_run_by_recipe") is False for row in durable_evidence_rows)
+            and all(row.get("tasks_created_by_recipe") is False for row in durable_evidence_rows)
+            and all(row.get("provider_model_task_dispatched_by_recipe") is False for row in durable_evidence_rows)
+            and all(row.get("external_calls_triggered") is False for row in durable_evidence_rows)
+            and all(row.get("tushare_called") is False for row in durable_evidence_rows)
+            and all(row.get("deepseek_called") is False for row in durable_evidence_rows)
+            and all(row.get("github_called") is False for row in durable_evidence_rows)
+            and all(row.get("does_not_execute_trades") is True for row in durable_evidence_rows)
+            and all(row.get("does_not_modify_strategy_action") is True for row in durable_evidence_rows)
+            and all(row.get("does_not_modify_holdings") is True for row in durable_evidence_rows)
+            and all(row.get("contains_secret") is False for row in durable_evidence_rows)
+            and _list(durable_evidence_recipe.get("call_ledger"))
+            and _dict(_list(durable_evidence_recipe.get("call_ledger"))[0]).get("api")
+            == "local_streamlit_retirement_durable_evidence_recipe"
+            and _dict(_list(durable_evidence_recipe.get("call_ledger"))[0]).get("external") is False
+            and packet.get("streamlit_retirement_durable_evidence_recipe_ready") is True
+            and packet.get("streamlit_retirement_durable_evidence_recipe_status")
+            == durable_evidence_recipe.get("status")
+            and packet.get("streamlit_retirement_durable_evidence_recipe_is_local") is True
+            and packet.get("streamlit_retirement_durable_evidence_recipe_is_not_retirement") is True
+            and packet.get("streamlit_retirement_durable_evidence_requires_replacement_parity") is True,
+            "Durable evidence recipe must enumerate direct parity/provider/browser/admin/fallback/app.py/promotion evidence while keeping Streamlit fallback retained and all execution/external/trading side effects disabled.",
+        ),
+        _row(
             "react_legacy_page_displays_boundaries",
             "Legacy / Admin / Debug" in route_source
             and "Streamlit 2.0 保留为 legacy" in route_source
             and "ordinary_workflow_exit_complete" in route_source
             and "streamlit_fallback_removal_ready" in route_source
             and "streamlitRetirementReadinessReceipt" in route_source
+            and "streamlitRetirementDurableEvidenceRecipe" in route_source
             and "Streamlit retirement readiness receipt" in route_source
+            and "Streamlit retirement durable evidence recipe" in route_source
             and "Streamlit fallback 依赖契约" in route_source
             and "普通主流程" in route_source
             and "真实交易" in route_source
@@ -398,6 +485,8 @@ def build_contract() -> dict[str, Any]:
             and "streamlit_fallback_retained" in this_script
             and "streamlit_retirement_readiness_receipt.v1" in this_script
             and "streamlit_retirement_stage_scope_manifest" in this_script
+            and "streamlit_retirement_durable_evidence_recipe.v1" in this_script
+            and "local_streamlit_retirement_durable_evidence_recipe_no_streamlit_execution" in this_script
             and "does_not_open_streamlit" in this_script
             and "does_not_execute_trades" in this_script
             and ("import " + "streamlit") not in this_script
@@ -429,6 +518,13 @@ def build_contract() -> dict[str, Any]:
         "no_feature_cut_allowed": True,
         "streamlit_retirement_readiness_receipt_ready": retirement_receipt.get("local_receipt_ready") is True,
         "streamlit_retirement_readiness_receipt_status": retirement_receipt.get("status"),
+        "streamlit_retirement_durable_evidence_recipe_ready": durable_evidence_recipe.get("local_recipe_ready")
+        is True,
+        "streamlit_retirement_durable_evidence_recipe_status": durable_evidence_recipe.get("status"),
+        "streamlit_retirement_durable_evidence_complete": False,
+        "streamlit_retirement_durable_evidence_blocker_count": durable_evidence_recipe.get(
+            "production_blocker_count"
+        ),
         "cache_only": True,
         "does_not_open_streamlit": True,
         "does_not_run_legacy_tools": True,
@@ -472,8 +568,17 @@ def build_contract() -> dict[str, Any]:
                 for row in streamlit_retirement_stage_scope_rows
                 if row.get("full_streamlit_removal_ready") is False
             ),
+            "streamlit_retirement_durable_evidence_row_count": len(durable_evidence_rows),
+            "streamlit_retirement_durable_evidence_keys": sorted(durable_evidence_keys),
+            "streamlit_retirement_durable_evidence_blocker_count": durable_evidence_recipe.get(
+                "production_blocker_count"
+            ),
+            "streamlit_retirement_durable_evidence_blocking_keys": durable_evidence_recipe.get(
+                "blocking_evidence_keys"
+            ),
         },
         "streamlit_retirement_stage_scope_rows": streamlit_retirement_stage_scope_rows,
+        "streamlit_retirement_durable_evidence_rows": durable_evidence_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Streamlit fallback removal, full ordinary-workflow exit, replacement parity, and admin/debug retirement remain pending.",
     }

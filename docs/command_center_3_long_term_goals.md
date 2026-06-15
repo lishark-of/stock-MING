@@ -1094,6 +1094,7 @@ Package Command Center 3 Tauri desktop shell
 - Legacy cache now exposes `primary_workflow_exit_audit`, `primary_workflow_exit_rows`, and `primary_workflow_route_rows`, making the ordinary-workflow exit status visible without opening Streamlit or running legacy tools.
 - Legacy cache now exposes `streamlit_fallback_dependency_contract` and `streamlit_fallback_dependency_rows`, separating Command Center 3 primary-ready routes, ordinary-flow partial fallback dependencies, and retained legacy/admin/debug dependencies. This is a local dependency contract only; it does not remove Streamlit fallback, open Streamlit, run legacy tools, create tasks, or call providers/models/GitHub.
 - Legacy cache now exposes `streamlit_retirement_readiness_receipt` and rows: a local LTG-10 next-step receipt that summarizes primary-exit blockers, fallback dependencies, ordinary blocking workflows, admin/debug retained blockers, no-feature-cut requirements, and the only allowed next step: explicit replacement parity review followed by Streamlit fallback retirement review. It keeps `ordinary_workflow_exit_complete=false`, `streamlit_fallback_removal_ready=false`, `full_streamlit_removal_ready=false`, and `streamlit_fallback_retained=true`.
+- Legacy cache now exposes `streamlit_retirement_durable_evidence_recipe` and rows: a local LTG-10 durable-evidence recipe for route inventory, ordinary workflow parity, Candidate Radar no-feature-loss acceptance, provider-backed parity, browser/performance/visual QA, admin/debug decision, fallback retirement review, `app.py` removal-or-retention decision, guardrail regression, and production promotion. It keeps `durable_evidence_complete=false`, `durable_promotion_ready=false`, `ordinary_workflow_exit_complete=false`, `streamlit_fallback_removal_ready=false`, `full_streamlit_removal_ready=false`, `streamlit_fallback_retained=true`, and every Streamlit/tool/task/provider/model/trade/action side-effect flag disabled.
 - `scripts/streamlit_legacy_contract.py` is now part of the local push gate. It validates legacy cache read-only policy, `legacy/admin/debug` marking, React/Tauri primary-entry policy, ordinary-workflow exit blockers, fallback dependency contract, no-feature-cut requirements, no Streamlit execution, no legacy tool execution, no task creation, no provider/model/GitHub calls, no trade, and no action mutation while `ordinary_workflow_exit_complete=false`.
 - `scripts/streamlit_legacy_contract.py` now emits `streamlit_retirement_stage_scope_rows` for the eight retirement evidence stages: route inventory/primary-entry contract, ordinary workflow replacement parity, Candidate Radar replacement parity, provider-backed parity acceptance, browser/performance QA, admin/debug retention or replacement decision, fallback retirement review, and `app.py` removal or retention review. Every row remains local/pending and keeps Streamlit opening, legacy tool execution, task creation, fallback removal, `app.py` deletion, provider/model task dispatch, external calls, trades, holdings mutation, secrets, and full retirement completion disabled.
 - It has not fully exited ordinary usage paths.
@@ -1106,6 +1107,7 @@ Package Command Center 3 Tauri desktop shell
 - `streamlit_retirement_readiness_receipt.status=streamlit_retirement_receipt_ready_fallback_blocked` is expected while Candidate Radar parity, full-pool/deep-scan acceptance, provider-backed parity, browser/performance QA, and admin/debug replacement or retirement decisions remain incomplete.
 - `scripts/streamlit_legacy_contract.py` is a local regression guard only; it does not remove Streamlit fallback, prove replacement parity, run old tools, open Streamlit, or complete ordinary-workflow exit.
 - `streamlit_retirement_stage_scope_rows` is a local stage-scope manifest only; it does not prove ordinary workflow replacement parity, Candidate Radar parity, provider-backed parity, browser/performance QA, admin/debug replacement/retention decisions, fallback retirement, `app.py` removal, or complete Streamlit exit.
+- `streamlit_retirement_durable_evidence_recipe` is a local durable-evidence recipe only; it does not collect direct parity evidence, run browser/performance QA, run provider-backed acceptance, decide admin/debug retention, remove fallback, delete `app.py`, approve promotion, or complete Streamlit exit.
 
 ### Implementation Phases
 
@@ -1113,9 +1115,10 @@ Package Command Center 3 Tauri desktop shell
 2. Migrate those workflows to React/Tauri + FastAPI.
 3. Keep `streamlit_fallback_dependency_contract` current so every fallback dependency has a removal criterion and no feature-cut boundary.
 4. Keep `streamlit_retirement_readiness_receipt` current so the next explicit parity/retirement review is visible without deleting fallback or marking completion.
-5. Keep Streamlit for debug/admin/fallback only.
-6. Preserve old-module guards.
-7. Promote `primary_workflow_exit_audit` to complete only after route coverage has no fallback blockers and legacy removal is safe.
+5. Keep `streamlit_retirement_durable_evidence_recipe` current so the durable evidence needed for final retirement remains visible and reviewable.
+6. Keep Streamlit for debug/admin/fallback only.
+7. Preserve old-module guards.
+8. Promote `primary_workflow_exit_audit` to complete only after route coverage has no fallback blockers and legacy removal is safe.
 
 ### Acceptance Criteria
 
@@ -1128,6 +1131,7 @@ Package Command Center 3 Tauri desktop shell
 - Streamlit retirement readiness receipt rows are visible in UI, `allowed_next_step=explicit_replacement_parity_review_then_streamlit_fallback_retirement_review`, and `not_allowed_next_steps` explicitly blocks GET cache opening Streamlit, running legacy tools, creating tasks, page render retiring fallback, deleting `app.py`, or treating the receipt as retirement completion.
 - `scripts/streamlit_legacy_contract.py` passes in the local push gate while reporting `ordinary_workflow_exit_complete=false`, `streamlit_fallback_removal_ready=false`, `full_streamlit_removal_ready=false`, `streamlit_fallback_retained=true`, `streamlit_retirement_readiness_receipt_ready=true`, and `does_not_open_streamlit=true`.
 - `streamlit_retirement_stage_scope_rows` must list all eight retirement evidence stages and keep `ordinary_workflow_exit_complete=false`, `streamlit_fallback_removal_ready=false`, `full_streamlit_removal_ready=false`, `streamlit_fallback_retained=true`, replacement parity false, provider-backed parity false, browser/performance QA false, admin/debug decision false, fallback removal false, `app.py` deletion false, external calls false, trades false, holdings mutation false, and `contains_secret=false`.
+- `streamlit_retirement_durable_evidence_recipe` must list the 10 durable evidence keys and keep direct parity, provider-backed parity, browser/performance QA, admin/debug decision, fallback retirement, `app.py` decision, and production promotion blocked until direct evidence exists. It must keep `durable_evidence_complete=false`, `durable_promotion_ready=false`, `ordinary_workflow_exit_complete=false`, `streamlit_fallback_removal_ready=false`, `full_streamlit_removal_ready=false`, `streamlit_fallback_retained=true`, Streamlit opening false, legacy tool execution false, task creation false, external calls false, trades false, action/holding mutation false, and `contains_secret=false`.
 
 ### Forbidden
 
@@ -1138,6 +1142,7 @@ Package Command Center 3 Tauri desktop shell
 - Do not treat `streamlit_retirement_readiness_receipt` as fallback removal, `app.py` deletion, replacement parity, admin/debug retirement, or complete Streamlit exit.
 - Do not treat `scripts/streamlit_legacy_contract.py` passing as Streamlit fallback removal, replacement parity, admin/debug retirement, or complete ordinary-workflow exit.
 - Do not treat `streamlit_retirement_stage_scope_rows` as ordinary workflow parity, Candidate Radar parity, provider-backed parity, browser/performance QA, admin/debug retirement, fallback removal, `app.py` deletion, or complete Streamlit exit.
+- Do not treat `streamlit_retirement_durable_evidence_recipe` as durable evidence completion, production promotion, fallback removal, `app.py` deletion, provider-backed acceptance, browser/performance QA, admin/debug decision, or complete Streamlit exit.
 
 ### Recommended Commit Message
 

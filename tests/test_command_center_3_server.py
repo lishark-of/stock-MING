@@ -1899,6 +1899,105 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertFalse(retirement_receipt["call_ledger"][0]["external"])
         self.assertIn("local_streamlit_retirement_readiness_receipt", {row["api"] for row in packet["call_ledger"]})
+        self.assertIn("streamlit_retirement_durable_evidence_recipe", packet)
+        durable_recipe = packet["streamlit_retirement_durable_evidence_recipe"]
+        durable_rows = {row["evidence_key"]: row for row in packet["streamlit_retirement_durable_evidence_rows"]}
+        required_durable_keys = {
+            "route_inventory_primary_entry",
+            "ordinary_workflow_replacement_parity",
+            "candidate_radar_no_feature_loss_acceptance",
+            "provider_backed_parity_acceptance",
+            "browser_performance_visual_qa",
+            "admin_debug_retention_decision",
+            "fallback_retirement_change_review",
+            "app_py_removal_or_retention_decision",
+            "legacy_guardrail_regression_review",
+            "production_promotion_approval",
+        }
+        self.assertEqual(durable_recipe["schema_version"], "streamlit_retirement_durable_evidence_recipe.v1")
+        self.assertEqual(
+            durable_recipe["scope"],
+            "local_streamlit_retirement_durable_evidence_recipe_no_streamlit_execution",
+        )
+        self.assertEqual(
+            durable_recipe["status"],
+            "streamlit_retirement_durable_evidence_recipe_ready_fallback_blocked",
+        )
+        self.assertTrue(durable_recipe["local_recipe_ready"])
+        self.assertFalse(durable_recipe["durable_evidence_complete"])
+        self.assertFalse(durable_recipe["durable_promotion_ready"])
+        self.assertFalse(durable_recipe["ordinary_workflow_exit_complete"])
+        self.assertFalse(durable_recipe["streamlit_fallback_removal_ready"])
+        self.assertFalse(durable_recipe["full_streamlit_removal_ready"])
+        self.assertTrue(durable_recipe["streamlit_fallback_retained"])
+        self.assertTrue(durable_recipe["legacy_fallback_required"])
+        self.assertTrue(durable_recipe["feature_parity_required_before_removal"])
+        self.assertTrue(durable_recipe["no_feature_cut_allowed"])
+        self.assertEqual(
+            durable_recipe["allowed_next_step"],
+            "collect_direct_replacement_parity_browser_provider_and_retirement_review_evidence",
+        )
+        self.assertIn("treat durable recipe as Streamlit retirement completion", durable_recipe["not_allowed_next_steps"])
+        self.assertIn("remove fallback before ordinary workflow parity is proven", durable_recipe["not_allowed_next_steps"])
+        self.assertIn(
+            "delete app.py before explicit retention or removal decision",
+            durable_recipe["not_allowed_next_steps"],
+        )
+        self.assertEqual(set(durable_rows), required_durable_keys)
+        self.assertEqual(durable_recipe["row_count"], len(required_durable_keys))
+        self.assertGreater(durable_recipe["production_blocker_count"], 0)
+        self.assertIn("candidate_radar_no_feature_loss_acceptance", durable_recipe["blocking_evidence_keys"])
+        self.assertIn("production_promotion_approval", durable_recipe["blocking_evidence_keys"])
+        self.assertEqual(durable_rows["route_inventory_primary_entry"]["current_status"], "local_verified")
+        self.assertEqual(durable_rows["legacy_guardrail_regression_review"]["current_status"], "local_verified")
+        self.assertTrue(durable_rows["candidate_radar_no_feature_loss_acceptance"]["production_blocker"])
+        self.assertTrue(durable_rows["provider_backed_parity_acceptance"]["direct_evidence_required"])
+        for row in durable_rows.values():
+            self.assertEqual(row["scope"], "streamlit_retirement_durable_evidence_recipe")
+            self.assertFalse(row["ordinary_workflow_exit_complete"])
+            self.assertFalse(row["streamlit_fallback_removal_ready"])
+            self.assertFalse(row["full_streamlit_removal_ready"])
+            self.assertTrue(row["streamlit_fallback_retained"])
+            self.assertFalse(row["fallback_removed_by_recipe"])
+            self.assertFalse(row["app_py_deleted_by_recipe"])
+            self.assertFalse(row["streamlit_opened_by_recipe"])
+            self.assertFalse(row["legacy_tools_run_by_recipe"])
+            self.assertFalse(row["tasks_created_by_recipe"])
+            self.assertFalse(row["provider_model_task_dispatched_by_recipe"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_modify_holdings"])
+            self.assertFalse(row["contains_secret"])
+        self.assertEqual(
+            durable_recipe["call_ledger"][0]["api"],
+            "local_streamlit_retirement_durable_evidence_recipe",
+        )
+        self.assertFalse(durable_recipe["call_ledger"][0]["external"])
+        self.assertIn(
+            "local_streamlit_retirement_durable_evidence_recipe",
+            {row["api"] for row in packet["call_ledger"]},
+        )
+        self.assertTrue(packet["streamlit_retirement_durable_evidence_recipe_ready"])
+        self.assertEqual(packet["streamlit_retirement_durable_evidence_recipe_status"], durable_recipe["status"])
+        self.assertEqual(
+            packet["streamlit_retirement_durable_evidence_blocker_count"],
+            durable_recipe["production_blocker_count"],
+        )
+        self.assertTrue(packet["streamlit_retirement_durable_evidence_recipe_is_local"])
+        self.assertTrue(packet["streamlit_retirement_durable_evidence_recipe_is_not_retirement"])
+        self.assertTrue(packet["streamlit_retirement_durable_evidence_requires_replacement_parity"])
+        self.assertEqual(
+            packet["counts"]["streamlit_retirement_durable_evidence_row_count"],
+            durable_recipe["row_count"],
+        )
+        self.assertEqual(
+            packet["counts"]["streamlit_retirement_durable_evidence_blocker_count"],
+            durable_recipe["production_blocker_count"],
+        )
         self.assertTrue(packet["streamlit_retirement_readiness_receipt_ready"])
         self.assertEqual(
             packet["streamlit_retirement_readiness_receipt_status"],
@@ -9774,6 +9873,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("retirement_readiness_receipt_allows_only_explicit_review", script)
         self.assertIn("streamlit_retirement_stage_scope_manifest", script)
         self.assertIn("streamlit_retirement_stage_scope_manifest_is_complete_and_pending", script)
+        self.assertIn("streamlit_retirement_durable_evidence_recipe.v1", script)
+        self.assertIn("streamlit_retirement_durable_evidence_recipe_is_local_fallback_blocked", script)
         self.assertIn("react_legacy_page_displays_boundaries", script)
         self.assertIn("legacy_startup_does_not_autocreate_or_autoexternal", script)
         self.assertIn("push_gate_runs_streamlit_contract_after_tauri", script)
@@ -9808,6 +9909,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["streamlit_retirement_readiness_receipt_status"],
             "streamlit_retirement_receipt_ready_fallback_blocked",
         )
+        self.assertTrue(payload["streamlit_retirement_durable_evidence_recipe_ready"])
+        self.assertEqual(
+            payload["streamlit_retirement_durable_evidence_recipe_status"],
+            "streamlit_retirement_durable_evidence_recipe_ready_fallback_blocked",
+        )
+        self.assertFalse(payload["streamlit_retirement_durable_evidence_complete"])
+        self.assertGreater(payload["streamlit_retirement_durable_evidence_blocker_count"], 0)
         self.assertTrue(payload["cache_only"])
         self.assertTrue(payload["does_not_open_streamlit"])
         self.assertTrue(payload["does_not_run_legacy_tools"])
@@ -9858,6 +9966,32 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed"]["streamlit_retirement_stage_scope_count"], 8)
         self.assertEqual(set(payload["observed"]["streamlit_retirement_stage_scope_keys"]), required_retirement_stages)
         self.assertEqual(payload["observed"]["streamlit_retirement_stage_scope_pending_count"], 8)
+        required_durable_keys = {
+            "route_inventory_primary_entry",
+            "ordinary_workflow_replacement_parity",
+            "candidate_radar_no_feature_loss_acceptance",
+            "provider_backed_parity_acceptance",
+            "browser_performance_visual_qa",
+            "admin_debug_retention_decision",
+            "fallback_retirement_change_review",
+            "app_py_removal_or_retention_decision",
+            "legacy_guardrail_regression_review",
+            "production_promotion_approval",
+        }
+        self.assertEqual(payload["observed"]["streamlit_retirement_durable_evidence_row_count"], 10)
+        self.assertEqual(
+            set(payload["observed"]["streamlit_retirement_durable_evidence_keys"]),
+            required_durable_keys,
+        )
+        self.assertGreater(payload["observed"]["streamlit_retirement_durable_evidence_blocker_count"], 0)
+        self.assertIn(
+            "candidate_radar_no_feature_loss_acceptance",
+            payload["observed"]["streamlit_retirement_durable_evidence_blocking_keys"],
+        )
+        self.assertIn(
+            "production_promotion_approval",
+            payload["observed"]["streamlit_retirement_durable_evidence_blocking_keys"],
+        )
         stage_rows = payload["streamlit_retirement_stage_scope_rows"]
         self.assertEqual({row["stage_key"] for row in stage_rows}, required_retirement_stages)
         for row in stage_rows:
@@ -9888,6 +10022,28 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertTrue(row["does_not_modify_strategy_action"])
             self.assertTrue(row["does_not_modify_holdings"])
             self.assertFalse(row["contains_secret"])
+        durable_rows = payload["streamlit_retirement_durable_evidence_rows"]
+        self.assertEqual({row["evidence_key"] for row in durable_rows}, required_durable_keys)
+        for row in durable_rows:
+            self.assertEqual(row["scope"], "streamlit_retirement_durable_evidence_recipe")
+            self.assertFalse(row["ordinary_workflow_exit_complete"])
+            self.assertFalse(row["streamlit_fallback_removal_ready"])
+            self.assertFalse(row["full_streamlit_removal_ready"])
+            self.assertTrue(row["streamlit_fallback_retained"])
+            self.assertFalse(row["fallback_removed_by_recipe"])
+            self.assertFalse(row["app_py_deleted_by_recipe"])
+            self.assertFalse(row["streamlit_opened_by_recipe"])
+            self.assertFalse(row["legacy_tools_run_by_recipe"])
+            self.assertFalse(row["tasks_created_by_recipe"])
+            self.assertFalse(row["provider_model_task_dispatched_by_recipe"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_modify_holdings"])
+            self.assertFalse(row["contains_secret"])
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("legacy_cache_is_read_only", criteria)
         self.assertIn("streamlit_marked_legacy_not_primary", criteria)
@@ -9895,6 +10051,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("fallback_dependency_contract_keeps_retirement_pending", criteria)
         self.assertIn("retirement_readiness_receipt_allows_only_explicit_review", criteria)
         self.assertIn("streamlit_retirement_stage_scope_manifest_is_complete_and_pending", criteria)
+        self.assertIn("streamlit_retirement_durable_evidence_recipe_is_local_fallback_blocked", criteria)
         self.assertIn("react_legacy_page_displays_boundaries", criteria)
         self.assertIn("legacy_startup_does_not_autocreate_or_autoexternal", criteria)
         self.assertIn("push_gate_runs_streamlit_contract_after_tauri", criteria)

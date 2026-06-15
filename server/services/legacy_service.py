@@ -11,10 +11,35 @@ from server.services import packet_service
 
 PACKET_KEY = "command_center_3_legacy_bridge_cache"
 SCHEMA_VERSION = "legacy_bridge_cache.v1"
+STREAMLIT_RETIREMENT_DURABLE_EVIDENCE_SCHEMA_VERSION = "streamlit_retirement_durable_evidence_recipe.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 APP_PY_PATH = PROJECT_ROOT / "app.py"
 SENSITIVE_KEY_PARTS = ("secret", "token", "api_key", "apikey", "password", "passwd", "credential", "authorization")
 SENSITIVE_TEXT_MARKERS = ("traceback", "api_key", "apikey", "authorization:", "bearer ", "token=", "secret=", "password=")
+STREAMLIT_RETIREMENT_DURABLE_EVIDENCE_KEYS = (
+    "route_inventory_primary_entry",
+    "ordinary_workflow_replacement_parity",
+    "candidate_radar_no_feature_loss_acceptance",
+    "provider_backed_parity_acceptance",
+    "browser_performance_visual_qa",
+    "admin_debug_retention_decision",
+    "fallback_retirement_change_review",
+    "app_py_removal_or_retention_decision",
+    "legacy_guardrail_regression_review",
+    "production_promotion_approval",
+)
+STREAMLIT_RETIREMENT_DURABLE_EVIDENCE_LABELS = {
+    "route_inventory_primary_entry": "route inventory and primary-entry evidence",
+    "ordinary_workflow_replacement_parity": "ordinary workflow replacement parity",
+    "candidate_radar_no_feature_loss_acceptance": "Candidate Radar no-feature-loss acceptance",
+    "provider_backed_parity_acceptance": "provider-backed parity acceptance",
+    "browser_performance_visual_qa": "browser, visual, and performance QA",
+    "admin_debug_retention_decision": "admin/debug retention or replacement decision",
+    "fallback_retirement_change_review": "fallback retirement change review",
+    "app_py_removal_or_retention_decision": "app.py removal or retention decision",
+    "legacy_guardrail_regression_review": "legacy guardrail regression review",
+    "production_promotion_approval": "production promotion approval",
+}
 
 
 def _now_iso() -> str:
@@ -627,6 +652,264 @@ def _streamlit_retirement_readiness_receipt(
     }
 
 
+def _streamlit_retirement_durable_evidence_recipe_row(
+    evidence_key: str,
+    *,
+    current_status: str,
+    target_status: str,
+    local_prerequisite_visible: bool,
+    direct_evidence_required: bool,
+    missing_evidence: list[str],
+) -> dict[str, Any]:
+    production_blocker = direct_evidence_required or current_status.startswith("pending")
+    return {
+        "evidence_key": evidence_key,
+        "evidence_label": STREAMLIT_RETIREMENT_DURABLE_EVIDENCE_LABELS[evidence_key],
+        "scope": "streamlit_retirement_durable_evidence_recipe",
+        "current_status": current_status,
+        "target_status": target_status,
+        "local_prerequisite_visible": bool(local_prerequisite_visible),
+        "direct_evidence_required": bool(direct_evidence_required),
+        "production_blocker": bool(production_blocker),
+        "missing_evidence": missing_evidence,
+        "ordinary_workflow_exit_complete": False,
+        "streamlit_fallback_removal_ready": False,
+        "full_streamlit_removal_ready": False,
+        "streamlit_fallback_retained": True,
+        "legacy_fallback_required": True,
+        "replacement_parity_complete": False,
+        "candidate_radar_parity_complete": False,
+        "provider_backed_parity_done": False,
+        "browser_performance_qa_done": False,
+        "admin_debug_decision_done": False,
+        "fallback_removed_by_recipe": False,
+        "app_py_deleted_by_recipe": False,
+        "streamlit_opened_by_recipe": False,
+        "legacy_tools_run_by_recipe": False,
+        "tasks_created_by_recipe": False,
+        "provider_model_task_dispatched_by_recipe": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "contains_secret": False,
+    }
+
+
+def _streamlit_retirement_durable_evidence_recipe(
+    *,
+    primary_workflow_exit_audit: Mapping[str, Any],
+    fallback_dependency_contract: Mapping[str, Any],
+    retirement_readiness_receipt: Mapping[str, Any],
+) -> dict[str, Any]:
+    route_inventory_visible = bool(primary_workflow_exit_audit.get("ordinary_workflow_route_count"))
+    local_receipt_ready = retirement_readiness_receipt.get("local_receipt_ready") is True
+    no_feature_cut_visible = fallback_dependency_contract.get("no_feature_cut_allowed") is True
+    local_recipe_ready = bool(route_inventory_visible and local_receipt_ready and no_feature_cut_visible)
+    ordinary_blocking_workflows = [
+        str(item) for item in _as_list(fallback_dependency_contract.get("ordinary_blocking_workflows"))
+    ]
+    full_removal_blocking_workflows = [
+        str(item) for item in _as_list(fallback_dependency_contract.get("full_removal_blocking_workflows"))
+    ]
+    rows = [
+        _streamlit_retirement_durable_evidence_recipe_row(
+            "route_inventory_primary_entry",
+            current_status="local_verified",
+            target_status="keep_primary_entry_contract_under_push_gate",
+            local_prerequisite_visible=route_inventory_visible,
+            direct_evidence_required=False,
+            missing_evidence=[],
+        ),
+        _streamlit_retirement_durable_evidence_recipe_row(
+            "ordinary_workflow_replacement_parity",
+            current_status="pending_direct_parity_evidence",
+            target_status="all_ordinary_workflows_have_command_center_3_parity",
+            local_prerequisite_visible=route_inventory_visible,
+            direct_evidence_required=True,
+            missing_evidence=[
+                "same-workflow React/Tauri parity review",
+                "ordinary workflow fallback dependency count reaches zero",
+                "migration checklist has no pending ordinary-workflow item",
+            ],
+        ),
+        _streamlit_retirement_durable_evidence_recipe_row(
+            "candidate_radar_no_feature_loss_acceptance",
+            current_status="pending_provider_worker_browser_evidence",
+            target_status="Candidate Radar quick/full/deep scan replaces legacy path without feature loss",
+            local_prerequisite_visible="candidate_radar_quick_scan" in ordinary_blocking_workflows,
+            direct_evidence_required=True,
+            missing_evidence=[
+                "legacy signal-group parity matrix",
+                "full-pool/deep-scan provider or accepted fixture evidence",
+                "worker/background execution evidence without UI stall",
+                "browser QA evidence for radar scan and result drilldown",
+            ],
+        ),
+        _streamlit_retirement_durable_evidence_recipe_row(
+            "provider_backed_parity_acceptance",
+            current_status="pending_provider_backed_acceptance",
+            target_status="provider-backed parity proves migrated routes preserve accepted data behavior",
+            local_prerequisite_visible=True,
+            direct_evidence_required=True,
+            missing_evidence=[
+                "explicit POST task provider acceptance",
+                "safe call ledger with row counts and data dates",
+                "permission/empty-window/error states distinguished",
+            ],
+        ),
+        _streamlit_retirement_durable_evidence_recipe_row(
+            "browser_performance_visual_qa",
+            current_status="pending_browser_performance_evidence",
+            target_status="React/Tauri primary flow passes visual, reduced-motion, and performance QA",
+            local_prerequisite_visible=True,
+            direct_evidence_required=True,
+            missing_evidence=[
+                "browser visual QA screenshots or report",
+                "performance trace proving no ordinary-flow stall",
+                "reduced-motion and clarity review",
+            ],
+        ),
+        _streamlit_retirement_durable_evidence_recipe_row(
+            "admin_debug_retention_decision",
+            current_status="pending_admin_debug_decision",
+            target_status="admin/debug tools are replaced or explicitly retained as non-primary fallback",
+            local_prerequisite_visible="legacy_admin_debug_tools" in full_removal_blocking_workflows,
+            direct_evidence_required=True,
+            missing_evidence=[
+                "admin/debug route replacement decision",
+                "fallback-only access policy",
+                "guardrail review for retained old modules",
+            ],
+        ),
+        _streamlit_retirement_durable_evidence_recipe_row(
+            "fallback_retirement_change_review",
+            current_status="pending_explicit_retirement_review",
+            target_status="fallback removal receives explicit review after parity evidence exists",
+            local_prerequisite_visible=local_receipt_ready,
+            direct_evidence_required=True,
+            missing_evidence=[
+                "ordinary fallback blocker count is zero",
+                "full removal blocker count is zero or retained-by-policy",
+                "explicit fallback retirement approval",
+            ],
+        ),
+        _streamlit_retirement_durable_evidence_recipe_row(
+            "app_py_removal_or_retention_decision",
+            current_status="pending_explicit_app_py_decision",
+            target_status="app.py is either retained as guarded fallback or removed after replacement proof",
+            local_prerequisite_visible=True,
+            direct_evidence_required=True,
+            missing_evidence=[
+                "app.py retention/removal decision record",
+                "legacy entrypoint and docs update review",
+                "rollback/fallback note if retained",
+            ],
+        ),
+        _streamlit_retirement_durable_evidence_recipe_row(
+            "legacy_guardrail_regression_review",
+            current_status="local_verified",
+            target_status="legacy guardrails remain tested during retirement work",
+            local_prerequisite_visible=bool(
+                primary_workflow_exit_audit.get("does_not_open_streamlit")
+                and primary_workflow_exit_audit.get("does_not_run_legacy_tools")
+                and retirement_readiness_receipt.get("does_not_modify_strategy_action")
+            ),
+            direct_evidence_required=False,
+            missing_evidence=[],
+        ),
+        _streamlit_retirement_durable_evidence_recipe_row(
+            "production_promotion_approval",
+            current_status="pending_production_promotion_approval",
+            target_status="ordinary workflow exit and fallback retirement are explicitly promoted",
+            local_prerequisite_visible=local_recipe_ready,
+            direct_evidence_required=True,
+            missing_evidence=[
+                "ordinary workflow replacement parity evidence",
+                "Candidate Radar no-feature-loss evidence",
+                "browser/performance QA evidence",
+                "admin/debug decision",
+                "explicit production promotion approval",
+            ],
+        ),
+    ]
+    blocker_rows = [row for row in rows if row["production_blocker"]]
+    return {
+        "schema_version": STREAMLIT_RETIREMENT_DURABLE_EVIDENCE_SCHEMA_VERSION,
+        "status": "streamlit_retirement_durable_evidence_recipe_ready_fallback_blocked"
+        if local_recipe_ready
+        else "streamlit_retirement_durable_evidence_recipe_blocked_local_contract",
+        "scope": "local_streamlit_retirement_durable_evidence_recipe_no_streamlit_execution",
+        "ltg": "LTG-10",
+        "local_recipe_ready": local_recipe_ready,
+        "durable_evidence_complete": False,
+        "durable_promotion_ready": False,
+        "ordinary_workflow_exit_complete": False,
+        "streamlit_fallback_removal_ready": False,
+        "full_streamlit_removal_ready": False,
+        "streamlit_fallback_retained": True,
+        "legacy_fallback_required": True,
+        "feature_parity_required_before_removal": True,
+        "no_feature_cut_allowed": True,
+        "allowed_next_step": "collect_direct_replacement_parity_browser_provider_and_retirement_review_evidence",
+        "not_allowed_next_steps": [
+            "treat durable recipe as Streamlit retirement completion",
+            "remove fallback before ordinary workflow parity is proven",
+            "delete app.py before explicit retention or removal decision",
+            "open Streamlit from GET cache or page render",
+            "run legacy tools from GET cache or page render",
+            "create tasks from GET cache or page render",
+            "use provider/model calls as page startup behavior",
+        ],
+        "missing_evidence_items": sorted(
+            {item for row in blocker_rows for item in _as_list(row.get("missing_evidence"))}
+        ),
+        "row_count": len(rows),
+        "production_blocker_count": len(blocker_rows),
+        "blocking_evidence_keys": [row["evidence_key"] for row in blocker_rows],
+        "ordinary_blocking_workflows": ordinary_blocking_workflows,
+        "full_removal_blocking_workflows": full_removal_blocking_workflows,
+        "streamlit_opened_by_recipe": False,
+        "legacy_tools_run_by_recipe": False,
+        "tasks_created_by_recipe": False,
+        "fallback_removed_by_recipe": False,
+        "app_py_deleted_by_recipe": False,
+        "provider_model_task_dispatched_by_recipe": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "contains_secret": False,
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_streamlit_retirement_durable_evidence_recipe",
+                "source": "legacy exit audit, fallback dependency contract, and retirement readiness receipt",
+                "row_count": len(rows),
+                "production_blocker_count": len(blocker_rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_durable_evidence_recipe",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_open_streamlit": True,
+                "does_not_run_legacy_tools": True,
+                "does_not_create_tasks": True,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This recipe fixes the durable evidence still required before LTG-10 can exit ordinary workflow. It does not open Streamlit, run legacy tools, remove fallback, delete app.py, call providers/models/GitHub, execute trades, or mark retirement complete.",
+    }
+
+
 def read_legacy_bridge_cache() -> dict[str, Any]:
     snapshot = packet_service.load_snapshot_cache()
     safe_snapshot = _safe_value(snapshot)
@@ -704,6 +987,11 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         primary_workflow_exit_audit=primary_workflow_exit_audit,
         fallback_dependency_contract=fallback_dependency_contract,
     )
+    durable_evidence_recipe = _streamlit_retirement_durable_evidence_recipe(
+        primary_workflow_exit_audit=primary_workflow_exit_audit,
+        fallback_dependency_contract=fallback_dependency_contract,
+        retirement_readiness_receipt=retirement_readiness_receipt,
+    )
 
     packet = {
         "packet_key": PACKET_KEY,
@@ -748,6 +1036,8 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         "streamlit_fallback_dependency_rows": fallback_dependency_contract["rows"],
         "streamlit_retirement_readiness_receipt": retirement_readiness_receipt,
         "streamlit_retirement_readiness_rows": retirement_readiness_receipt["rows"],
+        "streamlit_retirement_durable_evidence_recipe": durable_evidence_recipe,
+        "streamlit_retirement_durable_evidence_rows": durable_evidence_recipe["rows"],
         "counts": {
             **checklist_counts,
             "migration_item_count": len(migration_items),
@@ -771,6 +1061,10 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
             "streamlit_retirement_readiness_blocker_count": retirement_readiness_receipt[
                 "blocking_criterion_count"
             ],
+            "streamlit_retirement_durable_evidence_row_count": durable_evidence_recipe["row_count"],
+            "streamlit_retirement_durable_evidence_blocker_count": durable_evidence_recipe[
+                "production_blocker_count"
+            ],
         },
         "policy": policy,
         "call_ledger": [
@@ -783,7 +1077,16 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
                 "external": False,
             }
         ]
-        + retirement_readiness_receipt["call_ledger"],
+        + retirement_readiness_receipt["call_ledger"]
+        + durable_evidence_recipe["call_ledger"],
+        "streamlit_retirement_durable_evidence_recipe_ready": durable_evidence_recipe["local_recipe_ready"],
+        "streamlit_retirement_durable_evidence_recipe_status": durable_evidence_recipe["status"],
+        "streamlit_retirement_durable_evidence_blocker_count": durable_evidence_recipe[
+            "production_blocker_count"
+        ],
+        "streamlit_retirement_durable_evidence_recipe_is_local": True,
+        "streamlit_retirement_durable_evidence_recipe_is_not_retirement": True,
+        "streamlit_retirement_durable_evidence_requires_replacement_parity": True,
         "streamlit_retirement_readiness_receipt_ready": retirement_readiness_receipt["local_receipt_ready"],
         "streamlit_retirement_readiness_receipt_status": retirement_readiness_receipt["status"],
         "external_calls_triggered": False,
@@ -799,6 +1102,7 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
             "Streamlit 仅保留为 legacy/admin/debug；不是正式主入口，普通主流程迁往 React/Tauri + FastAPI。",
             "Legacy 启动不创建任务、不自动外联、不绕过 strategy guardrails。",
             "本页不调用 Tushare、DeepSeek 或 GitHub，不执行真实交易，不修改 strategy action。",
+            "streamlit_retirement_durable_evidence_recipe 只是 LTG-10 证据配方；不是 fallback 删除、app.py 删除或普通主流程退出完成。",
         ],
     }
     if status == "cache_missing":
