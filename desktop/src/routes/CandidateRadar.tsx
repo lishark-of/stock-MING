@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getBootstrapStatus, getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
+import { getBootstrapStatus, getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -139,6 +139,7 @@ export default function CandidateRadar() {
   const searchQuantProjectionReceipt = (cache.search_quant_projection_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionActivation = (cache.search_quant_projection_activation_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionAcceptanceDryRun = (cache.search_quant_projection_acceptance_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
+  const searchQuantProjectionExecutionRequest = (cache.search_quant_projection_execution_request_receipt as Record<string, unknown> | undefined) ?? {};
   const providerParityDryRun = (cache.provider_parity_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
   const fastScanRuntimeBudget = (cache.fast_scan_runtime_budget_contract as Record<string, unknown> | undefined) ?? {};
   const fastScanReadinessAudit = (cache.fast_scan_readiness_audit as Record<string, unknown> | undefined) ?? {};
@@ -149,6 +150,16 @@ export default function CandidateRadar() {
   const nextExecutionRecipe = (cache.candidate_radar_next_execution_recipe as Record<string, unknown> | undefined) ?? {};
   const workerExecutionRecipe = (cache.candidate_radar_worker_execution_recipe as Record<string, unknown> | undefined) ?? {};
   const workerExecutionRequest = (cache.candidate_radar_worker_execution_request_receipt as Record<string, unknown> | undefined) ?? {};
+  const launchQuantProjectionExecutionRequest = () =>
+    void postCandidateRadarQuantProjectionExecutionRequest({
+      scan_mode: "quant_projection_execution_request",
+      operator_approved: true,
+      acceptance_scope_hash: String(searchQuantProjectionAcceptanceDryRun.acceptance_scope_hash ?? ""),
+      requested_by: "candidate_radar_page"
+    }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
   const launchWorkerExecutionRequest = () =>
     void postCandidateRadarWorkerExecutionRequest({
       scan_mode: "worker_execution_request",
@@ -191,6 +202,7 @@ export default function CandidateRadar() {
   const searchQuantProjectionActivationRows = rows(cache.search_quant_projection_activation_rows);
   const searchQuantProjectionAcceptanceDryRunRows = rows(cache.search_quant_projection_acceptance_dry_run_rows);
   const searchQuantProjectionCredentialRows = rows(cache.search_quant_projection_credential_presence_rows);
+  const searchQuantProjectionExecutionRequestRows = rows(cache.search_quant_projection_execution_request_rows);
   const providerParityDryRunRows = rows(cache.provider_parity_dry_run_rows);
   const providerParityCredentialRows = rows(cache.provider_parity_credential_presence_rows);
   const fastScanRuntimeBudgetRows = rows(cache.fast_scan_runtime_budget_rows);
@@ -273,6 +285,9 @@ export default function CandidateRadar() {
           { label: "quant dry-run", value: String(searchQuantProjectionAcceptanceDryRun.status ?? "missing"), tone: searchQuantProjectionAcceptanceDryRun.ready_for_user_approved_real_acceptance === true ? "good" : "warn" },
           { label: "dry-run blockers", value: counts.search_quant_projection_acceptance_dry_run_blocking_count as number | undefined, tone: Number(counts.search_quant_projection_acceptance_dry_run_blocking_count ?? 0) ? "warn" : "good" },
           { label: "credential missing", value: counts.search_quant_projection_acceptance_credential_missing_count as number | undefined, tone: Number(counts.search_quant_projection_acceptance_credential_missing_count ?? 0) ? "warn" : "good" },
+          { label: "quant request", value: String(searchQuantProjectionExecutionRequest.status ?? "missing"), tone: searchQuantProjectionExecutionRequest.local_execution_request_ready === true ? "good" : "warn" },
+          { label: "quant request blockers", value: counts.search_quant_projection_execution_request_local_blocker_count as number | undefined, tone: Number(counts.search_quant_projection_execution_request_local_blocker_count ?? 0) ? "warn" : "good" },
+          { label: "quant request prod", value: counts.search_quant_projection_execution_request_production_blocker_count as number | undefined, tone: Number(counts.search_quant_projection_execution_request_production_blocker_count ?? 0) ? "warn" : "good" },
           { label: "provider parity", value: String(providerParityDryRun.status ?? "missing"), tone: providerParityDryRun.ready_for_user_approved_provider_parity === true ? "good" : "warn" },
           { label: "parity blockers", value: counts.provider_parity_dry_run_blocking_count as number | undefined, tone: Number(counts.provider_parity_dry_run_blocking_count ?? 0) ? "warn" : "good" },
           { label: "parity symbols", value: counts.provider_parity_candidate_symbol_count as number | undefined },
@@ -434,6 +449,21 @@ export default function CandidateRadar() {
           <DataLineageTable rows={objectRow(searchQuantProjectionAcceptanceDryRun)} />
           <DataLineageTable rows={searchQuantProjectionAcceptanceDryRunRows} />
           <DataLineageTable rows={searchQuantProjectionCredentialRows} />
+          <div className="actions">
+            <button onClick={launchQuantProjectionExecutionRequest} disabled={!searchQuantProjectionAcceptanceDryRun.acceptance_scope_hash}>
+              生成 provider/model execution request
+            </button>
+          </div>
+          <p>search_quant_projection_execution_request_receipt: {String(searchQuantProjectionExecutionRequest.status ?? "missing")}；local_execution_request_ready: {String(searchQuantProjectionExecutionRequest.local_execution_request_ready === true)}</p>
+          <p>requested scope matches latest: {String(searchQuantProjectionExecutionRequest.requested_acceptance_scope_hash_matches_latest === true)}；scope: {String(searchQuantProjectionExecutionRequest.acceptance_scope_hash_short ?? "--")}</p>
+          <p>target: {String(searchQuantProjectionExecutionRequest.target_provider_model_route ?? "future POST /api/candidate-radar/quant-projection-provider-model-acceptance")}</p>
+          <p>provider_model_task_created / dispatched: {String(searchQuantProjectionExecutionRequest.provider_model_task_created === true)} / {String(searchQuantProjectionExecutionRequest.provider_model_task_dispatched === true)}</p>
+          <p>provider_execution_implemented / model_execution_implemented: {String(searchQuantProjectionExecutionRequest.provider_execution_implemented === true)} / {String(searchQuantProjectionExecutionRequest.model_execution_implemented === true)}</p>
+          <p>factor / next / echarts refreshed: {String(searchQuantProjectionExecutionRequest.factor_refresh_executed === true)} / {String(searchQuantProjectionExecutionRequest.next_session_refresh_executed === true)} / {String(searchQuantProjectionExecutionRequest.echarts_payload_refreshed === true)}</p>
+          <p>tushare_called / deepseek_called / github_called: {String(searchQuantProjectionExecutionRequest.tushare_called === true)} / {String(searchQuantProjectionExecutionRequest.deepseek_called === true)} / {String(searchQuantProjectionExecutionRequest.github_called === true)}</p>
+          <p>这个 execution request 只绑定 dry-run scope hash 和用户确认；它不创建真实 provider/model task，不调用 Tushare/DeepSeek，不刷新图谱，不生成交易指令。</p>
+          <DataLineageTable rows={objectRow(searchQuantProjectionExecutionRequest)} />
+          <DataLineageTable rows={searchQuantProjectionExecutionRequestRows} />
         </PacketCard>
 
         <PacketCard title="雷达 provider parity dry-run" subtitle="POST /api/candidate-radar/provider-parity-dry-run；本地预检，不调用 Tushare/DeepSeek" status={String(providerParityDryRun.status ?? "missing")}>
@@ -593,7 +623,7 @@ export default function CandidateRadar() {
         <p>recommended_fast_scan_route: {String(nextExecutionRecipe.recommended_fast_scan_route ?? "POST /api/candidate-radar/scan-quick")}</p>
         <p>recommended_full_pool_local_route: {String(nextExecutionRecipe.recommended_full_pool_local_route ?? "POST /api/candidate-radar/full-pool-local-scan")}；recommended_deep_scan_local_review_route: {String(nextExecutionRecipe.recommended_deep_scan_local_review_route ?? "POST /api/candidate-radar/deep-scan-local-review")}</p>
         <p>recommended_worker_full_pool_route: {String(nextExecutionRecipe.recommended_worker_full_pool_route ?? "future POST /api/candidate-radar/full-pool-worker-scan")}；recommended_worker_deep_scan_route: {String(nextExecutionRecipe.recommended_worker_deep_scan_route ?? "future POST /api/candidate-radar/deep-scan-worker")}</p>
-        <p>provider/model/browser 验收路线: {String(nextExecutionRecipe.provider_parity_dry_run_route ?? "POST /api/candidate-radar/provider-parity-dry-run")} / {String(nextExecutionRecipe.quant_projection_acceptance_dry_run_route ?? "POST /api/candidate-radar/quant-projection-acceptance-dry-run")} / {String(nextExecutionRecipe.browser_qa_review_route ?? "POST /api/candidate-radar/browser-qa-review")}</p>
+        <p>provider/model/browser 验收路线: {String(nextExecutionRecipe.provider_parity_dry_run_route ?? "POST /api/candidate-radar/provider-parity-dry-run")} / {String(nextExecutionRecipe.quant_projection_acceptance_dry_run_route ?? "POST /api/candidate-radar/quant-projection-acceptance-dry-run")} / {String(nextExecutionRecipe.quant_projection_execution_request_route ?? "POST /api/candidate-radar/quant-projection-execution-request")} / {String(nextExecutionRecipe.browser_qa_review_route ?? "POST /api/candidate-radar/browser-qa-review")}</p>
         <p>ready_to_execute_from_cache: {String(nextExecutionRecipe.ready_to_execute_from_cache === true)}；worker_execution_recipe_ready: {String(nextExecutionRecipe.worker_execution_recipe_ready === true)}；worker_execution_implemented: {String(nextExecutionRecipe.worker_execution_implemented === true)}</p>
         <p>production_radar_replacement_complete: {String(nextExecutionRecipe.production_radar_replacement_complete === true)}；legacy_retirement_ready: {String(nextExecutionRecipe.legacy_retirement_ready === true)}</p>
         <p>tushare_called / deepseek_called / github_called: {String(nextExecutionRecipe.tushare_called === true)} / {String(nextExecutionRecipe.deepseek_called === true)} / {String(nextExecutionRecipe.github_called === true)}</p>
