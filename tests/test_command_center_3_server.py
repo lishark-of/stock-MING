@@ -85,6 +85,60 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.addCleanup(setattr, storage_service, "PARQUET_ROOT", original_root)
         return storage_service.PARQUET_ROOT
 
+    def _write_minimal_storage_dataset(self, root, dataset):
+        import pandas as pd
+
+        rows = {
+            "factor_values": {
+                "factor_key": "momentum",
+                "ts_code": "002008.SZ",
+                "trade_date": "20260611",
+                "raw_value": 1.23,
+                "data_status": "current",
+                "calculated_at": "2026-06-11T16:30:00+00:00",
+            },
+            "daily": {
+                "ts_code": "002008.SZ",
+                "trade_date": "20260611",
+                "open": 10.1,
+                "high": 10.8,
+                "low": 9.9,
+                "close": 10.5,
+                "vol": 12345,
+                "amount": 45678.0,
+            },
+            "daily_basic": {
+                "ts_code": "002008.SZ",
+                "trade_date": "20260611",
+                "turnover_rate": 1.2,
+                "pe_ttm": 18.5,
+                "pb": 2.1,
+                "total_mv": 100000.0,
+                "circ_mv": 80000.0,
+            },
+            "moneyflow": {
+                "ts_code": "002008.SZ",
+                "trade_date": "20260611",
+                "buy_sm_amount": 1200.0,
+                "sell_sm_amount": 900.0,
+                "buy_lg_amount": 3400.0,
+                "sell_lg_amount": 2800.0,
+            },
+            "trade_cal": {
+                "exchange": "SSE",
+                "cal_date": "20260611",
+                "is_open": 1,
+            },
+            "backtest_results": {
+                "strategy_key": "research_only",
+                "universe": "unit_pool",
+                "run_date": "20260611",
+                "status": "complete",
+                "metrics": "{}",
+            },
+        }
+        storage_service.parquet_store.write_dataset(pd.DataFrame([rows[dataset]]), root=root, name=dataset)
+
     def assert_local_ledger_boundary(self, row):
         self.assertFalse(row["external"])
         self.assertFalse(row["external_calls_triggered"])
@@ -2422,6 +2476,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         readiness_by_component = {row["component"]: row for row in overview["production_readiness"]["rows"]}
         self.assertIn("sqlite_meta", readiness_by_component)
         self.assertIn("schema_migration_preflight", readiness_by_component)
+        self.assertIn("schema_validation_acceptance_evidence", readiness_by_component)
         self.assertIn("dataset_version_policy", readiness_by_component)
         self.assertIn("parquet_store", readiness_by_component)
         self.assertIn("duckdb_query", readiness_by_component)
@@ -2429,6 +2484,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("artifact_hygiene", readiness_by_component)
         self.assertIn("artifact_cleanup_review", readiness_by_component)
         self.assertEqual(readiness_by_component["schema_migration_preflight"]["status"], "preflight_ready")
+        self.assertIn(
+            readiness_by_component["schema_validation_acceptance_evidence"]["status"],
+            {
+                "schema_acceptance_evidence_meta_missing",
+                "schema_acceptance_evidence_packet_missing",
+                "schema_acceptance_evidence_packet_read_failed",
+                "schema_acceptance_evidence_packet_decode_failed",
+                "schema_acceptance_evidence_partial_or_blocked",
+                "schema_acceptance_evidence_passed_all_local_datasets",
+            },
+        )
+        self.assertFalse(readiness_by_component["schema_validation_acceptance_evidence"]["blocking_for_cache_read"])
         self.assertEqual(readiness_by_component["dataset_version_policy"]["status"], "policy_ready")
         self.assertIn(readiness_by_component["duckdb_query"]["status"], {"service_ready", "dependency_missing"})
         self.assertEqual(readiness_by_component["duckdb_query"]["query_wrapper"], "duckdb_filtered_parquet.v1")
@@ -3723,6 +3790,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["production_readiness"]["dataset_version_manifest_write_reads_parquet_payloads"])
         self.assertFalse(catalog["production_readiness"]["dataset_version_manifest_write_external_calls"])
         self.assertEqual(catalog["production_readiness"]["schema_migration_policy"], "preflight_only_no_physical_migration_on_get")
+        self.assertIn(
+            catalog["production_readiness"]["schema_validation_acceptance_evidence_status"],
+            {
+                "schema_acceptance_evidence_meta_missing",
+                "schema_acceptance_evidence_packet_missing",
+                "schema_acceptance_evidence_packet_read_failed",
+                "schema_acceptance_evidence_packet_decode_failed",
+                "schema_acceptance_evidence_partial_or_blocked",
+                "schema_acceptance_evidence_passed_all_local_datasets",
+            },
+        )
+        self.assertFalse(catalog["production_readiness"]["schema_validation_acceptance_cache_get_writes_files"])
+        self.assertFalse(catalog["production_readiness"]["schema_validation_acceptance_reads_row_payloads"])
         self.assertEqual(catalog["production_readiness"]["schema_validation_dry_run_route"], "POST /api/storage/schema-validation/dry-run")
         self.assertTrue(catalog["production_readiness"]["schema_validation_dry_run_button_gated"])
         self.assertEqual(
@@ -4100,9 +4180,66 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(rows_by_dataset["daily_basic"]["acceptance_status"], "acceptance_blocked")
         self.assertFalse(rows_by_dataset["daily_basic"]["physical_schema_acceptance_passed"])
         self.assertIn("turnover_rate", rows_by_dataset["daily_basic"]["missing_required_columns"])
+        overview = storage_service.storage_overview()
+        evidence = overview["schema_validation_acceptance_evidence"]
+        self.assertEqual(evidence["schema_version"], "command_center_3_storage_schema_validation_acceptance_evidence.v1")
+        self.assertEqual(evidence["status"], "schema_acceptance_evidence_partial_or_blocked")
+        self.assertTrue(evidence["source_packet_present"])
+        self.assertEqual(evidence["source_packet_status"], "schema_acceptance_partial_or_blocked")
+        self.assertEqual(evidence["accepted_dataset_count"], 1)
+        self.assertGreaterEqual(evidence["blocked_dataset_count"], 5)
+        self.assertFalse(evidence["physical_schema_validation_done"])
+        self.assertFalse(evidence["cache_get_writes_files"])
+        self.assertFalse(evidence["cache_get_reads_row_payloads"])
+        self.assertFalse(evidence["external_calls_triggered"])
+        self.assertFalse(overview["storage_physical_durable_evidence_recipe"]["physical_schema_validation_done"])
+        durable_rows = {row["evidence_key"]: row for row in overview["storage_physical_durable_evidence_rows"]}
+        self.assertEqual(durable_rows["physical_schema_validation_evidence_required"]["status"], "blocked")
         dumped = json.dumps({"task": task, "packet": persisted}, ensure_ascii=False)
         self.assertNotIn("SHOULD_DROP", dumped)
         self.assertNotIn('"write_parquet_allowed": true', dumped)
+
+    def test_storage_schema_validation_acceptance_evidence_promotes_only_schema_row_when_all_datasets_pass(self):
+        if importlib.util.find_spec("pyarrow") is None or importlib.util.find_spec("pandas") is None:
+            self.skipTest("pyarrow/pandas parquet dependency missing")
+
+        self._with_meta_store()
+        root = self._with_parquet_root()
+        for dataset in storage_service.CANONICAL_PARQUET_DATASETS:
+            self._write_minimal_storage_dataset(root, dataset)
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        task = storage_service.run_storage_schema_validation_acceptance_task({"source": "unit_test_all_pass"})
+
+        self.assertEqual(task["status"], "success")
+        overview = storage_service.storage_overview()
+        evidence = overview["schema_validation_acceptance_evidence"]
+        self.assertEqual(evidence["status"], "schema_acceptance_evidence_passed_all_local_datasets")
+        self.assertEqual(evidence["accepted_dataset_count"], 6)
+        self.assertEqual(evidence["blocked_dataset_count"], 0)
+        self.assertTrue(evidence["physical_schema_validation_done"])
+        self.assertFalse(evidence["cache_get_writes_files"])
+        self.assertFalse(evidence["cache_get_reads_row_payloads"])
+        self.assertFalse(evidence["external_calls_triggered"])
+        self.assertFalse(evidence["tushare_called"])
+        self.assertFalse(evidence["deepseek_called"])
+        self.assertFalse(evidence["github_called"])
+        self.assertFalse(overview["production_readiness"]["production_storage_complete"])
+        self.assertTrue(overview["production_readiness"]["physical_schema_validation_done"])
+        self.assertEqual(overview["production_readiness"]["physical_schema_validation_done_count"], 6)
+        self.assertFalse(overview["storage_physical_durable_evidence_recipe"]["production_storage_complete"])
+        self.assertTrue(overview["storage_physical_durable_evidence_recipe"]["physical_schema_validation_done"])
+        self.assertIn(
+            "dataset_version_manifest_validation_required",
+            overview["storage_physical_durable_evidence_recipe"]["missing_durable_evidence"],
+        )
+        self.assertNotIn(
+            "physical_schema_validation_evidence_required",
+            overview["storage_physical_durable_evidence_recipe"]["missing_durable_evidence"],
+        )
+        durable_rows = {row["evidence_key"]: row for row in overview["storage_physical_durable_evidence_rows"]}
+        self.assertEqual(durable_rows["physical_schema_validation_evidence_required"]["status"], "passed")
+        self.assertEqual(durable_rows["dataset_version_manifest_validation_required"]["status"], "blocked")
 
     def test_storage_schema_validation_acceptance_endpoint_is_button_gated_local_task(self):
         self._with_meta_store()
@@ -9362,7 +9499,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["scope"], "local_storage_contract_no_physical_migration")
         self.assertEqual(payload["status"], "storage_contract_passed")
         self.assertFalse(payload["production_storage_complete"])
-        self.assertFalse(payload["physical_schema_validation_done"])
+        self.assertIsInstance(payload["physical_schema_validation_done"], bool)
+        self.assertIn(
+            payload["schema_validation_acceptance_evidence_status"],
+            {
+                "schema_acceptance_evidence_meta_missing",
+                "schema_acceptance_evidence_packet_missing",
+                "schema_acceptance_evidence_packet_read_failed",
+                "schema_acceptance_evidence_packet_decode_failed",
+                "schema_acceptance_evidence_partial_or_blocked",
+                "schema_acceptance_evidence_passed_all_local_datasets",
+            },
+        )
         self.assertFalse(payload["schema_migration_executed"])
         self.assertFalse(payload["dataset_version_manifest_validated"])
         self.assertFalse(payload["dataset_version_manifest_review_writes_manifest"])
@@ -9416,6 +9564,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["observed"]["storage_physical_durable_evidence_recipe_ready"])
         self.assertEqual(payload["observed"]["schema_migration_preflight_status"], "preflight_ready")
         self.assertEqual(payload["observed"]["dataset_version_policy_status"], "policy_ready")
+        self.assertIn(
+            payload["observed"]["schema_validation_acceptance_evidence_status"],
+            {
+                "schema_acceptance_evidence_meta_missing",
+                "schema_acceptance_evidence_packet_missing",
+                "schema_acceptance_evidence_packet_read_failed",
+                "schema_acceptance_evidence_packet_decode_failed",
+                "schema_acceptance_evidence_partial_or_blocked",
+                "schema_acceptance_evidence_passed_all_local_datasets",
+            },
+        )
+        self.assertIsInstance(payload["observed"]["physical_schema_validation_done"], bool)
         self.assertEqual(payload["observed"]["schema_validation_status"], "dry_run_completed")
         self.assertEqual(payload["observed"]["partition_migration_status"], "dry_run_completed")
         self.assertEqual(payload["observed"]["compaction_status"], "dry_run_completed")

@@ -242,6 +242,7 @@ def build_contract() -> dict[str, Any]:
         if isinstance(row, dict)
     }
     schema_preflight = _dict(overview.get("schema_migration_preflight"))
+    schema_acceptance_evidence = _dict(overview.get("schema_validation_acceptance_evidence"))
     dataset_version_policy = _dict(overview.get("dataset_version_policy"))
     dataset_version_manifest_evidence = _dict(overview.get("dataset_version_manifest_evidence_audit"))
     duckdb_policy = _dict(overview.get("duckdb_query_service"))
@@ -259,6 +260,18 @@ def build_contract() -> dict[str, Any]:
         if isinstance(row, dict)
     }
     overview_datasets = set(_dict(overview.get("dataset_status")).keys())
+    schema_evidence_done = schema_acceptance_evidence.get("physical_schema_validation_done") is True
+    expected_durable_missing = {
+        "dataset_version_manifest_validation_required",
+        "partition_migration_evidence_required",
+        "physical_compaction_evidence_required",
+        "cache_ttl_refresh_evidence_required",
+        "artifact_cleanup_delete_review_required",
+        "duckdb_post_migration_validation_required",
+        "production_promotion_review_required",
+    }
+    if not schema_evidence_done:
+        expected_durable_missing.add("physical_schema_validation_evidence_required")
 
     rows = [
         _row(
@@ -308,7 +321,7 @@ def build_contract() -> dict[str, Any]:
             and "dry-run/preflight/receipt as production storage completion"
             in _list(readiness_receipt.get("not_allowed_next_steps"))
             and readiness_receipt.get("production_storage_complete") is False
-            and readiness_receipt.get("physical_schema_validation_done") is False
+            and readiness_receipt.get("physical_schema_validation_done") is schema_evidence_done
             and readiness_receipt.get("schema_migration_executed") is False
             and readiness_receipt.get("partition_migration_executed") is False
             and readiness_receipt.get("physical_compaction_executed") is False
@@ -351,12 +364,20 @@ def build_contract() -> dict[str, Any]:
             and "GET /api/storage provider refresh" in _list(activation_receipt.get("not_allowed_next_steps"))
             and "activation receipt as production storage completion"
             in _list(activation_receipt.get("not_allowed_next_steps"))
-            and "physical schema validation acceptance for all canonical datasets"
-            in _list(activation_receipt.get("missing_evidence"))
+            and (
+                schema_evidence_done
+                or "physical schema validation acceptance for all canonical datasets"
+                in _list(activation_receipt.get("missing_evidence"))
+            )
+            and (
+                not schema_evidence_done
+                or "physical schema validation acceptance for all canonical datasets"
+                not in _list(activation_receipt.get("missing_evidence"))
+            )
             and "manifest validation backed by schema acceptance" in _list(activation_receipt.get("missing_evidence"))
             and "production promotion review" in _list(activation_receipt.get("missing_evidence"))
             and activation_receipt.get("production_storage_complete") is False
-            and activation_receipt.get("physical_schema_validation_done") is False
+            and activation_receipt.get("physical_schema_validation_done") is schema_evidence_done
             and activation_receipt.get("schema_migration_executed") is False
             and activation_receipt.get("dataset_version_manifest_validated") is False
             and activation_receipt.get("partition_migration_executed") is False
@@ -448,6 +469,38 @@ def build_contract() -> dict[str, Any]:
             "Physical execution recipe must sequence LTG-05 production work while staying local-only, no-write, no-provider, no-delete, no-trade, and pending.",
         ),
         _row(
+            "schema_validation_acceptance_evidence_is_read_only",
+            schema_acceptance_evidence.get("schema_version")
+            == "command_center_3_storage_schema_validation_acceptance_evidence.v1"
+            and schema_acceptance_evidence.get("status")
+            in {
+                "schema_acceptance_evidence_meta_missing",
+                "schema_acceptance_evidence_packet_missing",
+                "schema_acceptance_evidence_packet_read_failed",
+                "schema_acceptance_evidence_packet_decode_failed",
+                "schema_acceptance_evidence_partial_or_blocked",
+                "schema_acceptance_evidence_passed_all_local_datasets",
+            }
+            and schema_acceptance_evidence.get("dataset_count") == len(canonical_datasets)
+            and schema_acceptance_evidence.get("physical_schema_validation_done") is schema_evidence_done
+            and schema_acceptance_evidence.get("physical_schema_validation_done_count")
+            == schema_acceptance_evidence.get("accepted_dataset_count")
+            and schema_acceptance_evidence.get("cache_get_writes_files") is False
+            and schema_acceptance_evidence.get("cache_get_reads_row_payloads") is False
+            and schema_acceptance_evidence.get("schema_migration_executed") is False
+            and schema_acceptance_evidence.get("production_storage_complete") is False
+            and _flag_false(
+                schema_acceptance_evidence,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and schema_acceptance_evidence.get("does_not_execute_trades") is True
+            and schema_acceptance_evidence.get("does_not_modify_strategy_action") is True,
+            "Latest schema acceptance evidence may be missing, partial, or passed, but GET must remain read-only, no-provider, no-trade, and no action mutation.",
+        ),
+        _row(
             "physical_durable_evidence_recipe_is_local_pending",
             durable_evidence_recipe.get("schema_version")
             == "command_center_3_storage_physical_durable_evidence_recipe.v1"
@@ -459,7 +512,7 @@ def build_contract() -> dict[str, Any]:
             and durable_evidence_recipe.get("durable_evidence_complete") is False
             and durable_evidence_recipe.get("durable_promotion_ready") is False
             and durable_evidence_recipe.get("production_storage_complete") is False
-            and durable_evidence_recipe.get("physical_schema_validation_done") is False
+            and durable_evidence_recipe.get("physical_schema_validation_done") is schema_evidence_done
             and durable_evidence_recipe.get("schema_migration_executed") is False
             and durable_evidence_recipe.get("dataset_version_manifest_validated") is False
             and durable_evidence_recipe.get("partition_migration_executed") is False
@@ -478,17 +531,7 @@ def build_contract() -> dict[str, Any]:
             and durable_evidence_recipe.get("contains_secret") is False
             and tuple(durable_evidence_recipe.get("evidence_keys") or ())
             == REQUIRED_STORAGE_PHYSICAL_DURABLE_EVIDENCE_KEYS
-            and set(durable_evidence_recipe.get("missing_durable_evidence") or [])
-            == {
-                "physical_schema_validation_evidence_required",
-                "dataset_version_manifest_validation_required",
-                "partition_migration_evidence_required",
-                "physical_compaction_evidence_required",
-                "cache_ttl_refresh_evidence_required",
-                "artifact_cleanup_delete_review_required",
-                "duckdb_post_migration_validation_required",
-                "production_promotion_review_required",
-            }
+            and set(durable_evidence_recipe.get("missing_durable_evidence") or []) == expected_durable_missing
             and set(durable_evidence_rows) == set(REQUIRED_STORAGE_PHYSICAL_DURABLE_EVIDENCE_KEYS)
             and {
                 "physical schema validation acceptance packet",
@@ -852,7 +895,12 @@ def build_contract() -> dict[str, Any]:
         "ltg": "LTG-05/LTG-11",
         "contract_ready": not blockers,
         "production_storage_complete": False,
-        "physical_schema_validation_done": False,
+        "physical_schema_validation_done": schema_evidence_done,
+        "schema_validation_acceptance_evidence_status": schema_acceptance_evidence.get("status"),
+        "schema_validation_acceptance_accepted_dataset_count": schema_acceptance_evidence.get(
+            "accepted_dataset_count"
+        ),
+        "schema_validation_acceptance_blocked_dataset_count": schema_acceptance_evidence.get("blocked_dataset_count"),
         "schema_migration_executed": False,
         "dataset_version_manifest_validated": False,
         "dataset_version_manifest_evidence_validated": bool(
@@ -921,6 +969,17 @@ def build_contract() -> dict[str, Any]:
             "storage_physical_durable_evidence_production_blocker_count": durable_evidence_recipe.get(
                 "production_blocker_count"
             ),
+            "schema_validation_acceptance_evidence_status": schema_acceptance_evidence.get("status"),
+            "schema_validation_acceptance_source_packet_status": schema_acceptance_evidence.get(
+                "source_packet_status"
+            ),
+            "schema_validation_acceptance_accepted_dataset_count": schema_acceptance_evidence.get(
+                "accepted_dataset_count"
+            ),
+            "schema_validation_acceptance_blocked_dataset_count": schema_acceptance_evidence.get(
+                "blocked_dataset_count"
+            ),
+            "physical_schema_validation_done": schema_evidence_done,
             "schema_migration_preflight_status": schema_preflight.get("status"),
             "dataset_version_policy_status": dataset_version_policy.get("status"),
             "dataset_version_manifest_evidence_status": dataset_version_manifest_evidence.get("status"),

@@ -380,6 +380,12 @@ export default function StorageOverview() {
   const storagePhysicalDurableEvidenceRows =
     (overview.storage_physical_durable_evidence_rows as Array<Record<string, unknown>> | undefined) ??
     ((storageCatalog.storage_physical_durable_evidence_rows as Array<Record<string, unknown>> | undefined) ?? []);
+  const schemaValidationAcceptanceEvidence =
+    (overview.schema_validation_acceptance_evidence as Record<string, unknown> | undefined) ??
+    ((storageCatalog.schema_validation_acceptance_evidence as Record<string, unknown> | undefined) ?? {});
+  const schemaValidationAcceptanceEvidenceRows =
+    (overview.schema_validation_acceptance_evidence_rows as Array<Record<string, unknown>> | undefined) ??
+    ((storageCatalog.schema_validation_acceptance_evidence_rows as Array<Record<string, unknown>> | undefined) ?? []);
 
   return (
     <>
@@ -443,9 +449,11 @@ export default function StorageOverview() {
           { label: "version validations", value: datasetVersionPolicy.physical_dataset_version_validated_count ?? overview.physical_dataset_version_validated_count ?? 0 },
           { label: "manifest evidence", value: String(datasetVersionManifestEvidence.status ?? overview.dataset_version_manifest_evidence_status ?? "manifest_missing_validation_pending") },
           { label: "manifest validated", value: datasetVersionManifestEvidence.validated_dataset_count ?? overview.dataset_version_manifest_evidence_validated_count ?? 0 },
+          { label: "schema acceptance", value: String(schemaValidationAcceptanceEvidence.status ?? productionReadiness.schema_validation_acceptance_evidence_status ?? "schema_acceptance_evidence_meta_missing") },
+          { label: "schema accepted", value: schemaValidationAcceptanceEvidence.accepted_dataset_count ?? productionReadiness.schema_validation_acceptance_accepted_dataset_count ?? 0 },
           { label: "migration rows", value: schemaMigrationRows.length },
           { label: "migrations executed", value: schemaMigration.migration_executed_count ?? overview.schema_migration_executed_count ?? 0 },
-          { label: "physical schema checks", value: schemaMigration.physical_validation_done_count ?? overview.physical_schema_validation_done_count ?? 0 }
+          { label: "physical schema checks", value: productionReadiness.physical_schema_validation_done_count ?? schemaMigration.physical_validation_done_count ?? overview.physical_schema_validation_done_count ?? 0 }
         ]}
       />
 
@@ -510,6 +518,16 @@ export default function StorageOverview() {
 
       <PacketCard title="Storage production blocker rows" subtitle="schema、version、partition、compaction、TTL refresh 与 query service 的生产缺口" status="storage_production_blocker_rows">
         <DataLineageTable rows={storageProductionBlockerRows} />
+      </PacketCard>
+
+      <PacketCard title="Schema validation acceptance evidence" subtitle="读取最新按钮门控 schema acceptance packet；GET 只读，不创建 meta、不写 Parquet" status={String(schemaValidationAcceptanceEvidence.status ?? "schema_acceptance_evidence_missing")}>
+        <p>source_packet_present: {String(schemaValidationAcceptanceEvidence.source_packet_present ?? false)}</p>
+        <p>source_packet_status: {String(schemaValidationAcceptanceEvidence.source_packet_status ?? "--")}</p>
+        <p>accepted / blocked / missing: {String(schemaValidationAcceptanceEvidence.accepted_dataset_count ?? 0)} / {String(schemaValidationAcceptanceEvidence.blocked_dataset_count ?? 0)} / {String(schemaValidationAcceptanceEvidence.missing_dataset_count ?? 0)}</p>
+        <p>physical_schema_validation_done: {String(schemaValidationAcceptanceEvidence.physical_schema_validation_done ?? false)}</p>
+        <p>cache_get_writes_files / reads_row_payloads: {String(schemaValidationAcceptanceEvidence.cache_get_writes_files ?? false)} / {String(schemaValidationAcceptanceEvidence.cache_get_reads_row_payloads ?? false)}</p>
+        <p>Tushare / DeepSeek / GitHub: {String(schemaValidationAcceptanceEvidence.tushare_called ?? false)} / {String(schemaValidationAcceptanceEvidence.deepseek_called ?? false)} / {String(schemaValidationAcceptanceEvidence.github_called ?? false)}</p>
+        <DataLineageTable rows={schemaValidationAcceptanceEvidenceRows} />
       </PacketCard>
 
       <PacketCard title="Storage production readiness receipt" subtitle="LTG-05 下一步收据；允许显式 POST 审阅任务，不允许 GET 迁移、自动刷新或把收据当生产完成" status={String(storageProductionReadinessReceipt.status ?? "missing")}>

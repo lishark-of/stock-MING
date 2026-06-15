@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import sqlite3
 from typing import Any, Mapping
 
 from storage import duckdb_store, parquet_store
@@ -1845,6 +1846,105 @@ def run_storage_schema_validation_acceptance_task(payload: Any = None) -> dict[s
     ) or task
 
 
+def _read_storage_meta_packet_no_init(packet_key: str) -> tuple[Any, str]:
+    if not SQLITE_META_PATH.exists():
+        return None, "meta_missing"
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = sqlite3.connect(SQLITE_META_PATH)
+        row = conn.execute("SELECT payload_json FROM packets WHERE packet_key = ?", (packet_key,)).fetchone()
+    except Exception:
+        return None, "packet_read_failed"
+    finally:
+        if conn is not None:
+            conn.close()
+    if row is None:
+        return None, "packet_missing"
+    try:
+        return json.loads(row[0]), "packet_present"
+    except Exception:
+        return None, "packet_decode_failed"
+
+
+def storage_schema_validation_acceptance_evidence_audit() -> dict[str, Any]:
+    packet, read_status = _read_storage_meta_packet_no_init(SCHEMA_VALIDATION_ACCEPTANCE_PACKET_KEY)
+    packet_map = packet if isinstance(packet, Mapping) else {}
+    packet_present = read_status == "packet_present" and bool(packet_map)
+    rows = [dict(row) for row in packet_map.get("rows") or [] if isinstance(row, Mapping)] if packet_present else []
+    rows_by_dataset = {str(row.get("dataset") or ""): row for row in rows}
+    accepted_datasets = [
+        dataset
+        for dataset in CANONICAL_PARQUET_DATASETS
+        if rows_by_dataset.get(dataset, {}).get("physical_schema_acceptance_passed") is True
+    ]
+    missing_datasets = [dataset for dataset in CANONICAL_PARQUET_DATASETS if dataset not in rows_by_dataset]
+    blocked_datasets = [dataset for dataset in CANONICAL_PARQUET_DATASETS if dataset not in accepted_datasets]
+    accepted_count = len(accepted_datasets)
+    dataset_count = len(CANONICAL_PARQUET_DATASETS)
+    try:
+        source_packet_dataset_count = int(packet_map.get("dataset_count") or len(rows) or 0)
+    except Exception:
+        source_packet_dataset_count = len(rows)
+    all_accepted = (
+        packet_present
+        and accepted_count == dataset_count
+        and str(packet_map.get("status")) == "schema_acceptance_passed_all_local_datasets"
+    )
+    if not packet_present:
+        status = f"schema_acceptance_evidence_{read_status}"
+    elif all_accepted:
+        status = "schema_acceptance_evidence_passed_all_local_datasets"
+    else:
+        status = "schema_acceptance_evidence_partial_or_blocked"
+    return {
+        "schema_version": "command_center_3_storage_schema_validation_acceptance_evidence.v1",
+        "packet_key": "command_center_3_storage_schema_validation_acceptance_evidence_audit",
+        "status": status,
+        "mode": "cache_only_latest_schema_acceptance_evidence",
+        "scope": "read_latest_button_gated_schema_acceptance_packet",
+        "source_packet_key": SCHEMA_VALIDATION_ACCEPTANCE_PACKET_KEY,
+        "source_packet_present": packet_present,
+        "source_packet_read_status": read_status,
+        "source_packet_status": packet_map.get("status"),
+        "source_packet_task_id": str(packet_map.get("task_id") or ""),
+        "dataset_count": dataset_count,
+        "source_packet_dataset_count": source_packet_dataset_count,
+        "accepted_dataset_count": accepted_count,
+        "blocked_dataset_count": len(blocked_datasets),
+        "missing_dataset_count": len(missing_datasets),
+        "accepted_datasets": accepted_datasets,
+        "blocked_datasets": blocked_datasets,
+        "missing_datasets": missing_datasets,
+        "status_counts": _count_values(row.get("acceptance_status") for row in rows),
+        "rows": rows,
+        "physical_schema_validation_done": all_accepted,
+        "physical_schema_validation_done_count": accepted_count,
+        "schema_acceptance_passed_all": all_accepted,
+        "cache_get_writes_files": False,
+        "cache_get_reads_row_payloads": False,
+        "cache_get_reads_env_files": False,
+        "post_acceptance_writes_parquet": False,
+        "schema_migration_executed": False,
+        "production_storage_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_schema_validation_acceptance_evidence",
+            endpoint="GET /api/storage",
+            status=status,
+            row_count=len(rows),
+        ),
+        "warnings": [
+            "schema acceptance evidence audit 只读取已存在的本地 SQLite packet；meta 不存在时不会创建文件。",
+            "该 audit 不写 Parquet、不执行 migration、不调用 Tushare、DeepSeek、GitHub 或真实交易接口。",
+        ],
+    }
+
+
 def _partition_migration_dry_run_row(dataset: str) -> dict[str, Any]:
     metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=dataset)
     partition_plan = _partition_plan(dataset)
@@ -2925,6 +3025,7 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
     artifact_hygiene = storage_artifact_hygiene_status()
     artifact_cleanup_review = dict(artifact_hygiene.get("artifact_cleanup_review_contract") or {})
     schema_migration_preflight = storage_schema_migration_preflight()
+    schema_acceptance_evidence = storage_schema_validation_acceptance_evidence_audit()
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
     duckdb_query_service = duckdb_query_service_policy()
@@ -2944,6 +3045,18 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
             "current_backend": "metadata_only_contract_rows",
             "blocking_for_cache_read": False,
             "next_action": "add explicit physical schema validation and migration tasks; never run them from GET cache.",
+        },
+        {
+            "component": "schema_validation_acceptance_evidence",
+            "status": schema_acceptance_evidence["status"],
+            "production_role": "latest button-gated physical schema acceptance packet before any migration writer",
+            "current_backend": "local_sqlite_packet_read_only_no_init",
+            "blocking_for_cache_read": False,
+            "source_packet_present": schema_acceptance_evidence["source_packet_present"],
+            "accepted_dataset_count": schema_acceptance_evidence["accepted_dataset_count"],
+            "blocked_dataset_count": schema_acceptance_evidence["blocked_dataset_count"],
+            "physical_schema_validation_done": schema_acceptance_evidence["physical_schema_validation_done"],
+            "next_action": "run explicit schema validation acceptance and review blocked datasets before manifest or migration promotion.",
         },
         {
             "component": "dataset_version_policy",
@@ -3029,6 +3142,7 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "rows": rows,
         "production_control_rows": _storage_production_control_rows(),
         "blockers": blockers,
+        "production_storage_complete": False,
         "schema_version_policy": "packet metadata and factor_values require explicit schema_version before production migration.",
         "dataset_version_policy": "contract_only_manifest_write_requires_explicit_task",
         "dataset_version_policy_status": dataset_version_policy["status"],
@@ -3080,7 +3194,23 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "schema_migration_preflight_status": schema_migration_preflight["status"],
         "schema_migration_dataset_count": schema_migration_preflight["dataset_count"],
         "schema_migration_executed_count": schema_migration_preflight["migration_executed_count"],
-        "physical_schema_validation_done_count": schema_migration_preflight["physical_validation_done_count"],
+        "schema_migration_preflight_physical_validation_done_count": schema_migration_preflight[
+            "physical_validation_done_count"
+        ],
+        "schema_validation_acceptance_evidence": schema_acceptance_evidence,
+        "schema_validation_acceptance_evidence_status": schema_acceptance_evidence["status"],
+        "schema_validation_acceptance_evidence_exists": schema_acceptance_evidence["source_packet_present"],
+        "schema_validation_acceptance_source_packet_status": schema_acceptance_evidence["source_packet_status"],
+        "schema_validation_acceptance_source_packet_task_id": schema_acceptance_evidence["source_packet_task_id"],
+        "schema_validation_acceptance_accepted_dataset_count": schema_acceptance_evidence["accepted_dataset_count"],
+        "schema_validation_acceptance_blocked_dataset_count": schema_acceptance_evidence["blocked_dataset_count"],
+        "schema_validation_acceptance_missing_dataset_count": schema_acceptance_evidence["missing_dataset_count"],
+        "schema_validation_acceptance_passed_all": schema_acceptance_evidence["schema_acceptance_passed_all"],
+        "schema_validation_acceptance_cache_get_writes_files": schema_acceptance_evidence["cache_get_writes_files"],
+        "schema_validation_acceptance_reads_row_payloads": schema_acceptance_evidence["cache_get_reads_row_payloads"],
+        "physical_schema_validation_done": schema_acceptance_evidence["physical_schema_validation_done"],
+        "physical_schema_validation_done_count": schema_acceptance_evidence["physical_schema_validation_done_count"],
+        "physical_schema_validation_source": "schema_validation_acceptance_evidence_packet",
         "schema_validation_dry_run_route": "POST /api/storage/schema-validation/dry-run",
         "schema_validation_dry_run_button_gated": True,
         "schema_validation_dry_run_writes_parquet": False,
@@ -3186,7 +3316,10 @@ def storage_production_blocker_audit(production_readiness: Mapping[str, Any] | N
             "schema_physical_validation_complete",
             schema_validation_done >= dataset_count,
             current_status=f"{schema_validation_done}/{dataset_count}",
-            evidence="schema validation dry-run is available, but full physical validation has not been completed for every canonical dataset.",
+            evidence=(
+                "schema validation dry-run is available; latest button-gated schema acceptance evidence "
+                f"status={readiness.get('schema_validation_acceptance_evidence_status')}."
+            ),
             next_action="Run and review explicit schema validation tasks for all canonical datasets before production migration.",
             classification="dry_run_or_preflight_not_production",
         ),
@@ -3458,7 +3591,7 @@ def storage_production_readiness_receipt(
             "dry-run/preflight/receipt as production storage completion",
         ],
         "production_storage_complete": production_complete,
-        "physical_schema_validation_done": False,
+        "physical_schema_validation_done": bool(readiness.get("physical_schema_validation_done")),
         "schema_migration_executed": False,
         "dataset_version_manifest_validated": bool(readiness.get("dataset_version_manifest_evidence_validated")),
         "partition_migration_executed": False,
@@ -3539,6 +3672,7 @@ def storage_physical_migration_activation_receipt(
     )
     duckdb_boundary = readiness.get("duckdb_query_service_status") in {"service_ready", "dependency_missing"}
     local_activation_ready = readiness_ready and cache_get_boundary and explicit_task_boundary
+    schema_acceptance_done = readiness.get("physical_schema_validation_done") is True
     rows = [
         _storage_activation_row(
             "readiness_receipt_ready",
@@ -3548,8 +3682,12 @@ def storage_physical_migration_activation_receipt(
         ),
         _storage_activation_row(
             "schema_acceptance_required",
-            False,
-            "Physical schema acceptance has not been promoted to production evidence.",
+            schema_acceptance_done,
+            (
+                "Latest schema acceptance packet proves all canonical datasets."
+                if schema_acceptance_done
+                else "Physical schema acceptance has not been promoted to production evidence."
+            ),
             "run explicit schema acceptance review before any migration writer",
         ),
         _storage_activation_row(
@@ -3625,7 +3763,7 @@ def storage_physical_migration_activation_receipt(
             "activation receipt as production storage completion",
         ],
         "missing_evidence": [
-            "physical schema validation acceptance for all canonical datasets",
+            *([] if schema_acceptance_done else ["physical schema validation acceptance for all canonical datasets"]),
             "manifest validation backed by schema acceptance",
             "partition migration execution evidence",
             "physical compaction execution evidence",
@@ -3634,7 +3772,7 @@ def storage_physical_migration_activation_receipt(
             "production promotion review",
         ],
         "production_storage_complete": False,
-        "physical_schema_validation_done": False,
+        "physical_schema_validation_done": schema_acceptance_done,
         "schema_migration_executed": False,
         "dataset_version_manifest_validated": False,
         "partition_migration_executed": False,
@@ -3746,11 +3884,18 @@ def storage_physical_execution_recipe(
         and readiness.get("dataset_version_manifest_validate_writes_parquet") is False
     )
     duckdb_boundary = readiness.get("duckdb_query_service_status") in {"service_ready", "dependency_missing"}
+    schema_acceptance_done = readiness.get("physical_schema_validation_done") is True
     recipe_ready = bool(activation_ready and cache_get_boundary and required_task_boundaries_ready and manifest_guarded)
     rows = [
         _storage_physical_execution_recipe_row(
             "physical_schema_validation_acceptance",
-            status="ready_for_explicit_acceptance_review" if readiness.get("schema_validation_acceptance_button_gated") else "blocked_missing_schema_acceptance_task",
+            status=(
+                "accepted_physical_schema_evidence_present"
+                if schema_acceptance_done
+                else "ready_for_explicit_acceptance_review"
+                if readiness.get("schema_validation_acceptance_button_gated")
+                else "blocked_missing_schema_acceptance_task"
+            ),
             local_ready=readiness.get("schema_validation_acceptance_button_gated") is True,
             evidence=f"physical_schema_validation_done_count={readiness.get('physical_schema_validation_done_count')}/{dataset_count}",
             evidence_required="accepted schema-validation packet for every canonical dataset",
@@ -3963,6 +4108,8 @@ def storage_physical_durable_evidence_recipe(
         and execution_recipe.get("contains_secret") is False
     )
     local_recipe_ready = bool(blocker_audit_visible and readiness_visible and activation_visible and execution_ready and no_external_boundary)
+    schema_acceptance_done = readiness.get("physical_schema_validation_done") is True
+    schema_acceptance_status = readiness.get("schema_validation_acceptance_evidence_status")
     rows = [
         _storage_physical_durable_evidence_recipe_row(
             "production_blocker_audit_visible",
@@ -3998,9 +4145,12 @@ def storage_physical_durable_evidence_recipe(
         ),
         _storage_physical_durable_evidence_recipe_row(
             "physical_schema_validation_evidence_required",
-            passed=False,
+            passed=schema_acceptance_done,
             source_contract="schema_validation_acceptance",
-            evidence=f"physical_schema_validation_done_count={readiness.get('physical_schema_validation_done_count')}",
+            evidence=(
+                f"acceptance_status={schema_acceptance_status}; "
+                f"physical_schema_validation_done_count={readiness.get('physical_schema_validation_done_count')}"
+            ),
             required_evidence="accepted physical schema validation packet for every canonical dataset",
             next_step="run explicit schema validation acceptance before any writer or migration task",
         ),
@@ -4089,7 +4239,8 @@ def storage_physical_durable_evidence_recipe(
         "durable_evidence_complete": False,
         "durable_promotion_ready": False,
         "production_storage_complete": False,
-        "physical_schema_validation_done": False,
+        "physical_schema_validation_done": schema_acceptance_done,
+        "schema_validation_acceptance_evidence_status": schema_acceptance_status,
         "schema_migration_executed": False,
         "dataset_version_manifest_validated": False,
         "partition_migration_executed": False,
@@ -4251,6 +4402,7 @@ def storage_dataset_catalog() -> dict[str, Any]:
     artifact_hygiene = storage_artifact_hygiene_status()
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
+    schema_validation_acceptance_evidence = production_readiness.get("schema_validation_acceptance_evidence") or {}
     schema_migration_preflight = storage_schema_migration_preflight()
     duckdb_query_service = duckdb_query_service_policy()
     packet = {
@@ -4281,6 +4433,15 @@ def storage_dataset_catalog() -> dict[str, Any]:
         "artifact_hygiene": artifact_hygiene,
         "artifact_cleanup_review_contract": artifact_hygiene["artifact_cleanup_review_contract"],
         "artifact_cleanup_review_rows": artifact_hygiene["artifact_cleanup_review_rows"],
+        "schema_validation_acceptance_evidence": schema_validation_acceptance_evidence,
+        "schema_validation_acceptance_evidence_rows": schema_validation_acceptance_evidence.get("rows") or [],
+        "schema_validation_acceptance_evidence_status": schema_validation_acceptance_evidence.get("status"),
+        "schema_validation_acceptance_accepted_dataset_count": schema_validation_acceptance_evidence.get(
+            "accepted_dataset_count"
+        ),
+        "schema_validation_acceptance_blocked_dataset_count": schema_validation_acceptance_evidence.get(
+            "blocked_dataset_count"
+        ),
         "dataset_version_policy": dataset_version_policy,
         "dataset_version_rows": dataset_version_policy["rows"],
         "dataset_version_status_counts": dataset_version_policy["status_counts"],
@@ -4566,6 +4727,7 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
     )
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
+    schema_validation_acceptance_evidence = production_readiness.get("schema_validation_acceptance_evidence") or {}
     schema_migration_preflight = storage_schema_migration_preflight()
     duckdb_query_service = duckdb_query_service_policy()
     packet = {
@@ -4606,7 +4768,20 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "schema_migration_status_counts": schema_migration_preflight["status_counts"],
         "schema_migration_preflight_status": schema_migration_preflight["status"],
         "schema_migration_executed_count": schema_migration_preflight["migration_executed_count"],
-        "physical_schema_validation_done_count": schema_migration_preflight["physical_validation_done_count"],
+        "schema_migration_preflight_physical_validation_done_count": schema_migration_preflight[
+            "physical_validation_done_count"
+        ],
+        "schema_validation_acceptance_evidence": schema_validation_acceptance_evidence,
+        "schema_validation_acceptance_evidence_rows": schema_validation_acceptance_evidence.get("rows") or [],
+        "schema_validation_acceptance_evidence_status": schema_validation_acceptance_evidence.get("status"),
+        "schema_validation_acceptance_accepted_dataset_count": schema_validation_acceptance_evidence.get(
+            "accepted_dataset_count"
+        ),
+        "schema_validation_acceptance_blocked_dataset_count": schema_validation_acceptance_evidence.get(
+            "blocked_dataset_count"
+        ),
+        "physical_schema_validation_done": production_readiness.get("physical_schema_validation_done"),
+        "physical_schema_validation_done_count": production_readiness.get("physical_schema_validation_done_count"),
         "duckdb_query_service": duckdb_query_service,
         "duckdb_query_service_rows": duckdb_query_service["rows"],
         "duckdb_query_service_status": duckdb_query_service["status"],
