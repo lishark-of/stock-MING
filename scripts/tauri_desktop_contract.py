@@ -73,6 +73,21 @@ REQUIRED_TAURI_PRODUCTION_PACKAGE_STAGES = {
     "config_log_runtime_path_qa",
     "signing_notarization_review",
 }
+REQUIRED_TAURI_DURABLE_EVIDENCE_KEYS = {
+    "preflight_cache_boundary_visible",
+    "release_manifest_visible",
+    "readiness_receipt_visible",
+    "packaged_runtime_qa_matrix_visible",
+    "release_artifact_shape_visible",
+    "app_bundle_dmg_evidence_required",
+    "packaged_app_launch_qa_required",
+    "backend_startup_runtime_evidence_required",
+    "backend_offline_packaged_ux_required",
+    "config_log_runtime_path_evidence_required",
+    "signing_notarization_review_required",
+    "production_package_promotion_review_required",
+    "no_build_runtime_provider_trade_secret_boundary",
+}
 TAURI_PRODUCTION_PACKAGE_STAGE_LABELS = {
     "tauri_dev_runtime_smoke": "tauri dev runtime smoke",
     "tauri_build_repeatability": "repeatable tauri build",
@@ -185,6 +200,9 @@ def build_contract() -> dict[str, Any]:
     readiness_receipt = _dict(packet.get("production_package_readiness_receipt"))
     readiness_receipt_rows = [row for row in _list(packet.get("production_package_readiness_receipt_rows")) if isinstance(row, dict)]
     readiness_receipt_criteria = {str(row.get("criterion") or "") for row in readiness_receipt_rows}
+    durable_recipe = _dict(packet.get("tauri_package_durable_evidence_recipe"))
+    durable_rows = [row for row in _list(packet.get("tauri_package_durable_evidence_rows")) if isinstance(row, dict)]
+    durable_rows_by_key = {str(row.get("evidence_key") or ""): row for row in durable_rows}
     build_artifact = _dict(packet.get("tauri_build_artifact"))
     release_binary_detected = build_artifact.get("binary_exists") is True
     release_binary_state_valid = (
@@ -406,6 +424,77 @@ def build_contract() -> dict[str, Any]:
             "Tauri package readiness receipt may select the next explicit build/package-QA step, but it must not run build/runtime commands, read config, write logs, call providers, or claim production completion.",
         ),
         _row(
+            "tauri_package_durable_evidence_recipe_is_local_production_pending",
+            durable_recipe.get("schema_version") == desktop_service.TAURI_PACKAGE_DURABLE_EVIDENCE_SCHEMA_VERSION
+            and durable_recipe.get("status") == "tauri_package_durable_evidence_recipe_ready_production_pending"
+            and durable_recipe.get("scope")
+            == "local_tauri_package_durable_evidence_recipe_no_build_or_runtime_execution"
+            and durable_recipe.get("local_recipe_ready") is True
+            and durable_recipe.get("durable_evidence_complete") is False
+            and durable_recipe.get("durable_promotion_ready") is False
+            and durable_recipe.get("production_package_complete") is False
+            and durable_recipe.get("tauri_build_repeatability_done") is False
+            and durable_recipe.get("packaged_app_launch_qa_done") is False
+            and durable_recipe.get("backend_startup_strategy_runtime_validated") is False
+            and durable_recipe.get("backend_offline_packaged_ux_verified") is False
+            and durable_recipe.get("config_log_runtime_paths_validated") is False
+            and durable_recipe.get("signing_notarization_done") is False
+            and durable_recipe.get("provider_execution_implemented") is False
+            and durable_recipe.get("model_execution_implemented") is False
+            and durable_recipe.get("cache_get_external_calls") is False
+            and durable_recipe.get("react_render_external_calls") is False
+            and durable_recipe.get("preflight_runs_build") is False
+            and durable_recipe.get("preflight_opens_packaged_app") is False
+            and durable_recipe.get("preflight_starts_fastapi") is False
+            and durable_recipe.get("preflight_reads_config_values") is False
+            and durable_recipe.get("preflight_writes_log_files") is False
+            and durable_recipe.get("evidence_keys")
+            == list(desktop_service.TAURI_PACKAGE_DURABLE_EVIDENCE_KEYS)
+            and {row.get("evidence_key") for row in durable_rows} == REQUIRED_TAURI_DURABLE_EVIDENCE_KEYS
+            and int(durable_recipe.get("row_count") or 0) == len(durable_rows)
+            and int(durable_recipe.get("evidence_key_count") or 0)
+            == len(desktop_service.TAURI_PACKAGE_DURABLE_EVIDENCE_KEYS)
+            and int(durable_recipe.get("durable_evidence_blocker_count") or 0) >= 6
+            and ".app bundle and DMG artifact QA or explicit accepted equivalent"
+            in _list(durable_recipe.get("required_evidence"))
+            and "packaged app launch QA" in _list(durable_recipe.get("required_evidence"))
+            and "config/log runtime path evidence without secret values"
+            in _list(durable_recipe.get("required_evidence"))
+            and "treat release binary detection as packaged app launch QA"
+            in _list(durable_recipe.get("not_allowed_next_steps"))
+            and "run npm, cargo, or Tauri from GET preflight" in _list(durable_recipe.get("not_allowed_next_steps"))
+            and "call Tushare, DeepSeek, or GitHub from GET preflight or React render"
+            in _list(durable_recipe.get("not_allowed_next_steps"))
+            and durable_rows_by_key.get("preflight_cache_boundary_visible", {}).get("passed") is True
+            and durable_rows_by_key.get("release_manifest_visible", {}).get("passed") is True
+            and durable_rows_by_key.get("readiness_receipt_visible", {}).get("passed") is True
+            and durable_rows_by_key.get("packaged_runtime_qa_matrix_visible", {}).get("passed") is True
+            and durable_rows_by_key.get("release_artifact_shape_visible", {}).get("passed") is True
+            and durable_rows_by_key.get("packaged_app_launch_qa_required", {}).get("production_blocker") is True
+            and durable_rows_by_key.get("backend_offline_packaged_ux_required", {}).get("production_blocker") is True
+            and durable_rows_by_key.get("no_build_runtime_provider_trade_secret_boundary", {}).get("passed") is True
+            and _flag_false(
+                durable_recipe,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and durable_recipe.get("does_not_execute_trades") is True
+            and durable_recipe.get("does_not_modify_strategy_action") is True
+            and _list(durable_recipe.get("call_ledger"))
+            and _dict(_list(durable_recipe.get("call_ledger"))[0]).get("api")
+            == "local_tauri_package_durable_evidence_recipe"
+            and _dict(_list(durable_recipe.get("call_ledger"))[0]).get("external") is False
+            and policy.get("tauri_package_durable_evidence_recipe_is_local") is True
+            and policy.get("tauri_package_durable_evidence_recipe_is_not_build") is True
+            and policy.get("tauri_package_durable_evidence_recipe_is_not_runtime_execution") is True
+            and policy.get("tauri_package_durable_evidence_recipe_is_not_production_completion") is True
+            and "tauri_package_durable_evidence_recipe" in route_source,
+            "Tauri durable evidence recipe must pin remaining package/runtime/config/signing evidence without running build/runtime commands, opening apps, reading config, writing logs, calling providers, trading, or claiming production package completion.",
+        ),
+        _row(
             "production_package_stage_scope_manifest_is_complete_and_pending",
             {row.get("stage_key") for row in production_package_stage_scope_rows}
             == REQUIRED_TAURI_PRODUCTION_PACKAGE_STAGES
@@ -490,6 +579,7 @@ def build_contract() -> dict[str, Any]:
             "command_center_3_tauri_desktop_contract.v1" in this_script
             and "local_tauri_desktop_contract_no_build_or_runtime_execution" in this_script
             and "release_manifest_contract_is_local_package_manifest_only" in this_script
+            and "tauri_package_durable_evidence_recipe.v1" in this_script
             and "tauri_production_package_stage_scope_manifest" in this_script
             and "production_package_complete" in this_script
             and "packaged_runtime_qa_done" in this_script
@@ -526,6 +616,10 @@ def build_contract() -> dict[str, Any]:
         "production_package_readiness_receipt_status": readiness_receipt.get("status"),
         "tauri_release_manifest_ready": release_manifest.get("local_release_manifest_ready") is True,
         "tauri_release_manifest_status": release_manifest.get("status"),
+        "tauri_package_durable_evidence_recipe_ready": durable_recipe.get("local_recipe_ready") is True,
+        "tauri_package_durable_evidence_recipe_status": durable_recipe.get("status"),
+        "tauri_package_durable_evidence_complete": False,
+        "tauri_package_durable_evidence_blocker_count": durable_recipe.get("durable_evidence_blocker_count", 0),
         "cache_only": True,
         "does_not_run_tauri": True,
         "does_not_run_npm": True,
@@ -563,6 +657,10 @@ def build_contract() -> dict[str, Any]:
             "production_package_readiness_receipt_status": readiness_receipt.get("status"),
             "production_package_readiness_receipt_blocker_count": readiness_receipt.get("blocking_criterion_count"),
             "production_package_readiness_allowed_next_step": readiness_receipt.get("allowed_next_step"),
+            "tauri_package_durable_evidence_recipe_status": durable_recipe.get("status"),
+            "tauri_package_durable_evidence_ready": durable_recipe.get("local_recipe_ready"),
+            "tauri_package_durable_evidence_blocker_count": durable_recipe.get("durable_evidence_blocker_count"),
+            "tauri_package_durable_evidence_missing": durable_recipe.get("missing_durable_evidence"),
             "api_base_is_localhost": _dict(packet.get("api_base_info")).get("is_localhost"),
             "production_package_stage_scope_count": len(production_package_stage_scope_rows),
             "production_package_stage_scope_keys": sorted(
@@ -572,6 +670,7 @@ def build_contract() -> dict[str, Any]:
                 1 for row in production_package_stage_scope_rows if row.get("production_package_complete") is False
             ),
         },
+        "tauri_package_durable_evidence_rows": durable_rows,
         "production_package_stage_scope_rows": production_package_stage_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Tauri dev/build execution, packaged runtime launch QA, backend sidecar/manual startup acceptance, config/log runtime behavior, signing/notarization, and production desktop package completion remain pending.",

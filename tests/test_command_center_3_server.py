@@ -669,6 +669,71 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(desktop["policy"]["production_package_readiness_receipt_is_not_build"])
         self.assertTrue(desktop["policy"]["production_package_readiness_receipt_is_not_runtime_execution"])
         self.assertTrue(desktop["policy"]["production_package_readiness_receipt_is_not_production_completion"])
+        durable_recipe = desktop["tauri_package_durable_evidence_recipe"]
+        durable_rows = {row["evidence_key"]: row for row in desktop["tauri_package_durable_evidence_rows"]}
+        self.assertEqual(durable_recipe["schema_version"], "tauri_package_durable_evidence_recipe.v1")
+        self.assertEqual(
+            durable_recipe["scope"],
+            "local_tauri_package_durable_evidence_recipe_no_build_or_runtime_execution",
+        )
+        self.assertEqual(durable_recipe["status"], "tauri_package_durable_evidence_recipe_ready_production_pending")
+        self.assertTrue(durable_recipe["local_recipe_ready"])
+        self.assertFalse(durable_recipe["durable_evidence_complete"])
+        self.assertFalse(durable_recipe["durable_promotion_ready"])
+        self.assertFalse(durable_recipe["production_package_complete"])
+        self.assertFalse(durable_recipe["tauri_build_repeatability_done"])
+        self.assertFalse(durable_recipe["packaged_app_launch_qa_done"])
+        self.assertFalse(durable_recipe["backend_startup_strategy_runtime_validated"])
+        self.assertFalse(durable_recipe["backend_offline_packaged_ux_verified"])
+        self.assertFalse(durable_recipe["config_log_runtime_paths_validated"])
+        self.assertFalse(durable_recipe["signing_notarization_done"])
+        self.assertFalse(durable_recipe["provider_execution_implemented"])
+        self.assertFalse(durable_recipe["model_execution_implemented"])
+        self.assertFalse(durable_recipe["cache_get_external_calls"])
+        self.assertFalse(durable_recipe["react_render_external_calls"])
+        self.assertFalse(durable_recipe["preflight_runs_build"])
+        self.assertFalse(durable_recipe["preflight_opens_packaged_app"])
+        self.assertFalse(durable_recipe["preflight_starts_fastapi"])
+        self.assertFalse(durable_recipe["preflight_reads_config_values"])
+        self.assertFalse(durable_recipe["preflight_writes_log_files"])
+        self.assertIn("packaged app launch QA", durable_recipe["required_evidence"])
+        self.assertIn("frontend bundle secret review", durable_recipe["required_evidence"])
+        self.assertIn("treat release binary detection as packaged app launch QA", durable_recipe["not_allowed_next_steps"])
+        self.assertIn("run npm, cargo, or Tauri from GET preflight", durable_recipe["not_allowed_next_steps"])
+        self.assertIn("store raw token/key in frontend, packet, cache, ledger, or log", durable_recipe["not_allowed_next_steps"])
+        self.assertFalse(durable_recipe["external_calls_triggered"])
+        self.assertFalse(durable_recipe["tushare_called"])
+        self.assertFalse(durable_recipe["deepseek_called"])
+        self.assertFalse(durable_recipe["github_called"])
+        self.assertFalse(durable_recipe["contains_secret"])
+        self.assertTrue(durable_recipe["does_not_execute_trades"])
+        self.assertTrue(durable_recipe["does_not_modify_strategy_action"])
+        self.assertEqual(durable_recipe["row_count"], len(durable_rows))
+        self.assertEqual(set(durable_recipe["evidence_keys"]), set(durable_rows))
+        self.assertTrue(durable_rows["preflight_cache_boundary_visible"]["passed"])
+        self.assertTrue(durable_rows["release_manifest_visible"]["passed"])
+        self.assertTrue(durable_rows["readiness_receipt_visible"]["passed"])
+        self.assertTrue(durable_rows["packaged_runtime_qa_matrix_visible"]["passed"])
+        self.assertTrue(durable_rows["release_artifact_shape_visible"]["passed"])
+        self.assertTrue(durable_rows["packaged_app_launch_qa_required"]["production_blocker"])
+        self.assertTrue(durable_rows["backend_offline_packaged_ux_required"]["production_blocker"])
+        self.assertTrue(durable_rows["config_log_runtime_path_evidence_required"]["production_blocker"])
+        self.assertTrue(durable_rows["no_build_runtime_provider_trade_secret_boundary"]["passed"])
+        self.assertTrue(all(row["does_not_run_tauri"] for row in durable_rows.values()))
+        self.assertTrue(all(row["does_not_open_packaged_app"] for row in durable_rows.values()))
+        self.assertTrue(all(not row["external_calls_triggered"] for row in durable_rows.values()))
+        self.assertTrue(any(row["api"] == "local_tauri_package_durable_evidence_recipe" for row in desktop["call_ledger"]))
+        self.assertTrue(desktop["policy"]["tauri_package_durable_evidence_recipe_is_local"])
+        self.assertTrue(desktop["policy"]["tauri_package_durable_evidence_recipe_is_not_build"])
+        self.assertTrue(desktop["policy"]["tauri_package_durable_evidence_recipe_is_not_runtime_execution"])
+        self.assertTrue(desktop["policy"]["tauri_package_durable_evidence_recipe_is_not_production_completion"])
+        self.assertEqual(
+            desktop["counts"]["tauri_package_durable_evidence_blocker_count"],
+            durable_recipe["durable_evidence_blocker_count"],
+        )
+        self.assertTrue(desktop["runtime"]["tauri_package_durable_evidence_recipe_ready"])
+        self.assertEqual(desktop["runtime"]["tauri_package_durable_evidence_recipe_status"], durable_recipe["status"])
+        self.assertIn("tauri_package_durable_evidence_recipe", " ".join(desktop["warnings"]))
         self.assertEqual(desktop["counts"]["packaged_runtime_qa_matrix_count"], qa_contract["qa_matrix_count"])
         self.assertEqual(desktop["counts"]["packaged_runtime_pending_qa_count"], qa_contract["pending_qa_count"])
         self.assertEqual(
@@ -9499,6 +9564,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("production_blocker_audit_blocks_completion", script)
         self.assertIn("release_manifest_contract_is_local_package_manifest_only", script)
         self.assertIn("production_readiness_receipt_allows_only_explicit_package_qa", script)
+        self.assertIn("tauri_package_durable_evidence_recipe.v1", script)
+        self.assertIn("tauri_package_durable_evidence_recipe_is_local_production_pending", script)
         self.assertIn("tauri_production_package_stage_scope_manifest", script)
         self.assertIn("production_package_stage_scope_manifest_is_complete_and_pending", script)
         self.assertIn("tauri_task_policy_does_not_run_build_or_runtime", script)
@@ -9541,6 +9608,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["signing_notarization_done"])
         self.assertTrue(payload["production_package_readiness_receipt_ready"])
         self.assertTrue(payload["tauri_release_manifest_ready"])
+        self.assertTrue(payload["tauri_package_durable_evidence_recipe_ready"])
+        self.assertFalse(payload["tauri_package_durable_evidence_complete"])
+        self.assertGreater(payload["tauri_package_durable_evidence_blocker_count"], 0)
         self.assertEqual(
             payload["tauri_release_manifest_status"],
             "release_manifest_contract_ready_packaged_execution_pending",
@@ -9596,6 +9666,35 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["production_package_readiness_allowed_next_step"],
             "explicit_tauri_build_then_packaged_runtime_qa_review",
         )
+        self.assertEqual(
+            payload["observed"]["tauri_package_durable_evidence_recipe_status"],
+            "tauri_package_durable_evidence_recipe_ready_production_pending",
+        )
+        self.assertTrue(payload["observed"]["tauri_package_durable_evidence_ready"])
+        self.assertGreater(payload["observed"]["tauri_package_durable_evidence_blocker_count"], 0)
+        durable_rows = payload["tauri_package_durable_evidence_rows"]
+        required_durable_keys = {
+            "preflight_cache_boundary_visible",
+            "release_manifest_visible",
+            "readiness_receipt_visible",
+            "packaged_runtime_qa_matrix_visible",
+            "release_artifact_shape_visible",
+            "app_bundle_dmg_evidence_required",
+            "packaged_app_launch_qa_required",
+            "backend_startup_runtime_evidence_required",
+            "backend_offline_packaged_ux_required",
+            "config_log_runtime_path_evidence_required",
+            "signing_notarization_review_required",
+            "production_package_promotion_review_required",
+            "no_build_runtime_provider_trade_secret_boundary",
+        }
+        self.assertEqual({row["evidence_key"] for row in durable_rows}, required_durable_keys)
+        self.assertTrue(all(row["does_not_run_tauri"] for row in durable_rows))
+        self.assertTrue(all(row["does_not_open_packaged_app"] for row in durable_rows))
+        self.assertTrue(all(row["does_not_read_config_values"] for row in durable_rows))
+        self.assertTrue(all(row["does_not_write_log_files"] for row in durable_rows))
+        self.assertTrue(all(not row["external_calls_triggered"] for row in durable_rows))
+        self.assertTrue(all(not row["contains_secret"] for row in durable_rows))
         required_package_stages = {
             "tauri_dev_runtime_smoke",
             "tauri_build_repeatability",
@@ -9649,6 +9748,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("production_blocker_audit_blocks_completion", criteria)
         self.assertIn("release_manifest_contract_is_local_package_manifest_only", criteria)
         self.assertIn("production_readiness_receipt_allows_only_explicit_package_qa", criteria)
+        self.assertIn("tauri_package_durable_evidence_recipe_is_local_production_pending", criteria)
         self.assertIn("production_package_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("tauri_task_policy_does_not_run_build_or_runtime", criteria)
         self.assertIn("frontend_does_not_expose_secrets", criteria)

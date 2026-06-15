@@ -35,6 +35,7 @@ export default function DesktopShellPreflight() {
   const packagedRuntimeQaContract = (cache.packaged_runtime_qa_contract as Record<string, unknown> | undefined) ?? {};
   const tauriReleaseManifestContract = (cache.tauri_release_manifest_contract as Record<string, unknown> | undefined) ?? {};
   const productionPackageReadinessReceipt = (cache.production_package_readiness_receipt as Record<string, unknown> | undefined) ?? {};
+  const tauriPackageDurableEvidenceRecipe = (cache.tauri_package_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
   const devLaunchPlan = rows(cache.dev_launch_plan);
   const productionLaunchPlan = rows(cache.production_launch_plan);
   const productionRuntimeRows = rows(cache.production_runtime_contract_rows);
@@ -43,6 +44,7 @@ export default function DesktopShellPreflight() {
   const packagedRuntimeQaRows = rows(cache.packaged_runtime_qa_rows);
   const tauriReleaseManifestRows = rows(cache.tauri_release_manifest_rows);
   const productionPackageReadinessReceiptRows = rows(cache.production_package_readiness_receipt_rows);
+  const tauriPackageDurableEvidenceRows = rows(cache.tauri_package_durable_evidence_rows);
   const payloadCallLedger = (cache.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
 
@@ -85,6 +87,8 @@ export default function DesktopShellPreflight() {
           { label: "manifest blockers", value: tauriReleaseManifestContract.production_blocker_count as number | undefined, tone: Number(tauriReleaseManifestContract.production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "receipt ready", value: productionPackageReadinessReceipt.local_receipt_ready === true ? "yes" : "review", tone: productionPackageReadinessReceipt.local_receipt_ready === true ? "good" : "warn" },
           { label: "receipt blockers", value: productionPackageReadinessReceipt.blocking_criterion_count ?? counts.production_package_readiness_receipt_blocker_count, tone: Number(productionPackageReadinessReceipt.blocking_criterion_count ?? counts.production_package_readiness_receipt_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "durable recipe", value: tauriPackageDurableEvidenceRecipe.local_recipe_ready === true ? "ready" : "review", tone: tauriPackageDurableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
+          { label: "durable blockers", value: tauriPackageDurableEvidenceRecipe.durable_evidence_blocker_count ?? counts.tauri_package_durable_evidence_blocker_count, tone: Number(tauriPackageDurableEvidenceRecipe.durable_evidence_blocker_count ?? counts.tauri_package_durable_evidence_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "package blockers", value: productionBlockerAudit.blocker_count as number | undefined, tone: Number(productionBlockerAudit.blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "cache envelope ledger", value: cacheEnvelopeLedger.length },
@@ -209,6 +213,21 @@ export default function DesktopShellPreflight() {
         <p>not_allowed_next_steps: {Array.isArray(productionPackageReadinessReceipt.not_allowed_next_steps) ? productionPackageReadinessReceipt.not_allowed_next_steps.join(" / ") : "GET /api/desktop/preflight-cache npm build / GET /api/desktop/preflight-cache tauri build / GET /api/desktop/preflight-cache packaged app launch / release artifact detection as packaged runtime QA / preflight receipt as production package completion"}</p>
         <DataLineageTable rows={productionPackageReadinessReceiptRows} />
         <DataLineageTable rows={rows(productionPackageReadinessReceipt.call_ledger)} />
+      </PacketCard>
+
+      <PacketCard title="Tauri package durable evidence recipe" subtitle="LTG-09 生产包直接证据清单；只读，不运行 build/runtime" status={String(tauriPackageDurableEvidenceRecipe.status ?? "tauri_package_durable_evidence_recipe_ready_production_pending")}>
+        <p>schema_version: {String(tauriPackageDurableEvidenceRecipe.schema_version ?? "tauri_package_durable_evidence_recipe.v1")}</p>
+        <p>scope: {String(tauriPackageDurableEvidenceRecipe.scope ?? "local_tauri_package_durable_evidence_recipe_no_build_or_runtime_execution")}</p>
+        <p>local_recipe_ready: {String(tauriPackageDurableEvidenceRecipe.local_recipe_ready ?? false)}</p>
+        <p>durable_evidence_complete / durable_promotion_ready: {String(tauriPackageDurableEvidenceRecipe.durable_evidence_complete ?? false)} / {String(tauriPackageDurableEvidenceRecipe.durable_promotion_ready ?? false)}</p>
+        <p>production_package_complete: {String(tauriPackageDurableEvidenceRecipe.production_package_complete ?? false)}</p>
+        <p>allowed_next_step: {String(tauriPackageDurableEvidenceRecipe.allowed_next_step ?? "run_explicit_tauri_build_then_packaged_runtime_qa_then_durable_promotion_review")}</p>
+        <p>preflight_runs_build / preflight_opens_packaged_app / preflight_starts_fastapi: {String(tauriPackageDurableEvidenceRecipe.preflight_runs_build ?? false)} / {String(tauriPackageDurableEvidenceRecipe.preflight_opens_packaged_app ?? false)} / {String(tauriPackageDurableEvidenceRecipe.preflight_starts_fastapi ?? false)}</p>
+        <p>preflight_reads_config_values / preflight_writes_log_files: {String(tauriPackageDurableEvidenceRecipe.preflight_reads_config_values ?? false)} / {String(tauriPackageDurableEvidenceRecipe.preflight_writes_log_files ?? false)}</p>
+        <p>not_allowed_next_steps: {Array.isArray(tauriPackageDurableEvidenceRecipe.not_allowed_next_steps) ? tauriPackageDurableEvidenceRecipe.not_allowed_next_steps.join(" / ") : "release binary detection as packaged app launch QA / readiness receipt as production package completion / GET preflight build/runtime execution"}</p>
+        <DataLineageTable rows={[tauriPackageDurableEvidenceRecipe]} />
+        <DataLineageTable rows={tauriPackageDurableEvidenceRows} />
+        <DataLineageTable rows={rows(tauriPackageDurableEvidenceRecipe.call_ledger)} />
       </PacketCard>
 
       <PacketCard title="FastAPI 地址合同" subtitle="前端只连接本地 FastAPI，不保存 token/key" status={String(apiBaseInfo.is_localhost === true ? "localhost" : "review")}>

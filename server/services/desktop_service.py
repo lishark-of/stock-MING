@@ -18,6 +18,37 @@ FRONTEND_PAGE_STATE_BANNER = DESKTOP_ROOT / "src" / "components" / "PageStateBan
 FRONTEND_BACKEND_OFFLINE_NOTICE = DESKTOP_ROOT / "src" / "components" / "BackendOfflineNotice.tsx"
 FRONTEND_STYLES = DESKTOP_ROOT / "src" / "styles.css"
 ROOT_GITIGNORE = PROJECT_ROOT / ".gitignore"
+TAURI_PACKAGE_DURABLE_EVIDENCE_SCHEMA_VERSION = "tauri_package_durable_evidence_recipe.v1"
+TAURI_PACKAGE_DURABLE_EVIDENCE_KEYS = (
+    "preflight_cache_boundary_visible",
+    "release_manifest_visible",
+    "readiness_receipt_visible",
+    "packaged_runtime_qa_matrix_visible",
+    "release_artifact_shape_visible",
+    "app_bundle_dmg_evidence_required",
+    "packaged_app_launch_qa_required",
+    "backend_startup_runtime_evidence_required",
+    "backend_offline_packaged_ux_required",
+    "config_log_runtime_path_evidence_required",
+    "signing_notarization_review_required",
+    "production_package_promotion_review_required",
+    "no_build_runtime_provider_trade_secret_boundary",
+)
+TAURI_PACKAGE_DURABLE_EVIDENCE_LABELS = {
+    "preflight_cache_boundary_visible": "Preflight cache boundary is visible",
+    "release_manifest_visible": "Release manifest is visible",
+    "readiness_receipt_visible": "Readiness receipt is visible",
+    "packaged_runtime_qa_matrix_visible": "Packaged runtime QA matrix is visible",
+    "release_artifact_shape_visible": "Release artifact shape is visible",
+    "app_bundle_dmg_evidence_required": ".app/DMG evidence is required",
+    "packaged_app_launch_qa_required": "Packaged app launch QA is required",
+    "backend_startup_runtime_evidence_required": "Backend startup runtime evidence is required",
+    "backend_offline_packaged_ux_required": "Packaged offline UX evidence is required",
+    "config_log_runtime_path_evidence_required": "Config/log runtime path evidence is required",
+    "signing_notarization_review_required": "Signing/notarization review is required",
+    "production_package_promotion_review_required": "Production package promotion review is required",
+    "no_build_runtime_provider_trade_secret_boundary": "No build/runtime/provider/trade/secret boundary is preserved",
+}
 
 
 def _now_iso() -> str:
@@ -1182,6 +1213,380 @@ def _tauri_production_readiness_receipt(
     }
 
 
+def _tauri_package_durable_evidence_recipe_row(
+    evidence_key: str,
+    category: str,
+    status: str,
+    *,
+    passed: bool,
+    local_surface_required: bool,
+    production_blocker: bool,
+    evidence: str,
+    next_action: str,
+    recommended_order: int,
+) -> dict[str, Any]:
+    return {
+        "schema_version": TAURI_PACKAGE_DURABLE_EVIDENCE_SCHEMA_VERSION,
+        "evidence_key": evidence_key,
+        "evidence_label": TAURI_PACKAGE_DURABLE_EVIDENCE_LABELS[evidence_key],
+        "category": category,
+        "status": status,
+        "passed": bool(passed),
+        "local_surface_required": bool(local_surface_required),
+        "production_blocker": bool(production_blocker),
+        "recommended_order": recommended_order,
+        "evidence": evidence,
+        "next_action": next_action,
+        "recipe_only": True,
+        "cache_only": True,
+        "does_not_run_npm": True,
+        "does_not_run_cargo": True,
+        "does_not_run_tauri": True,
+        "does_not_open_packaged_app": True,
+        "does_not_start_fastapi": True,
+        "does_not_read_config_values": True,
+        "does_not_write_log_files": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _tauri_package_durable_evidence_recipe(packet: dict[str, Any]) -> dict[str, Any]:
+    policy = packet.get("policy") if isinstance(packet.get("policy"), dict) else {}
+    runtime = packet.get("runtime") if isinstance(packet.get("runtime"), dict) else {}
+    build_artifact = packet.get("tauri_build_artifact") if isinstance(packet.get("tauri_build_artifact"), dict) else {}
+    release_manifest = (
+        packet.get("tauri_release_manifest_contract")
+        if isinstance(packet.get("tauri_release_manifest_contract"), dict)
+        else {}
+    )
+    readiness_receipt = (
+        packet.get("production_package_readiness_receipt")
+        if isinstance(packet.get("production_package_readiness_receipt"), dict)
+        else {}
+    )
+    packaged_qa = (
+        packet.get("packaged_runtime_qa_contract")
+        if isinstance(packet.get("packaged_runtime_qa_contract"), dict)
+        else {}
+    )
+    blocker_audit = (
+        packet.get("production_blocker_audit")
+        if isinstance(packet.get("production_blocker_audit"), dict)
+        else {}
+    )
+    offline_ux = (
+        packet.get("backend_offline_ux_contract")
+        if isinstance(packet.get("backend_offline_ux_contract"), dict)
+        else {}
+    )
+    runtime_contract = (
+        packet.get("production_runtime_contract")
+        if isinstance(packet.get("production_runtime_contract"), dict)
+        else {}
+    )
+
+    preflight_boundary_visible = (
+        packet.get("cache_only") is True
+        and packet.get("read_only") is True
+        and policy.get("does_not_run_npm_build") is True
+        and policy.get("does_not_run_tauri") is True
+        and policy.get("does_not_run_cargo") is True
+        and policy.get("does_not_start_fastapi") is True
+        and policy.get("does_not_read_config_values") is True
+        and policy.get("does_not_write_log_files") is True
+        and packet.get("external_calls_triggered") is False
+    )
+    release_manifest_visible = (
+        release_manifest.get("schema_version") == "tauri_release_manifest_contract.v1"
+        and release_manifest.get("local_release_manifest_ready") is True
+    )
+    readiness_receipt_visible = (
+        readiness_receipt.get("schema_version") == "tauri_production_package_readiness_receipt.v1"
+        and readiness_receipt.get("local_receipt_ready") is True
+    )
+    packaged_runtime_qa_visible = (
+        packaged_qa.get("schema_version") == "tauri_packaged_runtime_qa_contract.v1"
+        and packaged_qa.get("qa_contract_ready") is True
+    )
+    release_artifact_shape_visible = (
+        build_artifact.get("schema_version") == "tauri_build_artifact_detection.v1"
+        and build_artifact.get("detected_by_get_cache") is True
+        and build_artifact.get("build_command_executed_by_get_cache") is False
+    )
+    no_build_runtime_provider_trade_secret_boundary = (
+        packet.get("external_calls_triggered") is False
+        and packet.get("tushare_called") is False
+        and packet.get("deepseek_called") is False
+        and packet.get("github_called") is False
+        and packet.get("does_not_execute_trades") is True
+        and packet.get("does_not_modify_strategy_action") is True
+        and packet.get("contains_secret") is False
+        and policy.get("does_not_run_npm_build") is True
+        and policy.get("does_not_run_tauri") is True
+        and policy.get("does_not_run_cargo") is True
+        and policy.get("does_not_read_config_values") is True
+        and policy.get("does_not_write_log_files") is True
+    )
+    app_bundle_dmg_done = bool(
+        build_artifact.get("packaged_app_bundle_detected") is True
+        and build_artifact.get("distribution_dmg_detected") is True
+    )
+    packaged_app_launch_qa_done = packaged_qa.get("packaged_runtime_validated") is True
+    backend_startup_runtime_done = blocker_audit.get("package_ready") is True and runtime.get("backend_autostart_configured") is True
+    offline_packaged_ux_done = offline_ux.get("backend_offline_ui_packaged_runtime_verified") is True
+    config_log_runtime_done = False
+    signing_notarization_done = blocker_audit.get("macos_signing_notarization_ready") is True
+    production_package_complete = blocker_audit.get("package_ready") is True
+
+    rows = [
+        _tauri_package_durable_evidence_recipe_row(
+            "preflight_cache_boundary_visible",
+            "local_surface",
+            "passed_preflight_boundary" if preflight_boundary_visible else "blocked_preflight_boundary",
+            passed=preflight_boundary_visible,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=f"cache_only={packet.get('cache_only')}; does_not_run_tauri={policy.get('does_not_run_tauri')}",
+            next_action="Keep GET desktop preflight read-only and build/runtime silent.",
+            recommended_order=1,
+        ),
+        _tauri_package_durable_evidence_recipe_row(
+            "release_manifest_visible",
+            "local_surface",
+            "passed_release_manifest" if release_manifest_visible else "blocked_release_manifest",
+            passed=release_manifest_visible,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=f"status={release_manifest.get('status')}; local_ready={release_manifest.get('local_release_manifest_ready')}",
+            next_action="Keep app identity, dist, ignore policy, backend startup, config/log path, and signing gaps visible.",
+            recommended_order=2,
+        ),
+        _tauri_package_durable_evidence_recipe_row(
+            "readiness_receipt_visible",
+            "local_surface",
+            "passed_readiness_receipt" if readiness_receipt_visible else "blocked_readiness_receipt",
+            passed=readiness_receipt_visible,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=f"status={readiness_receipt.get('status')}; blockers={readiness_receipt.get('blocking_criterion_count')}",
+            next_action="Use readiness receipt as next-step routing only, not as package completion.",
+            recommended_order=3,
+        ),
+        _tauri_package_durable_evidence_recipe_row(
+            "packaged_runtime_qa_matrix_visible",
+            "local_surface",
+            "passed_packaged_qa_matrix" if packaged_runtime_qa_visible else "blocked_packaged_qa_matrix",
+            passed=packaged_runtime_qa_visible,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=f"status={packaged_qa.get('status')}; pending={packaged_qa.get('pending_qa_count')}",
+            next_action="Keep packaged runtime QA explicit and outside GET preflight.",
+            recommended_order=4,
+        ),
+        _tauri_package_durable_evidence_recipe_row(
+            "release_artifact_shape_visible",
+            "local_surface",
+            "passed_artifact_shape" if release_artifact_shape_visible else "blocked_artifact_shape",
+            passed=release_artifact_shape_visible,
+            local_surface_required=True,
+            production_blocker=False,
+            evidence=(
+                f"status={build_artifact.get('status')}; binary_exists={build_artifact.get('binary_exists')}; "
+                f"bundle_app_count={build_artifact.get('bundle_app_count')}; dmg_count={build_artifact.get('bundle_dmg_count')}"
+            ),
+            next_action="Treat local artifact detection as shape evidence only; packaged launch QA remains required.",
+            recommended_order=5,
+        ),
+        _tauri_package_durable_evidence_recipe_row(
+            "app_bundle_dmg_evidence_required",
+            "durable_evidence",
+            "completed" if app_bundle_dmg_done else "pending_app_bundle_dmg_evidence",
+            passed=app_bundle_dmg_done,
+            local_surface_required=False,
+            production_blocker=not app_bundle_dmg_done,
+            evidence=f"app_bundle={build_artifact.get('packaged_app_bundle_detected')}; dmg={build_artifact.get('distribution_dmg_detected')}",
+            next_action="Attach .app and DMG artifact QA or an explicit accepted equivalent before production package promotion.",
+            recommended_order=6,
+        ),
+        _tauri_package_durable_evidence_recipe_row(
+            "packaged_app_launch_qa_required",
+            "durable_evidence",
+            "completed" if packaged_app_launch_qa_done else "pending_packaged_app_launch_qa",
+            passed=packaged_app_launch_qa_done,
+            local_surface_required=False,
+            production_blocker=not packaged_app_launch_qa_done,
+            evidence=f"packaged_runtime_validated={packaged_qa.get('packaged_runtime_validated')}",
+            next_action="Open the packaged app in an explicit QA run and record launch/runtime evidence.",
+            recommended_order=7,
+        ),
+        _tauri_package_durable_evidence_recipe_row(
+            "backend_startup_runtime_evidence_required",
+            "durable_evidence",
+            "completed" if backend_startup_runtime_done else "pending_backend_startup_runtime_evidence",
+            passed=backend_startup_runtime_done,
+            local_surface_required=False,
+            production_blocker=not backend_startup_runtime_done,
+            evidence=f"strategy={runtime_contract.get('backend_startup_strategy')}; package_ready={blocker_audit.get('package_ready')}",
+            next_action="Validate the chosen manual/sidecar backend startup behavior in packaged runtime.",
+            recommended_order=8,
+        ),
+        _tauri_package_durable_evidence_recipe_row(
+            "backend_offline_packaged_ux_required",
+            "durable_evidence",
+            "completed" if offline_packaged_ux_done else "pending_backend_offline_packaged_ux",
+            passed=offline_packaged_ux_done,
+            local_surface_required=False,
+            production_blocker=not offline_packaged_ux_done,
+            evidence=f"frontend_contract_ready={offline_ux.get('frontend_contract_ready')}; packaged_verified={offline_packaged_ux_done}",
+            next_action="Open packaged runtime with backend offline and capture the friendly local-only UX evidence.",
+            recommended_order=9,
+        ),
+        _tauri_package_durable_evidence_recipe_row(
+            "config_log_runtime_path_evidence_required",
+            "durable_evidence",
+            "completed" if config_log_runtime_done else "pending_config_log_runtime_path_evidence",
+            passed=config_log_runtime_done,
+            local_surface_required=False,
+            production_blocker=True,
+            evidence=(
+                f"config={runtime_contract.get('config_file_policy')}; log={runtime_contract.get('log_file_policy')}; "
+                "runtime_path_validation=false"
+            ),
+            next_action="Validate runtime path behavior without reading config values or writing unsafe logs.",
+            recommended_order=10,
+        ),
+        _tauri_package_durable_evidence_recipe_row(
+            "signing_notarization_review_required",
+            "durable_evidence",
+            "completed" if signing_notarization_done else "pending_signing_notarization_review",
+            passed=signing_notarization_done,
+            local_surface_required=False,
+            production_blocker=not signing_notarization_done,
+            evidence=f"macos_signing_notarization_ready={signing_notarization_done}",
+            next_action="Complete or explicitly waive macOS signing/notarization and distribution review.",
+            recommended_order=11,
+        ),
+        _tauri_package_durable_evidence_recipe_row(
+            "production_package_promotion_review_required",
+            "durable_evidence",
+            "completed" if production_package_complete else "pending_production_package_promotion_review",
+            passed=production_package_complete,
+            local_surface_required=False,
+            production_blocker=not production_package_complete,
+            evidence=f"production_package_complete={production_package_complete}; package_ready={blocker_audit.get('package_ready')}",
+            next_action="Promote only after artifact, runtime, backend, config/log, signing, secret, provider, and trade boundaries are reviewed.",
+            recommended_order=12,
+        ),
+        _tauri_package_durable_evidence_recipe_row(
+            "no_build_runtime_provider_trade_secret_boundary",
+            "safety",
+            "passed_no_build_runtime_provider_trade_secret"
+            if no_build_runtime_provider_trade_secret_boundary
+            else "blocked_safety_boundary",
+            passed=no_build_runtime_provider_trade_secret_boundary,
+            local_surface_required=True,
+            production_blocker=not no_build_runtime_provider_trade_secret_boundary,
+            evidence="Durable recipe runs no npm/cargo/Tauri, opens no packaged app, starts no FastAPI, reads no config values, writes no logs, calls no providers/models/GitHub, executes no trades, and exposes no secret.",
+            next_action="Preserve no-build/no-runtime/no-provider/no-trade/no-secret boundaries while production evidence improves.",
+            recommended_order=13,
+        ),
+    ]
+    local_blockers = [row["evidence_key"] for row in rows if row["local_surface_required"] and not row["passed"]]
+    durable_blockers = [row["evidence_key"] for row in rows if row["production_blocker"] and not row["passed"]]
+    local_ready = not local_blockers
+    contract = {
+        "schema_version": TAURI_PACKAGE_DURABLE_EVIDENCE_SCHEMA_VERSION,
+        "status": (
+            "tauri_package_durable_evidence_recipe_ready_production_pending"
+            if local_ready
+            else "tauri_package_durable_evidence_recipe_blocked_local_surface"
+        ),
+        "scope": "local_tauri_package_durable_evidence_recipe_no_build_or_runtime_execution",
+        "ltg": "LTG-09/LTG-14",
+        "local_recipe_ready": local_ready,
+        "durable_evidence_complete": False,
+        "durable_promotion_ready": False,
+        "production_package_complete": False,
+        "tauri_build_repeatability_done": False,
+        "app_bundle_dmg_qa_done": app_bundle_dmg_done,
+        "packaged_app_launch_qa_done": packaged_app_launch_qa_done,
+        "backend_startup_strategy_runtime_validated": backend_startup_runtime_done,
+        "backend_offline_packaged_ux_verified": offline_packaged_ux_done,
+        "config_log_runtime_paths_validated": False,
+        "signing_notarization_done": signing_notarization_done,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "preflight_runs_build": False,
+        "preflight_opens_packaged_app": False,
+        "preflight_starts_fastapi": False,
+        "preflight_reads_config_values": False,
+        "preflight_writes_log_files": False,
+        "evidence_keys": list(TAURI_PACKAGE_DURABLE_EVIDENCE_KEYS),
+        "missing_durable_evidence": durable_blockers,
+        "required_evidence": [
+            ".app bundle and DMG artifact QA or explicit accepted equivalent",
+            "packaged app launch QA",
+            "backend startup strategy runtime evidence",
+            "packaged backend-offline UX evidence",
+            "config/log runtime path evidence without secret values",
+            "macOS signing/notarization review",
+            "frontend bundle secret review",
+            "production package promotion review",
+        ],
+        "not_allowed_next_steps": [
+            "treat durable recipe as production desktop package",
+            "treat release binary detection as packaged app launch QA",
+            "treat readiness receipt as production package completion",
+            "run npm, cargo, or Tauri from GET preflight",
+            "open packaged app from GET preflight",
+            "start FastAPI from GET preflight",
+            "read config values or write log files from durable recipe",
+            "call Tushare, DeepSeek, or GitHub from GET preflight or React render",
+            "store raw token/key in frontend, packet, cache, ledger, or log",
+        ],
+        "allowed_next_step": "run_explicit_tauri_build_then_packaged_runtime_qa_then_durable_promotion_review",
+        "row_count": len(rows),
+        "evidence_key_count": len(TAURI_PACKAGE_DURABLE_EVIDENCE_KEYS),
+        "local_blocker_count": len(local_blockers),
+        "durable_evidence_blocker_count": len(durable_blockers),
+        "production_blocker_count": len(durable_blockers),
+        "local_blockers": local_blockers,
+        "rows": rows,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "note": "This recipe fixes the durable evidence checklist for LTG-09. It does not run npm, cargo, Tauri, packaged app, FastAPI, providers, models, GitHub, config reads, log writes, trades, or production desktop package promotion.",
+    }
+    contract["call_ledger"] = [
+        {
+            "api": "local_tauri_package_durable_evidence_recipe",
+            "source": "desktop preflight local contracts",
+            "row_count": len(rows),
+            "local_fetched_at": _now_iso(),
+            "call_status": contract["status"],
+            "external": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+    return contract
+
+
 def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     package_summary = _package_json_summary()
     tauri_config = _tauri_config_summary()
@@ -1417,4 +1822,28 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "桌面壳预检不读取 token/key，不调用 Tushare、DeepSeek、GitHub，不执行真实交易。",
         ],
     }
+    tauri_package_durable_evidence_recipe = _tauri_package_durable_evidence_recipe(packet)
+    packet["tauri_package_durable_evidence_recipe"] = tauri_package_durable_evidence_recipe
+    packet["tauri_package_durable_evidence_rows"] = tauri_package_durable_evidence_recipe["rows"]
+    packet["counts"]["tauri_package_durable_evidence_row_count"] = tauri_package_durable_evidence_recipe["row_count"]
+    packet["counts"]["tauri_package_durable_evidence_blocker_count"] = tauri_package_durable_evidence_recipe[
+        "durable_evidence_blocker_count"
+    ]
+    packet["counts"]["tauri_package_durable_evidence_ready"] = tauri_package_durable_evidence_recipe["local_recipe_ready"]
+    packet["runtime"]["tauri_package_durable_evidence_recipe_ready"] = tauri_package_durable_evidence_recipe[
+        "local_recipe_ready"
+    ]
+    packet["runtime"]["tauri_package_durable_evidence_recipe_status"] = tauri_package_durable_evidence_recipe["status"]
+    packet["runtime"]["tauri_package_durable_evidence_blocker_count"] = tauri_package_durable_evidence_recipe[
+        "durable_evidence_blocker_count"
+    ]
+    packet["policy"]["tauri_package_durable_evidence_recipe_is_local"] = True
+    packet["policy"]["tauri_package_durable_evidence_recipe_is_not_build"] = True
+    packet["policy"]["tauri_package_durable_evidence_recipe_is_not_runtime_execution"] = True
+    packet["policy"]["tauri_package_durable_evidence_recipe_is_not_production_completion"] = True
+    packet["policy"]["tauri_package_durable_evidence_recipe_requires_packaged_runtime_evidence"] = True
+    packet["call_ledger"] = packet["call_ledger"] + tauri_package_durable_evidence_recipe["call_ledger"]
+    packet["warnings"].append(
+        "tauri_package_durable_evidence_recipe 只固定 LTG-09 生产桌面包 durable evidence 清单；不会运行 npm/cargo/Tauri、打开 packaged app、启动 FastAPI、读取配置、写日志、外联或完成生产包。"
+    )
     return _json_safe(packet)
