@@ -111,6 +111,7 @@ LOCAL_FACTOR_TEST_DURABLE_SURFACE_KEYS = {
     "provider_sample_activation_receipt_visible",
     "provider_small_pool_scope_ticket_visible",
     "provider_small_pool_execution_recipe_visible",
+    "provider_small_pool_execution_request_visible",
     "no_trade_action_secret_boundary",
 }
 PRODUCTION_FACTOR_TEST_DURABLE_BLOCKER_KEYS = {
@@ -341,6 +342,25 @@ def build_contract() -> dict[str, Any]:
     ]
     factor_tests["provider_small_pool_execution_recipe"] = provider_small_pool_execution_recipe
     factor_tests["provider_small_pool_execution_rows"] = provider_small_pool_execution_rows
+    execution_request_payload = factor_service._factor_test_provider_small_pool_execution_request_payload(
+        {
+            "approved_by_user": True,
+            "acceptance_scope_hash": dry_run_receipt.get("acceptance_scope_hash"),
+        },
+        factor_tests,
+        now,
+    )
+    execution_request_receipt, execution_request_rows = factor_service._factor_test_provider_small_pool_execution_request_receipt(
+        execution_request_payload,
+        now,
+    )
+    factor_tests["provider_small_pool_execution_request_receipt"] = execution_request_receipt
+    factor_tests["provider_small_pool_execution_request_rows"] = execution_request_rows
+    execution_request_rows_by_criterion = {
+        str(row.get("criterion") or ""): row
+        for row in execution_request_rows
+        if isinstance(row, dict)
+    }
     durable_evidence_recipe, durable_evidence_rows, durable_evidence_ledger = factor_service._factor_test_durable_evidence_recipe(
         factor_tests, now
     )
@@ -398,6 +418,7 @@ def build_contract() -> dict[str, Any]:
         if isinstance(item, dict)
     }
     dry_run_catalog = _dict(task_catalog_by_type.get("run_factor_test_provider_small_pool_acceptance_dry_run"))
+    execution_request_catalog = _dict(task_catalog_by_type.get("run_factor_test_provider_small_pool_execution_request"))
     production_rows = {
         str(row.get("criterion") or ""): row
         for row in _list(production_qa.get("rows"))
@@ -697,6 +718,49 @@ def build_contract() -> dict[str, Any]:
             "Provider small-pool execution recipe may define the future provider-backed validation order only; it must not create tasks, call providers/models, compute production metrics, expose credentials, or promote completion.",
         ),
         _row(
+            "provider_small_pool_execution_request_is_local_scope_bound",
+            execution_request_catalog.get("route") == "POST /api/factor-quant/provider-small-pool-execution-request"
+            and execution_request_catalog.get("current_backend") == "local_factor_test_provider_small_pool_execution_request_pipeline"
+            and execution_request_catalog.get("local_execution_request_only") is True
+            and execution_request_catalog.get("creates_provider_task") is False
+            and execution_request_catalog.get("provider_execution_implemented") is False
+            and execution_request_catalog.get("provider_backed_small_pool_validation_done") is False
+            and execution_request_catalog.get("production_factor_test_validation_complete") is False
+            and execution_request_receipt.get("schema_version") == "factor_test_provider_small_pool_execution_request.v1"
+            and execution_request_receipt.get("scope")
+            == "local_factor_test_provider_small_pool_execution_request_no_provider_execution"
+            and execution_request_receipt.get("status")
+            == "factor_test_provider_small_pool_execution_request_ready_manual_provider_task_pending"
+            and execution_request_receipt.get("local_execution_request_ready") is True
+            and execution_request_receipt.get("ready_for_manual_provider_task_submission") is True
+            and execution_request_receipt.get("requested_scope_hash_matches_latest") is True
+            and execution_request_receipt.get("acceptance_scope_hash_short")
+            == dry_run_receipt.get("acceptance_scope_hash_short")
+            and execution_request_receipt.get("target_provider_task_route")
+            == "future POST /api/factor-quant/provider-small-pool-acceptance"
+            and execution_request_receipt.get("provider_task_created") is False
+            and execution_request_receipt.get("provider_execution_implemented") is False
+            and execution_request_receipt.get("provider_call_ledger_evidence_done") is False
+            and execution_request_receipt.get("sample_rows_collected") is False
+            and execution_request_receipt.get("provider_backed_small_pool_validation_done") is False
+            and execution_request_receipt.get("production_factor_test_validation_complete") is False
+            and execution_request_receipt.get("cache_get_external_calls") is False
+            and execution_request_receipt.get("react_render_external_calls") is False
+            and _flag_false(execution_request_receipt, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and execution_request_receipt.get("does_not_execute_trades") is True
+            and execution_request_receipt.get("does_not_modify_strategy_action") is True
+            and execution_request_receipt.get("contains_secret") is False
+            and execution_request_receipt.get("env_key_name_exposed") is False
+            and execution_request_receipt.get("credential_value_exposed") is False
+            and execution_request_receipt.get("blocking_criterion_count") == 0
+            and _dict(execution_request_rows_by_criterion.get("scope_hash_bound_to_latest_dry_run")).get("passed") is True
+            and _dict(execution_request_rows_by_criterion.get("provider_task_not_created_by_request")).get("passed") is True
+            and _dict(execution_request_rows_by_criterion.get("no_provider_model_github_trade_action_side_effects")).get("passed") is True
+            and _list(execution_request_receipt.get("call_ledger"))[0].get("api")
+            == "local_factor_test_provider_small_pool_execution_request",
+            "Provider small-pool execution request may bind the latest dry-run scope hash only; it must not create provider tasks, call providers/models, compute metrics, expose credentials, or prove validation.",
+        ),
+        _row(
             "factor_test_durable_evidence_recipe_is_local_production_pending",
             durable_evidence_recipe.get("schema_version") == "factor_test_durable_evidence_recipe.v1"
             and durable_evidence_recipe.get("scope") == "local_factor_test_durable_evidence_recipe_no_provider_execution"
@@ -882,8 +946,11 @@ def build_contract() -> dict[str, Any]:
             and "provider_sample_activation_receipt_is_local_pending" in this_script
             and "provider_small_pool_dry_run_scope_ticket_is_local" in this_script
             and "provider_small_pool_execution_recipe_is_local_pending" in this_script
+            and "provider_small_pool_execution_request_is_local_scope_bound" in this_script
             and "factor_test_provider_small_pool_execution_recipe.v1" in this_script
+            and "factor_test_provider_small_pool_execution_request.v1" in this_script
             and "local_factor_test_provider_small_pool_execution_recipe_no_provider_execution" in this_script
+            and "local_factor_test_provider_small_pool_execution_request_no_provider_execution" in this_script
             and "factor_metric_scope_manifest_is_complete_and_research_only" in this_script
             and "factor_test_production_stage_scope_manifest" in this_script
             and "local_dataset_sample_evidence_is_not_validation" in this_script

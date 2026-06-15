@@ -52,6 +52,12 @@ def dry_run_factor_test_provider_small_pool(payload: dict[str, Any] | None = Non
     return task_envelope(task)
 
 
+@router.post("/provider-small-pool-execution-request")
+def request_factor_test_provider_small_pool_execution(payload: dict[str, Any] | None = None) -> dict:
+    task = factor_service.create_factor_task("run_factor_test_provider_small_pool_execution_request", payload)
+    return task_envelope(task)
+
+
 @router.post("/deepseek-explain")
 def explain_factor_with_deepseek(payload: dict[str, Any] | None = None) -> dict:
     task = factor_service.create_factor_task("run_deepseek_factor_explanation", payload)

@@ -84,6 +84,7 @@ export default function FactorQuantHub() {
   const factorTestProviderSampleActivationReceipt = factorTests.provider_sample_activation_receipt ?? {};
   const factorTestProviderSmallPoolDryRun = factorTests.provider_small_pool_acceptance_dry_run_receipt ?? {};
   const factorTestProviderSmallPoolExecutionRecipe = factorTests.provider_small_pool_execution_recipe ?? {};
+  const factorTestProviderSmallPoolExecutionRequest = factorTests.provider_small_pool_execution_request_receipt ?? {};
   const factorTestDurableEvidenceRecipe = factorTests.durable_evidence_recipe ?? {};
   const tushareFailureModeQa = packet.failure_mode_qa_contract ?? {};
   const tushareRequestParameterQa = packet.request_parameter_qa_contract ?? {};
@@ -163,6 +164,8 @@ export default function FactorQuantHub() {
   const factorTestProviderSmallPoolDryRunCriterionRows = toRows(factorTests.provider_small_pool_acceptance_dry_run_rows);
   const factorTestProviderSmallPoolExecutionRecipeRows = objectRows(factorTestProviderSmallPoolExecutionRecipe as Record<string, unknown>, "provider_small_pool_execution_recipe");
   const factorTestProviderSmallPoolExecutionPhaseRows = toRows(factorTests.provider_small_pool_execution_rows);
+  const factorTestProviderSmallPoolExecutionRequestRows = objectRows(factorTestProviderSmallPoolExecutionRequest as Record<string, unknown>, "provider_small_pool_execution_request");
+  const factorTestProviderSmallPoolExecutionRequestCriterionRows = toRows(factorTests.provider_small_pool_execution_request_rows);
   const factorTestDurableEvidenceRecipeRows = objectRows(factorTestDurableEvidenceRecipe as Record<string, unknown>, "factor_test_durable_evidence_recipe");
   const factorTestDurableEvidenceRows = toRows(factorTests.durable_evidence_rows);
   const tushareFailureModeQaRows = objectRows(tushareFailureModeQa as Record<string, unknown>, "failure_mode_contract");
@@ -229,6 +232,7 @@ export default function FactorQuantHub() {
         <button onClick={() => launchTask("/api/factor-quant/universe-research-plan", { universe_mode: "full_pool" })}>生成读取计划</button>
         <button onClick={() => launchTask("/api/factor-quant/universe-worker-batch-dry-run", { approved_by_user: true, universe_mode: "full_pool" })}>批量研究预检</button>
         <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-dry-run", { approved_by_user: true, symbols: ["002008.SZ", "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"], forward_return_horizons: ["1d", "5d"] })}>小池验收预检</button>
+        <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-execution-request", { approved_by_user: true, acceptance_scope_hash: String(factorTestProviderSmallPoolDryRun.acceptance_scope_hash ?? "") })}>小池执行请求</button>
         <button onClick={() => launchTask("/api/factor-quant/deepseek-explain")}>DeepSeek 整理</button>
         <button onClick={() => launchTask("/api/factor-quant/deepseek-provider-benchmark-scope-ticket", { approved_by_user: true, sample_count: 40, response_format: "json_schema", max_retry_per_sample: 2 })}>DeepSeek benchmark 预检</button>
       </div>
@@ -568,6 +572,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">provider_small_pool_execution_recipe 只固定未来真实 provider-backed 小股票池验收顺序和证据清单；不创建 provider task、不调用 Tushare/DeepSeek/GitHub、不计算生产 IC/Rank IC/ICIR、不进入 strategy action，也不代表 production_factor_test_validation_complete。</p>
       <DataLineageTable rows={factorTestProviderSmallPoolExecutionPhaseRows} />
       <DataLineageTable rows={factorTestProviderSmallPoolExecutionRecipeRows} />
+      <h3>Factor Test provider 小股票池 execution request</h3>
+      <p className="risk-note">provider_small_pool_execution_request 只绑定 latest dry-run scope hash、用户确认和未来 provider task 目标；不创建 provider task、不调用 Tushare/DeepSeek/GitHub、不计算生产指标，也不代表 provider-backed validation。</p>
+      <DataLineageTable rows={factorTestProviderSmallPoolExecutionRequestCriterionRows} />
+      <DataLineageTable rows={factorTestProviderSmallPoolExecutionRequestRows} />
       <h3>Factor Test durable evidence recipe</h3>
       <p className="risk-note">factor_test_durable_evidence_recipe 只固定 LTG-03 真实小股票池生产验收直接证据清单；不调用 Tushare/DeepSeek/GitHub、不计算生产 IC/Rank IC/ICIR、不进入 strategy action，也不代表 provider-backed 或 production Factor Test 完成。</p>
       <DataLineageTable rows={factorTestDurableEvidenceRows} />

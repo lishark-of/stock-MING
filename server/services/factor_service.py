@@ -211,6 +211,7 @@ FACTOR_TEST_DURABLE_EVIDENCE_KEYS = (
     "provider_sample_activation_receipt_visible",
     "provider_small_pool_scope_ticket_visible",
     "provider_small_pool_execution_recipe_visible",
+    "provider_small_pool_execution_request_visible",
     "provider_backed_small_pool_task_required",
     "safe_provider_call_ledger_required",
     "sample_row_collection_required",
@@ -233,6 +234,7 @@ FACTOR_TEST_DURABLE_EVIDENCE_LABELS = {
     "provider_sample_activation_receipt_visible": "Provider sample activation receipt visible",
     "provider_small_pool_scope_ticket_visible": "Provider small-pool scope ticket visible",
     "provider_small_pool_execution_recipe_visible": "Provider small-pool execution recipe visible",
+    "provider_small_pool_execution_request_visible": "Provider small-pool execution request visible",
     "provider_backed_small_pool_task_required": "Provider-backed small-pool task required",
     "safe_provider_call_ledger_required": "Safe provider call ledger required",
     "sample_row_collection_required": "Provider sample rows required",
@@ -309,6 +311,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet, provider_sample_readiness_ledger = _attach_factor_test_provider_sample_readiness_receipt(packet, now)
     packet, provider_sample_activation_ledger = _attach_factor_test_provider_sample_activation_receipt(packet, now)
     packet, provider_small_pool_recipe_ledger = _attach_factor_test_provider_small_pool_execution_recipe(packet, now)
+    packet, provider_small_pool_request_ledger = _attach_factor_test_provider_small_pool_execution_request(packet, now)
     packet, factor_test_durable_recipe_ledger = _attach_factor_test_durable_evidence_recipe(packet, now)
     cache_ledger = _factor_quant_cache_call_ledger(packet, now)
     existing_ledger = packet.get("call_ledger") if isinstance(packet.get("call_ledger"), list) else []
@@ -331,6 +334,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         + provider_sample_readiness_ledger
         + provider_sample_activation_ledger
         + provider_small_pool_recipe_ledger
+        + provider_small_pool_request_ledger
         + factor_test_durable_recipe_ledger
         + list(existing_ledger)
     )
@@ -350,6 +354,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     provider_sample_receipt_warning = "Factor Test provider small-pool readiness receipt 只说明下一步显式 POST 验收是否可执行；不会调用 provider 或提升生产验收。"
     provider_sample_activation_warning = "Factor Test provider small-pool activation receipt 只串联下一步真实小股票池验收清单；不会调用 provider、创建任务或标记生产完成。"
     provider_small_pool_recipe_warning = "Factor Test provider small-pool execution recipe 只固定未来真实小股票池验收顺序；不会调用 Tushare、计算生产 IC 或标记生产完成。"
+    provider_small_pool_request_warning = "Factor Test provider small-pool execution request ticket 只绑定 dry-run scope hash 和后续手工 provider task 请求；不会调用 Tushare、创建 provider task 或标记生产完成。"
     factor_test_durable_recipe_warning = "Factor Test durable evidence recipe 只固定 LTG-03 生产验收直接证据清单；不会调用 Tushare/DeepSeek/GitHub、计算生产 IC 或标记生产完成。"
     existing_warnings = packet.get("warnings") if isinstance(packet.get("warnings"), list) else []
     owned_warnings = {
@@ -369,6 +374,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         provider_sample_receipt_warning,
         provider_sample_activation_warning,
         provider_small_pool_recipe_warning,
+        provider_small_pool_request_warning,
         factor_test_durable_recipe_warning,
     }
     packet["warnings"] = [
@@ -388,6 +394,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         provider_sample_receipt_warning,
         provider_sample_activation_warning,
         provider_small_pool_recipe_warning,
+        provider_small_pool_request_warning,
         factor_test_durable_recipe_warning,
     ] + [
         item
@@ -4308,6 +4315,378 @@ def _attach_factor_test_provider_small_pool_execution_recipe(packet: dict[str, A
     return packet, list(recipe.get("call_ledger") or [])
 
 
+def _factor_test_provider_small_pool_execution_request_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    evidence: str,
+    next_action: str,
+    *,
+    required: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "required_for_manual_provider_task_submission": bool(required),
+        "blocks_manual_provider_task_submission": bool(required and not passed),
+        "evidence": evidence,
+        "next_action": next_action,
+        "provider_task_created": False,
+        "provider_execution_implemented": False,
+        "provider_backed_small_pool_validation_done": False,
+        "production_factor_test_validation_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+    }
+
+
+def _factor_test_provider_small_pool_execution_request_payload(
+    payload: Any,
+    factor_tests: dict[str, Any],
+    now: str,
+) -> dict[str, Any]:
+    dry_run = _dict(factor_tests.get("provider_small_pool_acceptance_dry_run_receipt"))
+    recipe = _dict(factor_tests.get("provider_small_pool_execution_recipe"))
+    payload_dict = payload if isinstance(payload, dict) else {}
+    requested_scope_hash = str(
+        payload_dict.get("acceptance_scope_hash")
+        or payload_dict.get("scope_hash")
+        or payload_dict.get("provider_small_pool_scope_hash")
+        or ""
+    ).strip()
+    return {
+        "approved_by_user": bool(
+            payload_dict.get("approved_by_user") is True
+            or payload_dict.get("confirm_execution_request") is True
+        ),
+        "requested_scope_hash": requested_scope_hash,
+        "latest_dry_run_scope_hash": str(dry_run.get("acceptance_scope_hash") or ""),
+        "latest_dry_run_scope_hash_short": str(dry_run.get("acceptance_scope_hash_short") or ""),
+        "latest_dry_run_status": str(dry_run.get("status") or ""),
+        "execution_recipe_status": str(recipe.get("status") or ""),
+        "execution_recipe_ready": bool(recipe.get("local_recipe_ready")),
+        "scope_ticket_ready": bool(recipe.get("scope_ticket_ready")),
+        "symbols": [str(item) for item in dry_run.get("symbols", []) if item][:FACTOR_TEST_PROVIDER_SMALL_POOL_SYMBOL_LIMIT],
+        "symbol_count": int(dry_run.get("symbol_count") or 0),
+        "start_date": dry_run.get("start_date"),
+        "end_date": dry_run.get("end_date"),
+        "window_days": int(dry_run.get("window_days") or 0),
+        "metrics": [str(item) for item in dry_run.get("metrics", []) if item],
+        "forward_return_horizons": [str(item) for item in dry_run.get("forward_return_horizons", []) if item],
+        "required_datasets": list(FACTOR_TEST_PROVIDER_SMALL_POOL_ALLOWED_DATASETS),
+        "phase_keys": list(FACTOR_TEST_PROVIDER_SMALL_POOL_EXECUTION_PHASES),
+        "target_provider_task_route": "future POST /api/factor-quant/provider-small-pool-acceptance",
+        "target_provider_task_type": "run_factor_test_provider_small_pool_acceptance",
+        "target_acceptance_mode": "provider_backed_factor_test_small_pool_validation",
+        "created_at": now,
+        "server_secret_values_read": False,
+        "env_key_names_exposed": False,
+        "credential_values_exposed": False,
+    }
+
+
+def _factor_test_provider_small_pool_execution_request_receipt(
+    payload_safe: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    latest_scope_hash = str(payload_safe.get("latest_dry_run_scope_hash") or "")
+    requested_scope_hash = str(payload_safe.get("requested_scope_hash") or "")
+    requested_hash_matches_latest = bool(latest_scope_hash and requested_scope_hash and requested_scope_hash == latest_scope_hash)
+    dry_run_visible = bool(
+        payload_safe.get("latest_dry_run_status")
+        and latest_scope_hash
+        and str(payload_safe.get("latest_dry_run_status")) != "provider_small_pool_dry_run_blocked_preflight"
+    )
+    user_confirmed = payload_safe.get("approved_by_user") is True
+    recipe_ready = bool(payload_safe.get("execution_recipe_ready") and payload_safe.get("scope_ticket_ready"))
+    target_route_ok = payload_safe.get("target_provider_task_route") == "future POST /api/factor-quant/provider-small-pool-acceptance"
+    rows = [
+        _factor_test_provider_small_pool_execution_request_row(
+            "latest_dry_run_scope_ticket_visible",
+            "passed_latest_scope_ticket_visible" if dry_run_visible else "blocked_missing_or_blocked_dry_run_scope_ticket",
+            dry_run_visible,
+            f"latest_dry_run_status={payload_safe.get('latest_dry_run_status')}; scope_hash_short={payload_safe.get('latest_dry_run_scope_hash_short')}",
+            "Run the provider small-pool dry-run first and keep the approved scope hash visible.",
+        ),
+        _factor_test_provider_small_pool_execution_request_row(
+            "scope_hash_bound_to_latest_dry_run",
+            "passed_scope_hash_match" if requested_hash_matches_latest else "blocked_scope_hash_missing_or_mismatch",
+            requested_hash_matches_latest,
+            f"requested_scope_hash_short={requested_scope_hash[:16]}; latest_scope_hash_short={payload_safe.get('latest_dry_run_scope_hash_short')}",
+            "Bind the manual provider task request to the latest approved dry-run scope hash.",
+        ),
+        _factor_test_provider_small_pool_execution_request_row(
+            "explicit_user_confirmation",
+            "passed_user_confirmed" if user_confirmed else "blocked_user_confirmation_required",
+            user_confirmed,
+            f"approved_by_user={user_confirmed}",
+            "Require an explicit user confirmation before the future provider task is submitted.",
+        ),
+        _factor_test_provider_small_pool_execution_request_row(
+            "execution_recipe_ready",
+            "passed_execution_recipe_ready" if recipe_ready else "blocked_execution_recipe_not_ready",
+            recipe_ready,
+            f"execution_recipe_status={payload_safe.get('execution_recipe_status')}; scope_ticket_ready={payload_safe.get('scope_ticket_ready')}",
+            "Keep the ordered execution recipe visible before any real provider-backed validation.",
+        ),
+        _factor_test_provider_small_pool_execution_request_row(
+            "target_provider_task_route_declared",
+            "passed_target_route_declared" if target_route_ok else "blocked_target_route_mismatch",
+            target_route_ok,
+            f"target_provider_task_route={payload_safe.get('target_provider_task_route')}",
+            "Use the future explicit provider-small-pool validation route; never create it from GET cache.",
+        ),
+        _factor_test_provider_small_pool_execution_request_row(
+            "provider_task_not_created_by_request",
+            "passed_no_provider_task_created",
+            True,
+            "Execution request ticket records intent only and does not create or execute the provider task.",
+            "Submit a separate provider-backed task only after the user explicitly approves that later step.",
+            required=False,
+        ),
+        _factor_test_provider_small_pool_execution_request_row(
+            "no_provider_model_github_trade_action_side_effects",
+            "passed_no_external_or_trade_side_effects",
+            True,
+            "Request ticket does not call Tushare, DeepSeek, GitHub, execute trades, or mutate strategy action.",
+            "Keep Factor Test Lab research-only through provider validation and promotion review.",
+            required=False,
+        ),
+        _factor_test_provider_small_pool_execution_request_row(
+            "secret_redaction_boundary",
+            "passed_no_secret_exposure",
+            True,
+            "Request ticket includes symbols, dates, metrics, horizons, target route, and scope hash only.",
+            "Keep token/key material out of frontend, logs, packets, cache, and task payloads.",
+            required=False,
+        ),
+    ]
+    blockers = [row["criterion"] for row in rows if row["blocks_manual_provider_task_submission"]]
+    if not dry_run_visible:
+        status = "factor_test_provider_small_pool_execution_request_blocked_missing_dry_run_scope_ticket"
+        allowed_next_step = "run_factor_test_provider_small_pool_acceptance_dry_run"
+    elif not requested_hash_matches_latest:
+        status = "factor_test_provider_small_pool_execution_request_blocked_scope_hash_mismatch"
+        allowed_next_step = "resubmit_execution_request_with_latest_scope_hash"
+    elif not user_confirmed:
+        status = "factor_test_provider_small_pool_execution_request_blocked_user_confirmation_required"
+        allowed_next_step = "confirm_execution_request"
+    elif not recipe_ready:
+        status = "factor_test_provider_small_pool_execution_request_blocked_local_recipe"
+        allowed_next_step = "repair_provider_small_pool_execution_recipe"
+    else:
+        status = "factor_test_provider_small_pool_execution_request_ready_manual_provider_task_pending"
+        allowed_next_step = "manual_submit_future_provider_small_pool_acceptance_task_bound_to_scope_ticket"
+    ready = status == "factor_test_provider_small_pool_execution_request_ready_manual_provider_task_pending"
+    receipt = {
+        "schema_version": "factor_test_provider_small_pool_execution_request.v1",
+        "status": status,
+        "scope": "local_factor_test_provider_small_pool_execution_request_no_provider_execution",
+        "created_at": now,
+        "ltg": "LTG-03/LTG-02/LTG-11",
+        "local_execution_request_ready": ready,
+        "ready_for_manual_provider_task_submission": ready,
+        "allowed_next_step": allowed_next_step,
+        "target_provider_task_route": payload_safe.get("target_provider_task_route"),
+        "target_provider_task_type": payload_safe.get("target_provider_task_type"),
+        "target_acceptance_mode": payload_safe.get("target_acceptance_mode"),
+        "latest_dry_run_status": payload_safe.get("latest_dry_run_status"),
+        "execution_recipe_status": payload_safe.get("execution_recipe_status"),
+        "requested_scope_hash_matches_latest": requested_hash_matches_latest,
+        "acceptance_scope_hash": latest_scope_hash if requested_hash_matches_latest else "",
+        "acceptance_scope_hash_short": str(payload_safe.get("latest_dry_run_scope_hash_short") or ""),
+        "requested_scope_hash_short": requested_scope_hash[:16],
+        "symbols": payload_safe.get("symbols") or [],
+        "symbol_count": payload_safe.get("symbol_count") or 0,
+        "start_date": payload_safe.get("start_date"),
+        "end_date": payload_safe.get("end_date"),
+        "window_days": payload_safe.get("window_days") or 0,
+        "metrics": payload_safe.get("metrics") or [],
+        "forward_return_horizons": payload_safe.get("forward_return_horizons") or [],
+        "required_datasets": payload_safe.get("required_datasets") or [],
+        "phase_keys": payload_safe.get("phase_keys") or [],
+        "phase_count": len(payload_safe.get("phase_keys") or []),
+        "provider_task_created": False,
+        "provider_execution_implemented": False,
+        "provider_call_ledger_evidence_done": False,
+        "sample_rows_collected": False,
+        "multi_horizon_forward_returns_done": False,
+        "rolling_window_validation_done": False,
+        "cost_assumption_validation_done": False,
+        "neutralization_stability_done": False,
+        "pit_bias_controls_done": False,
+        "provider_backed_small_pool_validation_done": False,
+        "full_market_validation_done": False,
+        "production_factor_test_validation_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+        "blocking_criterion_count": len(blockers),
+        "blocking_criteria": blockers,
+        "not_allowed_next_steps": [
+            "treat_execution_request_as_provider_validation",
+            "create provider task from GET cache",
+            "call Tushare from execution request",
+            "call DeepSeek from execution request",
+            "call GitHub from execution request",
+            "compute production IC from execution request",
+            "mutate strategy action",
+            "real trade execution",
+            "leak token/key",
+        ],
+        "missing_evidence": [
+            "separate provider-backed task implementation",
+            "provider task_id bound to scope hash",
+            "safe provider call ledger rows for target pool",
+            "non-empty provider-backed sample rows",
+            "multi-horizon forward-return labels",
+            "rolling IC/Rank IC/ICIR evidence",
+            "cost and neutralization validation evidence",
+            "PIT/lookahead/survivorship controls evidence",
+            "manual Factor Test production promotion review",
+        ],
+        "row_count": len(rows),
+        "rows": rows,
+    }
+    ledger = [
+        {
+            "api": "local_factor_test_provider_small_pool_execution_request",
+            "request_params_safe": {
+                "status": status,
+                "scope": "local_factor_test_provider_small_pool_execution_request_no_provider_execution",
+                "target_provider_task_route": payload_safe.get("target_provider_task_route"),
+                "symbol_count": payload_safe.get("symbol_count") or 0,
+                "metric_count": len(payload_safe.get("metrics") or []),
+                "scope_hash_short": receipt["acceptance_scope_hash_short"],
+                "ready_for_manual_provider_task_submission": ready,
+                "provider_task_created": False,
+                "production_factor_test_validation_complete": False,
+            },
+            "row_count": len(rows),
+            "data_date": payload_safe.get("end_date"),
+            "local_fetched_at": now,
+            "call_status": status,
+            "error_message_safe": "",
+            **_local_ledger_boundary(),
+        }
+    ]
+    receipt["call_ledger"] = ledger
+    return receipt, rows
+
+
+def _missing_factor_test_provider_small_pool_execution_request(now: str) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    row = _factor_test_provider_small_pool_execution_request_row(
+        "execution_request_task_missing",
+        "no_execution_request_task_found",
+        False,
+        "No button-gated provider small-pool execution request ticket has been recorded yet.",
+        "Run the dry-run scope ticket, then generate an execution request ticket before the future provider task.",
+    )
+    receipt = {
+        "schema_version": "factor_test_provider_small_pool_execution_request.v1",
+        "status": "factor_test_provider_small_pool_execution_request_missing",
+        "scope": "local_factor_test_provider_small_pool_execution_request_no_provider_execution",
+        "created_at": now,
+        "ltg": "LTG-03/LTG-02/LTG-11",
+        "local_execution_request_ready": False,
+        "ready_for_manual_provider_task_submission": False,
+        "source_packet_present": False,
+        "cache_get_initializes_execution_request": False,
+        "provider_task_created": False,
+        "provider_execution_implemented": False,
+        "provider_backed_small_pool_validation_done": False,
+        "production_factor_test_validation_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+        "blocking_criterion_count": 1,
+        "blocking_criteria": ["execution_request_task_missing"],
+        "rows": [row],
+        "row_count": 1,
+    }
+    ledger = [
+        {
+            "api": "local_factor_test_provider_small_pool_execution_request",
+            "request_params_safe": {
+                "status": receipt["status"],
+                "source_packet_present": False,
+                "cache_get_initializes_execution_request": False,
+                "provider_task_created": False,
+                "production_factor_test_validation_complete": False,
+            },
+            "row_count": 1,
+            "data_date": None,
+            "local_fetched_at": now,
+            "call_status": receipt["status"],
+            "error_message_safe": "",
+            **_local_ledger_boundary(),
+        }
+    ]
+    receipt["call_ledger"] = ledger
+    return receipt, [row], ledger
+
+
+def _attach_factor_test_provider_small_pool_execution_request(
+    packet: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    factor_tests = packet.get("factor_tests") if isinstance(packet.get("factor_tests"), dict) else {}
+    factor_tests = dict(factor_tests)
+    receipt = factor_tests.get("provider_small_pool_execution_request_receipt")
+    rows = factor_tests.get("provider_small_pool_execution_request_rows")
+    if not isinstance(receipt, dict):
+        receipt, rows, ledger = _missing_factor_test_provider_small_pool_execution_request(now)
+    else:
+        receipt = dict(receipt)
+        rows = rows if isinstance(rows, list) else receipt.get("rows") if isinstance(receipt.get("rows"), list) else []
+        receipt["source_packet_present"] = True
+        receipt["cache_get_initializes_execution_request"] = False
+        ledger = list(receipt.get("call_ledger") or [])
+    factor_tests["provider_small_pool_execution_request_receipt"] = receipt
+    factor_tests["provider_small_pool_execution_request_rows"] = rows
+    existing_test_ledger = factor_tests.get("call_ledger") if isinstance(factor_tests.get("call_ledger"), list) else []
+    factor_tests["call_ledger"] = list(existing_test_ledger) + list(ledger)
+    acceptance = factor_tests.get("acceptance_contract") if isinstance(factor_tests.get("acceptance_contract"), dict) else {}
+    if acceptance:
+        acceptance = dict(acceptance)
+        acceptance["provider_small_pool_execution_request_status"] = receipt.get("status")
+        acceptance["provider_small_pool_execution_request_ready"] = bool(receipt.get("local_execution_request_ready"))
+        acceptance["provider_small_pool_execution_request_is_not_provider_execution"] = True
+        acceptance["provider_task_created"] = False
+        acceptance["provider_execution_implemented"] = False
+        acceptance["provider_backed_small_pool_validation_done"] = False
+        acceptance["production_factor_test_validation_complete"] = False
+        factor_tests["acceptance_contract"] = acceptance
+    packet["factor_tests"] = factor_tests
+    return packet, ledger
+
+
 def _factor_test_durable_evidence_recipe_row(
     evidence_key: str,
     source_contract: str,
@@ -4374,6 +4753,7 @@ def _factor_test_durable_evidence_recipe(
     activation = _dict(factor_tests.get("provider_sample_activation_receipt"))
     dry_run = _dict(factor_tests.get("provider_small_pool_acceptance_dry_run_receipt"))
     execution_recipe = _dict(factor_tests.get("provider_small_pool_execution_recipe"))
+    execution_request = _dict(factor_tests.get("provider_small_pool_execution_request_receipt"))
     items = factor_tests.get("items") if isinstance(factor_tests.get("items"), list) else []
 
     local_light_visible = bool(
@@ -4395,6 +4775,12 @@ def _factor_test_durable_evidence_recipe(
     execution_recipe_visible = bool(
         execution_recipe.get("schema_version") == "factor_test_provider_small_pool_execution_recipe.v1"
         and execution_recipe.get("local_recipe_ready") is True
+    )
+    execution_request_visible = bool(
+        execution_request.get("schema_version") == "factor_test_provider_small_pool_execution_request.v1"
+        and execution_request.get("cache_get_external_calls") is False
+        and execution_request.get("provider_task_created") is False
+        and execution_request.get("provider_execution_implemented") is False
     )
 
     rows = [
@@ -4487,6 +4873,16 @@ def _factor_test_durable_evidence_recipe(
             local_surface_required=True,
             evidence="provider small-pool execution recipe is visible as an ordered acceptance path",
             next_action="Execute phases only through a future explicit provider-backed validation task.",
+        ),
+        _factor_test_durable_evidence_recipe_row(
+            "provider_small_pool_execution_request_visible",
+            "provider_small_pool_execution_request_receipt",
+            "visible_execution_request_ticket" if execution_request_visible else "blocked_missing_execution_request_ticket",
+            passed=execution_request_visible,
+            production_blocker=False,
+            local_surface_required=True,
+            evidence="provider small-pool execution request ticket is visible as a local scope-bound request or missing placeholder",
+            next_action="Generate the request ticket from an approved dry-run before submitting a future provider task.",
         ),
         _factor_test_durable_evidence_recipe_row(
             "provider_backed_small_pool_task_required",
@@ -4783,6 +5179,78 @@ def run_factor_test_provider_small_pool_acceptance_dry_run_task(payload: Any = N
         status="success",
         progress=1.0,
         current_step=str(receipt.get("status") or "factor_test_provider_small_pool_dry_run_ready"),
+        call_ledger=list(receipt.get("call_ledger") or []),
+    ) or task
+    updated["payload_safe"] = payload_safe
+    return updated
+
+
+def run_factor_test_provider_small_pool_execution_request_task(payload: Any = None) -> dict[str, Any]:
+    now = _now_iso()
+    base_hub = dict(read_factor_quant_cache())
+    factor_tests = base_hub.get("factor_tests") if isinstance(base_hub.get("factor_tests"), dict) else {}
+    factor_tests = dict(factor_tests)
+    payload_safe = _factor_test_provider_small_pool_execution_request_payload(payload, factor_tests, now)
+    receipt, rows = _factor_test_provider_small_pool_execution_request_receipt(payload_safe, now)
+    payload_safe["provider_small_pool_execution_request_receipt"] = receipt
+    payload_safe["provider_small_pool_execution_request_rows"] = rows
+    task = create_task_record(
+        "run_factor_test_provider_small_pool_execution_request",
+        output_packet_key="command_center_factor_quant_hub_packet",
+        payload=payload_safe,
+        current_step="factor_test_provider_small_pool_execution_request_queued",
+        warnings=[
+            "Factor Test provider 小股票池 execution request 只生成本地请求 ticket，不调用 Tushare、DeepSeek 或 GitHub。",
+            "execution request 不创建 provider task、不计算生产 IC/Rank IC/ICIR、不修改 strategy action、不执行真实交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.25,
+        current_step="building_factor_test_provider_small_pool_execution_request_ticket",
+    )
+    receipt["task_id"] = task["task_id"]
+    try:
+        hub = dict(read_factor_quant_cache())
+        factor_tests = hub.get("factor_tests") if isinstance(hub.get("factor_tests"), dict) else {}
+        factor_tests = dict(factor_tests)
+        factor_tests["provider_small_pool_execution_request_receipt"] = receipt
+        factor_tests["provider_small_pool_execution_request_rows"] = rows
+        acceptance = factor_tests.get("acceptance_contract") if isinstance(factor_tests.get("acceptance_contract"), dict) else {}
+        if acceptance:
+            acceptance = dict(acceptance)
+            acceptance["provider_small_pool_execution_request_status"] = receipt.get("status")
+            acceptance["provider_small_pool_execution_request_ready"] = bool(receipt.get("local_execution_request_ready"))
+            acceptance["provider_small_pool_execution_request_is_not_provider_execution"] = True
+            acceptance["provider_task_created"] = False
+            acceptance["provider_execution_implemented"] = False
+            acceptance["provider_backed_small_pool_validation_done"] = False
+            acceptance["production_factor_test_validation_complete"] = False
+            factor_tests["acceptance_contract"] = acceptance
+        existing_test_ledger = factor_tests.get("call_ledger") if isinstance(factor_tests.get("call_ledger"), list) else []
+        factor_tests["call_ledger"] = list(receipt.get("call_ledger") or []) + list(existing_test_ledger)
+        hub["factor_tests"] = factor_tests
+        hub["call_ledger"] = list(receipt.get("call_ledger") or []) + list(hub.get("call_ledger") if isinstance(hub.get("call_ledger"), list) else [])
+        warning = "Factor Test provider 小股票池 execution request ticket 已生成：本地请求，不调用 provider，不代表生产验收完成。"
+        existing_warnings = hub.get("warnings") if isinstance(hub.get("warnings"), list) else []
+        hub["warnings"] = [warning] + [item for item in existing_warnings if item != warning]
+        hub["external_calls_triggered"] = False
+        hub["tushare_called"] = False
+        hub["deepseek_called"] = False
+        hub["github_called"] = False
+        hub["does_not_execute_trades"] = True
+        hub["does_not_modify_strategy_action"] = True
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet("command_center_factor_quant_hub_packet", hub)
+    except Exception as exc:
+        payload_safe["cache_write_error_safe"] = str(exc).splitlines()[0][:240]
+    updated = update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step=str(receipt.get("status") or "factor_test_provider_small_pool_execution_request_recorded"),
         call_ledger=list(receipt.get("call_ledger") or []),
     ) or task
     updated["payload_safe"] = payload_safe
@@ -6596,6 +7064,8 @@ def create_factor_task(task_type: str, payload: Any = None) -> dict[str, Any]:
         return run_factor_universe_worker_batch_dry_run_task(payload)
     if task_type == "run_factor_test_provider_small_pool_acceptance_dry_run":
         return run_factor_test_provider_small_pool_acceptance_dry_run_task(payload)
+    if task_type == "run_factor_test_provider_small_pool_execution_request":
+        return run_factor_test_provider_small_pool_execution_request_task(payload)
     if task_type == "run_deepseek_factor_explanation":
         return run_factor_deepseek_explanation_task(payload)
     if task_type == "run_deepseek_provider_benchmark_scope_ticket":
