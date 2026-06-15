@@ -256,8 +256,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(migration["long_term_goal_summary"]["closed_count"], 0)
         self.assertEqual(migration["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
-        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 7)
-        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_pending_count"], 66)
+        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 8)
+        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_pending_count"], 74)
         self.assertEqual(migration["long_term_goal_summary"]["goals_with_next_evidence_count"], 14)
         self.assertEqual(migration["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
@@ -269,7 +269,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(all(row["can_close_from_local_contracts"] is False for row in migration["long_term_goal_rows"]))
         self.assertIn("LTG-13", {row["id"] for row in migration["long_term_goal_rows"]})
         self.assertIn("LTG-14", {row["id"] for row in migration["long_term_goal_rows"]})
-        self.assertEqual(len(migration["ltg_stage_scope_observed_rows"]), 7)
+        self.assertEqual(len(migration["ltg_stage_scope_observed_rows"]), 8)
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
         self.assertEqual(
             observed_stage_rows["LTG-01"]["stage_scope_manifest"],
@@ -372,6 +372,31 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(observed_stage_rows["LTG-04"]["does_not_execute_trades"])
         self.assertFalse(observed_stage_rows["LTG-04"]["can_close_from_observed_row"])
         self.assertEqual(
+            observed_stage_rows["LTG-05"]["stage_scope_manifest"],
+            "storage_physical_migration_stage_scope_manifest",
+        )
+        self.assertEqual(observed_stage_rows["LTG-05"]["status"], "observed_in_storage_static_contract")
+        self.assertEqual(observed_stage_rows["LTG-05"]["row_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-05"]["pending_stage_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-05"]["local_evidence_stage_count"], 8)
+        self.assertFalse(observed_stage_rows["LTG-05"]["physical_schema_validation_done"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["schema_migration_executed"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["dataset_version_manifest_validated"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["partition_migration_executed"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["physical_compaction_executed"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["cache_ttl_refresh_executed"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["artifact_cleanup_delete_executed"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["production_storage_complete"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["writes_parquet_on_get"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["writes_parquet_by_contract"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["reads_row_payloads"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["external_calls_triggered"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["tushare_called"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["deepseek_called"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["github_called"])
+        self.assertTrue(observed_stage_rows["LTG-05"]["does_not_execute_trades"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["can_close_from_observed_row"])
+        self.assertEqual(
             observed_stage_rows["LTG-08"]["stage_scope_manifest"],
             "next_session_production_replacement_stage_scope_manifest",
         )
@@ -465,6 +490,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(migration_goals["LTG-04"]["observed_stage_scope_pending_count"], 8)
         self.assertFalse(migration_goals["LTG-04"]["observed_stage_scope_can_close_goal"])
+        self.assertEqual(migration_goals["LTG-05"]["stage_scope_manifest"], "storage_physical_migration_stage_scope_manifest")
+        self.assertIn("physical stage-scope manifest", migration_goals["LTG-05"]["current_state"])
+        self.assertIn("physical execution recipe", migration_goals["LTG-05"]["current_state"])
+        self.assertIn("physical schema validation", migration_goals["LTG-05"]["next_evidence_required"])
+        self.assertFalse(migration_goals["LTG-05"]["production_complete"])
+        self.assertEqual(
+            migration_goals["LTG-05"]["observed_stage_scope_manifest_status"],
+            "observed_in_storage_static_contract",
+        )
+        self.assertEqual(migration_goals["LTG-05"]["observed_stage_scope_pending_count"], 8)
+        self.assertFalse(migration_goals["LTG-05"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(
             migration_goals["LTG-08"]["observed_stage_scope_manifest_status"],
             "observed_in_next_session_map_static_contract",
@@ -544,7 +580,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(any(row["github_called"] for row in linkage_rows.values()))
         self.assertTrue(all(row["does_not_execute_trades"] for row in linkage_rows.values()))
         self.assertEqual(migration["call_ledger"][0]["api"], "local_migration_status_cache")
-        self.assertEqual(migration["call_ledger"][0]["ltg_stage_scope_observed_row_count"], 7)
+        self.assertEqual(migration["call_ledger"][0]["ltg_stage_scope_observed_row_count"], 8)
         self.assertEqual(migration["call_ledger"][0]["tushare_deepseek_linkage_row_count"], 7)
         self.assertEqual(migration["call_ledger"][0]["tushare_deepseek_mode_layer_row_count"], 4)
         self.assertFalse(migration["call_ledger"][0]["external"])
@@ -16544,11 +16580,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration["data"]["long_term_goal_summary"]["strict_closeout"], "0/14")
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
-        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 7)
-        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 66)
+        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 8)
+        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 74)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
-        self.assertEqual(len(migration["data"]["ltg_stage_scope_observed_rows"]), 7)
+        self.assertEqual(len(migration["data"]["ltg_stage_scope_observed_rows"]), 8)
         self.assertTrue(all(row["production_complete"] is False for row in migration["data"]["long_term_goal_rows"]))
         self.assertTrue(all(row["has_stage_scope_manifest"] is True for row in migration["data"]["long_term_goal_rows"]))
         self.assertTrue(
@@ -16583,6 +16619,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("worker stage-scope manifest", migration_goals["LTG-04"]["current_state"])
         self.assertIn("worker batch execution", migration_goals["LTG-04"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-04"]["production_complete"])
+        self.assertEqual(migration_goals["LTG-05"]["stage_scope_manifest"], "storage_physical_migration_stage_scope_manifest")
+        self.assertIn("physical stage-scope manifest", migration_goals["LTG-05"]["current_state"])
+        self.assertIn("physical execution recipe", migration_goals["LTG-05"]["current_state"])
+        self.assertIn("physical schema validation", migration_goals["LTG-05"]["next_evidence_required"])
+        self.assertFalse(migration_goals["LTG-05"]["production_complete"])
         observed_stage_rows = {row["id"]: row for row in migration["data"]["ltg_stage_scope_observed_rows"]}
         self.assertEqual(
             observed_stage_rows["LTG-01"]["stage_scope_manifest"],
@@ -16685,6 +16726,31 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(observed_stage_rows["LTG-04"]["does_not_execute_trades"])
         self.assertFalse(observed_stage_rows["LTG-04"]["can_close_from_observed_row"])
         self.assertEqual(
+            observed_stage_rows["LTG-05"]["stage_scope_manifest"],
+            "storage_physical_migration_stage_scope_manifest",
+        )
+        self.assertEqual(observed_stage_rows["LTG-05"]["status"], "observed_in_storage_static_contract")
+        self.assertEqual(observed_stage_rows["LTG-05"]["row_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-05"]["pending_stage_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-05"]["local_evidence_stage_count"], 8)
+        self.assertFalse(observed_stage_rows["LTG-05"]["physical_schema_validation_done"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["schema_migration_executed"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["dataset_version_manifest_validated"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["partition_migration_executed"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["physical_compaction_executed"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["cache_ttl_refresh_executed"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["artifact_cleanup_delete_executed"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["production_storage_complete"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["writes_parquet_on_get"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["writes_parquet_by_contract"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["reads_row_payloads"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["external_calls_triggered"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["tushare_called"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["deepseek_called"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["github_called"])
+        self.assertTrue(observed_stage_rows["LTG-05"]["does_not_execute_trades"])
+        self.assertFalse(observed_stage_rows["LTG-05"]["can_close_from_observed_row"])
+        self.assertEqual(
             observed_stage_rows["LTG-08"]["stage_scope_manifest"],
             "next_session_production_replacement_stage_scope_manifest",
         )
@@ -16755,6 +16821,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration_goals["LTG-04"]["observed_stage_scope_pending_count"], 8)
         self.assertFalse(migration_goals["LTG-04"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(
+            migration_goals["LTG-05"]["observed_stage_scope_manifest_status"],
+            "observed_in_storage_static_contract",
+        )
+        self.assertEqual(migration_goals["LTG-05"]["observed_stage_scope_pending_count"], 8)
+        self.assertFalse(migration_goals["LTG-05"]["observed_stage_scope_can_close_goal"])
+        self.assertEqual(
             migration_goals["LTG-08"]["observed_stage_scope_manifest_status"],
             "observed_in_next_session_map_static_contract",
         )
@@ -16772,7 +16844,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertGreaterEqual(migration_goals["LTG-14"]["observed_stage_scope_pending_count"], 10)
         self.assertFalse(migration_goals["LTG-14"]["observed_stage_scope_can_close_goal"])
-        self.assertEqual(migration["data"]["call_ledger"][0]["ltg_stage_scope_observed_row_count"], 7)
+        self.assertEqual(migration["data"]["call_ledger"][0]["ltg_stage_scope_observed_row_count"], 8)
         self.assertEqual(
             migration["data"]["tushare_deepseek_linkage_review"]["status"],
             "linkage_contract_visible_provider_model_execution_pending",

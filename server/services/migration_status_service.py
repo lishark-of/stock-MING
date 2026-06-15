@@ -64,7 +64,7 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "Storage / DuckDB / Parquet 生产化",
         "completion_bucket": "productionization_required",
         "completion_estimate": "50%-60%",
-        "current_state": "schema/version preflight, manifest writer/validator, DuckDB read API, filters, cursor pagination, dry-runs, physical activation receipt, physical execution recipe, scope-bound physical execution request ticket, and physical durable evidence recipe exist.",
+        "current_state": "schema/version preflight, manifest writer/validator, DuckDB read API, filters, cursor pagination, dry-runs, physical activation receipt, physical stage-scope manifest, physical execution recipe, scope-bound physical execution request ticket, and physical durable evidence recipe exist.",
         "not_complete_because": "physical schema validation evidence, schema migration, partition migration, compaction, TTL refresh execution, cleanup execution, physical task execution, durable evidence promotion, and production promotion remain pending.",
         "next_step": "Run the physical execution recipe one phase at a time from separate explicit physical tasks bound to the request ticket, then promote only with durable evidence rows reviewed; keep no GET writes, no provider refresh from cache, and no data artifacts in git.",
         "production_complete": False,
@@ -687,6 +687,96 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "production_factor_universe_complete": False,
                 "page_render_starts_full_pool": False,
                 "frontend_computes_rank_zscore": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observation_failure_is_not_completion",
+            }
+        )
+    try:
+        from scripts import storage_contract
+
+        stage_rows = storage_contract._physical_migration_stage_scope_rows()
+        stage_rows = stage_rows if isinstance(stage_rows, list) else []
+        row_count = len(stage_rows)
+        pending_count = sum(
+            1
+            for row in stage_rows
+            if isinstance(row, dict) and row.get("production_storage_complete") is False
+        )
+        local_evidence_count = sum(
+            1
+            for row in stage_rows
+            if isinstance(row, dict) and row.get("current_status") == "local_preflight_or_dry_run_only"
+        )
+        rows.append(
+            {
+                "id": "LTG-05",
+                "goal": "Storage / DuckDB / Parquet 生产化",
+                "stage_scope_manifest": "storage_physical_migration_stage_scope_manifest",
+                "status": "observed_in_storage_static_contract"
+                if stage_rows
+                else "missing_from_storage_static_contract",
+                "observed_source": "scripts/storage_contract._physical_migration_stage_scope_rows local static contract",
+                "cache_status": "storage_static_contract",
+                "cache_mode": "local_static_contract",
+                "row_count": row_count,
+                "pending_stage_count": pending_count,
+                "local_evidence_stage_count": local_evidence_count,
+                "production_blocker_count": pending_count,
+                "physical_schema_validation_done": False,
+                "schema_migration_executed": False,
+                "dataset_version_manifest_validated": False,
+                "partition_migration_executed": False,
+                "physical_compaction_executed": False,
+                "cache_ttl_refresh_executed": False,
+                "artifact_cleanup_delete_executed": False,
+                "production_storage_complete": False,
+                "writes_parquet_on_get": False,
+                "writes_parquet_by_contract": False,
+                "reads_row_payloads": False,
+                "cache_get_external_calls": False,
+                "react_render_external_calls": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observed_local_static_storage_stage_scope_not_production_completion",
+            }
+        )
+    except Exception:
+        rows.append(
+            {
+                "id": "LTG-05",
+                "goal": "Storage / DuckDB / Parquet 生产化",
+                "stage_scope_manifest": "storage_physical_migration_stage_scope_manifest",
+                "status": "local_observation_failed_safe_fallback",
+                "observed_source": "scripts/storage_contract._physical_migration_stage_scope_rows local static contract",
+                "error_message_safe": "storage_stage_scope_observation_failed",
+                "row_count": 0,
+                "pending_stage_count": 0,
+                "local_evidence_stage_count": 0,
+                "production_blocker_count": 0,
+                "physical_schema_validation_done": False,
+                "schema_migration_executed": False,
+                "dataset_version_manifest_validated": False,
+                "partition_migration_executed": False,
+                "physical_compaction_executed": False,
+                "cache_ttl_refresh_executed": False,
+                "artifact_cleanup_delete_executed": False,
+                "production_storage_complete": False,
+                "writes_parquet_on_get": False,
+                "writes_parquet_by_contract": False,
+                "reads_row_payloads": False,
                 "external_calls_triggered": False,
                 "tushare_called": False,
                 "deepseek_called": False,
