@@ -256,8 +256,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(migration["long_term_goal_summary"]["closed_count"], 0)
         self.assertEqual(migration["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
-        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 9)
-        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_pending_count"], 81)
+        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 10)
+        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_pending_count"], 89)
         self.assertEqual(migration["long_term_goal_summary"]["goals_with_next_evidence_count"], 14)
         self.assertEqual(migration["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
@@ -269,7 +269,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(all(row["can_close_from_local_contracts"] is False for row in migration["long_term_goal_rows"]))
         self.assertIn("LTG-13", {row["id"] for row in migration["long_term_goal_rows"]})
         self.assertIn("LTG-14", {row["id"] for row in migration["long_term_goal_rows"]})
-        self.assertEqual(len(migration["ltg_stage_scope_observed_rows"]), 9)
+        self.assertEqual(len(migration["ltg_stage_scope_observed_rows"]), 10)
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
         self.assertEqual(
             observed_stage_rows["LTG-01"]["stage_scope_manifest"],
@@ -424,6 +424,33 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(observed_stage_rows["LTG-06"]["does_not_execute_trades"])
         self.assertFalse(observed_stage_rows["LTG-06"]["can_close_from_observed_row"])
         self.assertEqual(
+            observed_stage_rows["LTG-07"]["stage_scope_manifest"],
+            "deepseek_production_stage_scope_manifest",
+        )
+        self.assertEqual(
+            observed_stage_rows["LTG-07"]["status"],
+            "observed_in_deepseek_governance_static_contract",
+        )
+        self.assertEqual(observed_stage_rows["LTG-07"]["row_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-07"]["pending_stage_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-07"]["local_evidence_stage_count"], 8)
+        self.assertFalse(observed_stage_rows["LTG-07"]["provider_benchmark_done"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["response_format_enforced"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["bounded_retry_repair_executed"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["token_budget_cost_evidence_complete"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["auto_after_task_production_ready"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["model_execution_implemented"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["production_deepseek_explanation_complete"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["deepseek_called_by_contract"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["external_calls_triggered"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["tushare_called"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["deepseek_called"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["github_called"])
+        self.assertTrue(observed_stage_rows["LTG-07"]["does_not_execute_trades"])
+        self.assertTrue(observed_stage_rows["LTG-07"]["does_not_override_numeric_values"])
+        self.assertTrue(observed_stage_rows["LTG-07"]["does_not_output_strategy_action"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["can_close_from_observed_row"])
+        self.assertEqual(
             observed_stage_rows["LTG-08"]["stage_scope_manifest"],
             "next_session_production_replacement_stage_scope_manifest",
         )
@@ -538,6 +565,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(migration_goals["LTG-06"]["observed_stage_scope_pending_count"], 7)
         self.assertFalse(migration_goals["LTG-06"]["observed_stage_scope_can_close_goal"])
+        self.assertEqual(migration_goals["LTG-07"]["stage_scope_manifest"], "deepseek_production_stage_scope_manifest")
+        self.assertIn("production stage-scope manifest", migration_goals["LTG-07"]["current_state"])
+        self.assertIn("larger provider benchmark", migration_goals["LTG-07"]["next_evidence_required"])
+        self.assertFalse(migration_goals["LTG-07"]["production_complete"])
+        self.assertEqual(
+            migration_goals["LTG-07"]["observed_stage_scope_manifest_status"],
+            "observed_in_deepseek_governance_static_contract",
+        )
+        self.assertEqual(migration_goals["LTG-07"]["observed_stage_scope_pending_count"], 8)
+        self.assertFalse(migration_goals["LTG-07"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(
             migration_goals["LTG-08"]["observed_stage_scope_manifest_status"],
             "observed_in_next_session_map_static_contract",
@@ -617,7 +654,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(any(row["github_called"] for row in linkage_rows.values()))
         self.assertTrue(all(row["does_not_execute_trades"] for row in linkage_rows.values()))
         self.assertEqual(migration["call_ledger"][0]["api"], "local_migration_status_cache")
-        self.assertEqual(migration["call_ledger"][0]["ltg_stage_scope_observed_row_count"], 9)
+        self.assertEqual(migration["call_ledger"][0]["ltg_stage_scope_observed_row_count"], 10)
         self.assertEqual(migration["call_ledger"][0]["tushare_deepseek_linkage_row_count"], 7)
         self.assertEqual(migration["call_ledger"][0]["tushare_deepseek_mode_layer_row_count"], 4)
         self.assertFalse(migration["call_ledger"][0]["external"])
@@ -16617,11 +16654,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration["data"]["long_term_goal_summary"]["strict_closeout"], "0/14")
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
-        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 9)
-        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 81)
+        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 10)
+        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 89)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
-        self.assertEqual(len(migration["data"]["ltg_stage_scope_observed_rows"]), 9)
+        self.assertEqual(len(migration["data"]["ltg_stage_scope_observed_rows"]), 10)
         self.assertTrue(all(row["production_complete"] is False for row in migration["data"]["long_term_goal_rows"]))
         self.assertTrue(all(row["has_stage_scope_manifest"] is True for row in migration["data"]["long_term_goal_rows"]))
         self.assertTrue(
@@ -16815,6 +16852,33 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(observed_stage_rows["LTG-06"]["does_not_execute_trades"])
         self.assertFalse(observed_stage_rows["LTG-06"]["can_close_from_observed_row"])
         self.assertEqual(
+            observed_stage_rows["LTG-07"]["stage_scope_manifest"],
+            "deepseek_production_stage_scope_manifest",
+        )
+        self.assertEqual(
+            observed_stage_rows["LTG-07"]["status"],
+            "observed_in_deepseek_governance_static_contract",
+        )
+        self.assertEqual(observed_stage_rows["LTG-07"]["row_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-07"]["pending_stage_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-07"]["local_evidence_stage_count"], 8)
+        self.assertFalse(observed_stage_rows["LTG-07"]["provider_benchmark_done"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["response_format_enforced"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["bounded_retry_repair_executed"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["token_budget_cost_evidence_complete"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["auto_after_task_production_ready"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["model_execution_implemented"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["production_deepseek_explanation_complete"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["deepseek_called_by_contract"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["external_calls_triggered"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["tushare_called"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["deepseek_called"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["github_called"])
+        self.assertTrue(observed_stage_rows["LTG-07"]["does_not_execute_trades"])
+        self.assertTrue(observed_stage_rows["LTG-07"]["does_not_override_numeric_values"])
+        self.assertTrue(observed_stage_rows["LTG-07"]["does_not_output_strategy_action"])
+        self.assertFalse(observed_stage_rows["LTG-07"]["can_close_from_observed_row"])
+        self.assertEqual(
             observed_stage_rows["LTG-08"]["stage_scope_manifest"],
             "next_session_production_replacement_stage_scope_manifest",
         )
@@ -16900,6 +16964,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(migration_goals["LTG-06"]["observed_stage_scope_pending_count"], 7)
         self.assertFalse(migration_goals["LTG-06"]["observed_stage_scope_can_close_goal"])
+        self.assertEqual(migration_goals["LTG-07"]["stage_scope_manifest"], "deepseek_production_stage_scope_manifest")
+        self.assertIn("production stage-scope manifest", migration_goals["LTG-07"]["current_state"])
+        self.assertIn("larger provider benchmark", migration_goals["LTG-07"]["next_evidence_required"])
+        self.assertFalse(migration_goals["LTG-07"]["production_complete"])
+        self.assertEqual(
+            migration_goals["LTG-07"]["observed_stage_scope_manifest_status"],
+            "observed_in_deepseek_governance_static_contract",
+        )
+        self.assertEqual(migration_goals["LTG-07"]["observed_stage_scope_pending_count"], 8)
+        self.assertFalse(migration_goals["LTG-07"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(
             migration_goals["LTG-08"]["observed_stage_scope_manifest_status"],
             "observed_in_next_session_map_static_contract",
@@ -16918,7 +16992,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertGreaterEqual(migration_goals["LTG-14"]["observed_stage_scope_pending_count"], 10)
         self.assertFalse(migration_goals["LTG-14"]["observed_stage_scope_can_close_goal"])
-        self.assertEqual(migration["data"]["call_ledger"][0]["ltg_stage_scope_observed_row_count"], 9)
+        self.assertEqual(migration["data"]["call_ledger"][0]["ltg_stage_scope_observed_row_count"], 10)
         self.assertEqual(
             migration["data"]["tushare_deepseek_linkage_review"]["status"],
             "linkage_contract_visible_provider_model_execution_pending",

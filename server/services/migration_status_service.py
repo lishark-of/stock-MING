@@ -84,7 +84,7 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "DeepSeek pro 稳定解释生产化",
         "completion_bucket": "productionization_required",
         "completion_estimate": "35%-45%",
-        "current_state": "manual governance, sanitizer, model strategy, JSON stability audit, response-format review, retry/repair dry-run, provider benchmark execution recipe, durable evidence recipe, and linkage contract exist.",
+        "current_state": "manual governance, sanitizer, model strategy, JSON stability audit, response-format review, retry/repair dry-run, provider benchmark execution recipe, production stage-scope manifest, durable evidence recipe, and linkage contract exist.",
         "not_complete_because": "JSON stability target, provider-backed benchmark, provider response-format enforcement, bounded retry/repair execution, model ledger/hash dedupe evidence, cost/redaction review, durable evidence promotion, and live_light model execution are pending.",
         "next_step": "Run a larger explicit DeepSeek pro benchmark bound to the execution recipe, then promote only with durable evidence rows reviewed for response_format, retry/repair, ledger hashes, cost, redaction, no numeric/action overwrite, and default-off auto_after_task.",
         "production_complete": False,
@@ -878,6 +878,94 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "github_called": False,
                 "does_not_execute_trades": True,
                 "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observation_failure_is_not_completion",
+            }
+        )
+    try:
+        from scripts import deepseek_governance_contract
+
+        stage_rows = deepseek_governance_contract._deepseek_production_stage_scope_rows()
+        stage_rows = stage_rows if isinstance(stage_rows, list) else []
+        row_count = len(stage_rows)
+        pending_count = sum(
+            1
+            for row in stage_rows
+            if isinstance(row, dict) and row.get("production_deepseek_explanation_complete") is False
+        )
+        local_evidence_count = sum(
+            1
+            for row in stage_rows
+            if isinstance(row, dict) and row.get("current_status") == "local_governance_or_dry_run_only"
+        )
+        rows.append(
+            {
+                "id": "LTG-07",
+                "goal": "DeepSeek pro 稳定解释生产化",
+                "stage_scope_manifest": "deepseek_production_stage_scope_manifest",
+                "status": "observed_in_deepseek_governance_static_contract"
+                if stage_rows
+                else "missing_from_deepseek_governance_static_contract",
+                "observed_source": "scripts/deepseek_governance_contract._deepseek_production_stage_scope_rows local static contract",
+                "cache_status": "deepseek_governance_static_contract",
+                "cache_mode": "local_static_contract",
+                "row_count": row_count,
+                "pending_stage_count": pending_count,
+                "local_evidence_stage_count": local_evidence_count,
+                "production_blocker_count": pending_count,
+                "provider_benchmark_done": False,
+                "response_format_enforced": False,
+                "bounded_retry_repair_executed": False,
+                "token_budget_cost_evidence_complete": False,
+                "auto_after_task_production_ready": False,
+                "model_execution_implemented": False,
+                "production_deepseek_explanation_complete": False,
+                "deepseek_called_by_contract": False,
+                "cache_get_external_calls": False,
+                "react_render_external_calls": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_override_numeric_values": True,
+                "does_not_output_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observed_local_static_deepseek_stage_scope_not_production_completion",
+            }
+        )
+    except Exception:
+        rows.append(
+            {
+                "id": "LTG-07",
+                "goal": "DeepSeek pro 稳定解释生产化",
+                "stage_scope_manifest": "deepseek_production_stage_scope_manifest",
+                "status": "local_observation_failed_safe_fallback",
+                "observed_source": "scripts/deepseek_governance_contract._deepseek_production_stage_scope_rows local static contract",
+                "error_message_safe": "deepseek_stage_scope_observation_failed",
+                "row_count": 0,
+                "pending_stage_count": 0,
+                "local_evidence_stage_count": 0,
+                "production_blocker_count": 0,
+                "provider_benchmark_done": False,
+                "response_format_enforced": False,
+                "bounded_retry_repair_executed": False,
+                "token_budget_cost_evidence_complete": False,
+                "auto_after_task_production_ready": False,
+                "model_execution_implemented": False,
+                "production_deepseek_explanation_complete": False,
+                "deepseek_called_by_contract": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "does_not_override_numeric_values": True,
+                "does_not_output_strategy_action": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
                 "evidence_boundary": "observation_failure_is_not_completion",
