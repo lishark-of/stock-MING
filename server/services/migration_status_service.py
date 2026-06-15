@@ -420,6 +420,93 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             }
         )
     try:
+        from scripts import next_session_map_contract
+
+        next_session_contract = next_session_map_contract.build_contract()
+        if not isinstance(next_session_contract, dict):
+            next_session_contract = {}
+        observed = next_session_contract.get("observed")
+        observed = observed if isinstance(observed, dict) else {}
+        stage_rows = next_session_contract.get("production_replacement_stage_scope_rows")
+        stage_rows = stage_rows if isinstance(stage_rows, list) else []
+        row_count = int(observed.get("production_stage_scope_count") or len(stage_rows) or 0)
+        pending_count = int(
+            observed.get("production_stage_scope_pending_count")
+            or sum(
+                1
+                for row in stage_rows
+                if isinstance(row, dict) and row.get("production_replacement_complete") is False
+            )
+        )
+        local_evidence_count = sum(
+            1
+            for row in stage_rows
+            if isinstance(row, dict)
+            and (row.get("exact_payload_contract_ready") is True or row.get("interaction_contract_ready") is True)
+        )
+        rows.append(
+            {
+                "id": "LTG-08",
+                "goal": "ECharts 次日操作图谱成熟版",
+                "stage_scope_manifest": "next_session_production_replacement_stage_scope_manifest",
+                "status": "observed_in_next_session_map_static_contract"
+                if stage_rows
+                else "missing_from_next_session_map_static_contract",
+                "observed_source": "scripts/next_session_map_contract.build_contract local static contract",
+                "cache_status": str(next_session_contract.get("status") or "missing"),
+                "cache_mode": "local_static_contract",
+                "row_count": row_count,
+                "pending_stage_count": pending_count,
+                "local_evidence_stage_count": local_evidence_count,
+                "production_blocker_count": pending_count,
+                "production_replacement_complete": next_session_contract.get("production_replacement_complete") is True,
+                "streamlit_parity_complete": next_session_contract.get("streamlit_parity_complete") is True,
+                "browser_visual_qa_done": next_session_contract.get("browser_visual_qa_done") is True,
+                "browser_performance_trace_done": next_session_contract.get("browser_performance_trace_done") is True,
+                "durable_ci_evidence_complete": next_session_contract.get("durable_evidence_complete") is True,
+                "frontend_computes_trade_action": next_session_contract.get("frontend_computes_trade_action") is True,
+                "does_not_modify_operation_zones": next_session_contract.get("does_not_modify_operation_zones") is True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observed_local_static_next_session_stage_scope_not_production_completion",
+            }
+        )
+    except Exception:
+        rows.append(
+            {
+                "id": "LTG-08",
+                "goal": "ECharts 次日操作图谱成熟版",
+                "stage_scope_manifest": "next_session_production_replacement_stage_scope_manifest",
+                "status": "local_observation_failed_safe_fallback",
+                "observed_source": "scripts/next_session_map_contract.build_contract local static contract",
+                "error_message_safe": "next_session_stage_scope_observation_failed",
+                "row_count": 0,
+                "pending_stage_count": 0,
+                "local_evidence_stage_count": 0,
+                "production_blocker_count": 0,
+                "production_replacement_complete": False,
+                "streamlit_parity_complete": False,
+                "browser_visual_qa_done": False,
+                "browser_performance_trace_done": False,
+                "durable_ci_evidence_complete": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "can_close_from_observed_row": False,
+                "evidence_boundary": "observation_failure_is_not_completion",
+            }
+        )
+    try:
         from scripts import motion_viewport_qa_contract
 
         motion_contract = motion_viewport_qa_contract.build_contract()
