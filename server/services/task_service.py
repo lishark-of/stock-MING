@@ -1656,7 +1656,7 @@ TASK_DISPATCH_DEDUPE_ENFORCED = True
 
 
 def _now_iso() -> str:
-    return _dt.datetime.now().isoformat(timespec="seconds")
+    return _dt.datetime.now().isoformat(timespec="microseconds")
 
 
 def _build_route_coverage() -> dict[str, Any]:
