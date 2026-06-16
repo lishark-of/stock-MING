@@ -127,6 +127,15 @@ function ltgNextStepPayload(row: Record<string, unknown>): Record<string, unknow
       source: "migration_status_ltg_next_action"
     };
   }
+  if (route === "POST /api/factor-quant/universe-worker-batch-research") {
+    return {
+      approved_by_user: true,
+      worker_batch_scope_hash: scopeHash(row, "factor_universe_worker_batch_execution_request_ticket"),
+      execution_request_task_id: taskId(row, "factor_universe_worker_batch_execution_request_ticket"),
+      requested_by: "migration_status_ltg_queue",
+      source: "migration_status_ltg_next_action"
+    };
+  }
   if (route === "POST /api/candidate-radar/quant-projection-acceptance-dry-run") {
     return {
       symbol: DEFAULT_LTG_QUEUE_SYMBOL,

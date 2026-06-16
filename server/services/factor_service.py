@@ -82,6 +82,8 @@ DEEPSEEK_PROVIDER_BENCHMARK_LEDGER_FIELDS = (
 FACTOR_UNIVERSE_RESEARCH_PLAN_MODES = {"watchlist", "custom_pool", "full_pool"}
 FACTOR_UNIVERSE_RESEARCH_PLAN_DATASETS = ("factor_values", "daily", "daily_basic", "moneyflow", "trade_cal")
 FACTOR_UNIVERSE_ITEM_SECRET_MARKERS = ("token", "api_key", "secret", "password", "authorization", "bearer")
+FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_ROUTE = "POST /api/factor-quant/universe-worker-batch-research"
+FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_TASK_TYPE = "run_factor_universe_worker_batch_research"
 FACTOR_UNIVERSE_WORKER_BATCH_SYMBOL_LIMIT = 500
 FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS = 20
 FACTOR_UNIVERSE_WORKER_BATCH_REQUIRED_STAGES = (
@@ -301,6 +303,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
     packet, universe_activation_receipt_ledger = _attach_factor_universe_execution_activation_receipt(packet, now)
     packet, universe_batch_recipe_ledger = _attach_factor_universe_worker_batch_execution_recipe(packet, now)
     packet, universe_batch_request_ledger = _attach_factor_universe_worker_batch_execution_request(packet, now)
+    packet, universe_batch_research_ledger = _attach_factor_universe_worker_batch_research_receipt(packet, now)
     packet, universe_durable_recipe_ledger = _attach_factor_universe_durable_evidence_recipe(packet, now)
     packet = _attach_deepseek_json_stability_audit(packet, governance=packet["deepseek_explain_governance"])
     packet, deepseek_activation_ledger = _attach_deepseek_production_activation_receipt(packet, now)
@@ -326,6 +329,7 @@ def read_factor_quant_cache() -> dict[str, Any]:
         + universe_activation_receipt_ledger
         + universe_batch_recipe_ledger
         + universe_batch_request_ledger
+        + universe_batch_research_ledger
         + universe_durable_recipe_ledger
         + deepseek_activation_ledger
         + deepseek_benchmark_recipe_ledger
@@ -6047,8 +6051,8 @@ def _factor_universe_worker_batch_execution_request_payload(
         "required_stages": [str(item) for item in dry_run.get("required_stages", []) if item],
         "requested_stages": [str(item) for item in dry_run.get("requested_stages", []) if item],
         "phase_keys": list(FACTOR_UNIVERSE_WORKER_BATCH_EXECUTION_PHASES),
-        "target_worker_task_route": "future POST /api/factor-quant/universe-worker-batch-research",
-        "target_worker_task_type": "run_factor_universe_worker_batch_research",
+        "target_worker_task_route": FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_ROUTE,
+        "target_worker_task_type": FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_TASK_TYPE,
         "target_acceptance_mode": "worker_backed_factor_universe_batch_research",
         "created_at": now,
         "server_secret_values_read": False,
@@ -6071,7 +6075,7 @@ def _factor_universe_worker_batch_execution_request_receipt(
     )
     user_confirmed = payload_safe.get("approved_by_user") is True
     recipe_ready = bool(payload_safe.get("execution_recipe_ready") and payload_safe.get("scope_ticket_ready"))
-    target_route_ok = payload_safe.get("target_worker_task_route") == "future POST /api/factor-quant/universe-worker-batch-research"
+    target_route_ok = payload_safe.get("target_worker_task_route") == FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_ROUTE
     rows = [
         _factor_universe_worker_batch_execution_request_row(
             "latest_worker_batch_scope_ticket_visible",
@@ -6106,7 +6110,7 @@ def _factor_universe_worker_batch_execution_request_receipt(
             "passed_target_route_declared" if target_route_ok else "blocked_target_route_mismatch",
             target_route_ok,
             f"target_worker_task_route={payload_safe.get('target_worker_task_route')}",
-            "Use the future explicit worker-batch research route; never create it from GET cache.",
+            "Use the explicit worker-batch research route; never create it from GET cache.",
         ),
         _factor_universe_worker_batch_execution_request_row(
             "worker_task_not_created_by_request",
@@ -6349,6 +6353,454 @@ def _attach_factor_universe_worker_batch_execution_request(
         contract["worker_started"] = False
         contract["large_universe_pipeline_done"] = False
         contract["cross_sectional_rank_zscore_done"] = False
+        contract["neutralization_done"] = False
+        contract["factor_combination_research_done"] = False
+        contract["full_pool_validation_done"] = False
+        contract["production_factor_universe_complete"] = False
+        contract["external_calls_triggered"] = False
+        contract["tushare_called"] = False
+        contract["deepseek_called"] = False
+        contract["github_called"] = False
+        packet["universe_research_contract"] = contract
+    return packet, ledger
+
+
+def _factor_universe_worker_batch_research_row(
+    criterion: str,
+    status: str,
+    passed: bool,
+    evidence: str,
+    next_action: str,
+    *,
+    required: bool = True,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "required_for_local_worker_research_receipt": bool(required),
+        "blocks_local_worker_research_receipt": bool(required and not passed),
+        "evidence": evidence,
+        "next_action": next_action,
+        "local_worker_task_record_created": False,
+        "worker_task_created": False,
+        "worker_task_executed": False,
+        "worker_process_started": False,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_pinged": False,
+        "storage_read_executed": False,
+        "large_universe_pipeline_done": False,
+        "cross_sectional_rank_zscore_done": False,
+        "zscore_done": False,
+        "neutralization_done": False,
+        "factor_combination_research_done": False,
+        "result_summary_persisted": False,
+        "full_pool_validation_done": False,
+        "production_factor_universe_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+    }
+
+
+def _factor_universe_worker_batch_research_payload(
+    payload: Any,
+    packet: dict[str, Any],
+    now: str,
+) -> dict[str, Any]:
+    execution_request = _dict(packet.get("universe_worker_batch_execution_request_receipt"))
+    payload_dict = payload if isinstance(payload, dict) else {}
+    requested_scope_hash = str(
+        payload_dict.get("worker_batch_scope_hash")
+        or payload_dict.get("scope_hash")
+        or payload_dict.get("universe_worker_batch_scope_hash")
+        or ""
+    ).strip()
+    execution_request_task_id = str(
+        payload_dict.get("execution_request_task_id")
+        or payload_dict.get("request_task_id")
+        or payload_dict.get("source_task_id")
+        or execution_request.get("task_id")
+        or ""
+    ).strip()
+    return {
+        "approved_by_user": bool(
+            payload_dict.get("approved_by_user") is True
+            or payload_dict.get("confirm_worker_research_receipt") is True
+        ),
+        "requested_scope_hash": requested_scope_hash,
+        "execution_request_task_id": execution_request_task_id,
+        "latest_execution_request_status": str(execution_request.get("status") or ""),
+        "latest_execution_request_ready": bool(
+            execution_request.get("local_execution_request_ready")
+            or execution_request.get("ready_for_manual_worker_task_submission")
+        ),
+        "latest_execution_request_task_id": str(execution_request.get("task_id") or ""),
+        "latest_execution_request_scope_hash": str(execution_request.get("worker_batch_scope_hash") or ""),
+        "latest_execution_request_scope_hash_short": str(execution_request.get("worker_batch_scope_hash_short") or ""),
+        "latest_execution_request_target_route": str(execution_request.get("target_worker_task_route") or ""),
+        "latest_execution_request_target_task_type": str(execution_request.get("target_worker_task_type") or ""),
+        "latest_execution_request_target_acceptance_mode": str(execution_request.get("target_acceptance_mode") or ""),
+        "universe_mode": execution_request.get("universe_mode"),
+        "symbols": [
+            str(item)
+            for item in execution_request.get("symbols", [])
+            if item
+        ][:FACTOR_UNIVERSE_WORKER_BATCH_SYMBOL_LIMIT],
+        "symbol_count": int(execution_request.get("symbol_count") or 0),
+        "required_datasets": [
+            str(item)
+            for item in execution_request.get("required_datasets", [])
+            if item
+        ],
+        "required_stages": [
+            str(item)
+            for item in execution_request.get("required_stages", [])
+            if item
+        ],
+        "requested_stages": [
+            str(item)
+            for item in execution_request.get("requested_stages", [])
+            if item
+        ],
+        "phase_keys": [
+            str(item)
+            for item in execution_request.get("phase_keys", [])
+            if item
+        ],
+        "target_worker_task_route": FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_ROUTE,
+        "target_worker_task_type": FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_TASK_TYPE,
+        "target_acceptance_mode": "worker_backed_factor_universe_batch_research",
+        "created_at": now,
+        "server_secret_values_read": False,
+        "env_key_names_exposed": False,
+        "credential_values_exposed": False,
+    }
+
+
+def _factor_universe_worker_batch_research_receipt(
+    payload_safe: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    requested_scope_hash = str(payload_safe.get("requested_scope_hash") or "")
+    latest_scope_hash = str(payload_safe.get("latest_execution_request_scope_hash") or "")
+    scope_hash_matches_request = bool(requested_scope_hash and latest_scope_hash and requested_scope_hash == latest_scope_hash)
+    execution_request_visible = bool(
+        payload_safe.get("latest_execution_request_status")
+        and payload_safe.get("latest_execution_request_ready") is True
+        and latest_scope_hash
+    )
+    user_confirmed = payload_safe.get("approved_by_user") is True
+    upstream_route = str(payload_safe.get("latest_execution_request_target_route") or "")
+    route_compatible = upstream_route in {
+        FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_ROUTE,
+        f"future {FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_ROUTE}",
+    }
+    task_type_compatible = payload_safe.get("latest_execution_request_target_task_type") in {
+        FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_TASK_TYPE,
+        "",
+    }
+    rows = [
+        _factor_universe_worker_batch_research_row(
+            "execution_request_visible",
+            "passed_execution_request_ready" if execution_request_visible else "blocked_missing_ready_execution_request",
+            execution_request_visible,
+            f"latest_execution_request_status={payload_safe.get('latest_execution_request_status')}; scope_hash_short={payload_safe.get('latest_execution_request_scope_hash_short')}",
+            "Generate the execution-request ticket first and keep its safe scope hash visible.",
+        ),
+        _factor_universe_worker_batch_research_row(
+            "scope_hash_bound_to_execution_request",
+            "passed_scope_hash_match" if scope_hash_matches_request else "blocked_scope_hash_missing_or_mismatch",
+            scope_hash_matches_request,
+            f"requested_scope_hash_short={requested_scope_hash[:16]}; latest_scope_hash_short={payload_safe.get('latest_execution_request_scope_hash_short')}",
+            "Resubmit the local research receipt request with the latest execution-request scope hash.",
+        ),
+        _factor_universe_worker_batch_research_row(
+            "explicit_user_confirmation",
+            "passed_user_confirmed" if user_confirmed else "blocked_user_confirmation_required",
+            user_confirmed,
+            f"approved_by_user={user_confirmed}",
+            "Require explicit user confirmation before recording the local worker-batch research receipt.",
+        ),
+        _factor_universe_worker_batch_research_row(
+            "target_worker_research_route_compatible",
+            "passed_target_route_compatible" if route_compatible else "blocked_target_route_mismatch",
+            route_compatible,
+            f"latest_target_route={upstream_route}; target_route={FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_ROUTE}",
+            "Use the explicit local POST route; older future-route receipts are accepted only as upstream lineage.",
+        ),
+        _factor_universe_worker_batch_research_row(
+            "target_worker_research_task_type_compatible",
+            "passed_target_task_type_compatible" if task_type_compatible else "blocked_target_task_type_mismatch",
+            task_type_compatible,
+            f"latest_target_task_type={payload_safe.get('latest_execution_request_target_task_type')}; target_task_type={FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_TASK_TYPE}",
+            "Bind the receipt to the factor universe worker-batch research task type.",
+        ),
+        _factor_universe_worker_batch_research_row(
+            "local_task_record_only",
+            "passed_local_receipt_only",
+            True,
+            "This POST records a local task receipt and scope lineage only; it does not start Celery, Redis, or a worker process.",
+            "Run true worker runtime acceptance later with separate approval and durable logs.",
+            required=False,
+        ),
+        _factor_universe_worker_batch_research_row(
+            "no_provider_model_github_trade_action_side_effects",
+            "passed_no_external_or_trade_side_effects",
+            True,
+            "Receipt creation does not call Tushare, DeepSeek, GitHub, execute trades, compute production metrics, or mutate strategy action.",
+            "Keep provider/model/trading work behind explicit separate task modes.",
+            required=False,
+        ),
+        _factor_universe_worker_batch_research_row(
+            "secret_redaction_boundary",
+            "passed_no_secret_exposure",
+            True,
+            "Receipt stores task ids, scope hashes, universe mode, stage scope, and row counts only.",
+            "Keep token/key material out of frontend, logs, packets, cache, and task payloads.",
+            required=False,
+        ),
+    ]
+    blockers = [row["criterion"] for row in rows if row["blocks_local_worker_research_receipt"]]
+    if not execution_request_visible:
+        status = "factor_universe_worker_batch_research_receipt_blocked_missing_execution_request"
+        allowed_next_step = "run_factor_universe_worker_batch_execution_request"
+    elif not scope_hash_matches_request:
+        status = "factor_universe_worker_batch_research_receipt_blocked_scope_hash_mismatch"
+        allowed_next_step = "resubmit_research_receipt_with_latest_execution_request_scope_hash"
+    elif not user_confirmed:
+        status = "factor_universe_worker_batch_research_receipt_blocked_user_confirmation_required"
+        allowed_next_step = "confirm_factor_universe_worker_batch_research_receipt"
+    elif not route_compatible or not task_type_compatible:
+        status = "factor_universe_worker_batch_research_receipt_blocked_target_task_contract"
+        allowed_next_step = "repair_factor_universe_worker_batch_execution_request_target"
+    else:
+        status = "factor_universe_worker_batch_research_receipt_ready_worker_runtime_evidence_pending"
+        allowed_next_step = "collect_worker_runtime_storage_metric_and_promotion_evidence"
+    ready = status == "factor_universe_worker_batch_research_receipt_ready_worker_runtime_evidence_pending"
+    receipt = {
+        "schema_version": "factor_universe_worker_batch_research_receipt.v1",
+        "status": status,
+        "scope": "local_factor_universe_worker_batch_research_receipt_no_worker_or_provider_execution",
+        "created_at": now,
+        "ltg": "LTG-04/LTG-06/LTG-11/LTG-12",
+        "local_receipt_ready": ready,
+        "local_worker_research_receipt_ready": ready,
+        "ready_for_worker_runtime_evidence_collection": ready,
+        "cache_get_initializes_worker_batch_research": False,
+        "allowed_next_step": allowed_next_step,
+        "target_worker_task_route": payload_safe.get("target_worker_task_route"),
+        "target_worker_task_type": payload_safe.get("target_worker_task_type"),
+        "target_acceptance_mode": payload_safe.get("target_acceptance_mode"),
+        "latest_execution_request_status": payload_safe.get("latest_execution_request_status"),
+        "latest_execution_request_task_id": payload_safe.get("latest_execution_request_task_id"),
+        "requested_execution_request_task_id": payload_safe.get("execution_request_task_id"),
+        "requested_scope_hash_matches_latest": scope_hash_matches_request,
+        "worker_batch_scope_hash": latest_scope_hash if scope_hash_matches_request else "",
+        "worker_batch_scope_hash_short": str(payload_safe.get("latest_execution_request_scope_hash_short") or ""),
+        "requested_scope_hash_short": requested_scope_hash[:16],
+        "universe_mode": payload_safe.get("universe_mode"),
+        "symbols": payload_safe.get("symbols") or [],
+        "symbol_count": payload_safe.get("symbol_count") or 0,
+        "required_datasets": payload_safe.get("required_datasets") or [],
+        "required_stages": payload_safe.get("required_stages") or [],
+        "requested_stages": payload_safe.get("requested_stages") or [],
+        "phase_keys": payload_safe.get("phase_keys") or [],
+        "phase_count": len(payload_safe.get("phase_keys") or []),
+        "local_worker_task_record_created": ready,
+        "worker_task_created": False,
+        "worker_task_executed": False,
+        "worker_execution_implemented": False,
+        "worker_process_started": False,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_pinged": False,
+        "storage_read_executed": False,
+        "large_universe_pipeline_done": False,
+        "cross_sectional_rank_zscore_done": False,
+        "zscore_done": False,
+        "neutralization_done": False,
+        "factor_combination_research_done": False,
+        "result_summary_persisted": False,
+        "full_pool_validation_done": False,
+        "production_factor_universe_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+        "blocking_criterion_count": len(blockers),
+        "blocking_criteria": blockers,
+        "not_allowed_next_steps": [
+            "treat_local_receipt_as_worker_runtime_execution",
+            "start worker from GET cache",
+            "start worker from React render",
+            "call Tushare from local receipt",
+            "call DeepSeek from local receipt",
+            "call GitHub from local receipt",
+            "compute production rank/zscore from local receipt",
+            "mutate strategy action",
+            "real trade execution",
+            "leak token/key",
+        ],
+        "missing_evidence": [
+            "worker runtime binding and durable task logs",
+            "storage read execution evidence",
+            "cross-sectional rank and zscore output",
+            "industry and market-cap neutralization output",
+            "factor combination research output",
+            "persisted result summary with safe hashes",
+            "full-pool validation report",
+            "manual Factor universe production promotion review",
+        ],
+        "row_count": len(rows),
+        "rows": rows,
+    }
+    ledger = [
+        {
+            "api": "local_factor_universe_worker_batch_research_receipt",
+            "request_params_safe": {
+                "status": status,
+                "scope": "local_factor_universe_worker_batch_research_receipt_no_worker_or_provider_execution",
+                "target_worker_task_route": payload_safe.get("target_worker_task_route"),
+                "universe_mode": payload_safe.get("universe_mode"),
+                "symbol_count": payload_safe.get("symbol_count") or 0,
+                "scope_hash_short": receipt["worker_batch_scope_hash_short"],
+                "local_receipt_ready": ready,
+                "local_worker_task_record_created": ready,
+                "worker_task_created": False,
+                "worker_process_started": False,
+                "production_factor_universe_complete": False,
+            },
+            "row_count": len(rows),
+            "data_date": None,
+            "local_fetched_at": now,
+            "call_status": status,
+            "error_message_safe": "",
+            **_local_ledger_boundary(),
+        }
+    ]
+    receipt["call_ledger"] = ledger
+    return receipt, rows
+
+
+def _missing_factor_universe_worker_batch_research_receipt(now: str) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    row = _factor_universe_worker_batch_research_row(
+        "worker_batch_research_receipt_missing",
+        "no_worker_batch_research_receipt_found",
+        False,
+        "No button-gated local Factor universe worker-batch research receipt has been recorded yet.",
+        "Generate the execution-request ticket, then record the local research receipt before collecting worker runtime evidence.",
+    )
+    receipt = {
+        "schema_version": "factor_universe_worker_batch_research_receipt.v1",
+        "status": "factor_universe_worker_batch_research_receipt_missing",
+        "scope": "local_factor_universe_worker_batch_research_receipt_no_worker_or_provider_execution",
+        "created_at": now,
+        "ltg": "LTG-04/LTG-06/LTG-11/LTG-12",
+        "local_receipt_ready": False,
+        "local_worker_research_receipt_ready": False,
+        "source_packet_present": False,
+        "cache_get_initializes_worker_batch_research": False,
+        "local_worker_task_record_created": False,
+        "worker_task_created": False,
+        "worker_task_executed": False,
+        "worker_execution_implemented": False,
+        "worker_process_started": False,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_pinged": False,
+        "storage_read_executed": False,
+        "large_universe_pipeline_done": False,
+        "cross_sectional_rank_zscore_done": False,
+        "zscore_done": False,
+        "neutralization_done": False,
+        "factor_combination_research_done": False,
+        "full_pool_validation_done": False,
+        "production_factor_universe_complete": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "env_key_name_exposed": False,
+        "credential_value_exposed": False,
+        "blocking_criterion_count": 1,
+        "blocking_criteria": ["worker_batch_research_receipt_missing"],
+        "rows": [row],
+        "row_count": 1,
+    }
+    ledger = [
+        {
+            "api": "local_factor_universe_worker_batch_research_receipt",
+            "request_params_safe": {
+                "status": receipt["status"],
+                "source_packet_present": False,
+                "cache_get_initializes_worker_batch_research": False,
+                "local_worker_task_record_created": False,
+                "worker_task_created": False,
+                "production_factor_universe_complete": False,
+            },
+            "row_count": 1,
+            "data_date": None,
+            "local_fetched_at": now,
+            "call_status": receipt["status"],
+            "error_message_safe": "",
+            **_local_ledger_boundary(),
+        }
+    ]
+    receipt["call_ledger"] = ledger
+    return receipt, [row], ledger
+
+
+def _attach_factor_universe_worker_batch_research_receipt(
+    packet: dict[str, Any],
+    now: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    receipt = packet.get("universe_worker_batch_research_receipt")
+    rows = packet.get("universe_worker_batch_research_rows")
+    if not isinstance(receipt, dict):
+        receipt, rows, ledger = _missing_factor_universe_worker_batch_research_receipt(now)
+    else:
+        receipt = dict(receipt)
+        rows = rows if isinstance(rows, list) else receipt.get("rows") if isinstance(receipt.get("rows"), list) else []
+        receipt["source_packet_present"] = True
+        receipt["cache_get_initializes_worker_batch_research"] = False
+        ledger = list(receipt.get("call_ledger") or [])
+    packet["universe_worker_batch_research_receipt"] = receipt
+    packet["universe_worker_batch_research_rows"] = rows
+    contract = packet.get("universe_research_contract")
+    if isinstance(contract, dict):
+        contract = dict(contract)
+        contract["worker_batch_research_receipt_status"] = receipt.get("status")
+        contract["worker_batch_research_receipt_ready"] = bool(receipt.get("local_worker_research_receipt_ready"))
+        contract["worker_batch_research_receipt_is_not_worker_execution"] = True
+        contract["local_worker_task_record_created"] = bool(receipt.get("local_worker_task_record_created"))
+        contract["worker_task_created"] = False
+        contract["worker_task_executed"] = False
+        contract["worker_started"] = False
+        contract["large_universe_pipeline_done"] = False
+        contract["cross_sectional_rank_zscore_done"] = False
+        contract["zscore_done"] = False
         contract["neutralization_done"] = False
         contract["factor_combination_research_done"] = False
         contract["full_pool_validation_done"] = False
@@ -6931,6 +7383,87 @@ def run_factor_universe_worker_batch_execution_request_task(payload: Any = None)
         status="success",
         progress=1.0,
         current_step=str(receipt.get("status") or "factor_universe_worker_batch_execution_request_recorded"),
+        call_ledger=list(receipt.get("call_ledger") or []),
+    ) or task
+    updated["payload_safe"] = payload_safe
+    return updated
+
+
+def run_factor_universe_worker_batch_research_task(payload: Any = None) -> dict[str, Any]:
+    now = _now_iso()
+    base_hub = dict(read_factor_quant_cache())
+    payload_safe = _factor_universe_worker_batch_research_payload(payload, base_hub, now)
+    receipt, rows = _factor_universe_worker_batch_research_receipt(payload_safe, now)
+    payload_safe["universe_worker_batch_research_receipt"] = receipt
+    payload_safe["universe_worker_batch_research_rows"] = rows
+    task = create_task_record(
+        FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_TASK_TYPE,
+        output_packet_key="command_center_factor_quant_hub_packet",
+        payload=payload_safe,
+        current_step="factor_universe_worker_batch_research_receipt_queued",
+        warnings=[
+            "Factor Universe worker-batch research receipt 只记录本地任务收据和 scope lineage，不启动 worker。",
+            "research receipt 不调用 Tushare、DeepSeek 或 GitHub，不读取 Redis/Celery，不计算 production rank/zscore/neutralization，不修改 strategy action，不执行真实交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.25,
+        current_step="building_factor_universe_worker_batch_research_receipt",
+    )
+    receipt["task_id"] = task["task_id"]
+    try:
+        hub = dict(read_factor_quant_cache())
+        hub["universe_worker_batch_research_receipt"] = receipt
+        hub["universe_worker_batch_research_rows"] = rows
+        universe_contract = hub.get("universe_research_contract") if isinstance(hub.get("universe_research_contract"), dict) else {}
+        universe_contract = dict(universe_contract)
+        universe_contract.update(
+            {
+                "worker_batch_research_receipt_status": receipt.get("status"),
+                "worker_batch_research_receipt_ready": bool(receipt.get("local_worker_research_receipt_ready")),
+                "worker_batch_research_receipt_is_not_worker_execution": True,
+                "local_worker_task_record_created": bool(receipt.get("local_worker_task_record_created")),
+                "worker_task_created": False,
+                "worker_task_executed": False,
+                "worker_started": False,
+                "large_universe_pipeline_done": False,
+                "full_pool_validation_done": False,
+                "cross_sectional_rank_zscore_done": False,
+                "zscore_done": False,
+                "neutralization_done": False,
+                "factor_combination_research_done": False,
+                "production_factor_universe_complete": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+        hub["universe_research_contract"] = universe_contract
+        hub["call_ledger"] = list(receipt.get("call_ledger") or []) + list(hub.get("call_ledger") if isinstance(hub.get("call_ledger"), list) else [])
+        warning = "Factor Universe worker-batch research receipt 已生成：本地收据，不启动 worker，不代表全市场/大股票池生产研究完成。"
+        existing_warnings = hub.get("warnings") if isinstance(hub.get("warnings"), list) else []
+        hub["warnings"] = [warning] + [item for item in existing_warnings if item != warning]
+        hub["external_calls_triggered"] = False
+        hub["tushare_called"] = False
+        hub["deepseek_called"] = False
+        hub["github_called"] = False
+        hub["does_not_execute_trades"] = True
+        hub["does_not_modify_strategy_action"] = True
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet("command_center_factor_quant_hub_packet", hub)
+    except Exception as exc:
+        payload_safe["cache_write_error_safe"] = str(exc).splitlines()[0][:240]
+    updated = update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step=str(receipt.get("status") or "factor_universe_worker_batch_research_receipt_recorded"),
         call_ledger=list(receipt.get("call_ledger") or []),
     ) or task
     updated["payload_safe"] = payload_safe
@@ -7555,6 +8088,8 @@ def create_factor_task(task_type: str, payload: Any = None) -> dict[str, Any]:
         return run_factor_universe_worker_batch_dry_run_task(payload)
     if task_type == "run_factor_universe_worker_batch_execution_request":
         return run_factor_universe_worker_batch_execution_request_task(payload)
+    if task_type == FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_TASK_TYPE:
+        return run_factor_universe_worker_batch_research_task(payload)
     if task_type == "run_factor_test_provider_small_pool_acceptance_dry_run":
         return run_factor_test_provider_small_pool_acceptance_dry_run_task(payload)
     if task_type == "run_factor_test_provider_small_pool_execution_request":

@@ -52,6 +52,12 @@ def request_factor_universe_worker_batch_execution(payload: dict[str, Any] | Non
     return task_envelope(task)
 
 
+@router.post("/universe-worker-batch-research")
+def record_factor_universe_worker_batch_research(payload: dict[str, Any] | None = None) -> dict:
+    task = factor_service.create_factor_task("run_factor_universe_worker_batch_research", payload)
+    return task_envelope(task)
+
+
 @router.post("/provider-small-pool-dry-run")
 def dry_run_factor_test_provider_small_pool(payload: dict[str, Any] | None = None) -> dict:
     task = factor_service.create_factor_task("run_factor_test_provider_small_pool_acceptance_dry_run", payload)

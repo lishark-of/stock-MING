@@ -69,6 +69,7 @@ export default function FactorQuantHub() {
   const universeWorkerBatchDryRun = packet.universe_worker_batch_dry_run_receipt ?? {};
   const universeWorkerBatchExecutionRecipe = packet.universe_worker_batch_execution_recipe ?? {};
   const universeWorkerBatchExecutionRequest = packet.universe_worker_batch_execution_request_receipt ?? {};
+  const universeWorkerBatchResearchReceipt = packet.universe_worker_batch_research_receipt ?? {};
   const universeDurableEvidenceRecipe = packet.universe_durable_evidence_recipe ?? {};
   const universeResearchTaskPlan = packet.universe_research_task_plan ?? {};
   const universeLocalRankZscore = packet.universe_local_rank_zscore_dry_run ?? {};
@@ -133,6 +134,8 @@ export default function FactorQuantHub() {
   const universeWorkerBatchExecutionPhaseRows = toRows(packet.universe_worker_batch_execution_rows);
   const universeWorkerBatchExecutionRequestRows = objectRows(universeWorkerBatchExecutionRequest as Record<string, unknown>, "universe_worker_batch_execution_request");
   const universeWorkerBatchExecutionRequestCriterionRows = toRows(packet.universe_worker_batch_execution_request_rows);
+  const universeWorkerBatchResearchRows = objectRows(universeWorkerBatchResearchReceipt as Record<string, unknown>, "universe_worker_batch_research_receipt");
+  const universeWorkerBatchResearchCriterionRows = toRows(packet.universe_worker_batch_research_rows);
   const universeDurableEvidenceRecipeRows = objectRows(universeDurableEvidenceRecipe as Record<string, unknown>, "universe_durable_evidence_recipe");
   const universeDurableEvidenceRows = toRows(packet.universe_durable_evidence_rows);
   const universeResearchTaskPlanRows = objectRows(universeResearchTaskPlan as Record<string, unknown>, "universe_read_plan");
@@ -531,6 +534,10 @@ export default function FactorQuantHub() {
       <p className="risk-note">universe_worker_batch_execution_request_receipt 只绑定 latest dry-run scope hash、用户确认和未来 worker task 目标；不创建 worker task、不启动 worker、不调用 Tushare/DeepSeek/GitHub、不计算 rank/zscore/neutralization，也不代表 full-pool production research。</p>
       <DataLineageTable rows={universeWorkerBatchExecutionRequestCriterionRows} />
       <DataLineageTable rows={universeWorkerBatchExecutionRequestRows} />
+      <h3>Factor Universe worker-batch research receipt</h3>
+      <p className="risk-note">universe_worker_batch_research_receipt 只记录按钮门控的本地 task receipt 和 scope lineage；不启动 worker、不 ping Redis/Celery、不调用 Tushare/DeepSeek/GitHub、不计算 production rank/zscore/neutralization，也不代表 full-pool production research。</p>
+      <DataLineageTable rows={universeWorkerBatchResearchCriterionRows} />
+      <DataLineageTable rows={universeWorkerBatchResearchRows} />
       <h3>Factor Universe durable evidence recipe</h3>
       <p className="risk-note">factor_universe_durable_evidence_recipe 只固定 LTG-04 worker-backed / full-pool 生产验收直接证据清单；不启动 worker、不调用 Tushare/DeepSeek/GitHub、不在前端计算 rank/zscore、不进入 strategy action，也不代表 production_factor_universe_complete。</p>
       <DataLineageTable rows={universeDurableEvidenceRows} />

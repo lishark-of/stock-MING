@@ -371,10 +371,10 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
         "ltg_ids": ["LTG-04"],
         "action_label": "Bind Factor universe worker-batch research scope evidence",
         "mode_layer": "button_task_then_future_worker_execution",
-        "current_phase": "worker_batch_scope_ticket_and_execution_request_required",
+        "current_phase": "worker_batch_scope_ticket_execution_request_and_local_research_receipt_required",
         "first_allowed_route": "POST /api/factor-quant/universe-worker-batch-dry-run",
         "second_allowed_route": "POST /api/factor-quant/universe-worker-batch-execution-request",
-        "future_provider_route": "future explicit factor universe worker-batch research task",
+        "future_provider_route": "future worker runtime storage metric and promotion evidence",
         "target_acceptance_mode": "worker_backed_factor_universe_research_pipeline",
         "required_evidence": [
             "approved universe worker-batch scope ticket",
@@ -714,6 +714,12 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "task_type": "run_factor_universe_worker_batch_execution_request",
             "receipt_key": "universe_worker_batch_execution_request_receipt",
             "route": "POST /api/factor-quant/universe-worker-batch-execution-request",
+        },
+        {
+            "phase_key": "factor_universe_worker_batch_local_research_receipt",
+            "task_type": "run_factor_universe_worker_batch_research",
+            "receipt_key": "universe_worker_batch_research_receipt",
+            "route": "POST /api/factor-quant/universe-worker-batch-research",
         },
         {
             "phase_key": "factor_universe_durable_evidence_recipe",
@@ -1652,6 +1658,13 @@ def _build_ltg_next_action_submission_preview_rows(
             "safe_payload_summary": "approved_by_user plus latest Factor universe worker-batch dry-run scope hash",
             "expected_local_receipt": "universe_worker_batch_execution_request_receipt",
             "required_prior_phase_key": "factor_universe_worker_batch_dry_run_scope_ticket",
+            "required_prior_material": "receipt_scope_hash",
+        },
+        "POST /api/factor-quant/universe-worker-batch-research": {
+            "step_kind": "local_factor_universe_worker_batch_research_receipt",
+            "safe_payload_summary": "approved_by_user plus latest Factor universe execution-request scope hash; local receipt only",
+            "expected_local_receipt": "universe_worker_batch_research_receipt",
+            "required_prior_phase_key": "factor_universe_worker_batch_execution_request_ticket",
             "required_prior_material": "receipt_scope_hash",
         },
         "POST /api/candidate-radar/quant-projection-acceptance-dry-run": {

@@ -456,6 +456,7 @@ const LTG_NEXT_ACCEPTANCE_LOCAL_ROUTES = new Set([
   "/api/factor-quant/provider-small-pool-execution-request",
   "/api/factor-quant/universe-worker-batch-dry-run",
   "/api/factor-quant/universe-worker-batch-execution-request",
+  "/api/factor-quant/universe-worker-batch-research",
   "/api/candidate-radar/quant-projection-acceptance-dry-run",
   "/api/candidate-radar/quant-projection-execution-request",
   "/api/candidate-radar/production-promotion-dry-run",
