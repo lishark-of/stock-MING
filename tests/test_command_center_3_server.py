@@ -21464,6 +21464,34 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(
             any(row["api"] == "local_candidate_radar_production_promotion_dry_run" for row in packet["call_ledger"])
         )
+
+        rebuild = self.client.post(
+            "/api/candidate-radar/provider-parity-dry-run",
+            json={
+                "candidate_symbols": ["002837.SZ"],
+                "selected_signal_groups": ["moneyflow", "dragon_tiger", "hard_risk", "unknown_group"],
+                "include_tushare": True,
+                "include_deepseek": True,
+                "user_approved": True,
+            },
+        ).json()
+        self.assertTrue(rebuild["ok"])
+        rebuilt = self.client.get("/api/candidate-radar/cache").json()["data"]
+        self.assertEqual(
+            rebuilt["candidate_radar_production_replacement_review_receipt"]["status"],
+            "candidate_radar_production_replacement_review_ready_production_blocked",
+        )
+        self.assertEqual(
+            rebuilt["candidate_radar_production_promotion_dry_run_receipt"]["status"],
+            "candidate_radar_production_promotion_dry_run_ready_production_still_blocked",
+        )
+        self.assertTrue(
+            rebuilt["candidate_radar_production_promotion_dry_run_receipt"]["ready_for_local_promotion_review"]
+        )
+        self.assertFalse(rebuilt["candidate_radar_production_promotion_dry_run_receipt"]["external_calls_triggered"])
+        self.assertFalse(rebuilt["candidate_radar_production_promotion_dry_run_receipt"]["tushare_called"])
+        self.assertFalse(rebuilt["candidate_radar_production_promotion_dry_run_receipt"]["deepseek_called"])
+        self.assertFalse(rebuilt["candidate_radar_production_promotion_dry_run_receipt"]["github_called"])
         self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))

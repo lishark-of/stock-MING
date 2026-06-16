@@ -52,6 +52,33 @@ CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_ROUTE = "POST /api/candidate-radar/produ
 CANDIDATE_PRODUCTION_PROMOTION_DRY_RUN_SCHEMA_VERSION = "candidate_radar_production_promotion_dry_run.v1"
 CANDIDATE_PRODUCTION_PROMOTION_DRY_RUN_TASK_TYPE = "run_candidate_radar_production_promotion_dry_run"
 CANDIDATE_PRODUCTION_PROMOTION_DRY_RUN_ROUTE = "POST /api/candidate-radar/production-promotion-dry-run"
+CANDIDATE_RADAR_PERSISTED_RECEIPT_SPECS = (
+    (
+        "candidate_radar_worker_execution_request_receipt",
+        "candidate_radar_worker_execution_request_rows",
+        CANDIDATE_WORKER_EXECUTION_REQUEST_SCHEMA_VERSION,
+    ),
+    (
+        "candidate_radar_full_pool_worker_fallback_receipt",
+        "candidate_radar_full_pool_worker_fallback_rows",
+        CANDIDATE_FULL_POOL_WORKER_FALLBACK_SCHEMA_VERSION,
+    ),
+    (
+        "candidate_radar_deep_scan_worker_fallback_receipt",
+        "candidate_radar_deep_scan_worker_fallback_rows",
+        CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_SCHEMA_VERSION,
+    ),
+    (
+        "candidate_radar_production_replacement_review_receipt",
+        "candidate_radar_production_replacement_review_rows",
+        CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_SCHEMA_VERSION,
+    ),
+    (
+        "candidate_radar_production_promotion_dry_run_receipt",
+        "candidate_radar_production_promotion_dry_run_rows",
+        CANDIDATE_PRODUCTION_PROMOTION_DRY_RUN_SCHEMA_VERSION,
+    ),
+)
 CANDIDATE_RADAR_DURABLE_EVIDENCE_SCHEMA_VERSION = "candidate_radar_durable_evidence_recipe.v1"
 CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS = (
     "cache_render_boundary_visible",
@@ -471,6 +498,25 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _preserve_candidate_radar_persisted_receipts(
+    packet: Mapping[str, Any],
+    previous_packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    view = dict(packet)
+    for receipt_key, rows_key, schema_version in CANDIDATE_RADAR_PERSISTED_RECEIPT_SPECS:
+        if isinstance(view.get(receipt_key), dict):
+            continue
+        previous_receipt = _as_dict(previous_packet.get(receipt_key))
+        if previous_receipt.get("schema_version") != schema_version:
+            continue
+        view[receipt_key] = previous_receipt
+        previous_rows = [row for row in _as_list(previous_packet.get(rows_key)) if isinstance(row, dict)]
+        if not previous_rows:
+            previous_rows = [row for row in _as_list(previous_receipt.get("rows")) if isinstance(row, dict)]
+        view[rows_key] = previous_rows
+    return view
 
 
 def _first_non_empty(mapping: Mapping[str, Any], keys: list[str]) -> Any:
@@ -10499,6 +10545,7 @@ def _build_candidate_radar_packet(
     }
     if not candidate_rows:
         packet["warnings"].append("当前没有可展示候选；3.0 cache 页不会自动刷新或扫描。")
+    packet = _preserve_candidate_radar_persisted_receipts(packet, previous_map)
     packet = _attach_quick_scan_receipt_contract(packet)
     task_pipeline_contract, task_pipeline_rows = _fast_scan_task_pipeline_contract(packet)
     counts = dict(_as_dict(packet.get("counts")))
