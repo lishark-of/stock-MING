@@ -476,6 +476,7 @@ const LTG_NEXT_ACCEPTANCE_LOCAL_ROUTES = new Set([
   "/api/candidate-radar/production-promotion-dry-run",
   "/api/candidate-radar/legacy-retirement-review",
   "/api/candidate-radar/production-promotion-review",
+  "/api/storage/backtest-results/schema-seed",
   "/api/storage/physical-execution-request",
   "/api/worker/synthetic-healthcheck",
   "/api/worker/activation-review",
@@ -566,6 +567,13 @@ export function postStorageArtifactCleanupDryRun(payload: Record<string, unknown
 
 export function postStorageSchemaValidationDryRun(payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>("/api/storage/schema-validation/dry-run", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function postStorageBacktestResultsSchemaSeed(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/storage/backtest-results/schema-seed", {
     method: "POST",
     body: JSON.stringify(payload)
   });

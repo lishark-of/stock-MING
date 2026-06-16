@@ -8,6 +8,7 @@ import {
   postStorageArtifactCleanupDryRun,
   postStorageCacheTtlDryRun,
   postStorageCompactionDryRun,
+  postStorageBacktestResultsSchemaSeed,
   postStorageDatasetVersionManifestDryRun,
   postStorageDatasetVersionManifestReview,
   postStorageDatasetVersionManifestValidate,
@@ -85,6 +86,8 @@ export default function StorageOverview() {
   const [dryRunReceipt, setDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [schemaValidationTaskId, setSchemaValidationTaskId] = useState("");
   const [schemaValidationReceipt, setSchemaValidationReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [backtestSchemaSeedTaskId, setBacktestSchemaSeedTaskId] = useState("");
+  const [backtestSchemaSeedReceipt, setBacktestSchemaSeedReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [schemaAcceptanceTaskId, setSchemaAcceptanceTaskId] = useState("");
   const [schemaAcceptanceReceipt, setSchemaAcceptanceReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [manifestDryRunTaskId, setManifestDryRunTaskId] = useState("");
@@ -156,6 +159,16 @@ export default function StorageOverview() {
     void postStorageSchemaValidationDryRun({ source: "storage_overview_button" }).then((res) => {
       setSchemaValidationReceipt(res);
       if (res.ok) setSchemaValidationTaskId(res.data.task_id);
+    });
+  const launchBacktestResultsSchemaSeed = () =>
+    void postStorageBacktestResultsSchemaSeed({
+      source: "storage_overview_button",
+      target_dataset: "backtest_results",
+      confirm_schema_seed: true,
+      write_backtest_rows_allowed: false
+    }).then((res) => {
+      setBacktestSchemaSeedReceipt(res);
+      if (res.ok) setBacktestSchemaSeedTaskId(res.data.task_id);
     });
   const launchSchemaValidationAcceptance = () =>
     void postStorageSchemaValidationAcceptance({ source: "storage_overview_button" }).then((res) => {
@@ -404,6 +417,9 @@ export default function StorageOverview() {
   const schemaValidationAcceptanceEvidenceRows =
     (overview.schema_validation_acceptance_evidence_rows as Array<Record<string, unknown>> | undefined) ??
     ((storageCatalog.schema_validation_acceptance_evidence_rows as Array<Record<string, unknown>> | undefined) ?? []);
+  const backtestResultsSchemaSeedEvidence =
+    (overview.backtest_results_schema_seed_evidence as Record<string, unknown> | undefined) ??
+    ((storageCatalog.backtest_results_schema_seed_evidence as Record<string, unknown> | undefined) ?? {});
 
   return (
     <>
@@ -468,6 +484,7 @@ export default function StorageOverview() {
           { label: "version validations", value: datasetVersionPolicy.physical_dataset_version_validated_count ?? overview.physical_dataset_version_validated_count ?? 0 },
           { label: "manifest evidence", value: String(datasetVersionManifestEvidence.status ?? overview.dataset_version_manifest_evidence_status ?? "manifest_missing_validation_pending") },
           { label: "manifest validated", value: datasetVersionManifestEvidence.validated_dataset_count ?? overview.dataset_version_manifest_evidence_validated_count ?? 0 },
+          { label: "backtest schema seed", value: String(backtestResultsSchemaSeedEvidence.status ?? overview.backtest_results_schema_seed_status ?? "missing"), tone: backtestResultsSchemaSeedEvidence.schema_seed_ready_for_schema_acceptance === true ? "good" : "warn" },
           { label: "schema acceptance", value: String(schemaValidationAcceptanceEvidence.status ?? productionReadiness.schema_validation_acceptance_evidence_status ?? "schema_acceptance_evidence_meta_missing") },
           { label: "schema accepted", value: schemaValidationAcceptanceEvidence.accepted_dataset_count ?? productionReadiness.schema_validation_acceptance_accepted_dataset_count ?? 0 },
           { label: "migration rows", value: schemaMigrationRows.length },
@@ -537,6 +554,22 @@ export default function StorageOverview() {
 
       <PacketCard title="Storage production blocker rows" subtitle="schema、version、partition、compaction、TTL refresh 与 query service 的生产缺口" status="storage_production_blocker_rows">
         <DataLineageTable rows={storageProductionBlockerRows} />
+      </PacketCard>
+
+      <PacketCard title="backtest_results schema seed" subtitle="按钮门控写入 ignored 本地空 schema；不写 mock 回测结果、不代表生产 storage 完成" status={String(backtestResultsSchemaSeedEvidence.status ?? "backtest_results_schema_seed_missing")}>
+        <p>target_dataset: {String(backtestResultsSchemaSeedEvidence.target_dataset ?? "backtest_results")}</p>
+        <p>schema_seed_ready_for_schema_acceptance: {String(backtestResultsSchemaSeedEvidence.schema_seed_ready_for_schema_acceptance ?? false)}</p>
+        <p>schema_seed_write_executed: {String(backtestResultsSchemaSeedEvidence.schema_seed_write_executed ?? false)}</p>
+        <p>row_count_written / expected: {String(backtestResultsSchemaSeedEvidence.row_count_written ?? 0)} / {String(backtestResultsSchemaSeedEvidence.expected_row_count_written ?? 0)}</p>
+        <p>writes_backtest_result_rows / mock_backtest_result_written: {String(backtestResultsSchemaSeedEvidence.writes_backtest_result_rows ?? false)} / {String(backtestResultsSchemaSeedEvidence.mock_backtest_result_written ?? false)}</p>
+        <p>post_task_reads_row_payloads / reads_env_files: {String(backtestResultsSchemaSeedEvidence.post_task_reads_row_payloads ?? false)} / {String(backtestResultsSchemaSeedEvidence.post_task_reads_env_files ?? false)}</p>
+        <p>Tushare / DeepSeek / GitHub: {String(backtestResultsSchemaSeedEvidence.tushare_called ?? false)} / {String(backtestResultsSchemaSeedEvidence.deepseek_called ?? false)} / {String(backtestResultsSchemaSeedEvidence.github_called ?? false)}</p>
+        <p>allowed_next_step: {String(backtestResultsSchemaSeedEvidence.allowed_next_step ?? "POST /api/storage/schema-validation/acceptance")}</p>
+        <div className="actions">
+          <button onClick={launchBacktestResultsSchemaSeed}>写入 backtest_results schema seed</button>
+        </div>
+        <TaskLaunchReceipt receipt={backtestSchemaSeedReceipt} />
+        <TaskStatusPanel taskId={backtestSchemaSeedTaskId} onSuccess={refreshStorage} />
       </PacketCard>
 
       <PacketCard title="Schema validation acceptance evidence" subtitle="读取最新按钮门控 schema acceptance packet；GET 只读，不创建 meta、不写 Parquet" status={String(schemaValidationAcceptanceEvidence.status ?? "schema_acceptance_evidence_missing")}>

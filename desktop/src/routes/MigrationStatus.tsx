@@ -166,6 +166,14 @@ function ltgNextStepPayload(row: Record<string, unknown>): Record<string, unknow
       source: "migration_status_ltg_next_action"
     };
   }
+  if (route === "POST /api/storage/backtest-results/schema-seed") {
+    return {
+      source: "migration_status_ltg_next_action",
+      confirm_schema_seed: true,
+      target_dataset: "backtest_results",
+      write_backtest_rows_allowed: false
+    };
+  }
   if (route === "POST /api/storage/physical-execution-request") {
     const preview = nextLocalStepPreview(row);
     return {

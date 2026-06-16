@@ -763,6 +763,12 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
     ],
     "p4_storage_physical_execution": [
         {
+            "phase_key": "storage_backtest_results_schema_seed_receipt",
+            "task_type": "run_storage_backtest_results_schema_seed",
+            "receipt_key": "backtest_results_schema_seed_evidence",
+            "route": "POST /api/storage/backtest-results/schema-seed",
+        },
+        {
             "phase_key": "storage_schema_validation_acceptance_receipt",
             "task_type": "run_storage_schema_validation_acceptance",
             "receipt_key": "schema_validation_acceptance_evidence",
@@ -1256,6 +1262,8 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "ci_mirror_ready",
         "push_readiness_receipt_ready",
         "ready_for_explicit_push_sequence",
+        "local_schema_seed_ready",
+        "schema_seed_ready_for_schema_acceptance",
         "manifest_write_plan_ready",
         "manifest_write_executed",
         "dataset_version_manifest_validated",
@@ -1266,6 +1274,7 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "trade_cal_acceptance_dry_run_ready_real_execution_still_blocked",
         "trade_cal_provider_acceptance_promotion_review_recorded_blockers_visible",
         "synthetic_healthcheck_passed_local_task_store_only",
+        "backtest_results_schema_seed_ready_for_schema_acceptance",
         "schema_acceptance_evidence_passed_all_local_datasets",
         "schema_acceptance_passed_all_local_datasets",
         "manifest_review_ready_for_manual_write",
@@ -1777,11 +1786,18 @@ def _build_ltg_next_action_submission_preview_rows(
             "required_prior_phase_key": "radar_production_promotion_dry_run_ticket",
             "required_prior_material": "receipt_scope_hash",
         },
+        "POST /api/storage/backtest-results/schema-seed": {
+            "step_kind": "local_backtest_results_zero_row_schema_seed",
+            "safe_payload_summary": "confirm_schema_seed=true; writes only ignored local backtest_results Parquet empty schema, no mock rows, no provider",
+            "expected_local_receipt": "backtest_results_schema_seed_evidence",
+            "required_prior_phase_key": "",
+            "required_prior_material": "",
+        },
         "POST /api/storage/schema-validation/acceptance": {
             "step_kind": "local_storage_schema_validation_acceptance",
             "safe_payload_summary": "source only; reads local Parquet schema metadata, no row payload, no write, no provider",
             "expected_local_receipt": "schema_validation_acceptance_evidence",
-            "required_prior_phase_key": "",
+            "required_prior_phase_key": "storage_backtest_results_schema_seed_receipt",
             "required_prior_material": "",
         },
         "POST /api/storage/dataset-version-manifest/dry-run": {

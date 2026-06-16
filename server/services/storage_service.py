@@ -19,6 +19,7 @@ SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 ARTIFACT_CLEANUP_DRY_RUN_PACKET_KEY = "command_center_3_storage_artifact_cleanup_dry_run_packet"
 SCHEMA_VALIDATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_schema_validation_dry_run_packet"
 SCHEMA_VALIDATION_ACCEPTANCE_PACKET_KEY = "command_center_3_storage_schema_validation_acceptance_packet"
+BACKTEST_RESULTS_SCHEMA_SEED_PACKET_KEY = "command_center_3_storage_backtest_results_schema_seed_packet"
 PARTITION_MIGRATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_partition_migration_dry_run_packet"
 COMPACTION_DRY_RUN_PACKET_KEY = "command_center_3_storage_compaction_dry_run_packet"
 CACHE_TTL_DRY_RUN_PACKET_KEY = "command_center_3_storage_cache_ttl_dry_run_packet"
@@ -1722,6 +1723,188 @@ def run_storage_schema_validation_dry_run_task(payload: Any = None) -> dict[str,
     ) or task
 
 
+def storage_backtest_results_schema_seed_packet(
+    *,
+    task_id: str | None = None,
+    payload_safe: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload_safe = payload_safe or {}
+    dataset = "backtest_results"
+    contract = _schema_contract(dataset)
+    required_columns = [str(column) for column in contract.get("required_columns") or []]
+    confirm_schema_seed = payload_safe.get("confirm_schema_seed") is True
+    dataset_path = parquet_store.dataset_path(root=PARQUET_ROOT, name=dataset)
+    dependency = parquet_store.dependency_status()
+    write_result: dict[str, Any] = {}
+    write_error = ""
+    schema_seed_write_executed = False
+    if not confirm_schema_seed:
+        status = "backtest_results_schema_seed_blocked_confirmation_required"
+    elif not dependency.get("available"):
+        status = "backtest_results_schema_seed_dependency_missing"
+    else:
+        try:
+            import pandas as pd
+
+            seed_frame = pd.DataFrame({column: pd.Series(dtype="string") for column in required_columns})
+            write_result = parquet_store.write_dataset(seed_frame, root=PARQUET_ROOT, name=dataset)
+            schema_seed_write_executed = write_result.get("status") == "written"
+        except Exception as exc:
+            write_error = _safe_error_message(exc)
+            schema_seed_write_executed = False
+        if schema_seed_write_executed:
+            status = "backtest_results_schema_seed_written_validation_pending"
+        else:
+            status = str(write_result.get("status") or "backtest_results_schema_seed_write_failed")
+    post_seed_schema_metadata = parquet_store.dataset_schema_metadata(root=PARQUET_ROOT, name=dataset)
+    physical_columns = [str(column) for column in post_seed_schema_metadata.get("columns") or []]
+    missing_required_columns = [column for column in required_columns if column not in physical_columns]
+    post_seed_schema_validated = (
+        post_seed_schema_metadata.get("status") == "ready"
+        and not missing_required_columns
+        and post_seed_schema_metadata.get("schema_read_done") is True
+    )
+    if schema_seed_write_executed and post_seed_schema_validated:
+        status = "backtest_results_schema_seed_ready_for_schema_acceptance"
+    elif schema_seed_write_executed:
+        status = "backtest_results_schema_seed_written_validation_blocked"
+    row_count_written = int(write_result.get("row_count") or 0) if schema_seed_write_executed else 0
+    schema_seed_ready = status == "backtest_results_schema_seed_ready_for_schema_acceptance"
+    return {
+        "schema_version": "command_center_3_storage_backtest_results_schema_seed.v1",
+        "packet_key": BACKTEST_RESULTS_SCHEMA_SEED_PACKET_KEY,
+        "task_id": str(task_id or ""),
+        "status": status,
+        "mode": "button_gated_local_schema_seed",
+        "scope": "local_backtest_results_zero_row_schema_seed_before_storage_acceptance",
+        "target_dataset": dataset,
+        "target_schema_version": contract.get("schema_version"),
+        "dataset_path": _path_label(dataset_path),
+        "confirm_schema_seed": confirm_schema_seed,
+        "schema_seed_ready_for_schema_acceptance": schema_seed_ready,
+        "local_schema_seed_ready": schema_seed_ready,
+        "schema_seed_write_executed": schema_seed_write_executed,
+        "schema_seed_written_on_post": schema_seed_write_executed,
+        "schema_seed_written_on_get": False,
+        "schema_seed_writes_parquet": schema_seed_write_executed,
+        "writes_only_ignored_local_parquet": True,
+        "writes_backtest_result_rows": False,
+        "mock_backtest_result_written": False,
+        "row_count_written": row_count_written,
+        "expected_row_count_written": 0,
+        "required_columns": required_columns,
+        "physical_columns": physical_columns,
+        "missing_required_columns": missing_required_columns,
+        "missing_required_column_count": len(missing_required_columns),
+        "post_seed_schema_metadata": {
+            **dict(post_seed_schema_metadata),
+            "path": _path_label(Path(str(post_seed_schema_metadata.get("path") or dataset_path))),
+        },
+        "post_seed_schema_validated": post_seed_schema_validated,
+        "post_seed_reads_row_payloads": False,
+        "cache_get_writes_files": False,
+        "post_task_writes_files": schema_seed_write_executed,
+        "post_task_writes_parquet": schema_seed_write_executed,
+        "post_task_reads_row_payloads": False,
+        "post_task_reads_env_files": False,
+        "writes_manifest": False,
+        "manifest_write_executed": False,
+        "schema_migration_executed": False,
+        "partition_migration_executed": False,
+        "physical_compaction_executed": False,
+        "cache_ttl_refresh_executed": False,
+        "production_storage_complete": False,
+        "allowed_next_step": "POST /api/storage/schema-validation/acceptance" if schema_seed_ready else "",
+        "manual_schema_acceptance_required_after_seed": schema_seed_ready,
+        "request_params_safe": {
+            "source": payload_safe.get("source") or "storage_page_button",
+            "target_dataset": dataset,
+            "confirm_schema_seed": confirm_schema_seed,
+            "external_sources_allowed": False,
+            "write_backtest_rows_allowed": False,
+            "write_parquet_schema_seed_allowed": confirm_schema_seed,
+        },
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "contains_secret": False,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_backtest_results_schema_seed",
+            endpoint="POST /api/storage/backtest-results/schema-seed",
+            status=status,
+            dataset=dataset,
+            row_count=row_count_written,
+            path=_path_label(dataset_path),
+        ),
+        "warnings": [
+            "POST /api/storage/backtest-results/schema-seed 只在确认后写入 ignored 本地 Parquet 空 schema；不会写入任何回测结果行。",
+            "backtest_results schema seed 不调用 Tushare、DeepSeek、GitHub，不执行真实交易，不修改 strategy action，也不代表生产 storage 完成。",
+        ],
+        **({"dependency": dependency} if not dependency.get("available") else {}),
+        **({"write_result": {**write_result, "path": _path_label(Path(str(write_result.get("path") or dataset_path)))}} if write_result else {}),
+        **({"error_message_safe": write_error} if write_error else {}),
+    }
+
+
+def run_storage_backtest_results_schema_seed_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_page_button",
+        "target_dataset": "backtest_results",
+        "confirm_schema_seed": payload_map.get("confirm_schema_seed") is True,
+        "external_sources_allowed": False,
+        "write_backtest_rows_allowed": False,
+    }
+    task = task_service.create_task_record(
+        "run_storage_backtest_results_schema_seed",
+        output_packet_key=BACKTEST_RESULTS_SCHEMA_SEED_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_backtest_results_schema_seed_queued",
+        warnings=[
+            "backtest_results schema seed 只写 ignored 本地 Parquet 空 schema；不会写 mock 回测行、不会读取凭据、不会调用外部源。",
+            "本任务只解除 schema metadata 验收前的本地 dataset 缺口，不执行 schema migration、partition、compaction、TTL、manifest 或生产 promotion。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.45,
+        current_step="writing_backtest_results_zero_row_schema_seed",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_backtest_results_schema_seed_packet(task_id=task["task_id"], payload_safe=payload_safe)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(BACKTEST_RESULTS_SCHEMA_SEED_PACKET_KEY, packet)
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="storage_backtest_results_schema_seed_packet_persist_failed",
+            error_message_safe="storage_backtest_results_schema_seed_sqlite_write_failed",
+            call_ledger=packet["call_ledger"],
+            warning="storage_backtest_results_schema_seed_packet_failed_no_external_call",
+        ) or task
+    ready = packet["schema_seed_ready_for_schema_acceptance"] is True
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success" if ready else "failed",
+        progress=1.0,
+        current_step="storage_backtest_results_schema_seed_completed" if ready else "storage_backtest_results_schema_seed_blocked",
+        error_message_safe=None if ready else str(packet.get("status") or "backtest_results_schema_seed_blocked"),
+        call_ledger=packet["call_ledger"],
+        warning="storage_backtest_results_schema_seed_completed_local_only"
+        if ready
+        else "storage_backtest_results_schema_seed_blocked_no_provider_no_trade",
+    ) or task
+
+
 def storage_schema_validation_acceptance_packet(
     *,
     task_id: str | None = None,
@@ -1867,6 +2050,73 @@ def _read_storage_meta_packet_no_init(packet_key: str) -> tuple[Any, str]:
         return json.loads(row[0]), "packet_present"
     except Exception:
         return None, "packet_decode_failed"
+
+
+def storage_backtest_results_schema_seed_evidence() -> dict[str, Any]:
+    packet, read_status = _read_storage_meta_packet_no_init(BACKTEST_RESULTS_SCHEMA_SEED_PACKET_KEY)
+    packet_map = packet if isinstance(packet, Mapping) else {}
+    if read_status == "packet_present" and packet_map:
+        return dict(packet_map)
+    status = f"backtest_results_schema_seed_{read_status}"
+    return {
+        "schema_version": "command_center_3_storage_backtest_results_schema_seed.v1",
+        "packet_key": BACKTEST_RESULTS_SCHEMA_SEED_PACKET_KEY,
+        "task_id": "",
+        "status": status,
+        "mode": "cache_only_latest_schema_seed_evidence",
+        "scope": "read_latest_button_gated_backtest_results_schema_seed_packet",
+        "target_dataset": "backtest_results",
+        "target_schema_version": DATASET_SCHEMA_CONTRACTS["backtest_results"]["schema_version"],
+        "confirm_schema_seed": False,
+        "schema_seed_ready_for_schema_acceptance": False,
+        "local_schema_seed_ready": False,
+        "schema_seed_write_executed": False,
+        "schema_seed_written_on_post": False,
+        "schema_seed_written_on_get": False,
+        "schema_seed_writes_parquet": False,
+        "writes_only_ignored_local_parquet": True,
+        "writes_backtest_result_rows": False,
+        "mock_backtest_result_written": False,
+        "row_count_written": 0,
+        "expected_row_count_written": 0,
+        "required_columns": list(DATASET_SCHEMA_CONTRACTS["backtest_results"]["required_columns"]),
+        "physical_columns": [],
+        "missing_required_columns": list(DATASET_SCHEMA_CONTRACTS["backtest_results"]["required_columns"]),
+        "missing_required_column_count": len(DATASET_SCHEMA_CONTRACTS["backtest_results"]["required_columns"]),
+        "post_seed_schema_validated": False,
+        "post_seed_reads_row_payloads": False,
+        "cache_get_writes_files": False,
+        "post_task_writes_files": False,
+        "post_task_writes_parquet": False,
+        "post_task_reads_row_payloads": False,
+        "post_task_reads_env_files": False,
+        "writes_manifest": False,
+        "manifest_write_executed": False,
+        "schema_migration_executed": False,
+        "partition_migration_executed": False,
+        "physical_compaction_executed": False,
+        "cache_ttl_refresh_executed": False,
+        "production_storage_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "contains_secret": False,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_backtest_results_schema_seed_evidence",
+            endpoint="GET /api/storage",
+            status=status,
+            dataset="backtest_results",
+            row_count=0,
+            path=_path_label(parquet_store.dataset_path(root=PARQUET_ROOT, name="backtest_results")),
+        ),
+        "warnings": [
+            "backtest_results schema seed evidence 只读取已存在的本地 SQLite packet；meta 不存在时不会创建文件。",
+            "该 evidence 不写 Parquet、不执行 migration、不调用 Tushare、DeepSeek、GitHub 或真实交易接口。",
+        ],
+    }
 
 
 def storage_schema_validation_acceptance_evidence_audit() -> dict[str, Any]:
@@ -3029,6 +3279,7 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
     artifact_cleanup_review = dict(artifact_hygiene.get("artifact_cleanup_review_contract") or {})
     schema_migration_preflight = storage_schema_migration_preflight()
     schema_acceptance_evidence = storage_schema_validation_acceptance_evidence_audit()
+    backtest_schema_seed_evidence = storage_backtest_results_schema_seed_evidence()
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
     duckdb_query_service = duckdb_query_service_policy()
@@ -3048,6 +3299,20 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
             "current_backend": "metadata_only_contract_rows",
             "blocking_for_cache_read": False,
             "next_action": "add explicit physical schema validation and migration tasks; never run them from GET cache.",
+        },
+        {
+            "component": "backtest_results_schema_seed_evidence",
+            "status": backtest_schema_seed_evidence["status"],
+            "production_role": "zero-row backtest_results physical schema seed before schema acceptance",
+            "current_backend": "confirm_gated_local_parquet_schema_seed",
+            "blocking_for_cache_read": False,
+            "schema_seed_ready_for_schema_acceptance": backtest_schema_seed_evidence[
+                "schema_seed_ready_for_schema_acceptance"
+            ],
+            "row_count_written": backtest_schema_seed_evidence["row_count_written"],
+            "writes_backtest_result_rows": backtest_schema_seed_evidence["writes_backtest_result_rows"],
+            "mock_backtest_result_written": backtest_schema_seed_evidence["mock_backtest_result_written"],
+            "next_action": "run explicit backtest_results schema seed before schema acceptance when this dataset is missing.",
         },
         {
             "component": "schema_validation_acceptance_evidence",
@@ -3194,6 +3459,22 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "dataset_version_manifest_validate_requires_prior_write": True,
         "schema_contract_policy": "canonical datasets expose local schema contracts; physical validation remains explicit and non-refreshing.",
         "schema_migration_policy": "preflight_only_no_physical_migration_on_get",
+        "backtest_results_schema_seed_evidence": backtest_schema_seed_evidence,
+        "backtest_results_schema_seed_route": "POST /api/storage/backtest-results/schema-seed",
+        "backtest_results_schema_seed_button_gated": True,
+        "backtest_results_schema_seed_requires_confirm": True,
+        "backtest_results_schema_seed_writes_parquet": True,
+        "backtest_results_schema_seed_writes_only_ignored_local_parquet": True,
+        "backtest_results_schema_seed_writes_backtest_result_rows": False,
+        "backtest_results_schema_seed_mock_backtest_result_written": False,
+        "backtest_results_schema_seed_reads_row_payloads": False,
+        "backtest_results_schema_seed_reads_env_files": False,
+        "backtest_results_schema_seed_schema_migration_executed": False,
+        "backtest_results_schema_seed_production_storage_complete": False,
+        "backtest_results_schema_seed_ready_for_schema_acceptance": backtest_schema_seed_evidence[
+            "schema_seed_ready_for_schema_acceptance"
+        ],
+        "backtest_results_schema_seed_row_count_written": backtest_schema_seed_evidence["row_count_written"],
         "schema_migration_preflight_status": schema_migration_preflight["status"],
         "schema_migration_dataset_count": schema_migration_preflight["dataset_count"],
         "schema_migration_executed_count": schema_migration_preflight["migration_executed_count"],
@@ -4786,6 +5067,7 @@ def storage_dataset_catalog() -> dict[str, Any]:
     artifact_hygiene = storage_artifact_hygiene_status()
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
+    backtest_results_schema_seed_evidence = storage_backtest_results_schema_seed_evidence()
     schema_validation_acceptance_evidence = production_readiness.get("schema_validation_acceptance_evidence") or {}
     schema_migration_preflight = storage_schema_migration_preflight()
     duckdb_query_service = duckdb_query_service_policy()
@@ -4836,6 +5118,11 @@ def storage_dataset_catalog() -> dict[str, Any]:
         "dataset_version_manifest_evidence_audit": dataset_version_manifest_evidence,
         "dataset_version_manifest_evidence_rows": dataset_version_manifest_evidence["rows"],
         "dataset_version_manifest_evidence_status_counts": dataset_version_manifest_evidence["status_counts"],
+        "backtest_results_schema_seed_evidence": backtest_results_schema_seed_evidence,
+        "backtest_results_schema_seed_status": backtest_results_schema_seed_evidence.get("status"),
+        "backtest_results_schema_seed_ready": backtest_results_schema_seed_evidence.get(
+            "schema_seed_ready_for_schema_acceptance"
+        ),
         "schema_migration_preflight": schema_migration_preflight,
         "schema_migration_rows": schema_migration_preflight["rows"],
         "schema_migration_status_counts": schema_migration_preflight["status_counts"],
@@ -5117,6 +5404,7 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
     )
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
+    backtest_results_schema_seed_evidence = storage_backtest_results_schema_seed_evidence()
     schema_validation_acceptance_evidence = production_readiness.get("schema_validation_acceptance_evidence") or {}
     schema_migration_preflight = storage_schema_migration_preflight()
     duckdb_query_service = duckdb_query_service_policy()
@@ -5148,6 +5436,11 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "dataset_version_manifest_evidence_status": dataset_version_manifest_evidence["status"],
         "dataset_version_manifest_evidence_validated_count": dataset_version_manifest_evidence["validated_dataset_count"],
         "dataset_version_manifest_evidence_validated": dataset_version_manifest_evidence["dataset_version_manifest_validated"],
+        "backtest_results_schema_seed_evidence": backtest_results_schema_seed_evidence,
+        "backtest_results_schema_seed_status": backtest_results_schema_seed_evidence.get("status"),
+        "backtest_results_schema_seed_ready": backtest_results_schema_seed_evidence.get(
+            "schema_seed_ready_for_schema_acceptance"
+        ),
         "dataset_partition_plan_status": {item["dataset"]: item["partition_plan"]["status"] for item in datasets},
         "dataset_compaction_status": {item["dataset"]: item["compaction_plan"]["status"] for item in datasets},
         "manual_compaction_recommended_count": sum(1 for item in datasets if item["compaction_plan"]["manual_compaction_recommended"]),

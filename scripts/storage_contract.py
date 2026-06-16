@@ -36,6 +36,7 @@ REQUIRED_BLOCKER_CRITERIA = {
 REQUIRED_STORAGE_TASK_TYPES = {
     "run_storage_artifact_cleanup_dry_run",
     "run_storage_schema_validation_dry_run",
+    "run_storage_backtest_results_schema_seed",
     "run_storage_schema_validation_acceptance",
     "run_storage_dataset_version_manifest_dry_run",
     "run_storage_dataset_version_manifest_review",
@@ -188,6 +189,13 @@ def build_contract() -> dict[str, Any]:
     schema_packet = storage_service.storage_schema_validation_dry_run_packet(
         payload_safe={"source": "storage_contract", "external_sources_allowed": False}
     )
+    schema_seed_packet = storage_service.storage_backtest_results_schema_seed_packet(
+        payload_safe={
+            "source": "storage_contract",
+            "confirm_schema_seed": False,
+            "external_sources_allowed": False,
+        }
+    )
     schema_acceptance_packet = storage_service.storage_schema_validation_acceptance_packet(
         payload_safe={"source": "storage_contract", "external_sources_allowed": False}
     )
@@ -251,6 +259,7 @@ def build_contract() -> dict[str, Any]:
         if isinstance(row, dict)
     }
     schema_preflight = _dict(overview.get("schema_migration_preflight"))
+    backtest_schema_seed_evidence = _dict(overview.get("backtest_results_schema_seed_evidence"))
     schema_acceptance_evidence = _dict(overview.get("schema_validation_acceptance_evidence"))
     dataset_version_policy = _dict(overview.get("dataset_version_policy"))
     dataset_version_manifest_evidence = _dict(overview.get("dataset_version_manifest_evidence_audit"))
@@ -748,6 +757,38 @@ def build_contract() -> dict[str, Any]:
             "Schema validation dry-run must read schema metadata only and must not write Parquet or execute migration.",
         ),
         _row(
+            "backtest_results_schema_seed_is_confirm_gated_zero_row",
+            schema_seed_packet.get("schema_version") == "command_center_3_storage_backtest_results_schema_seed.v1"
+            and schema_seed_packet.get("status") == "backtest_results_schema_seed_blocked_confirmation_required"
+            and schema_seed_packet.get("confirm_schema_seed") is False
+            and schema_seed_packet.get("schema_seed_write_executed") is False
+            and schema_seed_packet.get("schema_seed_written_on_post") is False
+            and schema_seed_packet.get("schema_seed_written_on_get") is False
+            and schema_seed_packet.get("schema_seed_ready_for_schema_acceptance") is False
+            and schema_seed_packet.get("target_dataset") == "backtest_results"
+            and schema_seed_packet.get("row_count_written") == 0
+            and schema_seed_packet.get("expected_row_count_written") == 0
+            and schema_seed_packet.get("writes_only_ignored_local_parquet") is True
+            and schema_seed_packet.get("writes_backtest_result_rows") is False
+            and schema_seed_packet.get("mock_backtest_result_written") is False
+            and schema_seed_packet.get("post_task_reads_row_payloads") is False
+            and schema_seed_packet.get("post_task_reads_env_files") is False
+            and schema_seed_packet.get("writes_manifest") is False
+            and schema_seed_packet.get("schema_migration_executed") is False
+            and schema_seed_packet.get("production_storage_complete") is False
+            and _flag_false(schema_seed_packet, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and schema_seed_packet.get("does_not_execute_trades") is True
+            and schema_seed_packet.get("does_not_modify_strategy_action") is True
+            and schema_seed_packet.get("contains_secret") is False
+            and backtest_schema_seed_evidence.get("schema_version")
+            == "command_center_3_storage_backtest_results_schema_seed.v1"
+            and backtest_schema_seed_evidence.get("cache_get_writes_files") is False
+            and backtest_schema_seed_evidence.get("post_task_reads_row_payloads") is False
+            and backtest_schema_seed_evidence.get("writes_backtest_result_rows") is False
+            and backtest_schema_seed_evidence.get("mock_backtest_result_written") is False,
+            "backtest_results schema seed must be a confirm-gated zero-row local Parquet schema seed; GET evidence stays read-only and no mock backtest rows may be written.",
+        ),
+        _row(
             "dataset_version_manifest_review_writes_no_manifest",
             manifest_review_packet.get("schema_version") == "command_center_3_storage_dataset_version_manifest_review.v1"
             and manifest_review_packet.get("status")
@@ -906,6 +947,18 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_storage_schema_validation_acceptance"].get("reads_row_payloads") is False
             and task_rows["run_storage_schema_validation_acceptance"].get("schema_migration_executed") is False
             and task_rows["run_storage_schema_validation_acceptance"].get("production_storage_complete") is False
+            and task_rows["run_storage_backtest_results_schema_seed"].get("current_backend") == "local_schema_seed_pipeline"
+            and task_rows["run_storage_backtest_results_schema_seed"].get("requires_confirm_schema_seed") is True
+            and task_rows["run_storage_backtest_results_schema_seed"].get("writes_parquet_on_post") is True
+            and task_rows["run_storage_backtest_results_schema_seed"].get("writes_only_ignored_local_parquet") is True
+            and task_rows["run_storage_backtest_results_schema_seed"].get("target_dataset") == "backtest_results"
+            and task_rows["run_storage_backtest_results_schema_seed"].get("writes_backtest_result_rows") is False
+            and task_rows["run_storage_backtest_results_schema_seed"].get("mock_backtest_result_written") is False
+            and task_rows["run_storage_backtest_results_schema_seed"].get("writes_manifest_on_post") is False
+            and task_rows["run_storage_backtest_results_schema_seed"].get("reads_row_payloads") is False
+            and task_rows["run_storage_backtest_results_schema_seed"].get("reads_env_files") is False
+            and task_rows["run_storage_backtest_results_schema_seed"].get("schema_migration_executed") is False
+            and task_rows["run_storage_backtest_results_schema_seed"].get("production_storage_complete") is False
             and task_rows["run_storage_dataset_version_manifest_dry_run"].get("writes_manifest_on_post") is False
             and task_rows["run_storage_dataset_version_manifest_dry_run"].get("manifest_write_executed") is False
             and task_rows["run_storage_dataset_version_manifest_review"].get("writes_manifest_on_post") is False
