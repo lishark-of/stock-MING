@@ -27945,6 +27945,35 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["universe_research_contract"]["production_factor_universe_complete"])
         self.assertIn("local_factor_universe_worker_batch_execution_request", {item.get("api") for item in packet["call_ledger"]})
 
+        migration = migration_status_service.build_migration_status()
+        action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        ltg04 = action_rows["p3_factor_universe_worker_batch_research"]
+        self.assertEqual(ltg04["local_receipt_status"], "local_receipts_visible_provider_or_worker_evidence_pending")
+        self.assertEqual(ltg04["local_receipt_step_count"], 4)
+        self.assertEqual(ltg04["required_local_receipt_step_count"], 3)
+        self.assertEqual(ltg04["ready_local_receipt_step_count"], 3)
+        self.assertEqual(ltg04["blocked_local_receipt_step_count"], 0)
+        self.assertEqual(
+            ltg04["next_local_step"],
+            "future explicit factor universe worker-batch research task",
+        )
+        steps = {step["phase_key"]: step for step in ltg04["local_step_rows"]}
+        self.assertTrue(steps["factor_universe_worker_batch_dry_run_scope_ticket"]["local_queue_required"])
+        self.assertTrue(steps["factor_universe_worker_batch_execution_recipe"]["local_queue_required"])
+        self.assertTrue(steps["factor_universe_worker_batch_execution_request_ticket"]["local_queue_required"])
+        self.assertFalse(steps["factor_universe_durable_evidence_recipe"]["local_queue_required"])
+        self.assertFalse(steps["factor_universe_durable_evidence_recipe"]["local_blocked"])
+        handoff = ltg04["future_handoff_preview_rows"][0]
+        self.assertTrue(ltg04["future_handoff_ready_from_local_receipt"])
+        self.assertEqual(handoff["status"], "future_worker_handoff_preview_ready")
+        self.assertEqual(handoff["future_route"], "future POST /api/factor-quant/universe-worker-batch-research")
+        self.assertEqual(handoff["future_task_type"], "run_factor_universe_worker_batch_research")
+        self.assertTrue(handoff["requires_separate_user_approved_worker_task"])
+        self.assertFalse(handoff["requires_separate_user_approved_provider_task"])
+        self.assertFalse(handoff["worker_task_created_by_preview"])
+        self.assertFalse(handoff["worker_execution_implemented_by_preview"])
+        self.assertFalse(handoff["external_calls_triggered"])
+
     def test_factor_universe_worker_batch_execution_request_rejects_scope_mismatch(self):
         self._with_meta_store()
         self._with_parquet_root()

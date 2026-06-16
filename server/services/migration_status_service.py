@@ -1144,8 +1144,12 @@ def _receipt_blocker_count(receipt: dict[str, Any]) -> int:
 def _receipt_target_payload_safe_summary(receipt: dict[str, Any]) -> dict[str, Any]:
     payload = receipt.get("target_payload_safe") if isinstance(receipt.get("target_payload_safe"), dict) else {}
     payload_map = payload if isinstance(payload, dict) else {}
+    target_route = str(receipt.get("target_post_task_route") or receipt.get("target_worker_task_route") or "")
+    target_task_type = str(receipt.get("target_task_type") or receipt.get("target_worker_task_type") or "")
     return {
         "target_payload_present": bool(payload_map),
+        "target_route": target_route,
+        "target_task_type": target_task_type,
         "target_payload_apis": [str(item) for item in payload_map.get("apis") or [] if str(item or "")],
         "target_payload_groups": [
             str(item) for item in payload_map.get("target_sample_acceptance_groups") or [] if str(item or "")
@@ -1283,11 +1287,15 @@ def _build_ltg_next_action_local_step_rows(
             receipt_durability_state = "receipt_visible_without_sqlite_durability"
         target_payload_summary = _receipt_target_payload_safe_summary(receipt_map) if receipt_visible else {}
         local_ready = _receipt_local_ready(receipt_map) if receipt_visible else False
+        local_queue_required = bool(step.get("local_queue_required", True))
+        if str(step.get("phase_key") or "").endswith("durable_evidence_recipe"):
+            local_queue_required = False
         step_rows.append(
             {
                 "phase_key": step["phase_key"],
                 "task_type": task_type,
                 "route": step["route"],
+                "local_queue_required": local_queue_required,
                 "task_found": task_found,
                 "receipt_visible": receipt_visible,
                 "latest_task_id": latest_task.get("task_id") if task_found else fallback.get("task_id", ""),
@@ -1304,8 +1312,8 @@ def _build_ltg_next_action_local_step_rows(
                 "receipt_scope_hash": receipt_scope_hash,
                 "receipt_scope_hash_short": receipt_scope_hash_short,
                 "receipt_blocker_count": _receipt_blocker_count(receipt_map) if receipt_visible else 0,
-                "receipt_target_post_task_route": receipt_map.get("target_post_task_route") or "",
-                "receipt_target_task_type": receipt_map.get("target_task_type") or "",
+                "receipt_target_post_task_route": target_payload_summary.get("target_route") or "",
+                "receipt_target_task_type": target_payload_summary.get("target_task_type") or "",
                 "receipt_target_acceptance_mode": receipt_map.get("target_acceptance_mode") or "",
                 "receipt_target_payload_present": target_payload_summary.get("target_payload_present") is True,
                 "receipt_target_payload_apis": target_payload_summary.get("target_payload_apis") or [],
@@ -1323,11 +1331,27 @@ def _build_ltg_next_action_local_step_rows(
                 "receipt_ready_for_manual_provider_task_submission": (
                     receipt_map.get("ready_for_manual_provider_task_submission") is True
                 ),
+                "receipt_ready_for_manual_worker_task_submission": (
+                    receipt_map.get("ready_for_manual_worker_task_submission") is True
+                ),
+                "receipt_ready_for_manual_provider_model_task_submission": (
+                    receipt_map.get("ready_for_manual_provider_model_task_submission") is True
+                ),
+                "receipt_ready_for_manual_physical_task_submission": (
+                    receipt_map.get("ready_for_manual_physical_task_submission") is True
+                ),
+                "receipt_ready_for_manual_runtime_qa_task_submission": (
+                    receipt_map.get("ready_for_manual_runtime_qa_task_submission") is True
+                ),
                 "receipt_creates_provider_task": receipt_map.get("creates_provider_task") is True,
                 "receipt_provider_task_created": receipt_map.get("provider_task_created") is True,
                 "receipt_provider_execution_implemented": receipt_map.get("provider_execution_implemented") is True,
+                "receipt_creates_worker_task": receipt_map.get("creates_worker_task") is True,
+                "receipt_worker_task_created": receipt_map.get("worker_task_created") is True,
+                "receipt_worker_execution_implemented": receipt_map.get("worker_execution_implemented") is True,
+                "receipt_worker_started": receipt_map.get("worker_started") is True,
                 "local_ready": local_ready,
-                "local_blocked": bool(receipt_visible and not local_ready),
+                "local_blocked": bool(local_queue_required and receipt_visible and not local_ready),
                 "creates_task_from_lookup": False,
                 "lookup_calls_provider": False,
                 "external_calls_triggered": False,
@@ -1896,11 +1920,23 @@ def _build_ltg_future_handoff_preview_rows(
     next_local_step: str,
     local_step_rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    def _ready_for_future_handoff(row: dict[str, Any]) -> bool:
+        return any(
+            row.get(key) is True
+            for key in (
+                "receipt_ready_for_manual_provider_task_submission",
+                "receipt_ready_for_manual_worker_task_submission",
+                "receipt_ready_for_manual_provider_model_task_submission",
+                "receipt_ready_for_manual_physical_task_submission",
+                "receipt_ready_for_manual_runtime_qa_task_submission",
+            )
+        )
+
     latest_ready_step = next(
         (
             row
             for row in reversed(local_step_rows)
-            if row.get("receipt_visible") is True and row.get("receipt_ready_for_manual_provider_task_submission") is True
+            if row.get("receipt_visible") is True and _ready_for_future_handoff(row)
         ),
         {},
     )
@@ -1909,16 +1945,31 @@ def _build_ltg_future_handoff_preview_rows(
         or (next_local_step if next_local_step.startswith("POST /api/") else "")
     )
     durable_local_receipt = latest_ready_step.get("receipt_durable_in_sqlite") is True
+    future_material_visible = bool(
+        latest_ready_step.get("receipt_target_payload_present")
+        or latest_ready_step.get("receipt_target_task_type")
+        or latest_ready_step.get("receipt_target_acceptance_mode")
+        or route
+    )
     handoff_ready = bool(
         latest_ready_step
         and durable_local_receipt
-        and latest_ready_step.get("receipt_target_payload_present") is True
+        and future_material_visible
         and latest_ready_step.get("receipt_creates_provider_task") is False
         and latest_ready_step.get("receipt_provider_task_created") is False
         and latest_ready_step.get("receipt_provider_execution_implemented") is False
+        and latest_ready_step.get("receipt_creates_worker_task") is False
+        and latest_ready_step.get("receipt_worker_task_created") is False
+        and latest_ready_step.get("receipt_worker_execution_implemented") is False
+        and latest_ready_step.get("receipt_worker_started") is False
     )
     if handoff_ready:
-        status = "future_provider_handoff_preview_ready"
+        if latest_ready_step.get("receipt_ready_for_manual_worker_task_submission") is True:
+            status = "future_worker_handoff_preview_ready"
+        elif latest_ready_step.get("receipt_ready_for_manual_provider_task_submission") is True:
+            status = "future_provider_handoff_preview_ready"
+        else:
+            status = "future_execution_handoff_preview_ready"
         disabled_reason = ""
     elif latest_ready_step and not durable_local_receipt:
         status = "future_provider_handoff_waiting_for_durable_local_receipt"
@@ -1953,7 +2004,17 @@ def _build_ltg_future_handoff_preview_rows(
             "creates_provider_task_from_preview": False,
             "provider_task_created_by_preview": False,
             "provider_execution_implemented_by_preview": False,
-            "requires_separate_user_approved_provider_task": True,
+            "worker_task_created_by_preview": False,
+            "worker_execution_implemented_by_preview": False,
+            "worker_started_by_preview": False,
+            "requires_separate_user_approved_provider_task": latest_ready_step.get(
+                "receipt_ready_for_manual_provider_task_submission"
+            )
+            is True,
+            "requires_separate_user_approved_worker_task": latest_ready_step.get(
+                "receipt_ready_for_manual_worker_task_submission"
+            )
+            is True,
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -1963,7 +2024,7 @@ def _build_ltg_future_handoff_preview_rows(
             "contains_secret": False,
             "can_close_goal": False,
             "production_complete": False,
-            "evidence_boundary": "future_handoff_preview_is_read_only_not_provider_execution",
+            "evidence_boundary": "future_handoff_preview_is_read_only_not_provider_or_worker_execution",
         }
     ]
 
@@ -1976,14 +2037,22 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         ltg_ids = [str(item) for item in action["ltg_ids"]]
         linked_rows = [rows_by_id[goal_id] for goal_id in ltg_ids if goal_id in rows_by_id]
         local_step_rows = _build_ltg_next_action_local_step_rows(str(action["queue_id"]), tasks_by_type)
+        required_local_step_rows = [row for row in local_step_rows if row.get("local_queue_required") is not False]
         observed_steps = [row for row in local_step_rows if row["receipt_visible"] is True]
-        missing_steps = [row for row in local_step_rows if row["receipt_visible"] is False]
+        observed_required_steps = [row for row in required_local_step_rows if row["receipt_visible"] is True]
+        missing_steps = [row for row in required_local_step_rows if row["receipt_visible"] is False]
         ready_steps = [row for row in local_step_rows if row.get("receipt_visible") is True and row.get("local_ready") is True]
         blocked_steps = [
-            row for row in local_step_rows if row.get("receipt_visible") is True and row.get("local_ready") is not True
+            row
+            for row in required_local_step_rows
+            if row.get("receipt_visible") is True and row.get("local_ready") is not True
         ]
         first_not_ready_step = next(
-            (row for row in local_step_rows if not (row.get("receipt_visible") is True and row.get("local_ready") is True)),
+            (
+                row
+                for row in required_local_step_rows
+                if not (row.get("receipt_visible") is True and row.get("local_ready") is True)
+            ),
             {},
         )
         durable_observed_steps = [row for row in observed_steps if row.get("receipt_durable_in_sqlite") is True]
@@ -1991,7 +2060,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         if not local_step_rows:
             local_status = "local_receipt_lookup_not_configured"
             next_local_step = ""
-        elif not observed_steps:
+        elif required_local_step_rows and not observed_required_steps:
             local_status = "local_receipts_missing"
             next_local_step = str(first_not_ready_step.get("route") or "")
         elif blocked_steps:
@@ -2056,6 +2125,7 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 "local_receipt_status": local_status,
                 "next_local_step": next_local_step,
                 "local_receipt_step_count": len(local_step_rows),
+                "required_local_receipt_step_count": len(required_local_step_rows),
                 "observed_local_receipt_step_count": len(observed_steps),
                 "missing_local_receipt_step_count": len(missing_steps),
                 "ready_local_receipt_step_count": len(ready_steps),
