@@ -26,6 +26,8 @@ TAURI_BACKEND_OFFLINE_PACKAGED_UX_REVIEW_PACKET_KEY = "command_center_3_tauri_ba
 TAURI_BACKEND_OFFLINE_PACKAGED_UX_REVIEW_TASK_TYPE = "run_tauri_backend_offline_packaged_ux_review"
 TAURI_BACKEND_STARTUP_RUNTIME_REVIEW_PACKET_KEY = "command_center_3_tauri_backend_startup_runtime_review_packet"
 TAURI_BACKEND_STARTUP_RUNTIME_REVIEW_TASK_TYPE = "run_tauri_backend_startup_runtime_review"
+TAURI_CONFIG_LOG_RUNTIME_REVIEW_PACKET_KEY = "command_center_3_tauri_config_log_runtime_review_packet"
+TAURI_CONFIG_LOG_RUNTIME_REVIEW_TASK_TYPE = "run_tauri_config_log_runtime_review"
 FRONTEND_API_CLIENT = DESKTOP_ROOT / "src" / "api" / "client.ts"
 FRONTEND_PAGE_STATE_BANNER = DESKTOP_ROOT / "src" / "components" / "PageStateBanner.tsx"
 FRONTEND_BACKEND_OFFLINE_NOTICE = DESKTOP_ROOT / "src" / "components" / "BackendOfflineNotice.tsx"
@@ -3000,6 +3002,327 @@ def _write_tauri_backend_startup_runtime_review_packet(
         SQLiteMetaStore(SQLITE_META_PATH).write_packet(TAURI_BACKEND_STARTUP_RUNTIME_REVIEW_PACKET_KEY, packet)
 
 
+def _tauri_config_log_runtime_review_call_ledger(
+    review: dict[str, Any],
+    reviewed_at: str,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "api": "local_tauri_config_log_runtime_review",
+            "request_params_safe": {
+                "review_scope": "local_tauri_config_log_path_policy_visibility",
+                "config_file_policy_observed_safe": review.get("config_file_policy_observed_safe"),
+                "log_file_policy_observed_safe": review.get("log_file_policy_observed_safe"),
+                "path_policy_panel_visible": review.get("path_policy_panel_visible"),
+                "no_config_values_exposed": review.get("no_config_values_exposed"),
+                "frontend_token_exposure_absent": review.get("frontend_token_exposure_absent"),
+                "screenshot_sha256": review.get("screenshot_sha256"),
+                "external_sources_allowed": False,
+                "starts_fastapi": False,
+                "runs_build": False,
+                "reads_config_values": False,
+                "writes_log_files": False,
+                "production_package_complete": False,
+            },
+            "row_count": review.get("row_count", 0),
+            "data_date": reviewed_at,
+            "local_fetched_at": reviewed_at,
+            "call_status": review.get("status"),
+            "error_message_safe": "",
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+
+
+def _tauri_config_log_runtime_review_contract(
+    *,
+    production_runtime_contract: dict[str, Any],
+    startup_review: dict[str, Any],
+    reviewed_at: str | None = None,
+    task_id: str = "",
+    explicit_review: bool = False,
+    explicit_packaged_app_launch_completed: bool = False,
+    path_policy_panel_visible: bool = False,
+    config_file_policy_visible: bool = False,
+    log_file_policy_visible: bool = False,
+    no_config_values_exposed: bool = False,
+    no_log_file_written_by_review: bool = False,
+    frontend_token_exposure_absent: bool = False,
+    config_file_policy_observed: str = "",
+    log_file_policy_observed: str = "",
+    screenshot_sha256: str = "",
+) -> dict[str, Any]:
+    config_policy = str(production_runtime_contract.get("config_file_policy") or "")
+    log_policy = str(production_runtime_contract.get("log_file_policy") or "")
+    runtime_contract_ready = bool(
+        production_runtime_contract.get("schema_version") == "tauri_production_runtime_contract.v1"
+        and production_runtime_contract.get("config_paths_declared") is True
+        and production_runtime_contract.get("log_paths_declared") is True
+        and production_runtime_contract.get("reads_config_values") is False
+        and production_runtime_contract.get("writes_log_files") is False
+        and production_runtime_contract.get("frontend_stores_tokens") is False
+        and production_runtime_contract.get("token_key_frontend_exposure") is False
+        and production_runtime_contract.get("external_calls_triggered") is False
+        and production_runtime_contract.get("tushare_called") is False
+        and production_runtime_contract.get("deepseek_called") is False
+        and production_runtime_contract.get("github_called") is False
+        and production_runtime_contract.get("does_not_execute_trades") is True
+        and production_runtime_contract.get("does_not_modify_strategy_action") is True
+        and config_policy
+        and log_policy
+    )
+    startup_ready = bool(
+        startup_review.get("schema_version") == "tauri_backend_startup_runtime_review.v1"
+        and startup_review.get("status") == "tauri_backend_startup_runtime_review_ready"
+        and startup_review.get("backend_startup_runtime_validated") is True
+        and startup_review.get("backend_startup_runtime_is_completion") is False
+        and startup_review.get("config_log_runtime_paths_validated") is False
+        and startup_review.get("production_package_complete") is False
+        and startup_review.get("external_calls_triggered") is False
+        and startup_review.get("tushare_called") is False
+        and startup_review.get("deepseek_called") is False
+        and startup_review.get("github_called") is False
+        and startup_review.get("does_not_execute_trades") is True
+        and startup_review.get("does_not_modify_strategy_action") is True
+        and startup_review.get("contains_secret") is False
+    )
+    config_policy_match = bool(config_file_policy_observed == config_policy)
+    log_policy_match = bool(log_file_policy_observed == log_policy)
+    screenshot_hash_safe = bool(
+        len(screenshot_sha256) == 64 and all(char in "0123456789abcdef" for char in screenshot_sha256)
+    )
+    config_log_ready = bool(
+        explicit_review
+        and explicit_packaged_app_launch_completed
+        and runtime_contract_ready
+        and startup_ready
+        and path_policy_panel_visible
+        and config_file_policy_visible
+        and log_file_policy_visible
+        and config_policy_match
+        and log_policy_match
+        and no_config_values_exposed
+        and no_log_file_written_by_review
+        and frontend_token_exposure_absent
+        and screenshot_hash_safe
+    )
+
+    def _row(criterion: str, status: str, passed: bool, evidence: str, *, blocks_review: bool = True) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": status,
+            "passed": bool(passed),
+            "evidence": evidence,
+            "blocks_review": bool(blocks_review and not passed),
+            "blocks_production": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+
+    rows = [
+        _row(
+            "explicit_post_config_log_runtime_review_task",
+            "passed" if explicit_review else "pending_explicit_post",
+            explicit_review,
+            "POST /api/desktop/tauri-config-log-runtime-review records an explicitly observed config/log path policy review.",
+        ),
+        _row(
+            "prior_packaged_runtime_connection_ready",
+            "passed_prior_startup_evidence" if runtime_contract_ready and startup_ready else "pending_prior_startup_evidence",
+            runtime_contract_ready and startup_ready,
+            (
+                f"runtime_contract={production_runtime_contract.get('status')}; "
+                f"startup_review={startup_review.get('status')}"
+            ),
+        ),
+        _row(
+            "config_log_path_policy_visible",
+            "passed_path_policy_visible" if path_policy_panel_visible and config_policy_match and log_policy_match else "pending_path_policy_visibility",
+            path_policy_panel_visible and config_policy_match and log_policy_match,
+            (
+                f"config={config_file_policy_observed if config_policy_match else 'mismatch_or_missing'}; "
+                f"log={log_file_policy_observed if log_policy_match else 'mismatch_or_missing'}"
+            ),
+        ),
+        _row(
+            "no_config_values_or_log_writes_observed",
+            "passed_no_value_or_write" if no_config_values_exposed and no_log_file_written_by_review else "pending_no_value_or_write",
+            no_config_values_exposed and no_log_file_written_by_review,
+            (
+                f"no_config_values_exposed={no_config_values_exposed}; "
+                f"log_files_written_by_review={not no_log_file_written_by_review}"
+            ),
+        ),
+        _row(
+            "frontend_secret_boundary_visible",
+            "passed_no_frontend_secret" if frontend_token_exposure_absent else "pending_frontend_secret_boundary",
+            frontend_token_exposure_absent,
+            "Frontend path policy view exposes policy strings only; token/key values remain absent.",
+        ),
+        _row(
+            "production_package_still_blocked",
+            "passed_production_blockers_visible",
+            True,
+            "Config/log runtime path evidence is complete, but signing/notarization and production promotion remain required.",
+            blocks_review=False,
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["blocks_review"]]
+    return {
+        "schema_version": "tauri_config_log_runtime_review.v1",
+        "status": "tauri_config_log_runtime_review_ready" if config_log_ready else "tauri_config_log_runtime_review_pending",
+        "scope": "button_gated_local_tauri_config_log_runtime_review_no_secret_no_write_no_provider_no_trade",
+        "ltg": "LTG-09",
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "explicit_review_task_done": explicit_review,
+        "explicit_packaged_app_launch_completed_before_review": explicit_packaged_app_launch_completed,
+        "path_policy_panel_visible": path_policy_panel_visible,
+        "config_file_policy_visible": config_file_policy_visible,
+        "log_file_policy_visible": log_file_policy_visible,
+        "config_file_policy_observed_safe": config_file_policy_observed if config_policy_match else "",
+        "log_file_policy_observed_safe": log_file_policy_observed if log_policy_match else "",
+        "no_config_values_exposed": no_config_values_exposed,
+        "no_log_file_written_by_review": no_log_file_written_by_review,
+        "frontend_token_exposure_absent": frontend_token_exposure_absent,
+        "screenshot_sha256": screenshot_sha256 if screenshot_hash_safe else "",
+        "local_config_log_runtime_review_ready": config_log_ready,
+        "direct_evidence_stage_key": "config_log_runtime_paths" if config_log_ready else "",
+        "direct_evidence_stage_keys": ["config_log_runtime_paths"] if config_log_ready else [],
+        "backend_startup_runtime_validated": startup_ready,
+        "config_log_runtime_paths_validated": config_log_ready,
+        "config_log_runtime_paths_is_completion": False,
+        "backend_sidecar_autostart_validated": False,
+        "backend_autostart_configured": False,
+        "packaged_runtime_validated": False,
+        "dmg_distribution_artifact_qa_done": False,
+        "signing_notarization_done": False,
+        "production_package_complete": False,
+        "tauri_build_executed_by_review": False,
+        "npm_or_cargo_executed_by_review": False,
+        "tauri_runtime_started_by_review": False,
+        "packaged_app_opened_by_review": False,
+        "fastapi_started_by_review": False,
+        "config_values_read_by_review": False,
+        "log_files_written_by_review": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": rows,
+        "row_count": len(rows),
+        "blocking_review_count": len(blocking_rows),
+        "blocking_review_criteria": [row["criterion"] for row in blocking_rows],
+        "call_ledger": [],
+        "note": "This review records config/log path policy visibility and no-secret/no-write boundaries only. It is not signing/notarization evidence or production desktop package completion.",
+    }
+
+
+def _safe_persisted_tauri_config_log_runtime_review(packet: dict[str, Any]) -> dict[str, Any]:
+    review = packet.get("tauri_config_log_runtime_review_contract")
+    if not isinstance(review, dict):
+        return {}
+    safe = (
+        review.get("schema_version") == "tauri_config_log_runtime_review.v1"
+        and review.get("status") == "tauri_config_log_runtime_review_ready"
+        and review.get("scope") == "button_gated_local_tauri_config_log_runtime_review_no_secret_no_write_no_provider_no_trade"
+        and review.get("explicit_review_task_done") is True
+        and review.get("path_policy_panel_visible") is True
+        and review.get("config_file_policy_visible") is True
+        and review.get("log_file_policy_visible") is True
+        and bool(review.get("config_file_policy_observed_safe"))
+        and bool(review.get("log_file_policy_observed_safe"))
+        and review.get("no_config_values_exposed") is True
+        and review.get("no_log_file_written_by_review") is True
+        and review.get("frontend_token_exposure_absent") is True
+        and len(str(review.get("screenshot_sha256") or "")) == 64
+        and review.get("local_config_log_runtime_review_ready") is True
+        and review.get("backend_startup_runtime_validated") is True
+        and review.get("config_log_runtime_paths_validated") is True
+        and review.get("config_log_runtime_paths_is_completion") is False
+        and review.get("backend_sidecar_autostart_validated") is False
+        and review.get("backend_autostart_configured") is False
+        and review.get("packaged_runtime_validated") is False
+        and review.get("dmg_distribution_artifact_qa_done") is False
+        and review.get("signing_notarization_done") is False
+        and review.get("production_package_complete") is False
+        and review.get("fastapi_started_by_review") is False
+        and review.get("config_values_read_by_review") is False
+        and review.get("log_files_written_by_review") is False
+        and review.get("external_calls_triggered") is False
+        and review.get("tushare_called") is False
+        and review.get("deepseek_called") is False
+        and review.get("github_called") is False
+        and review.get("does_not_execute_trades") is True
+        and review.get("does_not_modify_strategy_action") is True
+        and review.get("contains_secret") is False
+    )
+    return review if safe else {}
+
+
+def _read_tauri_config_log_runtime_review_packet() -> dict[str, Any]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(TAURI_CONFIG_LOG_RUNTIME_REVIEW_PACKET_KEY)
+    except Exception:
+        return {}
+    if not isinstance(packet, dict):
+        return {}
+    return packet if _safe_persisted_tauri_config_log_runtime_review(packet) else {}
+
+
+def _write_tauri_config_log_runtime_review_packet(
+    *,
+    review_contract: dict[str, Any],
+    ledger: list[dict[str, Any]],
+    reviewed_at: str,
+    task_id: str,
+) -> None:
+    packet = {
+        "packet_key": TAURI_CONFIG_LOG_RUNTIME_REVIEW_PACKET_KEY,
+        "schema_version": "tauri_config_log_runtime_review_packet.v1",
+        "status": review_contract.get("status"),
+        "ltg": "LTG-09",
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "tauri_config_log_runtime_review_contract": dict(review_contract),
+        "tauri_config_log_runtime_review_rows": list(review_contract.get("rows") or []),
+        "call_ledger": list(ledger),
+        "cache_only": True,
+        "runs_no_build": True,
+        "starts_no_fastapi": True,
+        "reads_no_config_values": True,
+        "writes_no_log_files": True,
+        "production_package_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "warnings": [
+            "This packet is a local review receipt for config/log runtime path policy visibility.",
+            "It is not signing/notarization evidence, sidecar/autostart validation, or production package completion.",
+        ],
+    }
+    if _safe_persisted_tauri_config_log_runtime_review(packet):
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(TAURI_CONFIG_LOG_RUNTIME_REVIEW_PACKET_KEY, packet)
+
+
 def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     package_summary = _package_json_summary()
     tauri_config = _tauri_config_summary()
@@ -3389,6 +3712,36 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         packet["warnings"].append(
             "tauri_backend_startup_runtime_review 只记录显式本地 manual FastAPI packaged runtime 观察；不等于 sidecar/autostart、配置/日志、签名/公证或 production package 完成。"
         )
+    persisted_config_log_review_packet = _read_tauri_config_log_runtime_review_packet()
+    persisted_config_log_review = _safe_persisted_tauri_config_log_runtime_review(
+        persisted_config_log_review_packet
+    )
+    if persisted_config_log_review:
+        packet["tauri_config_log_runtime_review_contract"] = persisted_config_log_review
+        packet["tauri_config_log_runtime_review_rows"] = list(persisted_config_log_review.get("rows") or [])
+        packet["tauri_config_log_runtime_review_ready"] = True
+        packet["counts"]["tauri_config_log_runtime_review_row_count"] = persisted_config_log_review.get(
+            "row_count",
+            0,
+        )
+        packet["counts"]["tauri_config_log_runtime_review_blocking_count"] = persisted_config_log_review.get(
+            "blocking_review_count",
+            0,
+        )
+        packet["runtime"]["tauri_config_log_runtime_review_ready"] = True
+        packet["runtime"]["tauri_config_log_runtime_review_status"] = persisted_config_log_review.get("status")
+        packet["runtime"]["config_log_runtime_paths_validated"] = True
+        packet["policy"]["tauri_config_log_runtime_review_is_local"] = True
+        packet["policy"]["tauri_config_log_runtime_review_is_not_build"] = True
+        packet["policy"]["tauri_config_log_runtime_review_did_not_read_config_values"] = True
+        packet["policy"]["tauri_config_log_runtime_review_did_not_write_log_files"] = True
+        packet["policy"]["tauri_config_log_runtime_review_is_not_production_completion"] = True
+        packet["call_ledger"] = packet["call_ledger"] + [
+            row for row in persisted_config_log_review_packet.get("call_ledger", []) if isinstance(row, dict)
+        ]
+        packet["warnings"].append(
+            "tauri_config_log_runtime_review 只记录显式本地 config/log path policy 观察；不读取配置值、不写日志、不等于签名/公证或 production package 完成。"
+        )
     return _json_safe(packet)
 
 
@@ -3626,4 +3979,66 @@ def run_tauri_backend_startup_runtime_review_task(payload: Any = None) -> dict[s
         else "tauri_backend_startup_runtime_review_pending",
         call_ledger=ledger,
         warning="tauri_backend_startup_runtime_review_completed_no_build_no_backend_no_external_call",
+    ) or task
+
+
+def run_tauri_config_log_runtime_review_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, dict) else {}
+    screenshot_sha256 = str(payload_map.get("screenshot_sha256") or "").strip().lower()
+    config_file_policy_observed = str(payload_map.get("config_file_policy_observed") or "").strip()
+    log_file_policy_observed = str(payload_map.get("log_file_policy_observed") or "").strip()
+    task = create_task_record(
+        TAURI_CONFIG_LOG_RUNTIME_REVIEW_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="tauri_config_log_runtime_review_queued",
+        warnings=[
+            "Tauri config/log runtime review 只记录用户/测试已显式观察到的 path policy 和无密钥暴露边界。",
+            "review 不运行 npm/cargo/Tauri、不启动 FastAPI、不读取配置值、不写日志、不调用 provider/model/GitHub、不交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="reading_local_tauri_config_log_runtime_evidence",
+    )
+    packet = read_desktop_shell_preflight_cache()
+    reviewed_at = _now_iso()
+    review_contract = _tauri_config_log_runtime_review_contract(
+        production_runtime_contract=packet.get("production_runtime_contract", {}),
+        startup_review=packet.get("tauri_backend_startup_runtime_review_contract", {}),
+        explicit_review=True,
+        explicit_packaged_app_launch_completed=payload_map.get("explicit_packaged_app_launch_completed") is True,
+        path_policy_panel_visible=payload_map.get("path_policy_panel_visible") is True,
+        config_file_policy_visible=payload_map.get("config_file_policy_visible") is True,
+        log_file_policy_visible=payload_map.get("log_file_policy_visible") is True,
+        no_config_values_exposed=payload_map.get("no_config_values_exposed") is True,
+        no_log_file_written_by_review=payload_map.get("no_log_file_written_by_review") is True,
+        frontend_token_exposure_absent=payload_map.get("frontend_token_exposure_absent") is True,
+        config_file_policy_observed=config_file_policy_observed,
+        log_file_policy_observed=log_file_policy_observed,
+        screenshot_sha256=screenshot_sha256,
+        task_id=str(task["task_id"]),
+        reviewed_at=reviewed_at,
+    )
+    ledger = _tauri_config_log_runtime_review_call_ledger(review_contract, reviewed_at)
+    _write_tauri_config_log_runtime_review_packet(
+        review_contract=review_contract,
+        ledger=ledger,
+        reviewed_at=reviewed_at,
+        task_id=str(task["task_id"]),
+    )
+    return update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="tauri_config_log_runtime_review_ready"
+        if review_contract["local_config_log_runtime_review_ready"]
+        else "tauri_config_log_runtime_review_pending",
+        call_ledger=ledger,
+        warning="tauri_config_log_runtime_review_completed_no_build_no_config_read_no_log_write_no_external_call",
     ) or task

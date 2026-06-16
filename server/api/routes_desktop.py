@@ -40,3 +40,9 @@ def review_tauri_backend_offline_packaged_ux(payload: dict[str, Any] | None = No
 def review_tauri_backend_startup_runtime(payload: dict[str, Any] | None = None) -> dict:
     task = desktop_service.run_tauri_backend_startup_runtime_review_task(payload)
     return task_envelope(task)
+
+
+@router.post("/tauri-config-log-runtime-review")
+def review_tauri_config_log_runtime(payload: dict[str, Any] | None = None) -> dict:
+    task = desktop_service.run_tauri_config_log_runtime_review_task(payload)
+    return task_envelope(task)

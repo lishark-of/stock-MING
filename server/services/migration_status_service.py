@@ -2684,6 +2684,7 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
     launch_review = _dict_or_empty(packet_map.get("tauri_packaged_runtime_launch_review_contract"))
     offline_ux_review = _dict_or_empty(packet_map.get("tauri_backend_offline_packaged_ux_review_contract"))
     startup_review = _dict_or_empty(packet_map.get("tauri_backend_startup_runtime_review_contract"))
+    config_log_review = _dict_or_empty(packet_map.get("tauri_config_log_runtime_review_contract"))
     packet_safe = bool(
         packet_map.get("external_calls_triggered") is not True
         and packet_map.get("tushare_called") is not True
@@ -2840,6 +2841,39 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
     )
     if backend_startup_runtime_ready:
         direct_stage_keys.append("backend_startup_runtime")
+    config_log_runtime_ready = bool(
+        packet_safe
+        and backend_startup_runtime_ready
+        and config_log_review.get("schema_version") == "tauri_config_log_runtime_review.v1"
+        and config_log_review.get("status") == "tauri_config_log_runtime_review_ready"
+        and config_log_review.get("explicit_review_task_done") is True
+        and config_log_review.get("local_config_log_runtime_review_ready") is True
+        and config_log_review.get("path_policy_panel_visible") is True
+        and config_log_review.get("config_file_policy_visible") is True
+        and config_log_review.get("log_file_policy_visible") is True
+        and bool(config_log_review.get("config_file_policy_observed_safe"))
+        and bool(config_log_review.get("log_file_policy_observed_safe"))
+        and config_log_review.get("no_config_values_exposed") is True
+        and config_log_review.get("no_log_file_written_by_review") is True
+        and config_log_review.get("frontend_token_exposure_absent") is True
+        and len(str(config_log_review.get("screenshot_sha256") or "")) == 64
+        and config_log_review.get("config_log_runtime_paths_validated") is True
+        and config_log_review.get("config_log_runtime_paths_is_completion") is False
+        and config_log_review.get("packaged_runtime_validated") is False
+        and config_log_review.get("production_package_complete") is False
+        and config_log_review.get("fastapi_started_by_review") is False
+        and config_log_review.get("config_values_read_by_review") is False
+        and config_log_review.get("log_files_written_by_review") is False
+        and config_log_review.get("external_calls_triggered") is False
+        and config_log_review.get("tushare_called") is False
+        and config_log_review.get("deepseek_called") is False
+        and config_log_review.get("github_called") is False
+        and config_log_review.get("does_not_execute_trades") is True
+        and config_log_review.get("does_not_modify_strategy_action") is True
+        and config_log_review.get("contains_secret") is False
+    )
+    if config_log_runtime_ready:
+        direct_stage_keys.append("config_log_runtime_paths")
     return {
         "schema_version": "migration_tauri_package_direct_evidence_summary.v1",
         "source_packet_key": "command_center_3_tauri_package_artifact_review_packet",
@@ -2872,6 +2906,15 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         "backend_startup_health_status_observed": startup_review.get("health_status_observed")
         if backend_startup_runtime_ready
         else "",
+        "config_log_runtime_screenshot_sha256": config_log_review.get("screenshot_sha256")
+        if config_log_runtime_ready
+        else "",
+        "config_file_policy_observed": config_log_review.get("config_file_policy_observed_safe")
+        if config_log_runtime_ready
+        else "",
+        "log_file_policy_observed": config_log_review.get("log_file_policy_observed_safe")
+        if config_log_runtime_ready
+        else "",
         "build_command_reviewed_safe": review.get("build_command_reviewed_safe") if build_repeatability_ready else "",
         "launch_command_reviewed_safe": launch_review.get("launch_command_reviewed_safe")
         if packaged_app_launch_ready
@@ -2889,7 +2932,7 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         "packaged_runtime_qa_done": False,
         "backend_startup_runtime_validated": backend_startup_runtime_ready,
         "backend_offline_packaged_ux_verified": backend_offline_packaged_ux_ready,
-        "config_log_runtime_paths_validated": False,
+        "config_log_runtime_paths_validated": config_log_runtime_ready,
         "signing_notarization_done": False,
         "production_package_complete": False,
         "external_calls_triggered": False,
@@ -5136,6 +5179,16 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     "backend_startup_health_status_observed"
                 )
                 or "",
+                "config_log_runtime_paths_validated": direct_evidence.get(
+                    "config_log_runtime_paths_validated"
+                )
+                is True,
+                "config_log_runtime_screenshot_sha256": direct_evidence.get(
+                    "config_log_runtime_screenshot_sha256"
+                )
+                or "",
+                "config_file_policy_observed": direct_evidence.get("config_file_policy_observed") or "",
+                "log_file_policy_observed": direct_evidence.get("log_file_policy_observed") or "",
                 "tauri_build_command_reviewed_safe": direct_evidence.get("build_command_reviewed_safe") or "",
                 "tauri_launch_command_reviewed_safe": direct_evidence.get("launch_command_reviewed_safe") or "",
                 "tauri_launch_observed_process_name": direct_evidence.get("observed_process_name") or "",
@@ -5161,7 +5214,6 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "release_binary_is_completion": False,
                 "app_bundle_detected": direct_evidence.get("app_bundle_detected") is True,
                 "dmg_distribution_detected": direct_evidence.get("dmg_distribution_detected") is True,
-                "config_log_runtime_paths_validated": False,
                 "signing_notarization_done": False,
                 "external_calls_triggered": False,
                 "tushare_called": False,
