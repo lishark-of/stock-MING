@@ -1140,13 +1140,16 @@ def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str,
             release_gate = release_gate if isinstance(release_gate, dict) else {}
             ci_triage_contract, _ = audit_service._ci_notification_triage_contract(release_gate, workflow_rows)
             ci_triage_contract = ci_triage_contract if isinstance(ci_triage_contract, dict) else {}
+            local_gate_run_receipt = audit_service._read_local_push_gate_run_receipt()
             push_receipt, _ = audit_service._release_gate_push_readiness_receipt(
                 release_gate,
                 ci_triage_contract,
+                local_gate_run_receipt,
             )
             packet = {
                 "release_gate_readiness_audit": release_gate,
                 "ci_notification_triage_contract": ci_triage_contract,
+                "local_push_gate_run_receipt": local_gate_run_receipt,
                 "release_gate_push_readiness_receipt": push_receipt if isinstance(push_receipt, dict) else {},
             }
         except Exception:
@@ -3435,12 +3438,18 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         release_gate = release_gate if isinstance(release_gate, dict) else {}
         ci_triage_contract, _ = audit_service._ci_notification_triage_contract(release_gate, workflow_rows)
         ci_triage_contract = ci_triage_contract if isinstance(ci_triage_contract, dict) else {}
-        push_receipt, _ = audit_service._release_gate_push_readiness_receipt(release_gate, ci_triage_contract)
+        local_gate_run_receipt = audit_service._read_local_push_gate_run_receipt()
+        push_receipt, _ = audit_service._release_gate_push_readiness_receipt(
+            release_gate,
+            ci_triage_contract,
+            local_gate_run_receipt,
+        )
         push_receipt = push_receipt if isinstance(push_receipt, dict) else {}
         stage_rows = audit_service._release_gate_stage_scope_rows(
             release_gate,
             push_receipt,
             ci_triage_contract,
+            local_gate_run_receipt,
         )
         stage_rows = stage_rows if isinstance(stage_rows, list) else []
         row_count = len(stage_rows)

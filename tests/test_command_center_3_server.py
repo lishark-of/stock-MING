@@ -111,6 +111,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.addCleanup(setattr, audit_service, "MOTION_QA_ARTIFACT_ROOT", original_root)
         return audit_service.MOTION_QA_ARTIFACT_ROOT
 
+    def _with_release_gate_receipt_path(self):
+        original_path = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
+        temp_dir = tempfile.TemporaryDirectory()
+        receipt_path = Path(temp_dir.name) / "release_gate" / "local_push_gate_run_receipt.json"
+        audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = receipt_path
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, audit_service, "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH", original_path)
+        return receipt_path
+
     def _with_parquet_root(self):
         original_root = storage_service.PARQUET_ROOT
         temp_dir = tempfile.TemporaryDirectory()
@@ -256,6 +265,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
     def test_cache_builders_do_not_call_external_sources(self):
         self._with_meta_store()
+        self._with_release_gate_receipt_path()
         factor = packet_service.build_factor_quant_cache()
         serenity = packet_service.build_serenity_cache()
         next_session = packet_service.build_next_session_cache()
@@ -296,7 +306,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(migration["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
         self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 14)
-        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_pending_count"], 121)
+        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_pending_count"], 119)
         self.assertEqual(migration["long_term_goal_summary"]["goals_with_next_evidence_count"], 14)
         self.assertEqual(migration["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
@@ -814,7 +824,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "observed_in_audit_cache_release_gate_contract",
         )
         self.assertEqual(observed_stage_rows["LTG-11"]["row_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-11"]["pending_stage_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-11"]["pending_stage_count"], 6)
         self.assertEqual(observed_stage_rows["LTG-11"]["local_evidence_stage_count"], 8)
         self.assertTrue(observed_stage_rows["LTG-11"]["local_gate_ready"])
         self.assertTrue(observed_stage_rows["LTG-11"]["ci_mirror_ready"])
@@ -1037,7 +1047,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             migration_goals["LTG-11"]["observed_stage_scope_manifest_status"],
             "observed_in_audit_cache_release_gate_contract",
         )
-        self.assertEqual(migration_goals["LTG-11"]["observed_stage_scope_pending_count"], 8)
+        self.assertEqual(migration_goals["LTG-11"]["observed_stage_scope_pending_count"], 6)
         self.assertFalse(migration_goals["LTG-11"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-12"]["stage_scope_manifest"], "trade_isolation_stage_scope_manifest")
         self.assertIn("trade-isolation stage-scope manifest", migration_goals["LTG-12"]["current_state"])
@@ -16065,6 +16075,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
     def test_call_ledger_audit_cache_aggregates_local_ledgers_without_external_work(self):
         self._with_meta_store()
+        self._with_release_gate_receipt_path()
         clear_task_statuses_for_tests(clear_persisted=True)
         task = task_service.create_task_record(
             "build_next_session_projection",
@@ -16115,6 +16126,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
+        self.assertFalse(packet["counts"]["local_push_gate_run_observed"])
+        self.assertFalse(packet["counts"]["local_push_gate_receipt_head_matches_current"])
         endpoint_by_source = {row["source"]: row for row in packet["endpoint_rows"]}
         self.assertIn("health", endpoint_by_source)
         self.assertIn("model_strategy", endpoint_by_source)
@@ -16234,6 +16247,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
         self.assertFalse(packet["github_called"])
+        local_gate_receipt = packet["local_push_gate_run_receipt"]
+        self.assertEqual(local_gate_receipt["schema_version"], "command_center_3_local_push_gate_run_receipt.v1")
+        self.assertEqual(local_gate_receipt["status"], "local_push_gate_run_receipt_missing")
+        self.assertFalse(local_gate_receipt["fresh_local_gate_run_observed"])
+        self.assertFalse(local_gate_receipt["head_matches_current"])
         self.assertTrue(packet["policy"]["audit_is_read_only"])
         self.assertTrue(packet["policy"]["post_task_required_for_external_work"])
         self.assertTrue(packet["policy"]["task_implementation_status_is_read_only"])
@@ -16245,6 +16263,74 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["call_ledger"][0]["storage_backend"], "memory_plus_sqlite_fallback")
         self.assertNotIn("SHOULD_DROP", json.dumps(packet, ensure_ascii=False))
         json.dumps(packet, ensure_ascii=False)
+
+    def test_release_gate_local_run_receipt_marks_current_head_without_ci_claim(self):
+        self._with_meta_store()
+        receipt_path = self._with_release_gate_receipt_path()
+        current_head = audit_service._current_git_head_summary()
+        self.assertTrue(current_head["head_full"])
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        receipt_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "command_center_3_local_push_gate_run_receipt.v1",
+                    "status": "local_push_gate_passed_current_head",
+                    "scope": "ignored_local_push_gate_run_receipt_no_push_no_github_api",
+                    "generated_at_utc": "2026-06-16T00:00:00Z",
+                    "branch": current_head["branch"],
+                    "head": current_head["head"],
+                    "head_full": current_head["head_full"],
+                    "checks": ["python_unittest", "desktop_build", "command_center_3_smoke"],
+                    "did_not_push": True,
+                    "git_add_dot_used": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "github_api_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                    "contains_secret": False,
+                    "local_gate_pass_is_not_ci_status": True,
+                    "remote_actions_status_known": False,
+                    "latest_remote_run_verified_green": False,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        packet = audit_service.read_call_ledger_audit_cache()
+
+        local_receipt = packet["local_push_gate_run_receipt"]
+        self.assertEqual(local_receipt["status"], "local_push_gate_passed_current_head")
+        self.assertTrue(local_receipt["fresh_local_gate_run_observed"])
+        self.assertTrue(local_receipt["head_matches_current"])
+        self.assertFalse(local_receipt["remote_actions_status_known"])
+        self.assertFalse(local_receipt["latest_remote_run_verified_green"])
+        push_receipt = packet["release_gate_push_readiness_receipt"]
+        self.assertEqual(push_receipt["status"], "push_readiness_receipt_ready_local_gate_passed_remote_ci_pending")
+        self.assertTrue(push_receipt["fresh_local_gate_run_observed"])
+        self.assertTrue(push_receipt["local_push_gate_run_receipt_head_matches_current"])
+        self.assertFalse(push_receipt["remote_actions_status_known"])
+        self.assertFalse(push_receipt["latest_remote_run_verified_green"])
+        self.assertNotIn("fresh_local_push_gate_command_output", push_receipt["missing_evidence_items"])
+        self.assertIn("matching_remote_actions_run_status", push_receipt["missing_evidence_items"])
+        self.assertTrue(push_receipt["did_not_push"])
+        self.assertFalse(push_receipt["github_api_called"])
+        stage_rows = {row["stage_key"]: row for row in packet["release_gate_stage_scope_rows"]}
+        self.assertTrue(stage_rows["local_push_gate_static_contract"]["stage_complete"])
+        self.assertTrue(stage_rows["ci_mirror_workflow_contract"]["stage_complete"])
+        self.assertTrue(stage_rows["fresh_local_gate_command_run"]["stage_complete"])
+        self.assertFalse(stage_rows["matching_remote_actions_status"]["stage_complete"])
+        self.assertFalse(stage_rows["explicit_push_approval_boundary"]["stage_complete"])
+        self.assertEqual(packet["counts"]["release_gate_stage_scope_pending_count"], 5)
+        self.assertTrue(packet["counts"]["local_push_gate_run_observed"])
+        self.assertTrue(packet["counts"]["local_push_gate_receipt_head_matches_current"])
+        self.assertFalse(packet["counts"]["push_readiness_remote_status_known"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
 
     def test_call_ledger_audit_covers_all_fastapi_get_routes(self):
         packet = audit_service.read_call_ledger_audit_cache()
@@ -16990,6 +17076,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, audit_service, "MOTION_QA_ARTIFACT_ROOT", original_root)
         return audit_service.MOTION_QA_ARTIFACT_ROOT
+
+    def _with_release_gate_receipt_path(self):
+        original_path = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
+        temp_dir = tempfile.TemporaryDirectory()
+        receipt_path = Path(temp_dir.name) / "release_gate" / "local_push_gate_run_receipt.json"
+        audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = receipt_path
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, audit_service, "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH", original_path)
+        return receipt_path
 
     def _with_parquet_root(self):
         original_root = storage_service.PARQUET_ROOT
@@ -19121,6 +19216,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
     def test_health_and_cache_endpoints(self):
         self._with_meta_store()
+        self._with_release_gate_receipt_path()
         self._with_parquet_root()
         health = self.client.get("/health").json()
         self.assertTrue(health["ok"])
@@ -19497,7 +19593,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
         self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 14)
-        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 121)
+        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 119)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_acceptance_runway_rows"]), 14)
@@ -19884,7 +19980,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "observed_in_audit_cache_release_gate_contract",
         )
         self.assertEqual(observed_stage_rows["LTG-11"]["row_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-11"]["pending_stage_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-11"]["pending_stage_count"], 6)
         self.assertEqual(observed_stage_rows["LTG-11"]["local_evidence_stage_count"], 8)
         self.assertTrue(observed_stage_rows["LTG-11"]["local_gate_ready"])
         self.assertTrue(observed_stage_rows["LTG-11"]["ci_mirror_ready"])
@@ -20062,7 +20158,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             migration_goals["LTG-11"]["observed_stage_scope_manifest_status"],
             "observed_in_audit_cache_release_gate_contract",
         )
-        self.assertEqual(migration_goals["LTG-11"]["observed_stage_scope_pending_count"], 8)
+        self.assertEqual(migration_goals["LTG-11"]["observed_stage_scope_pending_count"], 6)
         self.assertFalse(migration_goals["LTG-11"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-12"]["stage_scope_manifest"], "trade_isolation_stage_scope_manifest")
         self.assertIn("trade-isolation stage-scope manifest", migration_goals["LTG-12"]["current_state"])
@@ -26727,6 +26823,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
     def test_call_ledger_audit_cache_endpoint_returns_read_only_audit(self):
         self._with_meta_store()
         self._with_motion_qa_root()
+        self._with_release_gate_receipt_path()
         clear_task_statuses_for_tests(clear_persisted=True)
         response = self.client.get("/api/audit/cache").json()
 
@@ -26849,6 +26946,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(release_gate["generated_artifact_scan_step"])
         self.assertTrue(release_gate["release_report_step"])
         self.assertTrue(release_gate["clean_worktree_after_report"])
+        self.assertTrue(release_gate["local_push_gate_run_receipt_step"])
+        self.assertTrue(release_gate["local_push_gate_run_receipt_after_clean"])
         self.assertTrue(release_gate["no_git_push"])
         self.assertTrue(release_gate["no_git_add_dot"])
         self.assertNotIn("ci_mirror_not_proven", release_gate["blockers"])
@@ -26919,6 +27018,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("generated_artifact_scan", release_gate_criteria)
         self.assertIn("release_readiness_report", release_gate_criteria)
         self.assertIn("clean_worktree_after_report", release_gate_criteria)
+        self.assertIn("local_push_gate_run_receipt_step", release_gate_criteria)
+        self.assertIn("local_push_gate_run_receipt_after_clean", release_gate_criteria)
         self.assertIn("no_git_push", release_gate_criteria)
         self.assertIn("no_git_add_dot", release_gate_criteria)
         workflow_rows = {row["workflow"]: row for row in packet["release_gate_workflow_rows"]}
@@ -26933,6 +27034,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["counts"]["release_gate_local_ready"])
         self.assertTrue(packet["counts"]["release_gate_ci_mirror_ready"])
         self.assertFalse(packet["counts"]["release_gate_complete"])
+        self.assertFalse(packet["counts"]["local_push_gate_run_observed"])
+        self.assertFalse(packet["counts"]["local_push_gate_receipt_head_matches_current"])
         required_release_stages = {
             "local_push_gate_static_contract",
             "fresh_local_gate_command_run",
@@ -26944,12 +27047,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "explicit_push_approval_boundary",
         }
         self.assertEqual(packet["counts"]["release_gate_stage_scope_count"], 8)
-        self.assertEqual(packet["counts"]["release_gate_stage_scope_pending_count"], 8)
+        self.assertEqual(packet["counts"]["release_gate_stage_scope_pending_count"], 6)
         release_stage_rows = packet["release_gate_stage_scope_rows"]
         self.assertEqual({row["stage_key"] for row in release_stage_rows}, required_release_stages)
+        completed_static_stages = {"local_push_gate_static_contract", "ci_mirror_workflow_contract"}
         for row in release_stage_rows:
             self.assertEqual(row["scope"], "release_gate_stage_scope_manifest")
-            self.assertEqual(row["current_status"], "local_static_or_pending_evidence")
+            self.assertEqual(
+                row["current_status"],
+                "stage_complete" if row["stage_key"] in completed_static_stages else "local_static_or_pending_evidence",
+            )
             self.assertEqual(row["target_status"], "fresh_local_gate_or_remote_ci_evidence_required")
             self.assertTrue(row["required_before_release_push"])
             self.assertTrue(row["local_static_contract_ready"])
@@ -26964,7 +27071,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             self.assertFalse(row["release_report_written_by_cache"])
             self.assertFalse(row["release_report_is_ci_status"])
             self.assertFalse(row["release_gate_complete"])
-            self.assertFalse(row["stage_complete"])
+            self.assertEqual(row["stage_complete"], row["stage_key"] in completed_static_stages)
             self.assertTrue(row["did_not_push"])
             self.assertFalse(row["git_add_dot_used"])
             self.assertFalse(row["github_api_called"])
@@ -26974,6 +27081,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             self.assertTrue(row["does_not_execute_trades"])
             self.assertTrue(row["does_not_modify_strategy_action"])
             self.assertFalse(row["contains_secret"])
+        local_gate_receipt = packet["local_push_gate_run_receipt"]
+        self.assertEqual(local_gate_receipt["status"], "local_push_gate_run_receipt_missing")
+        self.assertFalse(local_gate_receipt["fresh_local_gate_run_observed"])
+        self.assertFalse(local_gate_receipt["head_matches_current"])
         push_receipt = packet["release_gate_push_readiness_receipt"]
         self.assertEqual(push_receipt["schema_version"], "command_center_3_push_readiness_receipt.v1")
         self.assertEqual(push_receipt["scope"], "local_push_readiness_receipt_no_command_or_github_api")

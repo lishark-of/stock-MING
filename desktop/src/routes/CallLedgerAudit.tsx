@@ -35,6 +35,7 @@ export default function CallLedgerAudit() {
   const releaseGateAudit = (cache.release_gate_readiness_audit as Record<string, unknown> | undefined) ?? {};
   const releaseGateRows = rows(cache.release_gate_readiness_rows);
   const releaseGateWorkflowRows = rows(cache.release_gate_workflow_rows);
+  const localPushGateRunReceipt = (cache.local_push_gate_run_receipt as Record<string, unknown> | undefined) ?? {};
   const releaseGatePushReceipt = (cache.release_gate_push_readiness_receipt as Record<string, unknown> | undefined) ?? {};
   const releaseGatePushRows = rows(cache.release_gate_push_readiness_rows);
   const ciNotificationTriage = (cache.ci_notification_triage_contract as Record<string, unknown> | undefined) ?? {};
@@ -131,6 +132,8 @@ export default function CallLedgerAudit() {
           { label: "gate blockers", value: counts.release_gate_blocker_count as number | undefined, tone: Number(counts.release_gate_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "gate checks", value: counts.release_gate_check_count as number | undefined },
           { label: "workflow files", value: counts.release_gate_workflow_count as number | undefined },
+          { label: "local gate run", value: counts.local_push_gate_run_observed === true ? "seen" : "pending", tone: counts.local_push_gate_run_observed === true ? "good" : "warn" },
+          { label: "head match", value: counts.local_push_gate_receipt_head_matches_current === true ? "yes" : "no", tone: counts.local_push_gate_receipt_head_matches_current === true ? "good" : "warn" },
           { label: "push receipt", value: releaseGatePushReceipt.status as string | undefined, tone: releaseGatePushReceipt.local_receipt_ready === true ? "good" : "warn" },
           { label: "push pending", value: counts.push_readiness_pending_evidence_count as number | undefined, tone: Number(counts.push_readiness_pending_evidence_count ?? 0) > 0 ? "warn" : "good" },
           { label: "remote known", value: counts.push_readiness_remote_status_known === true ? "yes" : "no", tone: counts.push_readiness_remote_status_known === true ? "good" : "warn" },
@@ -245,6 +248,16 @@ export default function CallLedgerAudit() {
 
       <PacketCard title="CI mirror static inventory" subtitle="只读列出 .github/workflows；不调用 GitHub API" status="ci_static_inventory">
         <DataLineageTable rows={releaseGateWorkflowRows} />
+      </PacketCard>
+
+      <PacketCard title="Local push gate run receipt" subtitle=".stock_ming_3/release_gate/local_push_gate_run_receipt.json：本地门禁通过证据，不代表远端 CI" status={String(localPushGateRunReceipt.status ?? "local_push_gate_run_receipt_missing")}>
+        <p>fresh_local_gate_run_observed: {String(localPushGateRunReceipt.fresh_local_gate_run_observed === true)}</p>
+        <p>head / current_head: {String(localPushGateRunReceipt.head ?? "")} / {String(localPushGateRunReceipt.current_head ?? "")}</p>
+        <p>head_matches_current: {String(localPushGateRunReceipt.head_matches_current === true)}</p>
+        <p>local_gate_pass_is_not_ci_status: {String(localPushGateRunReceipt.local_gate_pass_is_not_ci_status !== false)}</p>
+        <p>did_not_push: {String(localPushGateRunReceipt.did_not_push !== false)}；github_api_called: {String(localPushGateRunReceipt.github_api_called === true)}</p>
+        <p>这张 receipt 只说明 `scripts/push_gate_3_0.sh` 已在本机对当前 HEAD 通过；远端 Actions 仍需单独确认。</p>
+        <DataLineageTable rows={[localPushGateRunReceipt]} />
       </PacketCard>
 
       <PacketCard title="Push readiness receipt" subtitle="release_gate_push_readiness_receipt：本地收据，只选择显式 gate/push/远端复核路径" status={String(releaseGatePushReceipt.status ?? "missing")}>

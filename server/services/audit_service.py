@@ -41,6 +41,7 @@ SCHEMA_VERSION = "call_ledger_audit_cache.v1"
 RELEASE_GATE_SCHEMA_VERSION = "command_center_3_release_gate_readiness_audit.v1"
 CI_NOTIFICATION_TRIAGE_SCHEMA_VERSION = "command_center_3_ci_notification_triage.v1"
 PUSH_READINESS_RECEIPT_SCHEMA_VERSION = "command_center_3_push_readiness_receipt.v1"
+LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION = "command_center_3_local_push_gate_run_receipt.v1"
 MOTION_CLARITY_SCHEMA_VERSION = "command_center_3_motion_clarity_audit.v1"
 RELEASE_GATE_STAGE_SCOPE = "release_gate_stage_scope_manifest"
 REQUIRED_RELEASE_GATE_STAGE_KEYS = {
@@ -65,6 +66,7 @@ RELEASE_GATE_STAGE_LABELS = {
 }
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
+LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = PROJECT_ROOT / ".stock_ming_3" / "release_gate" / "local_push_gate_run_receipt.json"
 PUSH_GATE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "push_gate_3_0.sh"
 SMOKE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "smoke_3_0.sh"
 DATA_HEALTH_FRESHNESS_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "data_health_freshness_contract.py"
@@ -414,6 +416,155 @@ def _relative_path(path: Path) -> str:
         return str(path)
 
 
+def _git_dir_path() -> Path:
+    dot_git = PROJECT_ROOT / ".git"
+    if dot_git.is_file():
+        text = _read_local_text(dot_git).strip()
+        if text.startswith("gitdir:"):
+            raw_path = text.split(":", 1)[1].strip()
+            path = Path(raw_path)
+            return path if path.is_absolute() else (PROJECT_ROOT / path).resolve()
+    return dot_git
+
+
+def _current_git_head_summary() -> dict[str, Any]:
+    git_dir = _git_dir_path()
+    head_file = git_dir / "HEAD"
+    head_text = _read_local_text(head_file).strip()
+    if not head_text:
+        return {
+            "read_status": "git_head_missing",
+            "branch": "",
+            "head_full": "",
+            "head": "",
+        }
+    if head_text.startswith("ref:"):
+        ref_name = head_text.split(":", 1)[1].strip()
+        ref_text = _read_local_text(git_dir / ref_name).strip()
+        head_full = ref_text if ref_text else ""
+        branch = ref_name.removeprefix("refs/heads/")
+        return {
+            "read_status": "git_head_ref_present" if head_full else "git_head_ref_missing",
+            "branch": branch,
+            "head_full": head_full,
+            "head": head_full[:7],
+            "ref": ref_name,
+        }
+    return {
+        "read_status": "git_head_detached",
+        "branch": "HEAD",
+        "head_full": head_text,
+        "head": head_text[:7],
+        "ref": "",
+    }
+
+
+def _read_local_push_gate_run_receipt() -> dict[str, Any]:
+    current_head = _current_git_head_summary()
+    if not LOCAL_PUSH_GATE_RUN_RECEIPT_PATH.exists():
+        return {
+            "schema_version": LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION,
+            "status": "local_push_gate_run_receipt_missing",
+            "scope": "ignored_local_push_gate_run_receipt_no_push_no_github_api",
+            "receipt_path": _relative_path(LOCAL_PUSH_GATE_RUN_RECEIPT_PATH),
+            "read_status": "receipt_missing",
+            "current_head": current_head.get("head"),
+            "current_head_full": current_head.get("head_full"),
+            "current_branch": current_head.get("branch"),
+            "head_matches_current": False,
+            "fresh_local_gate_run_observed": False,
+            "did_not_push": True,
+            "git_add_dot_used": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "github_api_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+    try:
+        raw = json.loads(LOCAL_PUSH_GATE_RUN_RECEIPT_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {
+            "schema_version": LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION,
+            "status": "local_push_gate_run_receipt_unreadable",
+            "scope": "ignored_local_push_gate_run_receipt_no_push_no_github_api",
+            "receipt_path": _relative_path(LOCAL_PUSH_GATE_RUN_RECEIPT_PATH),
+            "read_status": "receipt_read_failed",
+            "current_head": current_head.get("head"),
+            "current_head_full": current_head.get("head_full"),
+            "current_branch": current_head.get("branch"),
+            "head_matches_current": False,
+            "fresh_local_gate_run_observed": False,
+            "did_not_push": True,
+            "git_add_dot_used": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "github_api_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+    raw_receipt = _as_dict(raw)
+    receipt = _as_dict(_safe_value(raw_receipt))
+    receipt_head_full = str(raw_receipt.get("head_full") or "")
+    receipt_head = str(raw_receipt.get("head") or "")
+    current_head_full = str(current_head.get("head_full") or "")
+    current_head_short = str(current_head.get("head") or "")
+    head_matches_current = bool(
+        current_head_full
+        and (
+            receipt_head_full == current_head_full
+            or (receipt_head and current_head_short and receipt_head == current_head_short)
+        )
+    )
+    schema_ok = raw_receipt.get("schema_version") == LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION
+    status_ok = raw_receipt.get("status") == "local_push_gate_passed_current_head"
+    boundary_ok = (
+        raw_receipt.get("did_not_push") is True
+        and raw_receipt.get("git_add_dot_used") is False
+        and raw_receipt.get("external_calls_triggered") is False
+        and raw_receipt.get("tushare_called") is False
+        and raw_receipt.get("deepseek_called") is False
+        and raw_receipt.get("github_api_called") is False
+        and raw_receipt.get("does_not_execute_trades") is True
+        and raw_receipt.get("does_not_modify_strategy_action") is True
+        and raw_receipt.get("contains_secret") is False
+    )
+    fresh = bool(schema_ok and status_ok and head_matches_current and boundary_ok)
+    receipt.update(
+        {
+            "schema_version": str(receipt.get("schema_version") or LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION),
+            "status": receipt.get("status") if schema_ok else "local_push_gate_run_receipt_schema_mismatch",
+            "scope": str(receipt.get("scope") or "ignored_local_push_gate_run_receipt_no_push_no_github_api"),
+            "receipt_path": _relative_path(LOCAL_PUSH_GATE_RUN_RECEIPT_PATH),
+            "read_status": "receipt_present",
+            "current_head": current_head_short,
+            "current_head_full": current_head_full,
+            "current_branch": current_head.get("branch"),
+            "head_matches_current": head_matches_current,
+            "boundary_flags_valid": boundary_ok,
+            "fresh_local_gate_run_observed": fresh,
+            "remote_actions_status_known": False,
+            "latest_remote_run_verified_green": False,
+            "local_gate_pass_is_not_ci_status": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "github_api_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+    )
+    return receipt
+
+
 def _script_contains_any(script: str, markers: tuple[str, ...]) -> bool:
     lower_script = script.lower()
     return any(marker.lower() in lower_script for marker in markers)
@@ -752,6 +903,10 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         "release_report_step": "PUSH_GATE_REPORT_PATH" in script and "write_release_readiness_report" in script,
         "clean_worktree_after_report": script.find('run_step "Release readiness report"') >= 0
         and script.find('run_step "Release readiness report"') < script.find('run_step "Clean worktree check"'),
+        "local_push_gate_run_receipt_step": "LOCAL_PUSH_GATE_RECEIPT_PATH" in script
+        and "write_local_push_gate_run_receipt" in script,
+        "local_push_gate_run_receipt_after_clean": script.find('run_step "Clean worktree check"') >= 0
+        and script.find('run_step "Clean worktree check"') < script.find('run_step "Local push gate run receipt"'),
         "no_git_push": "git push" not in script,
         "no_git_add_dot": "git add ." not in script,
         "does_not_call_tushare": not _script_contains_any(script, ("tushare_adapter", "refresh-tushare", "tushare.pro_api", "ts.pro_api")),
@@ -858,6 +1013,8 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "generated_artifact_scan_step",
             "release_report_step",
             "clean_worktree_after_report",
+            "local_push_gate_run_receipt_step",
+            "local_push_gate_run_receipt_after_clean",
             "no_git_push",
             "no_git_add_dot",
             "does_not_call_tushare",
@@ -1183,6 +1340,16 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             checks["clean_worktree_after_report"],
             evidence="Release readiness report runs before clean worktree check",
         ),
+        _release_gate_row(
+            "local_push_gate_run_receipt_step",
+            checks["local_push_gate_run_receipt_step"],
+            evidence="push gate writes ignored .stock_ming_3 release receipt only after local checks pass",
+        ),
+        _release_gate_row(
+            "local_push_gate_run_receipt_after_clean",
+            checks["local_push_gate_run_receipt_after_clean"],
+            evidence="ignored local push gate receipt is written after clean worktree check and before final PASS",
+        ),
         _release_gate_row("no_git_push", checks["no_git_push"], evidence="script contains no git push"),
         _release_gate_row("no_git_add_dot", checks["no_git_add_dot"], evidence="script contains no git add ."),
         _release_gate_row("does_not_call_tushare", checks["does_not_call_tushare"], evidence="no provider invocation markers"),
@@ -1367,9 +1534,12 @@ def _ci_notification_triage_contract(
 def _release_gate_push_readiness_receipt(
     release_gate_readiness_audit: Mapping[str, Any],
     ci_notification_triage_contract: Mapping[str, Any],
+    local_push_gate_run_receipt: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     local_gate_ready = release_gate_readiness_audit.get("local_gate_ready") is True
     ci_mirror_ready = release_gate_readiness_audit.get("ci_mirror_ready") is True
+    local_run_receipt = _as_dict(local_push_gate_run_receipt)
+    fresh_local_gate_run_observed = local_run_receipt.get("fresh_local_gate_run_observed") is True
     remote_actions_status_known = ci_notification_triage_contract.get("remote_actions_status_known") is True
     latest_remote_run_verified_green = ci_notification_triage_contract.get("latest_remote_run_verified_green") is True
     false_positive_allowlist_review_ready = (
@@ -1389,9 +1559,14 @@ def _release_gate_push_readiness_receipt(
         ),
         _release_gate_row(
             "fresh_local_gate_run_required_before_push",
-            True,
-            evidence="Receipt is static; scripts/push_gate_3_0.sh must still run immediately before git push.",
+            fresh_local_gate_run_observed,
+            evidence=(
+                f"local receipt head={local_run_receipt.get('head')}; "
+                f"current head={local_run_receipt.get('current_head')}; "
+                f"head_matches_current={local_run_receipt.get('head_matches_current')}"
+            ),
             production_blocker=False,
+            status_override="pending_local_gate_run" if not fresh_local_gate_run_observed else None,
         ),
         _release_gate_row(
             "local_gate_pass_not_remote_green",
@@ -1462,6 +1637,8 @@ def _release_gate_push_readiness_receipt(
     pending_rows = [row for row in rows if str(row.get("status") or "").startswith("pending")]
     if blocking_rows:
         status = "push_readiness_receipt_blocked"
+    elif ready_for_explicit_push_sequence and fresh_local_gate_run_observed:
+        status = "push_readiness_receipt_ready_local_gate_passed_remote_ci_pending"
     elif ready_for_explicit_push_sequence:
         status = "push_readiness_receipt_ready_local_gate_required_remote_ci_pending"
     else:
@@ -1483,15 +1660,22 @@ def _release_gate_push_readiness_receipt(
             "use git add .",
             "push when scripts/push_gate_3_0.sh fails",
         ],
-        "missing_evidence_items": [
-            "fresh_local_push_gate_command_output",
-            "matching_remote_actions_run_status",
-            "latest_remote_run_green_evidence",
-            "periodic_secret_artifact_allowlist_review",
-        ],
+        "missing_evidence_items": (
+            ([] if fresh_local_gate_run_observed else ["fresh_local_push_gate_command_output"])
+            + [
+                "matching_remote_actions_run_status",
+                "latest_remote_run_green_evidence",
+                "periodic_secret_artifact_allowlist_review",
+            ]
+        ),
         "local_gate_contract_ready": local_gate_ready,
         "ci_mirror_ready": ci_mirror_ready,
-        "fresh_local_gate_run_observed": False,
+        "fresh_local_gate_run_observed": fresh_local_gate_run_observed,
+        "local_push_gate_run_receipt": local_run_receipt,
+        "local_push_gate_run_receipt_status": local_run_receipt.get("status"),
+        "local_push_gate_run_receipt_head": local_run_receipt.get("head"),
+        "local_push_gate_run_receipt_current_head": local_run_receipt.get("current_head"),
+        "local_push_gate_run_receipt_head_matches_current": local_run_receipt.get("head_matches_current") is True,
         "remote_actions_status_known": remote_actions_status_known,
         "latest_remote_run_verified_green": latest_remote_run_verified_green,
         "can_clear_failure_email_without_matching_head_and_logs": False,
@@ -1519,8 +1703,9 @@ def _release_gate_push_readiness_receipt(
         "call_ledger": [
             {
                 "api": "local_release_gate_push_readiness_receipt",
-                "source": "local release gate and CI notification triage contracts",
+                "source": "local release gate, local push gate run receipt, and CI notification triage contracts",
                 "call_status": "cache_read",
+                "fresh_local_gate_run_observed": fresh_local_gate_run_observed,
                 "local_fetched_at": _now_iso(),
                 "external": False,
             }
@@ -1534,24 +1719,37 @@ def _release_gate_stage_scope_rows(
     release_gate_readiness_audit: Mapping[str, Any],
     release_gate_push_readiness_receipt: Mapping[str, Any],
     ci_notification_triage_contract: Mapping[str, Any],
+    local_push_gate_run_receipt: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     local_gate_ready = release_gate_readiness_audit.get("local_gate_ready") is True
     ci_mirror_ready = release_gate_readiness_audit.get("ci_mirror_ready") is True
     for_push_ready = release_gate_push_readiness_receipt.get("ready_for_explicit_local_gate_then_push") is True
+    fresh_local_gate_run_observed = (
+        release_gate_push_readiness_receipt.get("fresh_local_gate_run_observed") is True
+        or _as_dict(local_push_gate_run_receipt).get("fresh_local_gate_run_observed") is True
+    )
     rows: list[dict[str, Any]] = []
     for stage_key in sorted(REQUIRED_RELEASE_GATE_STAGE_KEYS):
+        stage_complete = (
+            (stage_key == "local_push_gate_static_contract" and local_gate_ready)
+            or (stage_key == "ci_mirror_workflow_contract" and ci_mirror_ready)
+        )
+        if stage_key == "fresh_local_gate_command_run":
+            stage_complete = fresh_local_gate_run_observed
         rows.append(
             {
                 "stage_key": stage_key,
                 "stage_label": RELEASE_GATE_STAGE_LABELS[stage_key],
                 "scope": RELEASE_GATE_STAGE_SCOPE,
-                "current_status": "local_static_or_pending_evidence",
+                "current_status": "stage_complete" if stage_complete else "local_static_or_pending_evidence",
                 "target_status": "fresh_local_gate_or_remote_ci_evidence_required",
                 "required_before_release_push": True,
                 "local_static_contract_ready": local_gate_ready,
                 "ci_mirror_ready": ci_mirror_ready,
                 "ready_for_explicit_push_sequence": for_push_ready,
-                "fresh_local_gate_run_observed": False,
+                "fresh_local_gate_run_observed": fresh_local_gate_run_observed,
+                "local_push_gate_receipt_head": _as_dict(local_push_gate_run_receipt).get("head", ""),
+                "local_push_gate_receipt_current_head": _as_dict(local_push_gate_run_receipt).get("current_head", ""),
                 "remote_actions_status_known": False,
                 "latest_remote_run_verified_green": False,
                 "failure_email_has_matching_head_and_logs": False,
@@ -1560,7 +1758,7 @@ def _release_gate_stage_scope_rows(
                 "release_report_written_by_cache": False,
                 "release_report_is_ci_status": False,
                 "release_gate_complete": False,
-                "stage_complete": False,
+                "stage_complete": stage_complete,
                 "did_not_push": True,
                 "git_add_dot_used": False,
                 "github_api_called": False,
@@ -3324,14 +3522,17 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         release_gate_readiness_audit,
         release_gate_workflow_rows,
     )
+    local_push_gate_run_receipt = _read_local_push_gate_run_receipt()
     release_gate_push_readiness_receipt, release_gate_push_readiness_rows = _release_gate_push_readiness_receipt(
         release_gate_readiness_audit,
         ci_notification_triage_contract,
+        local_push_gate_run_receipt,
     )
     release_gate_stage_scope_rows = _release_gate_stage_scope_rows(
         release_gate_readiness_audit,
         release_gate_push_readiness_receipt,
         ci_notification_triage_contract,
+        local_push_gate_run_receipt,
     )
     motion_clarity_audit, motion_clarity_rows = _motion_clarity_readiness_audit()
     motion_production_qa_contract, motion_production_qa_rows = _motion_production_qa_contract(
@@ -3416,6 +3617,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "release_gate_readiness_audit": release_gate_readiness_audit,
         "release_gate_readiness_rows": release_gate_readiness_rows,
         "release_gate_workflow_rows": release_gate_workflow_rows,
+        "local_push_gate_run_receipt": local_push_gate_run_receipt,
         "release_gate_push_readiness_receipt": release_gate_push_readiness_receipt,
         "release_gate_push_readiness_rows": release_gate_push_readiness_rows,
         "release_gate_stage_scope_rows": release_gate_stage_scope_rows,
@@ -3475,6 +3677,9 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "release_gate_stage_scope_pending_count": sum(
                 1 for row in release_gate_stage_scope_rows if row.get("stage_complete") is False
             ),
+            "local_push_gate_run_observed": local_push_gate_run_receipt.get("fresh_local_gate_run_observed") is True,
+            "local_push_gate_receipt_head_matches_current": local_push_gate_run_receipt.get("head_matches_current")
+            is True,
             "push_readiness_receipt_ready": release_gate_push_readiness_receipt.get("local_receipt_ready") is True,
             "push_readiness_remote_status_known": release_gate_push_readiness_receipt.get(
                 "remote_actions_status_known"
@@ -3605,6 +3810,8 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "release_gate_local_ready": release_gate_readiness_audit.get("local_gate_ready"),
                 "release_gate_complete": release_gate_readiness_audit.get("release_gate_complete"),
                 "push_readiness_receipt_status": release_gate_push_readiness_receipt.get("status"),
+                "local_push_gate_run_receipt_status": local_push_gate_run_receipt.get("status"),
+                "local_push_gate_run_observed": local_push_gate_run_receipt.get("fresh_local_gate_run_observed"),
                 "push_readiness_allowed_next_step": release_gate_push_readiness_receipt.get("allowed_next_step"),
                 "push_readiness_remote_status_known": release_gate_push_readiness_receipt.get(
                     "remote_actions_status_known"
@@ -3663,6 +3870,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "发现 missing_call_ledger 只代表该本地 cache 返回包没有附带调用血缘，不代表自动外联。",
             "release_gate_readiness_audit 只读解析本地脚本和 workflow；local_gate_ready 不是 CI 状态，也不是生产完成证明。",
             "release_gate_push_readiness_receipt 只选择显式本地 gate -> push -> 远端 Actions 复核路径；不运行命令、不调用 GitHub、不证明远端已绿。",
+            "local_push_gate_run_receipt 只读取 ignored 本地 receipt 并匹配当前 HEAD；它不是远端 Actions 状态，也不会触发 push。",
             "ci_notification_triage_contract 只解释失败邮件需要的远端日志证据；不调用 GitHub API，也不证明远端 run 已变绿。",
             "motion_clarity_audit 只读解析本地 React/CSS 源码；static_ready 不是浏览器视觉验收或生产动效完成证明。",
             "motion_production_qa_contract 是本地生产验收清单；不运行浏览器视觉 QA 或性能 trace。",

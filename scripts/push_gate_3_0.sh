@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 
 PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"
 PUSH_GATE_REPORT_PATH="${PUSH_GATE_REPORT_PATH:-}"
+LOCAL_PUSH_GATE_RECEIPT_PATH="${LOCAL_PUSH_GATE_RECEIPT_PATH:-.stock_ming_3/release_gate/local_push_gate_run_receipt.json}"
 if [ ! -x "$PYTHON_BIN" ]; then
   echo "FAIL: expected project Python at $PYTHON_BIN. Do not use system Python for the push gate." >&2
   exit 1
@@ -147,6 +148,81 @@ REPORT
   echo "release readiness report: $PUSH_GATE_REPORT_PATH"
 }
 
+write_local_push_gate_run_receipt() {
+  local receipt_path receipt_dir branch head head_full ahead_count generated_at
+  receipt_path="$LOCAL_PUSH_GATE_RECEIPT_PATH"
+  receipt_dir="$(dirname "$receipt_path")"
+  mkdir -p "$receipt_dir"
+  branch="$(git rev-parse --abbrev-ref HEAD)"
+  head="$(git rev-parse --short HEAD)"
+  head_full="$(git rev-parse HEAD)"
+  ahead_count="$(git rev-list --count origin/main..HEAD 2>/dev/null || echo unknown)"
+  generated_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+  "$PYTHON_BIN" - "$receipt_path" "$generated_at" "$branch" "$head" "$head_full" "$ahead_count" "$PUSH_GATE_REPORT_PATH" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+receipt_path, generated_at, branch, head, head_full, ahead_count, report_path = sys.argv[1:8]
+payload = {
+    "schema_version": "command_center_3_local_push_gate_run_receipt.v1",
+    "status": "local_push_gate_passed_current_head",
+    "scope": "ignored_local_push_gate_run_receipt_no_push_no_github_api",
+    "generated_at_utc": generated_at,
+    "branch": branch,
+    "head": head,
+    "head_full": head_full,
+    "origin_ahead_count": ahead_count,
+    "report_path": report_path,
+    "checks": [
+        "python_unittest",
+        "desktop_build",
+        "command_center_3_smoke",
+        "data_health_freshness_contract",
+        "tushare_acceptance_contract",
+        "bootstrap_runtime_contract",
+        "tushare_deepseek_linkage_contract",
+        "factor_test_lab_contract",
+        "factor_universe_contract",
+        "deepseek_governance_contract",
+        "next_session_map_contract",
+        "candidate_radar_contract",
+        "candidate_radar_browser_qa_runbook",
+        "storage_contract",
+        "worker_contract",
+        "tauri_desktop_contract",
+        "streamlit_legacy_contract",
+        "trade_isolation_contract",
+        "motion_viewport_qa_contract",
+        "motion_browser_qa_runbook",
+        "diff_whitespace_check",
+        "high_risk_secret_scan",
+        "secret_keyword_review_contract",
+        "generated_artifact_scan",
+        "release_readiness_report",
+        "clean_worktree_check",
+    ],
+    "did_not_push": True,
+    "git_add_dot_used": False,
+    "external_calls_triggered": False,
+    "tushare_called": False,
+    "deepseek_called": False,
+    "github_called": False,
+    "github_api_called": False,
+    "does_not_execute_trades": True,
+    "does_not_modify_strategy_action": True,
+    "contains_secret": False,
+    "local_gate_pass_is_not_ci_status": True,
+    "remote_actions_status_known": False,
+    "latest_remote_run_verified_green": False,
+}
+path = Path(receipt_path)
+path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+  echo "local push gate run receipt: $receipt_path"
+}
+
 run_step "Python unittest" "$PYTHON_BIN" -m unittest discover -s tests
 run_step "Desktop build" bash -c "cd desktop && npm run build"
 run_step "Command Center 3 smoke" env PYTHON_BIN="$PYTHON_BIN" scripts/smoke_3_0.sh
@@ -173,6 +249,7 @@ run_step "Secret keyword review contract" "$PYTHON_BIN" scripts/secret_keyword_r
 run_step "Generated artifact scan" artifact_scan
 run_step "Release readiness report" write_release_readiness_report
 run_step "Clean worktree check" worktree_clean_scan
+run_step "Local push gate run receipt" write_local_push_gate_run_receipt
 
 echo
 echo "PASS: Command Center 3 push gate completed. This script did not push, did not call external providers, and did not execute trades."
