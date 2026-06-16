@@ -1938,6 +1938,105 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(handoff["does_not_modify_strategy_action"])
         self.assertFalse(handoff["contains_secret"])
 
+    def test_ltg_stage_scope_observes_storage_schema_manifest_direct_evidence(self):
+        db_path = self._with_meta_store()
+        datasets = list(storage_service.CANONICAL_PARQUET_DATASETS)
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        store = SQLiteMetaStore(db_path)
+        store.write_packet(
+            storage_service.SCHEMA_VALIDATION_ACCEPTANCE_PACKET_KEY,
+            {
+                "packet_key": storage_service.SCHEMA_VALIDATION_ACCEPTANCE_PACKET_KEY,
+                "schema_version": "command_center_3_storage_schema_validation_acceptance.v1",
+                "status": "schema_acceptance_passed_all_local_datasets",
+                "dataset_count": len(datasets),
+                "rows": [
+                    {
+                        "dataset": dataset,
+                        "physical_schema_acceptance_passed": True,
+                        "acceptance_status": "accepted_local_schema",
+                    }
+                    for dataset in datasets
+                ],
+                "production_storage_complete": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+            },
+        )
+        store.write_packet(
+            storage_service.DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY,
+            {
+                "packet_key": storage_service.DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY,
+                "schema_version": "command_center_3_storage_dataset_version_manifest_validate.v1",
+                "status": "manifest_validate_passed_local_only",
+                "manifest_exists": True,
+                "dataset_count": len(datasets),
+                "validated_dataset_count": len(datasets),
+                "dataset_version_manifest_validated": True,
+                "physical_dataset_version_validated_count": len(datasets),
+                "production_storage_complete": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+            },
+        )
+        store.write_packet(
+            storage_service.STORAGE_PHYSICAL_EXECUTION_REQUEST_PACKET_KEY,
+            {
+                "packet_key": storage_service.STORAGE_PHYSICAL_EXECUTION_REQUEST_PACKET_KEY,
+                "schema_version": "command_center_3_storage_physical_execution_request.v1",
+                "status": "storage_physical_execution_request_ready_manual_physical_tasks_pending",
+                "local_execution_request_ready": True,
+                "production_storage_complete": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            },
+        )
+
+        migration = migration_status_service.build_migration_status()
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg05 = observed_stage_rows["LTG-05"]
+
+        self.assertEqual(ltg05["status"], "observed_storage_direct_execution_evidence_production_pending")
+        self.assertEqual(ltg05["row_count"], 8)
+        self.assertEqual(ltg05["pending_stage_count"], 6)
+        self.assertEqual(ltg05["production_blocker_count"], 6)
+        self.assertEqual(ltg05["direct_evidence_stage_count"], 2)
+        self.assertTrue(ltg05["physical_schema_validation_done"])
+        self.assertEqual(ltg05["physical_schema_validation_done_count"], len(datasets))
+        self.assertTrue(ltg05["dataset_version_manifest_validated"])
+        self.assertEqual(ltg05["dataset_version_manifest_validated_count"], len(datasets))
+        self.assertTrue(ltg05["storage_physical_execution_request_ready"])
+        self.assertEqual(ltg05["storage_direct_evidence_layer"], "L3_local_storage_physical_execution_evidence")
+        self.assertFalse(ltg05["schema_migration_executed"])
+        self.assertFalse(ltg05["partition_migration_executed"])
+        self.assertFalse(ltg05["physical_compaction_executed"])
+        self.assertFalse(ltg05["cache_ttl_refresh_executed"])
+        self.assertFalse(ltg05["artifact_cleanup_delete_executed"])
+        self.assertFalse(ltg05["production_storage_complete"])
+        self.assertFalse(ltg05["external_calls_triggered"])
+        self.assertFalse(ltg05["tushare_called"])
+        self.assertFalse(ltg05["deepseek_called"])
+        self.assertFalse(ltg05["github_called"])
+        self.assertTrue(ltg05["does_not_execute_trades"])
+        self.assertFalse(ltg05["can_close_from_observed_row"])
+
+        migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
+        self.assertEqual(migration_goals["LTG-05"]["observed_stage_scope_pending_count"], 6)
+        self.assertFalse(migration_goals["LTG-05"]["observed_stage_scope_can_close_goal"])
+
     def test_ltg_next_action_queue_reads_candidate_radar_packet_receipts(self):
         self._with_meta_store()
         old_tushare_token = os.environ.get("TUSHARE_TOKEN")
@@ -19677,7 +19776,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
         self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 14)
-        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 119)
+        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 117)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_acceptance_runway_rows"]), 14)
@@ -19900,13 +19999,21 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             observed_stage_rows["LTG-05"]["stage_scope_manifest"],
             "storage_physical_migration_stage_scope_manifest",
         )
-        self.assertEqual(observed_stage_rows["LTG-05"]["status"], "observed_in_storage_static_contract")
+        self.assertEqual(
+            observed_stage_rows["LTG-05"]["status"],
+            "observed_storage_direct_execution_evidence_production_pending",
+        )
         self.assertEqual(observed_stage_rows["LTG-05"]["row_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-05"]["pending_stage_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-05"]["pending_stage_count"], 6)
         self.assertEqual(observed_stage_rows["LTG-05"]["local_evidence_stage_count"], 8)
-        self.assertFalse(observed_stage_rows["LTG-05"]["physical_schema_validation_done"])
+        self.assertEqual(observed_stage_rows["LTG-05"]["direct_evidence_stage_count"], 2)
+        self.assertTrue(observed_stage_rows["LTG-05"]["physical_schema_validation_done"])
         self.assertFalse(observed_stage_rows["LTG-05"]["schema_migration_executed"])
-        self.assertFalse(observed_stage_rows["LTG-05"]["dataset_version_manifest_validated"])
+        self.assertTrue(observed_stage_rows["LTG-05"]["dataset_version_manifest_validated"])
+        self.assertEqual(
+            observed_stage_rows["LTG-05"]["storage_direct_evidence_layer"],
+            "L3_local_storage_physical_execution_evidence",
+        )
         self.assertFalse(observed_stage_rows["LTG-05"]["partition_migration_executed"])
         self.assertFalse(observed_stage_rows["LTG-05"]["physical_compaction_executed"])
         self.assertFalse(observed_stage_rows["LTG-05"]["cache_ttl_refresh_executed"])
@@ -20181,9 +20288,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(migration_goals["LTG-04"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(
             migration_goals["LTG-05"]["observed_stage_scope_manifest_status"],
-            "observed_in_storage_static_contract",
+            "observed_storage_direct_execution_evidence_production_pending",
         )
-        self.assertEqual(migration_goals["LTG-05"]["observed_stage_scope_pending_count"], 8)
+        self.assertEqual(migration_goals["LTG-05"]["observed_stage_scope_pending_count"], 6)
         self.assertFalse(migration_goals["LTG-05"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-06"]["stage_scope_manifest"], "worker_runtime_evidence_stage_scope_manifest")
         self.assertIn("runtime evidence stage-scope manifest", migration_goals["LTG-06"]["current_state"])

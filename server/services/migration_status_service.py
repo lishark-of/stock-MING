@@ -1675,6 +1675,133 @@ def _latest_storage_physical_execution_recipe_preview() -> dict[str, Any]:
     }
 
 
+def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
+    try:
+        from server.services import storage_service
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        schema_evidence = storage_service.storage_schema_validation_acceptance_evidence_audit()
+        execution_request = storage_service.storage_physical_execution_request_evidence()
+        try:
+            manifest_packet = SQLiteMetaStore(storage_service.SQLITE_META_PATH).read_packet(
+                storage_service.DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY
+            )
+        except Exception:
+            manifest_packet = {}
+    except Exception:
+        return {
+            "schema_version": "migration_storage_direct_execution_evidence_summary.v1",
+            "source_packet_key": "storage_sqlite_packets",
+            "available": False,
+            "status": "storage_direct_evidence_read_failed_safe_fallback",
+            "direct_evidence_stage_count": 0,
+            "physical_schema_validation_done": False,
+            "dataset_version_manifest_validated": False,
+            "storage_physical_execution_request_ready": False,
+            "production_storage_complete": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "direct_evidence_layer": "L1_static_contract",
+        }
+
+    schema_map = schema_evidence if isinstance(schema_evidence, dict) else {}
+    manifest_map = manifest_packet if isinstance(manifest_packet, dict) else {}
+    request_map = execution_request if isinstance(execution_request, dict) else {}
+    schema_done = bool(
+        schema_map.get("physical_schema_validation_done") is True
+        and schema_map.get("status") == "schema_acceptance_evidence_passed_all_local_datasets"
+        and schema_map.get("external_calls_triggered") is False
+        and schema_map.get("tushare_called") is False
+        and schema_map.get("deepseek_called") is False
+        and schema_map.get("github_called") is False
+        and schema_map.get("does_not_execute_trades") is True
+        and schema_map.get("production_storage_complete") is False
+    )
+    manifest_done = bool(
+        manifest_map.get("schema_version") == "command_center_3_storage_dataset_version_manifest_validate.v1"
+        and manifest_map.get("status") == "manifest_validate_passed_local_only"
+        and manifest_map.get("dataset_version_manifest_validated") is True
+        and manifest_map.get("external_calls_triggered") is False
+        and manifest_map.get("tushare_called") is False
+        and manifest_map.get("deepseek_called") is False
+        and manifest_map.get("github_called") is False
+        and manifest_map.get("does_not_execute_trades") is True
+        and manifest_map.get("production_storage_complete") is False
+    )
+    request_ready = bool(
+        request_map.get("local_execution_request_ready") is True
+        and request_map.get("external_calls_triggered") is False
+        and request_map.get("tushare_called") is False
+        and request_map.get("deepseek_called") is False
+        and request_map.get("github_called") is False
+        and request_map.get("does_not_execute_trades") is True
+        and request_map.get("production_storage_complete") is False
+    )
+    direct_evidence_count = int(schema_done) + int(manifest_done)
+    try:
+        schema_done_count = int(schema_map.get("physical_schema_validation_done_count") or 0)
+    except Exception:
+        schema_done_count = 0
+    try:
+        manifest_validated_count = int(
+            manifest_map.get("validated_dataset_count")
+            or manifest_map.get("physical_dataset_version_validated_count")
+            or 0
+        )
+    except Exception:
+        manifest_validated_count = 0
+    return {
+        "schema_version": "migration_storage_direct_execution_evidence_summary.v1",
+        "source_packet_key": "storage_sqlite_packets",
+        "source_schema_acceptance_packet_key": getattr(
+            storage_service,
+            "SCHEMA_VALIDATION_ACCEPTANCE_PACKET_KEY",
+            "command_center_3_storage_schema_validation_acceptance_packet",
+        ),
+        "source_manifest_validate_packet_key": getattr(
+            storage_service,
+            "DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY",
+            "command_center_3_storage_dataset_version_manifest_validate_packet",
+        ),
+        "source_physical_execution_request_packet_key": getattr(
+            storage_service,
+            "STORAGE_PHYSICAL_EXECUTION_REQUEST_PACKET_KEY",
+            "command_center_3_storage_physical_execution_request_packet",
+        ),
+        "available": bool(direct_evidence_count),
+        "status": "storage_direct_evidence_visible_production_pending"
+        if direct_evidence_count
+        else "storage_direct_evidence_missing",
+        "direct_evidence_stage_count": direct_evidence_count,
+        "physical_schema_validation_done": schema_done,
+        "physical_schema_validation_done_count": schema_done_count,
+        "schema_validation_acceptance_evidence_status": str(schema_map.get("status") or ""),
+        "dataset_version_manifest_validated": manifest_done,
+        "dataset_version_manifest_validate_packet_status": str(manifest_map.get("status") or "packet_missing"),
+        "dataset_version_manifest_validated_count": manifest_validated_count,
+        "manifest_exists": bool(manifest_map.get("manifest_exists")),
+        "storage_physical_execution_request_ready": request_ready,
+        "storage_physical_execution_request_status": str(request_map.get("status") or "packet_missing"),
+        "production_storage_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "direct_evidence_layer": "L3_local_storage_physical_execution_evidence"
+        if direct_evidence_count
+        else "L1_static_contract",
+        "evidence_boundary": "storage_schema_manifest_direct_evidence_is_not_production_storage_completion",
+    }
+
+
 def _latest_worker_runtime_qa_context_preview() -> dict[str, Any]:
     try:
         from server.services import worker_service
@@ -2809,28 +2936,67 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             for row in stage_rows
             if isinstance(row, dict) and row.get("current_status") == "local_preflight_or_dry_run_only"
         )
+        direct_evidence = _latest_storage_direct_execution_evidence_summary()
+        direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
+        observed_pending_count = max(pending_count - direct_evidence_count, 0)
+        storage_status = (
+            "observed_storage_direct_execution_evidence_production_pending"
+            if direct_evidence_count
+            else "observed_in_storage_static_contract"
+        )
         rows.append(
             {
                 "id": "LTG-05",
                 "goal": "Storage / DuckDB / Parquet 生产化",
                 "stage_scope_manifest": "storage_physical_migration_stage_scope_manifest",
-                "status": "observed_in_storage_static_contract"
-                if stage_rows
-                else "missing_from_storage_static_contract",
-                "observed_source": "scripts/storage_contract._physical_migration_stage_scope_rows local static contract",
-                "cache_status": "storage_static_contract",
-                "cache_mode": "local_static_contract",
+                "status": storage_status if stage_rows else "missing_from_storage_static_contract",
+                "observed_source": "scripts/storage_contract._physical_migration_stage_scope_rows local static contract + storage SQLite direct evidence",
+                "cache_status": "storage_static_contract_plus_direct_evidence"
+                if direct_evidence_count
+                else "storage_static_contract",
+                "cache_mode": "local_static_contract_plus_storage_direct_evidence"
+                if direct_evidence_count
+                else "local_static_contract",
                 "row_count": row_count,
-                "pending_stage_count": pending_count,
+                "pending_stage_count": observed_pending_count,
                 "local_evidence_stage_count": local_evidence_count,
-                "production_blocker_count": pending_count,
-                "physical_schema_validation_done": False,
+                "direct_evidence_stage_count": direct_evidence_count,
+                "production_blocker_count": observed_pending_count,
+                "physical_schema_validation_done": direct_evidence.get("physical_schema_validation_done") is True,
+                "physical_schema_validation_done_count": int(
+                    direct_evidence.get("physical_schema_validation_done_count") or 0
+                ),
+                "schema_validation_acceptance_evidence_status": direct_evidence.get(
+                    "schema_validation_acceptance_evidence_status"
+                )
+                or "",
                 "schema_migration_executed": False,
-                "dataset_version_manifest_validated": False,
+                "dataset_version_manifest_validated": direct_evidence.get(
+                    "dataset_version_manifest_validated"
+                )
+                is True,
+                "dataset_version_manifest_validate_packet_status": direct_evidence.get(
+                    "dataset_version_manifest_validate_packet_status"
+                )
+                or "",
+                "dataset_version_manifest_validated_count": int(
+                    direct_evidence.get("dataset_version_manifest_validated_count") or 0
+                ),
+                "manifest_exists": direct_evidence.get("manifest_exists") is True,
                 "partition_migration_executed": False,
                 "physical_compaction_executed": False,
                 "cache_ttl_refresh_executed": False,
                 "artifact_cleanup_delete_executed": False,
+                "storage_physical_execution_request_ready": direct_evidence.get(
+                    "storage_physical_execution_request_ready"
+                )
+                is True,
+                "storage_physical_execution_request_status": direct_evidence.get(
+                    "storage_physical_execution_request_status"
+                )
+                or "",
+                "storage_direct_evidence_layer": direct_evidence.get("direct_evidence_layer")
+                or "L1_static_contract",
                 "production_storage_complete": False,
                 "writes_parquet_on_get": False,
                 "writes_parquet_by_contract": False,
@@ -2845,7 +3011,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "does_not_modify_strategy_action": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
-                "evidence_boundary": "observed_local_static_storage_stage_scope_not_production_completion",
+                "evidence_boundary": "observed_l3_storage_schema_manifest_evidence_not_production_completion"
+                if direct_evidence_count
+                else "observed_local_static_storage_stage_scope_not_production_completion",
             }
         )
     except Exception:
