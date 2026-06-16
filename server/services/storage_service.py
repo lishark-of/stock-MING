@@ -2220,6 +2220,7 @@ def _partition_migration_dry_run_row(dataset: str) -> dict[str, Any]:
         "dataset": dataset,
         "status": dry_run_status,
         "partition_migration_status": dry_run_status,
+        "partition_migration_metadata_validation_done": dry_run_status == "ready_for_manual_partition_migration",
         "schema_validation_status": schema_validation.get("validation_status"),
         "schema_version": schema_validation.get("schema_version"),
         "source_parquet_status": metadata.get("status", "missing"),
@@ -2233,10 +2234,12 @@ def _partition_migration_dry_run_row(dataset: str) -> dict[str, Any]:
         "partition_writer": partition_plan.get("partition_writer"),
         "partition_migration_ready": dry_run_status == "ready_for_manual_partition_migration",
         "partition_migration_executed": False,
+        "production_storage_complete": False,
         "would_write_partitioned_dataset": False,
         "post_dry_run_writes_parquet": False,
         "post_dry_run_reads_row_payloads": False,
         "cache_get_writes_files": False,
+        "contains_secret": False,
         "manual_partition_migration_task_required": True,
         "manual_compaction_required_after_migration": True,
         "external_calls_triggered": False,
@@ -2256,6 +2259,8 @@ def storage_partition_migration_dry_run_packet(
     rows = [_partition_migration_dry_run_row(dataset) for dataset in CANONICAL_PARQUET_DATASETS]
     status_counts = _count_values(row.get("partition_migration_status") for row in rows)
     ready_count = sum(1 for row in rows if row.get("partition_migration_ready"))
+    metadata_validated_count = sum(1 for row in rows if row.get("partition_migration_metadata_validation_done"))
+    metadata_validation_done = metadata_validated_count == len(rows)
     packet = {
         "schema_version": "command_center_3_storage_partition_migration_dry_run.v1",
         "packet_key": PARTITION_MIGRATION_DRY_RUN_PACKET_KEY,
@@ -2265,6 +2270,8 @@ def storage_partition_migration_dry_run_packet(
         "scope": "partition_migration_plan_before_write",
         "dataset_count": len(rows),
         "partition_migration_ready_count": ready_count,
+        "partition_migration_metadata_validated_count": metadata_validated_count,
+        "partition_migration_metadata_validation_done": metadata_validation_done,
         "partition_migration_blocked_count": len(rows) - ready_count,
         "missing_dataset_count": status_counts.get("missing_dataset", 0),
         "blocked_schema_validation_count": status_counts.get("blocked_schema_validation", 0),
@@ -2285,6 +2292,8 @@ def storage_partition_migration_dry_run_packet(
         "post_dry_run_reads_row_payloads": False,
         "post_dry_run_reads_env_files": False,
         "partition_migration_executed": False,
+        "production_storage_complete": False,
+        "contains_secret": False,
         "manual_partition_migration_task_required": True,
         "external_calls_triggered": False,
         "tushare_called": False,

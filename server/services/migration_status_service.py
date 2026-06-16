@@ -2008,6 +2008,12 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
             )
         except Exception:
             manifest_packet = {}
+        try:
+            partition_packet = SQLiteMetaStore(storage_service.SQLITE_META_PATH).read_packet(
+                storage_service.PARTITION_MIGRATION_DRY_RUN_PACKET_KEY
+            )
+        except Exception:
+            partition_packet = {}
     except Exception:
         return {
             "schema_version": "migration_storage_direct_execution_evidence_summary.v1",
@@ -2018,6 +2024,7 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
             "physical_schema_validation_done": False,
             "dataset_version_manifest_validated": False,
             "duckdb_read_validation_done": False,
+            "partition_migration_metadata_validation_done": False,
             "storage_physical_execution_request_ready": False,
             "production_storage_complete": False,
             "external_calls_triggered": False,
@@ -2032,6 +2039,7 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
 
     schema_map = schema_evidence if isinstance(schema_evidence, dict) else {}
     manifest_map = manifest_packet if isinstance(manifest_packet, dict) else {}
+    partition_map = partition_packet if isinstance(partition_packet, dict) else {}
     request_map = execution_request if isinstance(execution_request, dict) else {}
     duckdb_map = duckdb_read_validation if isinstance(duckdb_read_validation, dict) else {}
     schema_done = bool(
@@ -2098,7 +2106,35 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
         and duckdb_map.get("does_not_modify_strategy_action") is True
         and duckdb_map.get("contains_secret") is False
     )
-    direct_evidence_count = int(schema_done) + int(manifest_done) + int(duckdb_read_validation_done)
+    partition_metadata_validation_done = bool(
+        partition_map.get("schema_version") == "command_center_3_storage_partition_migration_dry_run.v1"
+        and partition_map.get("status") == "dry_run_completed"
+        and partition_map.get("partition_migration_metadata_validation_done") is True
+        and int(partition_map.get("dataset_count") or 0) > 0
+        and int(partition_map.get("partition_migration_metadata_validated_count") or 0)
+        == int(partition_map.get("dataset_count") or 0)
+        and int(partition_map.get("partition_migration_blocked_count") or 0) == 0
+        and partition_map.get("partition_migration_executed") is False
+        and int(partition_map.get("partition_migration_executed_count") or 0) == 0
+        and partition_map.get("post_dry_run_writes_parquet") is False
+        and partition_map.get("post_dry_run_reads_row_payloads") is False
+        and partition_map.get("post_dry_run_reads_env_files") is False
+        and partition_map.get("cache_get_writes_files") is False
+        and partition_map.get("production_storage_complete") is False
+        and partition_map.get("external_calls_triggered") is False
+        and partition_map.get("tushare_called") is False
+        and partition_map.get("deepseek_called") is False
+        and partition_map.get("github_called") is False
+        and partition_map.get("does_not_execute_trades") is True
+        and partition_map.get("does_not_modify_strategy_action") is True
+        and partition_map.get("contains_secret") is False
+    )
+    direct_evidence_count = (
+        int(schema_done)
+        + int(manifest_done)
+        + int(duckdb_read_validation_done)
+        + int(partition_metadata_validation_done)
+    )
     try:
         schema_done_count = int(schema_map.get("physical_schema_validation_done_count") or 0)
     except Exception:
@@ -2146,6 +2182,12 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
         "duckdb_read_validation_dataset_count": int(duckdb_map.get("dataset_count") or 0),
         "duckdb_read_validation_contract_ready_count": int(duckdb_map.get("contract_ready_count") or 0),
         "duckdb_read_validation_ready_dataset_count": int(duckdb_map.get("ready_dataset_count") or 0),
+        "partition_migration_metadata_validation_done": partition_metadata_validation_done,
+        "partition_migration_metadata_validation_status": str(partition_map.get("status") or "packet_missing"),
+        "partition_migration_metadata_validated_count": int(
+            partition_map.get("partition_migration_metadata_validated_count") or 0
+        ),
+        "partition_migration_dataset_count": int(partition_map.get("dataset_count") or 0),
         "storage_physical_execution_request_ready": request_ready,
         "storage_physical_execution_request_status": str(request_map.get("status") or "packet_missing"),
         "production_storage_complete": False,
@@ -3895,6 +3937,20 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 ),
                 "duckdb_read_validation_ready_dataset_count": int(
                     direct_evidence.get("duckdb_read_validation_ready_dataset_count") or 0
+                ),
+                "partition_migration_metadata_validation_done": direct_evidence.get(
+                    "partition_migration_metadata_validation_done"
+                )
+                is True,
+                "partition_migration_metadata_validation_status": direct_evidence.get(
+                    "partition_migration_metadata_validation_status"
+                )
+                or "",
+                "partition_migration_metadata_validated_count": int(
+                    direct_evidence.get("partition_migration_metadata_validated_count") or 0
+                ),
+                "partition_migration_dataset_count": int(
+                    direct_evidence.get("partition_migration_dataset_count") or 0
                 ),
                 "partition_migration_executed": False,
                 "physical_compaction_executed": False,
