@@ -1200,6 +1200,7 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "evidence_plan_ready",
         "local_recipe_ready",
         "local_receipt_ready",
+        "local_review_ready",
         "local_activation_receipt_ready",
         "local_scope_ticket_ready",
         "local_browser_qa_review_ready",
