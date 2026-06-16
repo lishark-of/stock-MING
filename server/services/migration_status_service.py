@@ -2683,6 +2683,7 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
     review = _dict_or_empty(packet_map.get("tauri_package_artifact_review_contract"))
     launch_review = _dict_or_empty(packet_map.get("tauri_packaged_runtime_launch_review_contract"))
     offline_ux_review = _dict_or_empty(packet_map.get("tauri_backend_offline_packaged_ux_review_contract"))
+    startup_review = _dict_or_empty(packet_map.get("tauri_backend_startup_runtime_review_contract"))
     packet_safe = bool(
         packet_map.get("external_calls_triggered") is not True
         and packet_map.get("tushare_called") is not True
@@ -2807,6 +2808,38 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
     )
     if backend_offline_packaged_ux_ready:
         direct_stage_keys.append("backend_offline_packaged_ux")
+    backend_startup_runtime_ready = bool(
+        packet_safe
+        and packaged_app_launch_ready
+        and backend_offline_packaged_ux_ready
+        and startup_review.get("schema_version") == "tauri_backend_startup_runtime_review.v1"
+        and startup_review.get("status") == "tauri_backend_startup_runtime_review_ready"
+        and startup_review.get("explicit_review_task_done") is True
+        and startup_review.get("local_backend_startup_runtime_review_ready") is True
+        and startup_review.get("manual_fastapi_started_before_review") is True
+        and startup_review.get("fastapi_health_observed_ok") is True
+        and startup_review.get("packaged_app_fastapi_online_observed") is True
+        and startup_review.get("api_base_observed_safe") in {"http://127.0.0.1:8710", "http://localhost:8710"}
+        and startup_review.get("health_status_observed") in {"ok", "ready", "healthy"}
+        and len(str(startup_review.get("screenshot_sha256") or "")) == 64
+        and startup_review.get("backend_startup_runtime_validated") is True
+        and startup_review.get("backend_startup_runtime_is_completion") is False
+        and startup_review.get("backend_sidecar_autostart_validated") is False
+        and startup_review.get("packaged_runtime_validated") is False
+        and startup_review.get("production_package_complete") is False
+        and startup_review.get("fastapi_started_by_review") is False
+        and startup_review.get("config_values_read_by_review") is False
+        and startup_review.get("log_files_written_by_review") is False
+        and startup_review.get("external_calls_triggered") is False
+        and startup_review.get("tushare_called") is False
+        and startup_review.get("deepseek_called") is False
+        and startup_review.get("github_called") is False
+        and startup_review.get("does_not_execute_trades") is True
+        and startup_review.get("does_not_modify_strategy_action") is True
+        and startup_review.get("contains_secret") is False
+    )
+    if backend_startup_runtime_ready:
+        direct_stage_keys.append("backend_startup_runtime")
     return {
         "schema_version": "migration_tauri_package_direct_evidence_summary.v1",
         "source_packet_key": "command_center_3_tauri_package_artifact_review_packet",
@@ -2829,6 +2862,16 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         "backend_offline_packaged_ux_observed_route": offline_ux_review.get("observed_route")
         if backend_offline_packaged_ux_ready
         else "",
+        "backend_startup_runtime_validated": backend_startup_runtime_ready,
+        "backend_startup_runtime_screenshot_sha256": startup_review.get("screenshot_sha256")
+        if backend_startup_runtime_ready
+        else "",
+        "backend_startup_api_base_observed": startup_review.get("api_base_observed_safe")
+        if backend_startup_runtime_ready
+        else "",
+        "backend_startup_health_status_observed": startup_review.get("health_status_observed")
+        if backend_startup_runtime_ready
+        else "",
         "build_command_reviewed_safe": review.get("build_command_reviewed_safe") if build_repeatability_ready else "",
         "launch_command_reviewed_safe": launch_review.get("launch_command_reviewed_safe")
         if packaged_app_launch_ready
@@ -2844,7 +2887,7 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         "app_bundle_detected": app_bundle_ready,
         "dmg_distribution_detected": dmg_distribution_ready,
         "packaged_runtime_qa_done": False,
-        "backend_startup_runtime_validated": False,
+        "backend_startup_runtime_validated": backend_startup_runtime_ready,
         "backend_offline_packaged_ux_verified": backend_offline_packaged_ux_ready,
         "config_log_runtime_paths_validated": False,
         "signing_notarization_done": False,
@@ -5077,6 +5120,22 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     "backend_offline_packaged_ux_observed_route"
                 )
                 or "",
+                "backend_startup_runtime_validated": direct_evidence.get(
+                    "backend_startup_runtime_validated"
+                )
+                is True,
+                "backend_startup_runtime_screenshot_sha256": direct_evidence.get(
+                    "backend_startup_runtime_screenshot_sha256"
+                )
+                or "",
+                "backend_startup_api_base_observed": direct_evidence.get(
+                    "backend_startup_api_base_observed"
+                )
+                or "",
+                "backend_startup_health_status_observed": direct_evidence.get(
+                    "backend_startup_health_status_observed"
+                )
+                or "",
                 "tauri_build_command_reviewed_safe": direct_evidence.get("build_command_reviewed_safe") or "",
                 "tauri_launch_command_reviewed_safe": direct_evidence.get("launch_command_reviewed_safe") or "",
                 "tauri_launch_observed_process_name": direct_evidence.get("observed_process_name") or "",
@@ -5102,7 +5161,6 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "release_binary_is_completion": False,
                 "app_bundle_detected": direct_evidence.get("app_bundle_detected") is True,
                 "dmg_distribution_detected": direct_evidence.get("dmg_distribution_detected") is True,
-                "backend_startup_runtime_validated": False,
                 "config_log_runtime_paths_validated": False,
                 "signing_notarization_done": False,
                 "external_calls_triggered": False,
