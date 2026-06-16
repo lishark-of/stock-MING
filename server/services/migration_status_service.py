@@ -151,9 +151,9 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "下一票雷达快扫生产化",
         "completion_bucket": "real_validation_required",
         "completion_estimate": "40%-50%",
-        "current_state": "local quick-scan readiness, fast-scan task pipeline contract, no-feature-loss QA, legacy parity receipt, full/deep plan receipts, search-to-quant projection receipt, provider parity dry-run ticket, worker execution recipe, scope-bound worker execution-request ticket, scope-bound searched-symbol provider/model execution-request ticket, durable evidence recipe, production stage-scope manifest cache/React visibility, production promotion dry-run, legacy-retirement local review receipt, and result-delta clarity exist.",
+        "current_state": "local quick-scan readiness, fast-scan task pipeline contract, no-feature-loss QA, legacy parity receipt, full/deep plan receipts, search-to-quant projection receipt, provider parity dry-run ticket, worker execution recipe, scope-bound worker execution-request ticket, scope-bound searched-symbol provider/model execution-request ticket, durable evidence recipe, production stage-scope manifest cache/React visibility, production promotion dry-run, legacy-retirement local review receipt, production-promotion local review receipt, and result-delta clarity exist.",
         "not_complete_because": "async worker execution, real provider-backed radar parity execution, full-pool/deep-scan execution, real searched-symbol provider/model projection execution, DeepSeek model-ledger evidence when enabled, browser performance promotion, production legacy-retirement approval, and durable production replacement evidence are still pending.",
-        "next_step": "Use the worker execution-request, quant projection execution-request, durable evidence recipe, promotion dry-run, and legacy-retirement local review to bind real worker full-pool/deep-scan evidence, provider parity call ledger, real Tushare light call ledger, optional DeepSeek model ledger, browser performance/visual proof, and release evidence before any production replacement or legacy retirement claim.",
+        "next_step": "Use the worker execution-request, quant projection execution-request, durable evidence recipe, promotion dry-run, legacy-retirement local review, and production-promotion local review to bind real worker full-pool/deep-scan evidence, provider parity call ledger, real Tushare light call ledger, optional DeepSeek model ledger, browser performance/visual proof, and release evidence before any production replacement or legacy retirement claim.",
         "production_complete": False,
     },
     {
@@ -397,7 +397,7 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
         "ltg_ids": ["LTG-13"],
         "action_label": "Bind Candidate Radar provider/model/worker promotion evidence",
         "mode_layer": "button_task_then_worker_or_provider_execution",
-        "current_phase": "promotion_scope_ticket_and_direct_evidence_required",
+        "current_phase": "promotion_review_ticket_and_direct_evidence_required",
         "first_allowed_route": "POST /api/candidate-radar/quant-projection-acceptance-dry-run",
         "second_allowed_route": "POST /api/candidate-radar/quant-projection-execution-request",
         "future_provider_route": "future explicit worker/provider/model radar execution tasks",
@@ -409,6 +409,7 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
             "worker full-pool/deep-scan evidence",
             "browser performance and visual proof",
             "legacy retirement review",
+            "local production promotion review before real execution handoff",
         ],
         "not_allowed_next_steps": [
             "run full-pool/deep-scan from render",
@@ -752,6 +753,12 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "task_type": "run_candidate_radar_legacy_retirement_review",
             "receipt_key": "candidate_radar_legacy_retirement_review_receipt",
             "route": "POST /api/candidate-radar/legacy-retirement-review",
+        },
+        {
+            "phase_key": "radar_production_promotion_review_receipt",
+            "task_type": "run_candidate_radar_production_promotion_review",
+            "receipt_key": "candidate_radar_production_promotion_review_receipt",
+            "route": "POST /api/candidate-radar/production-promotion-review",
         },
     ],
     "p4_storage_physical_execution": [
@@ -1260,6 +1267,7 @@ def _build_ltg_next_action_local_step_rows(
             receipt_lookup_source = "task_status_derived_local_review"
         receipt_scope_hash = str(
             receipt_map.get("acceptance_scope_hash")
+            or receipt_map.get("promotion_scope_hash")
             or receipt_map.get("review_scope_hash")
             or receipt_map.get("production_replacement_review_scope_hash")
             or receipt_map.get("physical_execution_scope_hash")
@@ -1272,6 +1280,7 @@ def _build_ltg_next_action_local_step_rows(
         )
         receipt_scope_hash_short = str(
             receipt_map.get("acceptance_scope_hash_short")
+            or receipt_map.get("promotion_scope_hash_short")
             or receipt_map.get("review_scope_hash_short")
             or receipt_map.get("production_replacement_review_scope_hash_short")
             or receipt_map.get("physical_execution_scope_hash_short")
@@ -1696,6 +1705,20 @@ def _build_ltg_next_action_submission_preview_rows(
             "required_prior_material": "review_scope_hash",
             "manual_scope_hash_required": True,
             "context_key": "candidate_radar_production_replacement_review_preview",
+        },
+        "POST /api/candidate-radar/legacy-retirement-review": {
+            "step_kind": "local_candidate_radar_legacy_retirement_review",
+            "safe_payload_summary": "operator_approved plus latest promotion dry-run scope hash; local review only",
+            "expected_local_receipt": "candidate_radar_legacy_retirement_review_receipt",
+            "required_prior_phase_key": "radar_production_promotion_dry_run_ticket",
+            "required_prior_material": "receipt_scope_hash",
+        },
+        "POST /api/candidate-radar/production-promotion-review": {
+            "step_kind": "local_candidate_radar_production_promotion_review",
+            "safe_payload_summary": "operator_approved plus latest promotion dry-run scope hash after legacy-retirement review; local review only",
+            "expected_local_receipt": "candidate_radar_production_promotion_review_receipt",
+            "required_prior_phase_key": "radar_production_promotion_dry_run_ticket",
+            "required_prior_material": "receipt_scope_hash",
         },
         "POST /api/storage/physical-execution-request": {
             "step_kind": "scope_bound_physical_execution_request",

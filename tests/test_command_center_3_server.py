@@ -331,7 +331,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(action_rows["p2_tushare_target_sample_acceptance"]["local_receipt_step_count"], 1)
         self.assertEqual(action_rows["p3_factor_small_pool_provider_validation"]["local_receipt_step_count"], 2)
         self.assertEqual(action_rows["p3_factor_universe_worker_batch_research"]["local_receipt_step_count"], 5)
-        self.assertEqual(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_step_count"], 4)
+        self.assertEqual(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_step_count"], 5)
         self.assertEqual(action_rows["p4_storage_physical_execution"]["local_receipt_step_count"], 1)
         self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 5)
         self.assertEqual(action_rows["p5_deepseek_provider_benchmark_scope"]["local_receipt_step_count"], 1)
@@ -9363,6 +9363,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertLess(script.index('run_step "Release readiness report"'), script.index('run_step "Clean worktree check"'))
         self.assertIn("worktree_clean_scan", script)
         self.assertIn("git ls-files", script)
+
         self.assertIn("node_modules|dist|target|__pycache__", script)
         self.assertIn("desktop/src-tauri/icons/icon.png", script)
         self.assertIn("high-risk secret value scan", script)
@@ -9408,6 +9409,57 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("git push", script)
         self.assertNotIn("git add .", script)
         self.assertNotIn("tushare_adapter", script)
+
+    def test_ltg_progress_snapshot_script_is_read_only_accelerator(self):
+        path = Path("scripts/ltg_progress_snapshot.py")
+        script = path.read_text(encoding="utf-8")
+
+        self.assertTrue(path.exists())
+        self.assertIn("ltg_progress_snapshot.v1", script)
+        self.assertIn("build_migration_status", script)
+        self.assertIn("strict_closeout", script)
+        self.assertIn("ready_local_button_count", script)
+        self.assertIn("durable_handoff_ready_count", script)
+        self.assertIn("external_calls_triggered", script)
+        self.assertIn("tushare_called", script)
+        self.assertIn("deepseek_called", script)
+        self.assertIn("github_called", script)
+        self.assertIn("does_not_execute_trades", script)
+        self.assertNotIn("requests", script)
+        self.assertNotIn("httpx", script)
+        self.assertNotIn("curl", script)
+        self.assertNotIn("subprocess", script)
+
+        result = subprocess.run(
+            [sys.executable, str(path), "--json"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        snapshot = json.loads(result.stdout)
+        self.assertEqual(snapshot["schema_version"], "ltg_progress_snapshot.v1")
+        self.assertEqual(snapshot["strict_closeout"], "0/14")
+        self.assertEqual(snapshot["strict_closeout_done_count"], 0)
+        self.assertEqual(snapshot["strict_closeout_total_count"], 14)
+        self.assertEqual(snapshot["strict_closeout_remaining_count"], 14)
+        self.assertEqual(len(snapshot["goal_rows"]), 14)
+        self.assertEqual(len(snapshot["queue_rows"]), 14)
+        self.assertTrue(snapshot["safety"]["cache_only"])
+        self.assertFalse(snapshot["safety"]["external_calls_triggered"])
+        self.assertFalse(snapshot["safety"]["tushare_called"])
+        self.assertFalse(snapshot["safety"]["deepseek_called"])
+        self.assertFalse(snapshot["safety"]["github_called"])
+        self.assertTrue(snapshot["safety"]["does_not_execute_trades"])
+        self.assertFalse(snapshot["safety"]["contains_secret"])
+        self.assertTrue(all(row["production_complete"] is False for row in snapshot["goal_rows"]))
+        self.assertTrue(all(row["can_close_from_local_contracts"] is False for row in snapshot["goal_rows"]))
+        self.assertTrue(all(row["external_calls_triggered"] is False for row in snapshot["queue_rows"]))
+        self.assertTrue(all(row["tushare_called"] is False for row in snapshot["queue_rows"]))
+        self.assertTrue(all(row["deepseek_called"] is False for row in snapshot["queue_rows"]))
+        self.assertTrue(all(row["github_called"] is False for row in snapshot["queue_rows"]))
+        self.assertTrue(all(row["does_not_execute_trades"] is True for row in snapshot["queue_rows"]))
+        self.assertTrue(all(row["contains_secret"] is False for row in snapshot["queue_rows"]))
+        self.assertTrue(all(row["can_close_goal"] is False for row in snapshot["queue_rows"]))
 
     def test_data_health_freshness_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/data_health_freshness_contract.py")
