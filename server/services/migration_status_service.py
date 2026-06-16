@@ -2236,9 +2236,11 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
     synthetic = packet_map.get("worker_synthetic_healthcheck")
     runtime_request = packet_map.get("worker_runtime_qa_execution_request_receipt")
     runtime_dry_run = packet_map.get("worker_runtime_qa_dry_run_receipt")
+    runtime_execution = packet_map.get("worker_runtime_qa_execution_receipt")
     synthetic_map = synthetic if isinstance(synthetic, dict) else {}
     request_map = runtime_request if isinstance(runtime_request, dict) else {}
     dry_run_map = runtime_dry_run if isinstance(runtime_dry_run, dict) else {}
+    execution_map = runtime_execution if isinstance(runtime_execution, dict) else {}
     synthetic_done = bool(
         synthetic_map.get("schema_version") == "worker_synthetic_healthcheck.v1"
         and synthetic_map.get("status") == "synthetic_healthcheck_passed_local_task_store_only"
@@ -2313,7 +2315,39 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         and request_map.get("scheduler_started") is False
         and dry_run_map.get("scheduler_started") is False
     )
+    runtime_execution_done = bool(
+        execution_map.get("schema_version") == "worker_runtime_qa_execution_receipt.v1"
+        and execution_map.get("status") == "worker_runtime_qa_execution_ready_local_fallback_evidence"
+        and execution_map.get("local_runtime_qa_execution_done") is True
+        and execution_map.get("runtime_qa_task_created") is True
+        and execution_map.get("runtime_qa_task_executed") is True
+        and execution_map.get("runtime_qa_execution_implemented") is True
+        and execution_map.get("local_fallback_round_trip_verified") is True
+        and execution_map.get("local_task_round_trip_verified") is True
+        and execution_map.get("task_log_round_trip_verified") is True
+        and execution_map.get("task_log_persistence_verified") is True
+        and execution_map.get("append_only_worker_log_verified") is True
+        and execution_map.get("scheduler_default_off_runtime_verified") is True
+        and execution_map.get("provider_model_no_autoschedule_boundary_verified") is True
+        and execution_map.get("no_trade_no_action_boundary_verified") is True
+        and execution_map.get("production_worker_complete") is False
+        and execution_map.get("worker_started") is False
+        and execution_map.get("celery_worker_started") is False
+        and execution_map.get("redis_pinged") is False
+        and execution_map.get("scheduler_started") is False
+        and execution_map.get("task_dispatched") is False
+        and execution_map.get("provider_model_task_dispatched") is False
+        and execution_map.get("external_calls_triggered") is False
+        and execution_map.get("tushare_called") is False
+        and execution_map.get("deepseek_called") is False
+        and execution_map.get("github_called") is False
+        and execution_map.get("does_not_execute_trades") is True
+        and execution_map.get("does_not_modify_strategy_action") is True
+        and execution_map.get("contains_secret") is False
+    )
     direct_stage_keys = []
+    if runtime_execution_done:
+        direct_stage_keys.append("append_only_worker_logs")
     if scheduler_default_off_done:
         direct_stage_keys.append("scheduler_default_off_runtime")
     if provider_boundary_done:
@@ -2335,12 +2369,17 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         "task_readback_hash_matches": synthetic_map.get("task_readback_hash_matches") is True,
         "runtime_qa_execution_request_ready": runtime_request_ready,
         "runtime_qa_dry_run_ready": runtime_dry_run_ready,
+        "runtime_qa_execution_done": runtime_execution_done,
+        "local_fallback_round_trip_verified": execution_map.get("local_fallback_round_trip_verified") is True,
+        "task_log_persistence_verified": execution_map.get("task_log_persistence_verified") is True,
+        "append_only_worker_log_verified": execution_map.get("append_only_worker_log_verified") is True,
         "scheduler_default_off_runtime_verified": scheduler_default_off_done,
         "provider_model_no_autoschedule_boundary_verified": provider_boundary_done,
         "no_trade_no_action_boundary_verified": no_trade_no_action_done,
         "synthetic_healthcheck_status": str(synthetic_map.get("status") or "packet_missing"),
         "runtime_qa_execution_request_status": str(request_map.get("status") or "packet_missing"),
         "runtime_qa_dry_run_status": str(dry_run_map.get("status") or "packet_missing"),
+        "runtime_qa_execution_status": str(execution_map.get("status") or "packet_missing"),
         "production_worker_complete": False,
         "worker_started": False,
         "celery_worker_started": False,
@@ -2355,7 +2394,9 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "contains_secret": False,
-        "direct_evidence_layer": "L3_local_worker_runtime_safety_evidence"
+        "direct_evidence_layer": "L3_local_worker_runtime_execution_evidence"
+        if runtime_execution_done
+        else "L3_local_worker_runtime_safety_evidence"
         if direct_stage_keys
         else "L1_static_contract",
         "evidence_boundary": "worker_synthetic_runtime_qa_direct_evidence_is_not_production_worker_completion",
@@ -3915,9 +3956,15 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     "no_trade_no_action_boundary_verified"
                 )
                 is True,
-                "runtime_qa_executed": False,
-                "task_log_persistence_verified": False,
-                "append_only_worker_log_verified": False,
+                "runtime_qa_executed": direct_evidence.get("runtime_qa_execution_done") is True,
+                "local_fallback_round_trip_verified": direct_evidence.get(
+                    "local_fallback_round_trip_verified"
+                )
+                is True,
+                "task_log_persistence_verified": direct_evidence.get("task_log_persistence_verified")
+                is True,
+                "append_only_worker_log_verified": direct_evidence.get("append_only_worker_log_verified")
+                is True,
                 "cross_process_task_control_verified": False,
                 "activation_ready": False,
                 "production_worker_complete": False,

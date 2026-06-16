@@ -25,6 +25,8 @@ RUNTIME_QA_EXECUTION_REQUEST_PACKET_KEY = "command_center_3_worker_runtime_qa_ex
 RUNTIME_QA_EXECUTION_REQUEST_SCHEMA_VERSION = "worker_runtime_qa_execution_request_receipt.v1"
 RUNTIME_QA_DRY_RUN_PACKET_KEY = "command_center_3_worker_runtime_qa_dry_run_packet"
 RUNTIME_QA_DRY_RUN_SCHEMA_VERSION = "worker_runtime_qa_dry_run_receipt.v1"
+RUNTIME_QA_EXECUTION_PACKET_KEY = "command_center_3_worker_runtime_qa_execution_packet"
+RUNTIME_QA_EXECUTION_SCHEMA_VERSION = "worker_runtime_qa_execution_receipt.v1"
 WORKER_RUNTIME_DURABLE_EVIDENCE_SCHEMA_VERSION = "worker_runtime_durable_evidence_recipe.v1"
 WORKER_RUNTIME_QA_EXECUTION_PHASES = [
     "evidence_plan_scope_ticket",
@@ -2784,6 +2786,505 @@ def _read_worker_runtime_qa_dry_run_packet(
     return rebuilt
 
 
+def _worker_runtime_qa_event_log_path() -> Path:
+    return SQLITE_META_PATH.parent / "worker_runtime_qa_events.jsonl"
+
+
+def _append_worker_runtime_qa_event(event: dict[str, Any]) -> dict[str, Any]:
+    path = _worker_runtime_qa_event_log_path()
+    safe_event = _json_safe(event)
+    event_sha256 = _json_sha256(safe_event)
+    safe_event["event_sha256"] = event_sha256
+    before_size = path.stat().st_size if path.exists() else 0
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(safe_event, ensure_ascii=False, sort_keys=True, default=str))
+        handle.write("\n")
+    after_size = path.stat().st_size if path.exists() else 0
+    line_count = 0
+    last_event: dict[str, Any] = {}
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            line_count += 1
+            try:
+                decoded = json.loads(stripped)
+                if isinstance(decoded, dict):
+                    last_event = decoded
+            except Exception:
+                last_event = {}
+    return {
+        "schema_version": "worker_runtime_qa_append_only_event_result.v1",
+        "status": "append_only_worker_log_event_verified"
+        if after_size > before_size and last_event.get("event_sha256") == event_sha256
+        else "append_only_worker_log_event_blocked",
+        "event_log_path": str(path.relative_to(PROJECT_ROOT)) if path.is_relative_to(PROJECT_ROOT) else path.name,
+        "event_sha256": event_sha256,
+        "line_count": line_count,
+        "bytes_appended": max(after_size - before_size, 0),
+        "append_only_write_done": after_size > before_size,
+        "readback_event_hash_matches": last_event.get("event_sha256") == event_sha256,
+        "contains_secret": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _worker_runtime_qa_execution_row(
+    criterion: str,
+    *,
+    passed: bool,
+    status: str,
+    evidence: str,
+    next_action: str,
+    production_blocker: bool = False,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "production_blocker": bool(production_blocker and not passed),
+        "runtime_qa_executed": bool(passed),
+        "worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "task_dispatched": False,
+        "provider_model_task_dispatched": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "evidence": evidence,
+        "next_action": next_action,
+    }
+
+
+def _worker_runtime_qa_execution_phase_rows(
+    runtime_qa_execution_recipe: dict[str, Any],
+    *,
+    execution_ready: bool,
+    append_only_log_verified: bool,
+    local_fallback_verified: bool,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    completed_phases = {
+        "evidence_plan_scope_ticket",
+        "queue_binding_and_synthetic_round_trip",
+        "append_only_worker_log_validation",
+        "scheduler_default_off_runtime",
+        "provider_model_no_autoschedule_boundary",
+        "local_fallback_rollback_plan",
+    }
+    for index, phase in enumerate(runtime_qa_execution_recipe.get("allowed_execution_sequence") or [], start=1):
+        phase_key = str(phase)
+        phase_done = bool(
+            execution_ready
+            and (
+                phase_key in completed_phases
+                or (phase_key == "append_only_worker_log_validation" and append_only_log_verified)
+                or (phase_key == "local_fallback_rollback_plan" and local_fallback_verified)
+            )
+        )
+        rows.append(
+            {
+                "phase_index": index,
+                "phase": phase_key,
+                "phase_label": WORKER_RUNTIME_QA_EXECUTION_PHASE_LABELS.get(phase_key, phase_key),
+                "status": "passed_local_runtime_evidence" if phase_done else "pending_production_runtime_evidence",
+                "runtime_qa_done": phase_done,
+                "production_ready": False,
+                "worker_started": False,
+                "redis_pinged": False,
+                "scheduler_started": False,
+                "task_dispatched": False,
+                "provider_model_task_dispatched": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            }
+        )
+    return rows
+
+
+def _worker_runtime_qa_execution_receipt(
+    *,
+    runtime_qa_dry_run: dict[str, Any],
+    runtime_qa_execution_recipe: dict[str, Any],
+    explicit_execution: bool = False,
+    task_id: str | None = None,
+    executed_at: str | None = None,
+    payload_safe: dict[str, Any] | None = None,
+    runtime_task: dict[str, Any] | None = None,
+    readback: dict[str, Any] | None = None,
+    append_only_log: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    safe_payload = payload_safe if isinstance(payload_safe, dict) else {}
+    task_map = runtime_task if isinstance(runtime_task, dict) else {}
+    readback_map = readback if isinstance(readback, dict) else {}
+    append_map = append_only_log if isinstance(append_only_log, dict) else {}
+    approved = safe_payload.get("operator_approved") is True or safe_payload.get("approved") is True
+    dry_run_ready = runtime_qa_dry_run.get("local_dry_run_ready") is True
+    dry_run_task_id = str(runtime_qa_dry_run.get("dry_run_task_id") or "")
+    requested_dry_run_task_id = str(
+        safe_payload.get("dry_run_task_id")
+        or safe_payload.get("runtime_qa_dry_run_task_id")
+        or safe_payload.get("request_task_id")
+        or ""
+    )
+    evidence_plan_scope_hash = str(runtime_qa_dry_run.get("production_evidence_plan_scope_hash") or "")
+    runtime_qa_scope_hash = str(runtime_qa_dry_run.get("runtime_qa_scope_hash") or "")
+    requested_evidence_plan_scope_hash = str(
+        safe_payload.get("evidence_plan_scope_hash") or safe_payload.get("production_evidence_plan_scope_hash") or ""
+    )
+    requested_runtime_qa_scope_hash = str(
+        safe_payload.get("runtime_qa_scope_hash") or safe_payload.get("runtime_execution_scope_hash") or ""
+    )
+    dry_run_task_matches = bool(dry_run_task_id and requested_dry_run_task_id == dry_run_task_id)
+    evidence_plan_scope_matches = bool(
+        evidence_plan_scope_hash and requested_evidence_plan_scope_hash == evidence_plan_scope_hash
+    )
+    runtime_qa_scope_matches = bool(runtime_qa_scope_hash and requested_runtime_qa_scope_hash == runtime_qa_scope_hash)
+    local_round_trip = bool(task_map.get("status") == "success" and readback_map.get("status") == "success")
+    task_log_round_trip = bool(
+        isinstance(task_map.get("task_log"), list)
+        and isinstance(readback_map.get("task_log"), list)
+        and len(task_map.get("task_log") or []) > 0
+        and len(readback_map.get("task_log") or []) > 0
+    )
+    append_only_log_verified = bool(
+        append_map.get("append_only_write_done") is True
+        and append_map.get("readback_event_hash_matches") is True
+        and append_map.get("contains_secret") is False
+    )
+    local_fallback_verified = bool(
+        local_round_trip
+        and readback_map.get("storage_source") in {"memory", "sqlite_meta", "memory_and_sqlite"}
+        and task_map.get("external_calls_triggered") is not True
+    )
+    if not explicit_execution:
+        status = "worker_runtime_qa_execution_missing"
+    elif not approved:
+        status = "worker_runtime_qa_execution_blocked_operator_approval_required"
+    elif not dry_run_ready:
+        status = "worker_runtime_qa_execution_blocked_dry_run_required"
+    elif not requested_dry_run_task_id or not requested_evidence_plan_scope_hash or not requested_runtime_qa_scope_hash:
+        status = "worker_runtime_qa_execution_blocked_scope_hash_required"
+    elif not dry_run_task_matches or not evidence_plan_scope_matches or not runtime_qa_scope_matches:
+        status = "worker_runtime_qa_execution_blocked_scope_hash_mismatch"
+    elif not local_round_trip or not task_log_round_trip or not append_only_log_verified:
+        status = "worker_runtime_qa_execution_blocked_local_round_trip"
+    else:
+        status = "worker_runtime_qa_execution_ready_local_fallback_evidence"
+    ready = status == "worker_runtime_qa_execution_ready_local_fallback_evidence"
+    rows = [
+        _worker_runtime_qa_execution_row(
+            "explicit_post_runtime_qa_execution_done",
+            passed=explicit_execution,
+            status="passed" if explicit_execution else "blocked_missing_execution",
+            evidence="Runtime QA execution must be created through POST /api/worker/runtime-qa-execution.",
+            next_action="Run this only after request and dry-run receipts exist.",
+        ),
+        _worker_runtime_qa_execution_row(
+            "operator_approval_recorded",
+            passed=approved,
+            status="passed" if approved else "blocked_operator_approval_required",
+            evidence=f"operator_approved={approved}",
+            next_action="Require explicit operator approval for local runtime QA execution.",
+        ),
+        _worker_runtime_qa_execution_row(
+            "runtime_qa_dry_run_ready",
+            passed=dry_run_ready,
+            status="passed" if dry_run_ready else "blocked_dry_run_required",
+            evidence=f"dry_run_status={runtime_qa_dry_run.get('status')}",
+            next_action="Generate a scope-bound runtime QA dry-run before local execution.",
+        ),
+        _worker_runtime_qa_execution_row(
+            "dry_run_task_id_bound",
+            passed=dry_run_task_matches,
+            status="passed" if dry_run_task_matches else "blocked_dry_run_task_id_mismatch_or_missing",
+            evidence=f"requested_dry_run_task_id={requested_dry_run_task_id}; latest_dry_run_task_id={dry_run_task_id}",
+            next_action="Regenerate execution payload if the dry-run receipt changes.",
+        ),
+        _worker_runtime_qa_execution_row(
+            "evidence_plan_scope_hash_bound",
+            passed=evidence_plan_scope_matches,
+            status="passed" if evidence_plan_scope_matches else "blocked_scope_hash_mismatch_or_missing",
+            evidence=(
+                f"requested_scope_hash_short={requested_evidence_plan_scope_hash[:12]}; "
+                f"latest_scope_hash_short={evidence_plan_scope_hash[:12]}"
+            ),
+            next_action="Regenerate execution if the production evidence plan scope changes.",
+        ),
+        _worker_runtime_qa_execution_row(
+            "runtime_qa_scope_hash_bound",
+            passed=runtime_qa_scope_matches,
+            status="passed" if runtime_qa_scope_matches else "blocked_scope_hash_mismatch_or_missing",
+            evidence=(
+                f"requested_runtime_hash_short={requested_runtime_qa_scope_hash[:12]}; "
+                f"latest_runtime_hash_short={runtime_qa_scope_hash[:12]}"
+            ),
+            next_action="Regenerate execution if the runtime QA recipe changes.",
+        ),
+        _worker_runtime_qa_execution_row(
+            "local_fallback_round_trip_executed",
+            passed=local_round_trip and local_fallback_verified,
+            status="passed" if local_round_trip and local_fallback_verified else "blocked_local_round_trip",
+            evidence=f"task_status={task_map.get('status')}; readback_status={readback_map.get('status')}; storage_source={readback_map.get('storage_source')}",
+            next_action="Keep this as local fallback evidence; do not call it Celery/Redis process proof.",
+        ),
+        _worker_runtime_qa_execution_row(
+            "safe_task_log_round_trip_verified",
+            passed=task_log_round_trip,
+            status="passed" if task_log_round_trip else "blocked_task_log_round_trip",
+            evidence=f"task_log_count={len(task_map.get('task_log') or [])}; readback_task_log_count={len(readback_map.get('task_log') or [])}",
+            next_action="Keep task logs redacted and structured before any worker-process promotion.",
+        ),
+        _worker_runtime_qa_execution_row(
+            "append_only_worker_log_event_verified",
+            passed=append_only_log_verified,
+            status="passed" if append_only_log_verified else "blocked_append_only_log_event",
+            evidence=f"event_sha256={append_map.get('event_sha256') or ''}; line_count={append_map.get('line_count') or 0}",
+            next_action="Use this local JSONL proof as direct append-only evidence, not as Celery worker log proof.",
+        ),
+        _worker_runtime_qa_execution_row(
+            "scheduler_default_off_runtime",
+            passed=True,
+            status="passed",
+            evidence="Runtime QA execution starts no scheduler and records scheduler_started=false.",
+            next_action="Keep scheduler production activation separate and explicit.",
+        ),
+        _worker_runtime_qa_execution_row(
+            "provider_model_no_autoschedule_boundary",
+            passed=True,
+            status="passed",
+            evidence="Runtime QA execution calls no Tushare, DeepSeek, GitHub, provider, model, or probe path.",
+            next_action="Keep provider/model/probe tasks behind explicit task gates.",
+        ),
+        _worker_runtime_qa_execution_row(
+            "no_trade_no_action_boundary",
+            passed=True,
+            status="passed",
+            evidence="Runtime QA execution does not execute trades and does not mutate strategy action.",
+            next_action="Keep real trading outside LTG-06 worker runtime QA.",
+        ),
+        _worker_runtime_qa_execution_row(
+            "celery_redis_process_evidence_still_pending",
+            passed=False,
+            status="pending_manual_celery_redis_runtime_evidence",
+            evidence="Local runtime QA does not start Celery and does not ping Redis.",
+            next_action="Collect Celery/Redis process evidence in a separately approved runtime path.",
+            production_blocker=True,
+        ),
+        _worker_runtime_qa_execution_row(
+            "production_worker_completion_stays_blocked",
+            passed=True,
+            status="passed",
+            evidence="production_worker_complete remains false after local runtime QA execution.",
+            next_action="Promote only after Celery/Redis, cross-process controls, and production review evidence pass.",
+        ),
+    ]
+    production_blockers = [str(row["criterion"]) for row in rows if row.get("production_blocker")]
+    phase_rows = _worker_runtime_qa_execution_phase_rows(
+        runtime_qa_execution_recipe,
+        execution_ready=ready,
+        append_only_log_verified=append_only_log_verified,
+        local_fallback_verified=local_fallback_verified,
+    )
+    return {
+        "packet_key": RUNTIME_QA_EXECUTION_PACKET_KEY,
+        "schema_version": RUNTIME_QA_EXECUTION_SCHEMA_VERSION,
+        "status": status,
+        "scope": "button_gated_worker_runtime_qa_execution_local_fallback_no_process_start",
+        "ltg": "LTG-06/LTG-11",
+        "mode": "button_gated_local_runtime_qa_execution",
+        "explicit_runtime_qa_execution_done": bool(explicit_execution),
+        "execution_task_id": task_id,
+        "executed_at": executed_at,
+        "button_gated": True,
+        "operator_approved": approved,
+        "local_runtime_qa_execution_done": ready,
+        "runtime_qa_done": ready,
+        "runtime_qa_task_created": bool(task_id),
+        "runtime_qa_task_executed": ready,
+        "runtime_qa_execution_implemented": True,
+        "runtime_qa_dry_run_ready": dry_run_ready,
+        "runtime_qa_dry_run_status": runtime_qa_dry_run.get("status") or "missing",
+        "runtime_qa_dry_run_task_id": dry_run_task_id,
+        "requested_runtime_qa_dry_run_task_id": requested_dry_run_task_id,
+        "requested_runtime_qa_dry_run_task_id_matches_latest": dry_run_task_matches,
+        "runtime_qa_execution_recipe_ready": runtime_qa_execution_recipe.get("local_recipe_ready") is True,
+        "production_evidence_plan_scope_hash": evidence_plan_scope_hash if evidence_plan_scope_matches else "",
+        "production_evidence_plan_scope_hash_short": evidence_plan_scope_hash[:12],
+        "requested_evidence_plan_scope_hash_short": requested_evidence_plan_scope_hash[:12],
+        "requested_evidence_plan_scope_hash_matches_latest": evidence_plan_scope_matches,
+        "runtime_qa_scope_hash": runtime_qa_scope_hash if runtime_qa_scope_matches else "",
+        "runtime_qa_scope_hash_short": runtime_qa_scope_hash[:12],
+        "requested_runtime_qa_scope_hash_short": requested_runtime_qa_scope_hash[:12],
+        "requested_runtime_qa_scope_hash_matches_latest": runtime_qa_scope_matches,
+        "local_fallback_round_trip_verified": local_fallback_verified,
+        "local_task_round_trip_verified": local_round_trip,
+        "task_log_round_trip_verified": task_log_round_trip,
+        "task_log_persistence_verified": task_log_round_trip,
+        "append_only_worker_log_verified": append_only_log_verified,
+        "append_only_worker_log_event_result": append_map,
+        "scheduler_default_off_runtime_verified": True,
+        "provider_model_no_autoschedule_boundary_verified": True,
+        "no_trade_no_action_boundary_verified": True,
+        "local_blocker_count": 0 if ready else sum(1 for row in rows if not row.get("passed") and not row.get("production_blocker")),
+        "production_blocker_count": len(production_blockers),
+        "row_count": len(rows),
+        "phase_row_count": len(phase_rows),
+        "production_blockers": production_blockers,
+        "not_allowed_next_steps": [
+            "treat_local_runtime_qa_as_celery_process_proof",
+            "start Celery from runtime QA execution",
+            "ping Redis from runtime QA execution",
+            "start scheduler from runtime QA execution",
+            "autoschedule Tushare DeepSeek GitHub tasks",
+            "inspect Redis URL or credentials from runtime QA execution",
+            "mark_production_worker_complete_from_local_runtime_qa",
+        ],
+        "request_params_safe": {
+            "requested_from": safe_payload.get("requested_from") or "worker_runtime_page",
+            "operator_approved": approved,
+            "dry_run_task_id": requested_dry_run_task_id,
+            "evidence_plan_scope_hash_short": requested_evidence_plan_scope_hash[:12],
+            "runtime_qa_scope_hash_short": requested_runtime_qa_scope_hash[:12],
+            "external_sources_allowed": False,
+            "starts_celery_worker": False,
+            "pings_redis": False,
+            "starts_scheduler": False,
+            "provider_model_task_dispatched": False,
+            "production_worker_complete": False,
+        },
+        "rows": rows,
+        "phase_rows": phase_rows,
+        "production_worker_complete": False,
+        "activation_ready": False,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "task_dispatched": False,
+        "provider_model_task_dispatched": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": [
+            {
+                "api": "local_worker_runtime_qa_execution",
+                "source": "worker_runtime_qa_dry_run + local_task_store + append_only_jsonl_event",
+                "row_count": len(rows),
+                "phase_row_count": len(phase_rows),
+                "task_id": task_id,
+                "local_fetched_at": executed_at,
+                "call_status": status,
+                "event_sha256": append_map.get("event_sha256") or "",
+                "external": False,
+                "external_calls_triggered": False,
+                "redis_pinged": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "warnings": [
+            "Worker runtime QA execution 只执行本地 fallback round-trip 和 append-only JSONL evidence；不会启动 Celery、ping Redis 或启动 scheduler。",
+            "该 execution 不调用 Tushare、DeepSeek、GitHub，不执行真实交易，不修改 strategy action，不代表 production worker 完成。",
+        ],
+        "note": "This explicit local runtime QA execution records direct local fallback and append-only log evidence. It does not prove live Celery/Redis process orchestration or production worker completion.",
+    }
+
+
+def _missing_worker_runtime_qa_execution_packet(
+    runtime_qa_dry_run: dict[str, Any],
+    runtime_qa_execution_recipe: dict[str, Any],
+    read_status: str = "packet_missing",
+) -> dict[str, Any]:
+    receipt = _worker_runtime_qa_execution_receipt(
+        runtime_qa_dry_run=runtime_qa_dry_run,
+        runtime_qa_execution_recipe=runtime_qa_execution_recipe,
+        explicit_execution=False,
+    )
+    receipt["source_packet_read_status"] = read_status
+    receipt["source_packet_present"] = False
+    receipt["cache_get_initializes_meta_store"] = False
+    return receipt
+
+
+def _read_worker_runtime_qa_execution_packet(
+    runtime_qa_dry_run: dict[str, Any],
+    runtime_qa_execution_recipe: dict[str, Any],
+) -> dict[str, Any]:
+    packet, read_status = _read_worker_meta_packet_no_init(RUNTIME_QA_EXECUTION_PACKET_KEY)
+    if not isinstance(packet, dict):
+        return _missing_worker_runtime_qa_execution_packet(
+            runtime_qa_dry_run,
+            runtime_qa_execution_recipe,
+            read_status,
+        )
+    receipt = _json_safe(packet.get("worker_runtime_qa_execution_receipt") or packet)
+    if not isinstance(receipt, dict) or receipt.get("schema_version") != RUNTIME_QA_EXECUTION_SCHEMA_VERSION:
+        return _missing_worker_runtime_qa_execution_packet(
+            runtime_qa_dry_run,
+            runtime_qa_execution_recipe,
+            read_status,
+        )
+    receipt.setdefault("local_runtime_qa_execution_done", False)
+    receipt.setdefault("runtime_qa_done", False)
+    receipt.setdefault("runtime_qa_task_created", False)
+    receipt.setdefault("runtime_qa_task_executed", False)
+    receipt.setdefault("runtime_qa_execution_implemented", False)
+    receipt.setdefault("local_fallback_round_trip_verified", False)
+    receipt.setdefault("local_task_round_trip_verified", False)
+    receipt.setdefault("task_log_round_trip_verified", False)
+    receipt.setdefault("task_log_persistence_verified", False)
+    receipt.setdefault("append_only_worker_log_verified", False)
+    receipt.setdefault("scheduler_default_off_runtime_verified", False)
+    receipt.setdefault("provider_model_no_autoschedule_boundary_verified", False)
+    receipt.setdefault("no_trade_no_action_boundary_verified", False)
+    receipt.setdefault("production_worker_complete", False)
+    receipt.setdefault("worker_started", False)
+    receipt.setdefault("celery_worker_started", False)
+    receipt.setdefault("redis_pinged", False)
+    receipt.setdefault("scheduler_started", False)
+    receipt.setdefault("task_dispatched", False)
+    receipt.setdefault("provider_model_task_dispatched", False)
+    receipt.setdefault("external_calls_triggered", False)
+    receipt.setdefault("tushare_called", False)
+    receipt.setdefault("deepseek_called", False)
+    receipt.setdefault("github_called", False)
+    receipt.setdefault("does_not_execute_trades", True)
+    receipt.setdefault("does_not_modify_strategy_action", True)
+    receipt.setdefault("contains_secret", False)
+    receipt.setdefault("rows", [])
+    receipt.setdefault("phase_rows", [])
+    receipt.setdefault("call_ledger", [])
+    receipt["source_packet_read_status"] = read_status
+    receipt["source_packet_present"] = True
+    receipt["cache_get_initializes_meta_store"] = False
+    return receipt
+
+
 def _worker_runtime_durable_evidence_recipe_row(
     evidence_key: str,
     *,
@@ -4447,6 +4948,209 @@ def run_worker_runtime_qa_dry_run(payload: Any = None) -> dict[str, Any]:
     return packet
 
 
+def run_worker_runtime_qa_execution(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        "run_worker_runtime_qa_execution",
+        output_packet_key=RUNTIME_QA_EXECUTION_PACKET_KEY,
+        payload=payload,
+        current_step="worker_runtime_qa_execution_queued_local_fallback_no_process_start",
+        warnings=[
+            "Worker runtime QA execution 只执行本地 fallback round-trip 和 append-only evidence；不会启动 Celery、ping Redis、启动 scheduler、派发 provider/model/probe 任务。"
+        ],
+    )
+    task = task_service.update_task_status(
+        str(task["task_id"]),
+        status="running",
+        progress=0.5,
+        current_step="worker_runtime_qa_execution_running_local_fallback_round_trip",
+    ) or task
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    runtime_packet = read_worker_runtime_cache()
+    runtime_qa_dry_run = (
+        runtime_packet.get("worker_runtime_qa_dry_run_receipt")
+        if isinstance(runtime_packet.get("worker_runtime_qa_dry_run_receipt"), dict)
+        else {}
+    )
+    runtime_qa_execution_recipe = (
+        runtime_packet.get("worker_runtime_qa_execution_recipe")
+        if isinstance(runtime_packet.get("worker_runtime_qa_execution_recipe"), dict)
+        else {}
+    )
+    executed_at = _now_iso()
+    task = task_service.update_task_status(
+        str(task["task_id"]),
+        status="success",
+        progress=1.0,
+        current_step="worker_runtime_qa_execution_local_fallback_round_trip_recorded",
+        call_ledger=[
+            {
+                "api": "local_worker_runtime_qa_execution_pre_receipt",
+                "source": "local_task_store",
+                "row_count": 1,
+                "task_id": task.get("task_id"),
+                "local_fetched_at": executed_at,
+                "call_status": "local_fallback_round_trip_recorded",
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "redis_pinged": False,
+                "celery_started": False,
+                "scheduler_started": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        warning="worker_runtime_qa_execution_local_fallback_round_trip_no_external_call",
+    ) or task
+    readback = task_service.read_task_status(str(task.get("task_id") or ""))
+    append_event = {
+        "schema_version": "worker_runtime_qa_append_only_event.v1",
+        "event_type": "worker_runtime_qa_local_fallback_round_trip",
+        "task_id": task.get("task_id"),
+        "task_type": task.get("task_type"),
+        "task_status": task.get("status"),
+        "runtime_qa_scope_hash_short": str(runtime_qa_dry_run.get("runtime_qa_scope_hash_short") or ""),
+        "production_evidence_plan_scope_hash_short": str(
+            runtime_qa_dry_run.get("production_evidence_plan_scope_hash_short") or ""
+        ),
+        "local_fallback_round_trip_verified": isinstance(readback, dict) and readback.get("status") == "success",
+        "storage_source": readback.get("storage_source") if isinstance(readback, dict) else "",
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "redis_pinged": False,
+        "celery_started": False,
+        "scheduler_started": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+    try:
+        append_result = _append_worker_runtime_qa_event(append_event)
+    except Exception:
+        append_result = {
+            "schema_version": "worker_runtime_qa_append_only_event_result.v1",
+            "status": "append_only_worker_log_event_failed_safe",
+            "append_only_write_done": False,
+            "readback_event_hash_matches": False,
+            "contains_secret": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    receipt = _worker_runtime_qa_execution_receipt(
+        runtime_qa_dry_run=runtime_qa_dry_run,
+        runtime_qa_execution_recipe=runtime_qa_execution_recipe,
+        explicit_execution=True,
+        task_id=str(task.get("task_id") or ""),
+        executed_at=executed_at,
+        payload_safe=payload_safe,
+        runtime_task=task,
+        readback=readback if isinstance(readback, dict) else {},
+        append_only_log=append_result,
+    )
+    rows = receipt.get("rows") if isinstance(receipt.get("rows"), list) else []
+    phase_rows = receipt.get("phase_rows") if isinstance(receipt.get("phase_rows"), list) else []
+    ledger = [
+        {
+            "api": "local_worker_runtime_qa_execution",
+            "source": "worker_runtime_qa_dry_run + local_task_store + append_only_jsonl_event",
+            "row_count": len(rows),
+            "phase_row_count": len(phase_rows),
+            "task_id": task.get("task_id"),
+            "local_fetched_at": executed_at,
+            "call_status": receipt["status"],
+            "request_params_safe": {
+                "requested_from": receipt["request_params_safe"]["requested_from"],
+                "operator_approved": receipt["request_params_safe"]["operator_approved"],
+                "dry_run_task_id": receipt["request_params_safe"]["dry_run_task_id"],
+                "evidence_plan_scope_hash_short": receipt["request_params_safe"]["evidence_plan_scope_hash_short"],
+                "runtime_qa_scope_hash_short": receipt["request_params_safe"]["runtime_qa_scope_hash_short"],
+                "external_sources_allowed": False,
+                "starts_celery_worker": False,
+                "pings_redis": False,
+                "starts_scheduler": False,
+                "provider_model_task_dispatched": False,
+            },
+            "event_sha256": append_result.get("event_sha256") or "",
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "redis_pinged": False,
+            "celery_started": False,
+            "scheduler_started": False,
+            "task_dispatched": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "error_message_safe": "",
+        }
+    ]
+    task = task_service.update_task_status(
+        str(task["task_id"]),
+        status="success",
+        progress=1.0,
+        current_step=receipt["status"],
+        call_ledger=ledger,
+        warning="worker_runtime_qa_execution_recorded_local_fallback_no_process_start",
+    ) or task
+    packet = {
+        "packet_key": RUNTIME_QA_EXECUTION_PACKET_KEY,
+        "schema_version": RUNTIME_QA_EXECUTION_SCHEMA_VERSION,
+        "status": receipt["status"],
+        "scope": receipt["scope"],
+        "mode": receipt["mode"],
+        "executed_at": executed_at,
+        "task_id": task.get("task_id"),
+        "task_status": task.get("status"),
+        "task_type": task.get("task_type"),
+        "output_packet_key": RUNTIME_QA_EXECUTION_PACKET_KEY,
+        "worker_runtime_qa_execution_receipt": receipt,
+        "worker_runtime_qa_execution_rows": rows,
+        "worker_runtime_qa_execution_phase_rows": phase_rows,
+        "local_runtime_qa_execution_done": receipt["local_runtime_qa_execution_done"],
+        "runtime_qa_done": receipt["runtime_qa_done"],
+        "runtime_qa_scope_hash": receipt["runtime_qa_scope_hash"],
+        "production_evidence_plan_scope_hash": receipt["production_evidence_plan_scope_hash"],
+        "append_only_worker_log_verified": receipt["append_only_worker_log_verified"],
+        "task_log_persistence_verified": receipt["task_log_persistence_verified"],
+        "local_fallback_round_trip_verified": receipt["local_fallback_round_trip_verified"],
+        "production_worker_complete": False,
+        "activation_ready": False,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "task_dispatched": False,
+        "provider_model_task_dispatched": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": ledger,
+        "warnings": [
+            "这是显式 POST 的本地 Worker runtime QA execution，只证明 local fallback round-trip 与 append-only event。",
+            "它不启动 Celery、不 ping Redis、不启动 scheduler、不调用 Tushare/DeepSeek/GitHub、不执行真实交易，也不代表 production worker 完成。",
+        ],
+    }
+    packet = _json_safe(packet)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(RUNTIME_QA_EXECUTION_PACKET_KEY, packet)
+    except Exception:
+        packet.setdefault("warnings", []).append("worker_runtime_qa_execution_packet_persist_failed_safe")
+    return packet
+
+
 def read_worker_runtime_cache() -> dict[str, Any]:
     celery_available = _module_available("celery")
     redis_available = _module_available("redis")
@@ -4622,6 +5326,20 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     production_readiness["worker_runtime_qa_dry_run_source_packet_present"] = runtime_qa_dry_run.get(
         "source_packet_present"
     )
+    runtime_qa_execution = _read_worker_runtime_qa_execution_packet(
+        runtime_qa_dry_run,
+        runtime_qa_execution_recipe,
+    )
+    runtime_qa_execution_rows = runtime_qa_execution.get("rows") or []
+    production_readiness["worker_runtime_qa_execution_receipt"] = runtime_qa_execution
+    production_readiness["worker_runtime_qa_execution_rows"] = runtime_qa_execution_rows
+    production_readiness["worker_runtime_qa_execution_phase_rows"] = runtime_qa_execution.get("phase_rows") or []
+    production_readiness["worker_runtime_qa_execution_source_packet_read_status"] = runtime_qa_execution.get(
+        "source_packet_read_status"
+    )
+    production_readiness["worker_runtime_qa_execution_source_packet_present"] = runtime_qa_execution.get(
+        "source_packet_present"
+    )
     runtime_durable_evidence_recipe = _worker_runtime_durable_evidence_recipe(
         production_blocker_audit=production_blocker_audit,
         healthcheck_qa_contract=healthcheck_qa_contract,
@@ -4755,6 +5473,15 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         "worker_runtime_qa_dry_run_source_packet_present": runtime_qa_dry_run.get(
             "source_packet_present"
         ),
+        "worker_runtime_qa_execution_receipt": runtime_qa_execution,
+        "worker_runtime_qa_execution_rows": runtime_qa_execution_rows,
+        "worker_runtime_qa_execution_phase_rows": runtime_qa_execution.get("phase_rows") or [],
+        "worker_runtime_qa_execution_source_packet_read_status": runtime_qa_execution.get(
+            "source_packet_read_status"
+        ),
+        "worker_runtime_qa_execution_source_packet_present": runtime_qa_execution.get(
+            "source_packet_present"
+        ),
         "worker_runtime_durable_evidence_recipe": runtime_durable_evidence_recipe,
         "worker_runtime_durable_evidence_rows": runtime_durable_evidence_recipe["rows"],
         "dispatch_plan_status": "contract_ready_local_fallback",
@@ -4831,6 +5558,11 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_runtime_qa_dry_run_ready": 1 if runtime_qa_dry_run.get("local_dry_run_ready") else 0,
             "worker_runtime_qa_dry_run_row_count": runtime_qa_dry_run.get("row_count", 0),
             "worker_runtime_qa_dry_run_phase_row_count": runtime_qa_dry_run.get("phase_row_count", 0),
+            "worker_runtime_qa_execution_ready": 1
+            if runtime_qa_execution.get("local_runtime_qa_execution_done")
+            else 0,
+            "worker_runtime_qa_execution_row_count": runtime_qa_execution.get("row_count", 0),
+            "worker_runtime_qa_execution_phase_row_count": runtime_qa_execution.get("phase_row_count", 0),
             "worker_runtime_durable_evidence_recipe_ready": 1 if runtime_durable_evidence_recipe.get("local_recipe_ready") else 0,
             "worker_runtime_durable_evidence_row_count": runtime_durable_evidence_recipe.get("row_count", 0),
             "worker_runtime_durable_evidence_production_blocker_count": runtime_durable_evidence_recipe.get(
@@ -4885,6 +5617,10 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_runtime_qa_dry_run_is_button_gated": True,
             "worker_runtime_qa_dry_run_is_not_process_start": True,
             "worker_runtime_qa_dry_run_is_not_production_completion": True,
+            "worker_runtime_qa_execution_is_button_gated": True,
+            "worker_runtime_qa_execution_is_local_fallback_only": True,
+            "worker_runtime_qa_execution_is_not_process_start": True,
+            "worker_runtime_qa_execution_is_not_production_completion": True,
             "worker_runtime_durable_evidence_recipe_is_local": True,
             "worker_runtime_durable_evidence_recipe_is_not_process_start": True,
             "worker_runtime_durable_evidence_recipe_is_not_production_completion": True,
@@ -4908,6 +5644,7 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         + runtime_qa_execution_recipe["call_ledger"]
         + runtime_qa_execution_request["call_ledger"]
         + runtime_qa_dry_run["call_ledger"]
+        + runtime_qa_execution["call_ledger"]
         + runtime_durable_evidence_recipe["call_ledger"],
         "queue_call_ledger": queue_routing_contract["call_ledger"],
         "external_calls_triggered": False,
@@ -4925,6 +5662,7 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "Worker production evidence plan 只生成后续 runtime QA 的本地 scope ticket；不会启动 Celery、ping Redis、启动 scheduler、派发任务或完成 production worker。",
             "Worker runtime QA execution request 只绑定后续手动 runtime QA 的 scope；不会启动 Celery、ping Redis、启动 scheduler 或派发任务。",
             "Worker runtime QA dry-run 只本地审查 request ticket 与 recipe；不会创建/执行 runtime QA task 或启动任何 worker 进程。",
+            "Worker runtime QA execution 只执行本地 fallback round-trip 和 append-only event；不会启动 Celery/Redis 或证明 production worker。",
             "Worker runtime 只做诊断说明，不执行真实交易，不修改 strategy action。",
         ],
     }
