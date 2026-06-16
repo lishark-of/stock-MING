@@ -1746,6 +1746,90 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
         json.dumps({"factor": factor, "serenity": serenity, "next": next_session, "migration": migration, "desktop": desktop, "model_strategy": model_strategy}, ensure_ascii=False)
 
+    def test_ltg_stage_scope_observes_prior_tushare_provider_call_ledger_without_acceptance(self):
+        db_path = self._with_meta_store()
+        selected_apis = list(tushare_task_service.ALL_REFRESH_APIS)
+        call_ledger = []
+        for api in selected_apis:
+            is_trade_cal = api == "trade_cal"
+            call_ledger.append(
+                {
+                    "api": api,
+                    "request_params_safe": {"ts_code": "002008.SZ"} if not is_trade_cal else {"start_date": "20240101", "end_date": "20240131"},
+                    "row_count": 31 if is_trade_cal else 0,
+                    "data_date": "20240131" if is_trade_cal else None,
+                    "local_fetched_at": "2026-06-12T12:49:19",
+                    "call_status": "success" if is_trade_cal else "empty",
+                    "error_message_safe": "",
+                    "external": True,
+                    "external_calls_triggered": True,
+                    "tushare_called": True,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                }
+            )
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        SQLiteMetaStore(db_path).write_packet(
+            "command_center_tushare_refresh_packet",
+            {
+                "packet_key": "command_center_tushare_refresh_packet",
+                "schema_version": "command_center_tushare_refresh_task.v1",
+                "status": "success",
+                "selected_apis": selected_apis,
+                "call_ledger": call_ledger,
+                "tushare_called": True,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+        )
+
+        data_health = data_health_service.read_data_health_timeline_cache()
+        summary = data_health["local_tushare_refresh_packet_summary"]
+        promotion = data_health["trade_cal_provider_acceptance_promotion_audit"]
+        self.assertTrue(summary["provider_call_ledger_evidence_done"])
+        self.assertEqual(summary["trade_cal_provider_call_ledger_observed_count"], 1)
+        self.assertEqual(summary["trade_cal_provider_observed_row_count"], 31)
+        self.assertEqual(summary["trade_cal_provider_acceptance_evidence_row_count"], 0)
+        self.assertFalse(summary["provider_backed_long_window_acceptance_done"])
+        self.assertTrue(summary["long_window_acceptance_still_pending"])
+        self.assertTrue(promotion["provider_evidence_from_prior_task"])
+        self.assertTrue(promotion["safe_call_ledger_fields_present"])
+        self.assertFalse(promotion["promotion_ready"])
+        self.assertIn("minimum_long_window", promotion["blockers"])
+
+        migration = migration_status_service.build_migration_status()
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg01 = observed_stage_rows["LTG-01"]
+        ltg02 = observed_stage_rows["LTG-02"]
+
+        self.assertEqual(ltg01["pending_stage_count"], 9)
+        self.assertTrue(ltg01["provider_call_ledger_evidence_done"])
+        self.assertEqual(ltg01["provider_direct_evidence_layer"], "L3_direct_provider_call_ledger")
+        self.assertEqual(ltg01["trade_cal_provider_observed_row_count"], 31)
+        self.assertFalse(ltg01["provider_backed_trade_cal_acceptance_done"])
+        self.assertFalse(ltg01["real_trade_cal_long_window_validation_done"])
+        self.assertFalse(ltg01["production_freshness_gate_complete"])
+        self.assertFalse(ltg01["external_calls_triggered"])
+        self.assertFalse(ltg01["tushare_called"])
+        self.assertTrue(ltg01["does_not_execute_trades"])
+
+        self.assertEqual(ltg02["pending_stage_count"], 9)
+        self.assertTrue(ltg02["provider_call_ledger_evidence_done"])
+        self.assertEqual(ltg02["provider_call_ledger_count"], len(selected_apis))
+        self.assertEqual(ltg02["selected_api_count"], len(selected_apis))
+        self.assertTrue(ltg02["full_interface_selection_done"])
+        self.assertFalse(ltg02["provider_backed_acceptance_done"])
+        self.assertFalse(ltg02["production_tushare_pipeline_complete"])
+        self.assertFalse(ltg02["external_calls_triggered"])
+        self.assertFalse(ltg02["tushare_called"])
+        self.assertTrue(ltg02["does_not_execute_trades"])
+
     def test_ltg_next_action_queue_prebinds_tushare_target_sample_recipe(self):
         db_path = self._with_meta_store()
 

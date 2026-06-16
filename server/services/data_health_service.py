@@ -3844,7 +3844,14 @@ def _local_tushare_refresh_packet_summary(packet: Mapping[str, Any]) -> dict[str
         for row in call_ledger
         if isinstance(row, Mapping) and str(row.get("api") or "").lower() == "trade_cal"
     ]
+    trade_cal_provider_rows = [
+        row
+        for row in trade_cal_rows
+        if row.get("tushare_called") is True
+        and str(row.get("call_status") or "").lower() in {"success", "empty", "failed"}
+    ]
     accepted_rows = [row for row in trade_cal_rows if row.get("provider_backed_long_window_acceptance_done") is True]
+    max_trade_cal_row_count = _max_int([dict(row) for row in trade_cal_rows if isinstance(row, Mapping)], "row_count")
     return {
         "schema_version": "data_health_local_tushare_refresh_packet_summary.v1",
         "available": bool(packet),
@@ -3854,10 +3861,17 @@ def _local_tushare_refresh_packet_summary(packet: Mapping[str, Any]) -> dict[str
         "selected_apis": [str(item) for item in _as_list(packet.get("selected_apis"))],
         "call_ledger_count": len(call_ledger),
         "trade_cal_call_ledger_count": len(trade_cal_rows),
+        "trade_cal_provider_call_ledger_observed_count": len(trade_cal_provider_rows),
+        "provider_call_ledger_evidence_done": bool(trade_cal_provider_rows),
+        "trade_cal_provider_call_statuses": sorted(
+            {str(row.get("call_status") or "unknown") for row in trade_cal_provider_rows}
+        ),
+        "trade_cal_provider_observed_row_count": max_trade_cal_row_count,
         "trade_cal_provider_acceptance_evidence_row_count": len(accepted_rows),
         "provider_backed_long_window_acceptance_done": bool(accepted_rows),
         "provider_backed_acceptance_done": False,
         "production_tushare_pipeline_complete": False,
+        "long_window_acceptance_still_pending": not bool(accepted_rows),
         "cache_get_external_calls": False,
         "read_only_sqlite_packet_lookup": True,
         "external_calls_triggered": False,
@@ -5849,6 +5863,9 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "local_tushare_refresh_packet_trade_cal_evidence_row_count": int(
                 local_tushare_refresh_packet_summary.get("trade_cal_provider_acceptance_evidence_row_count") or 0
             ),
+            "local_tushare_refresh_packet_trade_cal_provider_call_ledger_observed_count": int(
+                local_tushare_refresh_packet_summary.get("trade_cal_provider_call_ledger_observed_count") or 0
+            ),
             "freshness_production_blocker_row_count": len(freshness_production_blocker_rows),
             "freshness_production_blocker_count": int(
                 freshness_production_blocker_audit.get("production_blocker_count") or 0
@@ -6009,6 +6026,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal_provider_acceptance_promotion_audit_calls_provider": False,
             "local_tushare_refresh_packet_lookup_is_read_only": True,
             "local_tushare_refresh_packet_lookup_calls_provider": False,
+            "local_tushare_refresh_packet_provider_call_ledger_is_direct_prior_task_evidence": bool(
+                local_tushare_refresh_packet_summary.get("provider_call_ledger_evidence_done")
+            ),
+            "local_tushare_refresh_packet_long_window_acceptance_still_pending": bool(
+                local_tushare_refresh_packet_summary.get("long_window_acceptance_still_pending")
+            ),
             "trade_cal_provider_acceptance_promotion_ready": bool(
                 trade_cal_provider_acceptance_promotion_audit.get("promotion_ready")
             ),
@@ -6135,6 +6158,9 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
                 ),
                 "local_tushare_refresh_packet_trade_cal_evidence_row_count": int(
                     local_tushare_refresh_packet_summary.get("trade_cal_provider_acceptance_evidence_row_count") or 0
+                ),
+                "local_tushare_refresh_packet_trade_cal_provider_call_ledger_observed_count": int(
+                    local_tushare_refresh_packet_summary.get("trade_cal_provider_call_ledger_observed_count") or 0
                 ),
                 "trade_cal_provider_acceptance_promotion_ready": bool(
                     trade_cal_provider_acceptance_promotion_audit.get("promotion_ready")
