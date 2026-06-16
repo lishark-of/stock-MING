@@ -1173,8 +1173,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(launcher["status"], "local_launcher_ready_dev_only")
         self.assertEqual(launcher["scope"], "manual_local_dev_launcher_not_production_package")
         self.assertEqual(launcher["launcher_path"], "scripts/start_command_center_3.command")
+        self.assertEqual(
+            launcher["shortcut_installer_path"],
+            "scripts/install_command_center_3_desktop_shortcut.sh",
+        )
         self.assertEqual(launcher["desktop_shortcut_target_name"], "stock-MING Command Center 3.command")
+        self.assertEqual(
+            launcher["desktop_shortcut_install_command"],
+            "scripts/install_command_center_3_desktop_shortcut.sh",
+        )
         self.assertTrue(launcher["launcher_exists"])
+        self.assertTrue(launcher["shortcut_installer_exists"])
+        self.assertTrue(launcher["shortcut_installer_executable"])
+        self.assertTrue(launcher["desktop_shortcut_installer_creates_symlink"])
+        self.assertFalse(launcher["desktop_shortcut_installer_starts_services"])
+        self.assertFalse(launcher["desktop_shortcut_installer_reads_credentials"])
         self.assertTrue(launcher["uses_project_venv_first"])
         self.assertTrue(launcher["allows_system_python_only_when_explicit"])
         self.assertTrue(launcher["requires_node_modules"])
@@ -1183,6 +1196,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(launcher["opens_local_browser_when_user_runs"])
         self.assertTrue(launcher["writes_ignored_local_logs_when_user_runs"])
         self.assertFalse(launcher["cache_get_starts_launcher"])
+        self.assertFalse(launcher["cache_get_installs_shortcut"])
         self.assertFalse(launcher["cache_get_starts_fastapi"])
         self.assertFalse(launcher["cache_get_starts_vite"])
         self.assertFalse(launcher["production_package_complete"])
@@ -1201,10 +1215,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(desktop["counts"]["desktop_launcher_ready"], 1)
         self.assertTrue(desktop["runtime"]["desktop_launcher_ready"])
         self.assertEqual(desktop["runtime"]["desktop_launcher_path"], "scripts/start_command_center_3.command")
+        self.assertTrue(desktop["runtime"]["desktop_shortcut_installer_ready"])
+        self.assertEqual(
+            desktop["runtime"]["desktop_shortcut_installer_path"],
+            "scripts/install_command_center_3_desktop_shortcut.sh",
+        )
         self.assertTrue(desktop["policy"]["desktop_launcher_contract_is_local"])
         self.assertTrue(desktop["policy"]["desktop_launcher_contract_is_manual_dev_only"])
         self.assertTrue(desktop["policy"]["desktop_launcher_contract_is_not_production_package"])
         self.assertTrue(desktop["policy"]["desktop_launcher_contract_does_not_run_from_get_cache"])
+        self.assertTrue(desktop["policy"]["desktop_shortcut_installer_contract_is_local"])
+        self.assertTrue(desktop["policy"]["desktop_shortcut_installer_does_not_run_from_get_cache"])
+        self.assertTrue(desktop["policy"]["desktop_shortcut_installer_does_not_start_services"])
         self.assertEqual(desktop["runtime"]["api_health_endpoint"], "http://127.0.0.1:8710/health")
         self.assertFalse(desktop["runtime"]["backend_autostart_configured"])
         self.assertFalse(desktop["runtime"]["production_package_build_attempted"])
@@ -1659,6 +1681,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         file_labels = {row["label"] for row in desktop["file_rows"]}
         self.assertIn("react_app", file_labels)
         self.assertIn("command_center_3_launcher", file_labels)
+        self.assertIn("command_center_3_shortcut_installer", file_labels)
         self.assertIn("tauri_config", file_labels)
         self.assertIn("cargo_toml", file_labels)
         self.assertIn("cargo_lock", file_labels)

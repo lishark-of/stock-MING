@@ -1358,11 +1358,17 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("开发启动顺序", page)
         self.assertIn("Command Center 3.0 本地快捷入口", page)
         self.assertIn("manual_local_dev_launcher_not_production_package", page)
+        self.assertIn("scripts/install_command_center_3_desktop_shortcut.sh", page)
         self.assertIn("scripts/start_command_center_3.command", page)
         self.assertIn("stock-MING Command Center 3.command", page)
+        self.assertIn("shortcut_installer_exists / executable / creates_symlink", page)
+        self.assertIn("shortcut_installer_starts_services / reads_credentials", page)
         self.assertIn("uses_project_venv_first / allows_system_python_only_when_explicit", page)
         self.assertIn("starts_fastapi_when_user_runs / starts_vite_when_user_runs / opens_local_browser_when_user_runs", page)
-        self.assertIn("cache_get_starts_launcher / cache_get_starts_fastapi / cache_get_starts_vite", page)
+        self.assertIn(
+            "cache_get_starts_launcher / cache_get_installs_shortcut / cache_get_starts_fastapi / cache_get_starts_vite",
+            page,
+        )
         self.assertIn("local_launcher_ready_dev_only", page)
         self.assertIn("FastAPI 地址合同", page)
         self.assertIn("scripts/dev_server.sh", page)

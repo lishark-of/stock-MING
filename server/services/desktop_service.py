@@ -19,6 +19,7 @@ FRONTEND_BACKEND_OFFLINE_NOTICE = DESKTOP_ROOT / "src" / "components" / "Backend
 FRONTEND_STYLES = DESKTOP_ROOT / "src" / "styles.css"
 ROOT_GITIGNORE = PROJECT_ROOT / ".gitignore"
 COMMAND_CENTER_3_LAUNCHER = PROJECT_ROOT / "scripts" / "start_command_center_3.command"
+COMMAND_CENTER_3_SHORTCUT_INSTALLER = PROJECT_ROOT / "scripts" / "install_command_center_3_desktop_shortcut.sh"
 TAURI_PACKAGE_DURABLE_EVIDENCE_SCHEMA_VERSION = "tauri_package_durable_evidence_recipe.v1"
 TAURI_PACKAGE_DURABLE_EVIDENCE_KEYS = (
     "preflight_cache_boundary_visible",
@@ -474,6 +475,7 @@ def _dev_launch_plan(api_base: str) -> list[dict[str, Any]]:
 
 def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
     source = _read_source_safe(COMMAND_CENTER_3_LAUNCHER)
+    installer_source = _read_source_safe(COMMAND_CENTER_3_SHORTCUT_INSTALLER)
     required_markers = (
         "Command Center 3.0 local launcher",
         "scripts/dev_server.sh",
@@ -485,9 +487,18 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "open \"$VITE_URL\"",
         "no Tushare, DeepSeek, GitHub, or trading call",
     )
+    required_installer_markers = (
+        "Command Center 3.0 desktop shortcut installer",
+        "start_command_center_3.command",
+        "ln -sfn",
+        "STOCK_MING_DESKTOP_DIR",
+        "STOCK_MING_DESKTOP_SHORTCUT_NAME",
+        "creates only a local symlink",
+        "no Tushare, DeepSeek, GitHub, or trading call",
+    )
     marker_rows = [
         {
-            "criterion": marker,
+            "criterion": f"launcher_marker:{marker}",
             "status": "passed" if marker in source else "blocked",
             "passed": marker in source,
             "evidence": _path_label(COMMAND_CENTER_3_LAUNCHER),
@@ -500,8 +511,27 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
             "does_not_modify_strategy_action": True,
         }
         for marker in required_markers
+    ] + [
+        {
+            "criterion": f"shortcut_installer_marker:{marker}",
+            "status": "passed" if marker in installer_source else "blocked",
+            "passed": marker in installer_source,
+            "evidence": _path_label(COMMAND_CENTER_3_SHORTCUT_INSTALLER),
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "loads_token_or_key": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+        for marker in required_installer_markers
     ]
-    local_ready = COMMAND_CENTER_3_LAUNCHER.exists() and all(row["passed"] for row in marker_rows)
+    local_ready = (
+        COMMAND_CENTER_3_LAUNCHER.exists()
+        and COMMAND_CENTER_3_SHORTCUT_INSTALLER.exists()
+        and all(row["passed"] for row in marker_rows)
+    )
     return {
         "schema_version": "command_center_3_local_launcher_contract.v1",
         "status": "local_launcher_ready_dev_only" if local_ready else "local_launcher_contract_blocked",
@@ -510,8 +540,14 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "launcher_path": _path_label(COMMAND_CENTER_3_LAUNCHER),
         "launcher_exists": COMMAND_CENTER_3_LAUNCHER.exists(),
         "launcher_executable": os.access(COMMAND_CENTER_3_LAUNCHER, os.X_OK),
+        "shortcut_installer_path": _path_label(COMMAND_CENTER_3_SHORTCUT_INSTALLER),
+        "shortcut_installer_exists": COMMAND_CENTER_3_SHORTCUT_INSTALLER.exists(),
+        "shortcut_installer_executable": os.access(COMMAND_CENTER_3_SHORTCUT_INSTALLER, os.X_OK),
         "desktop_shortcut_target_name": "stock-MING Command Center 3.command",
-        "desktop_shortcut_install_command": "ln -sf scripts/start_command_center_3.command ~/Desktop/stock-MING\\ Command\\ Center\\ 3.command",
+        "desktop_shortcut_install_command": "scripts/install_command_center_3_desktop_shortcut.sh",
+        "desktop_shortcut_installer_creates_symlink": "ln -sfn" in installer_source,
+        "desktop_shortcut_installer_starts_services": False,
+        "desktop_shortcut_installer_reads_credentials": False,
         "api_base": api_base,
         "vite_url": "http://127.0.0.1:5173",
         "uses_project_venv_first": "PROJECT_ROOT}/.venv/bin/python" in source,
@@ -522,6 +558,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "opens_local_browser_when_user_runs": 'open "$VITE_URL"' in source,
         "writes_ignored_local_logs_when_user_runs": ".stock_ming_3/logs" in source,
         "cache_get_starts_launcher": False,
+        "cache_get_installs_shortcut": False,
         "cache_get_starts_fastapi": False,
         "cache_get_starts_vite": False,
         "production_package_complete": False,
@@ -538,7 +575,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "call_ledger": [
             {
                 "api": "local_command_center_3_launcher_contract",
-                "source": _path_label(COMMAND_CENTER_3_LAUNCHER),
+                "source": f"{_path_label(COMMAND_CENTER_3_LAUNCHER)}; {_path_label(COMMAND_CENTER_3_SHORTCUT_INSTALLER)}",
                 "row_count": len(marker_rows),
                 "local_fetched_at": _now_iso(),
                 "call_status": "local_launcher_contract",
@@ -1700,6 +1737,11 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         _file_row(DESKTOP_ROOT / "src-tauri" / "src" / "main.rs", "tauri_main", "Tauri app entry"),
         _file_row(DESKTOP_ROOT / "src-tauri" / "icons" / "icon.png", "tauri_icon", "Tauri desktop window and app icon"),
         _file_row(COMMAND_CENTER_3_LAUNCHER, "command_center_3_launcher", "Manual local Command Center 3.0 launcher"),
+        _file_row(
+            COMMAND_CENTER_3_SHORTCUT_INSTALLER,
+            "command_center_3_shortcut_installer",
+            "Manual local Desktop shortcut installer",
+        ),
         _file_row(DESKTOP_ROOT / "node_modules", "node_modules", "Installed frontend dependencies"),
         _file_row(DESKTOP_ROOT / "dist", "dist", "Vite build output, should not be committed"),
     ]
@@ -1847,6 +1889,9 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "desktop_launcher_ready": desktop_launcher_contract["status"] == "local_launcher_ready_dev_only",
             "desktop_launcher_executable": desktop_launcher_contract["launcher_executable"],
             "desktop_launcher_path": desktop_launcher_contract["launcher_path"],
+            "desktop_shortcut_installer_ready": desktop_launcher_contract["shortcut_installer_exists"]
+            and desktop_launcher_contract["shortcut_installer_executable"],
+            "desktop_shortcut_installer_path": desktop_launcher_contract["shortcut_installer_path"],
             "backend_autostart_configured": False,
             "production_package_build_attempted": False,
             "production_package_build_artifact_detected": tauri_build_artifact["binary_exists"],
@@ -1890,6 +1935,9 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "desktop_launcher_contract_is_manual_dev_only": True,
             "desktop_launcher_contract_is_not_production_package": True,
             "desktop_launcher_contract_does_not_run_from_get_cache": True,
+            "desktop_shortcut_installer_contract_is_local": True,
+            "desktop_shortcut_installer_does_not_run_from_get_cache": True,
+            "desktop_shortcut_installer_does_not_start_services": True,
             "tauri_release_manifest_contract_is_local": True,
             "tauri_release_manifest_contract_is_not_build": True,
             "tauri_release_manifest_contract_is_not_runtime_execution": True,
