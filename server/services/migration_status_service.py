@@ -2681,6 +2681,7 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         packet = {}
     packet_map = packet if isinstance(packet, dict) else {}
     review = _dict_or_empty(packet_map.get("tauri_package_artifact_review_contract"))
+    launch_review = _dict_or_empty(packet_map.get("tauri_packaged_runtime_launch_review_contract"))
     packet_safe = bool(
         packet_map.get("external_calls_triggered") is not True
         and packet_map.get("tushare_called") is not True
@@ -2741,6 +2742,31 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         and int(review.get("bundle_dmg_count") or 0) > 0
         and review.get("dmg_distribution_path")
     )
+    packaged_app_launch_ready = bool(
+        packet_safe
+        and app_bundle_ready
+        and launch_review.get("schema_version") == "tauri_packaged_runtime_launch_review.v1"
+        and launch_review.get("status") == "tauri_packaged_runtime_launch_review_ready_local_launch_smoke"
+        and launch_review.get("explicit_review_task_done") is True
+        and launch_review.get("local_packaged_app_launch_review_ready") is True
+        and launch_review.get("explicit_packaged_app_launch_completed_before_review") is True
+        and launch_review.get("app_process_observed_after_launch") is True
+        and launch_review.get("packaged_app_launch_smoke_done") is True
+        and launch_review.get("packaged_app_launch_qa_done") is True
+        and launch_review.get("packaged_app_launch_is_completion") is False
+        and launch_review.get("packaged_runtime_validated") is False
+        and launch_review.get("production_package_complete") is False
+        and launch_review.get("fastapi_started_by_review") is False
+        and launch_review.get("config_values_read_by_review") is False
+        and launch_review.get("log_files_written_by_review") is False
+        and launch_review.get("external_calls_triggered") is False
+        and launch_review.get("tushare_called") is False
+        and launch_review.get("deepseek_called") is False
+        and launch_review.get("github_called") is False
+        and launch_review.get("does_not_execute_trades") is True
+        and launch_review.get("does_not_modify_strategy_action") is True
+        and launch_review.get("contains_secret") is False
+    )
     direct_stage_keys = ["release_binary_artifact_qa"] if artifact_review_ready else []
     if build_repeatability_ready:
         direct_stage_keys.append("tauri_build_repeatability")
@@ -2748,6 +2774,8 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         direct_stage_keys.append("app_bundle_artifact_qa")
     if dmg_distribution_ready:
         direct_stage_keys.append("dmg_distribution_artifact_qa")
+    if packaged_app_launch_ready:
+        direct_stage_keys.append("packaged_app_launch_smoke")
     return {
         "schema_version": "migration_tauri_package_direct_evidence_summary.v1",
         "source_packet_key": "command_center_3_tauri_package_artifact_review_packet",
@@ -2761,7 +2789,13 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         "tauri_build_repeatability_done": build_repeatability_ready,
         "app_bundle_artifact_qa_done": app_bundle_ready,
         "dmg_distribution_artifact_qa_done": dmg_distribution_ready,
+        "packaged_app_launch_smoke_done": packaged_app_launch_ready,
+        "packaged_app_launch_qa_done": packaged_app_launch_ready,
         "build_command_reviewed_safe": review.get("build_command_reviewed_safe") if build_repeatability_ready else "",
+        "launch_command_reviewed_safe": launch_review.get("launch_command_reviewed_safe")
+        if packaged_app_launch_ready
+        else "",
+        "observed_process_name": launch_review.get("observed_process_name") if packaged_app_launch_ready else "",
         "release_binary_path": review.get("release_binary_path") if artifact_review_ready else "",
         "release_binary_size_bytes": review.get("release_binary_size_bytes") if artifact_review_ready else 0,
         "release_binary_modified_at": review.get("release_binary_modified_at") if artifact_review_ready else "",
@@ -4991,7 +5025,11 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "tauri_build_repeatability_done": direct_evidence.get("tauri_build_repeatability_done") is True,
                 "app_bundle_artifact_qa_done": direct_evidence.get("app_bundle_artifact_qa_done") is True,
                 "dmg_distribution_artifact_qa_done": direct_evidence.get("dmg_distribution_artifact_qa_done") is True,
+                "packaged_app_launch_smoke_done": direct_evidence.get("packaged_app_launch_smoke_done") is True,
+                "packaged_app_launch_qa_done": direct_evidence.get("packaged_app_launch_qa_done") is True,
                 "tauri_build_command_reviewed_safe": direct_evidence.get("build_command_reviewed_safe") or "",
+                "tauri_launch_command_reviewed_safe": direct_evidence.get("launch_command_reviewed_safe") or "",
+                "tauri_launch_observed_process_name": direct_evidence.get("observed_process_name") or "",
                 "release_binary_artifact_path": direct_evidence.get("release_binary_path") or "",
                 "release_binary_artifact_size_bytes": direct_evidence.get("release_binary_size_bytes") or 0,
                 "release_binary_artifact_modified_at": direct_evidence.get("release_binary_modified_at") or "",

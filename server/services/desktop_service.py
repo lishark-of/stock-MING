@@ -20,6 +20,8 @@ TAURI_RELEASE_BINARY = DESKTOP_ROOT / "src-tauri" / "target" / "release" / "stoc
 TAURI_BUNDLE_ROOT = DESKTOP_ROOT / "src-tauri" / "target" / "release" / "bundle"
 TAURI_PACKAGE_ARTIFACT_REVIEW_PACKET_KEY = "command_center_3_tauri_package_artifact_review_packet"
 TAURI_PACKAGE_ARTIFACT_REVIEW_TASK_TYPE = "run_tauri_package_artifact_review"
+TAURI_PACKAGED_RUNTIME_LAUNCH_REVIEW_PACKET_KEY = "command_center_3_tauri_packaged_runtime_launch_review_packet"
+TAURI_PACKAGED_RUNTIME_LAUNCH_REVIEW_TASK_TYPE = "run_tauri_packaged_runtime_launch_review"
 FRONTEND_API_CLIENT = DESKTOP_ROOT / "src" / "api" / "client.ts"
 FRONTEND_PAGE_STATE_BANNER = DESKTOP_ROOT / "src" / "components" / "PageStateBanner.tsx"
 FRONTEND_BACKEND_OFFLINE_NOTICE = DESKTOP_ROOT / "src" / "components" / "BackendOfflineNotice.tsx"
@@ -2078,6 +2080,281 @@ def _write_tauri_package_artifact_review_packet(
         SQLiteMetaStore(SQLITE_META_PATH).write_packet(TAURI_PACKAGE_ARTIFACT_REVIEW_PACKET_KEY, packet)
 
 
+def _tauri_packaged_runtime_launch_review_call_ledger(review: dict[str, Any], reviewed_at: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "api": "local_tauri_packaged_runtime_launch_review",
+            "request_params_safe": {
+                "review_scope": "local_tauri_packaged_app_launch_smoke",
+                "app_bundle_path": review.get("app_bundle_path"),
+                "launch_command_reviewed_safe": review.get("launch_command_reviewed_safe"),
+                "app_process_observed_after_launch": review.get("app_process_observed_after_launch"),
+                "packaged_app_launch_smoke_done": review.get("packaged_app_launch_smoke_done"),
+                "external_sources_allowed": False,
+                "runs_build": False,
+                "starts_fastapi": False,
+                "production_package_complete": False,
+            },
+            "row_count": review.get("row_count", 0),
+            "data_date": reviewed_at,
+            "local_fetched_at": reviewed_at,
+            "call_status": review.get("status"),
+            "error_message_safe": "",
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+
+
+def _tauri_packaged_runtime_launch_review_contract(
+    *,
+    tauri_build_artifact: dict[str, Any],
+    reviewed_at: str | None = None,
+    task_id: str = "",
+    explicit_review: bool = False,
+    explicit_packaged_app_launch_completed: bool = False,
+    app_process_observed_after_launch: bool = False,
+    launch_command_reviewed_safe: str = "",
+    observed_process_name: str = "",
+) -> dict[str, Any]:
+    app_bundle_ready = bool(
+        tauri_build_artifact.get("schema_version") == "tauri_build_artifact_detection.v1"
+        and tauri_build_artifact.get("packaged_app_bundle_detected") is True
+        and int(tauri_build_artifact.get("bundle_app_count") or 0) > 0
+        and tauri_build_artifact.get("bundle_app_path")
+        and tauri_build_artifact.get("build_command_executed_by_get_cache") is False
+        and tauri_build_artifact.get("artifact_is_gitignored") is True
+    )
+    boundary_ready = bool(
+        tauri_build_artifact.get("external_calls_triggered") is False
+        and tauri_build_artifact.get("tushare_called") is False
+        and tauri_build_artifact.get("deepseek_called") is False
+        and tauri_build_artifact.get("github_called") is False
+        and tauri_build_artifact.get("does_not_execute_trades") is True
+        and tauri_build_artifact.get("does_not_modify_strategy_action") is True
+        and tauri_build_artifact.get("contains_secret") is False
+    )
+    accepted_launch_command = launch_command_reviewed_safe in {
+        "open -n desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app",
+        "open desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app",
+    }
+    launch_smoke_ready = bool(
+        explicit_review
+        and app_bundle_ready
+        and boundary_ready
+        and explicit_packaged_app_launch_completed
+        and app_process_observed_after_launch
+        and accepted_launch_command
+    )
+
+    def _row(criterion: str, status: str, passed: bool, evidence: str, *, blocks_review: bool = True) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": status,
+            "passed": bool(passed),
+            "evidence": evidence,
+            "blocks_review": bool(blocks_review and not passed),
+            "blocks_production": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+
+    rows = [
+        _row(
+            "explicit_post_launch_review_task",
+            "passed" if explicit_review else "pending_explicit_post",
+            explicit_review,
+            "POST /api/desktop/tauri-packaged-runtime-launch-review records a separately executed local .app launch smoke.",
+        ),
+        _row(
+            "app_bundle_artifact_ready",
+            "passed_local_app_bundle_artifact" if app_bundle_ready else "pending_app_bundle_artifact",
+            app_bundle_ready,
+            (
+                f"app_bundle={tauri_build_artifact.get('packaged_app_bundle_detected')}; "
+                f"app_count={tauri_build_artifact.get('bundle_app_count')}; "
+                f"app_path={tauri_build_artifact.get('bundle_app_path') or 'missing'}"
+            ),
+        ),
+        _row(
+            "explicit_packaged_app_launch_observed",
+            "passed_launch_process_observed" if launch_smoke_ready else "pending_launch_process_observation",
+            launch_smoke_ready,
+            (
+                f"explicit_launch={explicit_packaged_app_launch_completed}; "
+                f"process_observed={app_process_observed_after_launch}; "
+                f"process_name={observed_process_name or 'missing'}; "
+                f"launch_command={launch_command_reviewed_safe or 'missing'}"
+            ),
+        ),
+        _row(
+            "backend_offline_ux_still_pending",
+            "pending_backend_offline_packaged_ux",
+            False,
+            "Launch smoke does not prove backend-offline UI copy, visual state, or recovery behavior.",
+            blocks_review=False,
+        ),
+        _row(
+            "config_log_runtime_paths_still_pending",
+            "pending_config_log_runtime_paths",
+            False,
+            "Launch smoke does not read config values or validate log-path behavior.",
+            blocks_review=False,
+        ),
+        _row(
+            "production_package_still_blocked",
+            "passed_production_blockers_visible",
+            True,
+            "DMG distribution, backend startup, offline UX, config/log runtime paths, signing/notarization, and promotion review remain required.",
+            blocks_review=False,
+        ),
+        _row(
+            "no_external_trade_secret_boundary",
+            "passed_no_external_trade_secret",
+            boundary_ready,
+            "Review records no provider/model/GitHub/trade call and exposes no secret.",
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["blocks_review"]]
+    return {
+        "schema_version": "tauri_packaged_runtime_launch_review.v1",
+        "status": "tauri_packaged_runtime_launch_review_ready_local_launch_smoke"
+        if launch_smoke_ready
+        else "tauri_packaged_runtime_launch_review_pending",
+        "scope": "button_gated_local_tauri_packaged_app_launch_review_no_provider_no_trade",
+        "ltg": "LTG-09",
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "explicit_review_task_done": explicit_review,
+        "explicit_packaged_app_launch_completed_before_review": explicit_packaged_app_launch_completed,
+        "launch_command_reviewed_safe": launch_command_reviewed_safe if accepted_launch_command else "",
+        "app_process_observed_after_launch": app_process_observed_after_launch,
+        "observed_process_name": observed_process_name,
+        "local_packaged_app_launch_review_ready": launch_smoke_ready,
+        "direct_evidence_stage_key": "packaged_app_launch_smoke" if launch_smoke_ready else "",
+        "direct_evidence_stage_keys": ["packaged_app_launch_smoke"] if launch_smoke_ready else [],
+        "release_binary_path": tauri_build_artifact.get("binary_path"),
+        "app_bundle_path": tauri_build_artifact.get("bundle_app_path") or "",
+        "app_bundle_detected": tauri_build_artifact.get("packaged_app_bundle_detected") is True,
+        "packaged_app_launch_smoke_done": launch_smoke_ready,
+        "packaged_app_launch_qa_done": launch_smoke_ready,
+        "packaged_app_launch_is_completion": False,
+        "packaged_runtime_validated": False,
+        "backend_startup_runtime_validated": False,
+        "backend_offline_packaged_ux_verified": False,
+        "config_log_runtime_paths_validated": False,
+        "dmg_distribution_artifact_qa_done": False,
+        "signing_notarization_done": False,
+        "production_package_complete": False,
+        "tauri_build_executed_by_review": False,
+        "npm_or_cargo_executed_by_review": False,
+        "tauri_runtime_started_by_review": False,
+        "packaged_app_opened_by_review": launch_smoke_ready,
+        "fastapi_started_by_review": False,
+        "config_values_read_by_review": False,
+        "log_files_written_by_review": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": rows,
+        "row_count": len(rows),
+        "blocking_review_count": len(blocking_rows),
+        "blocking_review_criteria": [row["criterion"] for row in blocking_rows],
+        "call_ledger": [],
+        "note": "This review records a local .app launch smoke only. It is not backend-offline UX QA, config/log runtime validation, signing/notarization, or production desktop package completion.",
+    }
+
+
+def _safe_persisted_tauri_packaged_runtime_launch_review(packet: dict[str, Any]) -> dict[str, Any]:
+    review = packet.get("tauri_packaged_runtime_launch_review_contract")
+    if not isinstance(review, dict):
+        return {}
+    safe = (
+        review.get("schema_version") == "tauri_packaged_runtime_launch_review.v1"
+        and review.get("scope") == "button_gated_local_tauri_packaged_app_launch_review_no_provider_no_trade"
+        and review.get("explicit_review_task_done") is True
+        and review.get("local_packaged_app_launch_review_ready") is True
+        and review.get("packaged_app_launch_smoke_done") is True
+        and review.get("packaged_app_launch_is_completion") is False
+        and review.get("packaged_runtime_validated") is False
+        and review.get("production_package_complete") is False
+        and review.get("fastapi_started_by_review") is False
+        and review.get("config_values_read_by_review") is False
+        and review.get("log_files_written_by_review") is False
+        and review.get("external_calls_triggered") is False
+        and review.get("tushare_called") is False
+        and review.get("deepseek_called") is False
+        and review.get("github_called") is False
+        and review.get("does_not_execute_trades") is True
+        and review.get("does_not_modify_strategy_action") is True
+        and review.get("contains_secret") is False
+    )
+    return review if safe else {}
+
+
+def _read_tauri_packaged_runtime_launch_review_packet() -> dict[str, Any]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(TAURI_PACKAGED_RUNTIME_LAUNCH_REVIEW_PACKET_KEY)
+    except Exception:
+        return {}
+    if not isinstance(packet, dict):
+        return {}
+    return packet if _safe_persisted_tauri_packaged_runtime_launch_review(packet) else {}
+
+
+def _write_tauri_packaged_runtime_launch_review_packet(
+    *,
+    review_contract: dict[str, Any],
+    ledger: list[dict[str, Any]],
+    reviewed_at: str,
+    task_id: str,
+) -> None:
+    packet = {
+        "packet_key": TAURI_PACKAGED_RUNTIME_LAUNCH_REVIEW_PACKET_KEY,
+        "schema_version": "tauri_packaged_runtime_launch_review_packet.v1",
+        "status": review_contract.get("status"),
+        "ltg": "LTG-09",
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "tauri_packaged_runtime_launch_review_contract": dict(review_contract),
+        "tauri_packaged_runtime_launch_review_rows": list(review_contract.get("rows") or []),
+        "call_ledger": list(ledger),
+        "cache_only": True,
+        "runs_no_build": True,
+        "starts_no_fastapi": True,
+        "reads_no_config_values": True,
+        "writes_no_log_files": True,
+        "production_package_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "warnings": [
+            "This packet is a local review receipt for a separately executed Tauri .app launch smoke.",
+            "It is not backend-offline UX QA, config/log runtime validation, signing/notarization evidence, or production package completion.",
+        ],
+    }
+    if _safe_persisted_tauri_packaged_runtime_launch_review(packet):
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(TAURI_PACKAGED_RUNTIME_LAUNCH_REVIEW_PACKET_KEY, packet)
+
+
 def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     package_summary = _package_json_summary()
     tauri_config = _tauri_config_summary()
@@ -2387,6 +2664,30 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         packet["warnings"].append(
             "tauri_package_artifact_review 只审查本地 release binary artifact；不等于 packaged app launch QA、签名/公证或 production package 完成。"
         )
+    persisted_launch_review_packet = _read_tauri_packaged_runtime_launch_review_packet()
+    persisted_launch_review = _safe_persisted_tauri_packaged_runtime_launch_review(persisted_launch_review_packet)
+    if persisted_launch_review:
+        packet["tauri_packaged_runtime_launch_review_contract"] = persisted_launch_review
+        packet["tauri_packaged_runtime_launch_review_rows"] = list(persisted_launch_review.get("rows") or [])
+        packet["tauri_packaged_runtime_launch_review_ready"] = True
+        packet["counts"]["tauri_packaged_runtime_launch_review_row_count"] = persisted_launch_review.get("row_count", 0)
+        packet["counts"]["tauri_packaged_runtime_launch_review_blocking_count"] = persisted_launch_review.get(
+            "blocking_review_count",
+            0,
+        )
+        packet["runtime"]["tauri_packaged_runtime_launch_review_ready"] = True
+        packet["runtime"]["tauri_packaged_runtime_launch_review_status"] = persisted_launch_review.get("status")
+        packet["runtime"]["tauri_packaged_app_launch_smoke_done"] = True
+        packet["policy"]["tauri_packaged_runtime_launch_review_is_local"] = True
+        packet["policy"]["tauri_packaged_runtime_launch_review_is_not_build"] = True
+        packet["policy"]["tauri_packaged_runtime_launch_review_is_not_backend_start"] = True
+        packet["policy"]["tauri_packaged_runtime_launch_review_is_not_production_completion"] = True
+        packet["call_ledger"] = packet["call_ledger"] + [
+            row for row in persisted_launch_review_packet.get("call_ledger", []) if isinstance(row, dict)
+        ]
+        packet["warnings"].append(
+            "tauri_packaged_runtime_launch_review 只记录显式本地 .app 启动 smoke；不等于离线 UX、配置/日志、签名/公证或 production package 完成。"
+        )
     return _json_safe(packet)
 
 
@@ -2444,4 +2745,64 @@ def run_tauri_package_artifact_review_task(payload: Any = None) -> dict[str, Any
         else "tauri_package_artifact_review_pending",
         call_ledger=ledger,
         warning="tauri_package_artifact_review_completed_no_build_no_runtime_no_external_call",
+    ) or task
+
+
+def run_tauri_packaged_runtime_launch_review_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, dict) else {}
+    explicit_launch_completed = payload_map.get("explicit_packaged_app_launch_completed") is True
+    process_observed = payload_map.get("app_process_observed_after_launch") is True
+    requested_command = str(payload_map.get("launch_command") or "").strip()
+    launch_command_reviewed_safe = requested_command if requested_command in {
+        "open -n desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app",
+        "open desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app",
+    } else ""
+    observed_process_name = str(payload_map.get("observed_process_name") or "").strip()[:120]
+    task = create_task_record(
+        TAURI_PACKAGED_RUNTIME_LAUNCH_REVIEW_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="tauri_packaged_runtime_launch_review_queued",
+        warnings=[
+            "Tauri packaged runtime launch review 只记录用户/测试已显式执行的本地 .app 启动 smoke。",
+            "review 不运行 npm/cargo/Tauri、不启动 FastAPI、不读取配置、不写日志、不调用 provider/model/GitHub、不交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="reading_local_tauri_packaged_app_launch_evidence",
+    )
+    packet = read_desktop_shell_preflight_cache()
+    reviewed_at = _now_iso()
+    review_contract = _tauri_packaged_runtime_launch_review_contract(
+        tauri_build_artifact=packet.get("tauri_build_artifact", {}),
+        explicit_review=True,
+        explicit_packaged_app_launch_completed=explicit_launch_completed,
+        app_process_observed_after_launch=process_observed,
+        launch_command_reviewed_safe=launch_command_reviewed_safe,
+        observed_process_name=observed_process_name,
+        task_id=str(task["task_id"]),
+        reviewed_at=reviewed_at,
+    )
+    ledger = _tauri_packaged_runtime_launch_review_call_ledger(review_contract, reviewed_at)
+    _write_tauri_packaged_runtime_launch_review_packet(
+        review_contract=review_contract,
+        ledger=ledger,
+        reviewed_at=reviewed_at,
+        task_id=str(task["task_id"]),
+    )
+    return update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="tauri_packaged_runtime_launch_review_ready"
+        if review_contract["local_packaged_app_launch_review_ready"]
+        else "tauri_packaged_runtime_launch_review_pending",
+        call_ledger=ledger,
+        warning="tauri_packaged_runtime_launch_review_completed_no_build_no_backend_no_external_call",
     ) or task
