@@ -449,6 +449,7 @@ def storage_cache_ttl_dry_run_packet(
         "github_called": False,
         "does_not_modify_strategy_action": True,
         "does_not_execute_trades": True,
+        "contains_secret": False,
         "call_ledger": _storage_cache_call_ledger(
             "local_storage_cache_ttl_dry_run",
             endpoint="POST /api/storage/cache-ttl/dry-run",

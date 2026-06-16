@@ -2026,6 +2026,12 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
             )
         except Exception:
             cleanup_packet = {}
+        try:
+            cache_ttl_packet = SQLiteMetaStore(storage_service.SQLITE_META_PATH).read_packet(
+                storage_service.CACHE_TTL_DRY_RUN_PACKET_KEY
+            )
+        except Exception:
+            cache_ttl_packet = {}
     except Exception:
         return {
             "schema_version": "migration_storage_direct_execution_evidence_summary.v1",
@@ -2038,6 +2044,7 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
             "duckdb_read_validation_done": False,
             "partition_migration_metadata_validation_done": False,
             "physical_compaction_metadata_validation_done": False,
+            "cache_ttl_refresh_metadata_validation_done": False,
             "artifact_cleanup_review_done": False,
             "storage_physical_execution_request_ready": False,
             "production_storage_complete": False,
@@ -2056,6 +2063,7 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
     partition_map = partition_packet if isinstance(partition_packet, dict) else {}
     compaction_map = compaction_packet if isinstance(compaction_packet, dict) else {}
     cleanup_map = cleanup_packet if isinstance(cleanup_packet, dict) else {}
+    cache_ttl_map = cache_ttl_packet if isinstance(cache_ttl_packet, dict) else {}
     cleanup_review_map = (
         cleanup_map.get("artifact_cleanup_review_contract")
         if isinstance(cleanup_map.get("artifact_cleanup_review_contract"), dict)
@@ -2178,6 +2186,25 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
         and compaction_map.get("does_not_modify_strategy_action") is True
         and compaction_map.get("contains_secret") is False
     )
+    cache_ttl_refresh_metadata_validation_done = bool(
+        cache_ttl_map.get("schema_version") == "command_center_3_storage_cache_ttl_dry_run.v1"
+        and cache_ttl_map.get("status") == "dry_run_completed"
+        and int(cache_ttl_map.get("dataset_count") or 0) > 0
+        and int(cache_ttl_map.get("refresh_executed_count") or 0) == 0
+        and cache_ttl_map.get("refresh_executed") is False
+        and cache_ttl_map.get("auto_refresh_on_get") is False
+        and cache_ttl_map.get("post_dry_run_writes_parquet") is False
+        and cache_ttl_map.get("post_dry_run_reads_row_payloads") is False
+        and cache_ttl_map.get("post_dry_run_reads_env_files") is False
+        and cache_ttl_map.get("cache_get_writes_files") is False
+        and cache_ttl_map.get("external_calls_triggered") is False
+        and cache_ttl_map.get("tushare_called") is False
+        and cache_ttl_map.get("deepseek_called") is False
+        and cache_ttl_map.get("github_called") is False
+        and cache_ttl_map.get("does_not_execute_trades") is True
+        and cache_ttl_map.get("does_not_modify_strategy_action") is True
+        and cache_ttl_map.get("contains_secret") is False
+    )
     artifact_cleanup_review_done = bool(
         cleanup_map.get("schema_version") == "command_center_3_storage_artifact_cleanup_dry_run.v1"
         and cleanup_map.get("status") == "ready"
@@ -2217,6 +2244,7 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
         + int(duckdb_read_validation_done)
         + int(partition_metadata_validation_done)
         + int(physical_compaction_metadata_validation_done)
+        + int(cache_ttl_refresh_metadata_validation_done)
         + int(artifact_cleanup_review_done)
     )
     try:
@@ -2279,6 +2307,11 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
         ),
         "physical_compaction_dataset_count": int(compaction_map.get("dataset_count") or 0),
         "physical_compaction_not_needed_count": int(compaction_map.get("compaction_not_needed_count") or 0),
+        "cache_ttl_refresh_metadata_validation_done": cache_ttl_refresh_metadata_validation_done,
+        "cache_ttl_refresh_metadata_validation_status": str(cache_ttl_map.get("status") or "packet_missing"),
+        "cache_ttl_refresh_recommended_count": int(cache_ttl_map.get("refresh_recommended_count") or 0),
+        "cache_ttl_dataset_count": int(cache_ttl_map.get("dataset_count") or 0),
+        "cache_ttl_refresh_executed_count": int(cache_ttl_map.get("refresh_executed_count") or 0),
         "artifact_cleanup_review_done": artifact_cleanup_review_done,
         "artifact_cleanup_review_status": str(cleanup_map.get("artifact_cleanup_review_status") or "packet_missing"),
         "artifact_cleanup_candidate_count": int(cleanup_map.get("candidate_count") or 0),
@@ -4067,6 +4100,21 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 ),
                 "physical_compaction_not_needed_count": int(
                     direct_evidence.get("physical_compaction_not_needed_count") or 0
+                ),
+                "cache_ttl_refresh_metadata_validation_done": direct_evidence.get(
+                    "cache_ttl_refresh_metadata_validation_done"
+                )
+                is True,
+                "cache_ttl_refresh_metadata_validation_status": direct_evidence.get(
+                    "cache_ttl_refresh_metadata_validation_status"
+                )
+                or "",
+                "cache_ttl_refresh_recommended_count": int(
+                    direct_evidence.get("cache_ttl_refresh_recommended_count") or 0
+                ),
+                "cache_ttl_dataset_count": int(direct_evidence.get("cache_ttl_dataset_count") or 0),
+                "cache_ttl_refresh_executed_count": int(
+                    direct_evidence.get("cache_ttl_refresh_executed_count") or 0
                 ),
                 "artifact_cleanup_review_done": direct_evidence.get("artifact_cleanup_review_done") is True,
                 "artifact_cleanup_review_status": direct_evidence.get("artifact_cleanup_review_status") or "",

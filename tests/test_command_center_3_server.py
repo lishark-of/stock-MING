@@ -4443,6 +4443,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(persisted["dataset_count"], 6)
         self.assertEqual(persisted["refresh_recommended_count"], 1)
         self.assertEqual(persisted["refresh_executed_count"], 0)
+        self.assertFalse(persisted["contains_secret"])
         self.assertFalse(persisted["post_dry_run_writes_parquet"])
         self.assertFalse(persisted["post_dry_run_reads_row_payloads"])
         self.assertFalse(persisted["post_dry_run_reads_env_files"])
@@ -20394,7 +20395,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
         self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 14)
-        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 111)
+        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 110)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_acceptance_runway_rows"]), 14)
@@ -20572,7 +20573,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(observed_stage_rows["LTG-05"]["row_count"], 8)
         ltg05_direct_count = int(observed_stage_rows["LTG-05"].get("direct_evidence_stage_count") or 0)
-        self.assertIn(ltg05_direct_count, {2, 3, 4, 5, 6})
+        self.assertIn(ltg05_direct_count, {2, 3, 4, 5, 6, 7})
         self.assertEqual(observed_stage_rows["LTG-05"]["pending_stage_count"], 8 - ltg05_direct_count)
         self.assertEqual(observed_stage_rows["LTG-05"]["local_evidence_stage_count"], 8)
         self.assertTrue(observed_stage_rows["LTG-05"]["physical_schema_validation_done"])
@@ -20600,6 +20601,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 observed_stage_rows["LTG-05"]["physical_compaction_dataset_count"],
             )
             self.assertFalse(observed_stage_rows["LTG-05"]["physical_compaction_executed"])
+        if observed_stage_rows["LTG-05"].get("cache_ttl_refresh_metadata_validation_done"):
+            self.assertEqual(
+                observed_stage_rows["LTG-05"]["cache_ttl_refresh_metadata_validation_status"],
+                "dry_run_completed",
+            )
+            self.assertGreaterEqual(observed_stage_rows["LTG-05"]["cache_ttl_dataset_count"], 1)
+            self.assertEqual(observed_stage_rows["LTG-05"]["cache_ttl_refresh_executed_count"], 0)
+            self.assertFalse(observed_stage_rows["LTG-05"]["cache_ttl_refresh_executed"])
         if observed_stage_rows["LTG-05"].get("artifact_cleanup_review_done"):
             self.assertIn("manual_review_ready", observed_stage_rows["LTG-05"]["artifact_cleanup_review_status"])
             self.assertGreaterEqual(observed_stage_rows["LTG-05"]["artifact_cleanup_review_required_step_count"], 1)
