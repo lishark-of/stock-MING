@@ -274,15 +274,16 @@ TARGET_STACK = [
 ]
 
 LTG_NEXT_PRIORITY_ORDER = [
-    "P0 push gate / local status honesty",
+    "P0 LTG-11 push gate / local status honesty",
     "P1 LTG-01 trade_cal freshness provider acceptance",
     "P2 LTG-02 Tushare staged provider samples",
-    "P3 LTG-03/LTG-13 small-pool factor and radar validation",
+    "P3 LTG-03/LTG-04/LTG-13 small-pool factor, universe research, and radar validation",
     "P4 LTG-05/LTG-06 storage and worker productionization",
     "P5 LTG-07/LTG-08 DeepSeek and ECharts promotion",
     "P6 LTG-09 Tauri package",
     "P7 LTG-10 Streamlit retirement",
     "P8 LTG-14 motion clarity promotion",
+    "P10 LTG-12 real-trading isolation invariant",
 ]
 
 LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
@@ -362,6 +363,32 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
             "treat light metrics as production validation",
             "call Tushare from GET cache",
             "turn backtest metrics into trade advice",
+        ],
+    },
+    {
+        "queue_id": "p3_factor_universe_worker_batch_research",
+        "priority": "P3",
+        "ltg_ids": ["LTG-04"],
+        "action_label": "Bind Factor universe worker-batch research scope evidence",
+        "mode_layer": "button_task_then_future_worker_execution",
+        "current_phase": "worker_batch_scope_ticket_and_execution_request_required",
+        "first_allowed_route": "POST /api/factor-quant/universe-worker-batch-dry-run",
+        "second_allowed_route": "POST /api/factor-quant/universe-worker-batch-execution-request",
+        "future_provider_route": "future explicit factor universe worker-batch research task",
+        "target_acceptance_mode": "worker_backed_factor_universe_research_pipeline",
+        "required_evidence": [
+            "approved universe worker-batch scope ticket",
+            "execution recipe bound to scope hash",
+            "manual execution-request ticket",
+            "future worker-backed rank/zscore evidence",
+            "future neutralization and batching evidence",
+            "durable no-UI-blocking research evidence",
+        ],
+        "not_allowed_next_steps": [
+            "run full-pool computation from React render",
+            "start worker from GET cache",
+            "treat dry-run scope as full-universe research",
+            "let research output modify strategy action",
         ],
     },
     {
@@ -572,6 +599,58 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
             "use motion to imply trade urgency or strategy action",
         ],
     },
+    {
+        "queue_id": "p0_release_gate_push_readiness",
+        "priority": "P0",
+        "ltg_ids": ["LTG-11"],
+        "action_label": "Review release gate and push-readiness receipts",
+        "mode_layer": "cache_receipt_then_fresh_local_gate_and_remote_ci",
+        "current_phase": "local_gate_ready_remote_ci_and_fresh_run_required",
+        "first_allowed_route": "GET /api/audit/cache",
+        "second_allowed_route": "",
+        "future_provider_route": "fresh local push gate plus remote CI verification",
+        "target_acceptance_mode": "repeatable_release_gate_and_ci_green_evidence",
+        "required_evidence": [
+            "fresh local gate run",
+            "frontend build and smoke evidence",
+            "secret and artifact scan evidence",
+            "remote CI status for pushed head",
+            "failure email triage against matching head/logs",
+            "explicit user push confirmation",
+        ],
+        "not_allowed_next_steps": [
+            "call GitHub API from GET audit cache",
+            "treat old local gate metadata as current release approval",
+            "push from queue render",
+            "dismiss failure emails without matching head/logs",
+        ],
+    },
+    {
+        "queue_id": "p10_trade_isolation_release_guard",
+        "priority": "P10",
+        "ltg_ids": ["LTG-12"],
+        "action_label": "Keep real-trading isolation visible as a release invariant",
+        "mode_layer": "cache_receipt_then_separate_real_trading_project",
+        "current_phase": "research_client_release_receipt_ready_real_trading_still_disconnected",
+        "first_allowed_route": "GET /api/risk/cache",
+        "second_allowed_route": "",
+        "future_provider_route": "separate approved real-trading integration project only",
+        "target_acceptance_mode": "continued_no_broker_no_order_no_action_mutation_invariant",
+        "required_evidence": [
+            "continued no-broker proof",
+            "continued no-order-endpoint proof",
+            "continued no-frontend-submit proof",
+            "continued no-model-action-mutation proof",
+            "release receipt remains research-only",
+            "separate project approval before any real trading",
+        ],
+        "not_allowed_next_steps": [
+            "treat release receipt as trading approval",
+            "connect broker adapter inside Command Center 3 migration",
+            "add order endpoint to cache/task API",
+            "let model or factor output become orders",
+        ],
+    },
 ]
 
 LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
@@ -615,6 +694,32 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "task_type": "run_factor_test_provider_small_pool_execution_request",
             "receipt_key": "provider_small_pool_execution_request_receipt",
             "route": "POST /api/factor-quant/provider-small-pool-execution-request",
+        },
+    ],
+    "p3_factor_universe_worker_batch_research": [
+        {
+            "phase_key": "factor_universe_worker_batch_dry_run_scope_ticket",
+            "task_type": "run_factor_universe_worker_batch_dry_run",
+            "receipt_key": "universe_worker_batch_dry_run_receipt",
+            "route": "POST /api/factor-quant/universe-worker-batch-dry-run",
+        },
+        {
+            "phase_key": "factor_universe_worker_batch_execution_recipe",
+            "task_type": "",
+            "receipt_key": "universe_worker_batch_execution_recipe",
+            "route": "GET /api/factor-quant/cache",
+        },
+        {
+            "phase_key": "factor_universe_worker_batch_execution_request_ticket",
+            "task_type": "run_factor_universe_worker_batch_execution_request",
+            "receipt_key": "universe_worker_batch_execution_request_receipt",
+            "route": "POST /api/factor-quant/universe-worker-batch-execution-request",
+        },
+        {
+            "phase_key": "factor_universe_durable_evidence_recipe",
+            "task_type": "",
+            "receipt_key": "universe_durable_evidence_recipe",
+            "route": "GET /api/factor-quant/cache",
         },
     ],
     "p3_candidate_radar_provider_worker_promotion": [
@@ -747,6 +852,34 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "route": "GET /api/audit/cache",
         },
     ],
+    "p0_release_gate_push_readiness": [
+        {
+            "phase_key": "release_gate_readiness_audit",
+            "task_type": "",
+            "receipt_key": "release_gate_readiness_audit",
+            "route": "GET /api/audit/cache",
+        },
+        {
+            "phase_key": "ci_notification_triage_contract",
+            "task_type": "",
+            "receipt_key": "ci_notification_triage_contract",
+            "route": "GET /api/audit/cache",
+        },
+        {
+            "phase_key": "release_gate_push_readiness_receipt",
+            "task_type": "",
+            "receipt_key": "release_gate_push_readiness_receipt",
+            "route": "GET /api/audit/cache",
+        },
+    ],
+    "p10_trade_isolation_release_guard": [
+        {
+            "phase_key": "trade_isolation_release_receipt",
+            "task_type": "",
+            "receipt_key": "trade_isolation_release_receipt",
+            "route": "GET /api/risk/cache",
+        },
+    ],
 }
 
 
@@ -860,7 +993,16 @@ def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str,
     source = ""
     source_packet_key = ""
     storage_source = "sqlite_meta_packet"
-    if queue_id == "p3_candidate_radar_provider_worker_promotion":
+    if queue_id == "p3_factor_universe_worker_batch_research":
+        try:
+            from server.services import factor_service
+
+            packet = factor_service.read_factor_quant_cache()
+        except Exception:
+            packet = {}
+        source = "factor_quant_cache_packet"
+        source_packet_key = "command_center_factor_quant_hub_packet"
+    elif queue_id == "p3_candidate_radar_provider_worker_promotion":
         try:
             from server.services import candidate_service
 
@@ -935,6 +1077,37 @@ def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str,
             packet = {}
         source = "call_ledger_audit_sqlite_packet"
         source_packet_key = "command_center_3_call_ledger_audit_cache"
+    elif queue_id == "p0_release_gate_push_readiness":
+        try:
+            from server.services import audit_service
+
+            release_gate, _, workflow_rows = audit_service._release_gate_readiness_audit()
+            release_gate = release_gate if isinstance(release_gate, dict) else {}
+            ci_triage_contract, _ = audit_service._ci_notification_triage_contract(release_gate, workflow_rows)
+            ci_triage_contract = ci_triage_contract if isinstance(ci_triage_contract, dict) else {}
+            push_receipt, _ = audit_service._release_gate_push_readiness_receipt(
+                release_gate,
+                ci_triage_contract,
+            )
+            packet = {
+                "release_gate_readiness_audit": release_gate,
+                "ci_notification_triage_contract": ci_triage_contract,
+                "release_gate_push_readiness_receipt": push_receipt if isinstance(push_receipt, dict) else {},
+            }
+        except Exception:
+            packet = {}
+        source = "audit_release_gate_static_helpers"
+        source_packet_key = "command_center_3_call_ledger_audit_cache"
+        storage_source = "local_static_contract"
+    elif queue_id == "p10_trade_isolation_release_guard":
+        try:
+            from server.services import risk_service
+
+            packet = risk_service.read_risk_guardrails_cache()
+        except Exception:
+            packet = {}
+        source = "risk_guardrails_cache_packet"
+        source_packet_key = "command_center_3_risk_guardrails_cache"
     else:
         return {}
     packet_map = packet if isinstance(packet, dict) else {}
@@ -1007,6 +1180,10 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "local_activation_receipt_ready",
         "local_scope_ticket_ready",
         "local_browser_qa_review_ready",
+        "local_gate_ready",
+        "ci_mirror_ready",
+        "push_readiness_receipt_ready",
+        "ready_for_explicit_push_sequence",
     )
     if any(receipt.get(key) is True for key in ready_keys):
         return True
@@ -1072,6 +1249,7 @@ def _build_ltg_next_action_local_step_rows(
             or receipt_map.get("scope_ticket_sha256")
             or receipt_map.get("runtime_qa_scope_hash")
             or receipt_map.get("benchmark_scope_hash")
+            or receipt_map.get("worker_batch_scope_hash")
             or receipt_map.get("scope_hash")
             or ""
         )
@@ -1082,6 +1260,7 @@ def _build_ltg_next_action_local_step_rows(
             or receipt_map.get("physical_execution_scope_hash_short")
             or receipt_map.get("runtime_qa_scope_hash_short")
             or receipt_map.get("benchmark_scope_hash_short")
+            or receipt_map.get("worker_batch_scope_hash_short")
             or receipt_map.get("scope_hash_short")
             or (receipt_scope_hash[:16] if receipt_scope_hash else "")
         )
@@ -1435,6 +1614,20 @@ def _build_ltg_next_action_submission_preview_rows(
             "safe_payload_summary": "approved_by_user plus latest Factor small-pool dry-run scope hash",
             "expected_local_receipt": "provider_small_pool_execution_request_receipt",
             "required_prior_phase_key": "factor_small_pool_dry_run_scope_ticket",
+            "required_prior_material": "receipt_scope_hash",
+        },
+        "POST /api/factor-quant/universe-worker-batch-dry-run": {
+            "step_kind": "factor_universe_worker_batch_scope_ticket",
+            "safe_payload_summary": "approved_by_user, universe_mode=full_pool, requested stages, no worker/provider execution",
+            "expected_local_receipt": "universe_worker_batch_dry_run_receipt",
+            "required_prior_phase_key": "",
+            "required_prior_material": "",
+        },
+        "POST /api/factor-quant/universe-worker-batch-execution-request": {
+            "step_kind": "scope_bound_factor_universe_worker_batch_execution_request",
+            "safe_payload_summary": "approved_by_user plus latest Factor universe worker-batch dry-run scope hash",
+            "expected_local_receipt": "universe_worker_batch_execution_request_receipt",
+            "required_prior_phase_key": "factor_universe_worker_batch_dry_run_scope_ticket",
             "required_prior_material": "receipt_scope_hash",
         },
         "POST /api/candidate-radar/quant-projection-acceptance-dry-run": {
