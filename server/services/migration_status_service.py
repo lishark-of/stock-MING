@@ -2725,9 +2725,29 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         and review.get("build_command_reviewed_safe") in {"npm run tauri build", "cd desktop && npm run tauri build"}
         and review.get("release_binary_modified_at")
     )
+    app_bundle_ready = bool(
+        artifact_review_ready
+        and review.get("app_bundle_artifact_qa_done") is True
+        and review.get("app_bundle_detected") is True
+        and review.get("app_bundle_is_completion") is False
+        and int(review.get("bundle_app_count") or 0) > 0
+        and review.get("app_bundle_path")
+    )
+    dmg_distribution_ready = bool(
+        artifact_review_ready
+        and review.get("dmg_distribution_artifact_qa_done") is True
+        and review.get("dmg_distribution_detected") is True
+        and review.get("dmg_distribution_is_completion") is False
+        and int(review.get("bundle_dmg_count") or 0) > 0
+        and review.get("dmg_distribution_path")
+    )
     direct_stage_keys = ["release_binary_artifact_qa"] if artifact_review_ready else []
     if build_repeatability_ready:
         direct_stage_keys.append("tauri_build_repeatability")
+    if app_bundle_ready:
+        direct_stage_keys.append("app_bundle_artifact_qa")
+    if dmg_distribution_ready:
+        direct_stage_keys.append("dmg_distribution_artifact_qa")
     return {
         "schema_version": "migration_tauri_package_direct_evidence_summary.v1",
         "source_packet_key": "command_center_3_tauri_package_artifact_review_packet",
@@ -2739,12 +2759,18 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         "direct_evidence_stage_count": len(direct_stage_keys),
         "release_binary_artifact_qa_done": artifact_review_ready,
         "tauri_build_repeatability_done": build_repeatability_ready,
+        "app_bundle_artifact_qa_done": app_bundle_ready,
+        "dmg_distribution_artifact_qa_done": dmg_distribution_ready,
         "build_command_reviewed_safe": review.get("build_command_reviewed_safe") if build_repeatability_ready else "",
         "release_binary_path": review.get("release_binary_path") if artifact_review_ready else "",
         "release_binary_size_bytes": review.get("release_binary_size_bytes") if artifact_review_ready else 0,
         "release_binary_modified_at": review.get("release_binary_modified_at") if artifact_review_ready else "",
-        "app_bundle_detected": False,
-        "dmg_distribution_detected": False,
+        "app_bundle_path": review.get("app_bundle_path") if app_bundle_ready else "",
+        "dmg_distribution_path": review.get("dmg_distribution_path") if dmg_distribution_ready else "",
+        "temporary_dmg_count": review.get("temporary_dmg_count") if artifact_review_ready else 0,
+        "temporary_dmg_ignored_for_distribution": review.get("temporary_dmg_ignored_for_distribution") is True,
+        "app_bundle_detected": app_bundle_ready,
+        "dmg_distribution_detected": dmg_distribution_ready,
         "packaged_runtime_qa_done": False,
         "backend_startup_runtime_validated": False,
         "backend_offline_packaged_ux_verified": False,
@@ -2758,10 +2784,10 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "contains_secret": False,
-        "direct_evidence_layer": "L3_local_tauri_release_binary_artifact_review"
+        "direct_evidence_layer": "L3_local_tauri_package_artifact_review"
         if direct_stage_keys
         else "L1_static_contract",
-        "evidence_boundary": "release_binary_artifact_qa_is_not_packaged_runtime_or_production_package",
+        "evidence_boundary": "package_artifact_qa_is_not_packaged_runtime_or_production_package",
     }
 
 
@@ -4963,10 +4989,19 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 )
                 is True,
                 "tauri_build_repeatability_done": direct_evidence.get("tauri_build_repeatability_done") is True,
+                "app_bundle_artifact_qa_done": direct_evidence.get("app_bundle_artifact_qa_done") is True,
+                "dmg_distribution_artifact_qa_done": direct_evidence.get("dmg_distribution_artifact_qa_done") is True,
                 "tauri_build_command_reviewed_safe": direct_evidence.get("build_command_reviewed_safe") or "",
                 "release_binary_artifact_path": direct_evidence.get("release_binary_path") or "",
                 "release_binary_artifact_size_bytes": direct_evidence.get("release_binary_size_bytes") or 0,
                 "release_binary_artifact_modified_at": direct_evidence.get("release_binary_modified_at") or "",
+                "app_bundle_artifact_path": direct_evidence.get("app_bundle_path") or "",
+                "dmg_distribution_artifact_path": direct_evidence.get("dmg_distribution_path") or "",
+                "temporary_dmg_count": direct_evidence.get("temporary_dmg_count") or 0,
+                "temporary_dmg_ignored_for_distribution": direct_evidence.get(
+                    "temporary_dmg_ignored_for_distribution"
+                )
+                is True,
                 "tauri_runtime_started_by_contract": False,
                 "packaged_app_opened_by_contract": False,
                 "fastapi_started_by_contract": False,
@@ -4977,8 +5012,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     isinstance(row, dict) and row.get("release_binary_detected") is True for row in stage_rows
                 ),
                 "release_binary_is_completion": False,
-                "app_bundle_detected": False,
-                "dmg_distribution_detected": False,
+                "app_bundle_detected": direct_evidence.get("app_bundle_detected") is True,
+                "dmg_distribution_detected": direct_evidence.get("dmg_distribution_detected") is True,
                 "backend_startup_runtime_validated": False,
                 "backend_offline_packaged_ux_verified": False,
                 "config_log_runtime_paths_validated": False,
@@ -4992,7 +5027,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
                 "tauri_direct_evidence_layer": direct_evidence.get("direct_evidence_layer") or "L1_static_contract",
-                "evidence_boundary": "observed_l3_tauri_release_binary_artifact_not_packaged_runtime_or_production_package"
+                "evidence_boundary": "observed_l3_tauri_package_artifact_not_packaged_runtime_or_production_package"
                 if direct_evidence_count
                 else "observed_local_static_tauri_stage_scope_not_production_completion",
             }

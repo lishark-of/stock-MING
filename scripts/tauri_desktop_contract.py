@@ -128,7 +128,11 @@ def _read_script(path: str) -> str:
         return ""
 
 
-def _tauri_production_package_stage_scope_rows(release_binary_detected: bool) -> list[dict[str, Any]]:
+def _tauri_production_package_stage_scope_rows(
+    release_binary_detected: bool,
+    app_bundle_detected: bool,
+    dmg_distribution_detected: bool,
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for stage_key in sorted(REQUIRED_TAURI_PRODUCTION_PACKAGE_STAGES):
         rows.append(
@@ -143,8 +147,8 @@ def _tauri_production_package_stage_scope_rows(release_binary_detected: bool) ->
                 "release_binary_is_completion": False,
                 "tauri_dev_runtime_smoke_done": False,
                 "tauri_build_repeatability_done": False,
-                "app_bundle_detected": False,
-                "dmg_distribution_detected": False,
+                "app_bundle_detected": bool(app_bundle_detected),
+                "dmg_distribution_detected": bool(dmg_distribution_detected),
                 "backend_startup_runtime_validated": False,
                 "backend_offline_packaged_ux_verified": False,
                 "config_log_runtime_paths_validated": False,
@@ -205,6 +209,8 @@ def build_contract() -> dict[str, Any]:
     durable_rows_by_key = {str(row.get("evidence_key") or ""): row for row in durable_rows}
     build_artifact = _dict(packet.get("tauri_build_artifact"))
     release_binary_detected = build_artifact.get("binary_exists") is True
+    app_bundle_detected = build_artifact.get("packaged_app_bundle_detected") is True
+    dmg_distribution_detected = build_artifact.get("distribution_dmg_detected") is True
     release_binary_state_valid = (
         (
             release_binary_detected
@@ -232,7 +238,11 @@ def build_contract() -> dict[str, Any]:
     route_source = _read_script("desktop/src/routes/DesktopShellPreflight.tsx")
     api_client_source = _read_script("desktop/src/api/client.ts")
     this_script = _read_script("scripts/tauri_desktop_contract.py")
-    production_package_stage_scope_rows = _tauri_production_package_stage_scope_rows(release_binary_detected)
+    production_package_stage_scope_rows = _tauri_production_package_stage_scope_rows(
+        release_binary_detected,
+        app_bundle_detected,
+        dmg_distribution_detected,
+    )
 
     frontend_secret_boundary = (
         "getDesktopPreflightCache" in route_source
@@ -305,8 +315,8 @@ def build_contract() -> dict[str, Any]:
             and int(packaged_qa.get("pending_qa_count") or 0) > 0
             and REQUIRED_PACKAGED_QA_CRITERIA.issubset(qa_criteria)
             and release_binary_state_valid
-            and packaged_qa.get("packaged_app_bundle_detected") is False
-            and packaged_qa.get("distribution_dmg_detected") is False
+            and packaged_qa.get("packaged_app_bundle_detected") is app_bundle_detected
+            and packaged_qa.get("distribution_dmg_detected") is dmg_distribution_detected
             and qa_rows_by_criterion.get("backend_startup_strategy_qa", {}).get("passed") is False
             and qa_rows_by_criterion.get("backend_offline_ux_packaged_qa", {}).get("passed") is False
             and qa_rows_by_criterion.get("config_log_runtime_path_qa", {}).get("passed") is False
@@ -512,8 +522,11 @@ def build_contract() -> dict[str, Any]:
             and all(row.get("release_binary_is_completion") is False for row in production_package_stage_scope_rows)
             and all(row.get("tauri_dev_runtime_smoke_done") is False for row in production_package_stage_scope_rows)
             and all(row.get("tauri_build_repeatability_done") is False for row in production_package_stage_scope_rows)
-            and all(row.get("app_bundle_detected") is False for row in production_package_stage_scope_rows)
-            and all(row.get("dmg_distribution_detected") is False for row in production_package_stage_scope_rows)
+            and all(row.get("app_bundle_detected") is app_bundle_detected for row in production_package_stage_scope_rows)
+            and all(
+                row.get("dmg_distribution_detected") is dmg_distribution_detected
+                for row in production_package_stage_scope_rows
+            )
             and all(row.get("backend_startup_runtime_validated") is False for row in production_package_stage_scope_rows)
             and all(row.get("backend_offline_packaged_ux_verified") is False for row in production_package_stage_scope_rows)
             and all(row.get("config_log_runtime_paths_validated") is False for row in production_package_stage_scope_rows)
@@ -558,8 +571,8 @@ def build_contract() -> dict[str, Any]:
             and blocker_audit.get("frontend_stores_tokens") is False
             and blocker_audit.get("contains_secret") is False
             and release_binary_state_valid
-            and build_artifact.get("packaged_app_bundle_detected") is False
-            and build_artifact.get("distribution_dmg_detected") is False
+            and build_artifact.get("packaged_app_bundle_detected") is app_bundle_detected
+            and build_artifact.get("distribution_dmg_detected") is dmg_distribution_detected
             and build_artifact.get("build_command_executed_by_get_cache") is False
             and build_artifact.get("contains_secret") is False
             and policy.get("contains_secret") is False,
@@ -649,6 +662,8 @@ def build_contract() -> dict[str, Any]:
             "backend_offline_ux_status": offline_ux.get("status"),
             "production_runtime_status": runtime_contract.get("status"),
             "tauri_build_artifact_status": build_artifact.get("status"),
+            "app_bundle_detected": app_bundle_detected,
+            "dmg_distribution_detected": dmg_distribution_detected,
             "tauri_package_build_attempted": blocker_audit.get("tauri_package_build_attempted"),
             "backend_offline_ui_packaged_runtime_verified": blocker_audit.get(
                 "backend_offline_ui_packaged_runtime_verified"

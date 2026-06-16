@@ -950,17 +950,22 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(observed_stage_rows["LTG-09"]["pending_stage_count"], 8 - ltg09_direct_count)
         self.assertEqual(observed_stage_rows["LTG-09"]["local_evidence_stage_count"], 8)
         if ltg09_direct_count:
-            self.assertIn("release_binary_artifact_qa", observed_stage_rows["LTG-09"]["direct_evidence_stage_keys"])
+            ltg09_direct_keys = set(observed_stage_rows["LTG-09"]["direct_evidence_stage_keys"])
+            self.assertIn("release_binary_artifact_qa", ltg09_direct_keys)
             self.assertTrue(observed_stage_rows["LTG-09"]["release_binary_artifact_qa_done"])
             if ltg09_direct_count > 1:
-                self.assertIn("tauri_build_repeatability", observed_stage_rows["LTG-09"]["direct_evidence_stage_keys"])
+                self.assertIn("tauri_build_repeatability", ltg09_direct_keys)
                 self.assertTrue(observed_stage_rows["LTG-09"]["tauri_build_repeatability_done"])
+            if "app_bundle_artifact_qa" in ltg09_direct_keys:
+                self.assertTrue(observed_stage_rows["LTG-09"]["app_bundle_artifact_qa_done"])
+                self.assertTrue(observed_stage_rows["LTG-09"]["app_bundle_detected"])
+            else:
+                self.assertFalse(observed_stage_rows["LTG-09"]["app_bundle_detected"])
         self.assertFalse(observed_stage_rows["LTG-09"]["production_package_complete"])
         self.assertFalse(observed_stage_rows["LTG-09"]["tauri_build_executed"])
         self.assertFalse(observed_stage_rows["LTG-09"]["packaged_runtime_qa_done"])
         self.assertFalse(observed_stage_rows["LTG-09"]["tauri_package_durable_evidence_complete"])
         self.assertFalse(observed_stage_rows["LTG-09"]["release_binary_is_completion"])
-        self.assertFalse(observed_stage_rows["LTG-09"]["app_bundle_detected"])
         self.assertFalse(observed_stage_rows["LTG-09"]["dmg_distribution_detected"])
         self.assertFalse(observed_stage_rows["LTG-09"]["backend_startup_runtime_validated"])
         self.assertFalse(observed_stage_rows["LTG-09"]["backend_offline_packaged_ux_verified"])
@@ -1215,12 +1220,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             TAURI_LTG09_OBSERVED_STATUSES,
         )
         if ltg09_goal_direct_count:
-            self.assertIn("release_binary_artifact_qa", migration_goals["LTG-09"]["observed_stage_scope_direct_evidence_keys"])
+            ltg09_goal_direct_keys = set(migration_goals["LTG-09"]["observed_stage_scope_direct_evidence_keys"])
+            self.assertIn("release_binary_artifact_qa", ltg09_goal_direct_keys)
             if ltg09_goal_direct_count > 1:
                 self.assertIn(
                     "tauri_build_repeatability",
-                    migration_goals["LTG-09"]["observed_stage_scope_direct_evidence_keys"],
+                    ltg09_goal_direct_keys,
                 )
+            if "app_bundle_artifact_qa" in ltg09_goal_direct_keys:
+                self.assertIn("app_bundle_artifact_qa", ltg09_goal_direct_keys)
         self.assertFalse(migration_goals["LTG-09"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-10"]["stage_scope_manifest"], "streamlit_retirement_stage_scope_manifest")
         self.assertIn("retirement stage-scope manifest", migration_goals["LTG-10"]["current_state"])
@@ -1479,8 +1487,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         else:
             self.assertEqual(build_artifact["binary_size_bytes"], 0)
             self.assertFalse(build_artifact["binary_executable"])
-        self.assertFalse(build_artifact["packaged_app_bundle_detected"])
-        self.assertFalse(build_artifact["distribution_dmg_detected"])
+        self.assertEqual(
+            build_artifact["packaged_app_bundle_detected"],
+            int(build_artifact.get("bundle_app_count") or 0) > 0,
+        )
+        self.assertEqual(
+            build_artifact["distribution_dmg_detected"],
+            int(build_artifact.get("bundle_dmg_count") or 0) > 0,
+        )
         self.assertFalse(build_artifact["build_command_executed_by_get_cache"])
         self.assertTrue(build_artifact["artifact_is_gitignored"])
         self.assertFalse(build_artifact["packaged_runtime_validated"])
@@ -1636,8 +1650,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(qa_contract["qa_matrix_count"], len(desktop["packaged_runtime_qa_rows"]))
         self.assertEqual(qa_contract["release_binary_qa_passed"], build_artifact["binary_exists"])
         self.assertEqual(qa_contract["release_binary_executable"], build_artifact["binary_executable"])
-        self.assertFalse(qa_contract["packaged_app_bundle_detected"])
-        self.assertFalse(qa_contract["distribution_dmg_detected"])
+        self.assertEqual(qa_contract["packaged_app_bundle_detected"], build_artifact["packaged_app_bundle_detected"])
+        self.assertEqual(qa_contract["distribution_dmg_detected"], build_artifact["distribution_dmg_detected"])
         self.assertGreaterEqual(qa_contract["pending_qa_count"], 4)
         self.assertIn("release_artifact_qa", qa_rows)
         self.assertIn("backend_startup_strategy_qa", qa_rows)
@@ -12870,6 +12884,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed"]["production_package_stage_scope_count"], 8)
         self.assertEqual(set(payload["observed"]["production_package_stage_scope_keys"]), required_package_stages)
         self.assertEqual(payload["observed"]["production_package_stage_scope_pending_count"], 8)
+        expected_app_bundle_detected = payload["observed"]["app_bundle_detected"]
+        expected_dmg_distribution_detected = payload["observed"]["dmg_distribution_detected"]
         stage_rows = payload["production_package_stage_scope_rows"]
         self.assertEqual({row["stage_key"] for row in stage_rows}, required_package_stages)
         for row in stage_rows:
@@ -12880,8 +12896,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(row["release_binary_is_completion"])
             self.assertFalse(row["tauri_dev_runtime_smoke_done"])
             self.assertFalse(row["tauri_build_repeatability_done"])
-            self.assertFalse(row["app_bundle_detected"])
-            self.assertFalse(row["dmg_distribution_detected"])
+            self.assertEqual(row["app_bundle_detected"], expected_app_bundle_detected)
+            self.assertEqual(row["dmg_distribution_detected"], expected_dmg_distribution_detected)
             self.assertFalse(row["backend_startup_runtime_validated"])
             self.assertFalse(row["backend_offline_packaged_ux_verified"])
             self.assertFalse(row["config_log_runtime_paths_validated"])
@@ -20785,17 +20801,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(observed_stage_rows["LTG-09"]["pending_stage_count"], 8 - ltg09_direct_count)
         self.assertEqual(observed_stage_rows["LTG-09"]["local_evidence_stage_count"], 8)
         if ltg09_direct_count:
-            self.assertIn("release_binary_artifact_qa", observed_stage_rows["LTG-09"]["direct_evidence_stage_keys"])
+            ltg09_direct_keys = set(observed_stage_rows["LTG-09"]["direct_evidence_stage_keys"])
+            self.assertIn("release_binary_artifact_qa", ltg09_direct_keys)
             self.assertTrue(observed_stage_rows["LTG-09"]["release_binary_artifact_qa_done"])
             if ltg09_direct_count > 1:
-                self.assertIn("tauri_build_repeatability", observed_stage_rows["LTG-09"]["direct_evidence_stage_keys"])
+                self.assertIn("tauri_build_repeatability", ltg09_direct_keys)
                 self.assertTrue(observed_stage_rows["LTG-09"]["tauri_build_repeatability_done"])
+            if "app_bundle_artifact_qa" in ltg09_direct_keys:
+                self.assertTrue(observed_stage_rows["LTG-09"]["app_bundle_artifact_qa_done"])
+                self.assertTrue(observed_stage_rows["LTG-09"]["app_bundle_detected"])
+            else:
+                self.assertFalse(observed_stage_rows["LTG-09"]["app_bundle_detected"])
         self.assertFalse(observed_stage_rows["LTG-09"]["production_package_complete"])
         self.assertFalse(observed_stage_rows["LTG-09"]["tauri_build_executed"])
         self.assertFalse(observed_stage_rows["LTG-09"]["packaged_runtime_qa_done"])
         self.assertFalse(observed_stage_rows["LTG-09"]["tauri_package_durable_evidence_complete"])
         self.assertFalse(observed_stage_rows["LTG-09"]["release_binary_is_completion"])
-        self.assertFalse(observed_stage_rows["LTG-09"]["app_bundle_detected"])
         self.assertFalse(observed_stage_rows["LTG-09"]["dmg_distribution_detected"])
         self.assertFalse(observed_stage_rows["LTG-09"]["backend_startup_runtime_validated"])
         self.assertFalse(observed_stage_rows["LTG-09"]["backend_offline_packaged_ux_verified"])
@@ -21002,12 +21023,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(migration_goals["LTG-09"]["observed_stage_scope_pending_count"], 8 - ltg09_goal_direct_count)
         if ltg09_goal_direct_count:
-            self.assertIn("release_binary_artifact_qa", migration_goals["LTG-09"]["observed_stage_scope_direct_evidence_keys"])
+            ltg09_goal_direct_keys = set(migration_goals["LTG-09"]["observed_stage_scope_direct_evidence_keys"])
+            self.assertIn("release_binary_artifact_qa", ltg09_goal_direct_keys)
             if ltg09_goal_direct_count > 1:
                 self.assertIn(
                     "tauri_build_repeatability",
-                    migration_goals["LTG-09"]["observed_stage_scope_direct_evidence_keys"],
+                    ltg09_goal_direct_keys,
                 )
+            if "app_bundle_artifact_qa" in ltg09_goal_direct_keys:
+                self.assertIn("app_bundle_artifact_qa", ltg09_goal_direct_keys)
         self.assertFalse(migration_goals["LTG-09"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-10"]["stage_scope_manifest"], "streamlit_retirement_stage_scope_manifest")
         self.assertIn("retirement stage-scope manifest", migration_goals["LTG-10"]["current_state"])
@@ -21507,9 +21531,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         release_binary.write_bytes(b"\xcf\xfa\xed\xfe local tauri release binary fixture")
         release_binary.chmod(0o755)
         original_release_binary = desktop_service.TAURI_RELEASE_BINARY
+        original_bundle_root = desktop_service.TAURI_BUNDLE_ROOT
         desktop_service.TAURI_RELEASE_BINARY = release_binary
+        desktop_service.TAURI_BUNDLE_ROOT = Path(temp_dir.name) / "bundle"
+        desktop_service.TAURI_BUNDLE_ROOT.mkdir()
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, desktop_service, "TAURI_RELEASE_BINARY", original_release_binary)
+        self.addCleanup(setattr, desktop_service, "TAURI_BUNDLE_ROOT", original_bundle_root)
 
         response = self.client.post(
             "/api/desktop/tauri-package-artifact-review",
@@ -21618,9 +21646,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         release_binary.write_bytes(b"\xcf\xfa\xed\xfe repeatable local tauri build fixture")
         release_binary.chmod(0o755)
         original_release_binary = desktop_service.TAURI_RELEASE_BINARY
+        original_bundle_root = desktop_service.TAURI_BUNDLE_ROOT
         desktop_service.TAURI_RELEASE_BINARY = release_binary
+        desktop_service.TAURI_BUNDLE_ROOT = Path(temp_dir.name) / "bundle"
+        desktop_service.TAURI_BUNDLE_ROOT.mkdir()
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, desktop_service, "TAURI_RELEASE_BINARY", original_release_binary)
+        self.addCleanup(setattr, desktop_service, "TAURI_BUNDLE_ROOT", original_bundle_root)
 
         response = self.client.post(
             "/api/desktop/tauri-package-artifact-review",
@@ -21681,6 +21713,101 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg09["packaged_runtime_qa_done"])
         self.assertFalse(ltg09["app_bundle_detected"])
         self.assertFalse(ltg09["dmg_distribution_detected"])
+        self.assertFalse(ltg09["signing_notarization_done"])
+        self.assertFalse(ltg09["external_calls_triggered"])
+        self.assertFalse(ltg09["tushare_called"])
+        self.assertFalse(ltg09["deepseek_called"])
+        self.assertFalse(ltg09["github_called"])
+        self.assertTrue(ltg09["does_not_execute_trades"])
+        self.assertFalse(ltg09["contains_secret"])
+        self.assertFalse(ltg09["can_close_from_observed_row"])
+
+    def test_tauri_package_artifact_review_records_app_bundle_artifact_without_runtime_completion(self):
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        temp_dir = tempfile.TemporaryDirectory()
+        root = Path(temp_dir.name)
+        release_binary = root / "stock_ming_command_center"
+        release_binary.write_bytes(b"\xcf\xfa\xed\xfe app bundle local tauri build fixture")
+        release_binary.chmod(0o755)
+        bundle_root = root / "bundle"
+        app_bundle = bundle_root / "macos" / "stock-MING Command Center.app"
+        (app_bundle / "Contents" / "MacOS").mkdir(parents=True)
+        (app_bundle / "Contents" / "Resources").mkdir()
+        original_release_binary = desktop_service.TAURI_RELEASE_BINARY
+        original_bundle_root = desktop_service.TAURI_BUNDLE_ROOT
+        desktop_service.TAURI_RELEASE_BINARY = release_binary
+        desktop_service.TAURI_BUNDLE_ROOT = bundle_root
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, desktop_service, "TAURI_RELEASE_BINARY", original_release_binary)
+        self.addCleanup(setattr, desktop_service, "TAURI_BUNDLE_ROOT", original_bundle_root)
+
+        response = self.client.post(
+            "/api/desktop/tauri-package-artifact-review",
+            json={
+                "operator": "local-app-bundle-review",
+                "explicit_tauri_build_completed": True,
+                "build_command": "npm run tauri build",
+                "authorization": "Bearer SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        task = response["data"]["task"]
+        self.assertEqual(task["status"], "success")
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+
+        persisted = SQLiteMetaStore(desktop_service.SQLITE_META_PATH).read_packet(
+            desktop_service.TAURI_PACKAGE_ARTIFACT_REVIEW_PACKET_KEY
+        )
+        review = persisted["tauri_package_artifact_review_contract"]
+        self.assertEqual(
+            review["direct_evidence_stage_keys"],
+            ["release_binary_artifact_qa", "tauri_build_repeatability", "app_bundle_artifact_qa"],
+        )
+        self.assertTrue(review["tauri_build_repeatability_done"])
+        self.assertTrue(review["app_bundle_artifact_qa_done"])
+        self.assertTrue(review["app_bundle_detected"])
+        self.assertGreater(review["bundle_app_count"], 0)
+        self.assertTrue(review["app_bundle_path"].endswith(".app"))
+        self.assertFalse(review["app_bundle_is_completion"])
+        self.assertFalse(review["dmg_distribution_artifact_qa_done"])
+        self.assertFalse(review["dmg_distribution_detected"])
+        self.assertEqual(review["bundle_dmg_count"], 0)
+        self.assertFalse(review["app_bundle_dmg_qa_done"])
+        self.assertFalse(review["packaged_runtime_validated"])
+        self.assertFalse(review["packaged_app_launch_qa_done"])
+        self.assertFalse(review["production_package_complete"])
+        self.assertFalse(review["packaged_app_opened_by_review"])
+        self.assertFalse(review["external_calls_triggered"])
+        self.assertFalse(review["tushare_called"])
+        self.assertFalse(review["deepseek_called"])
+        self.assertFalse(review["github_called"])
+        self.assertTrue(review["does_not_execute_trades"])
+        self.assertFalse(review["contains_secret"])
+
+        migration = migration_status_service.build_migration_status()
+        ltg09 = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}["LTG-09"]
+        self.assertEqual(ltg09["direct_evidence_stage_count"], 3)
+        self.assertEqual(
+            ltg09["direct_evidence_stage_keys"],
+            ["release_binary_artifact_qa", "tauri_build_repeatability", "app_bundle_artifact_qa"],
+        )
+        self.assertEqual(ltg09["pending_stage_count"], 5)
+        self.assertEqual(ltg09["production_blocker_count"], 5)
+        self.assertTrue(ltg09["app_bundle_artifact_qa_done"])
+        self.assertTrue(ltg09["app_bundle_detected"])
+        self.assertTrue(ltg09["app_bundle_artifact_path"].endswith(".app"))
+        self.assertFalse(ltg09["dmg_distribution_artifact_qa_done"])
+        self.assertFalse(ltg09["dmg_distribution_detected"])
+        self.assertFalse(ltg09["production_package_complete"])
+        self.assertFalse(ltg09["packaged_runtime_qa_done"])
         self.assertFalse(ltg09["signing_notarization_done"])
         self.assertFalse(ltg09["external_calls_triggered"])
         self.assertFalse(ltg09["tushare_called"])

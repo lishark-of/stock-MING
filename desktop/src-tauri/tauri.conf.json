@@ -9,6 +9,14 @@
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "icon": ["icons/icon.png"],
+    "macOS": {
+      "minimumSystemVersion": "10.13"
+    }
+  },
   "app": {
     "windows": [
       {

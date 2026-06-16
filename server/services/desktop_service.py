@@ -17,6 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 DESKTOP_ROOT = PROJECT_ROOT / "desktop"
 TAURI_RELEASE_BINARY = DESKTOP_ROOT / "src-tauri" / "target" / "release" / "stock_ming_command_center"
+TAURI_BUNDLE_ROOT = DESKTOP_ROOT / "src-tauri" / "target" / "release" / "bundle"
 TAURI_PACKAGE_ARTIFACT_REVIEW_PACKET_KEY = "command_center_3_tauri_package_artifact_review_packet"
 TAURI_PACKAGE_ARTIFACT_REVIEW_TASK_TYPE = "run_tauri_package_artifact_review"
 FRONTEND_API_CLIENT = DESKTOP_ROOT / "src" / "api" / "client.ts"
@@ -97,9 +98,14 @@ def _file_row(path: Path, label: str, role: str) -> dict[str, Any]:
 def _tauri_build_artifact_summary() -> dict[str, Any]:
     binary_exists = TAURI_RELEASE_BINARY.exists() and TAURI_RELEASE_BINARY.is_file()
     stat = TAURI_RELEASE_BINARY.stat() if binary_exists else None
-    bundle_root = DESKTOP_ROOT / "src-tauri" / "target" / "release" / "bundle"
-    bundle_app_count = len(list(bundle_root.glob("**/*.app"))) if bundle_root.exists() else 0
-    bundle_dmg_count = len(list(bundle_root.glob("**/*.dmg"))) if bundle_root.exists() else 0
+    bundle_root = TAURI_BUNDLE_ROOT
+    bundle_app_root = bundle_root / "macos"
+    bundle_dmg_root = bundle_root / "dmg"
+    bundle_app_paths = sorted(path for path in bundle_app_root.glob("*.app") if path.is_dir()) if bundle_app_root.exists() else []
+    bundle_dmg_paths = sorted(path for path in bundle_dmg_root.glob("*.dmg") if path.is_file()) if bundle_dmg_root.exists() else []
+    temp_dmg_paths = sorted(path for path in bundle_root.glob("**/rw.*.dmg") if path.is_file()) if bundle_root.exists() else []
+    bundle_app_count = len(bundle_app_paths)
+    bundle_dmg_count = len(bundle_dmg_paths)
     binary_executable = bool(binary_exists and os.access(TAURI_RELEASE_BINARY, os.X_OK))
     return {
         "schema_version": "tauri_build_artifact_detection.v1",
@@ -114,6 +120,10 @@ def _tauri_build_artifact_summary() -> dict[str, Any]:
         "bundle_root_exists": bundle_root.exists(),
         "bundle_app_count": bundle_app_count,
         "bundle_dmg_count": bundle_dmg_count,
+        "bundle_app_path": _path_label(bundle_app_paths[0]) if bundle_app_paths else "",
+        "bundle_dmg_path": _path_label(bundle_dmg_paths[0]) if bundle_dmg_paths else "",
+        "temporary_dmg_count": len(temp_dmg_paths),
+        "temporary_dmg_ignored_for_distribution": bool(temp_dmg_paths),
         "packaged_app_bundle_detected": bundle_app_count > 0,
         "distribution_dmg_detected": bundle_dmg_count > 0,
         "detected_by_get_cache": True,
@@ -1737,6 +1747,8 @@ def _tauri_package_artifact_review_call_ledger(review: dict[str, Any], reviewed_
                 "binary_path": review.get("release_binary_path"),
                 "release_binary_review_ready": review.get("local_release_binary_artifact_review_ready"),
                 "tauri_build_repeatability_done": review.get("tauri_build_repeatability_done"),
+                "app_bundle_artifact_qa_done": review.get("app_bundle_artifact_qa_done"),
+                "dmg_distribution_artifact_qa_done": review.get("dmg_distribution_artifact_qa_done"),
                 "build_command_reviewed_safe": review.get("build_command_reviewed_safe"),
                 "external_sources_allowed": False,
                 "opens_packaged_app": False,
@@ -1793,6 +1805,19 @@ def _tauri_package_artifact_review_contract(
         "cd desktop && npm run tauri build",
     }
     build_repeatability_ready = bool(local_ready and explicit_tauri_build_completed and accepted_build_command)
+    app_bundle_ready = bool(
+        local_ready
+        and tauri_build_artifact.get("packaged_app_bundle_detected") is True
+        and int(tauri_build_artifact.get("bundle_app_count") or 0) > 0
+        and tauri_build_artifact.get("bundle_app_path")
+    )
+    dmg_distribution_ready = bool(
+        local_ready
+        and tauri_build_artifact.get("distribution_dmg_detected") is True
+        and int(tauri_build_artifact.get("bundle_dmg_count") or 0) > 0
+        and tauri_build_artifact.get("bundle_dmg_path")
+    )
+    app_bundle_dmg_ready = bool(app_bundle_ready and dmg_distribution_ready)
 
     def _row(criterion: str, status: str, passed: bool, evidence: str, *, blocks_review: bool = True) -> dict[str, Any]:
         return {
@@ -1849,13 +1874,27 @@ def _tauri_package_artifact_review_contract(
             blocks_review=False,
         ),
         _row(
-            "app_bundle_and_dmg_still_pending",
-            "pending_app_bundle_dmg",
-            False,
+            "app_bundle_artifact_detected",
+            "passed_local_app_bundle_artifact" if app_bundle_ready else "pending_app_bundle_artifact",
+            app_bundle_ready,
             (
                 f"app_bundle={tauri_build_artifact.get('packaged_app_bundle_detected')}; "
+                f"app_count={tauri_build_artifact.get('bundle_app_count')}; "
+                f"app_path={tauri_build_artifact.get('bundle_app_path') or 'missing'}; "
+                "app bundle artifact is local package-shape evidence only, not launch/runtime QA."
+            ),
+            blocks_review=False,
+        ),
+        _row(
+            "dmg_distribution_artifact_still_pending",
+            "passed_local_dmg_artifact" if dmg_distribution_ready else "pending_dmg_distribution_artifact",
+            dmg_distribution_ready,
+            (
                 f"dmg={tauri_build_artifact.get('distribution_dmg_detected')}; "
-                "local release binary is not app bundle/DMG acceptance."
+                f"dmg_count={tauri_build_artifact.get('bundle_dmg_count')}; "
+                f"dmg_path={tauri_build_artifact.get('bundle_dmg_path') or 'missing'}; "
+                f"temporary_dmg_count={tauri_build_artifact.get('temporary_dmg_count')}; "
+                "temporary rw.*.dmg files are ignored as distribution evidence."
             ),
             blocks_review=False,
         ),
@@ -1887,6 +1926,10 @@ def _tauri_package_artifact_review_contract(
     direct_evidence_stage_keys = ["release_binary_artifact_qa"] if local_ready else []
     if build_repeatability_ready:
         direct_evidence_stage_keys.append("tauri_build_repeatability")
+    if app_bundle_ready:
+        direct_evidence_stage_keys.append("app_bundle_artifact_qa")
+    if dmg_distribution_ready:
+        direct_evidence_stage_keys.append("dmg_distribution_artifact_qa")
     return {
         "schema_version": "tauri_package_artifact_review.v1",
         "status": "tauri_package_artifact_review_ready_local_binary"
@@ -1907,13 +1950,26 @@ def _tauri_package_artifact_review_contract(
         "release_binary_executable": tauri_build_artifact.get("binary_executable") is True,
         "release_binary_kind": tauri_build_artifact.get("binary_kind"),
         "release_binary_is_completion": False,
+        "bundle_app_count": tauri_build_artifact.get("bundle_app_count"),
+        "bundle_dmg_count": tauri_build_artifact.get("bundle_dmg_count"),
+        "app_bundle_path": tauri_build_artifact.get("bundle_app_path") or "",
+        "dmg_distribution_path": tauri_build_artifact.get("bundle_dmg_path") or "",
+        "temporary_dmg_count": tauri_build_artifact.get("temporary_dmg_count"),
+        "temporary_dmg_ignored_for_distribution": tauri_build_artifact.get(
+            "temporary_dmg_ignored_for_distribution"
+        )
+        is True,
         "explicit_tauri_build_completed_before_review": explicit_tauri_build_completed,
         "build_command_reviewed_safe": build_command_reviewed_safe if accepted_build_command else "",
         "tauri_build_repeatability_done": build_repeatability_ready,
         "tauri_build_repeatability_is_completion": False,
         "app_bundle_detected": tauri_build_artifact.get("packaged_app_bundle_detected") is True,
         "dmg_distribution_detected": tauri_build_artifact.get("distribution_dmg_detected") is True,
-        "app_bundle_dmg_qa_done": False,
+        "app_bundle_artifact_qa_done": app_bundle_ready,
+        "app_bundle_is_completion": False,
+        "dmg_distribution_artifact_qa_done": dmg_distribution_ready,
+        "dmg_distribution_is_completion": False,
+        "app_bundle_dmg_qa_done": app_bundle_dmg_ready,
         "packaged_runtime_validated": False,
         "packaged_app_launch_qa_done": False,
         "backend_startup_runtime_validated": False,
