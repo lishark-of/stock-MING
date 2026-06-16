@@ -17262,6 +17262,40 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("TS_OK", json.dumps(response, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(response, ensure_ascii=False))
 
+        migration = migration_status_service.build_migration_status()
+        p1_row = {
+            row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]
+        }["p1_trade_cal_provider_acceptance"]
+        p1_steps = {row["phase_key"]: row for row in p1_row["local_step_rows"]}
+        execution_step = p1_steps["trade_cal_execution_request_ticket"]
+        promotion_step = p1_steps["trade_cal_promotion_review_receipt"]
+        self.assertEqual(
+            p1_row["local_receipt_status"],
+            "local_receipts_visible_but_blocked",
+        )
+        self.assertEqual(
+            p1_row["next_local_step"],
+            "POST /api/data-health/trade-cal-provider-acceptance-execution-request",
+        )
+        self.assertEqual(p1_row["ready_local_receipt_step_count"], 2)
+        self.assertEqual(p1_row["blocked_local_receipt_step_count"], 1)
+        self.assertEqual(p1_row["blocked_local_receipt_steps"], ["trade_cal_execution_request_ticket"])
+        self.assertEqual(
+            p1_row["latest_observed_receipt_status"],
+            "trade_cal_provider_acceptance_promotion_review_recorded_blockers_visible",
+        )
+        self.assertFalse(execution_step["local_ready"])
+        self.assertTrue(execution_step["local_blocked"])
+        self.assertTrue(promotion_step["local_ready"])
+        self.assertFalse(promotion_step["local_blocked"])
+        self.assertFalse(promotion_step["receipt_provider_execution_implemented"])
+        self.assertFalse(p1_row["provider_execution_implemented"])
+        self.assertFalse(p1_row["production_complete"])
+        self.assertFalse(p1_row["external_calls_triggered"])
+        self.assertFalse(p1_row["tushare_called"])
+        self.assertFalse(p1_row["deepseek_called"])
+        self.assertFalse(p1_row["github_called"])
+
     def test_data_health_cache_surfaces_latest_trade_cal_promotion_review_without_provider_call(self):
         self._with_meta_store()
         self._with_parquet_root()

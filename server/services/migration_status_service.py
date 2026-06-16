@@ -1199,6 +1199,7 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         return True
     ready_statuses = {
         "trade_cal_acceptance_dry_run_ready_real_execution_still_blocked",
+        "trade_cal_provider_acceptance_promotion_review_recorded_blockers_visible",
         "synthetic_healthcheck_passed_local_task_store_only",
     }
     return str(receipt.get("status") or "") in ready_statuses
