@@ -344,6 +344,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             all(row["memory_only_local_receipt_step_count"] == 0 for row in migration["ltg_next_acceptance_action_rows"])
         )
         self.assertTrue(
+            all(row["ready_local_receipt_step_count"] == 0 for row in migration["ltg_next_acceptance_action_rows"])
+        )
+        self.assertTrue(
+            all(row["blocked_local_receipt_step_count"] == 0 for row in migration["ltg_next_acceptance_action_rows"])
+        )
+        self.assertTrue(
             all(row["local_receipts_all_durable"] is False for row in migration["ltg_next_acceptance_action_rows"])
         )
         self.assertTrue(
@@ -16406,6 +16412,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(receipt["credential_presence_summary"]["missing_provider_count"], 0)
         self.assertTrue(receipt["acceptance_scope_hash"])
         self.assertEqual(len(receipt["acceptance_scope_hash_short"]), 16)
+        self.assertTrue(receipt["local_dry_run_ready"])
         self.assertFalse(receipt["ready_to_execute_real_provider_task"])
         self.assertFalse(receipt["provider_execution_implemented"])
         self.assertFalse(receipt["provider_backed_long_window_acceptance_done"])
@@ -16508,6 +16515,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(receipt["latest_dry_run_scope_hash_short"], dry_run_receipt["acceptance_scope_hash_short"])
         self.assertEqual(receipt["requested_scope_hash_short"], dry_run_receipt["acceptance_scope_hash_short"])
         self.assertTrue(receipt["scope_hash_matches_latest_dry_run"])
+        self.assertEqual(receipt["local_execution_request_ready"], receipt["ready_for_manual_provider_task_submission"])
         self.assertFalse(receipt["ready_to_execute_from_cache"])
         self.assertFalse(receipt["creates_provider_task"])
         self.assertFalse(receipt["provider_task_executed_by_request"])
@@ -16541,6 +16549,21 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
         self.assertNotIn("TS_OK", json.dumps(response, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(response, ensure_ascii=False))
+
+        if not receipt["ready_for_manual_provider_task_submission"]:
+            migration = migration_status_service.build_migration_status()
+            p1_row = {
+                row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]
+            }["p1_trade_cal_provider_acceptance"]
+            self.assertEqual(p1_row["local_receipt_status"], "local_receipts_visible_but_blocked")
+            self.assertEqual(
+                p1_row["next_local_step"],
+                "POST /api/data-health/trade-cal-provider-acceptance-execution-request",
+            )
+            self.assertEqual(p1_row["ready_local_receipt_step_count"], 1)
+            self.assertEqual(p1_row["blocked_local_receipt_step_count"], 1)
+            self.assertEqual(p1_row["durable_local_receipt_step_count"], 2)
+            self.assertFalse(p1_row["future_handoff_ready_from_local_receipt"])
 
     def test_trade_cal_provider_acceptance_execution_request_rejects_scope_mismatch(self):
         self._with_meta_store()

@@ -189,6 +189,8 @@ export default function MigrationStatus() {
     local_receipt_status: row.local_receipt_status,
     observed_steps: row.observed_local_receipt_step_count,
     missing_steps: row.missing_local_receipt_step_count,
+    ready_steps: row.ready_local_receipt_step_count,
+    blocked_steps: row.blocked_local_receipt_step_count,
     durable_steps: row.durable_local_receipt_step_count,
     memory_only_steps: row.memory_only_local_receipt_step_count,
     all_receipts_durable: row.local_receipts_all_durable,
@@ -212,6 +214,8 @@ export default function MigrationStatus() {
       receipt_durable_in_sqlite: step.receipt_durable_in_sqlite,
       receipt_memory_only: step.receipt_memory_only,
       receipt_durability_state: step.receipt_durability_state,
+      local_ready: step.local_ready,
+      local_blocked: step.local_blocked,
       receipt_status: step.receipt_status,
       blocker_count: step.receipt_blocker_count,
       lookup_calls_provider: step.lookup_calls_provider,
@@ -279,6 +283,14 @@ export default function MigrationStatus() {
   );
   const observedLocalReceiptSteps = ltgNextAcceptanceActionRows.reduce(
     (total, row) => total + Number(row.observed_local_receipt_step_count ?? 0),
+    0
+  );
+  const readyLocalReceiptSteps = ltgNextAcceptanceActionRows.reduce(
+    (total, row) => total + Number(row.ready_local_receipt_step_count ?? 0),
+    0
+  );
+  const blockedLocalReceiptSteps = ltgNextAcceptanceActionRows.reduce(
+    (total, row) => total + Number(row.blocked_local_receipt_step_count ?? 0),
     0
   );
   const durableLocalReceiptSteps = ltgNextAcceptanceActionRows.reduce(
@@ -435,6 +447,8 @@ export default function MigrationStatus() {
         items={[
           { label: "near-term actions", value: ltgNextAcceptanceActionRows.length },
           { label: "observed local receipts", value: observedLocalReceiptSteps, tone: observedLocalReceiptSteps ? "good" : "warn" },
+          { label: "ready local receipts", value: readyLocalReceiptSteps, tone: readyLocalReceiptSteps ? "good" : "warn" },
+          { label: "blocked local receipts", value: blockedLocalReceiptSteps, tone: blockedLocalReceiptSteps ? "bad" : "good" },
           { label: "missing local receipts", value: missingLocalReceiptSteps, tone: missingLocalReceiptSteps ? "warn" : "good" },
           { label: "durable local receipts", value: durableLocalReceiptSteps, tone: durableLocalReceiptSteps ? "good" : "warn" },
           { label: "memory-only receipts", value: memoryOnlyLocalReceiptSteps, tone: memoryOnlyLocalReceiptSteps ? "bad" : "good" },

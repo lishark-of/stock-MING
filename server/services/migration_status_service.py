@@ -597,6 +597,25 @@ def _receipt_target_payload_safe_summary(receipt: dict[str, Any]) -> dict[str, A
     }
 
 
+def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
+    ready_keys = (
+        "local_dry_run_ready",
+        "local_execution_request_ready",
+        "ready_for_local_promotion_review",
+        "promotion_review_ready_for_release",
+        "recipe_ready_for_user_confirmation",
+        "ready_for_manual_provider_task_submission",
+        "ready_for_manual_worker_task_submission",
+        "ready_for_manual_provider_model_task_submission",
+    )
+    if any(receipt.get(key) is True for key in ready_keys):
+        return True
+    ready_statuses = {
+        "trade_cal_acceptance_dry_run_ready_real_execution_still_blocked",
+    }
+    return str(receipt.get("status") or "") in ready_statuses
+
+
 def _build_ltg_next_action_local_step_rows(
     queue_id: str,
     tasks_by_type: dict[str, list[dict[str, Any]]],
@@ -636,6 +655,7 @@ def _build_ltg_next_action_local_step_rows(
         else:
             receipt_durability_state = "receipt_visible_without_sqlite_durability"
         target_payload_summary = _receipt_target_payload_safe_summary(receipt_map) if receipt_visible else {}
+        local_ready = _receipt_local_ready(receipt_map) if receipt_visible else False
         step_rows.append(
             {
                 "phase_key": step["phase_key"],
@@ -677,16 +697,8 @@ def _build_ltg_next_action_local_step_rows(
                 "receipt_creates_provider_task": receipt_map.get("creates_provider_task") is True,
                 "receipt_provider_task_created": receipt_map.get("provider_task_created") is True,
                 "receipt_provider_execution_implemented": receipt_map.get("provider_execution_implemented") is True,
-                "local_ready": any(
-                    receipt_map.get(key) is True
-                    for key in (
-                        "local_dry_run_ready",
-                        "local_execution_request_ready",
-                        "ready_for_local_promotion_review",
-                        "promotion_review_ready_for_release",
-                        "recipe_ready_for_user_confirmation",
-                    )
-                ),
+                "local_ready": local_ready,
+                "local_blocked": bool(receipt_visible and not local_ready),
                 "creates_task_from_lookup": False,
                 "lookup_calls_provider": False,
                 "external_calls_triggered": False,
@@ -1021,6 +1033,14 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         local_step_rows = _build_ltg_next_action_local_step_rows(str(action["queue_id"]), tasks_by_type)
         observed_steps = [row for row in local_step_rows if row["receipt_visible"] is True]
         missing_steps = [row for row in local_step_rows if row["receipt_visible"] is False]
+        ready_steps = [row for row in local_step_rows if row.get("receipt_visible") is True and row.get("local_ready") is True]
+        blocked_steps = [
+            row for row in local_step_rows if row.get("receipt_visible") is True and row.get("local_ready") is not True
+        ]
+        first_not_ready_step = next(
+            (row for row in local_step_rows if not (row.get("receipt_visible") is True and row.get("local_ready") is True)),
+            {},
+        )
         durable_observed_steps = [row for row in observed_steps if row.get("receipt_durable_in_sqlite") is True]
         memory_only_observed_steps = [row for row in observed_steps if row.get("receipt_memory_only") is True]
         if not local_step_rows:
@@ -1028,10 +1048,13 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             next_local_step = ""
         elif not observed_steps:
             local_status = "local_receipts_missing"
-            next_local_step = str(missing_steps[0].get("route") or "")
+            next_local_step = str(first_not_ready_step.get("route") or "")
+        elif blocked_steps:
+            local_status = "local_receipts_visible_but_blocked"
+            next_local_step = str(first_not_ready_step.get("route") or "")
         elif missing_steps:
             local_status = "local_receipts_partially_visible_next_step_pending"
-            next_local_step = str(missing_steps[0].get("route") or "")
+            next_local_step = str(first_not_ready_step.get("route") or "")
         else:
             local_status = "local_receipts_visible_provider_or_worker_evidence_pending"
             next_local_step = str(action["future_provider_route"])
@@ -1080,6 +1103,8 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 "local_receipt_step_count": len(local_step_rows),
                 "observed_local_receipt_step_count": len(observed_steps),
                 "missing_local_receipt_step_count": len(missing_steps),
+                "ready_local_receipt_step_count": len(ready_steps),
+                "blocked_local_receipt_step_count": len(blocked_steps),
                 "durable_local_receipt_step_count": len(durable_observed_steps),
                 "memory_only_local_receipt_step_count": len(memory_only_observed_steps),
                 "local_receipts_all_durable": bool(observed_steps)
@@ -1087,6 +1112,8 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 "local_receipts_require_sqlite_durability_for_handoff": True,
                 "observed_local_receipt_steps": [str(row.get("phase_key") or "") for row in observed_steps],
                 "missing_local_receipt_steps": [str(row.get("phase_key") or "") for row in missing_steps],
+                "ready_local_receipt_steps": [str(row.get("phase_key") or "") for row in ready_steps],
+                "blocked_local_receipt_steps": [str(row.get("phase_key") or "") for row in blocked_steps],
                 "latest_observed_task_id": latest_observed.get("latest_task_id") or "",
                 "latest_observed_task_type": latest_observed.get("task_type") or "",
                 "latest_observed_receipt_status": latest_observed.get("receipt_status") or "",

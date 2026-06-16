@@ -1921,6 +1921,7 @@ def _build_trade_cal_provider_acceptance_dry_run(
         "acceptance_scope_hash": scope_ticket.get("scope_hash"),
         "acceptance_scope_hash_short": scope_ticket.get("scope_hash_short"),
         "acceptance_scope_hash_algorithm": scope_ticket.get("scope_hash_algorithm"),
+        "local_dry_run_ready": status == "trade_cal_acceptance_dry_run_ready_real_execution_still_blocked",
         "ready_for_user_approved_real_acceptance": False,
         "ready_to_execute_real_provider_task": False,
         "provider_execution_implemented": False,
@@ -2294,6 +2295,7 @@ def _build_trade_cal_provider_acceptance_execution_request(
         "acceptance_scope_hash_short": requested_scope_hash_short or "<required_from_dry_run>",
         "requested_by": payload_safe.get("requested_by"),
         "provider_execution_requires_separate_post": True,
+        "provider_execution_requires_separate_post_task": True,
     }
     receipt = {
         "schema_version": TRADE_CAL_PROVIDER_ACCEPTANCE_EXECUTION_REQUEST_SCHEMA_VERSION,
@@ -2320,6 +2322,7 @@ def _build_trade_cal_provider_acceptance_execution_request(
         "next_execution_recipe_ready_for_user_confirmation": recipe_ready,
         "next_execution_recipe_blocking_row_count": int(next_execution_recipe.get("blocking_row_count") or 0),
         "target_payload_safe": target_payload_safe,
+        "local_execution_request_ready": ready_for_manual_provider_task_submission,
         "ready_for_manual_provider_task_submission": ready_for_manual_provider_task_submission,
         "ready_to_execute_from_cache": False,
         "creates_provider_task": False,
