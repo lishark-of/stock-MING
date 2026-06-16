@@ -17,6 +17,68 @@ from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
 
 
+FACTOR_TEST_LTG03_OBSERVED_STATUSES = {
+    "observed_in_factor_test_lab_static_contract",
+    "observed_factor_test_lab_direct_evidence_production_pending",
+}
+
+
+def assert_ltg03_factor_test_stage_scope(test_case: unittest.TestCase, row: dict, expected_direct_count: int | None = None):
+    direct_count = int(row.get("direct_evidence_stage_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertEqual(row["stage_scope_manifest"], "factor_test_production_stage_scope_manifest")
+    test_case.assertIn(row["status"], FACTOR_TEST_LTG03_OBSERVED_STATUSES)
+    test_case.assertEqual(row["row_count"], 10)
+    test_case.assertEqual(row["pending_stage_count"], max(10 - direct_count, 0))
+    test_case.assertGreaterEqual(row["local_evidence_stage_count"], 2)
+    if direct_count:
+        test_case.assertEqual(row["status"], "observed_factor_test_lab_direct_evidence_production_pending")
+        test_case.assertIn("provider_small_pool_scope_ticket", row["direct_evidence_stage_keys"])
+        test_case.assertTrue(row["provider_small_pool_scope_ticket_verified"])
+        test_case.assertTrue(row["provider_small_pool_dry_run_ready"])
+        test_case.assertTrue(row["provider_small_pool_execution_recipe_ready"])
+        test_case.assertTrue(row["provider_small_pool_execution_request_ready"])
+        test_case.assertEqual(row["factor_test_direct_evidence_layer"], "L3_local_factor_test_scope_evidence")
+    test_case.assertFalse(row["provider_backed_small_pool_validation_done"])
+    test_case.assertFalse(row["full_market_validation_done"])
+    test_case.assertFalse(row["production_factor_test_validation_complete"])
+    test_case.assertTrue(row["real_provider_sample_still_required"])
+    test_case.assertTrue(row["provider_promotion_still_required"])
+    test_case.assertFalse(row["provider_execution_implemented"])
+    test_case.assertFalse(row["provider_call_ledger_evidence_done"])
+    test_case.assertFalse(row["multi_horizon_forward_returns_done"])
+    test_case.assertFalse(row["rolling_window_validation_done"])
+    test_case.assertFalse(row["cost_assumption_validation_done"])
+    test_case.assertFalse(row["neutralization_stability_done"])
+    test_case.assertFalse(row["pit_bias_controls_done"])
+    test_case.assertTrue(row["metrics_remain_research_only"])
+    test_case.assertFalse(row["enters_strategy_action"])
+    test_case.assertFalse(row["frontend_computes_action"])
+    test_case.assertFalse(row["external_calls_triggered"])
+    test_case.assertFalse(row["tushare_called"])
+    test_case.assertFalse(row["deepseek_called"])
+    test_case.assertFalse(row["github_called"])
+    test_case.assertTrue(row["does_not_execute_trades"])
+    test_case.assertFalse(row["contains_secret"])
+    test_case.assertFalse(row["can_close_from_observed_row"])
+
+
+def assert_ltg03_migration_goal_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("observed_stage_scope_direct_evidence_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertIn(row["observed_stage_scope_manifest_status"], FACTOR_TEST_LTG03_OBSERVED_STATUSES)
+    test_case.assertEqual(row["observed_stage_scope_pending_count"], max(10 - direct_count, 0))
+    if direct_count:
+        test_case.assertIn("provider_small_pool_scope_ticket", row["observed_stage_scope_direct_evidence_keys"])
+    test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
+
+
 class CommandCenter3ServerServiceTests(unittest.TestCase):
     def _with_snapshot_cache(self, payload):
         original_path = packet_service.SNAPSHOT_CACHE_PATH
@@ -603,35 +665,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(observed_stage_rows["LTG-02"]["github_called"])
         self.assertTrue(observed_stage_rows["LTG-02"]["does_not_execute_trades"])
         self.assertFalse(observed_stage_rows["LTG-02"]["can_close_from_observed_row"])
-        self.assertEqual(
-            observed_stage_rows["LTG-03"]["stage_scope_manifest"],
-            "factor_test_production_stage_scope_manifest",
-        )
-        self.assertEqual(observed_stage_rows["LTG-03"]["status"], "observed_in_factor_test_lab_static_contract")
-        self.assertEqual(observed_stage_rows["LTG-03"]["row_count"], 10)
-        self.assertEqual(observed_stage_rows["LTG-03"]["pending_stage_count"], 10)
-        self.assertGreaterEqual(observed_stage_rows["LTG-03"]["local_evidence_stage_count"], 2)
-        self.assertFalse(observed_stage_rows["LTG-03"]["provider_backed_small_pool_validation_done"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["full_market_validation_done"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["production_factor_test_validation_complete"])
-        self.assertTrue(observed_stage_rows["LTG-03"]["real_provider_sample_still_required"])
-        self.assertTrue(observed_stage_rows["LTG-03"]["provider_promotion_still_required"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["provider_execution_implemented"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["provider_call_ledger_evidence_done"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["multi_horizon_forward_returns_done"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["rolling_window_validation_done"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["cost_assumption_validation_done"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["neutralization_stability_done"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["pit_bias_controls_done"])
-        self.assertTrue(observed_stage_rows["LTG-03"]["metrics_remain_research_only"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["enters_strategy_action"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["frontend_computes_action"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["external_calls_triggered"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["tushare_called"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["deepseek_called"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["github_called"])
-        self.assertTrue(observed_stage_rows["LTG-03"]["does_not_execute_trades"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["can_close_from_observed_row"])
+        assert_ltg03_factor_test_stage_scope(self, observed_stage_rows["LTG-03"])
         self.assertEqual(
             observed_stage_rows["LTG-04"]["stage_scope_manifest"],
             "factor_universe_worker_batch_stage_scope_manifest",
@@ -1001,12 +1035,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider small-pool samples", migration_goals["LTG-03"]["next_evidence_required"])
         self.assertIn("safe scope ticket", migration_goals["LTG-03"]["next_step"])
         self.assertFalse(migration_goals["LTG-03"]["production_complete"])
-        self.assertEqual(
-            migration_goals["LTG-03"]["observed_stage_scope_manifest_status"],
-            "observed_in_factor_test_lab_static_contract",
-        )
-        self.assertEqual(migration_goals["LTG-03"]["observed_stage_scope_pending_count"], 10)
-        self.assertFalse(migration_goals["LTG-03"]["observed_stage_scope_can_close_goal"])
+        assert_ltg03_migration_goal_stage_scope(self, migration_goals["LTG-03"])
         self.assertEqual(migration_goals["LTG-04"]["stage_scope_manifest"], "factor_universe_worker_batch_stage_scope_manifest")
         self.assertIn("worker-batch dry-run scope ticket", migration_goals["LTG-04"]["current_state"])
         self.assertIn("worker stage-scope manifest", migration_goals["LTG-04"]["current_state"])
@@ -20002,35 +20031,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(observed_stage_rows["LTG-02"]["github_called"])
         self.assertTrue(observed_stage_rows["LTG-02"]["does_not_execute_trades"])
         self.assertFalse(observed_stage_rows["LTG-02"]["can_close_from_observed_row"])
-        self.assertEqual(
-            observed_stage_rows["LTG-03"]["stage_scope_manifest"],
-            "factor_test_production_stage_scope_manifest",
-        )
-        self.assertEqual(observed_stage_rows["LTG-03"]["status"], "observed_in_factor_test_lab_static_contract")
-        self.assertEqual(observed_stage_rows["LTG-03"]["row_count"], 10)
-        self.assertEqual(observed_stage_rows["LTG-03"]["pending_stage_count"], 10)
-        self.assertGreaterEqual(observed_stage_rows["LTG-03"]["local_evidence_stage_count"], 2)
-        self.assertFalse(observed_stage_rows["LTG-03"]["provider_backed_small_pool_validation_done"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["full_market_validation_done"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["production_factor_test_validation_complete"])
-        self.assertTrue(observed_stage_rows["LTG-03"]["real_provider_sample_still_required"])
-        self.assertTrue(observed_stage_rows["LTG-03"]["provider_promotion_still_required"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["provider_execution_implemented"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["provider_call_ledger_evidence_done"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["multi_horizon_forward_returns_done"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["rolling_window_validation_done"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["cost_assumption_validation_done"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["neutralization_stability_done"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["pit_bias_controls_done"])
-        self.assertTrue(observed_stage_rows["LTG-03"]["metrics_remain_research_only"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["enters_strategy_action"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["frontend_computes_action"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["external_calls_triggered"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["tushare_called"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["deepseek_called"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["github_called"])
-        self.assertTrue(observed_stage_rows["LTG-03"]["does_not_execute_trades"])
-        self.assertFalse(observed_stage_rows["LTG-03"]["can_close_from_observed_row"])
+        assert_ltg03_factor_test_stage_scope(self, observed_stage_rows["LTG-03"])
         self.assertEqual(
             observed_stage_rows["LTG-04"]["stage_scope_manifest"],
             "factor_universe_worker_batch_stage_scope_manifest",
@@ -20373,12 +20374,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(migration_goals["LTG-02"]["observed_stage_scope_pending_count"], 10)
         self.assertFalse(migration_goals["LTG-02"]["observed_stage_scope_can_close_goal"])
-        self.assertEqual(
-            migration_goals["LTG-03"]["observed_stage_scope_manifest_status"],
-            "observed_in_factor_test_lab_static_contract",
-        )
-        self.assertEqual(migration_goals["LTG-03"]["observed_stage_scope_pending_count"], 10)
-        self.assertFalse(migration_goals["LTG-03"]["observed_stage_scope_can_close_goal"])
+        assert_ltg03_migration_goal_stage_scope(self, migration_goals["LTG-03"])
         self.assertEqual(
             migration_goals["LTG-04"]["observed_stage_scope_manifest_status"],
             "observed_in_factor_universe_static_contract",
@@ -28967,6 +28963,70 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(task["deepseek_called"])
         self.assertFalse(task["github_called"])
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+    def test_ltg_stage_scope_observes_factor_test_scope_direct_evidence_without_provider_completion(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        self._with_bootstrap_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE")
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        dry_run_response = self.client.post(
+            "/api/factor-quant/provider-small-pool-dry-run",
+            json={
+                "approved_by_user": True,
+                "symbols": ["002008.SZ", "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"],
+                "start_date": "20260401",
+                "end_date": "20260614",
+                "metrics": [
+                    "ic",
+                    "rank_ic",
+                    "icir",
+                    "group_return",
+                    "top_bottom",
+                    "max_drawdown",
+                    "neutral_ic",
+                    "out_of_sample_decay",
+                    "cost_model",
+                ],
+                "forward_return_horizons": ["1d", "5d"],
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+        self.assertTrue(dry_run_response["ok"])
+        dry_run_receipt = dry_run_response["data"]["task"]["payload_safe"][
+            "provider_small_pool_acceptance_dry_run_receipt"
+        ]
+
+        execution_response = self.client.post(
+            "/api/factor-quant/provider-small-pool-execution-request",
+            json={
+                "approved_by_user": True,
+                "acceptance_scope_hash": dry_run_receipt["acceptance_scope_hash"],
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+        self.assertTrue(execution_response["ok"])
+
+        migration = migration_status_service.build_migration_status()
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg03 = observed_stage_rows["LTG-03"]
+        assert_ltg03_factor_test_stage_scope(self, ltg03, expected_direct_count=1)
+        self.assertEqual(ltg03["direct_evidence_stage_keys"], ["provider_small_pool_scope_ticket"])
+        self.assertFalse(ltg03["local_light_metric_baseline_verified"])
+        self.assertFalse(ltg03["provider_backed_small_pool_validation_done"])
+        self.assertFalse(ltg03["production_factor_test_validation_complete"])
+        self.assertEqual(ltg03["pending_stage_count"], 9)
+        self.assertFalse(ltg03["external_calls_triggered"])
+        self.assertFalse(ltg03["tushare_called"])
+        self.assertFalse(ltg03["deepseek_called"])
+        self.assertFalse(ltg03["github_called"])
+
+        migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
+        assert_ltg03_migration_goal_stage_scope(self, migration_goals["LTG-03"], expected_direct_count=1)
+        self.assertEqual(migration_goals["LTG-03"]["observed_stage_scope_pending_count"], 9)
+        self.assertNotIn("SHOULD_DROP", json.dumps(migration, ensure_ascii=False))
+        self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(migration, ensure_ascii=False))
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(migration, ensure_ascii=False))
 
     def test_factor_universe_research_plan_endpoint_is_local_read_plan(self):
         self._with_meta_store()

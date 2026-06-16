@@ -1101,6 +1101,150 @@ def _latest_tushare_direct_provider_evidence_summary() -> dict[str, Any]:
     }
 
 
+def _latest_factor_test_lab_direct_research_evidence_summary() -> dict[str, Any]:
+    try:
+        from server.services import factor_service
+
+        packet = factor_service.read_factor_quant_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    factor_tests = _dict_or_empty(packet_map.get("factor_tests"))
+    acceptance = _dict_or_empty(factor_tests.get("acceptance_contract"))
+    dry_run = _dict_or_empty(factor_tests.get("provider_small_pool_acceptance_dry_run_receipt"))
+    recipe = _dict_or_empty(factor_tests.get("provider_small_pool_execution_recipe"))
+    request = _dict_or_empty(factor_tests.get("provider_small_pool_execution_request_receipt"))
+    items = factor_tests.get("items") if isinstance(factor_tests.get("items"), list) else []
+
+    packet_safe = bool(
+        packet_map.get("external_calls_triggered") is False
+        and packet_map.get("tushare_called") is False
+        and packet_map.get("deepseek_called") is False
+        and packet_map.get("github_called") is False
+        and packet_map.get("does_not_execute_trades") is True
+        and packet_map.get("does_not_modify_strategy_action") is True
+        and packet_map.get("contains_secret") is not True
+    )
+    metric_rows_with_values = [
+        row
+        for row in items
+        if isinstance(row, dict)
+        and row.get("data_status") not in {"metric_scaffold_only", "not_enough_data"}
+        and any(
+            row.get(key) is not None
+            for key in (
+                "ic",
+                "rank_ic",
+                "icir",
+                "group_return",
+                "top_bottom",
+                "max_drawdown",
+                "neutral_ic",
+                "out_of_sample_decay",
+                "cost_model",
+            )
+        )
+    ]
+    local_light_metric_baseline = bool(
+        packet_safe
+        and int(factor_tests.get("computed_item_count") or 0) > 0
+        and bool(metric_rows_with_values)
+        and factor_tests.get("external_calls_triggered") is False
+        and factor_tests.get("tushare_called") is False
+        and factor_tests.get("deepseek_called") is False
+        and factor_tests.get("github_called") is False
+        and factor_tests.get("does_not_execute_trades") is True
+        and factor_tests.get("does_not_modify_strategy_action") is True
+    )
+    provider_small_pool_scope_ticket = bool(
+        packet_safe
+        and dry_run.get("schema_version") == "factor_test_provider_small_pool_acceptance_dry_run.v1"
+        and dry_run.get("local_dry_run_ready") is True
+        and dry_run.get("preflight_ready_for_user_approved_real_task") is True
+        and dry_run.get("provider_execution_implemented") is False
+        and dry_run.get("provider_backed_small_pool_validation_done") is False
+        and dry_run.get("production_factor_test_validation_complete") is False
+        and dry_run.get("external_calls_triggered") is False
+        and dry_run.get("tushare_called") is False
+        and dry_run.get("deepseek_called") is False
+        and dry_run.get("github_called") is False
+        and dry_run.get("does_not_execute_trades") is True
+        and dry_run.get("does_not_modify_strategy_action") is True
+        and dry_run.get("contains_secret") is False
+        and recipe.get("schema_version") == "factor_test_provider_small_pool_execution_recipe.v1"
+        and recipe.get("local_recipe_ready") is True
+        and recipe.get("scope_ticket_ready") is True
+        and recipe.get("provider_execution_implemented") is False
+        and recipe.get("provider_backed_small_pool_validation_done") is False
+        and recipe.get("production_factor_test_validation_complete") is False
+        and recipe.get("external_calls_triggered") is False
+        and recipe.get("tushare_called") is False
+        and recipe.get("deepseek_called") is False
+        and recipe.get("github_called") is False
+        and recipe.get("does_not_execute_trades") is True
+        and recipe.get("does_not_modify_strategy_action") is True
+        and recipe.get("contains_secret") is False
+        and request.get("schema_version") == "factor_test_provider_small_pool_execution_request.v1"
+        and request.get("local_execution_request_ready") is True
+        and request.get("ready_for_manual_provider_task_submission") is True
+        and request.get("provider_execution_implemented") is False
+        and request.get("provider_call_ledger_evidence_done") is False
+        and request.get("provider_backed_small_pool_validation_done") is False
+        and request.get("production_factor_test_validation_complete") is False
+        and request.get("external_calls_triggered") is False
+        and request.get("tushare_called") is False
+        and request.get("deepseek_called") is False
+        and request.get("github_called") is False
+        and request.get("does_not_execute_trades") is True
+        and request.get("does_not_modify_strategy_action") is True
+        and request.get("contains_secret") is False
+    )
+    direct_stage_keys = []
+    if local_light_metric_baseline:
+        direct_stage_keys.append("local_light_metric_baseline")
+    if provider_small_pool_scope_ticket:
+        direct_stage_keys.append("provider_small_pool_scope_ticket")
+    scope_hash_short = (
+        request.get("acceptance_scope_hash_short")
+        or dry_run.get("acceptance_scope_hash_short")
+        or recipe.get("acceptance_scope_hash_short")
+        or ""
+    )
+    return {
+        "schema_version": "migration_factor_test_lab_direct_research_evidence_summary.v1",
+        "source_packet_key": "command_center_factor_quant_hub_packet",
+        "status": "factor_test_lab_direct_evidence_visible_production_pending"
+        if direct_stage_keys
+        else "factor_test_lab_direct_evidence_missing",
+        "available": bool(direct_stage_keys),
+        "direct_evidence_stage_keys": direct_stage_keys,
+        "direct_evidence_stage_count": len(direct_stage_keys),
+        "local_light_metric_baseline_verified": local_light_metric_baseline,
+        "provider_small_pool_scope_ticket_verified": provider_small_pool_scope_ticket,
+        "provider_small_pool_dry_run_ready": dry_run.get("local_dry_run_ready") is True,
+        "provider_small_pool_execution_recipe_ready": recipe.get("local_recipe_ready") is True,
+        "provider_small_pool_execution_request_ready": request.get("local_execution_request_ready") is True,
+        "provider_small_pool_scope_hash_short": scope_hash_short,
+        "provider_backed_small_pool_validation_done": False,
+        "full_market_validation_done": False,
+        "production_factor_test_validation_complete": False,
+        "provider_execution_implemented": False,
+        "provider_call_ledger_evidence_done": False,
+        "metrics_remain_research_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "direct_evidence_layer": "L3_local_factor_test_scope_evidence"
+        if direct_stage_keys
+        else "L1_static_contract",
+        "evidence_boundary": "factor_test_scope_direct_evidence_is_not_provider_validation_or_production_completion",
+    }
+
+
 def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str, Any]:
     source = ""
     source_packet_key = ""
@@ -3047,21 +3191,54 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         local_evidence_count = sum(
             1 for row in stage_rows if isinstance(row, dict) and row.get("local_stage_evidence_present") is True
         )
+        direct_evidence = _latest_factor_test_lab_direct_research_evidence_summary()
+        direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
+        effective_pending_count = max(pending_count - direct_evidence_count, 0)
+        status = (
+            "observed_factor_test_lab_direct_evidence_production_pending"
+            if stage_rows and direct_evidence_count
+            else (
+                "observed_in_factor_test_lab_static_contract"
+                if stage_rows
+                else "missing_from_factor_test_lab_static_contract"
+            )
+        )
         rows.append(
             {
                 "id": "LTG-03",
                 "goal": "Factor Test Lab 完整生产化",
                 "stage_scope_manifest": "factor_test_production_stage_scope_manifest",
-                "status": "observed_in_factor_test_lab_static_contract"
-                if stage_rows
-                else "missing_from_factor_test_lab_static_contract",
-                "observed_source": "scripts/factor_test_lab_contract._factor_test_production_stage_scope_rows local static contract",
-                "cache_status": "factor_test_lab_static_contract",
+                "status": status,
+                "observed_source": (
+                    "scripts/factor_test_lab_contract._factor_test_production_stage_scope_rows local static "
+                    "contract + read-only factor_quant_cache direct evidence summary"
+                ),
+                "cache_status": direct_evidence.get("status") or "factor_test_lab_static_contract",
                 "cache_mode": "local_static_contract",
                 "row_count": row_count,
-                "pending_stage_count": pending_count,
+                "pending_stage_count": effective_pending_count,
                 "local_evidence_stage_count": local_evidence_count,
-                "production_blocker_count": pending_count,
+                "direct_evidence_stage_count": direct_evidence_count,
+                "direct_evidence_stage_keys": direct_evidence.get("direct_evidence_stage_keys", []),
+                "factor_test_direct_evidence_layer": direct_evidence.get("direct_evidence_layer"),
+                "local_light_metric_baseline_verified": direct_evidence.get("local_light_metric_baseline_verified")
+                is True,
+                "provider_small_pool_scope_ticket_verified": direct_evidence.get(
+                    "provider_small_pool_scope_ticket_verified"
+                )
+                is True,
+                "provider_small_pool_dry_run_ready": direct_evidence.get("provider_small_pool_dry_run_ready") is True,
+                "provider_small_pool_execution_recipe_ready": direct_evidence.get(
+                    "provider_small_pool_execution_recipe_ready"
+                )
+                is True,
+                "provider_small_pool_execution_request_ready": direct_evidence.get(
+                    "provider_small_pool_execution_request_ready"
+                )
+                is True,
+                "provider_small_pool_scope_hash_short": direct_evidence.get("provider_small_pool_scope_hash_short")
+                or "",
+                "production_blocker_count": effective_pending_count,
                 "provider_backed_small_pool_validation_done": False,
                 "full_market_validation_done": False,
                 "production_factor_test_validation_complete": False,
@@ -3091,7 +3268,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "does_not_modify_strategy_action": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
-                "evidence_boundary": "observed_local_static_factor_test_stage_scope_not_production_completion",
+                "evidence_boundary": direct_evidence.get("evidence_boundary")
+                or "observed_local_static_factor_test_stage_scope_not_production_completion",
             }
         )
     except Exception:
