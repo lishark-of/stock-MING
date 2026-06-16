@@ -4373,6 +4373,107 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("api_key", task["payload_safe"])
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
 
+    def test_storage_duckdb_read_validation_endpoint_records_local_direct_evidence(self):
+        if (
+            importlib.util.find_spec("duckdb") is None
+            or importlib.util.find_spec("pyarrow") is None
+            or importlib.util.find_spec("pandas") is None
+        ):
+            self.skipTest("duckdb/pyarrow/pandas dependency missing")
+        import pandas as pd
+
+        db_path = self._with_meta_store()
+        root = self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        storage_service.parquet_store.write_dataset(
+            pd.DataFrame(
+                {"ts_code": ["002008.SZ"], "trade_date": ["20260611"], "factor_key": ["momentum_20d"], "value": [1.2]}
+            ),
+            root=root,
+            name="factor_values",
+        )
+        storage_service.parquet_store.write_dataset(
+            pd.DataFrame({"ts_code": ["002008.SZ"], "trade_date": ["20260611"], "close": [10.8]}),
+            root=root,
+            name="daily",
+        )
+        storage_service.parquet_store.write_dataset(
+            pd.DataFrame({"ts_code": ["002008.SZ"], "trade_date": ["20260611"], "turnover_rate": [2.4]}),
+            root=root,
+            name="daily_basic",
+        )
+        storage_service.parquet_store.write_dataset(
+            pd.DataFrame({"ts_code": ["002008.SZ"], "trade_date": ["20260611"], "net_mf_amount": [1200.0]}),
+            root=root,
+            name="moneyflow",
+        )
+        storage_service.parquet_store.write_dataset(
+            pd.DataFrame({"cal_date": ["20260611"], "is_open": [1]}),
+            root=root,
+            name="trade_cal",
+        )
+        storage_service.parquet_store.write_dataset(
+            pd.DataFrame({"run_date": ["20260611"], "strategy_key": ["demo"], "return": [0.01]}),
+            root=root,
+            name="backtest_results",
+        )
+        from fastapi.testclient import TestClient
+        from server.main import app
+
+        response = TestClient(app).post(
+            "/api/storage/duckdb-read/validate",
+            json={"source": "api_test", "api_key": "SHOULD_DROP", "write_parquet_allowed": True},
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["task_type"], "run_storage_duckdb_read_validation")
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "storage_duckdb_read_validation_ready_local_query_contract")
+        self.assertEqual(task["output_packet_key"], "command_center_3_storage_duckdb_read_validation_packet")
+        self.assertEqual(task["call_ledger"][0]["api"], "local_storage_duckdb_read_validation")
+        self.assertEqual(task["call_ledger"][0]["endpoint"], "POST /api/storage/duckdb-read/validate")
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("api_key", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        persisted = SQLiteMetaStore(db_path).read_packet("command_center_3_storage_duckdb_read_validation_packet")
+        self.assertEqual(persisted["schema_version"], "command_center_3_storage_duckdb_read_validation.v1")
+        self.assertEqual(persisted["status"], "storage_duckdb_read_validation_ready_local_query_contract")
+        self.assertTrue(persisted["local_duckdb_read_validation_ready"])
+        self.assertEqual(persisted["dataset_count"], 6)
+        self.assertEqual(persisted["contract_ready_count"], 6)
+        self.assertEqual(persisted["ready_dataset_count"], 6)
+        self.assertFalse(persisted["writes_parquet"])
+        self.assertFalse(persisted["writes_manifest"])
+        self.assertFalse(persisted["deletes_artifacts"])
+        self.assertFalse(persisted["refreshes_providers"])
+        self.assertFalse(persisted["schema_migration_executed"])
+        self.assertFalse(persisted["partition_migration_executed"])
+        self.assertFalse(persisted["physical_compaction_executed"])
+        self.assertFalse(persisted["cache_ttl_refresh_executed"])
+        self.assertFalse(persisted["post_migration_validation_done"])
+        self.assertFalse(persisted["production_storage_complete"])
+        self.assertFalse(persisted["external_calls_triggered"])
+        self.assertFalse(persisted["tushare_called"])
+        self.assertFalse(persisted["deepseek_called"])
+        self.assertFalse(persisted["github_called"])
+        self.assertFalse(persisted["contains_secret"])
+        self.assertTrue(all(row["contract_ready"] for row in persisted["rows"]))
+
+        direct = migration_status_service._latest_storage_direct_execution_evidence_summary()
+        self.assertTrue(direct["duckdb_read_validation_done"])
+        self.assertEqual(direct["duckdb_read_validation_status"], "storage_duckdb_read_validation_ready_local_query_contract")
+        self.assertEqual(direct["duckdb_read_validation_contract_ready_count"], 6)
+        self.assertGreaterEqual(direct["direct_evidence_stage_count"], 1)
+
     def test_storage_physical_execution_request_binds_recipe_scope_without_writes(self):
         db_path = self._with_meta_store()
         self._with_parquet_root()
@@ -13298,7 +13399,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 61)
+        self.assertEqual(catalog["task_count"], 62)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -13317,7 +13418,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 61)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 62)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -13328,8 +13429,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 63)
-        self.assertEqual(route_coverage["task_creation_route_count"], 61)
+        self.assertEqual(route_coverage["known_post_route_count"], 64)
+        self.assertEqual(route_coverage["task_creation_route_count"], 62)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -13338,11 +13439,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 61)
+        self.assertEqual(implementation_status["task_count"], 62)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 58)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 59)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 59)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 60)
         self.assertEqual(implementation_status["external_capable_task_count"], 6)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -13402,6 +13503,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_storage_partition_migration_dry_run",
                 "run_storage_compaction_dry_run",
                 "run_storage_cache_ttl_dry_run",
+                "run_storage_duckdb_read_validation",
                 "run_storage_physical_execution_request",
                 "run_worker_synthetic_healthcheck",
                 "run_worker_activation_review",
@@ -13466,6 +13568,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_storage_partition_migration_dry_run",
                 "run_storage_compaction_dry_run",
                 "run_storage_cache_ttl_dry_run",
+                "run_storage_duckdb_read_validation",
                 "run_storage_physical_execution_request",
                 "run_worker_synthetic_healthcheck",
                 "run_worker_activation_review",
@@ -15171,6 +15274,34 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(by_type["run_storage_cache_ttl_dry_run"]["reads_env_files"])
         self.assertFalse(by_type["run_storage_cache_ttl_dry_run"]["refresh_executed"])
         self.assertTrue(by_type["run_storage_cache_ttl_dry_run"]["call_ledger_required"])
+        self.assertEqual(by_type["run_storage_duckdb_read_validation"]["route"], "POST /api/storage/duckdb-read/validate")
+        self.assertEqual(
+            by_type["run_storage_duckdb_read_validation"]["current_backend"],
+            "local_duckdb_read_validation_pipeline",
+        )
+        self.assertEqual(by_type["run_storage_duckdb_read_validation"]["possible_external_sources"], [])
+        self.assertEqual(
+            by_type["run_storage_duckdb_read_validation"]["external_call_policy"],
+            "local_duckdb_read_validation_no_write_no_external_call",
+        )
+        self.assertTrue(by_type["run_storage_duckdb_read_validation"]["read_validation_only"])
+        self.assertEqual(by_type["run_storage_duckdb_read_validation"]["query_wrapper"], "duckdb_filtered_parquet.v1")
+        self.assertEqual(
+            by_type["run_storage_duckdb_read_validation"]["query_result_contract_schema_version"],
+            "duckdb_query_result_contract.v1",
+        )
+        self.assertFalse(by_type["run_storage_duckdb_read_validation"]["cache_get_external_calls"])
+        self.assertFalse(by_type["run_storage_duckdb_read_validation"]["writes_parquet_on_post"])
+        self.assertFalse(by_type["run_storage_duckdb_read_validation"]["writes_manifest_on_post"])
+        self.assertFalse(by_type["run_storage_duckdb_read_validation"]["deletes_artifacts_on_post"])
+        self.assertFalse(by_type["run_storage_duckdb_read_validation"]["refreshes_external_sources_on_post"])
+        self.assertFalse(by_type["run_storage_duckdb_read_validation"]["reads_env_files"])
+        self.assertFalse(by_type["run_storage_duckdb_read_validation"]["schema_migration_executed"])
+        self.assertFalse(by_type["run_storage_duckdb_read_validation"]["partition_migration_executed"])
+        self.assertFalse(by_type["run_storage_duckdb_read_validation"]["physical_compaction_executed"])
+        self.assertFalse(by_type["run_storage_duckdb_read_validation"]["cache_ttl_refresh_executed"])
+        self.assertFalse(by_type["run_storage_duckdb_read_validation"]["production_storage_complete"])
+        self.assertTrue(by_type["run_storage_duckdb_read_validation"]["call_ledger_required"])
         self.assertEqual(
             by_type["run_storage_physical_execution_request"]["route"],
             "POST /api/storage/physical-execution-request",
@@ -15380,16 +15511,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 58)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 59)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 59)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 60)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 58)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 59)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 59)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 60)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -16243,9 +16374,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 58)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 59)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 59)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 60)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -16469,9 +16600,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 58)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 59)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 59)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 60)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -16504,9 +16635,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 58)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 59)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 59)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 60)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -20082,7 +20213,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
         self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 14)
-        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 115)
+        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 114)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_acceptance_runway_rows"]), 14)
@@ -20259,12 +20390,19 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "observed_storage_direct_execution_evidence_production_pending",
         )
         self.assertEqual(observed_stage_rows["LTG-05"]["row_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-05"]["pending_stage_count"], 6)
+        ltg05_direct_count = int(observed_stage_rows["LTG-05"].get("direct_evidence_stage_count") or 0)
+        self.assertIn(ltg05_direct_count, {2, 3})
+        self.assertEqual(observed_stage_rows["LTG-05"]["pending_stage_count"], 8 - ltg05_direct_count)
         self.assertEqual(observed_stage_rows["LTG-05"]["local_evidence_stage_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-05"]["direct_evidence_stage_count"], 2)
         self.assertTrue(observed_stage_rows["LTG-05"]["physical_schema_validation_done"])
         self.assertFalse(observed_stage_rows["LTG-05"]["schema_migration_executed"])
         self.assertTrue(observed_stage_rows["LTG-05"]["dataset_version_manifest_validated"])
+        if observed_stage_rows["LTG-05"].get("duckdb_read_validation_done"):
+            self.assertEqual(
+                observed_stage_rows["LTG-05"]["duckdb_read_validation_status"],
+                "storage_duckdb_read_validation_ready_local_query_contract",
+            )
+            self.assertGreaterEqual(observed_stage_rows["LTG-05"]["duckdb_read_validation_contract_ready_count"], 1)
         self.assertEqual(
             observed_stage_rows["LTG-05"]["storage_direct_evidence_layer"],
             "L3_local_storage_physical_execution_evidence",
@@ -20543,7 +20681,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             migration_goals["LTG-05"]["observed_stage_scope_manifest_status"],
             "observed_storage_direct_execution_evidence_production_pending",
         )
-        self.assertEqual(migration_goals["LTG-05"]["observed_stage_scope_pending_count"], 6)
+        self.assertEqual(migration_goals["LTG-05"]["observed_stage_scope_pending_count"], 8 - ltg05_direct_count)
         self.assertFalse(migration_goals["LTG-05"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-06"]["stage_scope_manifest"], "worker_runtime_evidence_stage_scope_manifest")
         self.assertIn("runtime evidence stage-scope manifest", migration_goals["LTG-06"]["current_state"])
@@ -20766,7 +20904,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 61)
+        self.assertEqual(task_catalog["data"]["task_count"], 62)
         self.assertIn("POST /api/bootstrap/live-startup", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-research-plan", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-worker-batch-dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
@@ -20838,6 +20976,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("POST /api/storage/partition-migration/dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/storage/compaction/dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/storage/cache-ttl/dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
+        self.assertIn("POST /api/storage/duckdb-read/validate", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/worker/synthetic-healthcheck", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/worker/activation-review", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/worker/production-evidence-plan", task_catalog["data"]["route_coverage"]["known_post_routes"])

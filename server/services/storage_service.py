@@ -28,6 +28,7 @@ DATASET_VERSION_MANIFEST_REVIEW_PACKET_KEY = "command_center_3_storage_dataset_v
 DATASET_VERSION_MANIFEST_WRITE_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_write_packet"
 DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_validate_packet"
 STORAGE_PHYSICAL_EXECUTION_REQUEST_PACKET_KEY = "command_center_3_storage_physical_execution_request_packet"
+DUCKDB_READ_VALIDATION_PACKET_KEY = "command_center_3_storage_duckdb_read_validation_packet"
 STORAGE_PRODUCTION_BLOCKER_SCHEMA_VERSION = "command_center_3_storage_production_blocker_audit.v1"
 STORAGE_PHYSICAL_DURABLE_EVIDENCE_SCHEMA_VERSION = (
     "command_center_3_storage_physical_durable_evidence_recipe.v1"
@@ -5239,6 +5240,228 @@ def parquet_dataset_status(
         row_count=packet["row_count"],
         path=metadata["path"],
     )
+
+
+def _duckdb_read_validation_row(dataset: str, packet: Mapping[str, Any]) -> dict[str, Any]:
+    contract = packet.get("query_result_contract") if isinstance(packet.get("query_result_contract"), Mapping) else {}
+    policy = packet.get("query_service_policy") if isinstance(packet.get("query_service_policy"), Mapping) else {}
+    contract_ready = (
+        contract.get("schema_version") == "duckdb_query_result_contract.v1"
+        and packet.get("query_wrapper") == "duckdb_filtered_parquet.v1"
+        and policy.get("safe_parameter_binding") is True
+        and policy.get("query_result_contract_enabled") is True
+        and packet.get("cache_only") is True
+        and packet.get("external_calls_triggered") is False
+        and packet.get("tushare_called") is False
+        and packet.get("deepseek_called") is False
+        and packet.get("github_called") is False
+        and packet.get("does_not_execute_trades") is True
+        and packet.get("does_not_modify_strategy_action") is True
+    )
+    return {
+        "dataset": dataset,
+        "status": packet.get("status") or "missing",
+        "query_wrapper": packet.get("query_wrapper") or "",
+        "query_result_contract_schema_version": contract.get("schema_version") or "",
+        "row_count": int(packet.get("row_count") or 0),
+        "returned_row_count": int(contract.get("returned_row_count") or 0),
+        "contract_ready": contract_ready,
+        "safe_parameter_binding": policy.get("safe_parameter_binding") is True,
+        "typed_projection_enabled": policy.get("typed_projection_enabled") is True,
+        "cursor_pagination_enabled": policy.get("cursor_pagination_enabled") is True,
+        "frontend_executes_query": policy.get("frontend_executes_query") is True,
+        "cache_get_writes_files": policy.get("cache_get_writes_files") is True,
+        "writes_parquet_on_get": policy.get("writes_parquet_on_get") is True,
+        "cache_only": packet.get("cache_only") is True,
+        "external_calls_triggered": packet.get("external_calls_triggered") is True,
+        "tushare_called": packet.get("tushare_called") is True,
+        "deepseek_called": packet.get("deepseek_called") is True,
+        "github_called": packet.get("github_called") is True,
+        "does_not_execute_trades": packet.get("does_not_execute_trades") is True,
+        "does_not_modify_strategy_action": packet.get("does_not_modify_strategy_action") is True,
+    }
+
+
+def storage_duckdb_read_validation_packet(
+    *,
+    task_id: str | None = None,
+    payload_safe: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload_safe = payload_safe or {}
+    limit = 1
+    rows = [
+        _duckdb_read_validation_row(dataset, parquet_dataset_status(dataset, limit=limit))
+        for dataset in CANONICAL_PARQUET_DATASETS
+    ]
+    contract_ready_count = sum(1 for row in rows if row["contract_ready"])
+    ready_dataset_count = sum(1 for row in rows if row["status"] == "ready")
+    dependency = duckdb_store.dependency_status()
+    local_ready = bool(
+        dependency.get("available")
+        and contract_ready_count == len(CANONICAL_PARQUET_DATASETS)
+        and all(row["frontend_executes_query"] is False for row in rows)
+        and all(row["cache_get_writes_files"] is False for row in rows)
+        and all(row["writes_parquet_on_get"] is False for row in rows)
+        and all(row["external_calls_triggered"] is False for row in rows)
+        and all(row["tushare_called"] is False for row in rows)
+        and all(row["deepseek_called"] is False for row in rows)
+        and all(row["github_called"] is False for row in rows)
+        and all(row["does_not_execute_trades"] is True for row in rows)
+        and all(row["does_not_modify_strategy_action"] is True for row in rows)
+    )
+    status = (
+        "storage_duckdb_read_validation_ready_local_query_contract"
+        if local_ready
+        else "storage_duckdb_read_validation_blocked_local_query_contract"
+    )
+    return {
+        "schema_version": "command_center_3_storage_duckdb_read_validation.v1",
+        "packet_key": DUCKDB_READ_VALIDATION_PACKET_KEY,
+        "task_id": str(task_id or ""),
+        "status": status,
+        "mode": "button_gated_local_duckdb_read_validation",
+        "scope": "local_storage_duckdb_read_validation_no_write_no_provider",
+        "ltg": "LTG-05",
+        "local_duckdb_read_validation_ready": local_ready,
+        "duckdb_dependency_available": dependency.get("available") is True,
+        "dataset_count": len(rows),
+        "contract_ready_count": contract_ready_count,
+        "ready_dataset_count": ready_dataset_count,
+        "limit": limit,
+        "rows": rows,
+        "query_result_contract_schema_version": "duckdb_query_result_contract.v1",
+        "query_wrapper": "duckdb_filtered_parquet.v1",
+        "safe_parameter_binding": True,
+        "typed_projection_enabled": True,
+        "cursor_pagination_enabled": True,
+        "frontend_executes_query": False,
+        "cache_get_writes_files": False,
+        "writes_parquet_on_get": False,
+        "writes_parquet": False,
+        "writes_manifest": False,
+        "deletes_artifacts": False,
+        "refreshes_providers": False,
+        "reads_env_files": False,
+        "reads_row_payloads_for_metrics": False,
+        "schema_migration_executed": False,
+        "partition_migration_executed": False,
+        "physical_compaction_executed": False,
+        "cache_ttl_refresh_executed": False,
+        "artifact_cleanup_delete_executed": False,
+        "post_migration_validation_done": False,
+        "production_storage_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "request_params_safe": {
+            "source": payload_safe.get("source") or "storage_page_button",
+            "limit": limit,
+            "external_sources_allowed": False,
+            "write_parquet_allowed": False,
+            "write_manifest_allowed": False,
+            "delete_allowed": False,
+        },
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_duckdb_read_validation",
+            endpoint="POST /api/storage/duckdb-read/validate",
+            status=status,
+            row_count=len(rows),
+        ),
+        "warnings": [
+            "DuckDB read validation 只验证本地 Parquet 查询合同；不会写 Parquet、写 manifest、删除文件或刷新 provider。",
+            "该 receipt 是 LTG-05 read-path direct evidence，不代表 schema migration、partition、compaction 或 production storage 完成。",
+        ],
+    }
+
+
+def storage_duckdb_read_validation_evidence() -> dict[str, Any]:
+    packet, read_status = _read_storage_meta_packet_no_init(DUCKDB_READ_VALIDATION_PACKET_KEY)
+    if read_status != "packet_present" or not isinstance(packet, Mapping):
+        return {
+            "schema_version": "command_center_3_storage_duckdb_read_validation.v1",
+            "packet_key": DUCKDB_READ_VALIDATION_PACKET_KEY,
+            "status": "storage_duckdb_read_validation_missing",
+            "local_duckdb_read_validation_ready": False,
+            "dataset_count": 0,
+            "contract_ready_count": 0,
+            "ready_dataset_count": 0,
+            "production_storage_complete": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+    evidence = dict(packet)
+    evidence["read_status"] = read_status
+    evidence.setdefault("local_duckdb_read_validation_ready", False)
+    evidence.setdefault("production_storage_complete", False)
+    evidence.setdefault("external_calls_triggered", False)
+    evidence.setdefault("tushare_called", False)
+    evidence.setdefault("deepseek_called", False)
+    evidence.setdefault("github_called", False)
+    evidence.setdefault("does_not_execute_trades", True)
+    evidence.setdefault("does_not_modify_strategy_action", True)
+    evidence.setdefault("contains_secret", False)
+    return evidence
+
+
+def run_storage_duckdb_read_validation_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_page_button",
+        "external_sources_allowed": False,
+        "write_parquet_allowed": False,
+        "write_manifest_allowed": False,
+        "delete_allowed": False,
+    }
+    task = task_service.create_task_record(
+        "run_storage_duckdb_read_validation",
+        output_packet_key=DUCKDB_READ_VALIDATION_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_duckdb_read_validation_queued",
+        warnings=[
+            "storage DuckDB read validation 只执行本地只读查询合同检查；不会写 Parquet、写 manifest、删除文件或调用外部源。",
+            "该任务不修改 strategy action、不执行真实交易，不代表 production storage 完成。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.45,
+        current_step="running_storage_duckdb_read_validation",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_duckdb_read_validation_packet(task_id=task["task_id"], payload_safe=payload_safe)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(DUCKDB_READ_VALIDATION_PACKET_KEY, packet)
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="storage_duckdb_read_validation_packet_persist_failed",
+            error_message_safe="storage_duckdb_read_validation_sqlite_write_failed",
+            call_ledger=packet["call_ledger"],
+            warning="storage_duckdb_read_validation_failed_no_external_call",
+        ) or task
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step=str(packet.get("status") or "storage_duckdb_read_validation_recorded"),
+        call_ledger=packet["call_ledger"],
+        warning="storage_duckdb_read_validation_recorded_no_write_no_external_call",
+    ) or task
 
 
 def factor_values_status(

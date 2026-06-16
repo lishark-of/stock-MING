@@ -2001,6 +2001,7 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
 
         schema_evidence = storage_service.storage_schema_validation_acceptance_evidence_audit()
         execution_request = storage_service.storage_physical_execution_request_evidence()
+        duckdb_read_validation = storage_service.storage_duckdb_read_validation_evidence()
         try:
             manifest_packet = SQLiteMetaStore(storage_service.SQLITE_META_PATH).read_packet(
                 storage_service.DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY
@@ -2016,6 +2017,7 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
             "direct_evidence_stage_count": 0,
             "physical_schema_validation_done": False,
             "dataset_version_manifest_validated": False,
+            "duckdb_read_validation_done": False,
             "storage_physical_execution_request_ready": False,
             "production_storage_complete": False,
             "external_calls_triggered": False,
@@ -2031,6 +2033,7 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
     schema_map = schema_evidence if isinstance(schema_evidence, dict) else {}
     manifest_map = manifest_packet if isinstance(manifest_packet, dict) else {}
     request_map = execution_request if isinstance(execution_request, dict) else {}
+    duckdb_map = duckdb_read_validation if isinstance(duckdb_read_validation, dict) else {}
     schema_done = bool(
         schema_map.get("physical_schema_validation_done") is True
         and schema_map.get("status") == "schema_acceptance_evidence_passed_all_local_datasets"
@@ -2061,7 +2064,41 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
         and request_map.get("does_not_execute_trades") is True
         and request_map.get("production_storage_complete") is False
     )
-    direct_evidence_count = int(schema_done) + int(manifest_done)
+    duckdb_read_validation_done = bool(
+        duckdb_map.get("schema_version") == "command_center_3_storage_duckdb_read_validation.v1"
+        and duckdb_map.get("status") == "storage_duckdb_read_validation_ready_local_query_contract"
+        and duckdb_map.get("local_duckdb_read_validation_ready") is True
+        and duckdb_map.get("duckdb_dependency_available") is True
+        and int(duckdb_map.get("dataset_count") or 0) > 0
+        and int(duckdb_map.get("contract_ready_count") or 0) == int(duckdb_map.get("dataset_count") or 0)
+        and duckdb_map.get("query_result_contract_schema_version") == "duckdb_query_result_contract.v1"
+        and duckdb_map.get("query_wrapper") == "duckdb_filtered_parquet.v1"
+        and duckdb_map.get("safe_parameter_binding") is True
+        and duckdb_map.get("typed_projection_enabled") is True
+        and duckdb_map.get("cursor_pagination_enabled") is True
+        and duckdb_map.get("frontend_executes_query") is False
+        and duckdb_map.get("cache_get_writes_files") is False
+        and duckdb_map.get("writes_parquet_on_get") is False
+        and duckdb_map.get("writes_parquet") is False
+        and duckdb_map.get("writes_manifest") is False
+        and duckdb_map.get("deletes_artifacts") is False
+        and duckdb_map.get("refreshes_providers") is False
+        and duckdb_map.get("schema_migration_executed") is False
+        and duckdb_map.get("partition_migration_executed") is False
+        and duckdb_map.get("physical_compaction_executed") is False
+        and duckdb_map.get("cache_ttl_refresh_executed") is False
+        and duckdb_map.get("artifact_cleanup_delete_executed") is False
+        and duckdb_map.get("post_migration_validation_done") is False
+        and duckdb_map.get("production_storage_complete") is False
+        and duckdb_map.get("external_calls_triggered") is False
+        and duckdb_map.get("tushare_called") is False
+        and duckdb_map.get("deepseek_called") is False
+        and duckdb_map.get("github_called") is False
+        and duckdb_map.get("does_not_execute_trades") is True
+        and duckdb_map.get("does_not_modify_strategy_action") is True
+        and duckdb_map.get("contains_secret") is False
+    )
+    direct_evidence_count = int(schema_done) + int(manifest_done) + int(duckdb_read_validation_done)
     try:
         schema_done_count = int(schema_map.get("physical_schema_validation_done_count") or 0)
     except Exception:
@@ -2104,6 +2141,11 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
         "dataset_version_manifest_validate_packet_status": str(manifest_map.get("status") or "packet_missing"),
         "dataset_version_manifest_validated_count": manifest_validated_count,
         "manifest_exists": bool(manifest_map.get("manifest_exists")),
+        "duckdb_read_validation_done": duckdb_read_validation_done,
+        "duckdb_read_validation_status": str(duckdb_map.get("status") or "packet_missing"),
+        "duckdb_read_validation_dataset_count": int(duckdb_map.get("dataset_count") or 0),
+        "duckdb_read_validation_contract_ready_count": int(duckdb_map.get("contract_ready_count") or 0),
+        "duckdb_read_validation_ready_dataset_count": int(duckdb_map.get("ready_dataset_count") or 0),
         "storage_physical_execution_request_ready": request_ready,
         "storage_physical_execution_request_status": str(request_map.get("status") or "packet_missing"),
         "production_storage_complete": False,
@@ -3717,6 +3759,17 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     direct_evidence.get("dataset_version_manifest_validated_count") or 0
                 ),
                 "manifest_exists": direct_evidence.get("manifest_exists") is True,
+                "duckdb_read_validation_done": direct_evidence.get("duckdb_read_validation_done") is True,
+                "duckdb_read_validation_status": direct_evidence.get("duckdb_read_validation_status") or "",
+                "duckdb_read_validation_dataset_count": int(
+                    direct_evidence.get("duckdb_read_validation_dataset_count") or 0
+                ),
+                "duckdb_read_validation_contract_ready_count": int(
+                    direct_evidence.get("duckdb_read_validation_contract_ready_count") or 0
+                ),
+                "duckdb_read_validation_ready_dataset_count": int(
+                    direct_evidence.get("duckdb_read_validation_ready_dataset_count") or 0
+                ),
                 "partition_migration_executed": False,
                 "physical_compaction_executed": False,
                 "cache_ttl_refresh_executed": False,
@@ -3766,6 +3819,11 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "physical_schema_validation_done": False,
                 "schema_migration_executed": False,
                 "dataset_version_manifest_validated": False,
+                "duckdb_read_validation_done": False,
+                "duckdb_read_validation_status": "observation_failed",
+                "duckdb_read_validation_dataset_count": 0,
+                "duckdb_read_validation_contract_ready_count": 0,
+                "duckdb_read_validation_ready_dataset_count": 0,
                 "partition_migration_executed": False,
                 "physical_compaction_executed": False,
                 "cache_ttl_refresh_executed": False,
