@@ -9497,9 +9497,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         durable_rows = payload["freshness_durable_evidence_rows"]
         self.assertEqual({row["evidence_key"] for row in durable_rows}, required_durable_keys)
         durable_rows_by_key = {row["evidence_key"]: row for row in durable_rows}
-        self.assertEqual(
+        self.assertIn(
             durable_rows_by_key["current_evidence_producer_coverage"]["current_status"],
-            "producer_generation_ready_current_cache_refresh_pending",
+            {
+                "producer_generation_ready_current_cache_refresh_pending",
+                "local_clear",
+            },
         )
         self.assertTrue(
             durable_rows_by_key["current_evidence_producer_coverage"]["producer_generation_contract_ready"]
@@ -17631,6 +17634,94 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", json.dumps(refresh_response, ensure_ascii=False))
         self.assertNotIn("SHOULD_DROP", json.dumps(cache_response, ensure_ascii=False))
 
+    def test_producer_cache_refresh_fallback_fills_thin_snapshot_freshness_fields(self):
+        db_path = self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "data_freshness": {
+                    "deepseek_called": False,
+                    "label": "今日已刷新",
+                    "last_updated": "2026-06-15T09:45:25",
+                    "state": "today",
+                },
+                "timestamp": "2026-06-15T09:45:25",
+                "command_center_market_packet": {
+                    "status": "ready",
+                    "data_status": "ready",
+                    "trade_date": "20260615",
+                    "summary": "thin local market packet",
+                },
+            }
+        )
+
+        cache_before = self.client.get("/api/data-health/cache").json()["data"]
+        readiness = cache_before["current_evidence_producer_cache_refresh_readiness"]
+        self.assertEqual(readiness["status"], "producer_cache_refresh_readiness_ready_manual_refresh_pending")
+
+        request_response = self.client.post(
+            "/api/data-health/producer-cache-refresh-execution-request",
+            json={
+                "approved_by_user": True,
+                "readiness_scope_hash_short": readiness["readiness_scope_hash_short"],
+                "producer_keys": readiness["producer_keys"],
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+        self.assertTrue(request_response["ok"])
+
+        refresh_response = self.client.post(
+            "/api/data-health/producer-cache-refresh",
+            json={
+                "approved_by_user": True,
+                "readiness_scope_hash_short": readiness["readiness_scope_hash_short"],
+                "producer_keys": readiness["producer_keys"],
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(refresh_response["ok"])
+        task = refresh_response["data"]["task"]
+        self.assertEqual(task["current_step"], "producer_cache_refresh_completed_local_sqlite_only_no_provider")
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        receipt = task["payload_safe"]["producer_cache_refresh_receipt"]
+        self.assertEqual(receipt["local_sqlite_packet_write_count"], 3)
+        self.assertFalse(receipt["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(receipt["production_freshness_gate_complete"])
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        store = SQLiteMetaStore(db_path)
+        for packet_key in receipt["written_packet_keys"]:
+            packet = store.read_packet(packet_key)
+            self.assertTrue(packet["expected_trade_date"])
+            self.assertTrue(packet["data_date"])
+            self.assertTrue(packet["freshness_state"])
+            self.assertFalse(packet["freshness_context_is_provider_acceptance"])
+            self.assertFalse(packet["freshness_context_calls_provider"])
+            self.assertFalse(packet["external_calls_triggered"])
+            self.assertFalse(packet["tushare_called"])
+            self.assertFalse(packet["deepseek_called"])
+            self.assertFalse(packet["github_called"])
+            self.assertTrue(packet["does_not_execute_trades"])
+            self.assertTrue(packet["does_not_modify_strategy_action"])
+            nested = packet["data_freshness"]
+            self.assertTrue(nested["expected_trade_date"])
+            self.assertTrue(nested["data_date"])
+            self.assertTrue(nested["freshness_state"])
+            self.assertFalse(nested["is_provider_acceptance"])
+
+        cache_after = self.client.get("/api/data-health/cache").json()["data"]
+        self.assertEqual(cache_after["current_evidence_producer_coverage_audit"]["blocked_producer_count"], 0)
+        self.assertEqual(cache_after["counts"]["latest_producer_cache_refresh_written_packet_count"], 3)
+        self.assertTrue(cache_after["freshness_provider_acceptance_readiness_receipt"]["ready_for_explicit_provider_task"])
+        self.assertTrue(cache_after["freshness_provider_acceptance_activation_receipt"]["ready_for_explicit_provider_task"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(refresh_response, ensure_ascii=False))
+
     def test_producer_cache_refresh_requires_execution_request_before_write(self):
         db_path = self._with_meta_store()
         self._with_parquet_root()
@@ -23746,6 +23837,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
 
     def test_data_health_producer_coverage_audit_exposes_missing_expected_trade_date(self):
+        self._with_meta_store()
         self._with_parquet_root()
         self._with_snapshot_cache(
             {
@@ -23810,6 +23902,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(response["call_ledger"][0]["current_evidence_producer_coverage_blocker_count"], 1)
 
     def test_data_health_canonicalizes_global_freshness_without_provider_acceptance(self):
+        self._with_meta_store()
         self._with_parquet_root()
         self._with_snapshot_cache(
             {

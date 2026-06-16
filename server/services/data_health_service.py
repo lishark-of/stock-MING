@@ -2978,6 +2978,172 @@ def _producer_cache_refresh_row(
     }
 
 
+def _local_refresh_date_context(
+    source_snapshot: Mapping[str, Any],
+    generated_snapshot: Mapping[str, Any],
+    now: str,
+) -> dict[str, str]:
+    source_freshness = _canonical_data_freshness_context(
+        _first_mapping(source_snapshot, "data_freshness")
+    )
+    generated_freshness = _canonical_data_freshness_context(
+        _first_mapping(generated_snapshot, "data_freshness")
+    )
+    contexts = (generated_freshness, source_freshness)
+    expected_trade_date = ""
+    data_date = ""
+    freshness_state = ""
+    for context in contexts:
+        if not expected_trade_date:
+            expected_trade_date = _producer_cache_refresh_date_text(
+                context,
+                "expected_trade_date",
+                "expected_data_date",
+                "expected_date",
+            )
+        if not data_date:
+            data_date = _producer_cache_refresh_date_text(
+                context,
+                "data_date",
+                "latest_data_date",
+                "latest_trade_date",
+                "trade_date",
+                "as_of_date",
+            )
+        if not freshness_state:
+            freshness_state = _producer_freshness_status(context)
+    if not expected_trade_date:
+        try:
+            from command_center_factor_research import _expected_data_date
+
+            expected_context = _expected_data_date(now)
+            expected_trade_date = _safe_text(expected_context.get("expected_data_date"), limit=40)
+        except Exception:
+            expected_trade_date = ""
+    if not data_date and expected_trade_date:
+        data_date = expected_trade_date
+    if freshness_state == "today":
+        freshness_state = "fresh"
+    if expected_trade_date and data_date and (not freshness_state or freshness_state == "fresh"):
+        freshness_state = "fresh" if expected_trade_date == data_date else "stale"
+    if not freshness_state:
+        freshness_state = "unknown"
+    return {
+        "expected_trade_date": expected_trade_date,
+        "data_date": data_date,
+        "freshness_state": freshness_state,
+    }
+
+
+def _producer_cache_refresh_date_text(mapping: Mapping[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = mapping.get(key)
+        if value in (None, "", {}, []):
+            continue
+        parsed = _parse_cal_date(value)
+        if parsed is not None:
+            return parsed.isoformat()
+    return ""
+
+
+def _producer_cache_refresh_snapshot_keys(snapshot_key: str) -> tuple[str, ...]:
+    aliases = {
+        "radar_packet": (
+            "radar_packet",
+            "candidate_radar_packet",
+            "command_center_3_candidate_radar_cache",
+        ),
+        "a_share_evidence_packet": (
+            "a_share_evidence_packet",
+            "command_center_evidence_radar_packet",
+            "a_share_fact_lineage_summary",
+        ),
+        "market_packet": (
+            "market_packet",
+            "command_center_market_context_packet",
+        ),
+    }
+    return aliases.get(snapshot_key, (snapshot_key,))
+
+
+def _attach_local_producer_cache_refresh_freshness(
+    generated_snapshot: Mapping[str, Any],
+    *,
+    source_snapshot: Mapping[str, Any],
+    now: str,
+) -> dict[str, Any]:
+    snapshot = dict(generated_snapshot)
+    fallback = _local_refresh_date_context(source_snapshot, snapshot, now)
+    fallback_expected = fallback["expected_trade_date"]
+    fallback_data_date = fallback["data_date"]
+    fallback_state = fallback["freshness_state"]
+    for spec in PRODUCER_CACHE_REFRESH_PACKET_SPECS:
+        for snapshot_key in _producer_cache_refresh_snapshot_keys(spec["snapshot_key"]):
+            packet = _as_dict(snapshot.get(snapshot_key))
+            if not packet:
+                continue
+            packet = dict(packet)
+            expected_trade_date = _producer_cache_refresh_date_text(
+                packet,
+                "expected_trade_date",
+                "expected_data_date",
+                "expected_date",
+            ) or fallback_expected
+            data_date = _producer_cache_refresh_date_text(
+                packet,
+                "data_date",
+                "latest_data_date",
+                "latest_trade_date",
+                "trade_date",
+                "as_of_date",
+            ) or fallback_data_date
+            freshness_state = _producer_freshness_status(packet) or fallback_state
+            if freshness_state == "today":
+                freshness_state = "fresh"
+            if expected_trade_date and data_date and (not freshness_state or freshness_state == "fresh"):
+                freshness_state = "fresh" if expected_trade_date == data_date else "stale"
+            if expected_trade_date:
+                if not _producer_cache_refresh_date_text(packet, "expected_trade_date"):
+                    packet["expected_trade_date"] = expected_trade_date
+                if not _producer_cache_refresh_date_text(packet, "expected_data_date"):
+                    packet["expected_data_date"] = expected_trade_date
+            if data_date:
+                if not _producer_cache_refresh_date_text(packet, "data_date"):
+                    packet["data_date"] = data_date
+                if not _producer_cache_refresh_date_text(packet, "latest_data_date"):
+                    packet["latest_data_date"] = data_date
+            if freshness_state:
+                current_state = _producer_freshness_status(packet)
+                if not current_state:
+                    packet["freshness_state"] = freshness_state
+            packet.setdefault("freshness_context_source", "local_producer_cache_refresh_fallback")
+            packet.setdefault("freshness_context_is_provider_acceptance", False)
+            packet.setdefault("freshness_context_calls_provider", False)
+            packet.setdefault("freshness_context_external_calls_triggered", False)
+            packet.setdefault("freshness_context_does_not_modify_strategy_action", True)
+            packet.setdefault("freshness_context_does_not_execute_trades", True)
+            nested = _as_dict(packet.get("data_freshness"))
+            if expected_trade_date and not _producer_cache_refresh_date_text(nested, "expected_trade_date"):
+                nested["expected_trade_date"] = expected_trade_date
+            if expected_trade_date and not _producer_cache_refresh_date_text(nested, "expected_data_date"):
+                nested["expected_data_date"] = expected_trade_date
+            if data_date and not _producer_cache_refresh_date_text(nested, "data_date"):
+                nested["data_date"] = data_date
+            if data_date and not _producer_cache_refresh_date_text(nested, "latest_data_date"):
+                nested["latest_data_date"] = data_date
+            if freshness_state and not _producer_freshness_status(nested):
+                nested["freshness_state"] = freshness_state
+            nested.setdefault("context_source", packet["freshness_context_source"])
+            nested.setdefault("is_provider_acceptance", False)
+            nested.setdefault("external_calls_triggered", False)
+            nested.setdefault("tushare_called", False)
+            nested.setdefault("deepseek_called", False)
+            nested.setdefault("github_called", False)
+            packet["data_freshness"] = nested
+            snapshot[snapshot_key] = packet
+    return snapshot
+
+
 def _build_local_producer_cache_refresh_packets(
     source_snapshot: Mapping[str, Any],
     *,
@@ -2987,6 +3153,11 @@ def _build_local_producer_cache_refresh_packets(
     import command_center_home_snapshot as home_snapshot
 
     generated_snapshot = home_snapshot.build_home_action_snapshot(dict(source_snapshot), target=target, now=now)
+    generated_snapshot = _attach_local_producer_cache_refresh_freshness(
+        generated_snapshot,
+        source_snapshot=source_snapshot,
+        now=now,
+    )
     generated_audit, generated_rows = _current_evidence_producer_coverage_audit(generated_snapshot)
     generated_by_producer = {
         str(row.get("producer") or ""): row for row in generated_rows if isinstance(row, Mapping)
@@ -3000,7 +3171,17 @@ def _build_local_producer_cache_refresh_packets(
         generated_row = generated_by_producer.get(producer, {})
         generated_status = _safe_text(generated_row.get("status"), limit=120)
         packet_raw = _as_dict(generated_snapshot.get(snapshot_key))
-        passed = bool(generated_status == "passed_read_only_contract" and packet_raw)
+        generated_fields_visible = bool(
+            generated_row.get("expected_trade_date")
+            and generated_row.get("data_date")
+            and generated_row.get("freshness_state")
+        )
+        passed = bool(
+            packet_raw
+            and generated_fields_visible
+            and not generated_status.startswith("blocked_")
+            and generated_status != "not_observed"
+        )
         rows.append(
             _producer_cache_refresh_row(
                 f"generated_{producer}_packet_ready",

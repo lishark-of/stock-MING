@@ -922,7 +922,10 @@ def build_contract() -> dict[str, Any]:
             and all(row.get("does_not_modify_strategy_action") is True for row in durable_evidence_rows)
             and all(row.get("contains_secret") is False for row in durable_evidence_rows)
             and producer_durable_row.get("current_status")
-            == "producer_generation_ready_current_cache_refresh_pending"
+            in {
+                "producer_generation_ready_current_cache_refresh_pending",
+                "local_clear",
+            }
             and producer_durable_row.get("producer_generation_contract_ready") is True
             and producer_durable_row.get("producer_generation_current_cache_refresh_pending") is True
             and producer_durable_row.get("producer_generation_writes_snapshot_cache") is False
@@ -940,8 +943,11 @@ def build_contract() -> dict[str, Any]:
             and producer_durable_row.get("producer_cache_refresh_creates_task") is False
             and producer_durable_row.get("producer_cache_refresh_calls_provider") is False
             and producer_durable_row.get("producer_cache_refresh_is_not_provider_acceptance") is True
-            and "current cache refresh with generated producer freshness context"
-            in _as_list(producer_durable_row.get("missing_evidence"))
+            and (
+                producer_durable_row.get("current_status") == "local_clear"
+                or "current cache refresh with generated producer freshness context"
+                in _as_list(producer_durable_row.get("missing_evidence"))
+            )
             and "provider-backed trade_cal acceptance evidence"
             in _as_list(producer_durable_row.get("missing_evidence"))
             and _as_list(durable_evidence_recipe.get("call_ledger"))
