@@ -2511,6 +2511,8 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         "runtime_qa_execution_done": runtime_execution_done,
         "local_fallback_round_trip_verified": execution_map.get("local_fallback_round_trip_verified") is True,
         "task_log_persistence_verified": execution_map.get("task_log_persistence_verified") is True,
+        "local_task_control_metadata_verified": execution_map.get("local_task_control_metadata_verified") is True,
+        "cross_process_task_control_verified": False,
         "append_only_worker_log_verified": execution_map.get("append_only_worker_log_verified") is True,
         "scheduler_default_off_runtime_verified": scheduler_default_off_done,
         "provider_model_no_autoschedule_boundary_verified": provider_boundary_done,
@@ -4225,6 +4227,10 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 )
                 is True,
                 "task_log_persistence_verified": direct_evidence.get("task_log_persistence_verified")
+                is True,
+                "local_task_control_metadata_verified": direct_evidence.get(
+                    "local_task_control_metadata_verified"
+                )
                 is True,
                 "append_only_worker_log_verified": direct_evidence.get("append_only_worker_log_verified")
                 is True,

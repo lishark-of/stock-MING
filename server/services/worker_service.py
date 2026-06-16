@@ -2836,6 +2836,61 @@ def _append_worker_runtime_qa_event(event: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _local_task_control_metadata_evidence(task_map: dict[str, Any], readback_map: dict[str, Any]) -> dict[str, Any]:
+    retry_policy = task_map.get("retry_policy") if isinstance(task_map.get("retry_policy"), dict) else {}
+    readback_retry = readback_map.get("retry_policy") if isinstance(readback_map.get("retry_policy"), dict) else {}
+    lock_policy = task_map.get("lock_policy") if isinstance(task_map.get("lock_policy"), dict) else {}
+    readback_lock = readback_map.get("lock_policy") if isinstance(readback_map.get("lock_policy"), dict) else {}
+    dedupe_policy = task_map.get("dedupe_policy") if isinstance(task_map.get("dedupe_policy"), dict) else {}
+    readback_dedupe = readback_map.get("dedupe_policy") if isinstance(readback_map.get("dedupe_policy"), dict) else {}
+    catalog = task_service.build_task_catalog()
+    supports_cancel = bool(catalog.get("policy", {}).get("supports_local_task_cancel"))
+    retry_visible = bool(
+        retry_policy.get("manual_retry_allowed") is True
+        and retry_policy.get("auto_retry_enabled") is False
+        and retry_policy.get("cache_api_can_retry") is False
+        and readback_retry.get("manual_retry_allowed") is True
+        and readback_retry.get("auto_retry_enabled") is False
+    )
+    lock_visible = bool(
+        lock_policy.get("conflict_detection_enabled") is True
+        and lock_policy.get("cache_api_can_acquire_lock") is False
+        and readback_lock.get("conflict_detection_enabled") is True
+        and readback_lock.get("cache_api_can_acquire_lock") is False
+    )
+    dedupe_visible = bool(
+        dedupe_policy.get("duplicate_detection_enabled") is True
+        and dedupe_policy.get("cache_api_can_dedupe") is False
+        and readback_dedupe.get("duplicate_detection_enabled") is True
+        and readback_dedupe.get("cache_api_can_dedupe") is False
+    )
+    verified = bool(retry_visible and supports_cancel and lock_visible and dedupe_visible)
+    return {
+        "schema_version": "worker_runtime_local_task_control_metadata_evidence.v1",
+        "status": "local_task_control_metadata_verified" if verified else "local_task_control_metadata_blocked",
+        "scope": "local_task_store_control_metadata_no_celery_no_redis",
+        "retry_metadata_verified": retry_visible,
+        "cancel_metadata_verified": supports_cancel,
+        "lock_metadata_verified": lock_visible,
+        "dedupe_metadata_verified": dedupe_visible,
+        "local_task_control_metadata_verified": verified,
+        "cross_process_task_control_verified": False,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "task_dispatched": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "evidence_boundary": "local task control metadata is not cross-process Celery/Redis runtime proof",
+    }
+
+
 def _worker_runtime_qa_execution_row(
     criterion: str,
     *,
@@ -2974,6 +3029,10 @@ def _worker_runtime_qa_execution_receipt(
         and readback_map.get("storage_source") in {"memory", "sqlite_meta", "memory_and_sqlite"}
         and task_map.get("external_calls_triggered") is not True
     )
+    task_control_metadata = _local_task_control_metadata_evidence(task_map, readback_map)
+    local_task_control_metadata_verified = bool(
+        task_control_metadata.get("local_task_control_metadata_verified") is True
+    )
     if not explicit_execution:
         status = "worker_runtime_qa_execution_missing"
     elif not approved:
@@ -3051,6 +3110,20 @@ def _worker_runtime_qa_execution_receipt(
             status="passed" if task_log_round_trip else "blocked_task_log_round_trip",
             evidence=f"task_log_count={len(task_map.get('task_log') or [])}; readback_task_log_count={len(readback_map.get('task_log') or [])}",
             next_action="Keep task logs redacted and structured before any worker-process promotion.",
+        ),
+        _worker_runtime_qa_execution_row(
+            "local_task_control_metadata_verified",
+            passed=local_task_control_metadata_verified,
+            status="passed_local_metadata"
+            if local_task_control_metadata_verified
+            else "blocked_local_task_control_metadata",
+            evidence=(
+                f"retry={task_control_metadata['retry_metadata_verified']}; "
+                f"cancel={task_control_metadata['cancel_metadata_verified']}; "
+                f"lock={task_control_metadata['lock_metadata_verified']}; "
+                f"dedupe={task_control_metadata['dedupe_metadata_verified']}"
+            ),
+            next_action="Use this as local task-control evidence only; prove cross-process behavior later with Celery/Redis runtime QA.",
         ),
         _worker_runtime_qa_execution_row(
             "append_only_worker_log_event_verified",
@@ -3138,6 +3211,9 @@ def _worker_runtime_qa_execution_receipt(
         "local_task_round_trip_verified": local_round_trip,
         "task_log_round_trip_verified": task_log_round_trip,
         "task_log_persistence_verified": task_log_round_trip,
+        "local_task_control_metadata_verified": local_task_control_metadata_verified,
+        "cross_process_task_control_verified": False,
+        "task_control_metadata_evidence": task_control_metadata,
         "append_only_worker_log_verified": append_only_log_verified,
         "append_only_worker_log_event_result": append_map,
         "scheduler_default_off_runtime_verified": True,
@@ -5122,6 +5198,8 @@ def run_worker_runtime_qa_execution(payload: Any = None) -> dict[str, Any]:
         "append_only_worker_log_verified": receipt["append_only_worker_log_verified"],
         "task_log_persistence_verified": receipt["task_log_persistence_verified"],
         "local_fallback_round_trip_verified": receipt["local_fallback_round_trip_verified"],
+        "local_task_control_metadata_verified": receipt["local_task_control_metadata_verified"],
+        "cross_process_task_control_verified": False,
         "production_worker_complete": False,
         "activation_ready": False,
         "worker_started": False,
