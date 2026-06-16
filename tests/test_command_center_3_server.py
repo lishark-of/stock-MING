@@ -950,8 +950,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(observed_stage_rows["LTG-09"]["pending_stage_count"], 8 - ltg09_direct_count)
         self.assertEqual(observed_stage_rows["LTG-09"]["local_evidence_stage_count"], 8)
         if ltg09_direct_count:
-            self.assertEqual(observed_stage_rows["LTG-09"]["direct_evidence_stage_keys"], ["release_binary_artifact_qa"])
+            self.assertIn("release_binary_artifact_qa", observed_stage_rows["LTG-09"]["direct_evidence_stage_keys"])
             self.assertTrue(observed_stage_rows["LTG-09"]["release_binary_artifact_qa_done"])
+            if ltg09_direct_count > 1:
+                self.assertIn("tauri_build_repeatability", observed_stage_rows["LTG-09"]["direct_evidence_stage_keys"])
+                self.assertTrue(observed_stage_rows["LTG-09"]["tauri_build_repeatability_done"])
         self.assertFalse(observed_stage_rows["LTG-09"]["production_package_complete"])
         self.assertFalse(observed_stage_rows["LTG-09"]["tauri_build_executed"])
         self.assertFalse(observed_stage_rows["LTG-09"]["packaged_runtime_qa_done"])
@@ -1212,10 +1215,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             TAURI_LTG09_OBSERVED_STATUSES,
         )
         if ltg09_goal_direct_count:
-            self.assertEqual(
-                migration_goals["LTG-09"]["observed_stage_scope_direct_evidence_keys"],
-                ["release_binary_artifact_qa"],
-            )
+            self.assertIn("release_binary_artifact_qa", migration_goals["LTG-09"]["observed_stage_scope_direct_evidence_keys"])
+            if ltg09_goal_direct_count > 1:
+                self.assertIn(
+                    "tauri_build_repeatability",
+                    migration_goals["LTG-09"]["observed_stage_scope_direct_evidence_keys"],
+                )
         self.assertFalse(migration_goals["LTG-09"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-10"]["stage_scope_manifest"], "streamlit_retirement_stage_scope_manifest")
         self.assertIn("retirement stage-scope manifest", migration_goals["LTG-10"]["current_state"])
@@ -20780,8 +20785,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(observed_stage_rows["LTG-09"]["pending_stage_count"], 8 - ltg09_direct_count)
         self.assertEqual(observed_stage_rows["LTG-09"]["local_evidence_stage_count"], 8)
         if ltg09_direct_count:
-            self.assertEqual(observed_stage_rows["LTG-09"]["direct_evidence_stage_keys"], ["release_binary_artifact_qa"])
+            self.assertIn("release_binary_artifact_qa", observed_stage_rows["LTG-09"]["direct_evidence_stage_keys"])
             self.assertTrue(observed_stage_rows["LTG-09"]["release_binary_artifact_qa_done"])
+            if ltg09_direct_count > 1:
+                self.assertIn("tauri_build_repeatability", observed_stage_rows["LTG-09"]["direct_evidence_stage_keys"])
+                self.assertTrue(observed_stage_rows["LTG-09"]["tauri_build_repeatability_done"])
         self.assertFalse(observed_stage_rows["LTG-09"]["production_package_complete"])
         self.assertFalse(observed_stage_rows["LTG-09"]["tauri_build_executed"])
         self.assertFalse(observed_stage_rows["LTG-09"]["packaged_runtime_qa_done"])
@@ -20994,10 +21002,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(migration_goals["LTG-09"]["observed_stage_scope_pending_count"], 8 - ltg09_goal_direct_count)
         if ltg09_goal_direct_count:
-            self.assertEqual(
-                migration_goals["LTG-09"]["observed_stage_scope_direct_evidence_keys"],
-                ["release_binary_artifact_qa"],
-            )
+            self.assertIn("release_binary_artifact_qa", migration_goals["LTG-09"]["observed_stage_scope_direct_evidence_keys"])
+            if ltg09_goal_direct_count > 1:
+                self.assertIn(
+                    "tauri_build_repeatability",
+                    migration_goals["LTG-09"]["observed_stage_scope_direct_evidence_keys"],
+                )
         self.assertFalse(migration_goals["LTG-09"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-10"]["stage_scope_manifest"], "streamlit_retirement_stage_scope_manifest")
         self.assertIn("retirement stage-scope manifest", migration_goals["LTG-10"]["current_state"])
@@ -21537,9 +21547,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(review["explicit_review_task_done"])
         self.assertTrue(review["local_release_binary_artifact_review_ready"])
         self.assertEqual(review["direct_evidence_stage_key"], "release_binary_artifact_qa")
+        self.assertEqual(review["direct_evidence_stage_keys"], ["release_binary_artifact_qa"])
         self.assertTrue(review["release_binary_exists"])
         self.assertTrue(review["release_binary_executable"])
         self.assertGreater(review["release_binary_size_bytes"], 0)
+        self.assertFalse(review["explicit_tauri_build_completed_before_review"])
+        self.assertFalse(review["tauri_build_repeatability_done"])
         self.assertFalse(review["release_binary_is_completion"])
         self.assertFalse(review["app_bundle_dmg_qa_done"])
         self.assertFalse(review["packaged_runtime_validated"])
@@ -21592,6 +21605,88 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg09["github_called"])
         self.assertTrue(ltg09["does_not_execute_trades"])
         self.assertTrue(ltg09["does_not_modify_strategy_action"])
+        self.assertFalse(ltg09["contains_secret"])
+        self.assertFalse(ltg09["can_close_from_observed_row"])
+
+    def test_tauri_package_artifact_review_records_explicit_build_repeatability_without_completion(self):
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        temp_dir = tempfile.TemporaryDirectory()
+        release_binary = Path(temp_dir.name) / "stock_ming_command_center"
+        release_binary.write_bytes(b"\xcf\xfa\xed\xfe repeatable local tauri build fixture")
+        release_binary.chmod(0o755)
+        original_release_binary = desktop_service.TAURI_RELEASE_BINARY
+        desktop_service.TAURI_RELEASE_BINARY = release_binary
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, desktop_service, "TAURI_RELEASE_BINARY", original_release_binary)
+
+        response = self.client.post(
+            "/api/desktop/tauri-package-artifact-review",
+            json={
+                "operator": "local-build-review",
+                "explicit_tauri_build_completed": True,
+                "build_command": "npm run tauri build",
+                "authorization": "Bearer SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        task = response["data"]["task"]
+        self.assertEqual(task["status"], "success")
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+
+        persisted = SQLiteMetaStore(desktop_service.SQLITE_META_PATH).read_packet(
+            desktop_service.TAURI_PACKAGE_ARTIFACT_REVIEW_PACKET_KEY
+        )
+        self.assertEqual(persisted["status"], "tauri_package_artifact_review_ready_local_binary")
+        review = persisted["tauri_package_artifact_review_contract"]
+        self.assertEqual(
+            review["direct_evidence_stage_keys"],
+            ["release_binary_artifact_qa", "tauri_build_repeatability"],
+        )
+        self.assertTrue(review["explicit_tauri_build_completed_before_review"])
+        self.assertEqual(review["build_command_reviewed_safe"], "npm run tauri build")
+        self.assertTrue(review["tauri_build_repeatability_done"])
+        self.assertFalse(review["tauri_build_repeatability_is_completion"])
+        self.assertFalse(review["production_package_complete"])
+        self.assertFalse(review["packaged_runtime_validated"])
+        self.assertFalse(review["tauri_build_executed_by_review"])
+        self.assertFalse(review["npm_or_cargo_executed_by_review"])
+        self.assertFalse(review["packaged_app_opened_by_review"])
+        self.assertFalse(review["external_calls_triggered"])
+        self.assertFalse(review["tushare_called"])
+        self.assertFalse(review["deepseek_called"])
+        self.assertFalse(review["github_called"])
+        self.assertFalse(review["contains_secret"])
+
+        migration = migration_status_service.build_migration_status()
+        ltg09 = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}["LTG-09"]
+        self.assertEqual(ltg09["direct_evidence_stage_count"], 2)
+        self.assertEqual(
+            ltg09["direct_evidence_stage_keys"],
+            ["release_binary_artifact_qa", "tauri_build_repeatability"],
+        )
+        self.assertEqual(ltg09["pending_stage_count"], 6)
+        self.assertEqual(ltg09["production_blocker_count"], 6)
+        self.assertTrue(ltg09["release_binary_artifact_qa_done"])
+        self.assertTrue(ltg09["tauri_build_repeatability_done"])
+        self.assertEqual(ltg09["tauri_build_command_reviewed_safe"], "npm run tauri build")
+        self.assertFalse(ltg09["production_package_complete"])
+        self.assertFalse(ltg09["packaged_runtime_qa_done"])
+        self.assertFalse(ltg09["app_bundle_detected"])
+        self.assertFalse(ltg09["dmg_distribution_detected"])
+        self.assertFalse(ltg09["signing_notarization_done"])
+        self.assertFalse(ltg09["external_calls_triggered"])
+        self.assertFalse(ltg09["tushare_called"])
+        self.assertFalse(ltg09["deepseek_called"])
+        self.assertFalse(ltg09["github_called"])
+        self.assertTrue(ltg09["does_not_execute_trades"])
         self.assertFalse(ltg09["contains_secret"])
         self.assertFalse(ltg09["can_close_from_observed_row"])
 

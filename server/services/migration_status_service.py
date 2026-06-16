@@ -2717,7 +2717,17 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         and review.get("does_not_modify_strategy_action") is True
         and review.get("contains_secret") is False
     )
+    build_repeatability_ready = bool(
+        artifact_review_ready
+        and review.get("explicit_tauri_build_completed_before_review") is True
+        and review.get("tauri_build_repeatability_done") is True
+        and review.get("tauri_build_repeatability_is_completion") is False
+        and review.get("build_command_reviewed_safe") in {"npm run tauri build", "cd desktop && npm run tauri build"}
+        and review.get("release_binary_modified_at")
+    )
     direct_stage_keys = ["release_binary_artifact_qa"] if artifact_review_ready else []
+    if build_repeatability_ready:
+        direct_stage_keys.append("tauri_build_repeatability")
     return {
         "schema_version": "migration_tauri_package_direct_evidence_summary.v1",
         "source_packet_key": "command_center_3_tauri_package_artifact_review_packet",
@@ -2728,8 +2738,11 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         "direct_evidence_stage_keys": direct_stage_keys,
         "direct_evidence_stage_count": len(direct_stage_keys),
         "release_binary_artifact_qa_done": artifact_review_ready,
+        "tauri_build_repeatability_done": build_repeatability_ready,
+        "build_command_reviewed_safe": review.get("build_command_reviewed_safe") if build_repeatability_ready else "",
         "release_binary_path": review.get("release_binary_path") if artifact_review_ready else "",
         "release_binary_size_bytes": review.get("release_binary_size_bytes") if artifact_review_ready else 0,
+        "release_binary_modified_at": review.get("release_binary_modified_at") if artifact_review_ready else "",
         "app_bundle_detected": False,
         "dmg_distribution_detected": False,
         "packaged_runtime_qa_done": False,
@@ -4949,8 +4962,11 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     "release_binary_artifact_qa_done"
                 )
                 is True,
+                "tauri_build_repeatability_done": direct_evidence.get("tauri_build_repeatability_done") is True,
+                "tauri_build_command_reviewed_safe": direct_evidence.get("build_command_reviewed_safe") or "",
                 "release_binary_artifact_path": direct_evidence.get("release_binary_path") or "",
                 "release_binary_artifact_size_bytes": direct_evidence.get("release_binary_size_bytes") or 0,
+                "release_binary_artifact_modified_at": direct_evidence.get("release_binary_modified_at") or "",
                 "tauri_runtime_started_by_contract": False,
                 "packaged_app_opened_by_contract": False,
                 "fastapi_started_by_contract": False,

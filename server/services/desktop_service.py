@@ -1736,6 +1736,8 @@ def _tauri_package_artifact_review_call_ledger(review: dict[str, Any], reviewed_
                 "review_scope": "local_tauri_release_binary_artifact",
                 "binary_path": review.get("release_binary_path"),
                 "release_binary_review_ready": review.get("local_release_binary_artifact_review_ready"),
+                "tauri_build_repeatability_done": review.get("tauri_build_repeatability_done"),
+                "build_command_reviewed_safe": review.get("build_command_reviewed_safe"),
                 "external_sources_allowed": False,
                 "opens_packaged_app": False,
                 "runs_build": False,
@@ -1764,6 +1766,8 @@ def _tauri_package_artifact_review_contract(
     reviewed_at: str | None = None,
     task_id: str = "",
     explicit_review: bool = False,
+    explicit_tauri_build_completed: bool = False,
+    build_command_reviewed_safe: str = "",
 ) -> dict[str, Any]:
     release_binary_ready = bool(
         tauri_build_artifact.get("schema_version") == "tauri_build_artifact_detection.v1"
@@ -1784,6 +1788,11 @@ def _tauri_package_artifact_review_contract(
         and tauri_build_artifact.get("contains_secret") is False
     )
     local_ready = bool(explicit_review and release_binary_ready and boundary_ready)
+    accepted_build_command = build_command_reviewed_safe in {
+        "npm run tauri build",
+        "cd desktop && npm run tauri build",
+    }
+    build_repeatability_ready = bool(local_ready and explicit_tauri_build_completed and accepted_build_command)
 
     def _row(criterion: str, status: str, passed: bool, evidence: str, *, blocks_review: bool = True) -> dict[str, Any]:
         return {
@@ -1828,6 +1837,18 @@ def _tauri_package_artifact_review_contract(
             "Review reads an existing ignored artifact only; it does not run npm, cargo, or Tauri.",
         ),
         _row(
+            "explicit_tauri_build_repeatability_review",
+            "passed_explicit_build_review" if build_repeatability_ready else "pending_explicit_build_review",
+            build_repeatability_ready,
+            (
+                f"explicit_tauri_build_completed={explicit_tauri_build_completed}; "
+                f"build_command_reviewed={build_command_reviewed_safe or 'missing'}; "
+                f"binary_modified_at={tauri_build_artifact.get('binary_modified_at')}; "
+                "review records the result of a separately executed explicit local Tauri build."
+            ),
+            blocks_review=False,
+        ),
+        _row(
             "app_bundle_and_dmg_still_pending",
             "pending_app_bundle_dmg",
             False,
@@ -1863,6 +1884,9 @@ def _tauri_package_artifact_review_contract(
         ),
     ]
     blocking_rows = [row for row in rows if row["blocks_review"]]
+    direct_evidence_stage_keys = ["release_binary_artifact_qa"] if local_ready else []
+    if build_repeatability_ready:
+        direct_evidence_stage_keys.append("tauri_build_repeatability")
     return {
         "schema_version": "tauri_package_artifact_review.v1",
         "status": "tauri_package_artifact_review_ready_local_binary"
@@ -1875,12 +1899,18 @@ def _tauri_package_artifact_review_contract(
         "explicit_review_task_done": explicit_review,
         "local_release_binary_artifact_review_ready": local_ready,
         "direct_evidence_stage_key": "release_binary_artifact_qa" if local_ready else "",
+        "direct_evidence_stage_keys": direct_evidence_stage_keys,
         "release_binary_path": tauri_build_artifact.get("binary_path"),
         "release_binary_exists": tauri_build_artifact.get("binary_exists") is True,
         "release_binary_size_bytes": tauri_build_artifact.get("binary_size_bytes"),
+        "release_binary_modified_at": tauri_build_artifact.get("binary_modified_at"),
         "release_binary_executable": tauri_build_artifact.get("binary_executable") is True,
         "release_binary_kind": tauri_build_artifact.get("binary_kind"),
         "release_binary_is_completion": False,
+        "explicit_tauri_build_completed_before_review": explicit_tauri_build_completed,
+        "build_command_reviewed_safe": build_command_reviewed_safe if accepted_build_command else "",
+        "tauri_build_repeatability_done": build_repeatability_ready,
+        "tauri_build_repeatability_is_completion": False,
         "app_bundle_detected": tauri_build_artifact.get("packaged_app_bundle_detected") is True,
         "dmg_distribution_detected": tauri_build_artifact.get("distribution_dmg_detected") is True,
         "app_bundle_dmg_qa_done": False,
@@ -2305,6 +2335,13 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
 
 
 def run_tauri_package_artifact_review_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, dict) else {}
+    explicit_tauri_build_completed = payload_map.get("explicit_tauri_build_completed") is True
+    requested_command = str(payload_map.get("build_command") or "").strip()
+    build_command_reviewed_safe = requested_command if requested_command in {
+        "npm run tauri build",
+        "cd desktop && npm run tauri build",
+    } else ("npm run tauri build" if explicit_tauri_build_completed else "")
     task = create_task_record(
         TAURI_PACKAGE_ARTIFACT_REVIEW_TASK_TYPE,
         output_packet_key=PACKET_KEY,
@@ -2330,6 +2367,8 @@ def run_tauri_package_artifact_review_task(payload: Any = None) -> dict[str, Any
         tauri_build_artifact=packet.get("tauri_build_artifact", {}),
         packaged_runtime_qa_contract=packet.get("packaged_runtime_qa_contract", {}),
         explicit_review=True,
+        explicit_tauri_build_completed=explicit_tauri_build_completed,
+        build_command_reviewed_safe=build_command_reviewed_safe,
         task_id=str(task["task_id"]),
         reviewed_at=reviewed_at,
     )
