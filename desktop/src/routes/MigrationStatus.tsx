@@ -199,6 +199,27 @@ export default function MigrationStatus() {
       creates_task_from_lookup: step.creates_task_from_lookup
     }));
   });
+  const ltgNextAcceptancePreviewRows = ltgNextAcceptanceActionRows.flatMap((row) => {
+    const previews = (row.next_local_step_preview_rows as Array<Record<string, unknown>> | undefined) ?? [];
+    return previews.map((preview) => ({
+      queue_id: row.queue_id,
+      priority: row.priority,
+      next_local_step: preview.next_local_step,
+      step_kind: preview.step_kind,
+      ready_for_clean_local_receipt: preview.ready_for_clean_local_receipt,
+      disabled_reason: preview.disabled_reason,
+      safe_payload_summary: preview.safe_payload_summary,
+      required_prior_phase_key: preview.required_prior_phase_key,
+      required_prior_material: preview.required_prior_material,
+      required_prior_receipt_visible: preview.required_prior_receipt_visible,
+      required_prior_material_visible: preview.required_prior_material_visible,
+      manual_scope_hash_required: preview.manual_scope_hash_required,
+      would_create_provider_task: preview.would_create_provider_task,
+      would_start_worker: preview.would_start_worker,
+      would_call_model: preview.would_call_model,
+      external_calls_triggered: preview.external_calls_triggered
+    }));
+  });
   const missingLocalReceiptSteps = ltgNextAcceptanceActionRows.reduce(
     (total, row) => total + Number(row.missing_local_receipt_step_count ?? 0),
     0
@@ -326,12 +347,15 @@ export default function MigrationStatus() {
       <DataLineageTable rows={ltgAcceptanceRunwayRows} />
       <h3>LTG next acceptance action queue</h3>
       <p className="risk-note">这里集中显示 P1/P2/P3 的下一步显式验收路径：只读展示允许的 POST 路由、未来 provider/worker 证据和禁止事项；GET cache 和页面渲染不会创建任务或调用外部服务。</p>
+      <p className="risk-note">按钮会先看 `next_local_step_preview_rows`：如果缺前置本地回执、scope hash、review hash 或执行请求 task id，就只展示缺口并禁用按钮，避免生成已知 blocked 的回执。</p>
       <div className="actions">
         {ltgNextAcceptanceActionRows.map((row) => {
           const nextLocalStep = String(row.next_local_step ?? "");
-          const disabled = !nextLocalStep.startsWith("POST /api/");
+          const nextLocalStepReady = row.next_local_step_ready_for_clean_receipt === true;
+          const disabled = !nextLocalStep.startsWith("POST /api/") || !nextLocalStepReady;
           return (
             <button
+              title={disabled ? String(row.next_local_step_disabled_reason ?? "local receipt prerequisite missing") : ""}
               disabled={disabled}
               key={String(row.queue_id ?? row.action_label)}
               onClick={() => launchLtgNextAction(row)}
@@ -351,6 +375,11 @@ export default function MigrationStatus() {
           { label: "missing local receipts", value: missingLocalReceiptSteps, tone: missingLocalReceiptSteps ? "warn" : "good" },
           { label: "local step rows", value: ltgNextAcceptanceLocalStepRows.length },
           {
+            label: "ready local buttons",
+            value: ltgNextAcceptanceActionRows.filter((row) => row.next_local_step_ready_for_clean_receipt === true).length,
+            tone: ltgNextAcceptanceActionRows.some((row) => row.next_local_step_ready_for_clean_receipt === true) ? "good" : "warn"
+          },
+          {
             label: "lookup creates task",
             value: ltgNextAcceptanceActionRows.some((row) => row.local_receipt_lookup_creates_task === true),
             tone: ltgNextAcceptanceActionRows.some((row) => row.local_receipt_lookup_creates_task === true) ? "bad" : "good"
@@ -363,6 +392,7 @@ export default function MigrationStatus() {
         ]}
       />
       <DataLineageTable rows={ltgNextAcceptanceReceiptRows} />
+      <DataLineageTable rows={ltgNextAcceptancePreviewRows} />
       <DataLineageTable rows={ltgNextAcceptanceLocalStepRows} />
       <DataLineageTable rows={ltgNextAcceptanceActionRows} />
       <DataLineageTable rows={longTermGoalRows} />

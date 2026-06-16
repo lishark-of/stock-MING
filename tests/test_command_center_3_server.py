@@ -327,6 +327,35 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 for step in row["local_step_rows"]
             )
         )
+        self.assertTrue(
+            all(row["next_local_step_preview_row_count"] == 1 for row in migration["ltg_next_acceptance_action_rows"])
+        )
+        self.assertTrue(action_rows["p1_trade_cal_provider_acceptance"]["next_local_step_ready_for_clean_receipt"])
+        p1_preview = action_rows["p1_trade_cal_provider_acceptance"]["next_local_step_preview_rows"][0]
+        self.assertEqual(p1_preview["step_kind"], "dry_run_scope_ticket")
+        self.assertTrue(p1_preview["ready_for_clean_local_receipt"])
+        self.assertEqual(p1_preview["disabled_reason"], "")
+        p2_preview = action_rows["p2_tushare_target_sample_acceptance"]["next_local_step_preview_rows"][0]
+        self.assertFalse(action_rows["p2_tushare_target_sample_acceptance"]["next_local_step_ready_for_clean_receipt"])
+        self.assertEqual(
+            action_rows["p2_tushare_target_sample_acceptance"]["next_local_step_disabled_reason"],
+            "manual_scope_hash_required_before_clean_local_receipt",
+        )
+        self.assertTrue(p2_preview["manual_scope_hash_required"])
+        self.assertEqual(p2_preview["required_prior_material"], "execution_recipe_scope_hash")
+        self.assertTrue(
+            all(
+                preview["external_calls_triggered"] is False
+                and preview["tushare_called"] is False
+                and preview["deepseek_called"] is False
+                and preview["github_called"] is False
+                and preview["does_not_execute_trades"] is True
+                and preview["does_not_modify_strategy_action"] is True
+                and preview["contains_secret"] is False
+                for row in migration["ltg_next_acceptance_action_rows"]
+                for preview in row["next_local_step_preview_rows"]
+            )
+        )
         self.assertTrue(all(row["local_receipt_lookup_creates_task"] is False for row in migration["ltg_next_acceptance_action_rows"]))
         self.assertTrue(all(row["local_receipt_lookup_calls_provider"] is False for row in migration["ltg_next_acceptance_action_rows"]))
         self.assertTrue(all(row["local_receipt_status"] for row in migration["ltg_next_acceptance_action_rows"]))

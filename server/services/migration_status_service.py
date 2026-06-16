@@ -642,6 +642,162 @@ def _build_ltg_next_action_local_step_rows(
     return step_rows
 
 
+def _local_step_row_by_phase(local_step_rows: list[dict[str, Any]], phase_key: str) -> dict[str, Any]:
+    return next((row for row in local_step_rows if row.get("phase_key") == phase_key), {})
+
+
+def _build_ltg_next_action_submission_preview_rows(
+    next_local_step: str,
+    local_step_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    route_specs: dict[str, dict[str, Any]] = {
+        "POST /api/data-health/trade-cal-provider-acceptance-dry-run": {
+            "step_kind": "dry_run_scope_ticket",
+            "safe_payload_summary": "approved_by_user, apis=trade_cal, exchange=SSE/SZSE, rolling_730_day_window",
+            "expected_local_receipt": "trade_cal_provider_acceptance_dry_run_receipt",
+            "required_prior_phase_key": "",
+            "required_prior_material": "",
+        },
+        "POST /api/data-health/trade-cal-provider-acceptance-execution-request": {
+            "step_kind": "scope_bound_execution_request",
+            "safe_payload_summary": "approved_by_user plus latest trade_cal dry-run scope hash",
+            "expected_local_receipt": "trade_cal_provider_acceptance_execution_request_receipt",
+            "required_prior_phase_key": "trade_cal_dry_run_scope_ticket",
+            "required_prior_material": "receipt_scope_hash_short",
+        },
+        "POST /api/data-health/trade-cal-provider-acceptance-promotion-review": {
+            "step_kind": "local_promotion_review",
+            "safe_payload_summary": "approved_by_user plus latest execution-request task id",
+            "expected_local_receipt": "trade_cal_provider_acceptance_promotion_review_receipt",
+            "required_prior_phase_key": "trade_cal_execution_request_ticket",
+            "required_prior_material": "latest_task_id",
+        },
+        "POST /api/tasks/tushare-provider-target-sample-execution-request": {
+            "step_kind": "manual_scope_bound_execution_request",
+            "safe_payload_summary": "operator_approved, selected target sample APIs, ts_code, and execution_recipe_scope_hash",
+            "expected_local_receipt": "provider_target_sample_execution_request_receipt",
+            "required_prior_phase_key": "provider_target_sample_execution_recipe",
+            "required_prior_material": "execution_recipe_scope_hash",
+            "manual_scope_hash_required": True,
+        },
+        "POST /api/factor-quant/provider-small-pool-dry-run": {
+            "step_kind": "dry_run_scope_ticket",
+            "safe_payload_summary": "approved_by_user, explicit small symbol pool, research metrics, forward-return horizons",
+            "expected_local_receipt": "provider_small_pool_acceptance_dry_run_receipt",
+            "required_prior_phase_key": "",
+            "required_prior_material": "",
+        },
+        "POST /api/factor-quant/provider-small-pool-execution-request": {
+            "step_kind": "scope_bound_execution_request",
+            "safe_payload_summary": "approved_by_user plus latest Factor small-pool dry-run scope hash",
+            "expected_local_receipt": "provider_small_pool_execution_request_receipt",
+            "required_prior_phase_key": "factor_small_pool_dry_run_scope_ticket",
+            "required_prior_material": "receipt_scope_hash",
+        },
+        "POST /api/candidate-radar/quant-projection-acceptance-dry-run": {
+            "step_kind": "dry_run_scope_ticket",
+            "safe_payload_summary": "symbol, selected light APIs, include_tushare/include_deepseek booleans, user approval",
+            "expected_local_receipt": "search_quant_projection_acceptance_dry_run_receipt",
+            "required_prior_phase_key": "",
+            "required_prior_material": "",
+        },
+        "POST /api/candidate-radar/quant-projection-execution-request": {
+            "step_kind": "scope_bound_execution_request",
+            "safe_payload_summary": "operator_approved plus latest radar quant-projection dry-run scope hash",
+            "expected_local_receipt": "search_quant_projection_execution_request_receipt",
+            "required_prior_phase_key": "radar_quant_projection_dry_run_scope_ticket",
+            "required_prior_material": "receipt_scope_hash",
+        },
+        "POST /api/candidate-radar/production-promotion-dry-run": {
+            "step_kind": "manual_scope_bound_promotion_dry_run",
+            "safe_payload_summary": "operator_approved plus latest production replacement review scope hash",
+            "expected_local_receipt": "candidate_radar_production_promotion_dry_run_receipt",
+            "required_prior_phase_key": "candidate_radar_production_replacement_review_receipt",
+            "required_prior_material": "review_scope_hash",
+            "manual_scope_hash_required": True,
+        },
+    }
+    spec = route_specs.get(next_local_step)
+    if spec is None:
+        return [
+            {
+                "next_local_step": next_local_step,
+                "step_kind": "future_provider_or_worker_evidence",
+                "local_button_available": False,
+                "ready_for_clean_local_receipt": False,
+                "disabled_reason": "route_is_not_an_allowlisted_local_receipt_step",
+                "safe_payload_summary": "",
+                "required_prior_phase_key": "",
+                "required_prior_material": "",
+                "required_prior_receipt_visible": False,
+                "required_prior_material_visible": False,
+                "manual_scope_hash_required": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "evidence_boundary": "submission_preview_is_read_only_not_task_execution",
+            }
+        ]
+
+    required_phase = str(spec.get("required_prior_phase_key") or "")
+    required_material = str(spec.get("required_prior_material") or "")
+    prior_step = _local_step_row_by_phase(local_step_rows, required_phase) if required_phase else {}
+    prior_visible = True if not required_phase else bool(prior_step.get("receipt_visible"))
+    if not required_material:
+        material_visible = True
+    elif required_material == "latest_task_id":
+        material_visible = bool(prior_step.get("latest_task_id"))
+    else:
+        material_visible = bool(
+            prior_step.get(required_material)
+            or prior_step.get("receipt_scope_hash")
+            or prior_step.get("receipt_scope_hash_short")
+        )
+    manual_scope_hash_required = bool(spec.get("manual_scope_hash_required"))
+    ready_for_clean_receipt = prior_visible and material_visible and not manual_scope_hash_required
+    if ready_for_clean_receipt:
+        disabled_reason = ""
+    elif manual_scope_hash_required:
+        disabled_reason = "manual_scope_hash_required_before_clean_local_receipt"
+    elif not prior_visible:
+        disabled_reason = "required_prior_local_receipt_missing"
+    else:
+        disabled_reason = "required_prior_material_missing"
+    return [
+        {
+            "next_local_step": next_local_step,
+            "step_kind": spec["step_kind"],
+            "local_button_available": True,
+            "ready_for_clean_local_receipt": ready_for_clean_receipt,
+            "disabled_reason": disabled_reason,
+            "safe_payload_summary": spec["safe_payload_summary"],
+            "expected_local_receipt": spec["expected_local_receipt"],
+            "required_prior_phase_key": required_phase,
+            "required_prior_material": required_material,
+            "required_prior_receipt_visible": prior_visible,
+            "required_prior_material_visible": material_visible,
+            "manual_scope_hash_required": manual_scope_hash_required,
+            "would_create_provider_task": False,
+            "would_start_worker": False,
+            "would_call_model": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "can_close_goal": False,
+            "production_complete": False,
+            "evidence_boundary": "submission_preview_is_read_only_not_task_execution",
+        }
+    ]
+
+
 def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows_by_id = {str(row.get("id") or ""): row for row in rows}
     tasks_by_type = _task_statuses_by_type()
@@ -665,6 +821,14 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             local_status = "local_receipts_visible_provider_or_worker_evidence_pending"
             next_local_step = str(action["future_provider_route"])
         latest_observed = observed_steps[-1] if observed_steps else {}
+        submission_preview_rows = _build_ltg_next_action_submission_preview_rows(next_local_step, local_step_rows)
+        next_step_ready_for_clean_receipt = any(
+            row.get("ready_for_clean_local_receipt") is True for row in submission_preview_rows
+        )
+        next_step_disabled_reason = next(
+            (str(row.get("disabled_reason") or "") for row in submission_preview_rows if row.get("disabled_reason")),
+            "",
+        )
         action_rows.append(
             {
                 "queue_order": index,
@@ -695,6 +859,10 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 "latest_observed_receipt_status": latest_observed.get("receipt_status") or "",
                 "local_receipt_blocker_count": sum(int(row.get("receipt_blocker_count") or 0) for row in observed_steps),
                 "local_step_rows": local_step_rows,
+                "next_local_step_preview_rows": submission_preview_rows,
+                "next_local_step_preview_row_count": len(submission_preview_rows),
+                "next_local_step_ready_for_clean_receipt": next_step_ready_for_clean_receipt,
+                "next_local_step_disabled_reason": next_step_disabled_reason,
                 "local_receipt_lookup_source": "task_service.list_task_statuses_memory_plus_sqlite_read_only",
                 "local_receipt_lookup_creates_task": False,
                 "local_receipt_lookup_calls_provider": False,
