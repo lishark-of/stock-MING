@@ -28,6 +28,8 @@ TAURI_BACKEND_STARTUP_RUNTIME_REVIEW_PACKET_KEY = "command_center_3_tauri_backen
 TAURI_BACKEND_STARTUP_RUNTIME_REVIEW_TASK_TYPE = "run_tauri_backend_startup_runtime_review"
 TAURI_CONFIG_LOG_RUNTIME_REVIEW_PACKET_KEY = "command_center_3_tauri_config_log_runtime_review_packet"
 TAURI_CONFIG_LOG_RUNTIME_REVIEW_TASK_TYPE = "run_tauri_config_log_runtime_review"
+TAURI_SIGNING_NOTARIZATION_REVIEW_PACKET_KEY = "command_center_3_tauri_signing_notarization_review_packet"
+TAURI_SIGNING_NOTARIZATION_REVIEW_TASK_TYPE = "run_tauri_signing_notarization_review"
 FRONTEND_API_CLIENT = DESKTOP_ROOT / "src" / "api" / "client.ts"
 FRONTEND_PAGE_STATE_BANNER = DESKTOP_ROOT / "src" / "components" / "PageStateBanner.tsx"
 FRONTEND_BACKEND_OFFLINE_NOTICE = DESKTOP_ROOT / "src" / "components" / "BackendOfflineNotice.tsx"
@@ -3323,6 +3325,326 @@ def _write_tauri_config_log_runtime_review_packet(
         SQLiteMetaStore(SQLITE_META_PATH).write_packet(TAURI_CONFIG_LOG_RUNTIME_REVIEW_PACKET_KEY, packet)
 
 
+def _tauri_signing_notarization_review_call_ledger(
+    review: dict[str, Any],
+    reviewed_at: str,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "api": "local_tauri_signing_notarization_review",
+            "request_params_safe": {
+                "review_scope": "local_codesign_spctl_distribution_gap_review",
+                "app_bundle_path": review.get("app_bundle_path_observed_safe"),
+                "codesign_signature_type": review.get("codesign_signature_type"),
+                "codesign_team_identifier_status": review.get("codesign_team_identifier_status"),
+                "spctl_assessment_status": review.get("spctl_assessment_status"),
+                "dmg_distribution_detected": review.get("dmg_distribution_detected"),
+                "temporary_dmg_detected": review.get("temporary_dmg_detected"),
+                "external_sources_allowed": False,
+                "runs_codesign": False,
+                "runs_spctl": False,
+                "runs_build": False,
+                "reads_config_values": False,
+                "writes_log_files": False,
+                "production_package_complete": False,
+            },
+            "row_count": review.get("row_count", 0),
+            "data_date": reviewed_at,
+            "local_fetched_at": reviewed_at,
+            "call_status": review.get("status"),
+            "error_message_safe": "",
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+
+
+def _tauri_signing_notarization_review_contract(
+    *,
+    tauri_build_artifact: dict[str, Any],
+    config_log_review: dict[str, Any],
+    reviewed_at: str | None = None,
+    task_id: str = "",
+    explicit_review: bool = False,
+    explicit_codesign_inspection_completed: bool = False,
+    explicit_spctl_assessment_completed: bool = False,
+    app_bundle_path_observed: str = "",
+    codesign_signature_type: str = "",
+    codesign_flags_observed: str = "",
+    codesign_team_identifier_status: str = "",
+    codesign_cdhash_observed: str = "",
+    spctl_assessment_status: str = "",
+    spctl_message_safe: str = "",
+    distribution_dmg_detected: bool = False,
+    temporary_dmg_detected: bool = False,
+    temporary_dmg_ignored_for_distribution: bool = False,
+    apple_developer_identity_used: bool = False,
+    notarization_ticket_detected: bool = False,
+) -> dict[str, Any]:
+    app_bundle_path = str(tauri_build_artifact.get("bundle_app_path") or "")
+    app_bundle_ready = bool(
+        tauri_build_artifact.get("schema_version") == "tauri_build_artifact_detection.v1"
+        and tauri_build_artifact.get("packaged_app_bundle_detected") is True
+        and int(tauri_build_artifact.get("bundle_app_count") or 0) > 0
+        and app_bundle_path
+        and app_bundle_path_observed == app_bundle_path
+        and tauri_build_artifact.get("artifact_is_gitignored") is True
+    )
+    config_log_ready = bool(
+        config_log_review.get("schema_version") == "tauri_config_log_runtime_review.v1"
+        and config_log_review.get("status") == "tauri_config_log_runtime_review_ready"
+        and config_log_review.get("config_log_runtime_paths_validated") is True
+        and config_log_review.get("production_package_complete") is False
+        and config_log_review.get("external_calls_triggered") is False
+        and config_log_review.get("tushare_called") is False
+        and config_log_review.get("deepseek_called") is False
+        and config_log_review.get("github_called") is False
+        and config_log_review.get("does_not_execute_trades") is True
+        and config_log_review.get("does_not_modify_strategy_action") is True
+        and config_log_review.get("contains_secret") is False
+    )
+    signature_type_safe = codesign_signature_type.strip().lower()[:80]
+    team_status_safe = codesign_team_identifier_status.strip().lower()[:80]
+    spctl_status_safe = spctl_assessment_status.strip().lower()[:80]
+    codesign_flags_safe = codesign_flags_observed.strip()[:160]
+    cdhash_safe = codesign_cdhash_observed.strip().lower()[:80]
+    spctl_message_trimmed = spctl_message_safe.strip().replace("\n", " ")[:240]
+    codesign_observed = bool(
+        explicit_codesign_inspection_completed
+        and signature_type_safe in {"adhoc", "developer_id", "apple_development", "unknown"}
+        and team_status_safe in {"not_set", "set", "unknown"}
+        and bool(cdhash_safe)
+    )
+    spctl_observed = bool(
+        explicit_spctl_assessment_completed
+        and spctl_status_safe in {"accepted", "rejected", "error", "internal_error", "unknown"}
+    )
+    production_signing_ready = bool(
+        signature_type_safe == "developer_id"
+        and team_status_safe == "set"
+        and spctl_status_safe == "accepted"
+        and apple_developer_identity_used
+        and notarization_ticket_detected
+        and distribution_dmg_detected
+    )
+    review_ready = bool(
+        explicit_review
+        and app_bundle_ready
+        and config_log_ready
+        and codesign_observed
+        and spctl_observed
+    )
+
+    def _row(criterion: str, status: str, passed: bool, evidence: str, *, blocks_review: bool = True) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": status,
+            "passed": bool(passed),
+            "evidence": evidence,
+            "blocks_review": bool(blocks_review and not passed),
+            "blocks_production": not bool(passed),
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+
+    rows = [
+        _row(
+            "explicit_post_signing_notarization_review_task",
+            "passed" if explicit_review else "pending_explicit_post",
+            explicit_review,
+            "POST /api/desktop/tauri-signing-notarization-review records a separately observed codesign/spctl review.",
+        ),
+        _row(
+            "prior_package_runtime_evidence_ready",
+            "passed_prior_config_log_evidence" if app_bundle_ready and config_log_ready else "pending_prior_config_log_evidence",
+            app_bundle_ready and config_log_ready,
+            f"app_bundle={app_bundle_path_observed}; config_log_ready={config_log_review.get('config_log_runtime_paths_validated')}",
+        ),
+        _row(
+            "codesign_inspection_observed",
+            "passed_codesign_inspection" if codesign_observed else "pending_codesign_inspection",
+            codesign_observed,
+            (
+                f"signature={signature_type_safe or 'missing'}; flags={codesign_flags_safe or 'missing'}; "
+                f"team_identifier={team_status_safe or 'missing'}; cdhash_present={bool(cdhash_safe)}"
+            ),
+        ),
+        _row(
+            "spctl_assessment_observed",
+            "passed_spctl_assessment" if spctl_observed else "pending_spctl_assessment",
+            spctl_observed,
+            f"spctl_status={spctl_status_safe or 'missing'}; message={spctl_message_trimmed or 'empty'}",
+        ),
+        _row(
+            "production_signing_notarization_ready",
+            "passed_production_signing_ready" if production_signing_ready else "blocked_signing_or_notarization",
+            production_signing_ready,
+            (
+                f"developer_identity={apple_developer_identity_used}; notarization_ticket={notarization_ticket_detected}; "
+                f"distribution_dmg={distribution_dmg_detected}; temp_dmg={temporary_dmg_detected}"
+            ),
+            blocks_review=False,
+        ),
+        _row(
+            "production_package_still_blocked",
+            "passed_blocker_visible",
+            True,
+            "Signing/notarization direct review is recorded, but production package promotion remains blocked until Developer ID, notarization, and distribution artifact are ready.",
+            blocks_review=False,
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["blocks_review"]]
+    return {
+        "schema_version": "tauri_signing_notarization_review.v1",
+        "status": "tauri_signing_notarization_review_ready_blocked"
+        if review_ready and not production_signing_ready
+        else ("tauri_signing_notarization_review_ready_passed" if production_signing_ready else "tauri_signing_notarization_review_pending"),
+        "scope": "button_gated_local_tauri_signing_notarization_gap_review_no_provider_no_trade",
+        "ltg": "LTG-09",
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "explicit_review_task_done": explicit_review,
+        "explicit_codesign_inspection_completed": explicit_codesign_inspection_completed,
+        "explicit_spctl_assessment_completed": explicit_spctl_assessment_completed,
+        "local_signing_notarization_review_ready": review_ready,
+        "direct_gap_evidence_stage_key": "signing_notarization_gap_review" if review_ready else "",
+        "direct_gap_evidence_stage_keys": ["signing_notarization_gap_review"] if review_ready else [],
+        "app_bundle_path_observed_safe": app_bundle_path_observed if app_bundle_ready else "",
+        "codesign_signature_type": signature_type_safe,
+        "codesign_flags_observed_safe": codesign_flags_safe,
+        "codesign_team_identifier_status": team_status_safe,
+        "codesign_cdhash_observed_safe": cdhash_safe,
+        "spctl_assessment_status": spctl_status_safe,
+        "spctl_message_safe": spctl_message_trimmed,
+        "distribution_dmg_detected": bool(distribution_dmg_detected),
+        "temporary_dmg_detected": bool(temporary_dmg_detected),
+        "temporary_dmg_ignored_for_distribution": bool(temporary_dmg_ignored_for_distribution),
+        "apple_developer_identity_used": bool(apple_developer_identity_used),
+        "notarization_ticket_detected": bool(notarization_ticket_detected),
+        "production_signing_notarization_ready": production_signing_ready,
+        "signing_notarization_done": production_signing_ready,
+        "signing_notarization_is_completion": False,
+        "production_package_complete": False,
+        "packaged_runtime_validated": False,
+        "tauri_build_executed_by_review": False,
+        "npm_or_cargo_executed_by_review": False,
+        "tauri_runtime_started_by_review": False,
+        "packaged_app_opened_by_review": False,
+        "fastapi_started_by_review": False,
+        "config_values_read_by_review": False,
+        "log_files_written_by_review": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": rows,
+        "row_count": len(rows),
+        "blocking_review_count": len(blocking_rows),
+        "blocking_review_criteria": [row["criterion"] for row in blocking_rows],
+        "call_ledger": [],
+        "note": "This review records local codesign/spctl/distribution status as direct blocker evidence. It does not notarize, sign, distribute, call providers/models/GitHub, trade, or complete the production desktop package.",
+    }
+
+
+def _safe_persisted_tauri_signing_notarization_review(packet: dict[str, Any]) -> dict[str, Any]:
+    review = packet.get("tauri_signing_notarization_review_contract")
+    if not isinstance(review, dict):
+        return {}
+    safe = (
+        review.get("schema_version") == "tauri_signing_notarization_review.v1"
+        and review.get("status") in {
+            "tauri_signing_notarization_review_ready_blocked",
+            "tauri_signing_notarization_review_ready_passed",
+        }
+        and review.get("scope") == "button_gated_local_tauri_signing_notarization_gap_review_no_provider_no_trade"
+        and review.get("explicit_review_task_done") is True
+        and review.get("explicit_codesign_inspection_completed") is True
+        and review.get("explicit_spctl_assessment_completed") is True
+        and review.get("local_signing_notarization_review_ready") is True
+        and bool(review.get("app_bundle_path_observed_safe"))
+        and bool(review.get("codesign_signature_type"))
+        and bool(review.get("codesign_cdhash_observed_safe"))
+        and bool(review.get("spctl_assessment_status"))
+        and review.get("signing_notarization_is_completion") is False
+        and review.get("production_package_complete") is False
+        and review.get("packaged_runtime_validated") is False
+        and review.get("fastapi_started_by_review") is False
+        and review.get("config_values_read_by_review") is False
+        and review.get("log_files_written_by_review") is False
+        and review.get("external_calls_triggered") is False
+        and review.get("tushare_called") is False
+        and review.get("deepseek_called") is False
+        and review.get("github_called") is False
+        and review.get("does_not_execute_trades") is True
+        and review.get("does_not_modify_strategy_action") is True
+        and review.get("contains_secret") is False
+    )
+    return review if safe else {}
+
+
+def _read_tauri_signing_notarization_review_packet() -> dict[str, Any]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(TAURI_SIGNING_NOTARIZATION_REVIEW_PACKET_KEY)
+    except Exception:
+        return {}
+    if not isinstance(packet, dict):
+        return {}
+    return packet if _safe_persisted_tauri_signing_notarization_review(packet) else {}
+
+
+def _write_tauri_signing_notarization_review_packet(
+    *,
+    review_contract: dict[str, Any],
+    ledger: list[dict[str, Any]],
+    reviewed_at: str,
+    task_id: str,
+) -> None:
+    packet = {
+        "packet_key": TAURI_SIGNING_NOTARIZATION_REVIEW_PACKET_KEY,
+        "schema_version": "tauri_signing_notarization_review_packet.v1",
+        "status": review_contract.get("status"),
+        "ltg": "LTG-09",
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "tauri_signing_notarization_review_contract": dict(review_contract),
+        "tauri_signing_notarization_review_rows": list(review_contract.get("rows") or []),
+        "call_ledger": list(ledger),
+        "cache_only": True,
+        "runs_no_build": True,
+        "runs_no_codesign_or_spctl": True,
+        "starts_no_fastapi": True,
+        "reads_no_config_values": True,
+        "writes_no_log_files": True,
+        "production_package_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "warnings": [
+            "This packet records local signing/notarization blocker evidence from separately observed codesign/spctl outputs.",
+            "It is not signing, notarization, distribution promotion, or production package completion.",
+        ],
+    }
+    if _safe_persisted_tauri_signing_notarization_review(packet):
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(TAURI_SIGNING_NOTARIZATION_REVIEW_PACKET_KEY, packet)
+
+
 def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     package_summary = _package_json_summary()
     tauri_config = _tauri_config_summary()
@@ -3742,6 +4064,37 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         packet["warnings"].append(
             "tauri_config_log_runtime_review 只记录显式本地 config/log path policy 观察；不读取配置值、不写日志、不等于签名/公证或 production package 完成。"
         )
+    persisted_signing_review_packet = _read_tauri_signing_notarization_review_packet()
+    persisted_signing_review = _safe_persisted_tauri_signing_notarization_review(
+        persisted_signing_review_packet
+    )
+    if persisted_signing_review:
+        packet["tauri_signing_notarization_review_contract"] = persisted_signing_review
+        packet["tauri_signing_notarization_review_rows"] = list(persisted_signing_review.get("rows") or [])
+        packet["tauri_signing_notarization_review_ready"] = True
+        packet["counts"]["tauri_signing_notarization_review_row_count"] = persisted_signing_review.get(
+            "row_count",
+            0,
+        )
+        packet["counts"]["tauri_signing_notarization_review_blocking_count"] = persisted_signing_review.get(
+            "blocking_review_count",
+            0,
+        )
+        packet["runtime"]["tauri_signing_notarization_review_ready"] = True
+        packet["runtime"]["tauri_signing_notarization_review_status"] = persisted_signing_review.get("status")
+        packet["runtime"]["signing_notarization_done"] = (
+            persisted_signing_review.get("signing_notarization_done") is True
+        )
+        packet["policy"]["tauri_signing_notarization_review_is_local"] = True
+        packet["policy"]["tauri_signing_notarization_review_did_not_run_codesign_or_spctl"] = True
+        packet["policy"]["tauri_signing_notarization_review_is_not_build"] = True
+        packet["policy"]["tauri_signing_notarization_review_is_not_production_completion"] = True
+        packet["call_ledger"] = packet["call_ledger"] + [
+            row for row in persisted_signing_review_packet.get("call_ledger", []) if isinstance(row, dict)
+        ]
+        packet["warnings"].append(
+            "tauri_signing_notarization_review 只记录显式本地 codesign/spctl gap evidence；不执行签名/公证、不等于 production package 完成。"
+        )
     return _json_safe(packet)
 
 
@@ -4041,4 +4394,67 @@ def run_tauri_config_log_runtime_review_task(payload: Any = None) -> dict[str, A
         else "tauri_config_log_runtime_review_pending",
         call_ledger=ledger,
         warning="tauri_config_log_runtime_review_completed_no_build_no_config_read_no_log_write_no_external_call",
+    ) or task
+
+
+def run_tauri_signing_notarization_review_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, dict) else {}
+    task = create_task_record(
+        TAURI_SIGNING_NOTARIZATION_REVIEW_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="tauri_signing_notarization_review_queued",
+        warnings=[
+            "Tauri signing/notarization review 只记录用户/测试已显式观察到的 codesign/spctl/DMG 状态。",
+            "review 不运行 codesign/spctl/notarytool，不运行 npm/cargo/Tauri，不调用 provider/model/GitHub，不交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="reading_local_tauri_signing_notarization_evidence",
+    )
+    packet = read_desktop_shell_preflight_cache()
+    reviewed_at = _now_iso()
+    review_contract = _tauri_signing_notarization_review_contract(
+        tauri_build_artifact=packet.get("tauri_build_artifact", {}),
+        config_log_review=packet.get("tauri_config_log_runtime_review_contract", {}),
+        explicit_review=True,
+        explicit_codesign_inspection_completed=payload_map.get("explicit_codesign_inspection_completed") is True,
+        explicit_spctl_assessment_completed=payload_map.get("explicit_spctl_assessment_completed") is True,
+        app_bundle_path_observed=str(payload_map.get("app_bundle_path_observed") or "").strip(),
+        codesign_signature_type=str(payload_map.get("codesign_signature_type") or "").strip(),
+        codesign_flags_observed=str(payload_map.get("codesign_flags_observed") or "").strip(),
+        codesign_team_identifier_status=str(payload_map.get("codesign_team_identifier_status") or "").strip(),
+        codesign_cdhash_observed=str(payload_map.get("codesign_cdhash_observed") or "").strip(),
+        spctl_assessment_status=str(payload_map.get("spctl_assessment_status") or "").strip(),
+        spctl_message_safe=str(payload_map.get("spctl_message_safe") or "").strip(),
+        distribution_dmg_detected=payload_map.get("distribution_dmg_detected") is True,
+        temporary_dmg_detected=payload_map.get("temporary_dmg_detected") is True,
+        temporary_dmg_ignored_for_distribution=payload_map.get("temporary_dmg_ignored_for_distribution") is True,
+        apple_developer_identity_used=payload_map.get("apple_developer_identity_used") is True,
+        notarization_ticket_detected=payload_map.get("notarization_ticket_detected") is True,
+        task_id=str(task["task_id"]),
+        reviewed_at=reviewed_at,
+    )
+    ledger = _tauri_signing_notarization_review_call_ledger(review_contract, reviewed_at)
+    _write_tauri_signing_notarization_review_packet(
+        review_contract=review_contract,
+        ledger=ledger,
+        reviewed_at=reviewed_at,
+        task_id=str(task["task_id"]),
+    )
+    return update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="tauri_signing_notarization_review_ready_blocked"
+        if review_contract["local_signing_notarization_review_ready"]
+        else "tauri_signing_notarization_review_pending",
+        call_ledger=ledger,
+        warning="tauri_signing_notarization_review_completed_no_sign_no_notary_no_external_call",
     ) or task

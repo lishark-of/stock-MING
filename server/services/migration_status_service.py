@@ -2685,6 +2685,7 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
     offline_ux_review = _dict_or_empty(packet_map.get("tauri_backend_offline_packaged_ux_review_contract"))
     startup_review = _dict_or_empty(packet_map.get("tauri_backend_startup_runtime_review_contract"))
     config_log_review = _dict_or_empty(packet_map.get("tauri_config_log_runtime_review_contract"))
+    signing_review = _dict_or_empty(packet_map.get("tauri_signing_notarization_review_contract"))
     packet_safe = bool(
         packet_map.get("external_calls_triggered") is not True
         and packet_map.get("tushare_called") is not True
@@ -2874,6 +2875,47 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
     )
     if config_log_runtime_ready:
         direct_stage_keys.append("config_log_runtime_paths")
+    signing_notarization_review_ready = bool(
+        packet_safe
+        and config_log_runtime_ready
+        and signing_review.get("schema_version") == "tauri_signing_notarization_review.v1"
+        and signing_review.get("status")
+        in {
+            "tauri_signing_notarization_review_ready_blocked",
+            "tauri_signing_notarization_review_ready_passed",
+        }
+        and signing_review.get("explicit_review_task_done") is True
+        and signing_review.get("explicit_codesign_inspection_completed") is True
+        and signing_review.get("explicit_spctl_assessment_completed") is True
+        and signing_review.get("local_signing_notarization_review_ready") is True
+        and bool(signing_review.get("app_bundle_path_observed_safe"))
+        and bool(signing_review.get("codesign_signature_type"))
+        and bool(signing_review.get("codesign_cdhash_observed_safe"))
+        and bool(signing_review.get("spctl_assessment_status"))
+        and signing_review.get("signing_notarization_is_completion") is False
+        and signing_review.get("production_package_complete") is False
+        and signing_review.get("packaged_runtime_validated") is False
+        and signing_review.get("fastapi_started_by_review") is False
+        and signing_review.get("config_values_read_by_review") is False
+        and signing_review.get("log_files_written_by_review") is False
+        and signing_review.get("external_calls_triggered") is False
+        and signing_review.get("tushare_called") is False
+        and signing_review.get("deepseek_called") is False
+        and signing_review.get("github_called") is False
+        and signing_review.get("does_not_execute_trades") is True
+        and signing_review.get("does_not_modify_strategy_action") is True
+        and signing_review.get("contains_secret") is False
+    )
+    signing_notarization_done = bool(
+        signing_notarization_review_ready
+        and signing_review.get("production_signing_notarization_ready") is True
+        and signing_review.get("signing_notarization_done") is True
+    )
+    direct_gap_stage_keys = (
+        list(signing_review.get("direct_gap_evidence_stage_keys") or [])
+        if signing_notarization_review_ready
+        else []
+    )
     return {
         "schema_version": "migration_tauri_package_direct_evidence_summary.v1",
         "source_packet_key": "command_center_3_tauri_package_artifact_review_packet",
@@ -2915,6 +2957,33 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         "log_file_policy_observed": config_log_review.get("log_file_policy_observed_safe")
         if config_log_runtime_ready
         else "",
+        "direct_gap_evidence_stage_keys": direct_gap_stage_keys,
+        "direct_gap_evidence_stage_count": len(direct_gap_stage_keys),
+        "signing_notarization_review_ready": signing_notarization_review_ready,
+        "signing_notarization_review_status": signing_review.get("status")
+        if signing_notarization_review_ready
+        else "",
+        "codesign_signature_type": signing_review.get("codesign_signature_type")
+        if signing_notarization_review_ready
+        else "",
+        "codesign_team_identifier_status": signing_review.get("codesign_team_identifier_status")
+        if signing_notarization_review_ready
+        else "",
+        "spctl_assessment_status": signing_review.get("spctl_assessment_status")
+        if signing_notarization_review_ready
+        else "",
+        "spctl_message_safe": signing_review.get("spctl_message_safe")
+        if signing_notarization_review_ready
+        else "",
+        "temporary_dmg_detected": signing_review.get("temporary_dmg_detected") is True
+        if signing_notarization_review_ready
+        else False,
+        "temporary_dmg_ignored_for_distribution": signing_review.get("temporary_dmg_ignored_for_distribution") is True
+        if signing_notarization_review_ready
+        else False,
+        "production_signing_notarization_ready": signing_review.get("production_signing_notarization_ready") is True
+        if signing_notarization_review_ready
+        else False,
         "build_command_reviewed_safe": review.get("build_command_reviewed_safe") if build_repeatability_ready else "",
         "launch_command_reviewed_safe": launch_review.get("launch_command_reviewed_safe")
         if packaged_app_launch_ready
@@ -2933,7 +3002,7 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         "backend_startup_runtime_validated": backend_startup_runtime_ready,
         "backend_offline_packaged_ux_verified": backend_offline_packaged_ux_ready,
         "config_log_runtime_paths_validated": config_log_runtime_ready,
-        "signing_notarization_done": False,
+        "signing_notarization_done": signing_notarization_done,
         "production_package_complete": False,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -5189,6 +5258,37 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 or "",
                 "config_file_policy_observed": direct_evidence.get("config_file_policy_observed") or "",
                 "log_file_policy_observed": direct_evidence.get("log_file_policy_observed") or "",
+                "direct_gap_evidence_stage_count": direct_evidence.get(
+                    "direct_gap_evidence_stage_count"
+                )
+                or 0,
+                "direct_gap_evidence_stage_keys": list(
+                    direct_evidence.get("direct_gap_evidence_stage_keys") or []
+                ),
+                "signing_notarization_review_ready": direct_evidence.get(
+                    "signing_notarization_review_ready"
+                )
+                is True,
+                "signing_notarization_review_status": direct_evidence.get(
+                    "signing_notarization_review_status"
+                )
+                or "",
+                "codesign_signature_type": direct_evidence.get("codesign_signature_type") or "",
+                "codesign_team_identifier_status": direct_evidence.get(
+                    "codesign_team_identifier_status"
+                )
+                or "",
+                "spctl_assessment_status": direct_evidence.get("spctl_assessment_status") or "",
+                "spctl_message_safe": direct_evidence.get("spctl_message_safe") or "",
+                "temporary_dmg_detected": direct_evidence.get("temporary_dmg_detected") is True,
+                "temporary_dmg_ignored_for_distribution": direct_evidence.get(
+                    "temporary_dmg_ignored_for_distribution"
+                )
+                is True,
+                "production_signing_notarization_ready": direct_evidence.get(
+                    "production_signing_notarization_ready"
+                )
+                is True,
                 "tauri_build_command_reviewed_safe": direct_evidence.get("build_command_reviewed_safe") or "",
                 "tauri_launch_command_reviewed_safe": direct_evidence.get("launch_command_reviewed_safe") or "",
                 "tauri_launch_observed_process_name": direct_evidence.get("observed_process_name") or "",
@@ -5214,7 +5314,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "release_binary_is_completion": False,
                 "app_bundle_detected": direct_evidence.get("app_bundle_detected") is True,
                 "dmg_distribution_detected": direct_evidence.get("dmg_distribution_detected") is True,
-                "signing_notarization_done": False,
+                "signing_notarization_done": direct_evidence.get("signing_notarization_done") is True,
                 "external_calls_triggered": False,
                 "tushare_called": False,
                 "deepseek_called": False,

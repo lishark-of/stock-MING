@@ -13592,7 +13592,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 68)
+        self.assertEqual(catalog["task_count"], 69)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -13611,7 +13611,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 68)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 69)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -13622,8 +13622,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 70)
-        self.assertEqual(route_coverage["task_creation_route_count"], 68)
+        self.assertEqual(route_coverage["known_post_route_count"], 71)
+        self.assertEqual(route_coverage["task_creation_route_count"], 69)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -13632,11 +13632,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 68)
+        self.assertEqual(implementation_status["task_count"], 69)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 65)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 66)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 66)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 67)
         self.assertEqual(implementation_status["external_capable_task_count"], 6)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -13671,6 +13671,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_tauri_backend_offline_packaged_ux_review",
                 "run_tauri_backend_startup_runtime_review",
                 "run_tauri_config_log_runtime_review",
+                "run_tauri_signing_notarization_review",
                 "run_candidate_radar_quick_scan",
                 "run_candidate_radar_quant_projection",
                 "run_candidate_radar_quant_projection_acceptance_dry_run",
@@ -13742,6 +13743,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_tauri_backend_offline_packaged_ux_review",
                 "run_tauri_backend_startup_runtime_review",
                 "run_tauri_config_log_runtime_review",
+                "run_tauri_signing_notarization_review",
                 "run_candidate_radar_quick_scan",
                 "run_candidate_radar_quant_projection",
                 "run_candidate_radar_quant_projection_acceptance_dry_run",
@@ -13845,6 +13847,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertIn(
             "POST /api/desktop/tauri-config-log-runtime-review",
+            route_coverage["known_post_routes"],
+        )
+        self.assertIn(
+            "POST /api/desktop/tauri-signing-notarization-review",
             route_coverage["known_post_routes"],
         )
         self.assertIn("POST /api/worker/synthetic-healthcheck", route_coverage["known_post_routes"])
@@ -15721,6 +15727,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/desktop/tauri-backend-offline-packaged-ux-review", discovered_routes)
         self.assertIn("POST /api/desktop/tauri-backend-startup-runtime-review", discovered_routes)
         self.assertIn("POST /api/desktop/tauri-config-log-runtime-review", discovered_routes)
+        self.assertIn("POST /api/desktop/tauri-signing-notarization-review", discovered_routes)
         self.assertIn("POST /api/data-health/trade-cal-provider-acceptance-execution-request", discovered_routes)
         self.assertIn("POST /api/data-health/trade-cal-provider-acceptance-promotion-review", discovered_routes)
         self.assertIn("POST /api/data-health/producer-cache-refresh-execution-request", discovered_routes)
@@ -15774,16 +15781,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 65)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 66)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 66)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 67)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 65)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 66)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 66)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 67)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -16638,9 +16645,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 65)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 66)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 66)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 67)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -16864,9 +16871,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 65)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 66)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 66)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 67)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -16899,9 +16906,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 65)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 66)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 66)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 67)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -21237,7 +21244,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 68)
+        self.assertEqual(task_catalog["data"]["task_count"], 69)
         self.assertIn(
             "POST /api/desktop/tauri-package-artifact-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
@@ -21256,6 +21263,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertIn(
             "POST /api/desktop/tauri-config-log-runtime-review",
+            task_catalog["data"]["route_coverage"]["known_post_routes"],
+        )
+        self.assertIn(
+            "POST /api/desktop/tauri-signing-notarization-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
         )
         self.assertIn("POST /api/bootstrap/live-startup", task_catalog["data"]["route_coverage"]["known_post_routes"])
@@ -22550,6 +22561,221 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg09["packaged_runtime_qa_done"])
         self.assertFalse(ltg09["dmg_distribution_artifact_qa_done"])
         self.assertFalse(ltg09["dmg_distribution_detected"])
+        self.assertFalse(ltg09["signing_notarization_done"])
+        self.assertFalse(ltg09["production_package_complete"])
+        self.assertFalse(ltg09["external_calls_triggered"])
+        self.assertFalse(ltg09["tushare_called"])
+        self.assertFalse(ltg09["deepseek_called"])
+        self.assertFalse(ltg09["github_called"])
+        self.assertTrue(ltg09["does_not_execute_trades"])
+        self.assertFalse(ltg09["contains_secret"])
+        self.assertFalse(ltg09["can_close_from_observed_row"])
+
+    def test_tauri_signing_notarization_review_records_gap_evidence_without_completion(self):
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        temp_dir = tempfile.TemporaryDirectory()
+        root = Path(temp_dir.name)
+        release_binary = root / "stock_ming_command_center"
+        release_binary.write_bytes(b"\xcf\xfa\xed\xfe packaged signing notarization fixture")
+        release_binary.chmod(0o755)
+        bundle_root = root / "bundle"
+        app_bundle = bundle_root / "macos" / "stock-MING Command Center.app"
+        (app_bundle / "Contents" / "MacOS").mkdir(parents=True)
+        (app_bundle / "Contents" / "Resources").mkdir()
+        temp_dmg = bundle_root / "macos" / "rw.fixture.stock-MING Command Center_3.0.0_aarch64.dmg"
+        temp_dmg.write_bytes(b"temporary dmg fixture")
+        original_release_binary = desktop_service.TAURI_RELEASE_BINARY
+        original_bundle_root = desktop_service.TAURI_BUNDLE_ROOT
+        desktop_service.TAURI_RELEASE_BINARY = release_binary
+        desktop_service.TAURI_BUNDLE_ROOT = bundle_root
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, desktop_service, "TAURI_RELEASE_BINARY", original_release_binary)
+        self.addCleanup(setattr, desktop_service, "TAURI_BUNDLE_ROOT", original_bundle_root)
+
+        self.assertTrue(
+            self.client.post(
+                "/api/desktop/tauri-package-artifact-review",
+                json={
+                    "operator": "local-signing-seed",
+                    "explicit_tauri_build_completed": True,
+                    "build_command": "npm run tauri build",
+                },
+            ).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/desktop/tauri-packaged-runtime-launch-review",
+                json={
+                    "operator": "local-signing-launch",
+                    "explicit_packaged_app_launch_completed": True,
+                    "app_process_observed_after_launch": True,
+                    "launch_command": "open -n desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app",
+                    "observed_process_name": "stock-MING Command Center",
+                },
+            ).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/desktop/tauri-backend-offline-packaged-ux-review",
+                json={
+                    "operator": "local-signing-offline-baseline",
+                    "explicit_packaged_app_launch_completed": True,
+                    "backend_was_offline_during_review": True,
+                    "offline_notice_observed": True,
+                    "fastapi_guidance_visible": True,
+                    "local_only_boundary_visible": True,
+                    "no_provider_model_github_trade_visible": True,
+                    "screenshot_sha256": "a" * 64,
+                    "observed_route": "Command Center packaged backend offline notice",
+                },
+            ).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/desktop/tauri-backend-startup-runtime-review",
+                json={
+                    "operator": "local-signing-startup-baseline",
+                    "explicit_packaged_app_launch_completed": True,
+                    "manual_fastapi_started_before_review": True,
+                    "fastapi_health_observed_ok": True,
+                    "packaged_app_fastapi_online_observed": True,
+                    "api_base_observed": "http://127.0.0.1:8710",
+                    "health_status_observed": "ok",
+                    "screenshot_sha256": "b" * 64,
+                },
+            ).json()["ok"]
+        )
+        preflight = desktop_service.read_desktop_shell_preflight_cache()
+        runtime_contract = preflight["production_runtime_contract"]
+        self.assertTrue(
+            self.client.post(
+                "/api/desktop/tauri-config-log-runtime-review",
+                json={
+                    "operator": "local-signing-config-log-baseline",
+                    "explicit_packaged_app_launch_completed": True,
+                    "path_policy_panel_visible": True,
+                    "config_file_policy_visible": True,
+                    "log_file_policy_visible": True,
+                    "config_file_policy_observed": runtime_contract["config_file_policy"],
+                    "log_file_policy_observed": runtime_contract["log_file_policy"],
+                    "no_config_values_exposed": True,
+                    "no_log_file_written_by_review": True,
+                    "frontend_token_exposure_absent": True,
+                    "screenshot_sha256": "c" * 64,
+                },
+            ).json()["ok"]
+        )
+        preflight = desktop_service.read_desktop_shell_preflight_cache()
+        artifact = preflight["tauri_build_artifact"]
+
+        response = self.client.post(
+            "/api/desktop/tauri-signing-notarization-review",
+            json={
+                "operator": "local-signing-notarization-review",
+                "explicit_codesign_inspection_completed": True,
+                "explicit_spctl_assessment_completed": True,
+                "app_bundle_path_observed": artifact["bundle_app_path"],
+                "codesign_signature_type": "adhoc",
+                "codesign_flags_observed": "0x20002(adhoc,linker-signed)",
+                "codesign_team_identifier_status": "not_set",
+                "codesign_cdhash_observed": "d" * 64,
+                "spctl_assessment_status": "internal_error",
+                "spctl_message_safe": "internal error in Code Signing subsystem",
+                "distribution_dmg_detected": False,
+                "temporary_dmg_detected": True,
+                "temporary_dmg_ignored_for_distribution": True,
+                "apple_developer_identity_used": False,
+                "notarization_ticket_detected": False,
+                "authorization": "Bearer SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        task = response["data"]["task"]
+        self.assertEqual(task["task_type"], desktop_service.TAURI_SIGNING_NOTARIZATION_REVIEW_TASK_TYPE)
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "tauri_signing_notarization_review_ready_blocked")
+        self.assertNotIn("authorization", task["payload_safe"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+
+        persisted = SQLiteMetaStore(desktop_service.SQLITE_META_PATH).read_packet(
+            desktop_service.TAURI_SIGNING_NOTARIZATION_REVIEW_PACKET_KEY
+        )
+        self.assertEqual(persisted["packet_key"], desktop_service.TAURI_SIGNING_NOTARIZATION_REVIEW_PACKET_KEY)
+        review = persisted["tauri_signing_notarization_review_contract"]
+        self.assertEqual(review["schema_version"], "tauri_signing_notarization_review.v1")
+        self.assertEqual(review["status"], "tauri_signing_notarization_review_ready_blocked")
+        self.assertEqual(
+            review["scope"],
+            "button_gated_local_tauri_signing_notarization_gap_review_no_provider_no_trade",
+        )
+        self.assertEqual(review["direct_gap_evidence_stage_keys"], ["signing_notarization_gap_review"])
+        self.assertTrue(review["explicit_review_task_done"])
+        self.assertTrue(review["explicit_codesign_inspection_completed"])
+        self.assertTrue(review["explicit_spctl_assessment_completed"])
+        self.assertEqual(review["codesign_signature_type"], "adhoc")
+        self.assertEqual(review["codesign_team_identifier_status"], "not_set")
+        self.assertEqual(review["spctl_assessment_status"], "internal_error")
+        self.assertTrue(review["temporary_dmg_detected"])
+        self.assertTrue(review["temporary_dmg_ignored_for_distribution"])
+        self.assertFalse(review["distribution_dmg_detected"])
+        self.assertFalse(review["apple_developer_identity_used"])
+        self.assertFalse(review["notarization_ticket_detected"])
+        self.assertFalse(review["production_signing_notarization_ready"])
+        self.assertFalse(review["signing_notarization_done"])
+        self.assertFalse(review["signing_notarization_is_completion"])
+        self.assertFalse(review["production_package_complete"])
+        self.assertFalse(review["packaged_runtime_validated"])
+        self.assertFalse(review["tauri_build_executed_by_review"])
+        self.assertFalse(review["npm_or_cargo_executed_by_review"])
+        self.assertFalse(review["tauri_runtime_started_by_review"])
+        self.assertFalse(review["packaged_app_opened_by_review"])
+        self.assertFalse(review["fastapi_started_by_review"])
+        self.assertFalse(review["config_values_read_by_review"])
+        self.assertFalse(review["log_files_written_by_review"])
+        self.assertFalse(review["external_calls_triggered"])
+        self.assertFalse(review["tushare_called"])
+        self.assertFalse(review["deepseek_called"])
+        self.assertFalse(review["github_called"])
+        self.assertTrue(review["does_not_execute_trades"])
+        self.assertTrue(review["does_not_modify_strategy_action"])
+        self.assertFalse(review["contains_secret"])
+
+        refreshed = desktop_service.read_desktop_shell_preflight_cache()
+        self.assertTrue(refreshed["tauri_signing_notarization_review_ready"])
+        self.assertFalse(refreshed["runtime"]["signing_notarization_done"])
+        self.assertTrue(refreshed["policy"]["tauri_signing_notarization_review_is_local"])
+        self.assertTrue(refreshed["policy"]["tauri_signing_notarization_review_did_not_run_codesign_or_spctl"])
+        self.assertTrue(refreshed["policy"]["tauri_signing_notarization_review_is_not_production_completion"])
+        self.assertIn(
+            "local_tauri_signing_notarization_review",
+            {row.get("api") for row in refreshed["call_ledger"]},
+        )
+
+        migration = migration_status_service.build_migration_status()
+        ltg09 = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}["LTG-09"]
+        self.assertEqual(ltg09["direct_evidence_stage_count"], 7)
+        self.assertEqual(ltg09["direct_gap_evidence_stage_count"], 1)
+        self.assertEqual(ltg09["direct_gap_evidence_stage_keys"], ["signing_notarization_gap_review"])
+        self.assertEqual(ltg09["pending_stage_count"], 1)
+        self.assertEqual(ltg09["production_blocker_count"], 1)
+        self.assertTrue(ltg09["signing_notarization_review_ready"])
+        self.assertEqual(ltg09["signing_notarization_review_status"], "tauri_signing_notarization_review_ready_blocked")
+        self.assertEqual(ltg09["codesign_signature_type"], "adhoc")
+        self.assertEqual(ltg09["codesign_team_identifier_status"], "not_set")
+        self.assertEqual(ltg09["spctl_assessment_status"], "internal_error")
+        self.assertTrue(ltg09["temporary_dmg_detected"])
+        self.assertTrue(ltg09["temporary_dmg_ignored_for_distribution"])
+        self.assertFalse(ltg09["production_signing_notarization_ready"])
         self.assertFalse(ltg09["signing_notarization_done"])
         self.assertFalse(ltg09["production_package_complete"])
         self.assertFalse(ltg09["external_calls_triggered"])
