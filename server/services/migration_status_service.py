@@ -763,6 +763,36 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
     ],
     "p4_storage_physical_execution": [
         {
+            "phase_key": "storage_schema_validation_acceptance_receipt",
+            "task_type": "run_storage_schema_validation_acceptance",
+            "receipt_key": "schema_validation_acceptance_evidence",
+            "route": "POST /api/storage/schema-validation/acceptance",
+        },
+        {
+            "phase_key": "storage_dataset_version_manifest_dry_run_receipt",
+            "task_type": "run_storage_dataset_version_manifest_dry_run",
+            "receipt_key": "storage_dataset_version_manifest_dry_run",
+            "route": "POST /api/storage/dataset-version-manifest/dry-run",
+        },
+        {
+            "phase_key": "storage_dataset_version_manifest_review_receipt",
+            "task_type": "run_storage_dataset_version_manifest_review",
+            "receipt_key": "storage_dataset_version_manifest_review",
+            "route": "POST /api/storage/dataset-version-manifest/review",
+        },
+        {
+            "phase_key": "storage_dataset_version_manifest_write_receipt",
+            "task_type": "run_storage_dataset_version_manifest_write",
+            "receipt_key": "storage_dataset_version_manifest_write",
+            "route": "POST /api/storage/dataset-version-manifest/write",
+        },
+        {
+            "phase_key": "storage_dataset_version_manifest_validate_receipt",
+            "task_type": "run_storage_dataset_version_manifest_validate",
+            "receipt_key": "storage_dataset_version_manifest_validate",
+            "route": "POST /api/storage/dataset-version-manifest/validate",
+        },
+        {
             "phase_key": "storage_physical_execution_request_ticket",
             "task_type": "run_storage_physical_execution_request",
             "receipt_key": "storage_physical_execution_request",
@@ -1131,6 +1161,24 @@ def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str,
         return {}
     packet_map = packet if isinstance(packet, dict) else {}
     receipt = packet_map.get(receipt_key)
+    if (not isinstance(receipt, dict) or not receipt) and queue_id == "p4_storage_physical_execution":
+        storage_packet_keys = {
+            "storage_dataset_version_manifest_dry_run": "command_center_3_storage_dataset_version_manifest_dry_run_packet",
+            "storage_dataset_version_manifest_review": "command_center_3_storage_dataset_version_manifest_review_packet",
+            "storage_dataset_version_manifest_write": "command_center_3_storage_dataset_version_manifest_write_packet",
+            "storage_dataset_version_manifest_validate": "command_center_3_storage_dataset_version_manifest_validate_packet",
+        }
+        packet_key = storage_packet_keys.get(receipt_key)
+        if packet_key:
+            try:
+                from server.services import storage_service
+                from storage.sqlite_meta import SQLiteMetaStore
+
+                receipt = SQLiteMetaStore(storage_service.SQLITE_META_PATH).read_packet(packet_key)
+                source = "storage_sqlite_packet"
+                source_packet_key = packet_key
+            except Exception:
+                receipt = {}
     if not isinstance(receipt, dict) or not receipt:
         return {}
     status = str(receipt.get("status") or "")
@@ -1208,6 +1256,9 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "ci_mirror_ready",
         "push_readiness_receipt_ready",
         "ready_for_explicit_push_sequence",
+        "manifest_write_plan_ready",
+        "manifest_write_executed",
+        "dataset_version_manifest_validated",
     )
     if any(receipt.get(key) is True for key in ready_keys):
         return True
@@ -1215,6 +1266,11 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "trade_cal_acceptance_dry_run_ready_real_execution_still_blocked",
         "trade_cal_provider_acceptance_promotion_review_recorded_blockers_visible",
         "synthetic_healthcheck_passed_local_task_store_only",
+        "schema_acceptance_evidence_passed_all_local_datasets",
+        "schema_acceptance_passed_all_local_datasets",
+        "manifest_review_ready_for_manual_write",
+        "manifest_write_completed_validated",
+        "manifest_validate_passed_local_only",
     }
     return str(receipt.get("status") or "") in ready_statuses
 
@@ -1721,11 +1777,46 @@ def _build_ltg_next_action_submission_preview_rows(
             "required_prior_phase_key": "radar_production_promotion_dry_run_ticket",
             "required_prior_material": "receipt_scope_hash",
         },
+        "POST /api/storage/schema-validation/acceptance": {
+            "step_kind": "local_storage_schema_validation_acceptance",
+            "safe_payload_summary": "source only; reads local Parquet schema metadata, no row payload, no write, no provider",
+            "expected_local_receipt": "schema_validation_acceptance_evidence",
+            "required_prior_phase_key": "",
+            "required_prior_material": "",
+        },
+        "POST /api/storage/dataset-version-manifest/dry-run": {
+            "step_kind": "local_storage_manifest_dry_run",
+            "safe_payload_summary": "source only; builds local manifest write plan, no manifest write, no Parquet write, no provider",
+            "expected_local_receipt": "storage_dataset_version_manifest_dry_run",
+            "required_prior_phase_key": "storage_schema_validation_acceptance_receipt",
+            "required_prior_material": "",
+        },
+        "POST /api/storage/dataset-version-manifest/review": {
+            "step_kind": "local_storage_manifest_review",
+            "safe_payload_summary": "source only; reviews schema acceptance plus manifest dry-run, no manifest write, no provider",
+            "expected_local_receipt": "storage_dataset_version_manifest_review",
+            "required_prior_phase_key": "storage_dataset_version_manifest_dry_run_receipt",
+            "required_prior_material": "",
+        },
+        "POST /api/storage/dataset-version-manifest/write": {
+            "step_kind": "local_storage_manifest_write",
+            "safe_payload_summary": "confirm_manifest_write=true after review; writes only ignored local _dataset_versions.json, no Parquet write, no provider",
+            "expected_local_receipt": "storage_dataset_version_manifest_write",
+            "required_prior_phase_key": "storage_dataset_version_manifest_review_receipt",
+            "required_prior_material": "",
+        },
+        "POST /api/storage/dataset-version-manifest/validate": {
+            "step_kind": "local_storage_manifest_validate",
+            "safe_payload_summary": "source only; validates ignored local _dataset_versions.json, no write, no provider",
+            "expected_local_receipt": "storage_dataset_version_manifest_validate",
+            "required_prior_phase_key": "storage_dataset_version_manifest_write_receipt",
+            "required_prior_material": "",
+        },
         "POST /api/storage/physical-execution-request": {
             "step_kind": "scope_bound_physical_execution_request",
             "safe_payload_summary": "approved_by_user plus latest storage physical execution recipe scope hash",
             "expected_local_receipt": "storage_physical_execution_request",
-            "required_prior_phase_key": "",
+            "required_prior_phase_key": "storage_dataset_version_manifest_validate_receipt",
             "required_prior_material": "physical_execution_scope_hash",
             "manual_scope_hash_required": True,
             "context_key": "storage_physical_execution_recipe_preview",

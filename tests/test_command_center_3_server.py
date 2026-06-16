@@ -332,7 +332,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(action_rows["p3_factor_small_pool_provider_validation"]["local_receipt_step_count"], 2)
         self.assertEqual(action_rows["p3_factor_universe_worker_batch_research"]["local_receipt_step_count"], 5)
         self.assertEqual(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_step_count"], 5)
-        self.assertEqual(action_rows["p4_storage_physical_execution"]["local_receipt_step_count"], 1)
+        self.assertEqual(action_rows["p4_storage_physical_execution"]["local_receipt_step_count"], 6)
+        self.assertEqual(
+            action_rows["p4_storage_physical_execution"]["next_local_step"],
+            "POST /api/storage/schema-validation/acceptance",
+        )
+        self.assertTrue(action_rows["p4_storage_physical_execution"]["next_local_step_ready_for_clean_receipt"])
         self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 5)
         self.assertEqual(action_rows["p5_deepseek_provider_benchmark_scope"]["local_receipt_step_count"], 1)
         self.assertEqual(action_rows["p5_next_session_map_browser_qa"]["local_receipt_step_count"], 1)
@@ -19367,7 +19372,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertIn("LTG-05", action_rows["p4_storage_physical_execution"]["ltg_ids"])
         self.assertIn("LTG-06", action_rows["p4_worker_runtime_qa"]["ltg_ids"])
-        self.assertEqual(action_rows["p4_storage_physical_execution"]["local_receipt_step_count"], 1)
+        self.assertEqual(action_rows["p4_storage_physical_execution"]["local_receipt_step_count"], 6)
+        self.assertEqual(
+            action_rows["p4_storage_physical_execution"]["next_local_step"],
+            "POST /api/storage/schema-validation/acceptance",
+        )
+        self.assertTrue(action_rows["p4_storage_physical_execution"]["next_local_step_ready_for_clean_receipt"])
         self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 5)
         self.assertIn("LTG-07", action_rows["p5_deepseek_provider_benchmark_scope"]["ltg_ids"])
         self.assertIn("LTG-08", action_rows["p5_next_session_map_browser_qa"]["ltg_ids"])
