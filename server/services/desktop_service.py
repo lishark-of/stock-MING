@@ -7,12 +7,18 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from storage.sqlite_meta import SQLiteMetaStore
+
+from .task_service import create_task_record, update_task_status
 
 PACKET_KEY = "command_center_3_desktop_shell_preflight_cache"
 SCHEMA_VERSION = "desktop_shell_preflight_cache.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 DESKTOP_ROOT = PROJECT_ROOT / "desktop"
 TAURI_RELEASE_BINARY = DESKTOP_ROOT / "src-tauri" / "target" / "release" / "stock_ming_command_center"
+TAURI_PACKAGE_ARTIFACT_REVIEW_PACKET_KEY = "command_center_3_tauri_package_artifact_review_packet"
+TAURI_PACKAGE_ARTIFACT_REVIEW_TASK_TYPE = "run_tauri_package_artifact_review"
 FRONTEND_API_CLIENT = DESKTOP_ROOT / "src" / "api" / "client.ts"
 FRONTEND_PAGE_STATE_BANNER = DESKTOP_ROOT / "src" / "components" / "PageStateBanner.tsx"
 FRONTEND_BACKEND_OFFLINE_NOTICE = DESKTOP_ROOT / "src" / "components" / "BackendOfflineNotice.tsx"
@@ -1722,6 +1728,270 @@ def _tauri_package_durable_evidence_recipe(packet: dict[str, Any]) -> dict[str, 
     return contract
 
 
+def _tauri_package_artifact_review_call_ledger(review: dict[str, Any], reviewed_at: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "api": "local_tauri_package_artifact_review",
+            "request_params_safe": {
+                "review_scope": "local_tauri_release_binary_artifact",
+                "binary_path": review.get("release_binary_path"),
+                "release_binary_review_ready": review.get("local_release_binary_artifact_review_ready"),
+                "external_sources_allowed": False,
+                "opens_packaged_app": False,
+                "runs_build": False,
+                "production_package_complete": False,
+            },
+            "row_count": review.get("row_count", 0),
+            "data_date": reviewed_at,
+            "local_fetched_at": reviewed_at,
+            "call_status": review.get("status"),
+            "error_message_safe": "",
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+
+
+def _tauri_package_artifact_review_contract(
+    *,
+    tauri_build_artifact: dict[str, Any],
+    packaged_runtime_qa_contract: dict[str, Any],
+    reviewed_at: str | None = None,
+    task_id: str = "",
+    explicit_review: bool = False,
+) -> dict[str, Any]:
+    release_binary_ready = bool(
+        tauri_build_artifact.get("schema_version") == "tauri_build_artifact_detection.v1"
+        and tauri_build_artifact.get("binary_exists") is True
+        and int(tauri_build_artifact.get("binary_size_bytes") or 0) > 0
+        and tauri_build_artifact.get("binary_executable") is True
+        and tauri_build_artifact.get("binary_kind") == "macos_mach_o_release_binary"
+        and tauri_build_artifact.get("build_command_executed_by_get_cache") is False
+        and tauri_build_artifact.get("artifact_is_gitignored") is True
+    )
+    boundary_ready = bool(
+        tauri_build_artifact.get("external_calls_triggered") is False
+        and tauri_build_artifact.get("tushare_called") is False
+        and tauri_build_artifact.get("deepseek_called") is False
+        and tauri_build_artifact.get("github_called") is False
+        and tauri_build_artifact.get("does_not_execute_trades") is True
+        and tauri_build_artifact.get("does_not_modify_strategy_action") is True
+        and tauri_build_artifact.get("contains_secret") is False
+    )
+    local_ready = bool(explicit_review and release_binary_ready and boundary_ready)
+
+    def _row(criterion: str, status: str, passed: bool, evidence: str, *, blocks_review: bool = True) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": status,
+            "passed": bool(passed),
+            "evidence": evidence,
+            "blocks_review": bool(blocks_review and not passed),
+            "blocks_production": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+
+    rows = [
+        _row(
+            "explicit_post_artifact_review_task",
+            "passed" if explicit_review else "pending_explicit_post",
+            explicit_review,
+            "POST /api/desktop/tauri-package-artifact-review performs the local release-binary artifact review.",
+        ),
+        _row(
+            "release_binary_exists_and_executable",
+            "passed_local_binary_artifact" if release_binary_ready else "pending_release_binary_artifact",
+            release_binary_ready,
+            (
+                f"path={tauri_build_artifact.get('binary_path')}; "
+                f"exists={tauri_build_artifact.get('binary_exists')}; "
+                f"size={tauri_build_artifact.get('binary_size_bytes')}; "
+                f"executable={tauri_build_artifact.get('binary_executable')}; "
+                f"kind={tauri_build_artifact.get('binary_kind')}"
+            ),
+        ),
+        _row(
+            "artifact_detection_did_not_run_build",
+            "passed_no_build_from_review",
+            tauri_build_artifact.get("build_command_executed_by_get_cache") is False,
+            "Review reads an existing ignored artifact only; it does not run npm, cargo, or Tauri.",
+        ),
+        _row(
+            "app_bundle_and_dmg_still_pending",
+            "pending_app_bundle_dmg",
+            False,
+            (
+                f"app_bundle={tauri_build_artifact.get('packaged_app_bundle_detected')}; "
+                f"dmg={tauri_build_artifact.get('distribution_dmg_detected')}; "
+                "local release binary is not app bundle/DMG acceptance."
+            ),
+            blocks_review=False,
+        ),
+        _row(
+            "packaged_launch_runtime_still_pending",
+            "pending_packaged_launch_runtime_qa",
+            False,
+            (
+                f"packaged_runtime_validated={packaged_runtime_qa_contract.get('packaged_runtime_validated')}; "
+                "release binary artifact QA is not packaged app launch QA."
+            ),
+            blocks_review=False,
+        ),
+        _row(
+            "production_package_still_blocked",
+            "passed_production_blockers_visible",
+            True,
+            "Backend startup, offline UX, config/log runtime paths, signing/notarization, and promotion review remain required.",
+            blocks_review=False,
+        ),
+        _row(
+            "no_external_trade_secret_boundary",
+            "passed_no_external_trade_secret",
+            boundary_ready,
+            "Review calls no providers/models/GitHub, executes no trades, mutates no strategy action, and exposes no secret.",
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["blocks_review"]]
+    return {
+        "schema_version": "tauri_package_artifact_review.v1",
+        "status": "tauri_package_artifact_review_ready_local_binary"
+        if local_ready
+        else "tauri_package_artifact_review_pending",
+        "scope": "button_gated_local_tauri_release_binary_artifact_review_no_build_no_runtime",
+        "ltg": "LTG-09",
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "explicit_review_task_done": explicit_review,
+        "local_release_binary_artifact_review_ready": local_ready,
+        "direct_evidence_stage_key": "release_binary_artifact_qa" if local_ready else "",
+        "release_binary_path": tauri_build_artifact.get("binary_path"),
+        "release_binary_exists": tauri_build_artifact.get("binary_exists") is True,
+        "release_binary_size_bytes": tauri_build_artifact.get("binary_size_bytes"),
+        "release_binary_executable": tauri_build_artifact.get("binary_executable") is True,
+        "release_binary_kind": tauri_build_artifact.get("binary_kind"),
+        "release_binary_is_completion": False,
+        "app_bundle_detected": tauri_build_artifact.get("packaged_app_bundle_detected") is True,
+        "dmg_distribution_detected": tauri_build_artifact.get("distribution_dmg_detected") is True,
+        "app_bundle_dmg_qa_done": False,
+        "packaged_runtime_validated": False,
+        "packaged_app_launch_qa_done": False,
+        "backend_startup_runtime_validated": False,
+        "backend_offline_packaged_ux_verified": False,
+        "config_log_runtime_paths_validated": False,
+        "signing_notarization_done": False,
+        "production_package_complete": False,
+        "tauri_build_executed_by_review": False,
+        "npm_or_cargo_executed_by_review": False,
+        "tauri_runtime_started_by_review": False,
+        "packaged_app_opened_by_review": False,
+        "fastapi_started_by_review": False,
+        "config_values_read_by_review": False,
+        "log_files_written_by_review": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "row_count": len(rows),
+        "blocking_review_count": len(blocking_rows),
+        "rows": rows,
+        "note": "This review is local release-binary artifact evidence only. It does not build, open the packaged app, start FastAPI, validate runtime UX, sign/notarize, call providers/models/GitHub, execute trades, or complete LTG-09.",
+    }
+
+
+def _safe_persisted_tauri_package_artifact_review(packet: dict[str, Any]) -> dict[str, Any]:
+    review = packet.get("tauri_package_artifact_review_contract")
+    if not isinstance(review, dict):
+        return {}
+    safe = (
+        review.get("schema_version") == "tauri_package_artifact_review.v1"
+        and review.get("scope") == "button_gated_local_tauri_release_binary_artifact_review_no_build_no_runtime"
+        and review.get("explicit_review_task_done") is True
+        and review.get("local_release_binary_artifact_review_ready") is True
+        and review.get("release_binary_is_completion") is False
+        and review.get("production_package_complete") is False
+        and review.get("packaged_runtime_validated") is False
+        and review.get("tauri_build_executed_by_review") is False
+        and review.get("npm_or_cargo_executed_by_review") is False
+        and review.get("tauri_runtime_started_by_review") is False
+        and review.get("packaged_app_opened_by_review") is False
+        and review.get("fastapi_started_by_review") is False
+        and review.get("config_values_read_by_review") is False
+        and review.get("log_files_written_by_review") is False
+        and review.get("external_calls_triggered") is False
+        and review.get("tushare_called") is False
+        and review.get("deepseek_called") is False
+        and review.get("github_called") is False
+        and review.get("does_not_execute_trades") is True
+        and review.get("does_not_modify_strategy_action") is True
+        and review.get("contains_secret") is False
+    )
+    return review if safe else {}
+
+
+def _read_tauri_package_artifact_review_packet() -> dict[str, Any]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(TAURI_PACKAGE_ARTIFACT_REVIEW_PACKET_KEY)
+    except Exception:
+        return {}
+    if not isinstance(packet, dict):
+        return {}
+    return packet if _safe_persisted_tauri_package_artifact_review(packet) else {}
+
+
+def _write_tauri_package_artifact_review_packet(
+    *,
+    review_contract: dict[str, Any],
+    ledger: list[dict[str, Any]],
+    reviewed_at: str,
+    task_id: str,
+) -> None:
+    packet = {
+        "packet_key": TAURI_PACKAGE_ARTIFACT_REVIEW_PACKET_KEY,
+        "schema_version": "tauri_package_artifact_review_packet.v1",
+        "status": review_contract.get("status"),
+        "ltg": "LTG-09",
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "tauri_package_artifact_review_contract": dict(review_contract),
+        "tauri_package_artifact_review_rows": list(review_contract.get("rows") or []),
+        "call_ledger": list(ledger),
+        "cache_only": True,
+        "runs_no_build": True,
+        "opens_no_packaged_app": True,
+        "starts_no_fastapi": True,
+        "reads_no_config_values": True,
+        "writes_no_log_files": True,
+        "production_package_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "warnings": [
+            "This packet is a local review receipt for an ignored Tauri release binary artifact only.",
+            "It is not packaged app launch QA, signing/notarization evidence, or production package completion.",
+        ],
+    }
+    if _safe_persisted_tauri_package_artifact_review(packet):
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(TAURI_PACKAGE_ARTIFACT_REVIEW_PACKET_KEY, packet)
+
+
 def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     package_summary = _package_json_summary()
     tauri_config = _tauri_config_summary()
@@ -2007,4 +2277,76 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     packet["warnings"].append(
         "tauri_package_durable_evidence_recipe 只固定 LTG-09 生产桌面包 durable evidence 清单；不会运行 npm/cargo/Tauri、打开 packaged app、启动 FastAPI、读取配置、写日志、外联或完成生产包。"
     )
+    persisted_artifact_review_packet = _read_tauri_package_artifact_review_packet()
+    persisted_artifact_review = _safe_persisted_tauri_package_artifact_review(persisted_artifact_review_packet)
+    if persisted_artifact_review:
+        packet["tauri_package_artifact_review_contract"] = persisted_artifact_review
+        packet["tauri_package_artifact_review_rows"] = list(persisted_artifact_review.get("rows") or [])
+        packet["tauri_package_artifact_review_ready"] = True
+        packet["counts"]["tauri_package_artifact_review_row_count"] = persisted_artifact_review.get("row_count", 0)
+        packet["counts"]["tauri_package_artifact_review_blocking_count"] = persisted_artifact_review.get(
+            "blocking_review_count",
+            0,
+        )
+        packet["runtime"]["tauri_package_artifact_review_ready"] = True
+        packet["runtime"]["tauri_package_artifact_review_status"] = persisted_artifact_review.get("status")
+        packet["runtime"]["tauri_release_binary_artifact_reviewed"] = True
+        packet["policy"]["tauri_package_artifact_review_is_local"] = True
+        packet["policy"]["tauri_package_artifact_review_is_not_build"] = True
+        packet["policy"]["tauri_package_artifact_review_is_not_runtime_execution"] = True
+        packet["policy"]["tauri_package_artifact_review_is_not_production_completion"] = True
+        packet["call_ledger"] = packet["call_ledger"] + [
+            row for row in persisted_artifact_review_packet.get("call_ledger", []) if isinstance(row, dict)
+        ]
+        packet["warnings"].append(
+            "tauri_package_artifact_review 只审查本地 release binary artifact；不等于 packaged app launch QA、签名/公证或 production package 完成。"
+        )
     return _json_safe(packet)
+
+
+def run_tauri_package_artifact_review_task(payload: Any = None) -> dict[str, Any]:
+    task = create_task_record(
+        TAURI_PACKAGE_ARTIFACT_REVIEW_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="tauri_package_artifact_review_queued",
+        warnings=[
+            "Tauri package artifact review 只读取本地 ignored release binary；不会运行 npm/cargo/Tauri。",
+            "review 结果只代表本地 release binary artifact QA；不代表 packaged runtime、签名/公证或 production package 完成。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="reading_local_tauri_release_binary_artifact",
+    )
+    packet = read_desktop_shell_preflight_cache()
+    reviewed_at = _now_iso()
+    review_contract = _tauri_package_artifact_review_contract(
+        tauri_build_artifact=packet.get("tauri_build_artifact", {}),
+        packaged_runtime_qa_contract=packet.get("packaged_runtime_qa_contract", {}),
+        explicit_review=True,
+        task_id=str(task["task_id"]),
+        reviewed_at=reviewed_at,
+    )
+    ledger = _tauri_package_artifact_review_call_ledger(review_contract, reviewed_at)
+    _write_tauri_package_artifact_review_packet(
+        review_contract=review_contract,
+        ledger=ledger,
+        reviewed_at=reviewed_at,
+        task_id=str(task["task_id"]),
+    )
+    return update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="tauri_package_artifact_review_ready"
+        if review_contract["local_release_binary_artifact_review_ready"]
+        else "tauri_package_artifact_review_pending",
+        call_ledger=ledger,
+        warning="tauri_package_artifact_review_completed_no_build_no_runtime_no_external_call",
+    ) or task

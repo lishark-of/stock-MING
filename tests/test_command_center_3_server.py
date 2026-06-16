@@ -29,6 +29,10 @@ RELEASE_GATE_LTG11_OBSERVED_STATUSES = {
     "observed_in_audit_cache_release_gate_contract",
     "observed_release_gate_direct_evidence_remote_ci_pending",
 }
+TAURI_LTG09_OBSERVED_STATUSES = {
+    "observed_in_tauri_desktop_static_contract",
+    "observed_tauri_release_binary_direct_evidence_production_pending",
+}
 
 
 def assert_ltg03_factor_test_stage_scope(test_case: unittest.TestCase, row: dict, expected_direct_count: int | None = None):
@@ -275,6 +279,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         original_storage_path = storage_service.SQLITE_META_PATH
         original_candidate_path = candidate_service.SQLITE_META_PATH
         original_worker_path = worker_service.SQLITE_META_PATH
+        original_desktop_path = desktop_service.SQLITE_META_PATH
         temp_dir = tempfile.TemporaryDirectory()
         db_path = Path(temp_dir.name) / "meta.sqlite"
         audit_service.SQLITE_META_PATH = db_path
@@ -286,6 +291,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         storage_service.SQLITE_META_PATH = db_path
         candidate_service.SQLITE_META_PATH = db_path
         worker_service.SQLITE_META_PATH = db_path
+        desktop_service.SQLITE_META_PATH = db_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, audit_service, "SQLITE_META_PATH", original_audit_path)
         self.addCleanup(setattr, packet_service, "SQLITE_META_PATH", original_packet_path)
@@ -296,6 +302,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.addCleanup(setattr, storage_service, "SQLITE_META_PATH", original_storage_path)
         self.addCleanup(setattr, candidate_service, "SQLITE_META_PATH", original_candidate_path)
         self.addCleanup(setattr, worker_service, "SQLITE_META_PATH", original_worker_path)
+        self.addCleanup(setattr, desktop_service, "SQLITE_META_PATH", original_desktop_path)
         return db_path
 
     def _with_motion_qa_root(self):
@@ -937,10 +944,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             observed_stage_rows["LTG-09"]["stage_scope_manifest"],
             "tauri_production_package_stage_scope_manifest",
         )
-        self.assertEqual(observed_stage_rows["LTG-09"]["status"], "observed_in_tauri_desktop_static_contract")
+        ltg09_direct_count = int(observed_stage_rows["LTG-09"].get("direct_evidence_stage_count") or 0)
+        self.assertIn(observed_stage_rows["LTG-09"]["status"], TAURI_LTG09_OBSERVED_STATUSES)
         self.assertEqual(observed_stage_rows["LTG-09"]["row_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-09"]["pending_stage_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-09"]["pending_stage_count"], 8 - ltg09_direct_count)
         self.assertEqual(observed_stage_rows["LTG-09"]["local_evidence_stage_count"], 8)
+        if ltg09_direct_count:
+            self.assertEqual(observed_stage_rows["LTG-09"]["direct_evidence_stage_keys"], ["release_binary_artifact_qa"])
+            self.assertTrue(observed_stage_rows["LTG-09"]["release_binary_artifact_qa_done"])
         self.assertFalse(observed_stage_rows["LTG-09"]["production_package_complete"])
         self.assertFalse(observed_stage_rows["LTG-09"]["tauri_build_executed"])
         self.assertFalse(observed_stage_rows["LTG-09"]["packaged_runtime_qa_done"])
@@ -1191,11 +1202,20 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("tauri dev/build", migration_goals["LTG-09"]["next_evidence_required"])
         self.assertIn("packaged runtime QA", migration_goals["LTG-09"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-09"]["production_complete"])
+        ltg09_goal_direct_count = int(migration_goals["LTG-09"].get("observed_stage_scope_direct_evidence_count") or 0)
         self.assertEqual(
-            migration_goals["LTG-09"]["observed_stage_scope_manifest_status"],
-            "observed_in_tauri_desktop_static_contract",
+            migration_goals["LTG-09"]["observed_stage_scope_pending_count"],
+            8 - ltg09_goal_direct_count,
         )
-        self.assertEqual(migration_goals["LTG-09"]["observed_stage_scope_pending_count"], 8)
+        self.assertIn(
+            migration_goals["LTG-09"]["observed_stage_scope_manifest_status"],
+            TAURI_LTG09_OBSERVED_STATUSES,
+        )
+        if ltg09_goal_direct_count:
+            self.assertEqual(
+                migration_goals["LTG-09"]["observed_stage_scope_direct_evidence_keys"],
+                ["release_binary_artifact_qa"],
+            )
         self.assertFalse(migration_goals["LTG-09"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-10"]["stage_scope_manifest"], "streamlit_retirement_stage_scope_manifest")
         self.assertIn("retirement stage-scope manifest", migration_goals["LTG-10"]["current_state"])
@@ -13551,7 +13571,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 63)
+        self.assertEqual(catalog["task_count"], 64)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -13570,7 +13590,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 63)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 64)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -13581,8 +13601,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 65)
-        self.assertEqual(route_coverage["task_creation_route_count"], 63)
+        self.assertEqual(route_coverage["known_post_route_count"], 66)
+        self.assertEqual(route_coverage["task_creation_route_count"], 64)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -13591,11 +13611,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 63)
+        self.assertEqual(implementation_status["task_count"], 64)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 60)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 61)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 61)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 62)
         self.assertEqual(implementation_status["external_capable_task_count"], 6)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -13625,6 +13645,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_factor_test_provider_small_pool_execution_request",
                 "build_next_session_projection",
                 "run_next_session_browser_qa_review",
+                "run_tauri_package_artifact_review",
                 "run_candidate_radar_quick_scan",
                 "run_candidate_radar_quant_projection",
                 "run_candidate_radar_quant_projection_acceptance_dry_run",
@@ -13691,6 +13712,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_factor_test_provider_small_pool_execution_request",
                 "build_next_session_projection",
                 "run_next_session_browser_qa_review",
+                "run_tauri_package_artifact_review",
                 "run_candidate_radar_quick_scan",
                 "run_candidate_radar_quant_projection",
                 "run_candidate_radar_quant_projection_acceptance_dry_run",
@@ -15701,16 +15723,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 60)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 61)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 61)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 62)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 60)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 61)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 61)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 62)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -16565,9 +16587,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 60)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 61)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 61)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 62)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -16791,9 +16813,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 60)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 61)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 61)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 62)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -16826,9 +16848,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 60)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 61)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 61)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 62)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -17860,6 +17882,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         original_tushare_task_path = tushare_task_service.SQLITE_META_PATH
         original_candidate_path = candidate_service.SQLITE_META_PATH
         original_worker_path = worker_service.SQLITE_META_PATH
+        original_desktop_path = desktop_service.SQLITE_META_PATH
         temp_dir = tempfile.TemporaryDirectory()
         db_path = Path(temp_dir.name) / "meta.sqlite"
         audit_service.SQLITE_META_PATH = db_path
@@ -17870,6 +17893,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         tushare_task_service.SQLITE_META_PATH = db_path
         candidate_service.SQLITE_META_PATH = db_path
         worker_service.SQLITE_META_PATH = db_path
+        desktop_service.SQLITE_META_PATH = db_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, audit_service, "SQLITE_META_PATH", original_audit_path)
         self.addCleanup(setattr, packet_service, "SQLITE_META_PATH", original_packet_path)
@@ -17879,6 +17903,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.addCleanup(setattr, tushare_task_service, "SQLITE_META_PATH", original_tushare_task_path)
         self.addCleanup(setattr, candidate_service, "SQLITE_META_PATH", original_candidate_path)
         self.addCleanup(setattr, worker_service, "SQLITE_META_PATH", original_worker_path)
+        self.addCleanup(setattr, desktop_service, "SQLITE_META_PATH", original_desktop_path)
         return db_path
 
     def _with_motion_qa_root(self):
@@ -20749,10 +20774,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             observed_stage_rows["LTG-09"]["stage_scope_manifest"],
             "tauri_production_package_stage_scope_manifest",
         )
-        self.assertEqual(observed_stage_rows["LTG-09"]["status"], "observed_in_tauri_desktop_static_contract")
+        ltg09_direct_count = int(observed_stage_rows["LTG-09"].get("direct_evidence_stage_count") or 0)
+        self.assertIn(observed_stage_rows["LTG-09"]["status"], TAURI_LTG09_OBSERVED_STATUSES)
         self.assertEqual(observed_stage_rows["LTG-09"]["row_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-09"]["pending_stage_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-09"]["pending_stage_count"], 8 - ltg09_direct_count)
         self.assertEqual(observed_stage_rows["LTG-09"]["local_evidence_stage_count"], 8)
+        if ltg09_direct_count:
+            self.assertEqual(observed_stage_rows["LTG-09"]["direct_evidence_stage_keys"], ["release_binary_artifact_qa"])
+            self.assertTrue(observed_stage_rows["LTG-09"]["release_binary_artifact_qa_done"])
         self.assertFalse(observed_stage_rows["LTG-09"]["production_package_complete"])
         self.assertFalse(observed_stage_rows["LTG-09"]["tauri_build_executed"])
         self.assertFalse(observed_stage_rows["LTG-09"]["packaged_runtime_qa_done"])
@@ -20958,11 +20987,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("tauri dev/build", migration_goals["LTG-09"]["next_evidence_required"])
         self.assertIn("packaged runtime QA", migration_goals["LTG-09"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-09"]["production_complete"])
-        self.assertEqual(
+        ltg09_goal_direct_count = int(migration_goals["LTG-09"].get("observed_stage_scope_direct_evidence_count") or 0)
+        self.assertIn(
             migration_goals["LTG-09"]["observed_stage_scope_manifest_status"],
-            "observed_in_tauri_desktop_static_contract",
+            TAURI_LTG09_OBSERVED_STATUSES,
         )
-        self.assertEqual(migration_goals["LTG-09"]["observed_stage_scope_pending_count"], 8)
+        self.assertEqual(migration_goals["LTG-09"]["observed_stage_scope_pending_count"], 8 - ltg09_goal_direct_count)
+        if ltg09_goal_direct_count:
+            self.assertEqual(
+                migration_goals["LTG-09"]["observed_stage_scope_direct_evidence_keys"],
+                ["release_binary_artifact_qa"],
+            )
         self.assertFalse(migration_goals["LTG-09"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-10"]["stage_scope_manifest"], "streamlit_retirement_stage_scope_manifest")
         self.assertIn("retirement stage-scope manifest", migration_goals["LTG-10"]["current_state"])
@@ -21138,7 +21173,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 63)
+        self.assertEqual(task_catalog["data"]["task_count"], 64)
+        self.assertIn(
+            "POST /api/desktop/tauri-package-artifact-review",
+            task_catalog["data"]["route_coverage"]["known_post_routes"],
+        )
         self.assertIn("POST /api/bootstrap/live-startup", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-research-plan", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-worker-batch-dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
@@ -21447,6 +21486,114 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(recovery["data"]["policy"]["recovery_actions_are_manual_guidance"])
         self.assertTrue(recovery["data"]["does_not_modify_strategy_action"])
         self.assertTrue(recovery["data"]["does_not_execute_trades"])
+
+    def test_tauri_package_artifact_review_endpoint_is_button_gated_local_binary_only(self):
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        temp_dir = tempfile.TemporaryDirectory()
+        release_binary = Path(temp_dir.name) / "stock_ming_command_center"
+        release_binary.write_bytes(b"\xcf\xfa\xed\xfe local tauri release binary fixture")
+        release_binary.chmod(0o755)
+        original_release_binary = desktop_service.TAURI_RELEASE_BINARY
+        desktop_service.TAURI_RELEASE_BINARY = release_binary
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, desktop_service, "TAURI_RELEASE_BINARY", original_release_binary)
+
+        response = self.client.post(
+            "/api/desktop/tauri-package-artifact-review",
+            json={"operator": "local-review", "authorization": "Bearer SHOULD_DROP"},
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["task_type"], desktop_service.TAURI_PACKAGE_ARTIFACT_REVIEW_TASK_TYPE)
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "tauri_package_artifact_review_ready")
+        self.assertNotIn("authorization", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+
+        persisted = SQLiteMetaStore(desktop_service.SQLITE_META_PATH).read_packet(
+            desktop_service.TAURI_PACKAGE_ARTIFACT_REVIEW_PACKET_KEY
+        )
+        self.assertEqual(persisted["packet_key"], desktop_service.TAURI_PACKAGE_ARTIFACT_REVIEW_PACKET_KEY)
+        self.assertEqual(persisted["status"], "tauri_package_artifact_review_ready_local_binary")
+        self.assertFalse(persisted["external_calls_triggered"])
+        self.assertFalse(persisted["tushare_called"])
+        self.assertFalse(persisted["deepseek_called"])
+        self.assertFalse(persisted["github_called"])
+
+        refreshed = desktop_service.read_desktop_shell_preflight_cache()
+        review = refreshed["tauri_package_artifact_review_contract"]
+        self.assertEqual(review["schema_version"], "tauri_package_artifact_review.v1")
+        self.assertEqual(review["status"], "tauri_package_artifact_review_ready_local_binary")
+        self.assertTrue(review["explicit_review_task_done"])
+        self.assertTrue(review["local_release_binary_artifact_review_ready"])
+        self.assertEqual(review["direct_evidence_stage_key"], "release_binary_artifact_qa")
+        self.assertTrue(review["release_binary_exists"])
+        self.assertTrue(review["release_binary_executable"])
+        self.assertGreater(review["release_binary_size_bytes"], 0)
+        self.assertFalse(review["release_binary_is_completion"])
+        self.assertFalse(review["app_bundle_dmg_qa_done"])
+        self.assertFalse(review["packaged_runtime_validated"])
+        self.assertFalse(review["packaged_app_launch_qa_done"])
+        self.assertFalse(review["backend_startup_runtime_validated"])
+        self.assertFalse(review["backend_offline_packaged_ux_verified"])
+        self.assertFalse(review["config_log_runtime_paths_validated"])
+        self.assertFalse(review["signing_notarization_done"])
+        self.assertFalse(review["production_package_complete"])
+        self.assertFalse(review["tauri_build_executed_by_review"])
+        self.assertFalse(review["npm_or_cargo_executed_by_review"])
+        self.assertFalse(review["tauri_runtime_started_by_review"])
+        self.assertFalse(review["packaged_app_opened_by_review"])
+        self.assertFalse(review["fastapi_started_by_review"])
+        self.assertFalse(review["config_values_read_by_review"])
+        self.assertFalse(review["log_files_written_by_review"])
+        self.assertFalse(review["external_calls_triggered"])
+        self.assertFalse(review["tushare_called"])
+        self.assertFalse(review["deepseek_called"])
+        self.assertFalse(review["github_called"])
+        self.assertTrue(refreshed["runtime"]["tauri_package_artifact_review_ready"])
+        self.assertTrue(refreshed["policy"]["tauri_package_artifact_review_is_not_build"])
+        self.assertTrue(refreshed["policy"]["tauri_package_artifact_review_is_not_runtime_execution"])
+        self.assertTrue(refreshed["policy"]["tauri_package_artifact_review_is_not_production_completion"])
+        self.assertIn("local_tauri_package_artifact_review", {row.get("api") for row in refreshed["call_ledger"]})
+
+        migration = migration_status_service.build_migration_status()
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg09 = observed_stage_rows["LTG-09"]
+        self.assertEqual(ltg09["status"], "observed_tauri_release_binary_direct_evidence_production_pending")
+        self.assertEqual(ltg09["row_count"], 8)
+        self.assertEqual(ltg09["pending_stage_count"], 7)
+        self.assertEqual(ltg09["production_blocker_count"], 7)
+        self.assertEqual(ltg09["direct_evidence_stage_count"], 1)
+        self.assertEqual(ltg09["direct_evidence_stage_keys"], ["release_binary_artifact_qa"])
+        self.assertTrue(ltg09["release_binary_artifact_qa_done"])
+        self.assertTrue(ltg09["release_binary_artifact_review_ready"])
+        self.assertFalse(ltg09["release_binary_is_completion"])
+        self.assertFalse(ltg09["production_package_complete"])
+        self.assertFalse(ltg09["packaged_runtime_qa_done"])
+        self.assertFalse(ltg09["app_bundle_detected"])
+        self.assertFalse(ltg09["dmg_distribution_detected"])
+        self.assertFalse(ltg09["backend_startup_runtime_validated"])
+        self.assertFalse(ltg09["backend_offline_packaged_ux_verified"])
+        self.assertFalse(ltg09["config_log_runtime_paths_validated"])
+        self.assertFalse(ltg09["signing_notarization_done"])
+        self.assertFalse(ltg09["external_calls_triggered"])
+        self.assertFalse(ltg09["tushare_called"])
+        self.assertFalse(ltg09["deepseek_called"])
+        self.assertFalse(ltg09["github_called"])
+        self.assertTrue(ltg09["does_not_execute_trades"])
+        self.assertTrue(ltg09["does_not_modify_strategy_action"])
+        self.assertFalse(ltg09["contains_secret"])
+        self.assertFalse(ltg09["can_close_from_observed_row"])
 
     def test_trade_review_cache_endpoint_returns_sanitized_local_records(self):
         self._with_trade_review_log(

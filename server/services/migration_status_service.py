@@ -2672,6 +2672,86 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
     }
 
 
+def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
+    try:
+        from server.services import desktop_service
+
+        packet = desktop_service.read_desktop_shell_preflight_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    review = _dict_or_empty(packet_map.get("tauri_package_artifact_review_contract"))
+    packet_safe = bool(
+        packet_map.get("external_calls_triggered") is not True
+        and packet_map.get("tushare_called") is not True
+        and packet_map.get("deepseek_called") is not True
+        and packet_map.get("github_called") is not True
+        and packet_map.get("does_not_execute_trades") is not False
+        and packet_map.get("does_not_modify_strategy_action") is not False
+    )
+    artifact_review_ready = bool(
+        packet_safe
+        and review.get("schema_version") == "tauri_package_artifact_review.v1"
+        and review.get("status") == "tauri_package_artifact_review_ready_local_binary"
+        and review.get("explicit_review_task_done") is True
+        and review.get("local_release_binary_artifact_review_ready") is True
+        and review.get("release_binary_exists") is True
+        and review.get("release_binary_executable") is True
+        and int(review.get("release_binary_size_bytes") or 0) > 0
+        and review.get("release_binary_is_completion") is False
+        and review.get("production_package_complete") is False
+        and review.get("packaged_runtime_validated") is False
+        and review.get("packaged_app_launch_qa_done") is False
+        and review.get("tauri_build_executed_by_review") is False
+        and review.get("npm_or_cargo_executed_by_review") is False
+        and review.get("tauri_runtime_started_by_review") is False
+        and review.get("packaged_app_opened_by_review") is False
+        and review.get("fastapi_started_by_review") is False
+        and review.get("config_values_read_by_review") is False
+        and review.get("log_files_written_by_review") is False
+        and review.get("external_calls_triggered") is False
+        and review.get("tushare_called") is False
+        and review.get("deepseek_called") is False
+        and review.get("github_called") is False
+        and review.get("does_not_execute_trades") is True
+        and review.get("does_not_modify_strategy_action") is True
+        and review.get("contains_secret") is False
+    )
+    direct_stage_keys = ["release_binary_artifact_qa"] if artifact_review_ready else []
+    return {
+        "schema_version": "migration_tauri_package_direct_evidence_summary.v1",
+        "source_packet_key": "command_center_3_tauri_package_artifact_review_packet",
+        "status": "tauri_package_release_binary_direct_evidence_visible_production_pending"
+        if direct_stage_keys
+        else "tauri_package_release_binary_direct_evidence_missing",
+        "available": bool(direct_stage_keys),
+        "direct_evidence_stage_keys": direct_stage_keys,
+        "direct_evidence_stage_count": len(direct_stage_keys),
+        "release_binary_artifact_qa_done": artifact_review_ready,
+        "release_binary_path": review.get("release_binary_path") if artifact_review_ready else "",
+        "release_binary_size_bytes": review.get("release_binary_size_bytes") if artifact_review_ready else 0,
+        "app_bundle_detected": False,
+        "dmg_distribution_detected": False,
+        "packaged_runtime_qa_done": False,
+        "backend_startup_runtime_validated": False,
+        "backend_offline_packaged_ux_verified": False,
+        "config_log_runtime_paths_validated": False,
+        "signing_notarization_done": False,
+        "production_package_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "direct_evidence_layer": "L3_local_tauri_release_binary_artifact_review"
+        if direct_stage_keys
+        else "L1_static_contract",
+        "evidence_boundary": "release_binary_artifact_qa_is_not_packaged_runtime_or_production_package",
+    }
+
+
 def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
     try:
         from server.services import candidate_service
@@ -4830,21 +4910,33 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             for row in stage_rows
             if isinstance(row, dict) and row.get("current_status") == "local_manifest_or_static_qa_only"
         )
+        direct_evidence = _latest_tauri_package_direct_evidence_summary()
+        direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
+        observed_pending_count = max(pending_count - direct_evidence_count, 0)
+        tauri_status = (
+            "observed_tauri_release_binary_direct_evidence_production_pending"
+            if direct_evidence_count
+            else "observed_in_tauri_desktop_static_contract"
+        )
         rows.append(
             {
                 "id": "LTG-09",
                 "goal": "Tauri desktop production package",
                 "stage_scope_manifest": "tauri_production_package_stage_scope_manifest",
-                "status": "observed_in_tauri_desktop_static_contract"
-                if stage_rows
-                else "missing_from_tauri_desktop_static_contract",
-                "observed_source": "scripts/tauri_desktop_contract.build_contract local static contract",
+                "status": tauri_status if stage_rows else "missing_from_tauri_desktop_static_contract",
+                "observed_source": (
+                    "scripts/tauri_desktop_contract.build_contract local static contract + tauri release binary artifact direct evidence"
+                ),
                 "cache_status": str(tauri_contract.get("status") or "missing"),
-                "cache_mode": "local_static_contract",
+                "cache_mode": "local_static_contract_plus_tauri_release_binary_artifact_evidence"
+                if direct_evidence_count
+                else "local_static_contract",
                 "row_count": row_count,
-                "pending_stage_count": pending_count,
+                "pending_stage_count": observed_pending_count,
                 "local_evidence_stage_count": local_evidence_count,
-                "production_blocker_count": pending_count,
+                "direct_evidence_stage_count": direct_evidence_count,
+                "direct_evidence_stage_keys": list(direct_evidence.get("direct_evidence_stage_keys") or []),
+                "production_blocker_count": observed_pending_count,
                 "production_package_complete": tauri_contract.get("production_package_complete") is True,
                 "tauri_build_executed": tauri_contract.get("tauri_build_executed") is True,
                 "packaged_runtime_qa_done": tauri_contract.get("packaged_runtime_qa_done") is True,
@@ -4852,6 +4944,13 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     "tauri_package_durable_evidence_complete"
                 )
                 is True,
+                "release_binary_artifact_qa_done": direct_evidence.get("release_binary_artifact_qa_done") is True,
+                "release_binary_artifact_review_ready": direct_evidence.get(
+                    "release_binary_artifact_qa_done"
+                )
+                is True,
+                "release_binary_artifact_path": direct_evidence.get("release_binary_path") or "",
+                "release_binary_artifact_size_bytes": direct_evidence.get("release_binary_size_bytes") or 0,
                 "tauri_runtime_started_by_contract": False,
                 "packaged_app_opened_by_contract": False,
                 "fastapi_started_by_contract": False,
@@ -4876,7 +4975,10 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "does_not_modify_strategy_action": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
-                "evidence_boundary": "observed_local_static_tauri_stage_scope_not_production_completion",
+                "tauri_direct_evidence_layer": direct_evidence.get("direct_evidence_layer") or "L1_static_contract",
+                "evidence_boundary": "observed_l3_tauri_release_binary_artifact_not_packaged_runtime_or_production_package"
+                if direct_evidence_count
+                else "observed_local_static_tauri_stage_scope_not_production_completion",
             }
         )
     except Exception:
