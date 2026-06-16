@@ -306,7 +306,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(migration["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
         self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 14)
-        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_pending_count"], 119)
+        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_pending_count"], 117)
         self.assertEqual(migration["long_term_goal_summary"]["goals_with_next_evidence_count"], 14)
         self.assertEqual(migration["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
@@ -905,9 +905,31 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(observed_stage_rows["LTG-12"]["contains_secret"])
         self.assertFalse(observed_stage_rows["LTG-12"]["can_close_from_observed_row"])
         self.assertEqual(observed_stage_rows["LTG-13"]["stage_scope_manifest"], "candidate_radar_production_stage_scope_manifest")
-        self.assertEqual(observed_stage_rows["LTG-13"]["status"], "observed_in_candidate_radar_cache")
+        self.assertIn(
+            observed_stage_rows["LTG-13"]["status"],
+            {
+                "observed_in_candidate_radar_cache",
+                "observed_candidate_radar_direct_evidence_production_pending",
+            },
+        )
+        ltg13_has_direct_evidence = (
+            observed_stage_rows["LTG-13"]["status"]
+            == "observed_candidate_radar_direct_evidence_production_pending"
+        )
         self.assertGreaterEqual(observed_stage_rows["LTG-13"]["row_count"], 10)
-        self.assertGreaterEqual(observed_stage_rows["LTG-13"]["pending_stage_count"], 10)
+        ltg13_direct_count = int(observed_stage_rows["LTG-13"].get("direct_evidence_stage_count") or 0)
+        self.assertEqual(
+            observed_stage_rows["LTG-13"]["pending_stage_count"],
+            max(10 - ltg13_direct_count, 0) if ltg13_has_direct_evidence else 10,
+        )
+        if ltg13_has_direct_evidence:
+            self.assertGreaterEqual(observed_stage_rows["LTG-13"]["direct_evidence_stage_count"], 2)
+            self.assertTrue(observed_stage_rows["LTG-13"]["cache_render_boundary_verified"])
+            self.assertTrue(observed_stage_rows["LTG-13"]["quick_scan_task_pipeline_verified"])
+            if ltg13_direct_count >= 5:
+                self.assertTrue(observed_stage_rows["LTG-13"]["local_full_pool_execution_receipt_verified"])
+                self.assertTrue(observed_stage_rows["LTG-13"]["local_deep_scan_review_receipt_verified"])
+                self.assertTrue(observed_stage_rows["LTG-13"]["browser_visual_performance_evidence_verified"])
         self.assertFalse(observed_stage_rows["LTG-13"]["production_radar_replacement_complete"])
         self.assertTrue(observed_stage_rows["LTG-13"]["production_promotion_dry_run_visible"])
         self.assertEqual(
@@ -1087,11 +1109,22 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(migration_goals["LTG-12"]["observed_stage_scope_pending_count"], 8)
         self.assertFalse(migration_goals["LTG-12"]["observed_stage_scope_can_close_goal"])
-        self.assertEqual(
+        self.assertIn(
             migration_goals["LTG-13"]["observed_stage_scope_manifest_status"],
-            "observed_in_candidate_radar_cache",
+            {
+                "observed_in_candidate_radar_cache",
+                "observed_candidate_radar_direct_evidence_production_pending",
+            },
         )
-        self.assertGreaterEqual(migration_goals["LTG-13"]["observed_stage_scope_pending_count"], 10)
+        ltg13_goal_direct_count = int(
+            migration_goals["LTG-13"].get("observed_stage_scope_direct_evidence_count") or 0
+        )
+        self.assertEqual(
+            migration_goals["LTG-13"]["observed_stage_scope_pending_count"],
+            max(10 - ltg13_goal_direct_count, 0)
+            if ltg13_goal_direct_count
+            else 10,
+        )
         self.assertFalse(migration_goals["LTG-13"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(
             migration_goals["LTG-13"]["observed_production_promotion_dry_run_status"],
@@ -20282,9 +20315,31 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             observed_stage_rows["LTG-13"]["stage_scope_manifest"],
             "candidate_radar_production_stage_scope_manifest",
         )
-        self.assertEqual(observed_stage_rows["LTG-13"]["status"], "observed_in_candidate_radar_cache")
+        self.assertIn(
+            observed_stage_rows["LTG-13"]["status"],
+            {
+                "observed_in_candidate_radar_cache",
+                "observed_candidate_radar_direct_evidence_production_pending",
+            },
+        )
+        ltg13_has_direct_evidence = (
+            observed_stage_rows["LTG-13"]["status"]
+            == "observed_candidate_radar_direct_evidence_production_pending"
+        )
         self.assertGreaterEqual(observed_stage_rows["LTG-13"]["row_count"], 10)
-        self.assertGreaterEqual(observed_stage_rows["LTG-13"]["pending_stage_count"], 10)
+        ltg13_direct_count = int(observed_stage_rows["LTG-13"].get("direct_evidence_stage_count") or 0)
+        self.assertEqual(
+            observed_stage_rows["LTG-13"]["pending_stage_count"],
+            max(10 - ltg13_direct_count, 0) if ltg13_has_direct_evidence else 10,
+        )
+        if ltg13_has_direct_evidence:
+            self.assertGreaterEqual(observed_stage_rows["LTG-13"]["direct_evidence_stage_count"], 2)
+            self.assertTrue(observed_stage_rows["LTG-13"]["cache_render_boundary_verified"])
+            self.assertTrue(observed_stage_rows["LTG-13"]["quick_scan_task_pipeline_verified"])
+            if ltg13_direct_count >= 5:
+                self.assertTrue(observed_stage_rows["LTG-13"]["local_full_pool_execution_receipt_verified"])
+                self.assertTrue(observed_stage_rows["LTG-13"]["local_deep_scan_review_receipt_verified"])
+                self.assertTrue(observed_stage_rows["LTG-13"]["browser_visual_performance_evidence_verified"])
         self.assertFalse(observed_stage_rows["LTG-13"]["production_radar_replacement_complete"])
         self.assertFalse(observed_stage_rows["LTG-13"]["external_calls_triggered"])
         self.assertFalse(observed_stage_rows["LTG-13"]["tushare_called"])
@@ -20416,11 +20471,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(migration_goals["LTG-12"]["observed_stage_scope_pending_count"], 8)
         self.assertFalse(migration_goals["LTG-12"]["observed_stage_scope_can_close_goal"])
-        self.assertEqual(
+        self.assertIn(
             migration_goals["LTG-13"]["observed_stage_scope_manifest_status"],
-            "observed_in_candidate_radar_cache",
+            {
+                "observed_in_candidate_radar_cache",
+                "observed_candidate_radar_direct_evidence_production_pending",
+            },
         )
-        self.assertGreaterEqual(migration_goals["LTG-13"]["observed_stage_scope_pending_count"], 10)
+        ltg13_goal_direct_count = int(
+            migration_goals["LTG-13"].get("observed_stage_scope_direct_evidence_count") or 0
+        )
+        self.assertEqual(
+            migration_goals["LTG-13"]["observed_stage_scope_pending_count"],
+            max(10 - ltg13_goal_direct_count, 0)
+            if ltg13_goal_direct_count
+            else 10,
+        )
         self.assertFalse(migration_goals["LTG-13"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(
             migration_goals["LTG-14"]["observed_stage_scope_manifest_status"],
@@ -23776,6 +23842,164 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("DEEPSEEK_API_KEY", json.dumps(cache, ensure_ascii=False))
+
+    def test_ltg_stage_scope_observes_candidate_radar_direct_evidence_without_replacement(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"},
+                "radar_packet": {
+                    "status": "ready",
+                    "top_candidates": [
+                        {"rank": 1, "ticker": "002008.SZ", "name": "大族激光", "score": 61},
+                        {"rank": 2, "ticker": "002837.SZ", "name": "英维克", "score": 47},
+                    ],
+                    "authorization": "Bearer SHOULD_DROP",
+                },
+                "next_ticket_candidates": [
+                    {"rank": 1, "ticker": "002008.SZ", "name": "大族激光", "score": 61},
+                    {"rank": 2, "ticker": "002837.SZ", "name": "英维克", "score": 47},
+                ],
+            }
+        )
+        artifact_root = self._with_candidate_motion_qa_root()
+        viewports = [
+            ("desktop", 1440, 900),
+            ("laptop", 1280, 800),
+            ("tablet", 834, 1112),
+            ("mobile", 390, 844),
+        ]
+        for run_id, reduced in (("default-run", False), ("reduced-run", True)):
+            report_dir = artifact_root / run_id
+            report_dir.mkdir(parents=True)
+            rows = [
+                {
+                    "route": "#candidates",
+                    "label": "Candidate Radar",
+                    "viewport": viewport,
+                    "width": width,
+                    "height": height,
+                    "url": "http://127.0.0.1:5173/#candidates",
+                    "status": "passed",
+                    "visual_qa_complete": True,
+                    "performance_trace_complete": True,
+                    "route_transition_observed_ms": 120,
+                    "route_transition_budget_ms": 500,
+                    "long_task_over_50ms_count": 0,
+                    "largest_motion_layout_shift": 0,
+                    "clipped_count": 0,
+                    "offscreen_count": 0,
+                }
+                for viewport, width, height in viewports
+            ]
+            (report_dir / "motion_browser_qa_report.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "command_center_3_motion_browser_qa_result.v1",
+                        "status": "motion_browser_qa_passed",
+                        "scope": "explicit_local_browser_visual_performance_run",
+                        "run_id": run_id,
+                        "generated_at": "2026-06-14T02:30:00.000Z",
+                        "base_url": "http://127.0.0.1:5173",
+                        "artifact_root": ".stock_ming_3/motion_qa",
+                        "reduced_motion": reduced,
+                        "route_count": 5,
+                        "viewport_count": 4,
+                        "qa_matrix_count": 20,
+                        "passed_count": 20,
+                        "review_required_count": 0,
+                        "console_error_count": 0,
+                        "visual_qa_complete": True,
+                        "browser_performance_verified": True,
+                        "production_motion_complete": False,
+                        "performance_budgets": {"route_transition_observed_ms": 500},
+                        "rows": rows,
+                        "errors": [],
+                        "cache_only": True,
+                        "starts_no_servers": True,
+                        "local_urls_only": True,
+                        "external_calls_triggered": False,
+                        "tushare_called": False,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+        browser_review = self.client.post(
+            "/api/candidate-radar/browser-qa-review",
+            json={"review_scope": "candidate_route_browser_qa_local_artifact"},
+        ).json()
+        self.assertTrue(browser_review["ok"])
+        self.client.post(
+            "/api/candidate-radar/full-pool-local-scan",
+            json={
+                "scan_mode": "full_pool_local_scan",
+                "local_execution_only": True,
+                "local_universe_candidates": [
+                    {"ticker": "002008.SZ", "name": "大族激光", "score": 61},
+                    {"ticker": "002837.SZ", "name": "英维克", "score": 47},
+                ],
+            },
+        )
+        self.client.post(
+            "/api/candidate-radar/deep-scan-local-review",
+            json={"scan_mode": "deep_scan_local_review", "local_review_only": True},
+        )
+
+        migration = migration_status_service.build_migration_status()
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg13 = observed_stage_rows["LTG-13"]
+
+        self.assertEqual(ltg13["status"], "observed_candidate_radar_direct_evidence_production_pending")
+        self.assertEqual(ltg13["row_count"], 10)
+        self.assertEqual(ltg13["pending_stage_count"], 5)
+        self.assertEqual(ltg13["production_blocker_count"], 5)
+        self.assertEqual(ltg13["direct_evidence_stage_count"], 5)
+        self.assertEqual(
+            set(ltg13["direct_evidence_stage_keys"]),
+            {
+                "cache_render_boundary",
+                "quick_scan_task_pipeline",
+                "local_full_pool_execution_receipt",
+                "local_deep_scan_review_receipt",
+                "browser_visual_performance_promotion",
+            },
+        )
+        self.assertTrue(ltg13["cache_render_boundary_verified"])
+        self.assertTrue(ltg13["quick_scan_task_pipeline_verified"])
+        self.assertTrue(ltg13["local_full_pool_execution_receipt_verified"])
+        self.assertTrue(ltg13["local_deep_scan_review_receipt_verified"])
+        self.assertTrue(ltg13["browser_visual_performance_evidence_verified"])
+        self.assertEqual(
+            ltg13["candidate_direct_evidence_layer"],
+            "L3_local_candidate_radar_scan_browser_safety_evidence",
+        )
+        self.assertFalse(ltg13["production_radar_replacement_complete"])
+        self.assertFalse(ltg13["legacy_retirement_ready"])
+        self.assertFalse(ltg13["full_pool_scan_done"])
+        self.assertFalse(ltg13["deep_scan_done"])
+        self.assertFalse(ltg13["provider_backed_acceptance_done"])
+        self.assertFalse(ltg13["worker_backed_execution_done"])
+        self.assertFalse(ltg13["external_calls_triggered"])
+        self.assertFalse(ltg13["tushare_called"])
+        self.assertFalse(ltg13["deepseek_called"])
+        self.assertFalse(ltg13["github_called"])
+        self.assertTrue(ltg13["does_not_execute_trades"])
+        self.assertTrue(ltg13["does_not_modify_strategy_action"])
+        self.assertTrue(ltg13["candidate_is_not_buy_instruction"])
+        self.assertFalse(ltg13["contains_secret"])
+        self.assertFalse(ltg13["can_close_from_observed_row"])
+
+        migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
+        self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_pending_count"], 5)
+        self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_direct_evidence_count"], 5)
+        self.assertFalse(migration_goals["LTG-13"]["observed_stage_scope_can_close_goal"])
 
     def test_candidate_radar_worker_execution_request_blocks_scope_hash_mismatch(self):
         self._with_meta_store()

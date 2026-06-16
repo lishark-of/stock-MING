@@ -1990,6 +1990,176 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
     }
 
 
+def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
+    try:
+        from server.services import candidate_service
+
+        packet = candidate_service.read_candidate_radar_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    policy = _dict_or_empty(packet_map.get("policy"))
+    task_pipeline = _dict_or_empty(packet_map.get("fast_scan_task_pipeline_contract"))
+    full_pool = _dict_or_empty(packet_map.get("full_pool_local_execution_receipt"))
+    deep_scan = _dict_or_empty(packet_map.get("deep_scan_local_review_receipt"))
+    browser_review = _dict_or_empty(packet_map.get("candidate_browser_qa_review_contract"))
+    production_review = _dict_or_empty(packet_map.get("candidate_radar_production_replacement_review_receipt"))
+
+    packet_safe = bool(
+        packet_map.get("external_calls_triggered") is False
+        and packet_map.get("tushare_called") is False
+        and packet_map.get("deepseek_called") is False
+        and packet_map.get("github_called") is False
+        and packet_map.get("does_not_execute_trades") is True
+        and packet_map.get("does_not_modify_strategy_action") is True
+        and packet_map.get("candidate_is_not_buy_instruction") is not False
+        and packet_map.get("contains_secret") is False
+    )
+    cache_render_done = bool(
+        packet_safe
+        and policy.get("does_not_scan_market") is True
+        and policy.get("post_task_required_for_scan") is True
+        and policy.get("does_not_call_tushare") is True
+        and policy.get("does_not_call_deepseek") is True
+        and policy.get("does_not_call_github") is True
+    )
+    quick_task_pipeline_done = bool(
+        packet_safe
+        and task_pipeline.get("schema_version") == "candidate_radar_fast_scan_task_pipeline.v1"
+        and task_pipeline.get("status") == "fast_scan_task_pipeline_ready_local_only"
+        and task_pipeline.get("local_task_pipeline_ready") is True
+        and int(task_pipeline.get("local_blocker_count") or 0) == 0
+        and task_pipeline.get("external_calls_triggered") is False
+        and task_pipeline.get("tushare_called") is False
+        and task_pipeline.get("deepseek_called") is False
+        and task_pipeline.get("github_called") is False
+        and task_pipeline.get("does_not_execute_trades") is True
+        and task_pipeline.get("does_not_modify_strategy_action") is True
+        and task_pipeline.get("candidate_is_not_buy_instruction") is not False
+        and task_pipeline.get("contains_secret") is not True
+    )
+    local_full_pool_done = bool(
+        packet_safe
+        and full_pool.get("schema_version") == "candidate_radar_full_pool_local_execution_receipt.v1"
+        and full_pool.get("status") == "full_pool_local_execution_ready_production_pending"
+        and full_pool.get("local_full_pool_execution_done") is True
+        and int(full_pool.get("candidate_row_count") or 0) > 0
+        and int(full_pool.get("local_blocker_count") or 0) == 0
+        and full_pool.get("production_full_pool_scan_done") is False
+        and full_pool.get("full_pool_scan_done") is False
+        and full_pool.get("provider_backed_acceptance_done") is False
+        and full_pool.get("worker_backed_execution_done") is False
+        and full_pool.get("external_calls_triggered") is False
+        and full_pool.get("tushare_called") is False
+        and full_pool.get("deepseek_called") is False
+        and full_pool.get("github_called") is False
+        and full_pool.get("does_not_execute_trades") is True
+        and full_pool.get("does_not_modify_strategy_action") is True
+        and full_pool.get("candidate_is_not_buy_instruction") is True
+    )
+    local_deep_scan_done = bool(
+        packet_safe
+        and deep_scan.get("schema_version") == "candidate_radar_deep_scan_local_review_receipt.v1"
+        and deep_scan.get("status") == "deep_scan_local_review_ready_production_pending"
+        and deep_scan.get("local_deep_scan_review_done") is True
+        and int(deep_scan.get("reviewed_candidate_count") or 0) > 0
+        and int(deep_scan.get("local_blocker_count") or 0) == 0
+        and deep_scan.get("deep_scan_done") is False
+        and deep_scan.get("deep_scan_validation_done") is False
+        and deep_scan.get("provider_backed_acceptance_done") is False
+        and deep_scan.get("worker_backed_execution_done") is False
+        and deep_scan.get("external_calls_triggered") is False
+        and deep_scan.get("tushare_called") is False
+        and deep_scan.get("deepseek_called") is False
+        and deep_scan.get("github_called") is False
+        and deep_scan.get("does_not_execute_trades") is True
+        and deep_scan.get("does_not_modify_strategy_action") is True
+        and deep_scan.get("candidate_is_not_buy_instruction") is True
+    )
+    browser_visual_performance_done = bool(
+        packet_safe
+        and browser_review.get("schema_version") == "candidate_radar_browser_qa_review.v1"
+        and browser_review.get("status") == "candidate_browser_qa_review_ready_local_artifact"
+        and browser_review.get("explicit_review_task_done") is True
+        and browser_review.get("local_browser_qa_review_ready") is True
+        and (
+            browser_review.get("candidate_browser_qa_evidence_found") is True
+            or int(browser_review.get("evidence_row_count") or 0) > 0
+        )
+        and browser_review.get("candidate_visual_qa_evidence_passed") is True
+        and browser_review.get("candidate_browser_performance_evidence_passed") is True
+        and browser_review.get("motion_viewport_coverage_complete") is True
+        and int(browser_review.get("review_required_count") or 0) == 0
+        and browser_review.get("opens_no_browser") is True
+        and browser_review.get("starts_no_servers") is True
+        and browser_review.get("production_radar_replacement_complete") is False
+        and browser_review.get("external_calls_triggered") is False
+        and browser_review.get("tushare_called") is False
+        and browser_review.get("deepseek_called") is False
+        and browser_review.get("github_called") is False
+        and browser_review.get("does_not_execute_trades") is True
+        and browser_review.get("does_not_modify_strategy_action") is True
+        and browser_review.get("candidate_is_not_buy_instruction") is True
+    )
+    production_review_ready = bool(
+        production_review.get("schema_version") == "candidate_radar_production_replacement_review.v1"
+        and production_review.get("status") == "candidate_radar_production_replacement_review_ready_production_blocked"
+        and production_review.get("local_review_ready") is True
+        and production_review.get("production_radar_replacement_complete") is False
+        and production_review.get("external_calls_triggered") is False
+        and production_review.get("tushare_called") is False
+        and production_review.get("deepseek_called") is False
+        and production_review.get("github_called") is False
+    )
+    direct_stage_keys = []
+    if cache_render_done:
+        direct_stage_keys.append("cache_render_boundary")
+    if quick_task_pipeline_done:
+        direct_stage_keys.append("quick_scan_task_pipeline")
+    if local_full_pool_done:
+        direct_stage_keys.append("local_full_pool_execution_receipt")
+    if local_deep_scan_done:
+        direct_stage_keys.append("local_deep_scan_review_receipt")
+    if browser_visual_performance_done:
+        direct_stage_keys.append("browser_visual_performance_promotion")
+
+    return {
+        "schema_version": "migration_candidate_radar_direct_evidence_summary.v1",
+        "source_packet_key": "command_center_3_candidate_radar_cache",
+        "status": "candidate_radar_direct_evidence_visible_production_pending"
+        if direct_stage_keys
+        else "candidate_radar_direct_evidence_missing",
+        "available": bool(direct_stage_keys),
+        "direct_evidence_stage_keys": direct_stage_keys,
+        "direct_evidence_stage_count": len(direct_stage_keys),
+        "cache_render_boundary_verified": cache_render_done,
+        "quick_scan_task_pipeline_verified": quick_task_pipeline_done,
+        "local_full_pool_execution_receipt_verified": local_full_pool_done,
+        "local_deep_scan_review_receipt_verified": local_deep_scan_done,
+        "browser_visual_performance_evidence_verified": browser_visual_performance_done,
+        "production_replacement_review_ready": production_review_ready,
+        "production_radar_replacement_complete": False,
+        "legacy_retirement_ready": False,
+        "provider_backed_acceptance_done": False,
+        "worker_backed_execution_done": False,
+        "model_execution_implemented": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+        "direct_evidence_layer": "L3_local_candidate_radar_scan_browser_safety_evidence"
+        if direct_stage_keys
+        else "L1_static_contract",
+        "evidence_boundary": (
+            "candidate_radar_local_scan_browser_evidence_is_not_production_replacement"
+        ),
+    }
+
+
 def _build_ltg_next_action_submission_preview_rows(
     next_local_step: str,
     local_step_rows: list[dict[str, Any]],
@@ -2720,6 +2890,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "github_called": False,
                 "does_not_execute_trades": True,
                 "does_not_modify_strategy_action": True,
+                "candidate_is_not_buy_instruction": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
                 "evidence_boundary": "observed_local_static_freshness_stage_scope_not_production_completion",
@@ -2754,6 +2925,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "github_called": False,
                 "does_not_execute_trades": True,
                 "does_not_modify_strategy_action": True,
+                "candidate_is_not_buy_instruction": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
                 "evidence_boundary": "observation_failure_is_not_completion",
@@ -2819,6 +2991,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "github_called": False,
                 "does_not_execute_trades": True,
                 "does_not_modify_strategy_action": True,
+                "candidate_is_not_buy_instruction": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
                 "evidence_boundary": "observed_local_static_tushare_stage_scope_not_production_completion",
@@ -2854,6 +3027,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "github_called": False,
                 "does_not_execute_trades": True,
                 "does_not_modify_strategy_action": True,
+                "candidate_is_not_buy_instruction": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
                 "evidence_boundary": "observation_failure_is_not_completion",
@@ -3421,19 +3595,31 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             or counts.get("candidate_radar_production_stage_scope_local_evidence_count")
             or 0
         )
+        direct_evidence = _latest_candidate_radar_direct_evidence_summary()
+        direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
+        observed_pending_count = max(pending_count - direct_evidence_count, 0)
+        candidate_status = (
+            "observed_candidate_radar_direct_evidence_production_pending"
+            if direct_evidence_count
+            else "observed_in_candidate_radar_cache"
+        )
         rows.append(
             {
                 "id": "LTG-13",
                 "goal": "下一票雷达快扫生产化",
                 "stage_scope_manifest": "candidate_radar_production_stage_scope_manifest",
-                "status": "observed_in_candidate_radar_cache" if manifest_visible else "missing_from_candidate_radar_cache",
-                "observed_source": "GET /api/candidate-radar/cache local builder",
+                "status": candidate_status if manifest_visible else "missing_from_candidate_radar_cache",
+                "observed_source": "GET /api/candidate-radar/cache local builder + candidate radar direct evidence",
                 "cache_status": str(candidate_packet.get("status") or "missing"),
-                "cache_mode": str(candidate_packet.get("mode") or "cache_only"),
+                "cache_mode": "cache_only_plus_candidate_radar_direct_evidence"
+                if direct_evidence_count
+                else str(candidate_packet.get("mode") or "cache_only"),
                 "row_count": row_count,
-                "pending_stage_count": pending_count,
+                "pending_stage_count": observed_pending_count,
                 "local_evidence_stage_count": local_evidence_count,
-                "production_blocker_count": int(manifest.get("production_blocker_count") or pending_count),
+                "direct_evidence_stage_count": direct_evidence_count,
+                "direct_evidence_stage_keys": list(direct_evidence.get("direct_evidence_stage_keys") or []),
+                "production_blocker_count": observed_pending_count,
                 "production_radar_replacement_complete": manifest.get("production_radar_replacement_complete") is True,
                 "legacy_retirement_ready": manifest.get("legacy_retirement_ready") is True,
                 "full_pool_scan_done": manifest.get("full_pool_scan_done") is True,
@@ -3441,6 +3627,22 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "provider_backed_acceptance_done": manifest.get("provider_backed_acceptance_done") is True,
                 "worker_backed_execution_done": manifest.get("worker_backed_execution_done") is True,
                 "browser_visual_delta_qa_done": manifest.get("browser_visual_delta_qa_done") is True,
+                "cache_render_boundary_verified": direct_evidence.get("cache_render_boundary_verified") is True,
+                "quick_scan_task_pipeline_verified": (
+                    direct_evidence.get("quick_scan_task_pipeline_verified") is True
+                ),
+                "local_full_pool_execution_receipt_verified": (
+                    direct_evidence.get("local_full_pool_execution_receipt_verified") is True
+                ),
+                "local_deep_scan_review_receipt_verified": (
+                    direct_evidence.get("local_deep_scan_review_receipt_verified") is True
+                ),
+                "browser_visual_performance_evidence_verified": (
+                    direct_evidence.get("browser_visual_performance_evidence_verified") is True
+                ),
+                "production_replacement_review_ready": (
+                    direct_evidence.get("production_replacement_review_ready") is True
+                ),
                 "durable_ci_evidence_complete": manifest.get("durable_ci_evidence_complete") is True,
                 "production_promotion_dry_run_visible": bool(promotion_dry_run),
                 "production_promotion_dry_run_status": str(promotion_dry_run.get("status") or "missing"),
@@ -3482,9 +3684,14 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "github_called": False,
                 "does_not_execute_trades": True,
                 "does_not_modify_strategy_action": True,
+                "candidate_is_not_buy_instruction": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
-                "evidence_boundary": "observed_local_cache_stage_scope_manifest_not_production_completion",
+                "candidate_direct_evidence_layer": direct_evidence.get("direct_evidence_layer")
+                or "L1_static_contract",
+                "evidence_boundary": "observed_l3_candidate_radar_local_direct_evidence_not_production_replacement"
+                if direct_evidence_count
+                else "observed_local_cache_stage_scope_manifest_not_production_completion",
             }
         )
     except Exception:
@@ -4177,8 +4384,11 @@ def _merge_ltg_stage_scope_observations(
             item["observed_stage_scope_row_count"] = observed.get("row_count")
             item["observed_stage_scope_pending_count"] = observed.get("pending_stage_count")
             item["observed_stage_scope_local_evidence_count"] = observed.get("local_evidence_stage_count")
+            item["observed_stage_scope_direct_evidence_count"] = observed.get("direct_evidence_stage_count", 0)
+            item["observed_stage_scope_direct_evidence_keys"] = observed.get("direct_evidence_stage_keys", [])
             item["observed_stage_scope_can_close_goal"] = False
             if str(item.get("id") or "") == "LTG-13":
+                item["observed_candidate_direct_evidence_layer"] = observed.get("candidate_direct_evidence_layer")
                 item["observed_production_promotion_dry_run_status"] = observed.get(
                     "production_promotion_dry_run_status"
                 )
