@@ -21,6 +21,10 @@ FACTOR_TEST_LTG03_OBSERVED_STATUSES = {
     "observed_in_factor_test_lab_static_contract",
     "observed_factor_test_lab_direct_evidence_production_pending",
 }
+RELEASE_GATE_LTG11_OBSERVED_STATUSES = {
+    "observed_in_audit_cache_release_gate_contract",
+    "observed_release_gate_direct_evidence_remote_ci_pending",
+}
 
 
 def assert_ltg03_factor_test_stage_scope(test_case: unittest.TestCase, row: dict, expected_direct_count: int | None = None):
@@ -76,6 +80,70 @@ def assert_ltg03_migration_goal_stage_scope(
     test_case.assertEqual(row["observed_stage_scope_pending_count"], max(10 - direct_count, 0))
     if direct_count:
         test_case.assertIn("provider_small_pool_scope_ticket", row["observed_stage_scope_direct_evidence_keys"])
+    test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
+
+
+def assert_ltg11_release_gate_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("direct_evidence_stage_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertEqual(row["stage_scope_manifest"], "release_gate_stage_scope_manifest")
+    test_case.assertIn(row["status"], RELEASE_GATE_LTG11_OBSERVED_STATUSES)
+    test_case.assertEqual(row["row_count"], 8)
+    test_case.assertEqual(row["pending_stage_count"], 5 if direct_count else 6)
+    test_case.assertEqual(row["local_evidence_stage_count"], 8)
+    if direct_count:
+        test_case.assertEqual(row["status"], "observed_release_gate_direct_evidence_remote_ci_pending")
+        test_case.assertEqual(row["direct_evidence_stage_keys"], ["fresh_local_gate_command_run"])
+        test_case.assertEqual(row["release_gate_direct_evidence_layer"], "L3_local_release_gate_execution_evidence")
+        test_case.assertTrue(row["fresh_local_gate_run_observed"])
+        test_case.assertTrue(row["local_push_gate_receipt_head_matches_current"])
+        test_case.assertGreaterEqual(row["local_push_gate_check_count"], 8)
+        test_case.assertTrue(row["required_local_gate_checks_present"])
+    else:
+        test_case.assertEqual(row["status"], "observed_in_audit_cache_release_gate_contract")
+        test_case.assertFalse(row["fresh_local_gate_run_observed"])
+    test_case.assertTrue(row["local_gate_ready"])
+    test_case.assertTrue(row["ci_mirror_ready"])
+    test_case.assertTrue(row["push_readiness_receipt_ready"])
+    test_case.assertTrue(row["ready_for_explicit_push_sequence"])
+    test_case.assertFalse(row["release_gate_complete"])
+    test_case.assertFalse(row["remote_actions_status_known"])
+    test_case.assertFalse(row["latest_remote_run_verified_green"])
+    test_case.assertFalse(row["failure_email_has_matching_head_and_logs"])
+    test_case.assertFalse(row["can_dismiss_failure_email_without_matching_head_and_logs"])
+    test_case.assertFalse(row["periodic_allowlist_review_ready"])
+    test_case.assertFalse(row["release_report_written_by_cache"])
+    test_case.assertFalse(row["release_report_is_ci_status"])
+    test_case.assertTrue(row["did_not_push"])
+    test_case.assertFalse(row["git_add_dot_used"])
+    test_case.assertFalse(row["github_api_called"])
+    test_case.assertFalse(row["external_calls_triggered"])
+    test_case.assertFalse(row["tushare_called"])
+    test_case.assertFalse(row["deepseek_called"])
+    test_case.assertFalse(row["github_called"])
+    test_case.assertTrue(row["does_not_execute_trades"])
+    test_case.assertTrue(row["does_not_modify_strategy_action"])
+    test_case.assertFalse(row["contains_secret"])
+    test_case.assertFalse(row["can_close_from_observed_row"])
+
+
+def assert_ltg11_migration_goal_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("observed_stage_scope_direct_evidence_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertIn(row["observed_stage_scope_manifest_status"], RELEASE_GATE_LTG11_OBSERVED_STATUSES)
+    test_case.assertEqual(row["observed_stage_scope_pending_count"], 5 if direct_count else 6)
+    if direct_count:
+        test_case.assertEqual(row["observed_stage_scope_direct_evidence_keys"], ["fresh_local_gate_command_run"])
     test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
 
 
@@ -869,38 +937,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(observed_stage_rows["LTG-10"]["does_not_execute_trades"])
         self.assertTrue(observed_stage_rows["LTG-10"]["does_not_modify_holdings"])
         self.assertFalse(observed_stage_rows["LTG-10"]["can_close_from_observed_row"])
-        self.assertEqual(observed_stage_rows["LTG-11"]["stage_scope_manifest"], "release_gate_stage_scope_manifest")
-        self.assertEqual(
-            observed_stage_rows["LTG-11"]["status"],
-            "observed_in_audit_cache_release_gate_contract",
-        )
-        self.assertEqual(observed_stage_rows["LTG-11"]["row_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-11"]["pending_stage_count"], 6)
-        self.assertEqual(observed_stage_rows["LTG-11"]["local_evidence_stage_count"], 8)
-        self.assertTrue(observed_stage_rows["LTG-11"]["local_gate_ready"])
-        self.assertTrue(observed_stage_rows["LTG-11"]["ci_mirror_ready"])
-        self.assertTrue(observed_stage_rows["LTG-11"]["push_readiness_receipt_ready"])
-        self.assertTrue(observed_stage_rows["LTG-11"]["ready_for_explicit_push_sequence"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["release_gate_complete"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["fresh_local_gate_run_observed"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["remote_actions_status_known"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["latest_remote_run_verified_green"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["failure_email_has_matching_head_and_logs"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["can_dismiss_failure_email_without_matching_head_and_logs"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["periodic_allowlist_review_ready"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["release_report_written_by_cache"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["release_report_is_ci_status"])
-        self.assertTrue(observed_stage_rows["LTG-11"]["did_not_push"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["git_add_dot_used"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["github_api_called"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["external_calls_triggered"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["tushare_called"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["deepseek_called"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["github_called"])
-        self.assertTrue(observed_stage_rows["LTG-11"]["does_not_execute_trades"])
-        self.assertTrue(observed_stage_rows["LTG-11"]["does_not_modify_strategy_action"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["contains_secret"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["can_close_from_observed_row"])
+        assert_ltg11_release_gate_stage_scope(self, observed_stage_rows["LTG-11"])
         self.assertEqual(observed_stage_rows["LTG-12"]["stage_scope_manifest"], "trade_isolation_stage_scope_manifest")
         self.assertEqual(
             observed_stage_rows["LTG-12"]["status"],
@@ -1121,12 +1158,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("fresh local gate run", migration_goals["LTG-11"]["next_evidence_required"])
         self.assertIn("remote CI status", migration_goals["LTG-11"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-11"]["production_complete"])
-        self.assertEqual(
-            migration_goals["LTG-11"]["observed_stage_scope_manifest_status"],
-            "observed_in_audit_cache_release_gate_contract",
-        )
-        self.assertEqual(migration_goals["LTG-11"]["observed_stage_scope_pending_count"], 6)
-        self.assertFalse(migration_goals["LTG-11"]["observed_stage_scope_can_close_goal"])
+        assert_ltg11_migration_goal_stage_scope(self, migration_goals["LTG-11"])
         self.assertEqual(migration_goals["LTG-12"]["stage_scope_manifest"], "trade_isolation_stage_scope_manifest")
         self.assertIn("trade-isolation stage-scope manifest", migration_goals["LTG-12"]["current_state"])
         self.assertIn("continued no-broker proof", migration_goals["LTG-12"]["next_evidence_required"])
@@ -16552,7 +16584,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                     "branch": current_head["branch"],
                     "head": current_head["head"],
                     "head_full": current_head["head_full"],
-                    "checks": ["python_unittest", "desktop_build", "command_center_3_smoke"],
+                    "checks": [
+                        "python_unittest",
+                        "desktop_build",
+                        "command_center_3_smoke",
+                        "diff_whitespace_check",
+                        "high_risk_secret_scan",
+                        "secret_keyword_review_contract",
+                        "generated_artifact_scan",
+                        "clean_worktree_check",
+                    ],
                     "did_not_push": True,
                     "git_add_dot_used": False,
                     "external_calls_triggered": False,
@@ -16603,6 +16644,42 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["github_called"])
         self.assertTrue(packet["does_not_execute_trades"])
+
+        migration = migration_status_service.build_migration_status()
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg11 = observed_stage_rows["LTG-11"]
+        self.assertEqual(ltg11["status"], "observed_release_gate_direct_evidence_remote_ci_pending")
+        self.assertEqual(ltg11["row_count"], 8)
+        self.assertEqual(ltg11["pending_stage_count"], 5)
+        self.assertEqual(ltg11["direct_evidence_stage_count"], 1)
+        self.assertEqual(ltg11["direct_evidence_stage_keys"], ["fresh_local_gate_command_run"])
+        self.assertEqual(ltg11["release_gate_direct_evidence_layer"], "L3_local_release_gate_execution_evidence")
+        self.assertTrue(ltg11["fresh_local_gate_run_observed"])
+        self.assertTrue(ltg11["local_push_gate_receipt_head_matches_current"])
+        self.assertEqual(ltg11["local_push_gate_receipt_head"], current_head["head"])
+        self.assertEqual(ltg11["local_push_gate_receipt_current_head"], current_head["head"])
+        self.assertEqual(ltg11["local_push_gate_check_count"], 8)
+        self.assertTrue(ltg11["required_local_gate_checks_present"])
+        self.assertFalse(ltg11["remote_actions_status_known"])
+        self.assertFalse(ltg11["latest_remote_run_verified_green"])
+        self.assertFalse(ltg11["release_gate_complete"])
+        self.assertTrue(ltg11["did_not_push"])
+        self.assertFalse(ltg11["github_api_called"])
+        self.assertFalse(ltg11["external_calls_triggered"])
+        self.assertFalse(ltg11["tushare_called"])
+        self.assertFalse(ltg11["deepseek_called"])
+        self.assertFalse(ltg11["github_called"])
+        self.assertTrue(ltg11["does_not_execute_trades"])
+        self.assertFalse(ltg11["can_close_from_observed_row"])
+
+        migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
+        self.assertEqual(migration_goals["LTG-11"]["observed_stage_scope_direct_evidence_count"], 1)
+        self.assertEqual(
+            migration_goals["LTG-11"]["observed_stage_scope_direct_evidence_keys"],
+            ["fresh_local_gate_command_run"],
+        )
+        self.assertEqual(migration_goals["LTG-11"]["observed_stage_scope_pending_count"], 5)
+        self.assertFalse(migration_goals["LTG-11"]["observed_stage_scope_can_close_goal"])
 
     def test_call_ledger_audit_covers_all_fastapi_get_routes(self):
         packet = audit_service.read_call_ledger_audit_cache()
@@ -20243,38 +20320,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(observed_stage_rows["LTG-10"]["does_not_execute_trades"])
         self.assertTrue(observed_stage_rows["LTG-10"]["does_not_modify_holdings"])
         self.assertFalse(observed_stage_rows["LTG-10"]["can_close_from_observed_row"])
-        self.assertEqual(observed_stage_rows["LTG-11"]["stage_scope_manifest"], "release_gate_stage_scope_manifest")
-        self.assertEqual(
-            observed_stage_rows["LTG-11"]["status"],
-            "observed_in_audit_cache_release_gate_contract",
-        )
-        self.assertEqual(observed_stage_rows["LTG-11"]["row_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-11"]["pending_stage_count"], 6)
-        self.assertEqual(observed_stage_rows["LTG-11"]["local_evidence_stage_count"], 8)
-        self.assertTrue(observed_stage_rows["LTG-11"]["local_gate_ready"])
-        self.assertTrue(observed_stage_rows["LTG-11"]["ci_mirror_ready"])
-        self.assertTrue(observed_stage_rows["LTG-11"]["push_readiness_receipt_ready"])
-        self.assertTrue(observed_stage_rows["LTG-11"]["ready_for_explicit_push_sequence"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["release_gate_complete"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["fresh_local_gate_run_observed"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["remote_actions_status_known"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["latest_remote_run_verified_green"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["failure_email_has_matching_head_and_logs"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["can_dismiss_failure_email_without_matching_head_and_logs"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["periodic_allowlist_review_ready"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["release_report_written_by_cache"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["release_report_is_ci_status"])
-        self.assertTrue(observed_stage_rows["LTG-11"]["did_not_push"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["git_add_dot_used"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["github_api_called"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["external_calls_triggered"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["tushare_called"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["deepseek_called"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["github_called"])
-        self.assertTrue(observed_stage_rows["LTG-11"]["does_not_execute_trades"])
-        self.assertTrue(observed_stage_rows["LTG-11"]["does_not_modify_strategy_action"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["contains_secret"])
-        self.assertFalse(observed_stage_rows["LTG-11"]["can_close_from_observed_row"])
+        assert_ltg11_release_gate_stage_scope(self, observed_stage_rows["LTG-11"])
         self.assertEqual(observed_stage_rows["LTG-12"]["stage_scope_manifest"], "trade_isolation_stage_scope_manifest")
         self.assertEqual(
             observed_stage_rows["LTG-12"]["status"],
@@ -20450,12 +20496,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("fresh local gate run", migration_goals["LTG-11"]["next_evidence_required"])
         self.assertIn("remote CI status", migration_goals["LTG-11"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-11"]["production_complete"])
-        self.assertEqual(
-            migration_goals["LTG-11"]["observed_stage_scope_manifest_status"],
-            "observed_in_audit_cache_release_gate_contract",
-        )
-        self.assertEqual(migration_goals["LTG-11"]["observed_stage_scope_pending_count"], 6)
-        self.assertFalse(migration_goals["LTG-11"]["observed_stage_scope_can_close_goal"])
+        assert_ltg11_migration_goal_stage_scope(self, migration_goals["LTG-11"])
         self.assertEqual(migration_goals["LTG-12"]["stage_scope_manifest"], "trade_isolation_stage_scope_manifest")
         self.assertIn("trade-isolation stage-scope manifest", migration_goals["LTG-12"]["current_state"])
         self.assertIn("continued no-broker proof", migration_goals["LTG-12"]["next_evidence_required"])

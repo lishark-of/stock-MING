@@ -1245,6 +1245,82 @@ def _latest_factor_test_lab_direct_research_evidence_summary() -> dict[str, Any]
     }
 
 
+def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
+    try:
+        from server.services import audit_service
+
+        receipt = audit_service._read_local_push_gate_run_receipt()
+    except Exception:
+        receipt = {}
+    receipt_map = receipt if isinstance(receipt, dict) else {}
+    checks = [str(item) for item in receipt_map.get("checks") or []]
+    required_checks = {
+        "python_unittest",
+        "desktop_build",
+        "command_center_3_smoke",
+        "diff_whitespace_check",
+        "high_risk_secret_scan",
+        "secret_keyword_review_contract",
+        "generated_artifact_scan",
+        "clean_worktree_check",
+    }
+    fresh_gate_run_done = bool(
+        receipt_map.get("schema_version") == "command_center_3_local_push_gate_run_receipt.v1"
+        and receipt_map.get("status") == "local_push_gate_passed_current_head"
+        and receipt_map.get("fresh_local_gate_run_observed") is True
+        and receipt_map.get("head_matches_current") is True
+        and required_checks.issubset(set(checks))
+        and receipt_map.get("did_not_push") is True
+        and receipt_map.get("git_add_dot_used") is False
+        and receipt_map.get("github_api_called") is False
+        and receipt_map.get("external_calls_triggered") is False
+        and receipt_map.get("tushare_called") is False
+        and receipt_map.get("deepseek_called") is False
+        and receipt_map.get("github_called") is False
+        and receipt_map.get("does_not_execute_trades") is True
+        and receipt_map.get("does_not_modify_strategy_action") is True
+        and receipt_map.get("contains_secret") is False
+        and receipt_map.get("local_gate_pass_is_not_ci_status") is True
+        and receipt_map.get("remote_actions_status_known") is False
+        and receipt_map.get("latest_remote_run_verified_green") is False
+    )
+    direct_stage_keys = ["fresh_local_gate_command_run"] if fresh_gate_run_done else []
+    return {
+        "schema_version": "migration_release_gate_direct_evidence_summary.v1",
+        "source_packet_key": "local_push_gate_run_receipt",
+        "source_status": str(receipt_map.get("status") or "missing"),
+        "status": "release_gate_direct_evidence_visible_remote_ci_pending"
+        if direct_stage_keys
+        else "release_gate_direct_evidence_missing",
+        "available": bool(direct_stage_keys),
+        "direct_evidence_stage_keys": direct_stage_keys,
+        "direct_evidence_stage_count": len(direct_stage_keys),
+        "fresh_local_gate_run_observed": fresh_gate_run_done,
+        "local_push_gate_receipt_head_matches_current": receipt_map.get("head_matches_current") is True,
+        "local_push_gate_receipt_head": str(receipt_map.get("head") or ""),
+        "local_push_gate_receipt_current_head": str(receipt_map.get("current_head") or ""),
+        "local_push_gate_check_count": len(checks),
+        "required_local_gate_checks_present": required_checks.issubset(set(checks)),
+        "remote_actions_status_known": False,
+        "latest_remote_run_verified_green": False,
+        "release_gate_complete": False,
+        "did_not_push": True,
+        "git_add_dot_used": False,
+        "github_api_called": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "direct_evidence_layer": "L3_local_release_gate_execution_evidence"
+        if direct_stage_keys
+        else "L1_static_contract",
+        "evidence_boundary": "fresh_local_push_gate_direct_evidence_is_not_remote_ci_or_push_completion",
+    }
+
+
 def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str, Any]:
     source = ""
     source_packet_key = ""
@@ -4257,6 +4333,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             local_gate_run_receipt,
         )
         stage_rows = stage_rows if isinstance(stage_rows, list) else []
+        direct_evidence = _latest_release_gate_direct_evidence_summary()
+        direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
         row_count = len(stage_rows)
         pending_count = int(
             sum(1 for row in stage_rows if isinstance(row, dict) and row.get("stage_complete") is False)
@@ -4273,15 +4351,27 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "id": "LTG-11",
                 "goal": "测试 / CI / smoke / 安全扫描标准化",
                 "stage_scope_manifest": "release_gate_stage_scope_manifest",
-                "status": "observed_in_audit_cache_release_gate_contract"
-                if stage_rows
-                else "missing_from_audit_cache_release_gate_contract",
-                "observed_source": "server.services.audit_service release gate local static helpers also surfaced by GET /api/audit/cache",
-                "cache_status": "ready" if stage_rows else "missing",
+                "status": (
+                    "observed_release_gate_direct_evidence_remote_ci_pending"
+                    if stage_rows and direct_evidence_count
+                    else (
+                        "observed_in_audit_cache_release_gate_contract"
+                        if stage_rows
+                        else "missing_from_audit_cache_release_gate_contract"
+                    )
+                ),
+                "observed_source": (
+                    "server.services.audit_service release gate local static helpers + local push gate run receipt "
+                    "also surfaced by GET /api/audit/cache"
+                ),
+                "cache_status": direct_evidence.get("status") or ("ready" if stage_rows else "missing"),
                 "cache_mode": "local_static_contract",
                 "row_count": row_count,
                 "pending_stage_count": pending_count,
                 "local_evidence_stage_count": local_evidence_count,
+                "direct_evidence_stage_count": direct_evidence_count,
+                "direct_evidence_stage_keys": direct_evidence.get("direct_evidence_stage_keys", []),
+                "release_gate_direct_evidence_layer": direct_evidence.get("direct_evidence_layer"),
                 "production_blocker_count": pending_count,
                 "local_gate_ready": release_gate.get("local_gate_ready") is True,
                 "ci_mirror_ready": release_gate.get("ci_mirror_ready") is True,
@@ -4289,7 +4379,17 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "ready_for_explicit_push_sequence": push_receipt.get("ready_for_explicit_local_gate_then_push")
                 is True,
                 "release_gate_complete": release_gate.get("release_gate_complete") is True,
-                "fresh_local_gate_run_observed": False,
+                "fresh_local_gate_run_observed": direct_evidence.get("fresh_local_gate_run_observed") is True,
+                "local_push_gate_receipt_head_matches_current": direct_evidence.get(
+                    "local_push_gate_receipt_head_matches_current"
+                )
+                is True,
+                "local_push_gate_receipt_head": direct_evidence.get("local_push_gate_receipt_head") or "",
+                "local_push_gate_receipt_current_head": direct_evidence.get("local_push_gate_receipt_current_head")
+                or "",
+                "local_push_gate_check_count": int(direct_evidence.get("local_push_gate_check_count") or 0),
+                "required_local_gate_checks_present": direct_evidence.get("required_local_gate_checks_present")
+                is True,
                 "remote_actions_status_known": False,
                 "latest_remote_run_verified_green": False,
                 "failure_email_has_matching_head_and_logs": False,
@@ -4308,7 +4408,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "does_not_modify_strategy_action": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
-                "evidence_boundary": "observed_local_release_gate_stage_scope_not_fresh_gate_or_remote_ci_completion",
+                "evidence_boundary": direct_evidence.get("evidence_boundary")
+                or "observed_local_release_gate_stage_scope_not_fresh_gate_or_remote_ci_completion",
             }
         )
     except Exception:
