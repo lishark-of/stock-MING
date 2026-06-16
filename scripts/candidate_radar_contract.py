@@ -138,6 +138,26 @@ def _flag_false(contract: dict[str, Any], *keys: str) -> bool:
     return all(contract.get(key) is False for key in keys)
 
 
+def _durable_row_blocked_or_local_visible(row: Any) -> bool:
+    row_map = _dict(row)
+    if row_map.get("production_blocker") is True:
+        return True
+    return bool(
+        row_map.get("passed") is True
+        and _flag_false(
+            row_map,
+            "external_calls_triggered",
+            "tushare_called",
+            "deepseek_called",
+            "github_called",
+            "contains_secret",
+        )
+        and row_map.get("does_not_execute_trades") is True
+        and row_map.get("does_not_modify_strategy_action") is True
+        and row_map.get("candidate_is_not_buy_instruction") is True
+    )
+
+
 def _task_catalog_rows() -> dict[str, dict[str, Any]]:
     return {
         str(row.get("task_type") or ""): dict(row)
@@ -1379,8 +1399,12 @@ def build_contract() -> dict[str, Any]:
             is True
             and _dict(durable_evidence_rows.get("provider_parity_scope_ticket_required")).get("production_blocker")
             is True
-            and _dict(durable_evidence_rows.get("quant_projection_scope_ticket_required")).get("production_blocker")
-            is True
+            and _durable_row_blocked_or_local_visible(
+                durable_evidence_rows.get("quant_projection_scope_ticket_required")
+            )
+            and _durable_row_blocked_or_local_visible(
+                durable_evidence_rows.get("quant_projection_execution_request_visible")
+            )
             and _dict(durable_evidence_rows.get("worker_full_pool_execution_evidence_required")).get(
                 "production_blocker"
             )

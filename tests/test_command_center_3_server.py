@@ -1721,6 +1721,84 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(handoff["does_not_modify_strategy_action"])
         self.assertFalse(handoff["contains_secret"])
 
+    def test_ltg_next_action_queue_reads_candidate_radar_packet_receipts(self):
+        self._with_meta_store()
+        old_tushare_token = os.environ.get("TUSHARE_TOKEN")
+        old_deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+        os.environ["TUSHARE_TOKEN"] = "REAL_TUSHARE_SECRET_VALUE"
+        os.environ["DEEPSEEK_API_KEY"] = "REAL_DEEPSEEK_SECRET_VALUE"
+        self.addCleanup(lambda: os.environ.pop("TUSHARE_TOKEN", None) if old_tushare_token is None else os.environ.__setitem__("TUSHARE_TOKEN", old_tushare_token))
+        self.addCleanup(lambda: os.environ.pop("DEEPSEEK_API_KEY", None) if old_deepseek_key is None else os.environ.__setitem__("DEEPSEEK_API_KEY", old_deepseek_key))
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "候选缓存"},
+                "data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"},
+            }
+        )
+
+        dry_run = candidate_service.run_candidate_quant_projection_acceptance_dry_run_task(
+            {
+                "symbol": "002008",
+                "include_tushare": True,
+                "include_deepseek": True,
+                "user_approved": True,
+                "selected_apis": ["trade_cal", "daily", "daily_basic", "moneyflow"],
+            },
+        )
+        self.assertEqual(dry_run["status"], "success")
+        cache = candidate_service.read_candidate_radar_cache()
+        scope_hash = cache["search_quant_projection_acceptance_dry_run_receipt"]["acceptance_scope_hash"]
+        self.assertTrue(scope_hash)
+
+        execution_request = candidate_service.run_candidate_quant_projection_execution_request_task(
+            {
+                "scan_mode": "quant_projection_execution_request",
+                "operator_approved": True,
+                "acceptance_scope_hash": scope_hash,
+            },
+        )
+        self.assertEqual(execution_request["status"], "success")
+
+        migration = migration_status_service.build_migration_status()
+        action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        p3 = action_rows["p3_candidate_radar_provider_worker_promotion"]
+        steps = {row["phase_key"]: row for row in p3["local_step_rows"]}
+
+        self.assertIn(
+            p3["local_receipt_status"],
+            {"local_receipts_partially_visible_next_step_pending", "local_receipts_visible_but_blocked"},
+        )
+        self.assertEqual(p3["ready_local_receipt_step_count"], 2)
+        self.assertGreaterEqual(p3["durable_local_receipt_step_count"], 2)
+        self.assertEqual(p3["next_local_step"], "POST /api/candidate-radar/production-promotion-dry-run")
+        self.assertTrue(steps["radar_quant_projection_dry_run_scope_ticket"]["receipt_visible"])
+        self.assertTrue(steps["radar_quant_projection_execution_request_ticket"]["receipt_visible"])
+        self.assertTrue(steps["radar_quant_projection_dry_run_scope_ticket"]["local_ready"])
+        self.assertTrue(steps["radar_quant_projection_execution_request_ticket"]["local_ready"])
+        self.assertEqual(
+            steps["radar_quant_projection_dry_run_scope_ticket"]["receipt_lookup_source"],
+            "candidate_radar_cache_packet",
+        )
+        self.assertEqual(
+            steps["radar_quant_projection_execution_request_ticket"]["receipt_lookup_source"],
+            "candidate_radar_cache_packet",
+        )
+        self.assertEqual(
+            steps["radar_quant_projection_dry_run_scope_ticket"]["receipt_durability_state"],
+            "durable_sqlite_receipt_visible",
+        )
+        self.assertEqual(
+            steps["radar_quant_projection_execution_request_ticket"]["receipt_durability_state"],
+            "durable_sqlite_receipt_visible",
+        )
+        self.assertFalse(p3["external_calls_triggered"])
+        self.assertFalse(p3["tushare_called"])
+        self.assertFalse(p3["deepseek_called"])
+        self.assertFalse(p3["github_called"])
+        self.assertTrue(p3["does_not_execute_trades"])
+        self.assertTrue(p3["does_not_modify_strategy_action"])
+
     def test_packet_service_reads_snapshot_alias_without_external_calls(self):
         self._with_snapshot_cache(
             {
@@ -19793,6 +19871,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("GET /api/position/cache", response["warnings"][0])
 
     def test_candidate_radar_cache_endpoint_returns_candidates_without_external_work(self):
+        self._with_meta_store()
         self._with_snapshot_cache(
             {
                 "radar_packet": {"status": "ready", "summary": "候选缓存", "authorization": "Bearer SHOULD_DROP"},

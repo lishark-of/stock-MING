@@ -564,6 +564,31 @@ def _task_statuses_by_type() -> dict[str, list[dict[str, Any]]]:
     return by_type
 
 
+def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str, Any]:
+    if queue_id != "p3_candidate_radar_provider_worker_promotion":
+        return {}
+    try:
+        from server.services import candidate_service
+
+        packet = candidate_service.read_candidate_radar_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    receipt = packet_map.get(receipt_key)
+    if not isinstance(receipt, dict) or not receipt:
+        return {}
+    status = str(receipt.get("status") or "")
+    if not status or status.endswith("_missing"):
+        return {}
+    return {
+        "receipt": dict(receipt),
+        "source": "candidate_radar_cache_packet",
+        "source_packet_key": "command_center_3_candidate_radar_cache",
+        "storage_source": "sqlite_meta_packet",
+        "task_id": str(receipt.get("task_id") or packet_map.get("task_id") or ""),
+    }
+
+
 def _receipt_blocker_count(receipt: dict[str, Any]) -> int:
     blocker_keys = (
         "blocking_row_count",
@@ -627,6 +652,14 @@ def _build_ltg_next_action_local_step_rows(
         payload_safe = latest_task.get("payload_safe") if isinstance(latest_task.get("payload_safe"), dict) else {}
         receipt = payload_safe.get(str(step["receipt_key"])) if isinstance(payload_safe, dict) else {}
         receipt_map = receipt if isinstance(receipt, dict) else {}
+        receipt_lookup_source = "task_payload_safe" if receipt_map else ""
+        fallback = {}
+        if not receipt_map:
+            fallback = _local_receipt_packet_fallback(queue_id, str(step["receipt_key"]))
+            fallback_receipt = fallback.get("receipt") if isinstance(fallback.get("receipt"), dict) else {}
+            receipt_map = fallback_receipt if isinstance(fallback_receipt, dict) else {}
+            if receipt_map:
+                receipt_lookup_source = str(fallback.get("source") or "business_packet_fallback")
         receipt_scope_hash = str(
             receipt_map.get("acceptance_scope_hash")
             or receipt_map.get("review_scope_hash")
@@ -642,8 +675,10 @@ def _build_ltg_next_action_local_step_rows(
         task_found = bool(latest_task)
         receipt_visible = bool(receipt_map)
         latest_task_storage_source = str(latest_task.get("storage_source") or "") if task_found else ""
+        if receipt_visible and receipt_lookup_source != "task_payload_safe" and not latest_task_storage_source:
+            latest_task_storage_source = str(fallback.get("storage_source") or "")
         receipt_durable_in_sqlite = bool(
-            receipt_visible and latest_task_storage_source in {"memory_and_sqlite", "sqlite_meta"}
+            receipt_visible and latest_task_storage_source in {"memory_and_sqlite", "sqlite_meta", "sqlite_meta_packet"}
         )
         receipt_memory_only = bool(receipt_visible and latest_task_storage_source == "memory")
         if not receipt_visible:
@@ -663,10 +698,12 @@ def _build_ltg_next_action_local_step_rows(
                 "route": step["route"],
                 "task_found": task_found,
                 "receipt_visible": receipt_visible,
-                "latest_task_id": latest_task.get("task_id") if task_found else "",
+                "latest_task_id": latest_task.get("task_id") if task_found else fallback.get("task_id", ""),
                 "latest_task_status": latest_task.get("status") if task_found else "",
                 "latest_task_current_step": latest_task.get("current_step") if task_found else "",
                 "latest_task_storage_source": latest_task_storage_source,
+                "receipt_lookup_source": receipt_lookup_source,
+                "receipt_source_packet_key": fallback.get("source_packet_key", ""),
                 "receipt_durable_in_sqlite": receipt_durable_in_sqlite,
                 "receipt_memory_only": receipt_memory_only,
                 "receipt_durability_state": receipt_durability_state,
