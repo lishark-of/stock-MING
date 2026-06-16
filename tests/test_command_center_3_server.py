@@ -8418,6 +8418,124 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(latest_policy["tushare_provider_target_sample_execution_request_requires_bound_scope_hash"])
         self.assertNotIn("SHOULD_DROP", json.dumps(data_health_cache, ensure_ascii=False))
 
+    def test_tushare_provider_target_sample_execution_recipe_seed_prebinds_local_request(self):
+        db_path = self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        from fastapi.testclient import TestClient
+        from server.main import app
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        seed_response = TestClient(app).post(
+            "/api/tasks/tushare-provider-target-sample-execution-recipe-seed",
+            json={
+                "target_sample_acceptance_groups": ["margin_financing"],
+                "apis": ["margin_detail"],
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(seed_response["ok"])
+        seed_task = seed_response["data"]["task"]
+        seed_recipe = seed_task["payload_safe"]["provider_target_sample_execution_recipe"]
+        self.assertEqual(seed_task["task_type"], "run_tushare_provider_target_sample_execution_recipe_seed")
+        self.assertEqual(seed_task["status"], "success")
+        self.assertEqual(seed_task["current_step"], "tushare_provider_target_sample_execution_recipe_seed_ready")
+        self.assertEqual(seed_recipe["schema_version"], "tushare_provider_target_sample_execution_recipe.v1")
+        self.assertEqual(seed_recipe["seed_schema_version"], "tushare_provider_target_sample_execution_recipe_seed.v1")
+        self.assertEqual(seed_recipe["status"], "target_sample_execution_recipe_ready_user_confirmation_required")
+        self.assertEqual(seed_recipe["requested_targets"], ["margin_financing"])
+        self.assertTrue(seed_recipe["recipe_ready_for_user_confirmation"])
+        self.assertEqual(seed_recipe["recipe_ready_target_count"], 1)
+        self.assertEqual(seed_recipe["blocked_recipe_target_count"], 0)
+        self.assertFalse(seed_recipe["provider_task_created_by_recipe"])
+        self.assertFalse(seed_recipe["provider_execution_implemented_by_recipe"])
+        self.assertFalse(seed_recipe["recipe_external_calls_triggered"])
+        self.assertFalse(seed_recipe["tushare_called_by_recipe"])
+        self.assertFalse(seed_recipe["deepseek_called"])
+        self.assertFalse(seed_recipe["github_called"])
+        self.assertTrue(seed_recipe["does_not_execute_trades"])
+        self.assertTrue(seed_recipe["does_not_modify_strategy_action"])
+        self.assertEqual(seed_recipe["call_ledger"][0]["api"], "local_tushare_provider_target_sample_execution_recipe_seed")
+        self.assert_local_ledger_boundary(seed_recipe["call_ledger"][0])
+        self.assertNotIn("SHOULD_DROP", json.dumps(seed_response, ensure_ascii=False))
+
+        persisted_seed = SQLiteMetaStore(db_path).read_packet(
+            "command_center_tushare_provider_target_sample_execution_recipe_packet"
+        )
+        self.assertEqual(
+            persisted_seed["provider_target_sample_execution_recipe"]["execution_recipe_scope_hash_short"],
+            seed_recipe["execution_recipe_scope_hash_short"],
+        )
+        self.assertFalse(persisted_seed["external_calls_triggered"])
+        self.assertFalse(persisted_seed["tushare_called"])
+        self.assertFalse(persisted_seed["deepseek_called"])
+        self.assertFalse(persisted_seed["github_called"])
+        self.assertFalse(persisted_seed["provider_target_sample_execution_recipe"]["contains_secret"])
+
+        migration = migration_status_service.build_migration_status()
+        p2 = {
+            row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]
+        }["p2_tushare_target_sample_acceptance"]
+        preview = p2["next_local_step_preview_rows"][0]
+        self.assertTrue(p2["next_local_step_ready_for_clean_receipt"])
+        self.assertEqual(p2["next_local_step_disabled_reason"], "")
+        self.assertEqual(
+            preview["prepared_context_source_packet_key"],
+            "command_center_tushare_provider_target_sample_execution_recipe_packet",
+        )
+        self.assertEqual(
+            preview["prepared_execution_recipe_scope_hash_short"],
+            seed_recipe["execution_recipe_scope_hash_short"],
+        )
+        self.assertEqual(preview["prepared_target_sample_acceptance_groups"], ["margin_financing"])
+        self.assertEqual(preview["prepared_apis"], ["margin_detail"])
+
+        request_response = TestClient(app).post(
+            "/api/tasks/tushare-provider-target-sample-execution-request",
+            json={
+                "operator_approved": True,
+                "execution_recipe_scope_hash": seed_recipe["execution_recipe_scope_hash"],
+                "target_sample_acceptance_groups": ["margin_financing"],
+                "apis": ["margin_detail"],
+                "ts_code": "002008.SZ",
+                "trade_date": "20260610",
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(request_response["ok"])
+        request_task = request_response["data"]["task"]
+        request_receipt = request_task["payload_safe"]["provider_target_sample_execution_request_receipt"]
+        self.assertEqual(request_receipt["status"], "target_sample_execution_request_ready_manual_provider_task_pending")
+        self.assertTrue(request_receipt["local_execution_request_ready"])
+        self.assertTrue(request_receipt["ready_for_manual_provider_task_submission"])
+        self.assertTrue(request_receipt["execution_recipe_scope_hash_matches_latest"])
+        self.assertEqual(request_receipt["selected_apis"], ["margin_detail"])
+        self.assertEqual(request_receipt["requested_targets"], ["margin_financing"])
+        self.assertFalse(request_receipt["creates_provider_task"])
+        self.assertFalse(request_receipt["provider_execution_implemented"])
+        self.assertFalse(request_receipt["external_calls_triggered"])
+        self.assertFalse(request_receipt["tushare_called"])
+        self.assertFalse(request_receipt["deepseek_called"])
+        self.assertFalse(request_receipt["github_called"])
+        self.assertTrue(request_receipt["does_not_execute_trades"])
+        self.assertTrue(request_receipt["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(request_response, ensure_ascii=False))
+
+        migration_after_request = migration_status_service.build_migration_status()
+        p2_after_request = {
+            row["queue_id"]: row for row in migration_after_request["ltg_next_acceptance_action_rows"]
+        }["p2_tushare_target_sample_acceptance"]
+        self.assertEqual(
+            p2_after_request["local_receipt_status"],
+            "local_receipts_visible_provider_or_worker_evidence_pending",
+        )
+        self.assertEqual(p2_after_request["ready_local_receipt_step_count"], 1)
+        self.assertEqual(p2_after_request["durable_local_receipt_step_count"], 1)
+        self.assertTrue(p2_after_request["local_receipts_all_durable"])
+        self.assertTrue(p2_after_request["future_handoff_ready_from_local_receipt"])
+
     def test_tushare_target_sample_acceptance_supports_multiple_review_ready_domains_without_promotion(self):
         db_path = self._with_meta_store()
         self._with_parquet_root()
@@ -12480,7 +12598,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 56)
+        self.assertEqual(catalog["task_count"], 57)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -12499,7 +12617,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 56)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 57)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -12510,8 +12628,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 58)
-        self.assertEqual(route_coverage["task_creation_route_count"], 56)
+        self.assertEqual(route_coverage["known_post_route_count"], 59)
+        self.assertEqual(route_coverage["task_creation_route_count"], 57)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -12520,11 +12638,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 56)
+        self.assertEqual(implementation_status["task_count"], 57)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 53)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 54)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 54)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 55)
         self.assertEqual(implementation_status["external_capable_task_count"], 6)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -12535,6 +12653,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             {
                 "refresh_tushare_facts",
                 "run_trade_cal_provider_acceptance_dry_run",
+                "run_tushare_provider_target_sample_execution_recipe_seed",
                 "run_tushare_provider_target_sample_execution_request",
                 "run_trade_cal_provider_acceptance_execution_request",
                 "run_trade_cal_provider_acceptance_promotion_review",
@@ -12594,6 +12713,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             {
                 "refresh_tushare_facts",
                 "run_trade_cal_provider_acceptance_dry_run",
+                "run_tushare_provider_target_sample_execution_recipe_seed",
                 "run_tushare_provider_target_sample_execution_request",
                 "run_trade_cal_provider_acceptance_execution_request",
                 "run_trade_cal_provider_acceptance_promotion_review",
@@ -12676,6 +12796,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertIn(
             "POST /api/data-health/producer-cache-refresh",
+            route_coverage["known_post_routes"],
+        )
+        self.assertIn(
+            "POST /api/tasks/tushare-provider-target-sample-execution-recipe-seed",
             route_coverage["known_post_routes"],
         )
         self.assertIn(
@@ -13007,6 +13131,38 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(by_type["refresh_tushare_facts"]["trade_cal_provider_acceptance_is_full_interface_acceptance"])
         self.assertFalse(by_type["refresh_tushare_facts"]["full_interface_acceptance_done"])
         self.assertFalse(by_type["refresh_tushare_facts"]["cache_get_external_calls"])
+        self.assertEqual(
+            by_type["run_tushare_provider_target_sample_execution_recipe_seed"]["route"],
+            "POST /api/tasks/tushare-provider-target-sample-execution-recipe-seed",
+        )
+        self.assertEqual(
+            by_type["run_tushare_provider_target_sample_execution_recipe_seed"]["current_backend"],
+            "local_tushare_provider_target_sample_execution_recipe_seed_pipeline",
+        )
+        self.assertEqual(
+            by_type["run_tushare_provider_target_sample_execution_recipe_seed"]["external_call_policy"],
+            "local_tushare_provider_target_sample_execution_recipe_seed_no_external_call",
+        )
+        self.assertEqual(
+            by_type["run_tushare_provider_target_sample_execution_recipe_seed"]["possible_external_sources"],
+            [],
+        )
+        self.assertEqual(
+            by_type["run_tushare_provider_target_sample_execution_recipe_seed"]["future_external_sources"],
+            ["tushare"],
+        )
+        self.assertTrue(by_type["run_tushare_provider_target_sample_execution_recipe_seed"]["local_recipe_seed_only"])
+        self.assertFalse(by_type["run_tushare_provider_target_sample_execution_recipe_seed"]["creates_provider_task"])
+        self.assertFalse(by_type["run_tushare_provider_target_sample_execution_recipe_seed"]["provider_execution_implemented"])
+        self.assertFalse(
+            by_type["run_tushare_provider_target_sample_execution_recipe_seed"][
+                "provider_target_sample_execution_recipe_creates_task"
+            ]
+        )
+        self.assertFalse(by_type["run_tushare_provider_target_sample_execution_recipe_seed"]["cache_get_external_calls"])
+        self.assertFalse(by_type["run_tushare_provider_target_sample_execution_recipe_seed"]["react_render_external_calls"])
+        self.assertTrue(by_type["run_tushare_provider_target_sample_execution_recipe_seed"]["does_not_execute_trades"])
+        self.assertTrue(by_type["run_tushare_provider_target_sample_execution_recipe_seed"]["does_not_modify_strategy_action"])
         self.assertEqual(
             by_type["run_tushare_provider_target_sample_execution_request"]["route"],
             "POST /api/tasks/tushare-provider-target-sample-execution-request",
@@ -14340,16 +14496,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 53)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 54)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 54)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 55)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 53)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 54)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 54)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 55)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -15180,9 +15336,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 53)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 54)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 54)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 55)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -15405,9 +15561,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 53)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 54)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 54)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 55)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -15438,9 +15594,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 53)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 54)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 54)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 55)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -19329,7 +19485,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 56)
+        self.assertEqual(task_catalog["data"]["task_count"], 57)
         self.assertIn("POST /api/bootstrap/live-startup", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-research-plan", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/factor-quant/universe-worker-batch-dry-run", task_catalog["data"]["route_coverage"]["known_post_routes"])
@@ -19345,6 +19501,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertIn("POST /api/next-session/browser-qa-review", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn("POST /api/tasks/refresh-tushare-facts", task_catalog["data"]["route_coverage"]["known_post_routes"])
+        self.assertIn(
+            "POST /api/tasks/tushare-provider-target-sample-execution-recipe-seed",
+            task_catalog["data"]["route_coverage"]["known_post_routes"],
+        )
         self.assertIn(
             "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
             task_catalog["data"]["route_coverage"]["known_post_routes"],

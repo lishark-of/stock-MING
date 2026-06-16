@@ -756,11 +756,19 @@ def _local_step_row_by_phase(local_step_rows: list[dict[str, Any]], phase_key: s
 
 
 def _latest_tushare_target_sample_execution_recipe_preview() -> dict[str, Any]:
+    source_packet_key = "command_center_tushare_refresh_packet"
     try:
         packet = packet_service.read_packet("command_center_tushare_refresh_packet")
     except Exception:
         packet = {}
     recipe = packet.get("provider_target_sample_execution_recipe") if isinstance(packet, dict) else {}
+    if not isinstance(recipe, dict) or not recipe:
+        source_packet_key = "command_center_tushare_provider_target_sample_execution_recipe_packet"
+        try:
+            packet = packet_service.read_packet(source_packet_key)
+        except Exception:
+            packet = {}
+        recipe = packet.get("provider_target_sample_execution_recipe") if isinstance(packet, dict) else {}
     recipe_map = recipe if isinstance(recipe, dict) else {}
     rows = [row for row in recipe_map.get("rows", []) if isinstance(row, dict)]
     selected_apis: list[str] = []
@@ -799,7 +807,7 @@ def _latest_tushare_target_sample_execution_recipe_preview() -> dict[str, Any]:
         "requested_targets": requested_targets,
         "selected_apis": selected_apis,
         "can_prebind_execution_recipe_scope_hash": recipe_ready,
-        "source_packet_key": "command_center_tushare_refresh_packet",
+        "source_packet_key": source_packet_key,
         "source_receipt_key": "provider_target_sample_execution_recipe",
         "external_calls_triggered": False,
         "tushare_called": False,
