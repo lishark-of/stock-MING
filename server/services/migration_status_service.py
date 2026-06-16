@@ -577,6 +577,26 @@ def _receipt_blocker_count(receipt: dict[str, Any]) -> int:
     return max((int(receipt.get(key) or 0) for key in blocker_keys), default=0)
 
 
+def _receipt_target_payload_safe_summary(receipt: dict[str, Any]) -> dict[str, Any]:
+    payload = receipt.get("target_payload_safe") if isinstance(receipt.get("target_payload_safe"), dict) else {}
+    payload_map = payload if isinstance(payload, dict) else {}
+    return {
+        "target_payload_present": bool(payload_map),
+        "target_payload_apis": [str(item) for item in payload_map.get("apis") or [] if str(item or "")],
+        "target_payload_groups": [
+            str(item) for item in payload_map.get("target_sample_acceptance_groups") or [] if str(item or "")
+        ],
+        "target_payload_acceptance_mode": str(payload_map.get("acceptance_mode") or receipt.get("target_acceptance_mode") or ""),
+        "target_payload_ts_code": str(payload_map.get("ts_code") or ""),
+        "target_payload_trade_date": str(payload_map.get("trade_date") or ""),
+        "target_payload_start_date": str(payload_map.get("start_date") or ""),
+        "target_payload_end_date": str(payload_map.get("end_date") or ""),
+        "target_payload_provider_execution_requires_separate_post_task": bool(
+            payload_map.get("provider_execution_requires_separate_post_task")
+        ),
+    }
+
+
 def _build_ltg_next_action_local_step_rows(
     queue_id: str,
     tasks_by_type: dict[str, list[dict[str, Any]]],
@@ -602,6 +622,7 @@ def _build_ltg_next_action_local_step_rows(
         )
         task_found = bool(latest_task)
         receipt_visible = bool(receipt_map)
+        target_payload_summary = _receipt_target_payload_safe_summary(receipt_map) if receipt_visible else {}
         step_rows.append(
             {
                 "phase_key": step["phase_key"],
@@ -617,6 +638,28 @@ def _build_ltg_next_action_local_step_rows(
                 "receipt_scope_hash": receipt_scope_hash,
                 "receipt_scope_hash_short": receipt_scope_hash_short,
                 "receipt_blocker_count": _receipt_blocker_count(receipt_map) if receipt_visible else 0,
+                "receipt_target_post_task_route": receipt_map.get("target_post_task_route") or "",
+                "receipt_target_task_type": receipt_map.get("target_task_type") or "",
+                "receipt_target_acceptance_mode": receipt_map.get("target_acceptance_mode") or "",
+                "receipt_target_payload_present": target_payload_summary.get("target_payload_present") is True,
+                "receipt_target_payload_apis": target_payload_summary.get("target_payload_apis") or [],
+                "receipt_target_payload_groups": target_payload_summary.get("target_payload_groups") or [],
+                "receipt_target_payload_acceptance_mode": (
+                    target_payload_summary.get("target_payload_acceptance_mode") or ""
+                ),
+                "receipt_target_payload_ts_code": target_payload_summary.get("target_payload_ts_code") or "",
+                "receipt_target_payload_trade_date": target_payload_summary.get("target_payload_trade_date") or "",
+                "receipt_target_payload_start_date": target_payload_summary.get("target_payload_start_date") or "",
+                "receipt_target_payload_end_date": target_payload_summary.get("target_payload_end_date") or "",
+                "receipt_target_payload_provider_execution_requires_separate_post_task": (
+                    target_payload_summary.get("target_payload_provider_execution_requires_separate_post_task") is True
+                ),
+                "receipt_ready_for_manual_provider_task_submission": (
+                    receipt_map.get("ready_for_manual_provider_task_submission") is True
+                ),
+                "receipt_creates_provider_task": receipt_map.get("creates_provider_task") is True,
+                "receipt_provider_task_created": receipt_map.get("provider_task_created") is True,
+                "receipt_provider_execution_implemented": receipt_map.get("provider_execution_implemented") is True,
                 "local_ready": any(
                     receipt_map.get(key) is True
                     for key in (
@@ -875,6 +918,73 @@ def _build_ltg_next_action_submission_preview_rows(
     ]
 
 
+def _build_ltg_future_handoff_preview_rows(
+    next_local_step: str,
+    local_step_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    latest_ready_step = next(
+        (
+            row
+            for row in reversed(local_step_rows)
+            if row.get("receipt_visible") is True and row.get("receipt_ready_for_manual_provider_task_submission") is True
+        ),
+        {},
+    )
+    route = str(
+        latest_ready_step.get("receipt_target_post_task_route")
+        or (next_local_step if next_local_step.startswith("POST /api/") else "")
+    )
+    handoff_ready = bool(
+        latest_ready_step
+        and latest_ready_step.get("receipt_target_payload_present") is True
+        and latest_ready_step.get("receipt_creates_provider_task") is False
+        and latest_ready_step.get("receipt_provider_task_created") is False
+        and latest_ready_step.get("receipt_provider_execution_implemented") is False
+    )
+    if handoff_ready:
+        status = "future_provider_handoff_preview_ready"
+        disabled_reason = ""
+    elif any(row.get("receipt_visible") for row in local_step_rows):
+        status = "future_provider_handoff_waiting_for_ready_execution_request"
+        disabled_reason = "latest_local_receipt_not_ready_for_provider_handoff"
+    else:
+        status = "future_provider_handoff_waiting_for_local_receipt"
+        disabled_reason = "local_execution_request_receipt_missing"
+    return [
+        {
+            "status": status,
+            "future_route": route,
+            "future_task_type": latest_ready_step.get("receipt_target_task_type") or "",
+            "target_acceptance_mode": latest_ready_step.get("receipt_target_acceptance_mode") or "",
+            "target_payload_apis": latest_ready_step.get("receipt_target_payload_apis") or [],
+            "target_payload_groups": latest_ready_step.get("receipt_target_payload_groups") or [],
+            "target_payload_ts_code": latest_ready_step.get("receipt_target_payload_ts_code") or "",
+            "target_payload_trade_date": latest_ready_step.get("receipt_target_payload_trade_date") or "",
+            "target_payload_start_date": latest_ready_step.get("receipt_target_payload_start_date") or "",
+            "target_payload_end_date": latest_ready_step.get("receipt_target_payload_end_date") or "",
+            "source_local_phase_key": latest_ready_step.get("phase_key") or "",
+            "source_local_task_id": latest_ready_step.get("latest_task_id") or "",
+            "source_local_receipt_status": latest_ready_step.get("receipt_status") or "",
+            "handoff_ready_from_local_receipt": handoff_ready,
+            "disabled_reason": disabled_reason,
+            "creates_provider_task_from_preview": False,
+            "provider_task_created_by_preview": False,
+            "provider_execution_implemented_by_preview": False,
+            "requires_separate_user_approved_provider_task": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "can_close_goal": False,
+            "production_complete": False,
+            "evidence_boundary": "future_handoff_preview_is_read_only_not_provider_execution",
+        }
+    ]
+
+
 def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows_by_id = {str(row.get("id") or ""): row for row in rows}
     tasks_by_type = _task_statuses_by_type()
@@ -908,12 +1018,16 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             local_step_rows,
             safe_context=safe_context,
         )
+        future_handoff_preview_rows = _build_ltg_future_handoff_preview_rows(next_local_step, local_step_rows)
         next_step_ready_for_clean_receipt = any(
             row.get("ready_for_clean_local_receipt") is True for row in submission_preview_rows
         )
         next_step_disabled_reason = next(
             (str(row.get("disabled_reason") or "") for row in submission_preview_rows if row.get("disabled_reason")),
             "",
+        )
+        future_handoff_ready = any(
+            row.get("handoff_ready_from_local_receipt") is True for row in future_handoff_preview_rows
         )
         action_rows.append(
             {
@@ -949,6 +1063,9 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 "next_local_step_preview_row_count": len(submission_preview_rows),
                 "next_local_step_ready_for_clean_receipt": next_step_ready_for_clean_receipt,
                 "next_local_step_disabled_reason": next_step_disabled_reason,
+                "future_handoff_preview_rows": future_handoff_preview_rows,
+                "future_handoff_preview_row_count": len(future_handoff_preview_rows),
+                "future_handoff_ready_from_local_receipt": future_handoff_ready,
                 "local_receipt_lookup_source": "task_service.list_task_statuses_memory_plus_sqlite_read_only",
                 "local_receipt_lookup_creates_task": False,
                 "local_receipt_lookup_calls_provider": False,

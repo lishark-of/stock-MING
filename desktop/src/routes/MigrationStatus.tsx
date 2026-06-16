@@ -238,6 +238,30 @@ export default function MigrationStatus() {
       external_calls_triggered: preview.external_calls_triggered
     }));
   });
+  const ltgFutureHandoffPreviewRows = ltgNextAcceptanceActionRows.flatMap((row) => {
+    const handoffs = (row.future_handoff_preview_rows as Array<Record<string, unknown>> | undefined) ?? [];
+    return handoffs.map((handoff) => ({
+      queue_id: row.queue_id,
+      priority: row.priority,
+      status: handoff.status,
+      future_route: handoff.future_route,
+      future_task_type: handoff.future_task_type,
+      target_acceptance_mode: handoff.target_acceptance_mode,
+      target_payload_apis: handoff.target_payload_apis,
+      target_payload_groups: handoff.target_payload_groups,
+      target_payload_ts_code: handoff.target_payload_ts_code,
+      target_payload_trade_date: handoff.target_payload_trade_date,
+      target_payload_start_date: handoff.target_payload_start_date,
+      target_payload_end_date: handoff.target_payload_end_date,
+      source_local_phase_key: handoff.source_local_phase_key,
+      source_local_task_id: handoff.source_local_task_id,
+      handoff_ready_from_local_receipt: handoff.handoff_ready_from_local_receipt,
+      disabled_reason: handoff.disabled_reason,
+      creates_provider_task_from_preview: handoff.creates_provider_task_from_preview,
+      provider_execution_implemented_by_preview: handoff.provider_execution_implemented_by_preview,
+      external_calls_triggered: handoff.external_calls_triggered
+    }));
+  });
   const missingLocalReceiptSteps = ltgNextAcceptanceActionRows.reduce(
     (total, row) => total + Number(row.missing_local_receipt_step_count ?? 0),
     0
@@ -366,6 +390,7 @@ export default function MigrationStatus() {
       <h3>LTG next acceptance action queue</h3>
       <p className="risk-note">这里集中显示 P1/P2/P3 的下一步显式验收路径：只读展示允许的 POST 路由、未来 provider/worker 证据和禁止事项；GET cache 和页面渲染不会创建任务或调用外部服务。</p>
       <p className="risk-note">按钮会先看 `next_local_step_preview_rows`：如果缺前置本地回执、scope hash、review hash 或执行请求 task id，就只展示缺口并禁用按钮，避免生成已知 blocked 的回执。</p>
+      <p className="risk-note">`future_handoff_preview_rows` 只把本地 execution-request 已绑定的未来 provider/worker payload 摘要列出来；它不提交 provider task、不调用 Tushare/DeepSeek/GitHub，也不能关闭 LTG。</p>
       <div className="actions">
         {ltgNextAcceptanceActionRows.map((row) => {
           const nextLocalStep = String(row.next_local_step ?? "");
@@ -398,6 +423,11 @@ export default function MigrationStatus() {
             tone: ltgNextAcceptanceActionRows.some((row) => row.next_local_step_ready_for_clean_receipt === true) ? "good" : "warn"
           },
           {
+            label: "handoff previews ready",
+            value: ltgFutureHandoffPreviewRows.filter((row) => row.handoff_ready_from_local_receipt === true).length,
+            tone: ltgFutureHandoffPreviewRows.some((row) => row.handoff_ready_from_local_receipt === true) ? "good" : "warn"
+          },
+          {
             label: "lookup creates task",
             value: ltgNextAcceptanceActionRows.some((row) => row.local_receipt_lookup_creates_task === true),
             tone: ltgNextAcceptanceActionRows.some((row) => row.local_receipt_lookup_creates_task === true) ? "bad" : "good"
@@ -411,6 +441,7 @@ export default function MigrationStatus() {
       />
       <DataLineageTable rows={ltgNextAcceptanceReceiptRows} />
       <DataLineageTable rows={ltgNextAcceptancePreviewRows} />
+      <DataLineageTable rows={ltgFutureHandoffPreviewRows} />
       <DataLineageTable rows={ltgNextAcceptanceLocalStepRows} />
       <DataLineageTable rows={ltgNextAcceptanceActionRows} />
       <DataLineageTable rows={longTermGoalRows} />

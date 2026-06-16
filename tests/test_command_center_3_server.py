@@ -331,6 +331,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(
             all(row["next_local_step_preview_row_count"] == 1 for row in migration["ltg_next_acceptance_action_rows"])
         )
+        self.assertTrue(
+            all(row["future_handoff_preview_row_count"] == 1 for row in migration["ltg_next_acceptance_action_rows"])
+        )
+        self.assertTrue(
+            all(row["future_handoff_ready_from_local_receipt"] is False for row in migration["ltg_next_acceptance_action_rows"])
+        )
         self.assertTrue(action_rows["p1_trade_cal_provider_acceptance"]["next_local_step_ready_for_clean_receipt"])
         p1_preview = action_rows["p1_trade_cal_provider_acceptance"]["next_local_step_preview_rows"][0]
         self.assertEqual(p1_preview["step_kind"], "dry_run_scope_ticket")
@@ -356,6 +362,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 and preview["contains_secret"] is False
                 for row in migration["ltg_next_acceptance_action_rows"]
                 for preview in row["next_local_step_preview_rows"]
+            )
+        )
+        self.assertTrue(
+            all(
+                preview["external_calls_triggered"] is False
+                and preview["tushare_called"] is False
+                and preview["deepseek_called"] is False
+                and preview["github_called"] is False
+                and preview["does_not_execute_trades"] is True
+                and preview["does_not_modify_strategy_action"] is True
+                and preview["contains_secret"] is False
+                for row in migration["ltg_next_acceptance_action_rows"]
+                for preview in row["future_handoff_preview_rows"]
             )
         )
         self.assertTrue(all(row["local_receipt_lookup_creates_task"] is False for row in migration["ltg_next_acceptance_action_rows"]))
@@ -1563,6 +1582,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                     "schema_version": "tushare_provider_target_sample_execution_recipe.v1",
                     "status": "target_sample_execution_recipe_ready_user_confirmation_required",
                     "recipe_ready_for_user_confirmation": True,
+                    "execution_recipe_scope_hash": "abc123def4567890abc123def4567890abc123def4567890abc123def4567890",
                     "execution_recipe_scope_hash_short": "abc123def4567890",
                     "requested_targets": ["margin_financing"],
                     "rows": [
@@ -1606,6 +1626,48 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(preview["does_not_execute_trades"])
         self.assertTrue(preview["does_not_modify_strategy_action"])
         self.assertFalse(preview["contains_secret"])
+
+        tushare_task_service.run_tushare_provider_target_sample_execution_request(
+            {
+                "operator_approved": True,
+                "execution_recipe_scope_hash": "abc123def4567890",
+                "target_sample_acceptance_groups": ["margin_financing"],
+                "apis": ["margin_detail"],
+                "ts_code": "002008.SZ",
+                "trade_date": "20260610",
+            }
+        )
+
+        migration_after_request = migration_status_service.build_migration_status()
+        action_rows_after_request = {
+            row["queue_id"]: row for row in migration_after_request["ltg_next_acceptance_action_rows"]
+        }
+        p2_after_request = action_rows_after_request["p2_tushare_target_sample_acceptance"]
+        handoff = p2_after_request["future_handoff_preview_rows"][0]
+
+        self.assertEqual(
+            p2_after_request["local_receipt_status"],
+            "local_receipts_visible_provider_or_worker_evidence_pending",
+        )
+        self.assertTrue(p2_after_request["future_handoff_ready_from_local_receipt"])
+        self.assertEqual(handoff["status"], "future_provider_handoff_preview_ready")
+        self.assertEqual(handoff["future_route"], "POST /api/tasks/refresh-tushare-facts")
+        self.assertEqual(handoff["future_task_type"], "refresh_tushare_facts")
+        self.assertEqual(handoff["target_acceptance_mode"], "provider_target_sample_acceptance")
+        self.assertEqual(handoff["target_payload_apis"], ["margin_detail"])
+        self.assertEqual(handoff["target_payload_groups"], ["margin_financing"])
+        self.assertEqual(handoff["target_payload_ts_code"], "002008.SZ")
+        self.assertEqual(handoff["target_payload_trade_date"], "20260610")
+        self.assertFalse(handoff["creates_provider_task_from_preview"])
+        self.assertFalse(handoff["provider_task_created_by_preview"])
+        self.assertFalse(handoff["provider_execution_implemented_by_preview"])
+        self.assertFalse(handoff["external_calls_triggered"])
+        self.assertFalse(handoff["tushare_called"])
+        self.assertFalse(handoff["deepseek_called"])
+        self.assertFalse(handoff["github_called"])
+        self.assertTrue(handoff["does_not_execute_trades"])
+        self.assertTrue(handoff["does_not_modify_strategy_action"])
+        self.assertFalse(handoff["contains_secret"])
 
     def test_packet_service_reads_snapshot_alias_without_external_calls(self):
         self._with_snapshot_cache(
