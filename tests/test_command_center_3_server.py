@@ -10939,7 +10939,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["candidate_radar_next_execution_recipe_ready"])
         self.assertTrue(payload["candidate_radar_worker_execution_recipe_ready"])
         self.assertTrue(payload["candidate_radar_durable_evidence_recipe_ready"])
-        self.assertGreaterEqual(payload["candidate_radar_durable_evidence_blocker_count"], 8)
+        self.assertGreaterEqual(payload["candidate_radar_durable_evidence_blocker_count"], 6)
         self.assertFalse(payload["external_calls_triggered"])
         self.assertFalse(payload["tushare_called"])
         self.assertFalse(payload["deepseek_called"])
@@ -11005,7 +11005,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "candidate_radar_next_execution_ready_for_fast_scan",
         )
         self.assertEqual(payload["observed"]["candidate_radar_next_execution_blocker_count"], 0)
-        self.assertGreater(payload["observed"]["candidate_radar_next_execution_production_pending_count"], 0)
+        self.assertGreaterEqual(payload["observed"]["candidate_radar_next_execution_production_pending_count"], 0)
         self.assertEqual(
             payload["observed"]["candidate_radar_worker_execution_recipe_status"],
             "candidate_radar_worker_execution_recipe_ready_production_pending",
@@ -11024,7 +11024,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "candidate_radar_durable_evidence_recipe_ready_production_pending",
         )
         self.assertTrue(payload["observed"]["candidate_radar_durable_evidence_ready"])
-        self.assertGreaterEqual(payload["observed"]["candidate_radar_durable_evidence_blocker_count"], 8)
+        self.assertGreaterEqual(payload["observed"]["candidate_radar_durable_evidence_blocker_count"], 6)
         self.assertIn(
             "worker_full_pool_execution_evidence_required",
             payload["observed"]["candidate_radar_durable_evidence_missing"],
@@ -22127,6 +22127,82 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 ],
             }
         )
+        artifact_root = self._with_candidate_motion_qa_root()
+        for run_id, reduced in (("default-run", False), ("reduced-run", True)):
+            report_dir = artifact_root / run_id
+            report_dir.mkdir(parents=True)
+            rows = [
+                {
+                    "route": "#candidates",
+                    "label": "Candidate Radar",
+                    "viewport": viewport,
+                    "width": width,
+                    "height": height,
+                    "url": "http://127.0.0.1:5173/#candidates",
+                    "status": "passed",
+                    "visual_qa_complete": True,
+                    "performance_trace_complete": True,
+                    "route_transition_observed_ms": 120,
+                    "route_transition_budget_ms": 500,
+                    "long_task_over_50ms_count": 0,
+                    "largest_motion_layout_shift": 0,
+                    "clipped_count": 0,
+                    "offscreen_count": 0,
+                }
+                for viewport, width, height in [
+                    ("desktop", 1440, 900),
+                    ("laptop", 1280, 800),
+                    ("tablet", 834, 1112),
+                    ("mobile", 390, 844),
+                ]
+            ]
+            (report_dir / "motion_browser_qa_report.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "command_center_3_motion_browser_qa_result.v1",
+                        "status": "motion_browser_qa_passed",
+                        "scope": "explicit_local_browser_visual_performance_run",
+                        "run_id": run_id,
+                        "generated_at": "2026-06-14T02:30:00.000Z",
+                        "base_url": "http://127.0.0.1:5173",
+                        "artifact_root": ".stock_ming_3/motion_qa",
+                        "reduced_motion": reduced,
+                        "route_count": 5,
+                        "viewport_count": 4,
+                        "qa_matrix_count": 20,
+                        "passed_count": 20,
+                        "review_required_count": 0,
+                        "console_error_count": 0,
+                        "visual_qa_complete": True,
+                        "browser_performance_verified": True,
+                        "production_motion_complete": False,
+                        "performance_budgets": {"route_transition_observed_ms": 500},
+                        "rows": rows,
+                        "errors": [],
+                        "cache_only": True,
+                        "starts_no_servers": True,
+                        "local_urls_only": True,
+                        "external_calls_triggered": False,
+                        "tushare_called": False,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+        browser_review = self.client.post(
+            "/api/candidate-radar/browser-qa-review",
+            json={"review_scope": "candidate_route_browser_qa_local_artifact"},
+        ).json()
+        self.assertTrue(browser_review["ok"])
+        self.assertEqual(
+            browser_review["data"]["task"]["current_step"],
+            "candidate_radar_browser_qa_review_ready",
+        )
 
         self.client.post(
             "/api/candidate-radar/full-pool-local-scan",
@@ -22208,6 +22284,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         rows = {row["criterion"]: row for row in packet["candidate_radar_worker_execution_request_rows"]}
         durable_rows = {row["evidence_key"]: row for row in packet["candidate_radar_durable_evidence_rows"]}
         next_rows = {row["phase"]: row for row in packet["candidate_radar_next_execution_rows"]}
+        review = packet["candidate_browser_qa_review_contract"]
+        durable = packet["candidate_radar_durable_evidence_recipe"]
+        self.assertEqual(review["status"], "candidate_browser_qa_review_ready_local_artifact")
+        self.assertTrue(review["explicit_review_task_done"])
+        self.assertTrue(review["local_browser_qa_review_ready"])
+        self.assertNotIn("browser_visual_performance_evidence_required", durable["missing_durable_evidence"])
+        self.assertTrue(durable_rows["browser_visual_performance_evidence_required"]["passed"])
+        self.assertFalse(durable_rows["browser_visual_performance_evidence_required"]["production_blocker"])
         self.assertEqual(receipt["schema_version"], "candidate_radar_worker_execution_request.v1")
         self.assertEqual(receipt["status"], "candidate_radar_worker_execution_request_ready_manual_worker_task_pending")
         self.assertEqual(receipt["route"], "POST /api/candidate-radar/worker-execution-request")

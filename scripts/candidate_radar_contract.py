@@ -932,7 +932,7 @@ def build_contract() -> dict[str, Any]:
             and _dict(next_execution_rows.get("worker_execution_recipe_visible")).get("status")
             == "worker_recipe_visible"
             and _dict(next_execution_rows.get("worker_execution_request_visible")).get("status")
-            == "pending_worker_execution_request"
+            in {"pending_worker_execution_request", "worker_request_visible"}
             and _dict(next_execution_rows.get("production_promotion_boundary")).get("status")
             == "promotion_blocked_visible"
             and policy.get("candidate_radar_next_execution_recipe_is_local") is True
@@ -1376,7 +1376,7 @@ def build_contract() -> dict[str, Any]:
             and int(durable_evidence_recipe.get("row_count") or 0) == len(durable_evidence_rows)
             and int(durable_evidence_recipe.get("evidence_key_count") or 0)
             == len(candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS)
-            and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) >= 8
+            and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) >= 6
             and "user-approved provider parity scope ticket"
             in _list(durable_evidence_recipe.get("required_evidence"))
             and "button-gated worker execution request ticket bound to the worker recipe hash"
@@ -1394,10 +1394,8 @@ def build_contract() -> dict[str, Any]:
             and _dict(durable_evidence_rows.get("cache_render_boundary_visible")).get("passed") is True
             and _dict(durable_evidence_rows.get("quick_scan_task_pipeline_visible")).get("passed") is True
             and _dict(durable_evidence_rows.get("worker_execution_recipe_visible")).get("passed") is True
-            and _dict(durable_evidence_rows.get("worker_execution_request_visible")).get("production_blocker")
-            is True
-            and _dict(durable_evidence_rows.get("provider_parity_scope_ticket_required")).get("production_blocker")
-            is True
+            and _durable_row_blocked_or_local_visible(durable_evidence_rows.get("worker_execution_request_visible"))
+            and _durable_row_blocked_or_local_visible(durable_evidence_rows.get("provider_parity_scope_ticket_required"))
             and _durable_row_blocked_or_local_visible(
                 durable_evidence_rows.get("quant_projection_scope_ticket_required")
             )

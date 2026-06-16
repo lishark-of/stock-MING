@@ -10182,9 +10182,22 @@ def _build_candidate_radar_packet(
         candidate_browser_qa_matrix_rows,
     ) = _candidate_browser_qa_runbook_contract()
     candidate_browser_qa_evidence_summary, candidate_browser_qa_evidence_rows = _candidate_browser_qa_evidence_summary()
+    previous_browser_review = _as_dict(previous_map.get("candidate_browser_qa_review_contract"))
+    previous_browser_review_done = previous_browser_review.get("explicit_review_task_done") is True
     candidate_browser_qa_review_contract = _candidate_browser_qa_review_contract(
         candidate_browser_qa_evidence_summary,
         candidate_browser_qa_evidence_rows,
+        explicit_review=previous_browser_review_done,
+        task_id=str(previous_browser_review.get("task_id") or previous_map.get("task_id") or "")
+        if previous_browser_review_done
+        else None,
+        reviewed_at=str(
+            previous_browser_review.get("reviewed_at")
+            or previous_map.get("candidate_browser_qa_review_completed_at")
+            or ""
+        )
+        if previous_browser_review_done
+        else None,
     )
     counts["fast_scan_runtime_budget_row_count"] = fast_scan_runtime_budget_contract["row_count"]
     counts["candidate_browser_qa_runbook_row_count"] = candidate_browser_qa_runbook_contract["row_count"]
