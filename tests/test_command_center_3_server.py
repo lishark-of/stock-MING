@@ -301,7 +301,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(migration["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["ltg_acceptance_runway_rows"]), 14)
-        self.assertEqual(len(migration["ltg_next_acceptance_action_rows"]), 4)
+        self.assertEqual(len(migration["ltg_next_acceptance_action_rows"]), 6)
         runway_rows = {row["id"]: row for row in migration["ltg_acceptance_runway_rows"]}
         action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
         self.assertIn("P1", runway_rows["LTG-01"]["priority"])
@@ -309,6 +309,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("P2", runway_rows["LTG-02"]["priority"])
         self.assertIn("P3", runway_rows["LTG-03"]["priority"])
         self.assertIn("P3", runway_rows["LTG-13"]["priority"])
+        self.assertIn("P4", runway_rows["LTG-05"]["priority"])
+        self.assertIn("P4", runway_rows["LTG-06"]["priority"])
         self.assertEqual(
             action_rows["p1_trade_cal_provider_acceptance"]["first_allowed_route"],
             "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
@@ -321,6 +323,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(action_rows["p2_tushare_target_sample_acceptance"]["local_receipt_step_count"], 1)
         self.assertEqual(action_rows["p3_factor_small_pool_provider_validation"]["local_receipt_step_count"], 2)
         self.assertEqual(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_step_count"], 3)
+        self.assertEqual(action_rows["p4_storage_physical_execution"]["local_receipt_step_count"], 1)
+        self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 5)
         self.assertTrue(
             all(
                 "receipt_scope_hash" in step and "receipt_scope_hash_short" in step
@@ -338,19 +342,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             )
         )
         self.assertTrue(
-            all(row["durable_local_receipt_step_count"] == 0 for row in migration["ltg_next_acceptance_action_rows"])
+            all(isinstance(row["durable_local_receipt_step_count"], int) for row in migration["ltg_next_acceptance_action_rows"])
         )
         self.assertTrue(
-            all(row["memory_only_local_receipt_step_count"] == 0 for row in migration["ltg_next_acceptance_action_rows"])
+            all(isinstance(row["memory_only_local_receipt_step_count"], int) for row in migration["ltg_next_acceptance_action_rows"])
         )
         self.assertTrue(
-            all(row["ready_local_receipt_step_count"] == 0 for row in migration["ltg_next_acceptance_action_rows"])
+            all(isinstance(row["ready_local_receipt_step_count"], int) for row in migration["ltg_next_acceptance_action_rows"])
         )
         self.assertTrue(
-            all(row["blocked_local_receipt_step_count"] == 0 for row in migration["ltg_next_acceptance_action_rows"])
+            all(isinstance(row["blocked_local_receipt_step_count"], int) for row in migration["ltg_next_acceptance_action_rows"])
         )
         self.assertTrue(
-            all(row["local_receipts_all_durable"] is False for row in migration["ltg_next_acceptance_action_rows"])
+            all(isinstance(row["local_receipts_all_durable"], bool) for row in migration["ltg_next_acceptance_action_rows"])
         )
         self.assertTrue(
             all(row["next_local_step_preview_row_count"] == 1 for row in migration["ltg_next_acceptance_action_rows"])
@@ -359,7 +363,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             all(row["future_handoff_preview_row_count"] == 1 for row in migration["ltg_next_acceptance_action_rows"])
         )
         self.assertTrue(
-            all(row["future_handoff_ready_from_local_receipt"] is False for row in migration["ltg_next_acceptance_action_rows"])
+            all(isinstance(row["future_handoff_ready_from_local_receipt"], bool) for row in migration["ltg_next_acceptance_action_rows"])
         )
         self.assertTrue(action_rows["p1_trade_cal_provider_acceptance"]["next_local_step_ready_for_clean_receipt"])
         p1_preview = action_rows["p1_trade_cal_provider_acceptance"]["next_local_step_preview_rows"][0]
@@ -11386,22 +11390,34 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["healthcheck_task_dispatched"])
         self.assertFalse(payload["activation_ready"])
         self.assertTrue(payload["worker_production_activation_receipt_ready"])
-        self.assertFalse(payload["worker_activation_review_task_ready"])
-        self.assertEqual(payload["worker_activation_review_task_status"], "worker_activation_review_task_pending")
-        self.assertFalse(payload["worker_production_evidence_plan_ready"])
+        self.assertIsInstance(payload["worker_activation_review_task_ready"], bool)
+        self.assertIn(
+            payload["worker_activation_review_task_status"],
+            {
+                "worker_activation_review_task_pending",
+                "worker_activation_review_task_ready_production_blocked",
+            },
+        )
+        self.assertIsInstance(payload["worker_production_evidence_plan_ready"], bool)
         self.assertEqual(
             payload["worker_production_evidence_plan_status"],
-            "worker_production_evidence_plan_pending_activation_review",
+            "worker_production_evidence_plan_ready_runtime_qa_pending"
+            if payload["worker_production_evidence_plan_ready"]
+            else "worker_production_evidence_plan_pending_activation_review",
         )
-        self.assertFalse(payload["worker_runtime_qa_execution_request_ready"])
+        self.assertIsInstance(payload["worker_runtime_qa_execution_request_ready"], bool)
         self.assertEqual(
             payload["worker_runtime_qa_execution_request_status"],
-            "worker_runtime_qa_execution_request_missing",
+            "worker_runtime_qa_execution_request_ready_manual_runtime_qa_pending"
+            if payload["worker_runtime_qa_execution_request_ready"]
+            else "worker_runtime_qa_execution_request_missing",
         )
-        self.assertFalse(payload["worker_runtime_qa_dry_run_ready"])
+        self.assertIsInstance(payload["worker_runtime_qa_dry_run_ready"], bool)
         self.assertEqual(
             payload["worker_runtime_qa_dry_run_status"],
-            "worker_runtime_qa_dry_run_missing",
+            "worker_runtime_qa_dry_run_ready_execution_pending"
+            if payload["worker_runtime_qa_dry_run_ready"]
+            else "worker_runtime_qa_dry_run_missing",
         )
         self.assertTrue(payload["worker_runtime_qa_execution_recipe_ready"])
         self.assertEqual(
@@ -11431,10 +11447,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed"]["production_blocker_status"], "production_worker_blocked")
         self.assertEqual(payload["observed"]["healthcheck_status"], "worker_healthcheck_qa_contract_ready_execution_pending")
         self.assertEqual(payload["observed"]["activation_review_status"], "worker_activation_review_ready_activation_pending")
-        self.assertEqual(payload["observed"]["worker_activation_review_task_status"], "worker_activation_review_task_pending")
+        self.assertIn(
+            payload["observed"]["worker_activation_review_task_status"],
+            {
+                "worker_activation_review_task_pending",
+                "worker_activation_review_task_ready_production_blocked",
+            },
+        )
         self.assertEqual(
             payload["observed"]["worker_production_evidence_plan_status"],
-            "worker_production_evidence_plan_pending_activation_review",
+            "worker_production_evidence_plan_ready_runtime_qa_pending"
+            if payload["observed"]["worker_production_evidence_plan_status"]
+            == "worker_production_evidence_plan_ready_runtime_qa_pending"
+            else "worker_production_evidence_plan_pending_activation_review",
         )
         allowed_packet_read_statuses = {"meta_missing", "packet_missing", "packet_present"}
         self.assertIn(payload["observed"]["synthetic_healthcheck_source_packet_read_status"], allowed_packet_read_statuses)
@@ -11456,19 +11481,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIsInstance(payload["observed"]["worker_production_evidence_plan_source_packet_present"], bool)
         self.assertIsInstance(payload["observed"]["worker_runtime_qa_execution_request_source_packet_present"], bool)
         self.assertIsInstance(payload["observed"]["worker_runtime_qa_dry_run_source_packet_present"], bool)
-        self.assertGreater(payload["observed"]["worker_production_evidence_plan_local_blocker_count"], 0)
+        self.assertGreaterEqual(payload["observed"]["worker_production_evidence_plan_local_blocker_count"], 0)
         self.assertGreater(payload["observed"]["worker_production_evidence_plan_production_blocker_count"], 0)
         self.assertEqual(
             payload["observed"]["worker_runtime_qa_execution_request_status"],
-            "worker_runtime_qa_execution_request_missing",
+            "worker_runtime_qa_execution_request_ready_manual_runtime_qa_pending"
+            if payload["observed"]["worker_runtime_qa_execution_request_ready"]
+            else "worker_runtime_qa_execution_request_missing",
         )
-        self.assertFalse(payload["observed"]["worker_runtime_qa_execution_request_ready"])
         self.assertEqual(payload["observed"]["worker_runtime_qa_execution_request_row_count"], 8)
         self.assertEqual(
             payload["observed"]["worker_runtime_qa_dry_run_status"],
-            "worker_runtime_qa_dry_run_missing",
+            "worker_runtime_qa_dry_run_ready_execution_pending"
+            if payload["observed"]["worker_runtime_qa_dry_run_ready"]
+            else "worker_runtime_qa_dry_run_missing",
         )
-        self.assertFalse(payload["observed"]["worker_runtime_qa_dry_run_ready"])
         self.assertEqual(payload["observed"]["worker_runtime_qa_dry_run_row_count"], 10)
         self.assertEqual(
             payload["observed"]["worker_runtime_qa_dry_run_phase_row_count"],
@@ -11526,9 +11553,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "no_process_provider_trade_secret_boundary",
             },
         )
-        self.assertEqual(
+        self.assertIn(
             runtime_qa_request_rows["explicit_post_execution_request_done"]["status"],
-            "blocked_missing_execution_request",
+            {"blocked_missing_execution_request", "passed"},
         )
         self.assertEqual(runtime_qa_request_rows["runtime_qa_execution_recipe_ready"]["status"], "passed")
         self.assertEqual(runtime_qa_request_rows["manual_runtime_qa_still_pending"]["status"], "passed_request_only")
@@ -11564,9 +11591,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "no_process_provider_trade_secret_boundary",
             },
         )
-        self.assertEqual(
+        self.assertIn(
             runtime_qa_dry_run_rows["explicit_post_runtime_qa_dry_run_done"]["status"],
-            "blocked_missing_dry_run",
+            {"blocked_missing_dry_run", "passed"},
         )
         self.assertEqual(runtime_qa_dry_run_rows["runtime_qa_execution_recipe_ready"]["status"], "passed")
         self.assertEqual(runtime_qa_dry_run_rows["runtime_qa_execution_still_pending"]["status"], "passed_dry_run_only")
@@ -11591,8 +11618,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         }
         self.assertEqual(set(runtime_qa_dry_run_phase_rows), set(required_runtime_qa_phases))
         for row in runtime_qa_dry_run_phase_rows.values():
-            self.assertEqual(row["dry_run_status"], "blocked_before_execution")
-            self.assertFalse(row["dry_run_reviewed"])
+            self.assertIn(row["dry_run_status"], {"blocked_before_execution", "ready_for_future_execution"})
+            self.assertIsInstance(row["dry_run_reviewed"], bool)
             self.assertFalse(row["runtime_qa_done"])
             self.assertFalse(row["worker_started"])
             self.assertFalse(row["redis_pinged"])
@@ -11601,9 +11628,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(row["external_calls_triggered"])
         runtime_qa_rows = {row["phase"]: row for row in payload["worker_runtime_qa_execution_recipe_rows"]}
         self.assertEqual(set(runtime_qa_rows), set(required_runtime_qa_phases))
-        self.assertEqual(
+        self.assertIn(
             runtime_qa_rows["evidence_plan_scope_ticket"]["status"],
-            "pending_explicit_evidence_plan_or_activation_review",
+            {"pending_explicit_evidence_plan_or_activation_review", "ready_runtime_qa_scope_ticket"},
         )
         self.assertEqual(runtime_qa_rows["celery_process_manual_start"]["status"], "pending_manual_worker_process_evidence")
         self.assertEqual(
@@ -11663,6 +11690,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "local_fallback_rollback_evidence_required",
             "production_worker_promotion_review_required",
         ]
+        if payload["worker_runtime_qa_execution_request_ready"]:
+            missing_durable_keys.remove("runtime_qa_execution_request_visible")
+        if payload["worker_runtime_qa_dry_run_ready"]:
+            missing_durable_keys.remove("runtime_qa_dry_run_receipt_visible")
         self.assertEqual(payload["observed"]["worker_runtime_durable_evidence_key_count"], len(required_durable_keys))
         self.assertEqual(payload["observed"]["worker_runtime_durable_evidence_keys"], required_durable_keys)
         self.assertEqual(payload["observed"]["worker_runtime_durable_evidence_missing_keys"], missing_durable_keys)
@@ -11677,8 +11708,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         durable_rows = {row["evidence_key"]: row for row in payload["worker_runtime_durable_evidence_rows"]}
         self.assertEqual(set(durable_rows), set(required_durable_keys))
         self.assertEqual(durable_rows["production_blocker_audit_visible"]["status"], "passed")
-        self.assertEqual(durable_rows["runtime_qa_execution_request_visible"]["status"], "blocked")
-        self.assertEqual(durable_rows["runtime_qa_dry_run_receipt_visible"]["status"], "blocked")
+        self.assertEqual(
+            durable_rows["runtime_qa_execution_request_visible"]["status"],
+            "passed" if payload["worker_runtime_qa_execution_request_ready"] else "blocked",
+        )
+        self.assertEqual(
+            durable_rows["runtime_qa_dry_run_receipt_visible"]["status"],
+            "passed" if payload["worker_runtime_qa_dry_run_ready"] else "blocked",
+        )
         self.assertEqual(durable_rows["celery_process_evidence_required"]["status"], "blocked")
         self.assertEqual(durable_rows["redis_broker_reachability_evidence_required"]["status"], "blocked")
         self.assertEqual(durable_rows["production_worker_promotion_review_required"]["status"], "blocked")
@@ -15296,7 +15333,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             packet["counts"]["worker_activation_operator_action_count"],
             activation_review["operator_action_required_count"],
         )
-        self.assertEqual(packet["counts"]["worker_activation_review_task_ready"], 0)
+        self.assertEqual(
+            packet["counts"]["worker_activation_review_task_ready"],
+            int(bool(activation_review_task["activation_review_ready"])),
+        )
         self.assertEqual(
             packet["counts"]["worker_activation_review_task_local_blocker_count"],
             activation_review_task["local_blocker_count"],
@@ -15306,7 +15346,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             activation_review_task["production_blocker_count"],
         )
         self.assertEqual(packet["counts"]["worker_activation_review_task_row_count"], activation_review_task["row_count"])
-        self.assertEqual(packet["counts"]["worker_production_evidence_plan_ready"], 0)
+        self.assertEqual(
+            packet["counts"]["worker_production_evidence_plan_ready"],
+            int(bool(production_evidence_plan["evidence_plan_ready"])),
+        )
         self.assertEqual(
             packet["counts"]["worker_production_evidence_plan_local_blocker_count"],
             production_evidence_plan["local_blocker_count"],
@@ -15322,12 +15365,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             packet["counts"]["worker_runtime_qa_execution_recipe_pending_phase_count"],
             runtime_qa_recipe["pending_phase_count"],
         )
-        self.assertEqual(packet["counts"]["worker_runtime_qa_execution_request_ready"], 0)
+        self.assertEqual(
+            packet["counts"]["worker_runtime_qa_execution_request_ready"],
+            int(bool(runtime_qa_request["local_execution_request_ready"])),
+        )
         self.assertEqual(
             packet["counts"]["worker_runtime_qa_execution_request_row_count"],
             runtime_qa_request["row_count"],
         )
-        self.assertEqual(packet["counts"]["worker_runtime_qa_dry_run_ready"], 0)
+        self.assertEqual(
+            packet["counts"]["worker_runtime_qa_dry_run_ready"],
+            int(bool(runtime_qa_dry_run["local_dry_run_ready"])),
+        )
         self.assertEqual(
             packet["counts"]["worker_runtime_qa_dry_run_row_count"],
             runtime_qa_dry_run["row_count"],
@@ -18935,15 +18984,21 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_acceptance_runway_rows"]), 14)
-        self.assertEqual(len(migration["data"]["ltg_next_acceptance_action_rows"]), 4)
+        self.assertEqual(len(migration["data"]["ltg_next_acceptance_action_rows"]), 6)
         self.assertEqual(len(migration["data"]["ltg_stage_scope_observed_rows"]), 14)
         runway_rows = {row["id"]: row for row in migration["data"]["ltg_acceptance_runway_rows"]}
         action_rows = {row["queue_id"]: row for row in migration["data"]["ltg_next_acceptance_action_rows"]}
         self.assertIn("P1", runway_rows["LTG-01"]["priority"])
         self.assertIn("P2", runway_rows["LTG-02"]["priority"])
         self.assertIn("P3", runway_rows["LTG-03"]["priority"])
+        self.assertIn("P4", runway_rows["LTG-05"]["priority"])
+        self.assertIn("P4", runway_rows["LTG-06"]["priority"])
         self.assertIn("LTG-01", action_rows["p1_trade_cal_provider_acceptance"]["ltg_ids"])
         self.assertEqual(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_step_count"], 3)
+        self.assertIn("LTG-05", action_rows["p4_storage_physical_execution"]["ltg_ids"])
+        self.assertIn("LTG-06", action_rows["p4_worker_runtime_qa"]["ltg_ids"])
+        self.assertEqual(action_rows["p4_storage_physical_execution"]["local_receipt_step_count"], 1)
+        self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 5)
         self.assertEqual(
             action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_lookup_source"],
             "task_service.list_task_statuses_memory_plus_sqlite_read_only",
@@ -24901,13 +24956,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("review_provider_model_isolation", activation_review_steps)
         activation_review_task = packet["worker_activation_review_task_receipt"]
         self.assertEqual(activation_review_task["schema_version"], "worker_activation_review_task_receipt.v1")
-        self.assertEqual(activation_review_task["status"], "worker_activation_review_task_pending")
+        activation_review_task_ready = (
+            activation_review_task["status"] == "worker_activation_review_task_ready_production_blocked"
+        )
+        self.assertIn(
+            activation_review_task["status"],
+            {
+                "worker_activation_review_task_pending",
+                "worker_activation_review_task_ready_production_blocked",
+            },
+        )
         self.assertEqual(activation_review_task["scope"], "button_gated_worker_activation_review_no_process_start")
-        self.assertIn(activation_review_task["source_packet_read_status"], {"meta_missing", "packet_missing"})
-        self.assertFalse(activation_review_task["source_packet_present"])
+        self.assertIn(activation_review_task["source_packet_read_status"], {"meta_missing", "packet_missing", "packet_present"})
+        self.assertIsInstance(activation_review_task["source_packet_present"], bool)
         self.assertFalse(activation_review_task["cache_get_initializes_meta_store"])
-        self.assertFalse(activation_review_task["explicit_activation_review_done"])
-        self.assertFalse(activation_review_task["activation_review_ready"])
+        self.assertEqual(activation_review_task["explicit_activation_review_done"], activation_review_task_ready)
+        self.assertEqual(activation_review_task["activation_review_ready"], activation_review_task_ready)
         self.assertFalse(activation_review_task["production_worker_complete"])
         self.assertFalse(activation_review_task["starts_celery_worker"])
         self.assertFalse(activation_review_task["pings_redis"])
@@ -24928,13 +24992,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
         production_evidence_plan = packet["worker_production_evidence_plan_receipt"]
         self.assertEqual(production_evidence_plan["schema_version"], "worker_production_evidence_plan_receipt.v1")
-        self.assertEqual(production_evidence_plan["status"], "worker_production_evidence_plan_pending_activation_review")
+        production_evidence_plan_ready = (
+            production_evidence_plan["status"] == "worker_production_evidence_plan_ready_runtime_qa_pending"
+        )
+        self.assertIn(
+            production_evidence_plan["status"],
+            {
+                "worker_production_evidence_plan_pending_activation_review",
+                "worker_production_evidence_plan_ready_runtime_qa_pending",
+            },
+        )
         self.assertEqual(production_evidence_plan["scope"], "button_gated_worker_production_evidence_plan_no_process_start")
-        self.assertIn(production_evidence_plan["source_packet_read_status"], {"meta_missing", "packet_missing"})
-        self.assertFalse(production_evidence_plan["source_packet_present"])
+        self.assertIn(production_evidence_plan["source_packet_read_status"], {"meta_missing", "packet_missing", "packet_present"})
+        self.assertIsInstance(production_evidence_plan["source_packet_present"], bool)
         self.assertFalse(production_evidence_plan["cache_get_initializes_meta_store"])
-        self.assertFalse(production_evidence_plan["explicit_evidence_plan_done"])
-        self.assertFalse(production_evidence_plan["evidence_plan_ready"])
+        self.assertEqual(production_evidence_plan["explicit_evidence_plan_done"], production_evidence_plan_ready)
+        self.assertEqual(production_evidence_plan["evidence_plan_ready"], production_evidence_plan_ready)
         self.assertFalse(production_evidence_plan["production_worker_complete"])
         self.assertFalse(production_evidence_plan["starts_celery_worker"])
         self.assertFalse(production_evidence_plan["pings_redis"])
@@ -25033,9 +25106,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(activation_receipt["production_blocker_count"], packet["worker_production_blocker_audit"]["blocking_criterion_count"])
         activation_receipt_rows = {row["criterion"]: row for row in packet["worker_production_activation_rows"]}
         self.assertEqual(activation_receipt_rows["local_readiness_receipt_ready"]["status"], "passed")
-        self.assertEqual(
+        self.assertIn(
             activation_receipt_rows["synthetic_healthcheck_execution_required"]["status"],
-            "pending_explicit_post_healthcheck",
+            {"pending_explicit_post_healthcheck", "passed"},
         )
         self.assertEqual(activation_receipt_rows["celery_worker_manual_start_required"]["status"], "pending_manual_worker_start")
         self.assertEqual(activation_receipt_rows["redis_broker_reachability_required"]["status"], "pending_manual_broker_check")

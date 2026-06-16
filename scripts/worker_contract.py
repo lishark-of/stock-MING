@@ -370,6 +370,11 @@ def build_contract() -> dict[str, Any]:
         for item in _list(_dict(production_evidence_plan.get("scope_ticket_payload")).get("evidence_scope"))
     ]
     worker_runtime_evidence_stage_scope_rows = _worker_runtime_evidence_stage_scope_rows(production_evidence_scope)
+    expected_runtime_durable_missing = set(REQUIRED_RUNTIME_DURABLE_EVIDENCE_MISSING_KEYS)
+    if runtime_qa_request.get("local_execution_request_ready") is True:
+        expected_runtime_durable_missing.discard("runtime_qa_execution_request_visible")
+    if runtime_qa_dry_run.get("local_dry_run_ready") is True:
+        expected_runtime_durable_missing.discard("runtime_qa_dry_run_receipt_visible")
 
     rows = [
         _row(
@@ -1021,11 +1026,11 @@ def build_contract() -> dict[str, Any]:
             == len(REQUIRED_RUNTIME_DURABLE_EVIDENCE_KEYS)
             and runtime_durable_keys == set(REQUIRED_RUNTIME_DURABLE_EVIDENCE_KEYS)
             and set(runtime_durable_recipe.get("missing_durable_evidence") or [])
-            == set(REQUIRED_RUNTIME_DURABLE_EVIDENCE_MISSING_KEYS)
+            == expected_runtime_durable_missing
             and int(runtime_durable_recipe.get("production_blocker_count") or 0)
-            == len(REQUIRED_RUNTIME_DURABLE_EVIDENCE_MISSING_KEYS)
+            == len(expected_runtime_durable_missing)
             and int(runtime_durable_recipe.get("durable_evidence_blocker_count") or 0)
-            == len(REQUIRED_RUNTIME_DURABLE_EVIDENCE_MISSING_KEYS)
+            == len(expected_runtime_durable_missing)
             and {
                 "manual Celery process evidence",
                 "redacted Redis broker reachability evidence",

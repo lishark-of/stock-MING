@@ -141,6 +141,57 @@ function ltgNextStepPayload(row: Record<string, unknown>): Record<string, unknow
       source: "migration_status_ltg_next_action"
     };
   }
+  if (route === "POST /api/storage/physical-execution-request") {
+    const preview = nextLocalStepPreview(row);
+    return {
+      source: "migration_status_ltg_next_action",
+      approved_by_user: true,
+      physical_execution_scope_hash: String(preview.prepared_physical_execution_scope_hash ?? "")
+    };
+  }
+  if (route === "POST /api/worker/synthetic-healthcheck") {
+    return {
+      requested_from: "migration_status_ltg_next_action",
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/worker/activation-review") {
+    return {
+      requested_from: "migration_status_ltg_next_action",
+      operator_approved: true,
+      approved_by_user: true,
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/worker/production-evidence-plan") {
+    return {
+      requested_from: "migration_status_ltg_next_action",
+      operator_approved: true,
+      approved_by_user: true,
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/worker/runtime-qa-execution-request") {
+    const preview = nextLocalStepPreview(row);
+    return {
+      requested_from: "migration_status_ltg_next_action",
+      operator_approved: true,
+      evidence_plan_scope_hash: String(preview.prepared_evidence_plan_scope_hash ?? ""),
+      runtime_qa_scope_hash: String(preview.prepared_runtime_qa_scope_hash ?? ""),
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/worker/runtime-qa-dry-run") {
+    const preview = nextLocalStepPreview(row);
+    return {
+      requested_from: "migration_status_ltg_next_action",
+      operator_approved: true,
+      request_task_id: String(preview.prepared_runtime_qa_request_task_id ?? ""),
+      evidence_plan_scope_hash: String(preview.prepared_evidence_plan_scope_hash ?? ""),
+      runtime_qa_scope_hash: String(preview.prepared_runtime_qa_scope_hash ?? ""),
+      source: "migration_status_ltg_next_action"
+    };
+  }
   return { requested_by: "migration_status_ltg_queue", source: "migration_status_ltg_next_action" };
 }
 
@@ -245,6 +296,10 @@ export default function MigrationStatus() {
       prepared_context_source_packet_key: preview.prepared_context_source_packet_key,
       prepared_context_source_receipt_key: preview.prepared_context_source_receipt_key,
       prepared_review_scope_hash_short: preview.prepared_review_scope_hash_short,
+      prepared_physical_execution_scope_hash_short: preview.prepared_physical_execution_scope_hash_short,
+      prepared_evidence_plan_scope_hash_short: preview.prepared_evidence_plan_scope_hash_short,
+      prepared_runtime_qa_scope_hash_short: preview.prepared_runtime_qa_scope_hash_short,
+      prepared_runtime_qa_request_task_id: preview.prepared_runtime_qa_request_task_id,
       would_create_provider_task: preview.would_create_provider_task,
       would_start_worker: preview.would_start_worker,
       would_call_model: preview.would_call_model,
@@ -421,7 +476,7 @@ export default function MigrationStatus() {
       <p className="risk-note">这张表把每个长期目标的优先级、下一步验收动作和 observed pending 数集中到一处；它只读已有 roadmap/cache 合同，不创建任务、不调用外部服务，也不能关闭目标。</p>
       <DataLineageTable rows={ltgAcceptanceRunwayRows} />
       <h3>LTG next acceptance action queue</h3>
-      <p className="risk-note">这里集中显示 P1/P2/P3 的下一步显式验收路径：只读展示允许的 POST 路由、未来 provider/worker 证据和禁止事项；GET cache 和页面渲染不会创建任务或调用外部服务。</p>
+      <p className="risk-note">这里集中显示 P1-P4 的下一步显式验收路径：只读展示允许的 POST 路由、未来 provider/worker/storage 证据和禁止事项；GET cache 和页面渲染不会创建任务或调用外部服务。</p>
       <p className="risk-note">按钮会先看 `next_local_step_preview_rows`：如果缺前置本地回执、scope hash、review hash 或执行请求 task id，就只展示缺口并禁用按钮，避免生成已知 blocked 的回执。</p>
       <p className="risk-note">`future_handoff_preview_rows` 只把本地 execution-request 已绑定的未来 provider/worker payload 摘要列出来；它不提交 provider task、不调用 Tushare/DeepSeek/GitHub，也不能关闭 LTG。</p>
       <p className="risk-note">handoff ready 还要求本地 execution-request receipt 已落到 SQLite；memory-only receipt 只算临时可见，不作为跨进程验收证据。</p>

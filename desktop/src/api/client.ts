@@ -457,6 +457,12 @@ const LTG_NEXT_ACCEPTANCE_LOCAL_ROUTES = new Set([
   "/api/candidate-radar/quant-projection-acceptance-dry-run",
   "/api/candidate-radar/quant-projection-execution-request",
   "/api/candidate-radar/production-promotion-dry-run",
+  "/api/storage/physical-execution-request",
+  "/api/worker/synthetic-healthcheck",
+  "/api/worker/activation-review",
+  "/api/worker/production-evidence-plan",
+  "/api/worker/runtime-qa-execution-request",
+  "/api/worker/runtime-qa-dry-run",
 ]);
 
 export function postLtgNextAcceptanceLocalStep(route: string, payload: Record<string, unknown> = {}) {

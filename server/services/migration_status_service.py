@@ -390,6 +390,58 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
             "retire legacy radar before parity evidence",
         ],
     },
+    {
+        "queue_id": "p4_storage_physical_execution",
+        "priority": "P4",
+        "ltg_ids": ["LTG-05"],
+        "action_label": "Bind Storage physical execution request evidence",
+        "mode_layer": "button_task_then_physical_storage_execution",
+        "current_phase": "physical_execution_request_required",
+        "first_allowed_route": "POST /api/storage/physical-execution-request",
+        "second_allowed_route": "",
+        "future_provider_route": "future explicit physical storage execution tasks",
+        "target_acceptance_mode": "storage_physical_execution_and_promotion",
+        "required_evidence": [
+            "scope-bound physical execution request",
+            "schema migration execution evidence",
+            "partition migration execution evidence",
+            "dataset manifest write/validate evidence",
+            "compaction/cache TTL/artifact cleanup evidence",
+            "durable promotion review",
+        ],
+        "not_allowed_next_steps": [
+            "write Parquet from cache render",
+            "delete artifacts from cache render",
+            "treat execution request as physical execution",
+            "mark production storage complete from local receipts",
+        ],
+    },
+    {
+        "queue_id": "p4_worker_runtime_qa",
+        "priority": "P4",
+        "ltg_ids": ["LTG-06"],
+        "action_label": "Bind Worker runtime QA scope evidence",
+        "mode_layer": "button_task_then_manual_worker_runtime_qa",
+        "current_phase": "runtime_qa_scope_ticket_required",
+        "first_allowed_route": "POST /api/worker/synthetic-healthcheck",
+        "second_allowed_route": "POST /api/worker/runtime-qa-execution-request",
+        "future_provider_route": "future explicit worker runtime QA execution task",
+        "target_acceptance_mode": "worker_runtime_qa_and_promotion",
+        "required_evidence": [
+            "synthetic local task-store healthcheck",
+            "activation review",
+            "production evidence plan",
+            "runtime QA execution request",
+            "runtime QA dry-run",
+            "real Celery/Redis runtime QA evidence",
+        ],
+        "not_allowed_next_steps": [
+            "start Celery from cache render",
+            "ping Redis from cache render",
+            "dispatch provider/model tasks from runtime QA tickets",
+            "mark production worker complete from local receipts",
+        ],
+    },
 ]
 
 LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
@@ -453,6 +505,46 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "task_type": "run_candidate_radar_production_promotion_dry_run",
             "receipt_key": "candidate_radar_production_promotion_dry_run_receipt",
             "route": "POST /api/candidate-radar/production-promotion-dry-run",
+        },
+    ],
+    "p4_storage_physical_execution": [
+        {
+            "phase_key": "storage_physical_execution_request_ticket",
+            "task_type": "run_storage_physical_execution_request",
+            "receipt_key": "storage_physical_execution_request",
+            "route": "POST /api/storage/physical-execution-request",
+        },
+    ],
+    "p4_worker_runtime_qa": [
+        {
+            "phase_key": "worker_synthetic_healthcheck_receipt",
+            "task_type": "run_worker_synthetic_healthcheck",
+            "receipt_key": "worker_synthetic_healthcheck",
+            "route": "POST /api/worker/synthetic-healthcheck",
+        },
+        {
+            "phase_key": "worker_activation_review_receipt",
+            "task_type": "run_worker_activation_review",
+            "receipt_key": "worker_activation_review_task_receipt",
+            "route": "POST /api/worker/activation-review",
+        },
+        {
+            "phase_key": "worker_production_evidence_plan_receipt",
+            "task_type": "run_worker_production_evidence_plan",
+            "receipt_key": "worker_production_evidence_plan_receipt",
+            "route": "POST /api/worker/production-evidence-plan",
+        },
+        {
+            "phase_key": "worker_runtime_qa_execution_request_ticket",
+            "task_type": "run_worker_runtime_qa_execution_request",
+            "receipt_key": "worker_runtime_qa_execution_request_receipt",
+            "route": "POST /api/worker/runtime-qa-execution-request",
+        },
+        {
+            "phase_key": "worker_runtime_qa_dry_run_receipt",
+            "task_type": "run_worker_runtime_qa_dry_run",
+            "receipt_key": "worker_runtime_qa_dry_run_receipt",
+            "route": "POST /api/worker/runtime-qa-dry-run",
         },
     ],
 }
@@ -565,14 +657,38 @@ def _task_statuses_by_type() -> dict[str, list[dict[str, Any]]]:
 
 
 def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str, Any]:
-    if queue_id != "p3_candidate_radar_provider_worker_promotion":
-        return {}
-    try:
-        from server.services import candidate_service
+    source = ""
+    source_packet_key = ""
+    storage_source = "sqlite_meta_packet"
+    if queue_id == "p3_candidate_radar_provider_worker_promotion":
+        try:
+            from server.services import candidate_service
 
-        packet = candidate_service.read_candidate_radar_cache()
-    except Exception:
-        packet = {}
+            packet = candidate_service.read_candidate_radar_cache()
+        except Exception:
+            packet = {}
+        source = "candidate_radar_cache_packet"
+        source_packet_key = "command_center_3_candidate_radar_cache"
+    elif queue_id == "p4_storage_physical_execution":
+        try:
+            from server.services import storage_service
+
+            packet = storage_service.storage_overview()
+        except Exception:
+            packet = {}
+        source = "storage_overview_packet"
+        source_packet_key = "command_center_3_storage_overview"
+    elif queue_id == "p4_worker_runtime_qa":
+        try:
+            from server.services import worker_service
+
+            packet = worker_service.read_worker_runtime_cache()
+        except Exception:
+            packet = {}
+        source = "worker_runtime_cache_packet"
+        source_packet_key = "command_center_3_worker_runtime_cache"
+    else:
+        return {}
     packet_map = packet if isinstance(packet, dict) else {}
     receipt = packet_map.get(receipt_key)
     if not isinstance(receipt, dict) or not receipt:
@@ -582,9 +698,9 @@ def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str,
         return {}
     return {
         "receipt": dict(receipt),
-        "source": "candidate_radar_cache_packet",
-        "source_packet_key": "command_center_3_candidate_radar_cache",
-        "storage_source": "sqlite_meta_packet",
+        "source": source,
+        "source_packet_key": source_packet_key,
+        "storage_source": storage_source,
         "task_id": str(receipt.get("task_id") or packet_map.get("task_id") or ""),
     }
 
@@ -632,11 +748,17 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "ready_for_manual_provider_task_submission",
         "ready_for_manual_worker_task_submission",
         "ready_for_manual_provider_model_task_submission",
+        "ready_for_manual_physical_task_submission",
+        "ready_for_manual_runtime_qa_task_submission",
+        "activation_review_ready",
+        "evidence_plan_ready",
+        "local_recipe_ready",
     )
     if any(receipt.get(key) is True for key in ready_keys):
         return True
     ready_statuses = {
         "trade_cal_acceptance_dry_run_ready_real_execution_still_blocked",
+        "synthetic_healthcheck_passed_local_task_store_only",
     }
     return str(receipt.get("status") or "") in ready_statuses
 
@@ -664,12 +786,17 @@ def _build_ltg_next_action_local_step_rows(
             receipt_map.get("acceptance_scope_hash")
             or receipt_map.get("review_scope_hash")
             or receipt_map.get("production_replacement_review_scope_hash")
+            or receipt_map.get("physical_execution_scope_hash")
+            or receipt_map.get("scope_ticket_sha256")
+            or receipt_map.get("runtime_qa_scope_hash")
             or ""
         )
         receipt_scope_hash_short = str(
             receipt_map.get("acceptance_scope_hash_short")
             or receipt_map.get("review_scope_hash_short")
             or receipt_map.get("production_replacement_review_scope_hash_short")
+            or receipt_map.get("physical_execution_scope_hash_short")
+            or receipt_map.get("runtime_qa_scope_hash_short")
             or (receipt_scope_hash[:16] if receipt_scope_hash else "")
         )
         task_found = bool(latest_task)
@@ -868,6 +995,111 @@ def _latest_candidate_radar_production_replacement_review_preview() -> dict[str,
     }
 
 
+def _latest_storage_physical_execution_recipe_preview() -> dict[str, Any]:
+    try:
+        from server.services import storage_service
+
+        packet = storage_service.storage_overview()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    recipe = packet_map.get("storage_physical_execution_recipe")
+    recipe_map = recipe if isinstance(recipe, dict) else {}
+    scope_hash = str(recipe_map.get("physical_execution_scope_hash") or "")
+    scope_hash_short = str(recipe_map.get("physical_execution_scope_hash_short") or scope_hash[:12])
+    recipe_ready = bool(
+        recipe_map.get("local_recipe_ready") is True
+        and recipe_map.get("production_storage_complete") is False
+        and recipe_map.get("external_calls_triggered") is False
+        and recipe_map.get("tushare_called") is False
+        and recipe_map.get("deepseek_called") is False
+        and recipe_map.get("github_called") is False
+        and recipe_map.get("does_not_execute_trades") is True
+        and recipe_map.get("does_not_modify_strategy_action") is True
+        and recipe_map.get("contains_secret") is False
+        and bool(scope_hash)
+    )
+    return {
+        "recipe_visible": bool(recipe_map),
+        "recipe_status": str(recipe_map.get("status") or ""),
+        "physical_execution_scope_hash": scope_hash,
+        "physical_execution_scope_hash_short": scope_hash_short,
+        "can_prebind_physical_execution_scope_hash": recipe_ready,
+        "source_packet_key": "command_center_3_storage_overview",
+        "source_receipt_key": "storage_physical_execution_recipe",
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "evidence_boundary": "latest_storage_physical_execution_recipe_preview_is_read_only_not_execution",
+    }
+
+
+def _latest_worker_runtime_qa_context_preview() -> dict[str, Any]:
+    try:
+        from server.services import worker_service
+
+        packet = worker_service.read_worker_runtime_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    plan = packet_map.get("worker_production_evidence_plan_receipt")
+    recipe = packet_map.get("worker_runtime_qa_execution_recipe")
+    request = packet_map.get("worker_runtime_qa_execution_request_receipt")
+    plan_map = plan if isinstance(plan, dict) else {}
+    recipe_map = recipe if isinstance(recipe, dict) else {}
+    request_map = request if isinstance(request, dict) else {}
+    plan_scope_hash = str(plan_map.get("scope_ticket_sha256") or "")
+    recipe_scope_hash = str(recipe_map.get("runtime_qa_scope_hash") or "")
+    request_task_id = str(request_map.get("request_task_id") or "")
+    request_evidence_plan_scope_hash = str(request_map.get("production_evidence_plan_scope_hash") or plan_scope_hash)
+    request_runtime_scope_hash = str(request_map.get("runtime_qa_scope_hash") or recipe_scope_hash)
+    plan_ready = plan_map.get("evidence_plan_ready") is True
+    recipe_ready = recipe_map.get("local_recipe_ready") is True
+    request_ready = request_map.get("local_execution_request_ready") is True
+    no_side_effects = bool(
+        packet_map.get("external_calls_triggered") is not True
+        and packet_map.get("tushare_called") is not True
+        and packet_map.get("deepseek_called") is not True
+        and packet_map.get("github_called") is not True
+        and packet_map.get("does_not_execute_trades") is True
+        and packet_map.get("does_not_modify_strategy_action") is True
+        and packet_map.get("contains_secret") is not True
+    )
+    return {
+        "evidence_plan_visible": bool(plan_map),
+        "evidence_plan_status": str(plan_map.get("status") or ""),
+        "evidence_plan_scope_hash": plan_scope_hash,
+        "evidence_plan_scope_hash_short": plan_scope_hash[:12],
+        "runtime_qa_recipe_visible": bool(recipe_map),
+        "runtime_qa_recipe_status": str(recipe_map.get("status") or ""),
+        "runtime_qa_scope_hash": recipe_scope_hash,
+        "runtime_qa_scope_hash_short": recipe_scope_hash[:12],
+        "runtime_qa_request_visible": bool(request_map),
+        "runtime_qa_request_status": str(request_map.get("status") or ""),
+        "runtime_qa_request_task_id": request_task_id,
+        "runtime_qa_request_evidence_plan_scope_hash": request_evidence_plan_scope_hash,
+        "runtime_qa_request_runtime_scope_hash": request_runtime_scope_hash,
+        "can_prebind_runtime_qa_execution_request_scope": bool(plan_ready and recipe_ready and no_side_effects),
+        "can_prebind_runtime_qa_dry_run_scope": bool(
+            request_ready and bool(request_task_id) and bool(request_evidence_plan_scope_hash) and bool(request_runtime_scope_hash)
+        ),
+        "source_packet_key": "command_center_3_worker_runtime_cache",
+        "source_receipt_key": "worker_runtime_qa_execution_recipe",
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "evidence_boundary": "latest_worker_runtime_qa_context_preview_is_read_only_not_execution",
+    }
+
+
 def _build_ltg_next_action_submission_preview_rows(
     next_local_step: str,
     local_step_rows: list[dict[str, Any]],
@@ -942,6 +1174,54 @@ def _build_ltg_next_action_submission_preview_rows(
             "manual_scope_hash_required": True,
             "context_key": "candidate_radar_production_replacement_review_preview",
         },
+        "POST /api/storage/physical-execution-request": {
+            "step_kind": "scope_bound_physical_execution_request",
+            "safe_payload_summary": "approved_by_user plus latest storage physical execution recipe scope hash",
+            "expected_local_receipt": "storage_physical_execution_request",
+            "required_prior_phase_key": "",
+            "required_prior_material": "physical_execution_scope_hash",
+            "manual_scope_hash_required": True,
+            "context_key": "storage_physical_execution_recipe_preview",
+        },
+        "POST /api/worker/synthetic-healthcheck": {
+            "step_kind": "local_synthetic_healthcheck",
+            "safe_payload_summary": "requested_from only; local task-store readback, no worker process start",
+            "expected_local_receipt": "worker_synthetic_healthcheck",
+            "required_prior_phase_key": "",
+            "required_prior_material": "",
+        },
+        "POST /api/worker/activation-review": {
+            "step_kind": "local_activation_review",
+            "safe_payload_summary": "operator_approved plus latest synthetic healthcheck receipt",
+            "expected_local_receipt": "worker_activation_review_task_receipt",
+            "required_prior_phase_key": "worker_synthetic_healthcheck_receipt",
+            "required_prior_material": "",
+        },
+        "POST /api/worker/production-evidence-plan": {
+            "step_kind": "local_production_evidence_plan",
+            "safe_payload_summary": "operator_approved plus latest worker activation review receipt",
+            "expected_local_receipt": "worker_production_evidence_plan_receipt",
+            "required_prior_phase_key": "worker_activation_review_receipt",
+            "required_prior_material": "",
+        },
+        "POST /api/worker/runtime-qa-execution-request": {
+            "step_kind": "scope_bound_runtime_qa_execution_request",
+            "safe_payload_summary": "operator_approved plus evidence-plan scope hash and runtime QA recipe scope hash",
+            "expected_local_receipt": "worker_runtime_qa_execution_request_receipt",
+            "required_prior_phase_key": "worker_production_evidence_plan_receipt",
+            "required_prior_material": "receipt_scope_hash",
+            "manual_scope_hash_required": True,
+            "context_key": "worker_runtime_qa_context_preview",
+        },
+        "POST /api/worker/runtime-qa-dry-run": {
+            "step_kind": "scope_bound_runtime_qa_dry_run",
+            "safe_payload_summary": "operator_approved plus latest runtime QA request task id and bound scope hashes",
+            "expected_local_receipt": "worker_runtime_qa_dry_run_receipt",
+            "required_prior_phase_key": "worker_runtime_qa_execution_request_ticket",
+            "required_prior_material": "latest_task_id",
+            "manual_scope_hash_required": True,
+            "context_key": "worker_runtime_qa_context_preview",
+        },
     }
     spec = route_specs.get(next_local_step)
     if spec is None:
@@ -995,6 +1275,25 @@ def _build_ltg_next_action_submission_preview_rows(
         prior_visible = bool(context_map.get("review_visible"))
         material_visible = bool(context_map.get("review_scope_hash"))
         manual_scope_hash_required = not bool(context_map.get("can_prebind_review_scope_hash"))
+    if context_key == "storage_physical_execution_recipe_preview":
+        prior_visible = bool(context_map.get("recipe_visible"))
+        material_visible = bool(context_map.get("physical_execution_scope_hash"))
+        manual_scope_hash_required = not bool(context_map.get("can_prebind_physical_execution_scope_hash"))
+    if context_key == "worker_runtime_qa_context_preview":
+        if next_local_step == "POST /api/worker/runtime-qa-execution-request":
+            prior_visible = bool(prior_step.get("receipt_visible")) and bool(context_map.get("runtime_qa_recipe_visible"))
+            material_visible = bool(context_map.get("evidence_plan_scope_hash")) and bool(
+                context_map.get("runtime_qa_scope_hash")
+            )
+            manual_scope_hash_required = not bool(context_map.get("can_prebind_runtime_qa_execution_request_scope"))
+        elif next_local_step == "POST /api/worker/runtime-qa-dry-run":
+            prior_visible = bool(prior_step.get("receipt_visible")) and bool(context_map.get("runtime_qa_request_visible"))
+            material_visible = bool(
+                context_map.get("runtime_qa_request_task_id")
+                and context_map.get("runtime_qa_request_evidence_plan_scope_hash")
+                and context_map.get("runtime_qa_request_runtime_scope_hash")
+            )
+            manual_scope_hash_required = not bool(context_map.get("can_prebind_runtime_qa_dry_run_scope"))
     ready_for_clean_receipt = prior_visible and material_visible and not manual_scope_hash_required
     if ready_for_clean_receipt:
         disabled_reason = ""
@@ -1016,6 +1315,18 @@ def _build_ltg_next_action_submission_preview_rows(
         and manual_scope_hash_required
     ):
         disabled_reason = "latest_candidate_radar_production_replacement_review_not_ready"
+    elif context_key == "storage_physical_execution_recipe_preview" and not prior_visible:
+        disabled_reason = "latest_storage_physical_execution_recipe_missing"
+    elif context_key == "storage_physical_execution_recipe_preview" and prior_visible and not material_visible:
+        disabled_reason = "latest_storage_physical_execution_scope_hash_missing"
+    elif context_key == "storage_physical_execution_recipe_preview" and prior_visible and manual_scope_hash_required:
+        disabled_reason = "latest_storage_physical_execution_recipe_not_ready"
+    elif context_key == "worker_runtime_qa_context_preview" and not prior_visible:
+        disabled_reason = "latest_worker_runtime_qa_prerequisite_missing"
+    elif context_key == "worker_runtime_qa_context_preview" and prior_visible and not material_visible:
+        disabled_reason = "latest_worker_runtime_qa_scope_material_missing"
+    elif context_key == "worker_runtime_qa_context_preview" and prior_visible and manual_scope_hash_required:
+        disabled_reason = "latest_worker_runtime_qa_context_not_ready"
     elif manual_scope_hash_required:
         disabled_reason = "manual_scope_hash_required_before_clean_local_receipt"
     elif not prior_visible:
@@ -1044,6 +1355,17 @@ def _build_ltg_next_action_submission_preview_rows(
             "prepared_context_source_receipt_key": context_map.get("source_receipt_key") or "",
             "prepared_review_scope_hash": context_map.get("review_scope_hash") or "",
             "prepared_review_scope_hash_short": context_map.get("review_scope_hash_short") or "",
+            "prepared_physical_execution_scope_hash": context_map.get("physical_execution_scope_hash") or "",
+            "prepared_physical_execution_scope_hash_short": context_map.get("physical_execution_scope_hash_short") or "",
+            "prepared_evidence_plan_scope_hash": context_map.get("evidence_plan_scope_hash")
+            or context_map.get("runtime_qa_request_evidence_plan_scope_hash")
+            or "",
+            "prepared_evidence_plan_scope_hash_short": context_map.get("evidence_plan_scope_hash_short") or "",
+            "prepared_runtime_qa_scope_hash": context_map.get("runtime_qa_scope_hash")
+            or context_map.get("runtime_qa_request_runtime_scope_hash")
+            or "",
+            "prepared_runtime_qa_scope_hash_short": context_map.get("runtime_qa_scope_hash_short") or "",
+            "prepared_runtime_qa_request_task_id": context_map.get("runtime_qa_request_task_id") or "",
             "would_create_provider_task": False,
             "would_start_worker": False,
             "would_call_model": False,
@@ -1182,6 +1504,12 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             safe_context["candidate_radar_production_replacement_review_preview"] = (
                 _latest_candidate_radar_production_replacement_review_preview()
             )
+        if action["queue_id"] == "p4_storage_physical_execution":
+            safe_context["storage_physical_execution_recipe_preview"] = (
+                _latest_storage_physical_execution_recipe_preview()
+            )
+        if action["queue_id"] == "p4_worker_runtime_qa":
+            safe_context["worker_runtime_qa_context_preview"] = _latest_worker_runtime_qa_context_preview()
         submission_preview_rows = _build_ltg_next_action_submission_preview_rows(
             next_local_step,
             local_step_rows,

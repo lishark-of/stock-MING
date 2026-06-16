@@ -271,7 +271,6 @@ def build_contract() -> dict[str, Any]:
     overview_datasets = set(_dict(overview.get("dataset_status")).keys())
     schema_evidence_done = schema_acceptance_evidence.get("physical_schema_validation_done") is True
     expected_durable_missing = {
-        "physical_execution_request_visible",
         "dataset_version_manifest_validation_required",
         "partition_migration_evidence_required",
         "physical_compaction_evidence_required",
@@ -280,6 +279,8 @@ def build_contract() -> dict[str, Any]:
         "duckdb_post_migration_validation_required",
         "production_promotion_review_required",
     }
+    if physical_execution_request_packet.get("local_execution_request_ready") is not True:
+        expected_durable_missing.add("physical_execution_request_visible")
     if not schema_evidence_done:
         expected_durable_missing.add("physical_schema_validation_evidence_required")
 
