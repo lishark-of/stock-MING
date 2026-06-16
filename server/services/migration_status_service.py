@@ -2334,6 +2334,9 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
     deep_scan = _dict_or_empty(packet_map.get("deep_scan_local_review_receipt"))
     browser_review = _dict_or_empty(packet_map.get("candidate_browser_qa_review_contract"))
     production_review = _dict_or_empty(packet_map.get("candidate_radar_production_replacement_review_receipt"))
+    legacy_retirement_review = _dict_or_empty(
+        packet_map.get("candidate_radar_legacy_retirement_review_receipt")
+    )
 
     packet_safe = bool(
         packet_map.get("external_calls_triggered") is False
@@ -2441,6 +2444,36 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         and production_review.get("deepseek_called") is False
         and production_review.get("github_called") is False
     )
+    legacy_retirement_review_done = bool(
+        packet_safe
+        and legacy_retirement_review.get("schema_version") == "candidate_radar_legacy_retirement_review.v1"
+        and legacy_retirement_review.get("status")
+        == "candidate_radar_legacy_retirement_review_ready_retirement_blocked"
+        and legacy_retirement_review.get("explicit_legacy_retirement_review_done") is True
+        and legacy_retirement_review.get("operator_approved") is True
+        and legacy_retirement_review.get("local_review_ready") is True
+        and legacy_retirement_review.get("ready_to_retire_legacy") is False
+        and legacy_retirement_review.get("legacy_retirement_ready") is False
+        and legacy_retirement_review.get("legacy_fallback_required") is True
+        and legacy_retirement_review.get("production_radar_replacement_complete") is False
+        and legacy_retirement_review.get("production_replacement_review_ready") is True
+        and legacy_retirement_review.get("production_promotion_dry_run_visible") is True
+        and int(legacy_retirement_review.get("local_blocker_count") or 0) == 0
+        and int(legacy_retirement_review.get("production_blocker_count") or 0) > 0
+        and legacy_retirement_review.get("cache_get_external_calls") is False
+        and legacy_retirement_review.get("react_render_external_calls") is False
+        and legacy_retirement_review.get("external_calls_triggered") is False
+        and legacy_retirement_review.get("tushare_called") is False
+        and legacy_retirement_review.get("deepseek_called") is False
+        and legacy_retirement_review.get("github_called") is False
+        and legacy_retirement_review.get("worker_started") is False
+        and legacy_retirement_review.get("creates_worker_task") is False
+        and legacy_retirement_review.get("creates_provider_model_task") is False
+        and legacy_retirement_review.get("contains_secret") is False
+        and legacy_retirement_review.get("does_not_execute_trades") is True
+        and legacy_retirement_review.get("does_not_modify_strategy_action") is True
+        and legacy_retirement_review.get("candidate_is_not_buy_instruction") is True
+    )
     direct_stage_keys = []
     if cache_render_done:
         direct_stage_keys.append("cache_render_boundary")
@@ -2452,6 +2485,8 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         direct_stage_keys.append("local_deep_scan_review_receipt")
     if browser_visual_performance_done:
         direct_stage_keys.append("browser_visual_performance_promotion")
+    if legacy_retirement_review_done:
+        direct_stage_keys.append("legacy_retirement_review")
 
     return {
         "schema_version": "migration_candidate_radar_direct_evidence_summary.v1",
@@ -2468,6 +2503,7 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         "local_deep_scan_review_receipt_verified": local_deep_scan_done,
         "browser_visual_performance_evidence_verified": browser_visual_performance_done,
         "production_replacement_review_ready": production_review_ready,
+        "legacy_retirement_review_direct_evidence_verified": legacy_retirement_review_done,
         "production_radar_replacement_complete": False,
         "legacy_retirement_ready": False,
         "provider_backed_acceptance_done": False,
@@ -4074,6 +4110,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "legacy_retirement_review_ready_for_local_review": (
                     legacy_retirement_review.get("local_review_ready") is True
                 ),
+                "legacy_retirement_review_direct_evidence_verified": (
+                    direct_evidence.get("legacy_retirement_review_direct_evidence_verified") is True
+                ),
                 "legacy_retirement_review_production_blocker_count": int(
                     legacy_retirement_review.get("production_blocker_count")
                     or counts.get("candidate_radar_legacy_retirement_review_production_blocker_count")
@@ -4123,6 +4162,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "legacy_retirement_review_route": "POST /api/candidate-radar/legacy-retirement-review",
                 "legacy_retirement_review_explicit_task_done": False,
                 "legacy_retirement_review_ready_for_local_review": False,
+                "legacy_retirement_review_direct_evidence_verified": False,
                 "legacy_retirement_review_production_blocker_count": 0,
                 "legacy_retirement_review_can_close_goal": False,
                 "external_calls_triggered": False,

@@ -24100,6 +24100,33 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "/api/candidate-radar/deep-scan-local-review",
             json={"scan_mode": "deep_scan_local_review", "local_review_only": True},
         )
+        production_review = self.client.post(
+            "/api/candidate-radar/production-replacement-review",
+            json={"approved_by_user": True, "reviewer": "unit_test"},
+        ).json()
+        self.assertTrue(production_review["ok"])
+        cache_after_review = self.client.get("/api/candidate-radar/cache").json()["data"]
+        review_scope_hash = cache_after_review["candidate_radar_production_replacement_review_receipt"][
+            "review_scope_hash"
+        ]
+        promotion = self.client.post(
+            "/api/candidate-radar/production-promotion-dry-run",
+            json={
+                "promotion_scope": "candidate_radar_production_promotion_local_dry_run",
+                "operator_approved": True,
+                "review_scope_hash": review_scope_hash,
+            },
+        ).json()
+        self.assertTrue(promotion["ok"])
+        legacy_review = self.client.post(
+            "/api/candidate-radar/legacy-retirement-review",
+            json={
+                "review_scope": "candidate_radar_legacy_retirement_local_review",
+                "operator_approved": True,
+                "reviewer": "unit_test",
+            },
+        ).json()
+        self.assertTrue(legacy_review["ok"])
 
         migration = migration_status_service.build_migration_status()
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
@@ -24107,9 +24134,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         self.assertEqual(ltg13["status"], "observed_candidate_radar_direct_evidence_production_pending")
         self.assertEqual(ltg13["row_count"], 10)
-        self.assertEqual(ltg13["pending_stage_count"], 5)
-        self.assertEqual(ltg13["production_blocker_count"], 5)
-        self.assertEqual(ltg13["direct_evidence_stage_count"], 5)
+        self.assertEqual(ltg13["pending_stage_count"], 4)
+        self.assertEqual(ltg13["production_blocker_count"], 4)
+        self.assertEqual(ltg13["direct_evidence_stage_count"], 6)
         self.assertEqual(
             set(ltg13["direct_evidence_stage_keys"]),
             {
@@ -24118,6 +24145,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "local_full_pool_execution_receipt",
                 "local_deep_scan_review_receipt",
                 "browser_visual_performance_promotion",
+                "legacy_retirement_review",
             },
         )
         self.assertTrue(ltg13["cache_render_boundary_verified"])
@@ -24125,6 +24153,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ltg13["local_full_pool_execution_receipt_verified"])
         self.assertTrue(ltg13["local_deep_scan_review_receipt_verified"])
         self.assertTrue(ltg13["browser_visual_performance_evidence_verified"])
+        self.assertTrue(ltg13["legacy_retirement_review_direct_evidence_verified"])
+        self.assertTrue(ltg13["legacy_retirement_review_ready_for_local_review"])
         self.assertEqual(
             ltg13["candidate_direct_evidence_layer"],
             "L3_local_candidate_radar_scan_browser_safety_evidence",
@@ -24146,8 +24176,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg13["can_close_from_observed_row"])
 
         migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
-        self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_pending_count"], 5)
-        self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_direct_evidence_count"], 5)
+        self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_pending_count"], 4)
+        self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_direct_evidence_count"], 6)
         self.assertFalse(migration_goals["LTG-13"]["observed_stage_scope_can_close_goal"])
 
     def test_candidate_radar_worker_execution_request_blocks_scope_hash_mismatch(self):
