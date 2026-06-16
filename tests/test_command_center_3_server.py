@@ -685,17 +685,34 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             observed_stage_rows["LTG-06"]["stage_scope_manifest"],
             "worker_runtime_evidence_stage_scope_manifest",
         )
-        self.assertEqual(observed_stage_rows["LTG-06"]["status"], "observed_in_worker_static_contract")
+        self.assertIn(
+            observed_stage_rows["LTG-06"]["status"],
+            {
+                "observed_in_worker_static_contract",
+                "observed_worker_direct_runtime_evidence_production_pending",
+            },
+        )
+        ltg06_has_direct_evidence = (
+            observed_stage_rows["LTG-06"]["status"]
+            == "observed_worker_direct_runtime_evidence_production_pending"
+        )
         self.assertEqual(observed_stage_rows["LTG-06"]["row_count"], 7)
-        self.assertEqual(observed_stage_rows["LTG-06"]["pending_stage_count"], 7)
+        self.assertEqual(observed_stage_rows["LTG-06"]["pending_stage_count"], 5 if ltg06_has_direct_evidence else 7)
         self.assertEqual(observed_stage_rows["LTG-06"]["local_evidence_stage_count"], 7)
+        if ltg06_has_direct_evidence:
+            self.assertEqual(observed_stage_rows["LTG-06"]["direct_evidence_stage_count"], 2)
+            self.assertTrue(observed_stage_rows["LTG-06"]["synthetic_healthcheck_executed"])
+            self.assertTrue(observed_stage_rows["LTG-06"]["runtime_qa_execution_request_ready"])
+            self.assertTrue(observed_stage_rows["LTG-06"]["runtime_qa_dry_run_ready"])
+            self.assertTrue(observed_stage_rows["LTG-06"]["provider_model_no_autoschedule_boundary_verified"])
+            self.assertTrue(observed_stage_rows["LTG-06"]["no_trade_no_action_boundary_verified"])
         self.assertFalse(observed_stage_rows["LTG-06"]["worker_started"])
         self.assertFalse(observed_stage_rows["LTG-06"]["celery_worker_started"])
         self.assertFalse(observed_stage_rows["LTG-06"]["redis_pinged"])
         self.assertFalse(observed_stage_rows["LTG-06"]["scheduler_started"])
         self.assertFalse(observed_stage_rows["LTG-06"]["task_dispatched"])
         self.assertFalse(observed_stage_rows["LTG-06"]["provider_model_task_dispatched"])
-        self.assertFalse(observed_stage_rows["LTG-06"]["healthcheck_executed"])
+        self.assertEqual(observed_stage_rows["LTG-06"]["healthcheck_executed"], ltg06_has_direct_evidence)
         self.assertFalse(observed_stage_rows["LTG-06"]["runtime_qa_executed"])
         self.assertFalse(observed_stage_rows["LTG-06"]["task_log_persistence_verified"])
         self.assertFalse(observed_stage_rows["LTG-06"]["append_only_worker_log_verified"])
@@ -994,11 +1011,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("runtime evidence stage-scope manifest", migration_goals["LTG-06"]["current_state"])
         self.assertIn("runtime QA execution", migration_goals["LTG-06"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-06"]["production_complete"])
-        self.assertEqual(
+        self.assertIn(
             migration_goals["LTG-06"]["observed_stage_scope_manifest_status"],
-            "observed_in_worker_static_contract",
+            {
+                "observed_in_worker_static_contract",
+                "observed_worker_direct_runtime_evidence_production_pending",
+            },
         )
-        self.assertEqual(migration_goals["LTG-06"]["observed_stage_scope_pending_count"], 7)
+        ltg06_goal_has_direct_evidence = (
+            migration_goals["LTG-06"]["observed_stage_scope_manifest_status"]
+            == "observed_worker_direct_runtime_evidence_production_pending"
+        )
+        self.assertEqual(
+            migration_goals["LTG-06"]["observed_stage_scope_pending_count"],
+            5 if ltg06_goal_has_direct_evidence else 7,
+        )
         self.assertFalse(migration_goals["LTG-06"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-07"]["stage_scope_manifest"], "deepseek_production_stage_scope_manifest")
         self.assertIn("production stage-scope manifest", migration_goals["LTG-07"]["current_state"])
@@ -19776,7 +19803,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
         self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 14)
-        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 117)
+        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 115)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_acceptance_runway_rows"]), 14)
@@ -20032,17 +20059,34 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             observed_stage_rows["LTG-06"]["stage_scope_manifest"],
             "worker_runtime_evidence_stage_scope_manifest",
         )
-        self.assertEqual(observed_stage_rows["LTG-06"]["status"], "observed_in_worker_static_contract")
+        self.assertIn(
+            observed_stage_rows["LTG-06"]["status"],
+            {
+                "observed_in_worker_static_contract",
+                "observed_worker_direct_runtime_evidence_production_pending",
+            },
+        )
+        ltg06_has_direct_evidence = (
+            observed_stage_rows["LTG-06"]["status"]
+            == "observed_worker_direct_runtime_evidence_production_pending"
+        )
         self.assertEqual(observed_stage_rows["LTG-06"]["row_count"], 7)
-        self.assertEqual(observed_stage_rows["LTG-06"]["pending_stage_count"], 7)
+        self.assertEqual(observed_stage_rows["LTG-06"]["pending_stage_count"], 5 if ltg06_has_direct_evidence else 7)
         self.assertEqual(observed_stage_rows["LTG-06"]["local_evidence_stage_count"], 7)
+        if ltg06_has_direct_evidence:
+            self.assertEqual(observed_stage_rows["LTG-06"]["direct_evidence_stage_count"], 2)
+            self.assertTrue(observed_stage_rows["LTG-06"]["synthetic_healthcheck_executed"])
+            self.assertTrue(observed_stage_rows["LTG-06"]["runtime_qa_execution_request_ready"])
+            self.assertTrue(observed_stage_rows["LTG-06"]["runtime_qa_dry_run_ready"])
+            self.assertTrue(observed_stage_rows["LTG-06"]["provider_model_no_autoschedule_boundary_verified"])
+            self.assertTrue(observed_stage_rows["LTG-06"]["no_trade_no_action_boundary_verified"])
         self.assertFalse(observed_stage_rows["LTG-06"]["worker_started"])
         self.assertFalse(observed_stage_rows["LTG-06"]["celery_worker_started"])
         self.assertFalse(observed_stage_rows["LTG-06"]["redis_pinged"])
         self.assertFalse(observed_stage_rows["LTG-06"]["scheduler_started"])
         self.assertFalse(observed_stage_rows["LTG-06"]["task_dispatched"])
         self.assertFalse(observed_stage_rows["LTG-06"]["provider_model_task_dispatched"])
-        self.assertFalse(observed_stage_rows["LTG-06"]["healthcheck_executed"])
+        self.assertEqual(observed_stage_rows["LTG-06"]["healthcheck_executed"], ltg06_has_direct_evidence)
         self.assertFalse(observed_stage_rows["LTG-06"]["runtime_qa_executed"])
         self.assertFalse(observed_stage_rows["LTG-06"]["task_log_persistence_verified"])
         self.assertFalse(observed_stage_rows["LTG-06"]["append_only_worker_log_verified"])
@@ -20296,11 +20340,21 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("runtime evidence stage-scope manifest", migration_goals["LTG-06"]["current_state"])
         self.assertIn("runtime QA execution", migration_goals["LTG-06"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-06"]["production_complete"])
-        self.assertEqual(
+        self.assertIn(
             migration_goals["LTG-06"]["observed_stage_scope_manifest_status"],
-            "observed_in_worker_static_contract",
+            {
+                "observed_in_worker_static_contract",
+                "observed_worker_direct_runtime_evidence_production_pending",
+            },
         )
-        self.assertEqual(migration_goals["LTG-06"]["observed_stage_scope_pending_count"], 7)
+        ltg06_goal_has_direct_evidence = (
+            migration_goals["LTG-06"]["observed_stage_scope_manifest_status"]
+            == "observed_worker_direct_runtime_evidence_production_pending"
+        )
+        self.assertEqual(
+            migration_goals["LTG-06"]["observed_stage_scope_pending_count"],
+            5 if ltg06_goal_has_direct_evidence else 7,
+        )
         self.assertFalse(migration_goals["LTG-06"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-07"]["stage_scope_manifest"], "deepseek_production_stage_scope_manifest")
         self.assertIn("production stage-scope manifest", migration_goals["LTG-07"]["current_state"])
@@ -26882,6 +26936,97 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(cached_receipt["runtime_qa_task_executed"])
         self.assertFalse(cached_receipt["production_worker_complete"])
         self.assertFalse(cached_receipt["external_calls_triggered"])
+
+    def test_ltg_stage_scope_observes_worker_runtime_direct_evidence_without_completion(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        self.assertTrue(
+            self.client.post("/api/worker/synthetic-healthcheck", json={"requested_from": "test"}).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/worker/activation-review",
+                json={"requested_from": "test", "operator_approved": True},
+            ).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/worker/production-evidence-plan",
+                json={"requested_from": "test", "operator_approved": True},
+            ).json()["ok"]
+        )
+        cache_before_request = self.client.get("/api/worker/cache").json()["data"]
+        plan_receipt = cache_before_request["worker_production_evidence_plan_receipt"]
+        runtime_recipe = cache_before_request["worker_runtime_qa_execution_recipe"]
+        request_response = self.client.post(
+            "/api/worker/runtime-qa-execution-request",
+            json={
+                "requested_from": "test",
+                "operator_approved": True,
+                "scope_ticket_sha256": plan_receipt["scope_ticket_sha256"],
+                "runtime_qa_scope_hash": runtime_recipe["runtime_qa_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(request_response["ok"])
+        runtime_request = request_response["data"]["worker_runtime_qa_execution_request_receipt"]
+        dry_run_response = self.client.post(
+            "/api/worker/runtime-qa-dry-run",
+            json={
+                "requested_from": "test",
+                "operator_approved": True,
+                "request_task_id": runtime_request["request_task_id"],
+                "evidence_plan_scope_hash": runtime_request["production_evidence_plan_scope_hash"],
+                "runtime_qa_scope_hash": runtime_request["runtime_qa_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(dry_run_response["ok"])
+
+        migration = migration_status_service.build_migration_status()
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg06 = observed_stage_rows["LTG-06"]
+
+        self.assertEqual(ltg06["status"], "observed_worker_direct_runtime_evidence_production_pending")
+        self.assertEqual(ltg06["row_count"], 7)
+        self.assertEqual(ltg06["pending_stage_count"], 5)
+        self.assertEqual(ltg06["production_blocker_count"], 5)
+        self.assertEqual(ltg06["direct_evidence_stage_count"], 2)
+        self.assertEqual(
+            set(ltg06["direct_evidence_stage_keys"]),
+            {"provider_model_no_autoschedule_boundary", "no_trade_no_action_boundary"},
+        )
+        self.assertTrue(ltg06["synthetic_healthcheck_executed"])
+        self.assertTrue(ltg06["local_task_round_trip_verified"])
+        self.assertTrue(ltg06["task_log_round_trip_verified"])
+        self.assertTrue(ltg06["task_readback_hash_matches"])
+        self.assertTrue(ltg06["runtime_qa_execution_request_ready"])
+        self.assertTrue(ltg06["runtime_qa_dry_run_ready"])
+        self.assertTrue(ltg06["provider_model_no_autoschedule_boundary_verified"])
+        self.assertTrue(ltg06["no_trade_no_action_boundary_verified"])
+        self.assertEqual(ltg06["worker_direct_evidence_layer"], "L3_local_worker_runtime_safety_evidence")
+        self.assertFalse(ltg06["worker_started"])
+        self.assertFalse(ltg06["celery_worker_started"])
+        self.assertFalse(ltg06["redis_pinged"])
+        self.assertFalse(ltg06["scheduler_started"])
+        self.assertFalse(ltg06["task_dispatched"])
+        self.assertFalse(ltg06["provider_model_task_dispatched"])
+        self.assertFalse(ltg06["runtime_qa_executed"])
+        self.assertFalse(ltg06["task_log_persistence_verified"])
+        self.assertFalse(ltg06["append_only_worker_log_verified"])
+        self.assertFalse(ltg06["cross_process_task_control_verified"])
+        self.assertFalse(ltg06["activation_ready"])
+        self.assertFalse(ltg06["production_worker_complete"])
+        self.assertFalse(ltg06["external_calls_triggered"])
+        self.assertFalse(ltg06["tushare_called"])
+        self.assertFalse(ltg06["deepseek_called"])
+        self.assertFalse(ltg06["github_called"])
+        self.assertTrue(ltg06["does_not_execute_trades"])
+        self.assertTrue(ltg06["does_not_modify_strategy_action"])
+        self.assertFalse(ltg06["can_close_from_observed_row"])
+
+        migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
+        self.assertEqual(migration_goals["LTG-06"]["observed_stage_scope_pending_count"], 5)
+        self.assertFalse(migration_goals["LTG-06"]["observed_stage_scope_can_close_goal"])
 
     def test_worker_runtime_qa_execution_request_rejects_scope_mismatch_without_process_start(self):
         self._with_meta_store()

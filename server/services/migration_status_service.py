@@ -1864,6 +1864,132 @@ def _latest_worker_runtime_qa_context_preview() -> dict[str, Any]:
     }
 
 
+def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
+    try:
+        from server.services import worker_service
+
+        packet = worker_service.read_worker_runtime_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    synthetic = packet_map.get("worker_synthetic_healthcheck")
+    runtime_request = packet_map.get("worker_runtime_qa_execution_request_receipt")
+    runtime_dry_run = packet_map.get("worker_runtime_qa_dry_run_receipt")
+    synthetic_map = synthetic if isinstance(synthetic, dict) else {}
+    request_map = runtime_request if isinstance(runtime_request, dict) else {}
+    dry_run_map = runtime_dry_run if isinstance(runtime_dry_run, dict) else {}
+    synthetic_done = bool(
+        synthetic_map.get("schema_version") == "worker_synthetic_healthcheck.v1"
+        and synthetic_map.get("status") == "synthetic_healthcheck_passed_local_task_store_only"
+        and synthetic_map.get("synthetic_healthcheck_executed") is True
+        and synthetic_map.get("local_task_round_trip_verified") is True
+        and synthetic_map.get("task_log_round_trip_verified") is True
+        and synthetic_map.get("task_readback_hash_matches") is True
+        and synthetic_map.get("source_packet_present") is True
+        and synthetic_map.get("celery_worker_started") is False
+        and synthetic_map.get("redis_pinged") is False
+        and synthetic_map.get("scheduler_started") is False
+        and synthetic_map.get("production_worker_complete") is False
+        and synthetic_map.get("external_calls_triggered") is False
+        and synthetic_map.get("tushare_called") is False
+        and synthetic_map.get("deepseek_called") is False
+        and synthetic_map.get("github_called") is False
+        and synthetic_map.get("does_not_execute_trades") is True
+        and synthetic_map.get("does_not_modify_strategy_action") is True
+        and synthetic_map.get("contains_secret") is False
+    )
+    runtime_request_ready = bool(
+        request_map.get("schema_version") == "worker_runtime_qa_execution_request_receipt.v1"
+        and request_map.get("status") == "worker_runtime_qa_execution_request_ready_manual_runtime_qa_pending"
+        and request_map.get("local_execution_request_ready") is True
+        and request_map.get("runtime_qa_task_created") is False
+        and request_map.get("runtime_qa_task_executed") is False
+        and request_map.get("production_worker_complete") is False
+        and request_map.get("worker_started") is False
+        and request_map.get("redis_pinged") is False
+        and request_map.get("scheduler_started") is False
+        and request_map.get("task_dispatched") is False
+        and request_map.get("provider_model_task_dispatched") is False
+        and request_map.get("external_calls_triggered") is False
+        and request_map.get("tushare_called") is False
+        and request_map.get("deepseek_called") is False
+        and request_map.get("github_called") is False
+        and request_map.get("does_not_execute_trades") is True
+        and request_map.get("does_not_modify_strategy_action") is True
+        and request_map.get("contains_secret") is False
+    )
+    runtime_dry_run_ready = bool(
+        dry_run_map.get("schema_version") == "worker_runtime_qa_dry_run_receipt.v1"
+        and dry_run_map.get("status") == "worker_runtime_qa_dry_run_ready_execution_pending"
+        and dry_run_map.get("local_dry_run_ready") is True
+        and dry_run_map.get("runtime_qa_task_created") is False
+        and dry_run_map.get("runtime_qa_task_executed") is False
+        and dry_run_map.get("production_worker_complete") is False
+        and dry_run_map.get("worker_started") is False
+        and dry_run_map.get("redis_pinged") is False
+        and dry_run_map.get("scheduler_started") is False
+        and dry_run_map.get("task_dispatched") is False
+        and dry_run_map.get("provider_model_task_dispatched") is False
+        and dry_run_map.get("external_calls_triggered") is False
+        and dry_run_map.get("tushare_called") is False
+        and dry_run_map.get("deepseek_called") is False
+        and dry_run_map.get("github_called") is False
+        and dry_run_map.get("does_not_execute_trades") is True
+        and dry_run_map.get("does_not_modify_strategy_action") is True
+        and dry_run_map.get("contains_secret") is False
+    )
+    provider_boundary_done = bool(synthetic_done and runtime_request_ready and runtime_dry_run_ready)
+    no_trade_no_action_done = bool(
+        provider_boundary_done
+        and packet_map.get("does_not_execute_trades") is True
+        and packet_map.get("does_not_modify_strategy_action") is True
+    )
+    direct_stage_keys = []
+    if provider_boundary_done:
+        direct_stage_keys.append("provider_model_no_autoschedule_boundary")
+    if no_trade_no_action_done:
+        direct_stage_keys.append("no_trade_no_action_boundary")
+    return {
+        "schema_version": "migration_worker_direct_runtime_evidence_summary.v1",
+        "source_packet_key": "command_center_3_worker_runtime_cache",
+        "status": "worker_direct_runtime_evidence_visible_production_pending"
+        if direct_stage_keys
+        else "worker_direct_runtime_evidence_missing",
+        "available": bool(direct_stage_keys),
+        "direct_evidence_stage_keys": direct_stage_keys,
+        "direct_evidence_stage_count": len(direct_stage_keys),
+        "synthetic_healthcheck_executed": synthetic_done,
+        "local_task_round_trip_verified": synthetic_map.get("local_task_round_trip_verified") is True,
+        "task_log_round_trip_verified": synthetic_map.get("task_log_round_trip_verified") is True,
+        "task_readback_hash_matches": synthetic_map.get("task_readback_hash_matches") is True,
+        "runtime_qa_execution_request_ready": runtime_request_ready,
+        "runtime_qa_dry_run_ready": runtime_dry_run_ready,
+        "provider_model_no_autoschedule_boundary_verified": provider_boundary_done,
+        "no_trade_no_action_boundary_verified": no_trade_no_action_done,
+        "synthetic_healthcheck_status": str(synthetic_map.get("status") or "packet_missing"),
+        "runtime_qa_execution_request_status": str(request_map.get("status") or "packet_missing"),
+        "runtime_qa_dry_run_status": str(dry_run_map.get("status") or "packet_missing"),
+        "production_worker_complete": False,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "task_dispatched": False,
+        "provider_model_task_dispatched": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "direct_evidence_layer": "L3_local_worker_runtime_safety_evidence"
+        if direct_stage_keys
+        else "L1_static_contract",
+        "evidence_boundary": "worker_synthetic_runtime_qa_direct_evidence_is_not_production_worker_completion",
+    }
+
+
 def _build_ltg_next_action_submission_preview_rows(
     next_local_step: str,
     local_step_rows: list[dict[str, Any]],
@@ -3068,28 +3194,57 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             for row in stage_rows
             if isinstance(row, dict) and row.get("selected_by_evidence_plan_scope") is True
         )
+        direct_evidence = _latest_worker_direct_runtime_evidence_summary()
+        direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
+        observed_pending_count = max(pending_count - direct_evidence_count, 0)
+        worker_status = (
+            "observed_worker_direct_runtime_evidence_production_pending"
+            if direct_evidence_count
+            else "observed_in_worker_static_contract"
+        )
         rows.append(
             {
                 "id": "LTG-06",
                 "goal": "Worker / Celery / Redis 生产化",
                 "stage_scope_manifest": "worker_runtime_evidence_stage_scope_manifest",
-                "status": "observed_in_worker_static_contract"
-                if stage_rows
-                else "missing_from_worker_static_contract",
-                "observed_source": "scripts/worker_contract._worker_runtime_evidence_stage_scope_rows local static contract",
-                "cache_status": "worker_static_contract",
-                "cache_mode": "local_static_contract",
+                "status": worker_status if stage_rows else "missing_from_worker_static_contract",
+                "observed_source": "scripts/worker_contract._worker_runtime_evidence_stage_scope_rows local static contract + worker runtime direct evidence",
+                "cache_status": "worker_static_contract_plus_direct_evidence"
+                if direct_evidence_count
+                else "worker_static_contract",
+                "cache_mode": "local_static_contract_plus_worker_direct_evidence"
+                if direct_evidence_count
+                else "local_static_contract",
                 "row_count": row_count,
-                "pending_stage_count": pending_count,
+                "pending_stage_count": observed_pending_count,
                 "local_evidence_stage_count": local_evidence_count,
-                "production_blocker_count": pending_count,
+                "direct_evidence_stage_count": direct_evidence_count,
+                "direct_evidence_stage_keys": list(direct_evidence.get("direct_evidence_stage_keys") or []),
+                "production_blocker_count": observed_pending_count,
                 "worker_started": False,
                 "celery_worker_started": False,
                 "redis_pinged": False,
                 "scheduler_started": False,
                 "task_dispatched": False,
                 "provider_model_task_dispatched": False,
-                "healthcheck_executed": False,
+                "healthcheck_executed": direct_evidence.get("synthetic_healthcheck_executed") is True,
+                "synthetic_healthcheck_executed": direct_evidence.get("synthetic_healthcheck_executed") is True,
+                "local_task_round_trip_verified": direct_evidence.get("local_task_round_trip_verified") is True,
+                "task_log_round_trip_verified": direct_evidence.get("task_log_round_trip_verified") is True,
+                "task_readback_hash_matches": direct_evidence.get("task_readback_hash_matches") is True,
+                "runtime_qa_execution_request_ready": direct_evidence.get(
+                    "runtime_qa_execution_request_ready"
+                )
+                is True,
+                "runtime_qa_dry_run_ready": direct_evidence.get("runtime_qa_dry_run_ready") is True,
+                "provider_model_no_autoschedule_boundary_verified": direct_evidence.get(
+                    "provider_model_no_autoschedule_boundary_verified"
+                )
+                is True,
+                "no_trade_no_action_boundary_verified": direct_evidence.get(
+                    "no_trade_no_action_boundary_verified"
+                )
+                is True,
                 "runtime_qa_executed": False,
                 "task_log_persistence_verified": False,
                 "append_only_worker_log_verified": False,
@@ -3106,7 +3261,11 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "does_not_modify_strategy_action": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
-                "evidence_boundary": "observed_local_static_worker_runtime_stage_scope_not_production_completion",
+                "worker_direct_evidence_layer": direct_evidence.get("direct_evidence_layer")
+                or "L1_static_contract",
+                "evidence_boundary": "observed_l3_worker_runtime_safety_evidence_not_production_completion"
+                if direct_evidence_count
+                else "observed_local_static_worker_runtime_stage_scope_not_production_completion",
             }
         )
     except Exception:
