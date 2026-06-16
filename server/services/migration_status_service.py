@@ -2577,6 +2577,101 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
     }
 
 
+def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
+    try:
+        from server.services import next_session_service
+
+        packet = next_session_service.read_next_session_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    browser_evidence = _dict_or_empty(packet_map.get("next_session_browser_qa_evidence_summary"))
+    browser_review = _dict_or_empty(packet_map.get("next_session_browser_qa_review_contract"))
+    packet_safe = bool(
+        packet_map.get("external_calls_triggered") is not True
+        and packet_map.get("tushare_called") is not True
+        and packet_map.get("deepseek_called") is not True
+        and packet_map.get("github_called") is not True
+        and packet_map.get("does_not_execute_trades") is not False
+        and packet_map.get("does_not_modify_strategy_action") is not False
+    )
+    review_ready = bool(
+        browser_review.get("schema_version") == "next_session_browser_qa_review.v1"
+        and browser_review.get("status") == "next_session_browser_qa_review_ready_local_artifact"
+        and browser_review.get("explicit_review_task_done") is True
+        and browser_review.get("local_browser_qa_review_ready") is True
+        and int(browser_review.get("blocking_review_count") or 0) == 0
+        and browser_review.get("streamlit_parity_complete") is False
+        and browser_review.get("production_replacement_complete") is False
+        and browser_review.get("opens_no_browser") is True
+        and browser_review.get("starts_no_servers") is True
+        and browser_review.get("writes_no_artifacts") is True
+        and browser_review.get("external_calls_triggered") is False
+        and browser_review.get("tushare_called") is False
+        and browser_review.get("deepseek_called") is False
+        and browser_review.get("github_called") is False
+        and browser_review.get("does_not_execute_trades") is True
+        and browser_review.get("does_not_modify_strategy_action") is True
+        and browser_review.get("does_not_modify_operation_zones") is True
+    )
+    visual_done = bool(
+        packet_safe
+        and review_ready
+        and browser_evidence.get("next_visual_qa_evidence_passed") is True
+        and browser_review.get("next_visual_qa_evidence_passed") is True
+    )
+    performance_done = bool(
+        packet_safe
+        and review_ready
+        and browser_evidence.get("next_browser_performance_evidence_passed") is True
+        and browser_review.get("next_browser_performance_evidence_passed") is True
+    )
+    reduced_motion_done = bool(
+        packet_safe
+        and review_ready
+        and browser_evidence.get("default_motion_passed") is True
+        and browser_evidence.get("reduced_motion_passed") is True
+        and browser_review.get("default_motion_passed") is True
+        and browser_review.get("reduced_motion_passed") is True
+        and browser_review.get("motion_viewport_coverage_complete") is True
+    )
+    direct_stage_keys = []
+    if visual_done:
+        direct_stage_keys.append("browser_visual_qa")
+    if performance_done:
+        direct_stage_keys.append("browser_performance_trace")
+    if reduced_motion_done:
+        direct_stage_keys.append("reduced_motion_accessibility_qa")
+    return {
+        "schema_version": "migration_next_session_direct_evidence_summary.v1",
+        "source_packet_key": "command_center_next_session_projection_packet + command_center_next_session_browser_qa_review_packet",
+        "status": "next_session_direct_browser_evidence_visible_production_pending"
+        if direct_stage_keys
+        else "next_session_direct_browser_evidence_missing",
+        "available": bool(direct_stage_keys),
+        "direct_evidence_stage_keys": direct_stage_keys,
+        "direct_evidence_stage_count": len(direct_stage_keys),
+        "browser_visual_qa_done": visual_done,
+        "browser_performance_trace_done": performance_done,
+        "reduced_motion_accessibility_qa_done": reduced_motion_done,
+        "local_browser_qa_review_ready": review_ready,
+        "streamlit_parity_complete": False,
+        "production_replacement_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_operation_zones": True,
+        "contains_secret": False,
+        "direct_evidence_layer": "L3_local_next_session_browser_visual_performance_evidence"
+        if direct_stage_keys
+        else "L1_static_contract",
+        "evidence_boundary": "next_session_browser_qa_review_is_not_streamlit_parity_or_production_replacement",
+    }
+
+
 def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
     try:
         from server.services import candidate_service
@@ -4629,25 +4724,41 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             if isinstance(row, dict)
             and (row.get("exact_payload_contract_ready") is True or row.get("interaction_contract_ready") is True)
         )
+        direct_evidence = _latest_next_session_direct_evidence_summary()
+        direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
+        observed_pending_count = max(pending_count - direct_evidence_count, 0)
+        next_session_status = (
+            "observed_next_session_browser_direct_evidence_production_pending"
+            if direct_evidence_count
+            else "observed_in_next_session_map_static_contract"
+        )
         rows.append(
             {
                 "id": "LTG-08",
                 "goal": "ECharts 次日操作图谱成熟版",
                 "stage_scope_manifest": "next_session_production_replacement_stage_scope_manifest",
-                "status": "observed_in_next_session_map_static_contract"
-                if stage_rows
-                else "missing_from_next_session_map_static_contract",
-                "observed_source": "scripts/next_session_map_contract.build_contract local static contract",
+                "status": next_session_status if stage_rows else "missing_from_next_session_map_static_contract",
+                "observed_source": (
+                    "scripts/next_session_map_contract.build_contract local static contract + next-session browser QA direct evidence"
+                ),
                 "cache_status": str(next_session_contract.get("status") or "missing"),
-                "cache_mode": "local_static_contract",
+                "cache_mode": "local_static_contract_plus_next_session_browser_direct_evidence"
+                if direct_evidence_count
+                else "local_static_contract",
                 "row_count": row_count,
-                "pending_stage_count": pending_count,
+                "pending_stage_count": observed_pending_count,
                 "local_evidence_stage_count": local_evidence_count,
-                "production_blocker_count": pending_count,
+                "direct_evidence_stage_count": direct_evidence_count,
+                "direct_evidence_stage_keys": list(direct_evidence.get("direct_evidence_stage_keys") or []),
+                "production_blocker_count": observed_pending_count,
                 "production_replacement_complete": next_session_contract.get("production_replacement_complete") is True,
                 "streamlit_parity_complete": next_session_contract.get("streamlit_parity_complete") is True,
-                "browser_visual_qa_done": next_session_contract.get("browser_visual_qa_done") is True,
-                "browser_performance_trace_done": next_session_contract.get("browser_performance_trace_done") is True,
+                "browser_visual_qa_done": direct_evidence.get("browser_visual_qa_done") is True,
+                "browser_performance_trace_done": direct_evidence.get("browser_performance_trace_done") is True,
+                "reduced_motion_accessibility_qa_done": (
+                    direct_evidence.get("reduced_motion_accessibility_qa_done") is True
+                ),
+                "local_browser_qa_review_ready": direct_evidence.get("local_browser_qa_review_ready") is True,
                 "durable_ci_evidence_complete": next_session_contract.get("durable_evidence_complete") is True,
                 "frontend_computes_trade_action": next_session_contract.get("frontend_computes_trade_action") is True,
                 "does_not_modify_operation_zones": next_session_contract.get("does_not_modify_operation_zones") is True,
@@ -4659,7 +4770,11 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "does_not_modify_strategy_action": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
-                "evidence_boundary": "observed_local_static_next_session_stage_scope_not_production_completion",
+                "next_session_direct_evidence_layer": direct_evidence.get("direct_evidence_layer")
+                or "L1_static_contract",
+                "evidence_boundary": "observed_l3_next_session_browser_evidence_not_production_replacement"
+                if direct_evidence_count
+                else "observed_local_static_next_session_stage_scope_not_production_completion",
             }
         )
     except Exception:

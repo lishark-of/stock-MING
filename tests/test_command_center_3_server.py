@@ -2794,9 +2794,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         review = service_packet["next_session_browser_qa_review_contract"]
         self.assertEqual(review["schema_version"], "next_session_browser_qa_review.v1")
         self.assertEqual(review["scope"], "button_gated_local_next_session_browser_qa_review_no_browser_execution")
-        self.assertEqual(review["status"], "next_session_browser_qa_review_pending")
-        self.assertFalse(review["explicit_review_task_done"])
-        self.assertFalse(review["local_browser_qa_review_ready"])
+        self.assertIn(
+            review["status"],
+            {
+                "next_session_browser_qa_review_pending",
+                "next_session_browser_qa_review_ready_local_artifact",
+            },
+        )
+        if review["status"] == "next_session_browser_qa_review_ready_local_artifact":
+            self.assertTrue(review["explicit_review_task_done"])
+            self.assertTrue(review["local_browser_qa_review_ready"])
+        else:
+            self.assertFalse(review["explicit_review_task_done"])
+            self.assertFalse(review["local_browser_qa_review_ready"])
         self.assertFalse(review["production_replacement_complete"])
         self.assertFalse(review["streamlit_parity_complete"])
         self.assertTrue(review["opens_no_browser"])
@@ -26958,6 +26968,134 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(review["deepseek_called"])
         self.assertFalse(review["github_called"])
         self.assertTrue(refreshed["next_session_browser_qa_review_ready"])
+
+    def test_next_session_browser_qa_review_persists_when_projection_cache_missing(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache({})
+        original_root = next_session_service.MOTION_QA_ARTIFACT_ROOT
+        temp_dir = tempfile.TemporaryDirectory()
+        motion_root = Path(temp_dir.name) / "motion_qa"
+        next_session_service.MOTION_QA_ARTIFACT_ROOT = motion_root
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, next_session_service, "MOTION_QA_ARTIFACT_ROOT", original_root)
+
+        for run_id, reduced in (("default-run", False), ("reduced-run", True)):
+            report_dir = motion_root / run_id
+            report_dir.mkdir(parents=True, exist_ok=True)
+            rows = [
+                {
+                    "route": "#next",
+                    "label": "Next Session Map",
+                    "viewport": viewport,
+                    "width": 1440,
+                    "height": 960,
+                    "status": "passed",
+                    "visual_qa_complete": True,
+                    "performance_trace_complete": True,
+                    "route_transition_observed_ms": 220,
+                    "route_transition_budget_ms": 500,
+                    "long_task_over_50ms_count": 0,
+                    "clipped_count": 0,
+                    "offscreen_count": 0,
+                }
+                for viewport in ("desktop", "laptop", "tablet", "mobile")
+            ]
+            (report_dir / "motion_browser_qa_report.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "command_center_3_motion_browser_qa_result.v1",
+                        "scope": "explicit_local_browser_visual_performance_run",
+                        "run_id": run_id,
+                        "generated_at": "2026-06-14T09:00:00",
+                        "status": "motion_browser_qa_passed",
+                        "reduced_motion": reduced,
+                        "local_urls_only": True,
+                        "starts_no_servers": True,
+                        "external_calls_triggered": False,
+                        "tushare_called": False,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                        "performance_budgets": {"route_transition_observed_ms": 500},
+                        "rows": rows,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+        response = self.client.post(
+            "/api/next-session/browser-qa-review",
+            json={"reviewer": "local-cache-missing", "authorization": "Bearer SHOULD_DROP"},
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["task_type"], "run_next_session_browser_qa_review")
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "next_session_browser_qa_review_ready")
+        self.assertNotIn("authorization", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+        persisted = next_session_service.SQLiteMetaStore(next_session_service.SQLITE_META_PATH).read_packet(
+            next_session_service.NEXT_SESSION_BROWSER_QA_REVIEW_PACKET_KEY
+        )
+        self.assertEqual(persisted["packet_key"], next_session_service.NEXT_SESSION_BROWSER_QA_REVIEW_PACKET_KEY)
+        self.assertEqual(persisted["status"], "next_session_browser_qa_review_ready_local_artifact")
+        self.assertFalse(persisted["external_calls_triggered"])
+        self.assertFalse(persisted["tushare_called"])
+        self.assertFalse(persisted["deepseek_called"])
+        self.assertFalse(persisted["github_called"])
+
+        refreshed = next_session_service.read_next_session_cache()
+        self.assertEqual(refreshed["status"], "cache_missing")
+        review = refreshed["next_session_browser_qa_review_contract"]
+        self.assertEqual(review["status"], "next_session_browser_qa_review_ready_local_artifact")
+        self.assertTrue(review["explicit_review_task_done"])
+        self.assertTrue(review["local_browser_qa_review_ready"])
+        self.assertEqual(review["task_id"], task["task_id"])
+        self.assertEqual(review["blocking_review_count"], 0)
+        self.assertTrue(review["next_visual_qa_evidence_passed"])
+        self.assertTrue(review["next_browser_performance_evidence_passed"])
+        self.assertFalse(review["streamlit_parity_complete"])
+        self.assertFalse(review["production_replacement_complete"])
+        self.assertTrue(review["opens_no_browser"])
+        self.assertTrue(review["writes_no_artifacts"])
+        self.assertFalse(review["external_calls_triggered"])
+        self.assertFalse(review["tushare_called"])
+        self.assertFalse(review["deepseek_called"])
+        self.assertFalse(review["github_called"])
+        self.assertTrue(refreshed["next_session_browser_qa_review_ready"])
+        self.assertIn("local_next_session_browser_qa_review", {row.get("api") for row in refreshed["call_ledger"]})
+
+        migration = migration_status_service.build_migration_status()
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg08 = observed_stage_rows["LTG-08"]
+        self.assertEqual(ltg08["status"], "observed_next_session_browser_direct_evidence_production_pending")
+        self.assertEqual(ltg08["row_count"], 8)
+        self.assertEqual(ltg08["pending_stage_count"], 5)
+        self.assertEqual(ltg08["production_blocker_count"], 5)
+        self.assertEqual(ltg08["direct_evidence_stage_count"], 3)
+        self.assertEqual(
+            set(ltg08["direct_evidence_stage_keys"]),
+            {"browser_visual_qa", "browser_performance_trace", "reduced_motion_accessibility_qa"},
+        )
+        self.assertTrue(ltg08["browser_visual_qa_done"])
+        self.assertTrue(ltg08["browser_performance_trace_done"])
+        self.assertTrue(ltg08["reduced_motion_accessibility_qa_done"])
+        self.assertTrue(ltg08["local_browser_qa_review_ready"])
+        self.assertFalse(ltg08["streamlit_parity_complete"])
+        self.assertFalse(ltg08["production_replacement_complete"])
+        self.assertFalse(ltg08["external_calls_triggered"])
+        self.assertFalse(ltg08["tushare_called"])
+        self.assertFalse(ltg08["deepseek_called"])
+        self.assertFalse(ltg08["github_called"])
+        self.assertTrue(ltg08["does_not_execute_trades"])
+        self.assertTrue(ltg08["does_not_modify_strategy_action"])
+        self.assertTrue(ltg08["does_not_modify_operation_zones"])
+        self.assertFalse(ltg08["can_close_from_observed_row"])
 
     def test_task_cancel_endpoint_marks_pending_task_without_external_work(self):
         self._with_meta_store()

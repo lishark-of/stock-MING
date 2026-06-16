@@ -312,6 +312,23 @@ def build_contract() -> dict[str, Any]:
     task_catalog = task_service.build_task_catalog()
     task = _next_session_task(task_catalog)
     browser_qa_task = _task_by_type(task_catalog, "run_next_session_browser_qa_review")
+    browser_qa_review_status = browser_qa_review.get("status")
+    browser_qa_review_pending = (
+        browser_qa_review_status == "next_session_browser_qa_review_pending"
+        and browser_qa_review.get("explicit_review_task_done") is False
+        and browser_qa_review.get("local_browser_qa_review_ready") is False
+        and _dict(browser_qa_review_rows.get("explicit_post_review_task")).get("status") == "pending_explicit_post"
+    )
+    browser_qa_review_ready = (
+        browser_qa_review_status == "next_session_browser_qa_review_ready_local_artifact"
+        and browser_qa_review.get("explicit_review_task_done") is True
+        and browser_qa_review.get("local_browser_qa_review_ready") is True
+        and _dict(browser_qa_review_rows.get("explicit_post_review_task")).get("status") == "passed"
+        and _dict(browser_qa_review_rows.get("next_route_evidence_available")).get("status") == "passed"
+        and _dict(browser_qa_review_rows.get("visual_evidence_passed")).get("status") == "passed"
+        and _dict(browser_qa_review_rows.get("performance_evidence_passed")).get("status") == "passed"
+        and _dict(browser_qa_review_rows.get("default_and_reduced_motion_coverage")).get("status") == "passed"
+    )
     next_page = _read_script("desktop/src/routes/NextSessionMap.tsx")
     chart_component = _read_script("desktop/src/components/NextSessionChart.tsx")
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
@@ -395,7 +412,12 @@ def build_contract() -> dict[str, Any]:
             and _flag_false(current_cache, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
             and len(current_ledger) >= 1
             and all(
-                row.get("api") in {"local_next_session_cache", "local_next_session_durable_evidence_recipe"}
+                row.get("api")
+                in {
+                    "local_next_session_cache",
+                    "local_next_session_browser_qa_review",
+                    "local_next_session_durable_evidence_recipe",
+                }
                 for row in current_ledger
             )
             and all(row.get("external") is False for row in current_ledger)
@@ -552,18 +574,15 @@ def build_contract() -> dict[str, Any]:
             and browser_qa_task.get("does_not_execute_trades") is True
             and browser_qa_review.get("schema_version") == "next_session_browser_qa_review.v1"
             and browser_qa_review.get("scope") == "button_gated_local_next_session_browser_qa_review_no_browser_execution"
-            and browser_qa_review.get("status") == "next_session_browser_qa_review_pending"
-            and browser_qa_review.get("explicit_review_task_done") is False
-            and browser_qa_review.get("local_browser_qa_review_ready") is False
+            and (browser_qa_review_pending or browser_qa_review_ready)
             and browser_qa_review.get("production_replacement_complete") is False
             and browser_qa_review.get("streamlit_parity_complete") is False
             and browser_qa_review.get("opens_no_browser") is True
             and browser_qa_review.get("writes_no_artifacts") is True
-            and _dict(browser_qa_review_rows.get("explicit_post_review_task")).get("status") == "pending_explicit_post"
             and _dict(browser_qa_review_rows.get("streamlit_parity_stays_pending")).get("status") == "passed"
             and _dict(browser_qa_review_rows.get("production_replacement_stays_blocked")).get("status") == "passed"
             and _flag_false(browser_qa_review, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called"),
-            "Next-session browser QA review must be explicit POST, local artifact only, no browser execution, and not a production replacement promotion.",
+            "Next-session browser QA review must be explicit POST/local artifact only when ready, or remain pending before POST; neither state may execute a browser or promote production replacement.",
         ),
         _row(
             "next_session_durable_evidence_recipe_is_local_production_pending",

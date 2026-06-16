@@ -16,6 +16,7 @@ SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 MOTION_QA_ARTIFACT_ROOT = PROJECT_ROOT / ".stock_ming_3" / "motion_qa"
 MOTION_BROWSER_QA_RUNNER_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runner.mjs"
 NEXT_SESSION_ROUTE_SOURCE_PATH = PROJECT_ROOT / "desktop" / "src" / "routes" / "NextSessionMap.tsx"
+NEXT_SESSION_BROWSER_QA_REVIEW_PACKET_KEY = "command_center_next_session_browser_qa_review_packet"
 NEXT_SESSION_DURABLE_EVIDENCE_SCHEMA_VERSION = "next_session_durable_evidence_recipe.v1"
 NEXT_SESSION_DURABLE_EVIDENCE_KEYS = (
     "cache_render_boundary_visible",
@@ -615,6 +616,81 @@ def _next_session_browser_qa_review_contract(
         "does_not_modify_operation_zones": True,
         "note": "This review promotes local #next browser QA evidence only to a button-gated local review state. It does not execute browser QA, prove Streamlit parity, or complete production replacement.",
     }
+
+
+def _safe_persisted_browser_qa_review(packet: Mapping[str, Any]) -> dict[str, Any]:
+    review = _as_dict(packet.get("next_session_browser_qa_review_contract"))
+    safe = (
+        review.get("schema_version") == "next_session_browser_qa_review.v1"
+        and review.get("scope") == "button_gated_local_next_session_browser_qa_review_no_browser_execution"
+        and review.get("explicit_review_task_done") is True
+        and review.get("local_browser_qa_review_ready") is True
+        and review.get("production_replacement_complete") is False
+        and review.get("streamlit_parity_complete") is False
+        and review.get("opens_no_browser") is True
+        and review.get("starts_no_servers") is True
+        and review.get("writes_no_artifacts") is True
+        and review.get("external_calls_triggered") is False
+        and review.get("tushare_called") is False
+        and review.get("deepseek_called") is False
+        and review.get("github_called") is False
+        and review.get("does_not_execute_trades") is True
+        and review.get("does_not_modify_strategy_action") is True
+        and review.get("does_not_modify_operation_zones") is True
+    )
+    return review if safe else {}
+
+
+def _read_next_session_browser_qa_review_packet() -> dict[str, Any]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(NEXT_SESSION_BROWSER_QA_REVIEW_PACKET_KEY)
+    except Exception:
+        return {}
+    if not isinstance(packet, dict):
+        return {}
+    return packet if _safe_persisted_browser_qa_review(packet) else {}
+
+
+def _write_next_session_browser_qa_review_packet(
+    *,
+    review_contract: Mapping[str, Any],
+    evidence_summary: Mapping[str, Any],
+    ledger: list[dict[str, Any]],
+    reviewed_at: str,
+    task_id: str,
+) -> None:
+    packet = {
+        "packet_key": NEXT_SESSION_BROWSER_QA_REVIEW_PACKET_KEY,
+        "schema_version": "next_session_browser_qa_review_packet.v1",
+        "status": review_contract.get("status"),
+        "ltg": "LTG-08/LTG-14",
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "next_session_browser_qa_review_contract": dict(review_contract),
+        "next_session_browser_qa_review_rows": _as_list(review_contract.get("rows")),
+        "next_session_browser_qa_evidence_status": evidence_summary.get("status"),
+        "next_session_browser_qa_latest_report_path": evidence_summary.get("latest_report_path"),
+        "next_session_browser_qa_latest_run_id": evidence_summary.get("latest_run_id"),
+        "call_ledger": list(ledger),
+        "cache_only": True,
+        "opens_no_browser": True,
+        "starts_no_servers": True,
+        "writes_no_artifacts": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_operation_zones": True,
+        "contains_secret": False,
+        "warnings": [
+            "This packet is a local review receipt for ignored #next browser QA artifacts only.",
+            "It does not open a browser, start servers, call providers/models/GitHub, execute trades, mutate action or operation zones, or complete production replacement.",
+        ],
+    }
+    if _safe_persisted_browser_qa_review(packet):
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(NEXT_SESSION_BROWSER_QA_REVIEW_PACKET_KEY, packet)
 
 
 def _next_session_replacement_activation_receipt(packet: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -1408,8 +1484,14 @@ def read_next_session_cache() -> dict[str, Any]:
         browser_qa_matrix_rows,
     ) = _next_session_browser_qa_runbook_contract()
     browser_qa_evidence, browser_qa_evidence_rows = _next_session_browser_qa_evidence_summary()
+    persisted_browser_qa_review_packet = _read_next_session_browser_qa_review_packet()
+    persisted_browser_qa_review = _as_dict(
+        persisted_browser_qa_review_packet.get("next_session_browser_qa_review_contract")
+    )
     existing_browser_qa_review = _as_dict(packet.get("next_session_browser_qa_review_contract"))
-    if existing_browser_qa_review.get("explicit_review_task_done") is True:
+    if persisted_browser_qa_review.get("explicit_review_task_done") is True:
+        browser_qa_review = persisted_browser_qa_review
+    elif existing_browser_qa_review.get("explicit_review_task_done") is True:
         browser_qa_review = existing_browser_qa_review
     else:
         browser_qa_review = _next_session_browser_qa_review_contract(browser_qa_evidence, browser_qa_evidence_rows)
@@ -1441,6 +1523,11 @@ def read_next_session_cache() -> dict[str, Any]:
     existing_ledger = [row for row in _as_list(packet.get("call_ledger")) if isinstance(row, dict)]
     if not existing_ledger:
         existing_ledger = _next_session_cache_call_ledger(packet, _now_iso())
+    review_ledger = [
+        row for row in _as_list(persisted_browser_qa_review_packet.get("call_ledger")) if isinstance(row, dict)
+    ]
+    if review_ledger:
+        existing_ledger.extend(review_ledger)
     packet["call_ledger"] = existing_ledger + durable_evidence_recipe["call_ledger"]
     warnings = [str(item) for item in _as_list(packet.get("warnings"))]
     for warning in [
@@ -1508,6 +1595,13 @@ def run_next_session_browser_qa_review_task(payload: Any = None) -> dict[str, An
         reviewed_at=reviewed_at,
     )
     ledger = _next_session_browser_qa_review_call_ledger(review_contract, reviewed_at)
+    _write_next_session_browser_qa_review_packet(
+        review_contract=review_contract,
+        evidence_summary=evidence_summary,
+        ledger=ledger,
+        reviewed_at=reviewed_at,
+        task_id=str(task["task_id"]),
+    )
     packet["task_id"] = task["task_id"]
     packet["next_session_browser_qa_review_completed_at"] = reviewed_at
     packet["next_session_browser_qa_review_contract"] = review_contract
