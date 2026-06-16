@@ -463,6 +463,8 @@ const LTG_NEXT_ACCEPTANCE_LOCAL_ROUTES = new Set([
   "/api/worker/production-evidence-plan",
   "/api/worker/runtime-qa-execution-request",
   "/api/worker/runtime-qa-dry-run",
+  "/api/factor-quant/deepseek-provider-benchmark-scope-ticket",
+  "/api/next-session/browser-qa-review",
 ]);
 
 export function postLtgNextAcceptanceLocalStep(route: string, payload: Record<string, unknown> = {}) {

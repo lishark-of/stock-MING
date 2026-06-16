@@ -442,6 +442,58 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
             "mark production worker complete from local receipts",
         ],
     },
+    {
+        "queue_id": "p5_deepseek_provider_benchmark_scope",
+        "priority": "P5",
+        "ltg_ids": ["LTG-07"],
+        "action_label": "Bind DeepSeek provider benchmark scope ticket",
+        "mode_layer": "button_task_then_model_execution",
+        "current_phase": "provider_benchmark_scope_ticket_required",
+        "first_allowed_route": "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket",
+        "second_allowed_route": "",
+        "future_provider_route": "future explicit DeepSeek provider benchmark task",
+        "target_acceptance_mode": "deepseek_provider_benchmark_and_promotion",
+        "required_evidence": [
+            "approved provider benchmark scope ticket",
+            "server-side secret presence boolean only",
+            "provider benchmark model ledger",
+            "provider response_format/json_schema execution evidence",
+            "bounded retry/repair evidence",
+            "token/cost/redaction durable evidence",
+        ],
+        "not_allowed_next_steps": [
+            "call DeepSeek from GET cache",
+            "call DeepSeek from React render",
+            "treat scope ticket as provider benchmark evidence",
+            "override numeric values or strategy action",
+        ],
+    },
+    {
+        "queue_id": "p5_next_session_map_browser_qa",
+        "priority": "P5",
+        "ltg_ids": ["LTG-08"],
+        "action_label": "Review ECharts next-session browser QA evidence",
+        "mode_layer": "button_task_then_browser_or_parity_execution",
+        "current_phase": "browser_qa_review_required",
+        "first_allowed_route": "POST /api/next-session/browser-qa-review",
+        "second_allowed_route": "",
+        "future_provider_route": "future explicit next-session parity and production replacement tasks",
+        "target_acceptance_mode": "next_session_browser_visual_performance_and_parity_promotion",
+        "required_evidence": [
+            "same-packet Streamlit parity evidence",
+            "browser visual QA report",
+            "browser performance trace",
+            "reduced-motion evidence",
+            "durable CI/release evidence",
+            "production replacement promotion review",
+        ],
+        "not_allowed_next_steps": [
+            "open browser from GET cache",
+            "treat local review as browser execution",
+            "retire Streamlit visual path before parity evidence",
+            "compute action or mutate operation_zones in React",
+        ],
+    },
 ]
 
 LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
@@ -545,6 +597,22 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "task_type": "run_worker_runtime_qa_dry_run",
             "receipt_key": "worker_runtime_qa_dry_run_receipt",
             "route": "POST /api/worker/runtime-qa-dry-run",
+        },
+    ],
+    "p5_deepseek_provider_benchmark_scope": [
+        {
+            "phase_key": "deepseek_provider_benchmark_scope_ticket",
+            "task_type": "run_deepseek_provider_benchmark_scope_ticket",
+            "receipt_key": "deepseek_provider_benchmark_scope_ticket_receipt",
+            "route": "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket",
+        },
+    ],
+    "p5_next_session_map_browser_qa": [
+        {
+            "phase_key": "next_session_browser_qa_review_receipt",
+            "task_type": "run_next_session_browser_qa_review",
+            "receipt_key": "next_session_browser_qa_review_contract",
+            "route": "POST /api/next-session/browser-qa-review",
         },
     ],
 }
@@ -687,6 +755,24 @@ def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str,
             packet = {}
         source = "worker_runtime_cache_packet"
         source_packet_key = "command_center_3_worker_runtime_cache"
+    elif queue_id == "p5_deepseek_provider_benchmark_scope":
+        try:
+            from server.services import factor_service
+
+            packet = factor_service.read_factor_quant_cache()
+        except Exception:
+            packet = {}
+        source = "factor_quant_cache_packet"
+        source_packet_key = "command_center_factor_quant_hub_packet"
+    elif queue_id == "p5_next_session_map_browser_qa":
+        try:
+            from server.services import next_session_service
+
+            packet = next_session_service.read_next_session_cache()
+        except Exception:
+            packet = {}
+        source = "next_session_cache_packet"
+        source_packet_key = "command_center_next_session_projection_packet"
     else:
         return {}
     packet_map = packet if isinstance(packet, dict) else {}
@@ -709,6 +795,7 @@ def _receipt_blocker_count(receipt: dict[str, Any]) -> int:
     blocker_keys = (
         "blocking_row_count",
         "blocking_phase_count",
+        "blocking_review_count",
         "local_blocker_count",
         "production_blocker_count",
         "provider_evidence_blocker_count",
@@ -753,6 +840,8 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "activation_review_ready",
         "evidence_plan_ready",
         "local_recipe_ready",
+        "local_scope_ticket_ready",
+        "local_browser_qa_review_ready",
     )
     if any(receipt.get(key) is True for key in ready_keys):
         return True
@@ -782,6 +871,34 @@ def _build_ltg_next_action_local_step_rows(
             receipt_map = fallback_receipt if isinstance(fallback_receipt, dict) else {}
             if receipt_map:
                 receipt_lookup_source = str(fallback.get("source") or "business_packet_fallback")
+        if (
+            queue_id == "p5_next_session_map_browser_qa"
+            and task_type == "run_next_session_browser_qa_review"
+            and latest_task.get("status") == "success"
+            and str(latest_task.get("current_step") or "") == "next_session_browser_qa_review_ready"
+        ):
+            receipt_map = {
+                "schema_version": "next_session_browser_qa_review.v1",
+                "status": "next_session_browser_qa_review_ready_local_artifact",
+                "scope": "button_gated_local_next_session_browser_qa_review_no_browser_execution",
+                "task_id": str(latest_task.get("task_id") or ""),
+                "explicit_review_task_done": True,
+                "local_browser_qa_review_ready": True,
+                "blocking_review_count": 0,
+                "production_replacement_complete": False,
+                "streamlit_parity_complete": False,
+                "opens_no_browser": True,
+                "writes_no_artifacts": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "evidence_boundary": "task_status_derived_local_browser_qa_review_not_browser_execution",
+            }
+            receipt_lookup_source = "task_status_derived_local_review"
         receipt_scope_hash = str(
             receipt_map.get("acceptance_scope_hash")
             or receipt_map.get("review_scope_hash")
@@ -789,6 +906,7 @@ def _build_ltg_next_action_local_step_rows(
             or receipt_map.get("physical_execution_scope_hash")
             or receipt_map.get("scope_ticket_sha256")
             or receipt_map.get("runtime_qa_scope_hash")
+            or receipt_map.get("benchmark_scope_hash")
             or ""
         )
         receipt_scope_hash_short = str(
@@ -797,6 +915,7 @@ def _build_ltg_next_action_local_step_rows(
             or receipt_map.get("production_replacement_review_scope_hash_short")
             or receipt_map.get("physical_execution_scope_hash_short")
             or receipt_map.get("runtime_qa_scope_hash_short")
+            or receipt_map.get("benchmark_scope_hash_short")
             or (receipt_scope_hash[:16] if receipt_scope_hash else "")
         )
         task_found = bool(latest_task)
@@ -1221,6 +1340,20 @@ def _build_ltg_next_action_submission_preview_rows(
             "required_prior_material": "latest_task_id",
             "manual_scope_hash_required": True,
             "context_key": "worker_runtime_qa_context_preview",
+        },
+        "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket": {
+            "step_kind": "local_model_benchmark_scope_ticket",
+            "safe_payload_summary": "approved_by_user, sample_count=40, response_format=json_schema, max_retry_per_sample=2",
+            "expected_local_receipt": "deepseek_provider_benchmark_scope_ticket_receipt",
+            "required_prior_phase_key": "",
+            "required_prior_material": "",
+        },
+        "POST /api/next-session/browser-qa-review": {
+            "step_kind": "local_browser_qa_artifact_review",
+            "safe_payload_summary": "review_scope=next_session_browser_qa_local_artifact; reads ignored local reports only",
+            "expected_local_receipt": "next_session_browser_qa_review_contract",
+            "required_prior_phase_key": "",
+            "required_prior_material": "",
         },
     }
     spec = route_specs.get(next_local_step)

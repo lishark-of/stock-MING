@@ -564,7 +564,9 @@ def _next_session_browser_qa_review_contract(
             blocks_production=True,
         ),
     ]
-    blocking_review_rows = [row for row in review_rows if row.get("blocks_review") is True]
+    blocking_review_rows = [
+        row for row in review_rows if row.get("blocks_review") is True and row.get("passed") is not True
+    ]
     local_review_ready = explicit_review and not blocking_review_rows
     status = "next_session_browser_qa_review_ready_local_artifact" if local_review_ready else "next_session_browser_qa_review_pending"
     return {

@@ -301,7 +301,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(migration["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["ltg_acceptance_runway_rows"]), 14)
-        self.assertEqual(len(migration["ltg_next_acceptance_action_rows"]), 6)
+        self.assertEqual(len(migration["ltg_next_acceptance_action_rows"]), 8)
         runway_rows = {row["id"]: row for row in migration["ltg_acceptance_runway_rows"]}
         action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
         self.assertIn("P1", runway_rows["LTG-01"]["priority"])
@@ -311,6 +311,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("P3", runway_rows["LTG-13"]["priority"])
         self.assertIn("P4", runway_rows["LTG-05"]["priority"])
         self.assertIn("P4", runway_rows["LTG-06"]["priority"])
+        self.assertIn("P5", runway_rows["LTG-07"]["priority"])
+        self.assertIn("P5", runway_rows["LTG-08"]["priority"])
         self.assertEqual(
             action_rows["p1_trade_cal_provider_acceptance"]["first_allowed_route"],
             "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
@@ -325,6 +327,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_step_count"], 3)
         self.assertEqual(action_rows["p4_storage_physical_execution"]["local_receipt_step_count"], 1)
         self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 5)
+        self.assertEqual(action_rows["p5_deepseek_provider_benchmark_scope"]["local_receipt_step_count"], 1)
+        self.assertEqual(action_rows["p5_next_session_map_browser_qa"]["local_receipt_step_count"], 1)
+        self.assertEqual(
+            action_rows["p5_deepseek_provider_benchmark_scope"]["first_allowed_route"],
+            "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket",
+        )
+        self.assertEqual(
+            action_rows["p5_next_session_map_browser_qa"]["first_allowed_route"],
+            "POST /api/next-session/browser-qa-review",
+        )
         self.assertTrue(
             all(
                 "receipt_scope_hash" in step and "receipt_scope_hash_short" in step
@@ -10438,10 +10450,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["auto_after_task_production_ready"])
         self.assertTrue(payload["deepseek_production_activation_receipt_ready"])
         self.assertTrue(payload["provider_benchmark_execution_recipe_ready"])
-        self.assertFalse(payload["provider_benchmark_scope_ticket_ready"])
-        self.assertEqual(
+        self.assertIsInstance(payload["provider_benchmark_scope_ticket_ready"], bool)
+        self.assertIn(
             payload["provider_benchmark_scope_ticket_status"],
-            "deepseek_provider_benchmark_scope_ticket_missing",
+            {
+                "deepseek_provider_benchmark_scope_ticket_missing",
+                "deepseek_provider_benchmark_scope_ticket_ready_secret_pending",
+                "deepseek_provider_benchmark_scope_ticket_ready_model_execution_pending",
+            },
         )
         self.assertTrue(payload["deepseek_durable_evidence_recipe_ready"])
         self.assertEqual(
@@ -10491,11 +10507,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["benchmark_recipe_allowed_next_step"],
             "explicit_deepseek_provider_benchmark_task_with_user_approval",
         )
-        self.assertEqual(
+        self.assertIn(
             payload["observed"]["benchmark_scope_ticket_status"],
-            "deepseek_provider_benchmark_scope_ticket_missing",
+            {
+                "deepseek_provider_benchmark_scope_ticket_missing",
+                "deepseek_provider_benchmark_scope_ticket_ready_secret_pending",
+                "deepseek_provider_benchmark_scope_ticket_ready_model_execution_pending",
+            },
         )
-        self.assertFalse(payload["observed"]["benchmark_scope_ticket_ready"])
+        self.assertIsInstance(payload["observed"]["benchmark_scope_ticket_ready"], bool)
         self.assertTrue(payload["observed"]["benchmark_scope_ticket_hash_short"])
         self.assertIsInstance(payload["observed"]["benchmark_scope_ticket_secret_present"], bool)
         self.assertEqual(
@@ -18984,7 +19004,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_acceptance_runway_rows"]), 14)
-        self.assertEqual(len(migration["data"]["ltg_next_acceptance_action_rows"]), 6)
+        self.assertEqual(len(migration["data"]["ltg_next_acceptance_action_rows"]), 8)
         self.assertEqual(len(migration["data"]["ltg_stage_scope_observed_rows"]), 14)
         runway_rows = {row["id"]: row for row in migration["data"]["ltg_acceptance_runway_rows"]}
         action_rows = {row["queue_id"]: row for row in migration["data"]["ltg_next_acceptance_action_rows"]}
@@ -18993,12 +19013,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("P3", runway_rows["LTG-03"]["priority"])
         self.assertIn("P4", runway_rows["LTG-05"]["priority"])
         self.assertIn("P4", runway_rows["LTG-06"]["priority"])
+        self.assertIn("P5", runway_rows["LTG-07"]["priority"])
+        self.assertIn("P5", runway_rows["LTG-08"]["priority"])
         self.assertIn("LTG-01", action_rows["p1_trade_cal_provider_acceptance"]["ltg_ids"])
         self.assertEqual(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_step_count"], 3)
         self.assertIn("LTG-05", action_rows["p4_storage_physical_execution"]["ltg_ids"])
         self.assertIn("LTG-06", action_rows["p4_worker_runtime_qa"]["ltg_ids"])
         self.assertEqual(action_rows["p4_storage_physical_execution"]["local_receipt_step_count"], 1)
         self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 5)
+        self.assertIn("LTG-07", action_rows["p5_deepseek_provider_benchmark_scope"]["ltg_ids"])
+        self.assertIn("LTG-08", action_rows["p5_next_session_map_browser_qa"]["ltg_ids"])
+        self.assertEqual(action_rows["p5_deepseek_provider_benchmark_scope"]["local_receipt_step_count"], 1)
+        self.assertEqual(action_rows["p5_next_session_map_browser_qa"]["local_receipt_step_count"], 1)
         self.assertEqual(
             action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_lookup_source"],
             "task_service.list_task_statuses_memory_plus_sqlite_read_only",
