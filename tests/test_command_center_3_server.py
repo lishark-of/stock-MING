@@ -255,6 +255,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         return log_path
 
     def test_cache_builders_do_not_call_external_sources(self):
+        self._with_meta_store()
         factor = packet_service.build_factor_quant_cache()
         serenity = packet_service.build_serenity_cache()
         next_session = packet_service.build_next_session_cache()
@@ -339,10 +340,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(action_rows["p2_tushare_target_sample_acceptance"]["next_local_step_ready_for_clean_receipt"])
         self.assertEqual(
             action_rows["p2_tushare_target_sample_acceptance"]["next_local_step_disabled_reason"],
-            "manual_scope_hash_required_before_clean_local_receipt",
+            "latest_target_sample_execution_recipe_missing",
         )
         self.assertTrue(p2_preview["manual_scope_hash_required"])
         self.assertEqual(p2_preview["required_prior_material"], "execution_recipe_scope_hash")
+        self.assertEqual(p2_preview["prepared_execution_recipe_scope_hash_short"], "")
         self.assertTrue(
             all(
                 preview["external_calls_triggered"] is False
@@ -1546,6 +1548,64 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("bearer ", strategy_dump)
 
         json.dumps({"factor": factor, "serenity": serenity, "next": next_session, "migration": migration, "desktop": desktop, "model_strategy": model_strategy}, ensure_ascii=False)
+
+    def test_ltg_next_action_queue_prebinds_tushare_target_sample_recipe(self):
+        db_path = self._with_meta_store()
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        SQLiteMetaStore(db_path).write_packet(
+            "command_center_tushare_refresh_packet",
+            {
+                "packet_key": "command_center_tushare_refresh_packet",
+                "status": "ready",
+                "provider_target_sample_execution_recipe": {
+                    "schema_version": "tushare_provider_target_sample_execution_recipe.v1",
+                    "status": "target_sample_execution_recipe_ready_user_confirmation_required",
+                    "recipe_ready_for_user_confirmation": True,
+                    "execution_recipe_scope_hash_short": "abc123def4567890",
+                    "requested_targets": ["margin_financing"],
+                    "rows": [
+                        {
+                            "target": "margin_financing",
+                            "requested_for_execution_recipe": True,
+                            "selected_apis": ["margin_detail"],
+                            "recipe_ready_for_user_confirmation": True,
+                        }
+                    ],
+                    "provider_task_created_by_recipe": False,
+                    "provider_execution_implemented_by_recipe": False,
+                    "recipe_external_calls_triggered": False,
+                    "tushare_called_by_recipe": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                    "contains_secret": False,
+                },
+            },
+        )
+
+        migration = migration_status_service.build_migration_status()
+        action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        p2 = action_rows["p2_tushare_target_sample_acceptance"]
+        preview = p2["next_local_step_preview_rows"][0]
+
+        self.assertTrue(p2["next_local_step_ready_for_clean_receipt"])
+        self.assertEqual(p2["next_local_step_disabled_reason"], "")
+        self.assertEqual(preview["prepared_execution_recipe_scope_hash_short"], "abc123def4567890")
+        self.assertEqual(preview["prepared_target_sample_acceptance_groups"], ["margin_financing"])
+        self.assertEqual(preview["prepared_apis"], ["margin_detail"])
+        self.assertEqual(preview["prepared_context_source_packet_key"], "command_center_tushare_refresh_packet")
+        self.assertFalse(preview["manual_scope_hash_required"])
+        self.assertFalse(preview["would_create_provider_task"])
+        self.assertFalse(preview["external_calls_triggered"])
+        self.assertFalse(preview["tushare_called"])
+        self.assertFalse(preview["deepseek_called"])
+        self.assertFalse(preview["github_called"])
+        self.assertTrue(preview["does_not_execute_trades"])
+        self.assertTrue(preview["does_not_modify_strategy_action"])
+        self.assertFalse(preview["contains_secret"])
 
     def test_packet_service_reads_snapshot_alias_without_external_calls(self):
         self._with_snapshot_cache(

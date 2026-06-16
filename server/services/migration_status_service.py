@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from server.services import task_service
+from server.services import packet_service, task_service
 
 
 TUSHARE_DEEPSEEK_LINKAGE_REVIEW_TASK_TYPE = "run_tushare_deepseek_linkage_review"
@@ -646,10 +646,69 @@ def _local_step_row_by_phase(local_step_rows: list[dict[str, Any]], phase_key: s
     return next((row for row in local_step_rows if row.get("phase_key") == phase_key), {})
 
 
+def _latest_tushare_target_sample_execution_recipe_preview() -> dict[str, Any]:
+    try:
+        packet = packet_service.read_packet("command_center_tushare_refresh_packet")
+    except Exception:
+        packet = {}
+    recipe = packet.get("provider_target_sample_execution_recipe") if isinstance(packet, dict) else {}
+    recipe_map = recipe if isinstance(recipe, dict) else {}
+    rows = [row for row in recipe_map.get("rows", []) if isinstance(row, dict)]
+    selected_apis: list[str] = []
+    for row in rows:
+        if row.get("requested_for_execution_recipe") is not True:
+            continue
+        for api in row.get("selected_apis") or []:
+            api_name = str(api or "")
+            if api_name and api_name not in selected_apis:
+                selected_apis.append(api_name)
+    requested_targets = [str(item) for item in recipe_map.get("requested_targets") or [] if str(item or "")]
+    scope_hash_short = str(recipe_map.get("execution_recipe_scope_hash_short") or "")[:16]
+    recipe_visible = bool(recipe_map)
+    recipe_ready = bool(
+        recipe_map.get("schema_version") == "tushare_provider_target_sample_execution_recipe.v1"
+        and recipe_map.get("status") == "target_sample_execution_recipe_ready_user_confirmation_required"
+        and recipe_map.get("recipe_ready_for_user_confirmation") is True
+        and recipe_map.get("provider_task_created_by_recipe") is False
+        and recipe_map.get("provider_execution_implemented_by_recipe") is False
+        and recipe_map.get("recipe_external_calls_triggered") is False
+        and recipe_map.get("tushare_called_by_recipe") is False
+        and recipe_map.get("deepseek_called") is False
+        and recipe_map.get("github_called") is False
+        and recipe_map.get("does_not_execute_trades") is True
+        and recipe_map.get("does_not_modify_strategy_action") is True
+        and recipe_map.get("contains_secret") is False
+        and bool(scope_hash_short)
+        and bool(requested_targets)
+        and bool(selected_apis)
+    )
+    return {
+        "recipe_visible": recipe_visible,
+        "recipe_status": str(recipe_map.get("status") or ""),
+        "recipe_ready_for_user_confirmation": recipe_ready,
+        "execution_recipe_scope_hash_short": scope_hash_short,
+        "requested_targets": requested_targets,
+        "selected_apis": selected_apis,
+        "can_prebind_execution_recipe_scope_hash": recipe_ready,
+        "source_packet_key": "command_center_tushare_refresh_packet",
+        "source_receipt_key": "provider_target_sample_execution_recipe",
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "evidence_boundary": "latest_target_sample_recipe_preview_is_read_only_not_provider_execution",
+    }
+
+
 def _build_ltg_next_action_submission_preview_rows(
     next_local_step: str,
     local_step_rows: list[dict[str, Any]],
+    safe_context: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    safe_context = dict(safe_context or {})
     route_specs: dict[str, dict[str, Any]] = {
         "POST /api/data-health/trade-cal-provider-acceptance-dry-run": {
             "step_kind": "dry_run_scope_ticket",
@@ -679,6 +738,7 @@ def _build_ltg_next_action_submission_preview_rows(
             "required_prior_phase_key": "provider_target_sample_execution_recipe",
             "required_prior_material": "execution_recipe_scope_hash",
             "manual_scope_hash_required": True,
+            "context_key": "tushare_target_sample_execution_recipe_preview",
         },
         "POST /api/factor-quant/provider-small-pool-dry-run": {
             "step_kind": "dry_run_scope_ticket",
@@ -745,6 +805,9 @@ def _build_ltg_next_action_submission_preview_rows(
 
     required_phase = str(spec.get("required_prior_phase_key") or "")
     required_material = str(spec.get("required_prior_material") or "")
+    context_key = str(spec.get("context_key") or "")
+    context = safe_context.get(context_key) if context_key else {}
+    context_map = context if isinstance(context, dict) else {}
     prior_step = _local_step_row_by_phase(local_step_rows, required_phase) if required_phase else {}
     prior_visible = True if not required_phase else bool(prior_step.get("receipt_visible"))
     if not required_material:
@@ -758,9 +821,17 @@ def _build_ltg_next_action_submission_preview_rows(
             or prior_step.get("receipt_scope_hash_short")
         )
     manual_scope_hash_required = bool(spec.get("manual_scope_hash_required"))
+    if context_key == "tushare_target_sample_execution_recipe_preview":
+        prior_visible = bool(context_map.get("recipe_visible"))
+        material_visible = bool(context_map.get("execution_recipe_scope_hash_short"))
+        manual_scope_hash_required = not bool(context_map.get("can_prebind_execution_recipe_scope_hash"))
     ready_for_clean_receipt = prior_visible and material_visible and not manual_scope_hash_required
     if ready_for_clean_receipt:
         disabled_reason = ""
+    elif context_key == "tushare_target_sample_execution_recipe_preview" and not prior_visible:
+        disabled_reason = "latest_target_sample_execution_recipe_missing"
+    elif context_key == "tushare_target_sample_execution_recipe_preview" and prior_visible and manual_scope_hash_required:
+        disabled_reason = "latest_target_sample_execution_recipe_not_ready_for_confirmation"
     elif manual_scope_hash_required:
         disabled_reason = "manual_scope_hash_required_before_clean_local_receipt"
     elif not prior_visible:
@@ -781,6 +852,12 @@ def _build_ltg_next_action_submission_preview_rows(
             "required_prior_receipt_visible": prior_visible,
             "required_prior_material_visible": material_visible,
             "manual_scope_hash_required": manual_scope_hash_required,
+            "prepared_execution_recipe_scope_hash_short": context_map.get("execution_recipe_scope_hash_short") or "",
+            "prepared_target_sample_acceptance_groups": list(context_map.get("requested_targets") or []),
+            "prepared_apis": list(context_map.get("selected_apis") or []),
+            "prepared_context_status": context_map.get("recipe_status") or "",
+            "prepared_context_source_packet_key": context_map.get("source_packet_key") or "",
+            "prepared_context_source_receipt_key": context_map.get("source_receipt_key") or "",
             "would_create_provider_task": False,
             "would_start_worker": False,
             "would_call_model": False,
@@ -821,7 +898,16 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             local_status = "local_receipts_visible_provider_or_worker_evidence_pending"
             next_local_step = str(action["future_provider_route"])
         latest_observed = observed_steps[-1] if observed_steps else {}
-        submission_preview_rows = _build_ltg_next_action_submission_preview_rows(next_local_step, local_step_rows)
+        safe_context: dict[str, Any] = {}
+        if action["queue_id"] == "p2_tushare_target_sample_acceptance":
+            safe_context["tushare_target_sample_execution_recipe_preview"] = (
+                _latest_tushare_target_sample_execution_recipe_preview()
+            )
+        submission_preview_rows = _build_ltg_next_action_submission_preview_rows(
+            next_local_step,
+            local_step_rows,
+            safe_context=safe_context,
+        )
         next_step_ready_for_clean_receipt = any(
             row.get("ready_for_clean_local_receipt") is True for row in submission_preview_rows
         )

@@ -39,6 +39,17 @@ function taskId(row: Record<string, unknown>, phaseKey: string): string {
   return String(localStep(row, phaseKey).latest_task_id ?? "");
 }
 
+function nextLocalStepPreview(row: Record<string, unknown>): Record<string, unknown> {
+  const previews = (row.next_local_step_preview_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  return previews[0] ?? {};
+}
+
+function stringArray(value: unknown, fallback: Array<string>): Array<string> {
+  return Array.isArray(value) && value.every((item) => typeof item === "string")
+    ? value as Array<string>
+    : fallback;
+}
+
 function ltgNextStepPayload(row: Record<string, unknown>): Record<string, unknown> {
   const route = String(row.next_local_step ?? "");
   if (route === "POST /api/data-health/trade-cal-provider-acceptance-dry-run") {
@@ -71,11 +82,12 @@ function ltgNextStepPayload(row: Record<string, unknown>): Record<string, unknow
     };
   }
   if (route === "POST /api/tasks/tushare-provider-target-sample-execution-request") {
+    const preview = nextLocalStepPreview(row);
     return {
       operator_approved: true,
-      execution_recipe_scope_hash: "",
-      target_sample_acceptance_groups: ["margin_financing"],
-      apis: ["margin_detail"],
+      execution_recipe_scope_hash: String(preview.prepared_execution_recipe_scope_hash_short ?? ""),
+      target_sample_acceptance_groups: stringArray(preview.prepared_target_sample_acceptance_groups, ["margin_financing"]),
+      apis: stringArray(preview.prepared_apis, ["margin_detail"]),
       ts_code: DEFAULT_LTG_QUEUE_SYMBOL,
       requested_by: "migration_status_ltg_queue",
       source: "migration_status_ltg_next_action"
@@ -214,6 +226,12 @@ export default function MigrationStatus() {
       required_prior_receipt_visible: preview.required_prior_receipt_visible,
       required_prior_material_visible: preview.required_prior_material_visible,
       manual_scope_hash_required: preview.manual_scope_hash_required,
+      prepared_execution_recipe_scope_hash_short: preview.prepared_execution_recipe_scope_hash_short,
+      prepared_target_sample_acceptance_groups: preview.prepared_target_sample_acceptance_groups,
+      prepared_apis: preview.prepared_apis,
+      prepared_context_status: preview.prepared_context_status,
+      prepared_context_source_packet_key: preview.prepared_context_source_packet_key,
+      prepared_context_source_receipt_key: preview.prepared_context_source_receipt_key,
       would_create_provider_task: preview.would_create_provider_task,
       would_start_worker: preview.would_start_worker,
       would_call_model: preview.would_call_model,
