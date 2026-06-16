@@ -426,6 +426,13 @@ export function postCandidateRadarLegacyRetirementReview(payload: Record<string,
   });
 }
 
+export function postCandidateRadarProductionPromotionReview(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/candidate-radar/production-promotion-review", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function postCandidateRadarDeepScanPlan(payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>("/api/candidate-radar/deep-scan-plan", {
     method: "POST",
@@ -468,6 +475,7 @@ const LTG_NEXT_ACCEPTANCE_LOCAL_ROUTES = new Set([
   "/api/candidate-radar/quant-projection-execution-request",
   "/api/candidate-radar/production-promotion-dry-run",
   "/api/candidate-radar/legacy-retirement-review",
+  "/api/candidate-radar/production-promotion-review",
   "/api/storage/physical-execution-request",
   "/api/worker/synthetic-healthcheck",
   "/api/worker/activation-review",

@@ -112,3 +112,9 @@ def dry_run_candidate_radar_production_promotion(payload: dict[str, Any] | None 
 def review_candidate_radar_legacy_retirement(payload: dict[str, Any] | None = None) -> dict:
     task = candidate_service.run_candidate_legacy_retirement_review_task(payload)
     return task_envelope(task)
+
+
+@router.post("/production-promotion-review")
+def review_candidate_radar_production_promotion(payload: dict[str, Any] | None = None) -> dict:
+    task = candidate_service.run_candidate_production_promotion_review_task(payload)
+    return task_envelope(task)

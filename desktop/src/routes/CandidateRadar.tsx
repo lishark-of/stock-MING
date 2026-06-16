@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getBootstrapStatus, getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
+import { getBootstrapStatus, getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionPromotionReview, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -155,6 +155,7 @@ export default function CandidateRadar() {
   const productionReplacementReview = (cache.candidate_radar_production_replacement_review_receipt as Record<string, unknown> | undefined) ?? {};
   const productionPromotionDryRun = (cache.candidate_radar_production_promotion_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
   const legacyRetirementReview = (cache.candidate_radar_legacy_retirement_review_receipt as Record<string, unknown> | undefined) ?? {};
+  const productionPromotionReview = (cache.candidate_radar_production_promotion_review_receipt as Record<string, unknown> | undefined) ?? {};
   const launchQuantProjectionExecutionRequest = () =>
     void postCandidateRadarQuantProjectionExecutionRequest({
       scan_mode: "quant_projection_execution_request",
@@ -223,6 +224,16 @@ export default function CandidateRadar() {
       setTaskReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
     });
+  const launchProductionPromotionReview = () =>
+    void postCandidateRadarProductionPromotionReview({
+      review_scope: "candidate_radar_production_promotion_local_review",
+      operator_approved: true,
+      promotion_scope_hash: String(productionPromotionDryRun.promotion_scope_hash ?? ""),
+      reviewer: "candidate_radar_page"
+    }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
   const durableEvidenceRecipe = (cache.candidate_radar_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
   const productionStageScopeManifest = (cache.candidate_radar_production_stage_scope_manifest as Record<string, unknown> | undefined) ?? {};
   const resultDeltaClarity = (cache.result_delta_clarity_contract as Record<string, unknown> | undefined) ?? {};
@@ -273,6 +284,7 @@ export default function CandidateRadar() {
   const productionReplacementReviewRows = rows(cache.candidate_radar_production_replacement_review_rows);
   const productionPromotionDryRunRows = rows(cache.candidate_radar_production_promotion_dry_run_rows);
   const legacyRetirementReviewRows = rows(cache.candidate_radar_legacy_retirement_review_rows);
+  const productionPromotionReviewRows = rows(cache.candidate_radar_production_promotion_review_rows);
   const durableEvidenceRows = rows(cache.candidate_radar_durable_evidence_rows);
   const productionStageScopeRows = rows(cache.candidate_radar_production_stage_scope_rows);
   const resultDeltaClarityRows = rows(cache.result_delta_clarity_rows);
@@ -817,6 +829,24 @@ export default function CandidateRadar() {
         <p>这个 review 只把旧雷达何时可以退场讲清楚；真实 worker/provider/model/browser 证据和发布证据没有完成前，legacy/admin/debug fallback 继续保留。</p>
         <DataLineageTable rows={objectRow(legacyRetirementReview)} />
         <DataLineageTable rows={legacyRetirementReviewRows} />
+      </PacketCard>
+
+      <PacketCard title="雷达 production promotion review" subtitle="POST /api/candidate-radar/production-promotion-review；审查 promotion 边界，不运行 worker/provider/model/browser" status={String(productionPromotionReview.status ?? "missing")}>
+        <div className="actions">
+          <button onClick={launchProductionPromotionReview} disabled={!productionPromotionDryRun.promotion_scope_hash || !legacyRetirementReview.local_review_ready}>
+            生成 production promotion review
+          </button>
+        </div>
+        <p>local_review_ready: {String(productionPromotionReview.local_review_ready === true)}；ready_to_mark_production: {String(productionPromotionReview.ready_to_mark_production_radar_replacement_complete === true)}</p>
+        <p>promotion scope match: {String(productionPromotionReview.requested_promotion_scope_hash_matches_latest === true)}；promotion scope: {String(productionPromotionReview.promotion_scope_hash_short ?? "--")}；review scope: {String(productionPromotionReview.promotion_review_scope_hash_short ?? "--")}</p>
+        <p>replacement review / promotion dry-run / legacy review / durable recipe: {String(productionPromotionReview.production_replacement_review_ready === true)} / {String(productionPromotionReview.production_promotion_dry_run_visible === true)} / {String(productionPromotionReview.legacy_retirement_review_visible === true)} / {String(productionPromotionReview.durable_evidence_recipe_visible === true)}</p>
+        <p>worker full/deep / provider / DeepSeek ledger / browser promoted: {String(productionPromotionReview.worker_full_pool_execution_done === true)} / {String(productionPromotionReview.worker_deep_scan_execution_done === true)} / {String(productionPromotionReview.provider_backed_acceptance_done === true)} / {String(productionPromotionReview.deepseek_model_ledger_complete === true)} / {String(productionPromotionReview.browser_visual_performance_promoted === true)}</p>
+        <p>local_blocker_count / production_blocker_count: {String(productionPromotionReview.local_blocker_count ?? 0)} / {String(productionPromotionReview.production_blocker_count ?? 0)}</p>
+        <p>worker_started / provider_model_task / production complete: {String(productionPromotionReview.worker_started === true)} / {String(productionPromotionReview.creates_provider_model_task === true)} / {String(productionPromotionReview.production_radar_replacement_complete === true)}</p>
+        <p>tushare_called / deepseek_called / github_called: {String(productionPromotionReview.tushare_called === true)} / {String(productionPromotionReview.deepseek_called === true)} / {String(productionPromotionReview.github_called === true)}</p>
+        <p>这个 review 只把 LTG-13 promotion 边界写成可审计本地收据；真实 worker/provider/model/browser/release 证据未完成前，不能标记生产替代。</p>
+        <DataLineageTable rows={objectRow(productionPromotionReview)} />
+        <DataLineageTable rows={productionPromotionReviewRows} />
       </PacketCard>
 
       <PacketCard title="雷达耐久证据配方" subtitle="candidate_radar_durable_evidence_recipe；生产替代前的直接证据清单，不运行扫描、不外联" status={String(durableEvidenceRecipe.status ?? "missing")}>

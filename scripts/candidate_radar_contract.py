@@ -43,6 +43,7 @@ REQUIRED_TASK_TYPES = {
     "run_candidate_radar_production_replacement_review",
     "run_candidate_radar_production_promotion_dry_run",
     "run_candidate_radar_legacy_retirement_review",
+    "run_candidate_radar_production_promotion_review",
 }
 REQUIRED_NO_FEATURE_LOSS_GAPS = {
     "browser_performance_trace_pending",
@@ -524,6 +525,28 @@ def build_contract() -> dict[str, Any]:
     }
     production_review_packet["candidate_radar_legacy_retirement_review_receipt"] = legacy_retirement_review
     production_review_packet["candidate_radar_legacy_retirement_review_rows"] = legacy_retirement_review_rows_list
+    production_promotion_review, production_promotion_review_rows_list = (
+        candidate_service._candidate_radar_production_promotion_review_receipt(
+            production_review_packet,
+            payload_safe={
+                "operator_approved": True,
+                "promotion_scope_hash": production_promotion_dry_run.get("promotion_scope_hash"),
+                "reviewer": "local_contract",
+            },
+            explicit_review=True,
+            task_id="local-contract-production-promotion-review",
+            reviewed_at=now,
+        )
+    )
+    production_promotion_review_rows = {
+        str(row.get("criterion") or ""): row
+        for row in production_promotion_review_rows_list
+        if isinstance(row, dict)
+    }
+    production_review_packet["candidate_radar_production_promotion_review_receipt"] = production_promotion_review
+    production_review_packet["candidate_radar_production_promotion_review_rows"] = (
+        production_promotion_review_rows_list
+    )
     production_review_packet = candidate_service._attach_candidate_radar_durable_evidence_recipe(
         production_review_packet
     )
@@ -881,6 +904,60 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_candidate_radar_production_promotion_dry_run"].get("candidate_is_not_buy_instruction")
             is True,
             "Candidate Radar production promotion dry-run must be a button-gated local scope ticket that does not start workers, providers, models, GitHub, trades, or production replacement.",
+        ),
+        _row(
+            "candidate_radar_production_promotion_review_task_is_button_gated_local_only",
+            task_rows["run_candidate_radar_production_promotion_review"].get("route")
+            == "POST /api/candidate-radar/production-promotion-review"
+            and task_rows["run_candidate_radar_production_promotion_review"].get("local_review_only") is True
+            and task_rows["run_candidate_radar_production_promotion_review"].get(
+                "requires_production_replacement_review"
+            )
+            is True
+            and task_rows["run_candidate_radar_production_promotion_review"].get(
+                "requires_production_promotion_dry_run"
+            )
+            is True
+            and task_rows["run_candidate_radar_production_promotion_review"].get(
+                "requires_legacy_retirement_review"
+            )
+            is True
+            and task_rows["run_candidate_radar_production_promotion_review"].get("requires_operator_approval")
+            is True
+            and task_rows["run_candidate_radar_production_promotion_review"].get("creates_worker_task") is False
+            and task_rows["run_candidate_radar_production_promotion_review"].get("worker_started") is False
+            and task_rows["run_candidate_radar_production_promotion_review"].get("creates_provider_model_task")
+            is False
+            and task_rows["run_candidate_radar_production_promotion_review"].get("provider_execution_implemented")
+            is False
+            and task_rows["run_candidate_radar_production_promotion_review"].get("model_execution_implemented")
+            is False
+            and task_rows["run_candidate_radar_production_promotion_review"].get(
+                "production_radar_replacement_complete"
+            )
+            is False
+            and task_rows["run_candidate_radar_production_promotion_review"].get(
+                "ready_to_mark_production_radar_replacement_complete"
+            )
+            is False
+            and task_rows["run_candidate_radar_production_promotion_review"].get("legacy_retirement_ready")
+            is False
+            and task_rows["run_candidate_radar_production_promotion_review"].get("legacy_fallback_required")
+            is True
+            and task_rows["run_candidate_radar_production_promotion_review"].get("tushare_called") is False
+            and task_rows["run_candidate_radar_production_promotion_review"].get("deepseek_called") is False
+            and task_rows["run_candidate_radar_production_promotion_review"].get("github_called") is False
+            and task_rows["run_candidate_radar_production_promotion_review"].get("cache_get_external_calls")
+            is False
+            and task_rows["run_candidate_radar_production_promotion_review"].get("page_render_external_calls")
+            is False
+            and task_rows["run_candidate_radar_production_promotion_review"].get("does_not_execute_trades")
+            is True
+            and task_rows["run_candidate_radar_production_promotion_review"].get("does_not_modify_strategy_action")
+            is True
+            and task_rows["run_candidate_radar_production_promotion_review"].get("candidate_is_not_buy_instruction")
+            is True,
+            "Candidate Radar production promotion review must be a button-gated local boundary review that clears only the local review checklist item and starts no worker, provider, model, GitHub, or trading work.",
         ),
         _row(
             "candidate_radar_legacy_retirement_review_task_is_button_gated_local_only",
@@ -1482,6 +1559,86 @@ def build_contract() -> dict[str, Any]:
             "Candidate Radar legacy retirement review must make legacy fallback retirement auditable while keeping retirement blocked until direct worker/provider/model/browser/release evidence exists.",
         ),
         _row(
+            "candidate_radar_production_promotion_review_is_local_production_blocked",
+            production_promotion_review.get("schema_version")
+            == candidate_service.CANDIDATE_PRODUCTION_PROMOTION_REVIEW_SCHEMA_VERSION
+            and production_promotion_review.get("status")
+            == "candidate_radar_production_promotion_review_ready_production_blocked"
+            and production_promotion_review.get("scope")
+            == "button_gated_local_candidate_radar_production_promotion_review_no_external_call"
+            and production_promotion_review.get("route")
+            == "POST /api/candidate-radar/production-promotion-review"
+            and production_promotion_review.get("task_type") == "run_candidate_radar_production_promotion_review"
+            and production_promotion_review.get("explicit_production_promotion_review_done") is True
+            and production_promotion_review.get("operator_approved") is True
+            and production_promotion_review.get("local_review_ready") is True
+            and production_promotion_review.get("ready_to_mark_production_radar_replacement_complete") is False
+            and production_promotion_review.get("production_radar_replacement_complete") is False
+            and production_promotion_review.get("legacy_retirement_ready") is False
+            and production_promotion_review.get("legacy_fallback_required") is True
+            and production_promotion_review.get("production_replacement_review_ready") is True
+            and production_promotion_review.get("production_promotion_dry_run_visible") is True
+            and production_promotion_review.get("legacy_retirement_review_visible") is True
+            and production_promotion_review.get("durable_evidence_recipe_visible") is True
+            and production_promotion_review.get("production_stage_manifest_visible") is True
+            and production_promotion_review.get("requested_promotion_scope_hash_matches_latest") is True
+            and len(str(production_promotion_review.get("promotion_review_scope_hash") or "")) == 64
+            and production_promotion_review.get("promotion_review_scope_hash_input_includes_secret") is False
+            and production_promotion_review.get("worker_full_pool_execution_done") is False
+            and production_promotion_review.get("worker_deep_scan_execution_done") is False
+            and production_promotion_review.get("provider_backed_acceptance_done") is False
+            and production_promotion_review.get("deepseek_model_ledger_complete") is False
+            and production_promotion_review.get("browser_visual_performance_promoted") is False
+            and production_promotion_review.get("durable_evidence_complete") is False
+            and int(production_promotion_review.get("local_blocker_count") or 0) == 0
+            and int(production_promotion_review.get("production_blocker_count") or 0) >= 6
+            and int(production_promotion_review.get("row_count") or 0) == len(production_promotion_review_rows)
+            and _dict(production_promotion_review_rows.get("worker_full_pool_execution_evidence_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(production_promotion_review_rows.get("worker_deep_scan_execution_evidence_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(production_promotion_review_rows.get("provider_backed_parity_call_ledger_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(production_promotion_review_rows.get("deepseek_model_ledger_if_enabled_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(production_promotion_review_rows.get("production_completion_stays_blocked")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(production_promotion_review_rows.get("no_provider_model_trade_secret_boundary")).get("passed")
+            is True
+            and "treat production promotion review as production radar replacement"
+            in _list(production_promotion_review.get("not_allowed_next_steps"))
+            and _flag_false(
+                production_promotion_review,
+                "cache_get_external_calls",
+                "react_render_external_calls",
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "worker_started",
+                "creates_worker_task",
+                "creates_provider_model_task",
+                "contains_secret",
+            )
+            and production_promotion_review.get("does_not_execute_trades") is True
+            and production_promotion_review.get("does_not_modify_strategy_action") is True
+            and production_promotion_review.get("does_not_modify_holdings") is True
+            and production_promotion_review.get("candidate_is_not_buy_instruction") is True
+            and "candidate_radar_production_promotion_review_receipt" in candidate_frontend
+            and "雷达 production promotion review" in candidate_frontend,
+            "Candidate Radar production promotion review must make the final local promotion review auditable while keeping production replacement blocked until direct worker/provider/model/browser/release evidence exists.",
+        ),
+        _row(
             "candidate_radar_durable_evidence_recipe_is_local_production_pending",
             durable_evidence_recipe.get("schema_version")
             == candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_SCHEMA_VERSION
@@ -1514,7 +1671,7 @@ def build_contract() -> dict[str, Any]:
             and int(durable_evidence_recipe.get("row_count") or 0) == len(durable_evidence_rows)
             and int(durable_evidence_recipe.get("evidence_key_count") or 0)
             == len(candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS)
-            and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) >= 5
+            and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) >= 4
             and "user-approved provider parity scope ticket"
             in _list(durable_evidence_recipe.get("required_evidence"))
             and "button-gated worker execution request ticket bound to the worker recipe hash"
@@ -1557,6 +1714,9 @@ def build_contract() -> dict[str, Any]:
             is True
             and _durable_row_blocked_or_local_visible(
                 durable_evidence_rows.get("legacy_retirement_review_required")
+            )
+            and _durable_row_blocked_or_local_visible(
+                durable_evidence_rows.get("production_promotion_review_required")
             )
             and _dict(durable_evidence_rows.get("no_trade_action_secret_boundary")).get("passed") is True
             and policy.get("candidate_radar_durable_evidence_recipe_is_local") is True
@@ -2372,8 +2532,10 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_production_replacement_review.v1" in this_script
             and "candidate_radar_production_promotion_dry_run.v1" in this_script
             and "candidate_radar_legacy_retirement_review.v1" in this_script
+            and "candidate_radar_production_promotion_review.v1" in this_script
             and "production-promotion-dry-run" in this_script
             and "legacy-retirement-review" in this_script
+            and "production-promotion-review" in this_script
             and "candidate_is_not_buy_instruction" in this_script
             and ("request" + "s") not in this_script
             and ("ht" + "tpx") not in this_script
@@ -2454,6 +2616,11 @@ def build_contract() -> dict[str, Any]:
         ),
         "candidate_radar_legacy_retirement_review_ready": legacy_retirement_review.get("local_review_ready") is True,
         "candidate_radar_legacy_retirement_review_blocker_count": legacy_retirement_review.get(
+            "production_blocker_count"
+        ),
+        "candidate_radar_production_promotion_review_ready": production_promotion_review.get("local_review_ready")
+        is True,
+        "candidate_radar_production_promotion_review_blocker_count": production_promotion_review.get(
             "production_blocker_count"
         ),
         "cache_only": True,
@@ -2539,6 +2706,13 @@ def build_contract() -> dict[str, Any]:
             "candidate_radar_legacy_retirement_review_status": legacy_retirement_review.get("status"),
             "candidate_radar_legacy_retirement_review_ready": legacy_retirement_review.get("local_review_ready"),
             "candidate_radar_legacy_retirement_review_blocker_count": legacy_retirement_review.get(
+                "production_blocker_count"
+            ),
+            "candidate_radar_production_promotion_review_status": production_promotion_review.get("status"),
+            "candidate_radar_production_promotion_review_ready": production_promotion_review.get(
+                "local_review_ready"
+            ),
+            "candidate_radar_production_promotion_review_blocker_count": production_promotion_review.get(
                 "production_blocker_count"
             ),
             "result_delta_status": result_delta.get("status"),
