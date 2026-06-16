@@ -2236,6 +2236,45 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "contains_secret": False,
             },
         )
+        store.write_packet(
+            storage_service.ARTIFACT_CLEANUP_DRY_RUN_PACKET_KEY,
+            {
+                "packet_key": storage_service.ARTIFACT_CLEANUP_DRY_RUN_PACKET_KEY,
+                "schema_version": "command_center_3_storage_artifact_cleanup_dry_run.v1",
+                "status": "ready",
+                "artifact_cleanup_review_done": True,
+                "artifact_cleanup_review_status": "manual_review_ready_delete_pending",
+                "candidate_count": 2,
+                "present_artifact_count": 2,
+                "artifact_cleanup_review_required_step_count": 7,
+                "manual_approval_required_before_delete": True,
+                "delete_execution_task_available": False,
+                "delete_executed_count": 0,
+                "safe_delete_command_generated": False,
+                "cleanup_review_is_not_delete_execution": True,
+                "production_cleanup_complete": False,
+                "delete_files_on_post": False,
+                "auto_cleanup_on_post": False,
+                "would_delete_files": False,
+                "does_not_scan_secret_values": True,
+                "does_not_read_file_payloads": True,
+                "does_not_read_env_files": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "artifact_cleanup_review_contract": {
+                    "artifact_cleanup_review_done": True,
+                    "delete_executed": False,
+                    "cleanup_review_is_not_delete_execution": True,
+                    "production_cleanup_complete": False,
+                    "contains_secret": False,
+                },
+            },
+        )
 
         migration = migration_status_service.build_migration_status()
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
@@ -2243,9 +2282,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
         self.assertEqual(ltg05["status"], "observed_storage_direct_execution_evidence_production_pending")
         self.assertEqual(ltg05["row_count"], 8)
-        self.assertEqual(ltg05["pending_stage_count"], 4)
-        self.assertEqual(ltg05["production_blocker_count"], 4)
-        self.assertEqual(ltg05["direct_evidence_stage_count"], 4)
+        self.assertEqual(ltg05["pending_stage_count"], 3)
+        self.assertEqual(ltg05["production_blocker_count"], 3)
+        self.assertEqual(ltg05["direct_evidence_stage_count"], 5)
         self.assertTrue(ltg05["physical_schema_validation_done"])
         self.assertEqual(ltg05["physical_schema_validation_done_count"], len(datasets))
         self.assertTrue(ltg05["dataset_version_manifest_validated"])
@@ -2260,6 +2299,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(ltg05["physical_compaction_metadata_validated_count"], len(datasets))
         self.assertEqual(ltg05["physical_compaction_dataset_count"], len(datasets))
         self.assertEqual(ltg05["physical_compaction_not_needed_count"], len(datasets))
+        self.assertTrue(ltg05["artifact_cleanup_review_done"])
+        self.assertEqual(ltg05["artifact_cleanup_review_status"], "manual_review_ready_delete_pending")
+        self.assertEqual(ltg05["artifact_cleanup_candidate_count"], 2)
+        self.assertEqual(ltg05["artifact_cleanup_review_required_step_count"], 7)
         self.assertEqual(ltg05["storage_direct_evidence_layer"], "L3_local_storage_physical_execution_evidence")
         self.assertFalse(ltg05["schema_migration_executed"])
         self.assertFalse(ltg05["partition_migration_executed"])
@@ -2275,7 +2318,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(ltg05["can_close_from_observed_row"])
 
         migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
-        self.assertEqual(migration_goals["LTG-05"]["observed_stage_scope_pending_count"], 4)
+        self.assertEqual(migration_goals["LTG-05"]["observed_stage_scope_pending_count"], 3)
         self.assertFalse(migration_goals["LTG-05"]["observed_stage_scope_can_close_goal"])
 
     def test_ltg_next_action_queue_reads_candidate_radar_packet_receipts(self):
@@ -5701,11 +5744,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(review["delete_executed"])
         self.assertFalse(review["safe_delete_command_generated"])
         self.assertTrue(review["cleanup_review_is_not_delete_execution"])
+        self.assertTrue(review["artifact_cleanup_review_done"])
         self.assertFalse(review["production_cleanup_complete"])
+        self.assertFalse(review["contains_secret"])
         self.assertFalse(review["reads_payloads"])
         self.assertFalse(review["post_dry_run_external_calls"])
         self.assertEqual(persisted["artifact_cleanup_review_status"], review["status"])
         self.assertEqual(persisted["artifact_cleanup_review_required_step_count"], review["required_review_step_count"])
+        self.assertTrue(persisted["artifact_cleanup_review_done"])
         self.assertFalse(persisted["safe_delete_command_generated"])
         self.assertFalse(persisted["production_cleanup_complete"])
         self.assertTrue(persisted["cleanup_review_is_not_delete_execution"])
@@ -5718,6 +5764,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         rows_by_artifact = {row["artifact"]: row for row in persisted["candidate_rows"]}
         self.assertEqual(rows_by_artifact["command_center_runtime_cache"]["dry_run_status"], "present_manual_review_required")
         self.assertFalse(rows_by_artifact["command_center_runtime_cache"]["would_delete_on_this_task"])
+        self.assertFalse(rows_by_artifact["command_center_runtime_cache"]["contains_secret"])
         self.assertEqual(rows_by_artifact["desktop_build_output"]["candidate_action"], "manual_cleanup_candidate_after_review")
         dumped = json.dumps({"task": task, "packet": persisted}, ensure_ascii=False)
         self.assertNotIn("SHOULD_DROP", dumped)
@@ -20347,7 +20394,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
         self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 14)
-        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 112)
+        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 111)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_acceptance_runway_rows"]), 14)
@@ -20525,7 +20572,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(observed_stage_rows["LTG-05"]["row_count"], 8)
         ltg05_direct_count = int(observed_stage_rows["LTG-05"].get("direct_evidence_stage_count") or 0)
-        self.assertIn(ltg05_direct_count, {2, 3, 4, 5})
+        self.assertIn(ltg05_direct_count, {2, 3, 4, 5, 6})
         self.assertEqual(observed_stage_rows["LTG-05"]["pending_stage_count"], 8 - ltg05_direct_count)
         self.assertEqual(observed_stage_rows["LTG-05"]["local_evidence_stage_count"], 8)
         self.assertTrue(observed_stage_rows["LTG-05"]["physical_schema_validation_done"])
@@ -20553,6 +20600,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 observed_stage_rows["LTG-05"]["physical_compaction_dataset_count"],
             )
             self.assertFalse(observed_stage_rows["LTG-05"]["physical_compaction_executed"])
+        if observed_stage_rows["LTG-05"].get("artifact_cleanup_review_done"):
+            self.assertIn("manual_review_ready", observed_stage_rows["LTG-05"]["artifact_cleanup_review_status"])
+            self.assertGreaterEqual(observed_stage_rows["LTG-05"]["artifact_cleanup_review_required_step_count"], 1)
+            self.assertFalse(observed_stage_rows["LTG-05"]["artifact_cleanup_delete_executed"])
         self.assertEqual(
             observed_stage_rows["LTG-05"]["storage_direct_evidence_layer"],
             "L3_local_storage_physical_execution_evidence",

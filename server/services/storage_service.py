@@ -3089,6 +3089,7 @@ def artifact_cleanup_review_contract(hygiene_rows: list[dict[str, Any]]) -> dict
         "safe_delete_command_generated": False,
         "delete_command_not_generated": True,
         "cleanup_review_is_not_delete_execution": True,
+        "artifact_cleanup_review_done": True,
         "production_cleanup_complete": False,
         "cache_get_external_calls": False,
         "post_dry_run_external_calls": False,
@@ -3103,6 +3104,7 @@ def artifact_cleanup_review_contract(hygiene_rows: list[dict[str, Any]]) -> dict
         "github_called": False,
         "does_not_modify_strategy_action": True,
         "does_not_execute_trades": True,
+        "contains_secret": False,
         "rows": review_rows,
         "note": "Artifact cleanup review is a human approval contract after dry-run. It does not delete files, generate delete commands, read payloads, scan secret values, call providers, execute trades or modify strategy action.",
     }
@@ -3184,6 +3186,7 @@ def storage_artifact_cleanup_dry_run_packet(*, task_id: str | None = None, paylo
                 "external_calls_triggered": False,
                 "does_not_execute_trades": True,
                 "does_not_modify_strategy_action": True,
+                "contains_secret": False,
             }
         )
     candidate_rows = [row for row in rows if row["candidate_action"] != "none"]
@@ -3206,6 +3209,7 @@ def storage_artifact_cleanup_dry_run_packet(*, task_id: str | None = None, paylo
         "artifact_cleanup_review_rows": review_contract["rows"],
         "artifact_cleanup_review_status": review_contract["status"],
         "artifact_cleanup_review_required_step_count": review_contract["required_review_step_count"],
+        "artifact_cleanup_review_done": review_contract.get("artifact_cleanup_review_done") is True,
         "manual_approval_required_before_delete": True,
         "delete_execution_task_available": False,
         "delete_executed_count": 0,

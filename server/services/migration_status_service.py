@@ -2020,6 +2020,12 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
             )
         except Exception:
             compaction_packet = {}
+        try:
+            cleanup_packet = SQLiteMetaStore(storage_service.SQLITE_META_PATH).read_packet(
+                storage_service.ARTIFACT_CLEANUP_DRY_RUN_PACKET_KEY
+            )
+        except Exception:
+            cleanup_packet = {}
     except Exception:
         return {
             "schema_version": "migration_storage_direct_execution_evidence_summary.v1",
@@ -2032,6 +2038,7 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
             "duckdb_read_validation_done": False,
             "partition_migration_metadata_validation_done": False,
             "physical_compaction_metadata_validation_done": False,
+            "artifact_cleanup_review_done": False,
             "storage_physical_execution_request_ready": False,
             "production_storage_complete": False,
             "external_calls_triggered": False,
@@ -2048,6 +2055,12 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
     manifest_map = manifest_packet if isinstance(manifest_packet, dict) else {}
     partition_map = partition_packet if isinstance(partition_packet, dict) else {}
     compaction_map = compaction_packet if isinstance(compaction_packet, dict) else {}
+    cleanup_map = cleanup_packet if isinstance(cleanup_packet, dict) else {}
+    cleanup_review_map = (
+        cleanup_map.get("artifact_cleanup_review_contract")
+        if isinstance(cleanup_map.get("artifact_cleanup_review_contract"), dict)
+        else {}
+    )
     request_map = execution_request if isinstance(execution_request, dict) else {}
     duckdb_map = duckdb_read_validation if isinstance(duckdb_read_validation, dict) else {}
     schema_done = bool(
@@ -2165,12 +2178,46 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
         and compaction_map.get("does_not_modify_strategy_action") is True
         and compaction_map.get("contains_secret") is False
     )
+    artifact_cleanup_review_done = bool(
+        cleanup_map.get("schema_version") == "command_center_3_storage_artifact_cleanup_dry_run.v1"
+        and cleanup_map.get("status") == "ready"
+        and cleanup_map.get("artifact_cleanup_review_done") is True
+        and str(cleanup_map.get("artifact_cleanup_review_status") or "").startswith("manual_review_ready")
+        and int(cleanup_map.get("candidate_count") or 0) >= 0
+        and int(cleanup_map.get("present_artifact_count") or 0) >= 0
+        and int(cleanup_map.get("artifact_cleanup_review_required_step_count") or 0) > 0
+        and cleanup_map.get("manual_approval_required_before_delete") is True
+        and cleanup_map.get("delete_execution_task_available") is False
+        and int(cleanup_map.get("delete_executed_count") or 0) == 0
+        and cleanup_map.get("safe_delete_command_generated") is False
+        and cleanup_map.get("cleanup_review_is_not_delete_execution") is True
+        and cleanup_map.get("production_cleanup_complete") is False
+        and cleanup_map.get("delete_files_on_post") is False
+        and cleanup_map.get("auto_cleanup_on_post") is False
+        and cleanup_map.get("would_delete_files") is False
+        and cleanup_map.get("does_not_scan_secret_values") is True
+        and cleanup_map.get("does_not_read_file_payloads") is True
+        and cleanup_map.get("does_not_read_env_files") is True
+        and cleanup_map.get("external_calls_triggered") is False
+        and cleanup_map.get("tushare_called") is False
+        and cleanup_map.get("deepseek_called") is False
+        and cleanup_map.get("github_called") is False
+        and cleanup_map.get("does_not_execute_trades") is True
+        and cleanup_map.get("does_not_modify_strategy_action") is True
+        and cleanup_map.get("contains_secret") is False
+        and cleanup_review_map.get("artifact_cleanup_review_done") is True
+        and cleanup_review_map.get("delete_executed") is False
+        and cleanup_review_map.get("cleanup_review_is_not_delete_execution") is True
+        and cleanup_review_map.get("production_cleanup_complete") is False
+        and cleanup_review_map.get("contains_secret") is False
+    )
     direct_evidence_count = (
         int(schema_done)
         + int(manifest_done)
         + int(duckdb_read_validation_done)
         + int(partition_metadata_validation_done)
         + int(physical_compaction_metadata_validation_done)
+        + int(artifact_cleanup_review_done)
     )
     try:
         schema_done_count = int(schema_map.get("physical_schema_validation_done_count") or 0)
@@ -2232,6 +2279,12 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
         ),
         "physical_compaction_dataset_count": int(compaction_map.get("dataset_count") or 0),
         "physical_compaction_not_needed_count": int(compaction_map.get("compaction_not_needed_count") or 0),
+        "artifact_cleanup_review_done": artifact_cleanup_review_done,
+        "artifact_cleanup_review_status": str(cleanup_map.get("artifact_cleanup_review_status") or "packet_missing"),
+        "artifact_cleanup_candidate_count": int(cleanup_map.get("candidate_count") or 0),
+        "artifact_cleanup_review_required_step_count": int(
+            cleanup_map.get("artifact_cleanup_review_required_step_count") or 0
+        ),
         "storage_physical_execution_request_ready": request_ready,
         "storage_physical_execution_request_status": str(request_map.get("status") or "packet_missing"),
         "production_storage_complete": False,
@@ -4012,6 +4065,14 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 ),
                 "physical_compaction_not_needed_count": int(
                     direct_evidence.get("physical_compaction_not_needed_count") or 0
+                ),
+                "artifact_cleanup_review_done": direct_evidence.get("artifact_cleanup_review_done") is True,
+                "artifact_cleanup_review_status": direct_evidence.get("artifact_cleanup_review_status") or "",
+                "artifact_cleanup_candidate_count": int(
+                    direct_evidence.get("artifact_cleanup_candidate_count") or 0
+                ),
+                "artifact_cleanup_review_required_step_count": int(
+                    direct_evidence.get("artifact_cleanup_review_required_step_count") or 0
                 ),
                 "partition_migration_executed": False,
                 "physical_compaction_executed": False,
