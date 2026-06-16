@@ -501,7 +501,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(migration["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
         self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 14)
-        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_pending_count"], 117)
+        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_pending_count"], 116)
         self.assertEqual(migration["long_term_goal_summary"]["goals_with_next_evidence_count"], 14)
         self.assertEqual(migration["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
@@ -14033,12 +14033,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(chokepoint_strategy["contains_secret"])
         self.assertFalse(chokepoint_strategy["external_call_on_cache_read"])
         self.assertEqual(by_type["run_factor_light"]["possible_external_sources"], [])
-        self.assertEqual(by_type["run_factor_light"]["universe_modes"], ["current_target"])
-        self.assertEqual(by_type["run_factor_light"]["future_universe_modes"], ["watchlist", "custom_pool", "full_pool"])
+        self.assertEqual(by_type["run_factor_light"]["universe_modes"], ["current_target", "watchlist", "custom_pool"])
+        self.assertEqual(by_type["run_factor_light"]["future_universe_modes"], ["full_pool"])
         self.assertEqual(
             by_type["run_factor_light"]["factor_universe_contract_status"],
-            "current_target_only_local_light_pipeline",
+            "current_target_or_local_universe_seed_pipeline",
         )
+        self.assertTrue(by_type["run_factor_light"]["local_rank_zscore_seed_supported"])
+        self.assertFalse(by_type["run_factor_light"]["local_rank_zscore_seed_is_provider_acceptance"])
+        self.assertFalse(by_type["run_factor_light"]["production_factor_universe_complete"])
         self.assertTrue(by_type["run_factor_light"]["full_pool_requires_worker"])
         self.assertFalse(by_type["run_factor_light"]["frontend_computes_rank_zscore"])
         self.assertFalse(by_type["run_factor_light"]["page_render_starts_full_pool"])
@@ -16998,6 +17001,101 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(chart_payload["chart_contract"]["series_counts"]["missing"], len(packet["score"]["missing_factors"]))
         self.assertIn("不执行真实交易", " ".join(chart_payload["chart_contract"]["guardrails"]))
         self.assertIn("因子图表不得修改 strategy action", " ".join(chart_payload["chart_contract"]["guardrails"]))
+
+    def test_factor_run_light_custom_pool_writes_local_rank_zscore_evidence_seed(self):
+        self._with_snapshot_cache(
+            {
+                "timestamp": "2026-06-10T09:30:00",
+                "moneyflow_packet": {"status": "ready", "ticker": "002008.SZ", "main_net_yi": 1.2, "small_net_yi": -0.4},
+                "hard_risk_packet": {"status": "ready", "risk_flags": []},
+                "limit_emotion_packet": {"status": "ready", "limit_heat_score": 1},
+                "chip_packet": {"status": "ready", "winner_rate": 40},
+                "strategy_packet": {"status": "ready", "action": "wait"},
+                "decision_packet": {"status": "ready"},
+                "quant_packet": {"status": "ready"},
+                "a_share_fact_lineage_summary": {"items": [{"fact_key": "moneyflow"}]},
+            }
+        )
+        self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        symbols = ["002008.SZ", "300750.SZ", "600519.SH", "000001.SZ", "601318.SH"]
+
+        task = factor_service.create_factor_task(
+            "run_factor_light",
+            payload={"universe_mode": "custom_pool", "symbols": symbols, "token": "SHOULD_DROP"},
+        )
+        factor = factor_service.read_factor_quant_cache()
+        storage = storage_service.factor_values_status(limit=20)
+        storage_rows = storage["query"]["rows"]
+
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "factor_light_completed_from_local_cache")
+        self.assertNotIn("token", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+        self.assertIn("local_factor_light_universe_rank_zscore_seed", {item.get("api") for item in task["call_ledger"]})
+        self.assertIn("local_parquet_factor_values", {item.get("api") for item in task["call_ledger"]})
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task.get("github_called", False))
+
+        seed = factor["local_rank_zscore_evidence_seed"]
+        self.assertEqual(seed["schema_version"], "factor_light_local_universe_rank_zscore_seed.v1")
+        self.assertEqual(seed["status"], "local_rank_zscore_seed_written_research_only")
+        self.assertEqual(seed["scope"], "local_factor_values_rank_zscore_seed_not_provider_acceptance")
+        self.assertEqual(seed["symbol_count"], 5)
+        self.assertEqual(seed["row_count"], 5)
+        self.assertFalse(seed["provider_backed"])
+        self.assertFalse(seed["production_factor_universe_complete"])
+        self.assertFalse(seed["external_calls_triggered"])
+        self.assertFalse(seed["tushare_called"])
+        self.assertFalse(seed["deepseek_called"])
+        self.assertFalse(seed["github_called"])
+        self.assertTrue(seed["does_not_execute_trades"])
+        self.assertTrue(seed["does_not_modify_strategy_action"])
+
+        self.assertEqual(storage["status"], "ready")
+        self.assertEqual(storage["metadata"]["status"], "ready")
+        seed_rows = [row for row in storage_rows if row.get("factor_key") == "local_universe_rank_zscore_seed"]
+        self.assertEqual(len(seed_rows), 5)
+        self.assertEqual({row["ts_code"] for row in seed_rows}, set(symbols))
+        runtime_seed_rows = [
+            row
+            for row in factor["runtime"]["factor_values"]
+            if row.get("factor_key") == "local_universe_rank_zscore_seed"
+        ]
+        self.assertEqual(len(runtime_seed_rows), 5)
+        self.assertEqual({row["source_mode"] for row in runtime_seed_rows}, {"local_research_seed_not_provider_acceptance"})
+        self.assertTrue(all(row["excluded_from_score"] for row in runtime_seed_rows))
+        self.assertTrue(all(row["enters_composite_score"] is False for row in runtime_seed_rows))
+
+        rank_zscore = factor["universe_local_rank_zscore_dry_run"]
+        self.assertEqual(rank_zscore["status"], "local_rank_zscore_dry_run_ready_research_only")
+        self.assertTrue(rank_zscore["rank_zscore_dry_run_executed"])
+        self.assertGreaterEqual(rank_zscore["eligible_group_count"], 1)
+        self.assertGreaterEqual(rank_zscore["rank_zscore_preview_row_count"], 5)
+        self.assertTrue(rank_zscore["metrics_are_research_only"])
+        self.assertFalse(rank_zscore["cross_sectional_rank_zscore_done"])
+        self.assertFalse(rank_zscore["neutralization_done"])
+        self.assertFalse(rank_zscore["full_pool_validation_done"])
+        self.assertFalse(rank_zscore["production_factor_universe_complete"])
+        self.assertFalse(rank_zscore["external_calls_triggered"])
+        self.assertFalse(rank_zscore["tushare_called"])
+        self.assertFalse(rank_zscore["deepseek_called"])
+        self.assertFalse(rank_zscore["github_called"])
+        self.assertTrue(rank_zscore["does_not_execute_trades"])
+        self.assertTrue(rank_zscore["does_not_modify_strategy_action"])
+
+        migration = migration_status_service.build_migration_status()
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        assert_ltg04_factor_universe_stage_scope(self, observed_stage_rows["LTG-04"], expected_direct_count=1)
+        self.assertEqual(observed_stage_rows["LTG-04"]["pending_stage_count"], 7)
+        migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
+        assert_ltg04_migration_goal_stage_scope(self, migration_goals["LTG-04"], expected_direct_count=1)
+        self.assertEqual(migration_goals["LTG-04"]["observed_stage_scope_pending_count"], 7)
+        self.assertFalse(migration_goals["LTG-04"]["observed_stage_scope_can_close_goal"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(migration, ensure_ascii=False))
 
     def test_deepseek_explanation_task_prepares_prompt_without_model_call(self):
         self._with_meta_store()

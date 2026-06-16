@@ -86,6 +86,9 @@ FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_ROUTE = "POST /api/factor-quant/universe-w
 FACTOR_UNIVERSE_WORKER_BATCH_RESEARCH_TASK_TYPE = "run_factor_universe_worker_batch_research"
 FACTOR_UNIVERSE_WORKER_BATCH_SYMBOL_LIMIT = 500
 FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS = 20
+FACTOR_LIGHT_LOCAL_UNIVERSE_MODES = {"watchlist", "custom_pool"}
+FACTOR_LIGHT_LOCAL_UNIVERSE_SYMBOL_LIMIT = 50
+FACTOR_LIGHT_LOCAL_RANK_ZSCORE_MIN_SYMBOLS = 5
 FACTOR_UNIVERSE_WORKER_BATCH_REQUIRED_STAGES = (
     "storage_read_plan",
     "worker_batch_scope",
@@ -7488,6 +7491,103 @@ def _target_from_payload_or_snapshot(payload: Any, snapshot: dict[str, Any]) -> 
     return "current_target"
 
 
+def _factor_light_universe_from_payload(payload: Any, snapshot: dict[str, Any]) -> dict[str, Any]:
+    target = _target_from_payload_or_snapshot(payload, snapshot)
+    universe = {
+        "type": "current_target",
+        "items": [target],
+        "size": 1,
+        "local_rank_zscore_evidence_seed": False,
+        "local_research_only": True,
+        "provider_backed": False,
+        "full_pool_validation_done": False,
+    }
+    if not isinstance(payload, dict):
+        return universe
+    mode = str(payload.get("universe_mode") or payload.get("mode") or "").strip()
+    if mode not in FACTOR_LIGHT_LOCAL_UNIVERSE_MODES:
+        return universe
+    symbols, ignored_symbols = _factor_test_symbols_from_payload(payload)
+    bounded_symbols = symbols[:FACTOR_LIGHT_LOCAL_UNIVERSE_SYMBOL_LIMIT]
+    if len(symbols) > FACTOR_LIGHT_LOCAL_UNIVERSE_SYMBOL_LIMIT:
+        ignored_symbols = list(ignored_symbols) + symbols[FACTOR_LIGHT_LOCAL_UNIVERSE_SYMBOL_LIMIT:]
+    if len(bounded_symbols) < FACTOR_LIGHT_LOCAL_RANK_ZSCORE_MIN_SYMBOLS:
+        universe["requested_universe_mode"] = mode
+        universe["requested_symbol_count"] = len(bounded_symbols)
+        universe["ignored_symbols"] = ignored_symbols
+        universe["local_rank_zscore_evidence_blocked_reason"] = "not_enough_symbols"
+        return universe
+    return {
+        "type": mode,
+        "items": bounded_symbols,
+        "size": len(bounded_symbols),
+        "ignored_symbols": ignored_symbols,
+        "local_rank_zscore_evidence_seed": True,
+        "local_rank_zscore_seed_min_symbol_count": FACTOR_LIGHT_LOCAL_RANK_ZSCORE_MIN_SYMBOLS,
+        "local_research_only": True,
+        "provider_backed": False,
+        "full_pool_validation_done": False,
+        "partial_pool_is_full_market_proof": False,
+    }
+
+
+def _factor_light_local_universe_seed_values(symbols: list[str], now: str) -> list[dict[str, Any]]:
+    trade_date = now[:10].replace("-", "") if now else _dt.date.today().strftime("%Y%m%d")
+    values: list[dict[str, Any]] = []
+    denominator = max(len(symbols) - 1, 1)
+    for index, symbol in enumerate(symbols):
+        raw_value = round(1.0 + index / denominator, 6)
+        values.append(
+            {
+                "ts_code": symbol,
+                "trade_date": trade_date,
+                "factor_key": "local_universe_rank_zscore_seed",
+                "factor_name": "Local universe rank/zscore evidence seed",
+                "category": "local_research_evidence",
+                "raw_value": raw_value,
+                "zscore": None,
+                "rank_pct": None,
+                "direction": "research_only",
+                "effect": "neutral",
+                "score_impact": 0.0,
+                "status": "ready",
+                "data_status": "ready",
+                "status_note": "Local research seed for LTG-04 rank/zscore evidence; not provider-backed market data.",
+                "pit_validated": False,
+                "excluded_from_score": True,
+                "enters_composite_score": False,
+                "calculated_at": now,
+                "source_packet": "local_factor_light_universe_evidence_seed",
+                "source": "local_factor_light_universe_evidence_seed",
+                "source_mode": "local_research_seed_not_provider_acceptance",
+                "local_research_seed": True,
+                "provider_backed": False,
+                "production_factor_universe_complete": False,
+            }
+        )
+    return values
+
+
+def _factor_light_local_universe_seed_call_ledger(universe: dict[str, Any], row_count: int, now: str) -> dict[str, Any]:
+    return {
+        "api": "local_factor_light_universe_rank_zscore_seed",
+        "request_params_safe": {
+            "universe_mode": universe.get("type"),
+            "symbol_count": int(universe.get("size") or 0),
+            "row_count": row_count,
+            "scope": "local_factor_values_rank_zscore_seed_not_provider_acceptance",
+            "provider_backed": False,
+            "production_factor_universe_complete": False,
+        },
+        "row_count": row_count,
+        "data_date": now[:10].replace("-", "") if now else None,
+        "local_fetched_at": now,
+        "call_status": "local_rank_zscore_seed_written_research_only" if row_count else "local_rank_zscore_seed_not_requested",
+        "error_message_safe": "",
+        **_local_ledger_boundary(),
+    }
+
+
 def _local_snapshot_call_ledger(snapshot: dict[str, Any], now: str) -> list[dict[str, Any]]:
     loaded_keys = [
         key
@@ -7536,8 +7636,7 @@ def _factor_values_storage_call_ledger(result: dict[str, Any], now: str) -> dict
 def _build_light_hub_from_snapshot(payload: Any = None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     now = _now_iso()
     snapshot = packet_service.load_snapshot_cache()
-    target = _target_from_payload_or_snapshot(payload, snapshot)
-    universe = {"type": "current_target", "items": [target], "size": 1}
+    universe = _factor_light_universe_from_payload(payload, snapshot)
     library = factor_research.build_factor_library_packet(now=now)
     ledger = factor_research.build_factor_data_ledger_packet(factor_library=library, now=now)
     call_ledger = _local_snapshot_call_ledger(snapshot, now)
@@ -7562,8 +7661,44 @@ def _build_light_hub_from_snapshot(payload: Any = None) -> tuple[dict[str, Any],
         serenity_packet=serenity_radar.build_serenity_method_radar_packet(now=now),
         now=now,
     )
+    seed_values: list[dict[str, Any]] = []
+    if universe.get("local_rank_zscore_evidence_seed"):
+        seed_values = _factor_light_local_universe_seed_values([str(item) for item in universe.get("items") or []], now)
+        runtime = dict(hub.get("runtime") if isinstance(hub.get("runtime"), dict) else {})
+        runtime_values = runtime.get("factor_values") if isinstance(runtime.get("factor_values"), list) else []
+        runtime["factor_values"] = seed_values + list(runtime_values)
+        runtime["local_rank_zscore_evidence_seed"] = True
+        runtime["local_rank_zscore_seed_row_count"] = len(seed_values)
+        runtime["local_rank_zscore_seed_is_provider_acceptance"] = False
+        runtime["production_factor_universe_complete"] = False
+        hub["runtime"] = runtime
+        hub["local_rank_zscore_evidence_seed"] = {
+            "schema_version": "factor_light_local_universe_rank_zscore_seed.v1",
+            "status": "local_rank_zscore_seed_written_research_only",
+            "scope": "local_factor_values_rank_zscore_seed_not_provider_acceptance",
+            "universe_mode": universe.get("type"),
+            "symbol_count": int(universe.get("size") or 0),
+            "row_count": len(seed_values),
+            "provider_backed": False,
+            "production_factor_universe_complete": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "note": "Local rank/zscore seed rows prove the storage/read/rank preview chain only; they are not provider acceptance or production universe validation.",
+        }
+        call_ledger = call_ledger + [_factor_light_local_universe_seed_call_ledger(universe, len(seed_values), now)]
+        warnings = list(hub.get("warnings") if isinstance(hub.get("warnings"), list) else [])
+        warning = "Factor light local universe seed 已写入 research-only factor_values：只用于 LTG-04 rank/zscore 本地证据，不代表真实 provider/full-pool 生产验收。"
+        hub["warnings"] = [warning] + [item for item in warnings if item != warning]
     hub["cache_source"] = "local_factor_light_pipeline"
     hub["source_snapshot_available"] = bool(snapshot)
+    hub["universe"] = universe
+    hub["local_rank_zscore_seed_row_count"] = len(seed_values)
+    hub["local_rank_zscore_seed_is_provider_acceptance"] = False
+    hub["production_factor_universe_complete"] = False
     hub["task_call_ledger"] = call_ledger
     hub["tushare_called"] = False
     hub["deepseek_called"] = False

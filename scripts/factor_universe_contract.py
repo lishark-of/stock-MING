@@ -797,9 +797,12 @@ def build_contract() -> dict[str, Any]:
             and worker_batch_request_task.get("react_render_direct_worker_calls") is False
             and worker_batch_request_task.get("does_not_execute_trades") is True
             and worker_batch_request_task.get("does_not_modify_strategy_action") is True
-            and light_task.get("universe_modes") == ["current_target"]
-            and light_task.get("future_universe_modes") == ["watchlist", "custom_pool", "full_pool"],
-            "Task catalog must keep factor universe work button-gated: read-plan-only, worker-batch dry-run ticket, and execution-request ticket only while light mode remains current_target-only.",
+            and light_task.get("universe_modes") == ["current_target", "watchlist", "custom_pool"]
+            and light_task.get("future_universe_modes") == ["full_pool"]
+            and light_task.get("local_rank_zscore_seed_supported") is True
+            and light_task.get("local_rank_zscore_seed_is_provider_acceptance") is False
+            and light_task.get("production_factor_universe_complete") is False,
+            "Task catalog must keep factor universe work button-gated: run-light may write a local watchlist/custom_pool rank/zscore seed only, while full_pool/worker/provider production evidence remains pending.",
         ),
         _row(
             "frontend_displays_plan_and_does_not_compute_universe",

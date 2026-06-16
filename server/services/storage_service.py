@@ -5612,9 +5612,10 @@ def _factor_value_rows_from_hub(hub_packet: Any) -> list[dict[str, Any]]:
         if not isinstance(item, Mapping):
             continue
         data_status = item.get("data_status") or item.get("status")
+        item_ts_code = item.get("ts_code") or item.get("symbol") or item.get("ticker") or ts_code
         rows.append(
             {
-                "ts_code": ts_code,
+                "ts_code": _safe_scalar(item_ts_code),
                 "trade_date": _safe_scalar(item.get("trade_date") or trade_date),
                 "factor_key": _safe_scalar(item.get("factor_key")),
                 "factor_name": _safe_scalar(item.get("factor_name")),
