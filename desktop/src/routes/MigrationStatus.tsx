@@ -132,10 +132,11 @@ function ltgNextStepPayload(row: Record<string, unknown>): Record<string, unknow
     };
   }
   if (route === "POST /api/candidate-radar/production-promotion-dry-run") {
+    const preview = nextLocalStepPreview(row);
     return {
       promotion_scope: "candidate_radar_production_promotion_local_dry_run",
       operator_approved: true,
-      review_scope_hash: "",
+      review_scope_hash: String(preview.prepared_review_scope_hash ?? ""),
       requested_by: "migration_status_ltg_queue",
       source: "migration_status_ltg_next_action"
     };
@@ -243,6 +244,7 @@ export default function MigrationStatus() {
       prepared_context_status: preview.prepared_context_status,
       prepared_context_source_packet_key: preview.prepared_context_source_packet_key,
       prepared_context_source_receipt_key: preview.prepared_context_source_receipt_key,
+      prepared_review_scope_hash_short: preview.prepared_review_scope_hash_short,
       would_create_provider_task: preview.would_create_provider_task,
       would_start_worker: preview.would_start_worker,
       would_call_model: preview.would_call_model,

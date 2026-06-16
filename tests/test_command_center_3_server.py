@@ -422,6 +422,25 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(memory_only_handoff["status"], "future_provider_handoff_waiting_for_durable_local_receipt")
         self.assertFalse(memory_only_handoff["handoff_ready_from_local_receipt"])
         self.assertEqual(memory_only_handoff["disabled_reason"], "local_execution_request_receipt_not_durable_in_sqlite")
+        radar_promotion_preview = migration_status_service._build_ltg_next_action_submission_preview_rows(
+            "POST /api/candidate-radar/production-promotion-dry-run",
+            [],
+            safe_context={
+                "candidate_radar_production_replacement_review_preview": {
+                    "review_visible": True,
+                    "review_status": "candidate_radar_production_replacement_review_ready_production_blocked",
+                    "review_scope_hash": "a" * 64,
+                    "review_scope_hash_short": "a" * 16,
+                    "can_prebind_review_scope_hash": True,
+                    "source_packet_key": "command_center_3_candidate_radar_cache",
+                    "source_receipt_key": "candidate_radar_production_replacement_review_receipt",
+                }
+            },
+        )[0]
+        self.assertTrue(radar_promotion_preview["ready_for_clean_local_receipt"])
+        self.assertFalse(radar_promotion_preview["manual_scope_hash_required"])
+        self.assertEqual(radar_promotion_preview["prepared_review_scope_hash"], "a" * 64)
+        self.assertEqual(radar_promotion_preview["prepared_review_scope_hash_short"], "a" * 16)
         self.assertTrue(all(row["local_receipt_lookup_creates_task"] is False for row in migration["ltg_next_acceptance_action_rows"]))
         self.assertTrue(all(row["local_receipt_lookup_calls_provider"] is False for row in migration["ltg_next_acceptance_action_rows"]))
         self.assertTrue(all(row["local_receipt_status"] for row in migration["ltg_next_acceptance_action_rows"]))

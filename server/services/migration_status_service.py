@@ -820,6 +820,54 @@ def _latest_tushare_target_sample_execution_recipe_preview() -> dict[str, Any]:
     }
 
 
+def _latest_candidate_radar_production_replacement_review_preview() -> dict[str, Any]:
+    source_packet_key = "command_center_3_candidate_radar_cache"
+    try:
+        from server.services import candidate_service
+
+        packet = candidate_service.read_candidate_radar_cache()
+    except Exception:
+        packet = {}
+    receipt = packet.get("candidate_radar_production_replacement_review_receipt") if isinstance(packet, dict) else {}
+    receipt_map = receipt if isinstance(receipt, dict) else {}
+    status = str(receipt_map.get("status") or "")
+    review_scope_hash = str(receipt_map.get("review_scope_hash") or "")
+    review_scope_hash_short = str(receipt_map.get("review_scope_hash_short") or review_scope_hash[:16])
+    review_visible = bool(receipt_map and status and not status.endswith("_missing"))
+    review_ready = bool(
+        review_visible
+        and receipt_map.get("local_review_ready") is True
+        and receipt_map.get("production_radar_replacement_complete") is False
+        and receipt_map.get("legacy_retirement_ready") is False
+        and receipt_map.get("external_calls_triggered") is False
+        and receipt_map.get("tushare_called") is False
+        and receipt_map.get("deepseek_called") is False
+        and receipt_map.get("github_called") is False
+        and receipt_map.get("does_not_execute_trades") is True
+        and receipt_map.get("does_not_modify_strategy_action") is True
+        and receipt_map.get("contains_secret") is False
+        and bool(review_scope_hash)
+    )
+    return {
+        "review_visible": review_visible,
+        "review_status": status,
+        "review_scope_hash": review_scope_hash,
+        "review_scope_hash_short": review_scope_hash_short,
+        "review_local_ready": receipt_map.get("local_review_ready") is True,
+        "can_prebind_review_scope_hash": review_ready,
+        "source_packet_key": source_packet_key,
+        "source_receipt_key": "candidate_radar_production_replacement_review_receipt",
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "evidence_boundary": "latest_candidate_radar_replacement_review_preview_is_read_only_not_promotion",
+    }
+
+
 def _build_ltg_next_action_submission_preview_rows(
     next_local_step: str,
     local_step_rows: list[dict[str, Any]],
@@ -892,6 +940,7 @@ def _build_ltg_next_action_submission_preview_rows(
             "required_prior_phase_key": "candidate_radar_production_replacement_review_receipt",
             "required_prior_material": "review_scope_hash",
             "manual_scope_hash_required": True,
+            "context_key": "candidate_radar_production_replacement_review_preview",
         },
     }
     spec = route_specs.get(next_local_step)
@@ -942,6 +991,10 @@ def _build_ltg_next_action_submission_preview_rows(
         prior_visible = bool(context_map.get("recipe_visible"))
         material_visible = bool(context_map.get("execution_recipe_scope_hash_short"))
         manual_scope_hash_required = not bool(context_map.get("can_prebind_execution_recipe_scope_hash"))
+    if context_key == "candidate_radar_production_replacement_review_preview":
+        prior_visible = bool(context_map.get("review_visible"))
+        material_visible = bool(context_map.get("review_scope_hash"))
+        manual_scope_hash_required = not bool(context_map.get("can_prebind_review_scope_hash"))
     ready_for_clean_receipt = prior_visible and material_visible and not manual_scope_hash_required
     if ready_for_clean_receipt:
         disabled_reason = ""
@@ -949,6 +1002,20 @@ def _build_ltg_next_action_submission_preview_rows(
         disabled_reason = "latest_target_sample_execution_recipe_missing"
     elif context_key == "tushare_target_sample_execution_recipe_preview" and prior_visible and manual_scope_hash_required:
         disabled_reason = "latest_target_sample_execution_recipe_not_ready_for_confirmation"
+    elif context_key == "candidate_radar_production_replacement_review_preview" and not prior_visible:
+        disabled_reason = "latest_candidate_radar_production_replacement_review_missing"
+    elif (
+        context_key == "candidate_radar_production_replacement_review_preview"
+        and prior_visible
+        and not material_visible
+    ):
+        disabled_reason = "latest_candidate_radar_production_replacement_review_scope_hash_missing"
+    elif (
+        context_key == "candidate_radar_production_replacement_review_preview"
+        and prior_visible
+        and manual_scope_hash_required
+    ):
+        disabled_reason = "latest_candidate_radar_production_replacement_review_not_ready"
     elif manual_scope_hash_required:
         disabled_reason = "manual_scope_hash_required_before_clean_local_receipt"
     elif not prior_visible:
@@ -972,9 +1039,11 @@ def _build_ltg_next_action_submission_preview_rows(
             "prepared_execution_recipe_scope_hash_short": context_map.get("execution_recipe_scope_hash_short") or "",
             "prepared_target_sample_acceptance_groups": list(context_map.get("requested_targets") or []),
             "prepared_apis": list(context_map.get("selected_apis") or []),
-            "prepared_context_status": context_map.get("recipe_status") or "",
+            "prepared_context_status": context_map.get("recipe_status") or context_map.get("review_status") or "",
             "prepared_context_source_packet_key": context_map.get("source_packet_key") or "",
             "prepared_context_source_receipt_key": context_map.get("source_receipt_key") or "",
+            "prepared_review_scope_hash": context_map.get("review_scope_hash") or "",
+            "prepared_review_scope_hash_short": context_map.get("review_scope_hash_short") or "",
             "would_create_provider_task": False,
             "would_start_worker": False,
             "would_call_model": False,
@@ -1108,6 +1177,10 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         if action["queue_id"] == "p2_tushare_target_sample_acceptance":
             safe_context["tushare_target_sample_execution_recipe_preview"] = (
                 _latest_tushare_target_sample_execution_recipe_preview()
+            )
+        if action["queue_id"] == "p3_candidate_radar_provider_worker_promotion":
+            safe_context["candidate_radar_production_replacement_review_preview"] = (
+                _latest_candidate_radar_production_replacement_review_preview()
             )
         submission_preview_rows = _build_ltg_next_action_submission_preview_rows(
             next_local_step,
