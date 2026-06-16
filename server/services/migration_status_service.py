@@ -2263,7 +2263,17 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         and packet_map.get("does_not_execute_trades") is True
         and packet_map.get("does_not_modify_strategy_action") is True
     )
+    scheduler_default_off_done = bool(
+        synthetic_done
+        and runtime_request_ready
+        and runtime_dry_run_ready
+        and synthetic_map.get("scheduler_started") is False
+        and request_map.get("scheduler_started") is False
+        and dry_run_map.get("scheduler_started") is False
+    )
     direct_stage_keys = []
+    if scheduler_default_off_done:
+        direct_stage_keys.append("scheduler_default_off_runtime")
     if provider_boundary_done:
         direct_stage_keys.append("provider_model_no_autoschedule_boundary")
     if no_trade_no_action_done:
@@ -2283,6 +2293,7 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         "task_readback_hash_matches": synthetic_map.get("task_readback_hash_matches") is True,
         "runtime_qa_execution_request_ready": runtime_request_ready,
         "runtime_qa_dry_run_ready": runtime_dry_run_ready,
+        "scheduler_default_off_runtime_verified": scheduler_default_off_done,
         "provider_model_no_autoschedule_boundary_verified": provider_boundary_done,
         "no_trade_no_action_boundary_verified": no_trade_no_action_done,
         "synthetic_healthcheck_status": str(synthetic_map.get("status") or "packet_missing"),
@@ -3798,6 +3809,10 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 )
                 is True,
                 "runtime_qa_dry_run_ready": direct_evidence.get("runtime_qa_dry_run_ready") is True,
+                "scheduler_default_off_runtime_verified": direct_evidence.get(
+                    "scheduler_default_off_runtime_verified"
+                )
+                is True,
                 "provider_model_no_autoschedule_boundary_verified": direct_evidence.get(
                     "provider_model_no_autoschedule_boundary_verified"
                 )

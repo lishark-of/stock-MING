@@ -841,13 +841,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             == "observed_worker_direct_runtime_evidence_production_pending"
         )
         self.assertEqual(observed_stage_rows["LTG-06"]["row_count"], 7)
-        self.assertEqual(observed_stage_rows["LTG-06"]["pending_stage_count"], 5 if ltg06_has_direct_evidence else 7)
+        self.assertEqual(observed_stage_rows["LTG-06"]["pending_stage_count"], 4 if ltg06_has_direct_evidence else 7)
         self.assertEqual(observed_stage_rows["LTG-06"]["local_evidence_stage_count"], 7)
         if ltg06_has_direct_evidence:
-            self.assertEqual(observed_stage_rows["LTG-06"]["direct_evidence_stage_count"], 2)
+            self.assertEqual(observed_stage_rows["LTG-06"]["direct_evidence_stage_count"], 3)
+            self.assertIn(
+                "scheduler_default_off_runtime",
+                observed_stage_rows["LTG-06"]["direct_evidence_stage_keys"],
+            )
             self.assertTrue(observed_stage_rows["LTG-06"]["synthetic_healthcheck_executed"])
             self.assertTrue(observed_stage_rows["LTG-06"]["runtime_qa_execution_request_ready"])
             self.assertTrue(observed_stage_rows["LTG-06"]["runtime_qa_dry_run_ready"])
+            self.assertTrue(observed_stage_rows["LTG-06"]["scheduler_default_off_runtime_verified"])
             self.assertTrue(observed_stage_rows["LTG-06"]["provider_model_no_autoschedule_boundary_verified"])
             self.assertTrue(observed_stage_rows["LTG-06"]["no_trade_no_action_boundary_verified"])
         self.assertFalse(observed_stage_rows["LTG-06"]["worker_started"])
@@ -27356,12 +27361,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         self.assertEqual(ltg06["status"], "observed_worker_direct_runtime_evidence_production_pending")
         self.assertEqual(ltg06["row_count"], 7)
-        self.assertEqual(ltg06["pending_stage_count"], 5)
-        self.assertEqual(ltg06["production_blocker_count"], 5)
-        self.assertEqual(ltg06["direct_evidence_stage_count"], 2)
+        self.assertEqual(ltg06["pending_stage_count"], 4)
+        self.assertEqual(ltg06["production_blocker_count"], 4)
+        self.assertEqual(ltg06["direct_evidence_stage_count"], 3)
         self.assertEqual(
             set(ltg06["direct_evidence_stage_keys"]),
-            {"provider_model_no_autoschedule_boundary", "no_trade_no_action_boundary"},
+            {
+                "scheduler_default_off_runtime",
+                "provider_model_no_autoschedule_boundary",
+                "no_trade_no_action_boundary",
+            },
         )
         self.assertTrue(ltg06["synthetic_healthcheck_executed"])
         self.assertTrue(ltg06["local_task_round_trip_verified"])
@@ -27369,6 +27378,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ltg06["task_readback_hash_matches"])
         self.assertTrue(ltg06["runtime_qa_execution_request_ready"])
         self.assertTrue(ltg06["runtime_qa_dry_run_ready"])
+        self.assertTrue(ltg06["scheduler_default_off_runtime_verified"])
         self.assertTrue(ltg06["provider_model_no_autoschedule_boundary_verified"])
         self.assertTrue(ltg06["no_trade_no_action_boundary_verified"])
         self.assertEqual(ltg06["worker_direct_evidence_layer"], "L3_local_worker_runtime_safety_evidence")
@@ -27393,7 +27403,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg06["can_close_from_observed_row"])
 
         migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
-        self.assertEqual(migration_goals["LTG-06"]["observed_stage_scope_pending_count"], 5)
+        self.assertEqual(migration_goals["LTG-06"]["observed_stage_scope_pending_count"], 4)
         self.assertFalse(migration_goals["LTG-06"]["observed_stage_scope_can_close_goal"])
 
     def test_worker_runtime_qa_execution_request_rejects_scope_mismatch_without_process_start(self):
