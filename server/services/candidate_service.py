@@ -7356,6 +7356,7 @@ def _candidate_radar_durable_evidence_recipe(
     activation = _as_dict(packet.get("candidate_radar_production_activation_receipt"))
     browser_evidence = _as_dict(packet.get("candidate_browser_qa_evidence_summary"))
     browser_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
+    legacy_retirement_review = _as_dict(packet.get("candidate_radar_legacy_retirement_review_receipt"))
 
     cache_render_safe = bool(
         packet.get("cache_only") is True
@@ -7393,6 +7394,7 @@ def _candidate_radar_durable_evidence_recipe(
     browser_visual_perf_done = local_browser_visual_perf_reviewed
     deepseek_model_ledger_done = False
     legacy_retirement_ready = promotion.get("legacy_retirement_ready") is True
+    legacy_retirement_review_done = legacy_retirement_review.get("local_review_ready") is True
     promotion_ready = promotion.get("promotion_ready") is True
     no_trade_boundary = bool(
         packet.get("does_not_execute_trades") is True
@@ -7593,11 +7595,19 @@ def _candidate_radar_durable_evidence_recipe(
         _candidate_radar_durable_evidence_recipe_row(
             "legacy_retirement_review_required",
             "durable_evidence",
-            "ready_for_review" if legacy_retirement_ready else "pending_legacy_retirement_review",
-            passed=legacy_retirement_ready,
+            "ready_for_legacy_retirement"
+            if legacy_retirement_ready
+            else "review_visible_retirement_blocked"
+            if legacy_retirement_review_done
+            else "pending_legacy_retirement_review",
+            passed=legacy_retirement_ready or legacy_retirement_review_done,
             local_surface_required=False,
-            production_blocker=not legacy_retirement_ready,
-            evidence=f"legacy_retirement_ready={legacy_retirement_ready}",
+            production_blocker=not (legacy_retirement_ready or legacy_retirement_review_done),
+            evidence=(
+                f"legacy_retirement_review_done={legacy_retirement_review_done}; "
+                f"legacy_retirement_ready={legacy_retirement_ready}; "
+                f"ready_to_retire_legacy={legacy_retirement_review.get('ready_to_retire_legacy') is True}"
+            ),
             next_action="Keep Streamlit radar fallback until worker/provider/browser promotion clears.",
             recommended_order=18,
         ),
@@ -7647,6 +7657,7 @@ def _candidate_radar_durable_evidence_recipe(
         "provider_backed_acceptance_done": provider_backed_done,
         "browser_visual_performance_reviewed": browser_visual_perf_done,
         "deepseek_model_ledger_complete": deepseek_model_ledger_done,
+        "legacy_retirement_review_done": legacy_retirement_review_done,
         "provider_execution_implemented": False,
         "model_execution_implemented": False,
         "worker_execution_implemented": False,

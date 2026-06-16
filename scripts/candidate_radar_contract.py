@@ -522,10 +522,15 @@ def build_contract() -> dict[str, Any]:
         for row in legacy_retirement_review_rows_list
         if isinstance(row, dict)
     }
-    durable_evidence_recipe = _dict(cache_packet.get("candidate_radar_durable_evidence_recipe"))
+    production_review_packet["candidate_radar_legacy_retirement_review_receipt"] = legacy_retirement_review
+    production_review_packet["candidate_radar_legacy_retirement_review_rows"] = legacy_retirement_review_rows_list
+    production_review_packet = candidate_service._attach_candidate_radar_durable_evidence_recipe(
+        production_review_packet
+    )
+    durable_evidence_recipe = _dict(production_review_packet.get("candidate_radar_durable_evidence_recipe"))
     durable_evidence_rows = {
         str(row.get("evidence_key") or ""): row
-        for row in _list(cache_packet.get("candidate_radar_durable_evidence_rows"))
+        for row in _list(production_review_packet.get("candidate_radar_durable_evidence_rows"))
         if isinstance(row, dict)
     }
     quick_receipt = _dict(cache_packet.get("quick_scan_execution_receipt"))
@@ -1509,7 +1514,7 @@ def build_contract() -> dict[str, Any]:
             and int(durable_evidence_recipe.get("row_count") or 0) == len(durable_evidence_rows)
             and int(durable_evidence_recipe.get("evidence_key_count") or 0)
             == len(candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS)
-            and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) >= 6
+            and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) >= 5
             and "user-approved provider parity scope ticket"
             in _list(durable_evidence_recipe.get("required_evidence"))
             and "button-gated worker execution request ticket bound to the worker recipe hash"
@@ -1550,6 +1555,9 @@ def build_contract() -> dict[str, Any]:
                 "production_blocker"
             )
             is True
+            and _durable_row_blocked_or_local_visible(
+                durable_evidence_rows.get("legacy_retirement_review_required")
+            )
             and _dict(durable_evidence_rows.get("no_trade_action_secret_boundary")).get("passed") is True
             and policy.get("candidate_radar_durable_evidence_recipe_is_local") is True
             and policy.get("candidate_radar_durable_evidence_recipe_calls_provider_or_model") is False

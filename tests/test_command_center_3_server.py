@@ -10952,7 +10952,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["candidate_radar_next_execution_recipe_ready"])
         self.assertTrue(payload["candidate_radar_worker_execution_recipe_ready"])
         self.assertTrue(payload["candidate_radar_durable_evidence_recipe_ready"])
-        self.assertGreaterEqual(payload["candidate_radar_durable_evidence_blocker_count"], 6)
+        self.assertGreaterEqual(payload["candidate_radar_durable_evidence_blocker_count"], 5)
         self.assertFalse(payload["external_calls_triggered"])
         self.assertFalse(payload["tushare_called"])
         self.assertFalse(payload["deepseek_called"])
@@ -11037,7 +11037,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "candidate_radar_durable_evidence_recipe_ready_production_pending",
         )
         self.assertTrue(payload["observed"]["candidate_radar_durable_evidence_ready"])
-        self.assertGreaterEqual(payload["observed"]["candidate_radar_durable_evidence_blocker_count"], 6)
+        self.assertGreaterEqual(payload["observed"]["candidate_radar_durable_evidence_blocker_count"], 5)
         self.assertIn(
             "worker_full_pool_execution_evidence_required",
             payload["observed"]["candidate_radar_durable_evidence_missing"],
@@ -21684,10 +21684,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(receipt_rows["deepseek_model_ledger_if_enabled_required"]["status"], "pending_model_ledger")
         self.assertTrue(receipt_rows["production_completion_stays_blocked"]["production_blocker"])
         self.assertTrue(receipt_rows["no_provider_model_trade_secret_boundary"]["passed"])
-        self.assertIn(
+        durable = packet["candidate_radar_durable_evidence_recipe"]
+        durable_rows = {row["evidence_key"]: row for row in packet["candidate_radar_durable_evidence_rows"]}
+        self.assertNotIn(
             "legacy_retirement_review_required",
-            packet["candidate_radar_durable_evidence_recipe"]["missing_durable_evidence"],
+            durable["missing_durable_evidence"],
         )
+        self.assertEqual(
+            durable_rows["legacy_retirement_review_required"]["status"],
+            "review_visible_retirement_blocked",
+        )
+        self.assertTrue(durable_rows["legacy_retirement_review_required"]["passed"])
+        self.assertFalse(durable_rows["legacy_retirement_review_required"]["production_blocker"])
+        self.assertFalse(durable["legacy_retirement_ready"])
+        self.assertTrue(durable["legacy_fallback_required"])
         self.assertFalse(receipt["cache_get_external_calls"])
         self.assertFalse(receipt["react_render_external_calls"])
         self.assertFalse(receipt["external_calls_triggered"])
