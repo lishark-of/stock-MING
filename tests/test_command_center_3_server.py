@@ -24309,6 +24309,61 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "/api/candidate-radar/deep-scan-local-review",
             json={"scan_mode": "deep_scan_local_review", "local_review_only": True},
         )
+        self.client.post(
+            "/api/candidate-radar/provider-parity-dry-run",
+            json={
+                "candidate_symbols": ["002008.SZ", "002837.SZ"],
+                "selected_signal_groups": ["moneyflow", "dragon_tiger", "hard_risk"],
+                "include_tushare": True,
+                "include_deepseek": True,
+                "user_approved": True,
+            },
+        )
+        self.client.post(
+            "/api/candidate-radar/quant-projection-acceptance-dry-run",
+            json={
+                "symbol": "002008",
+                "include_tushare": True,
+                "include_deepseek": True,
+                "user_approved": True,
+                "selected_apis": ["trade_cal", "daily", "daily_basic", "moneyflow"],
+            },
+        )
+        cache_before_worker = self.client.get("/api/candidate-radar/cache").json()["data"]
+        worker_scope_hash = cache_before_worker["candidate_radar_worker_execution_recipe"][
+            "worker_execution_scope_hash"
+        ]
+        worker_request = self.client.post(
+            "/api/candidate-radar/worker-execution-request",
+            json={
+                "scan_mode": "worker_execution_request",
+                "operator_approved": True,
+                "worker_execution_scope_hash": worker_scope_hash,
+            },
+        ).json()
+        self.assertTrue(worker_request["ok"])
+        full_pool_worker = self.client.post(
+            "/api/candidate-radar/full-pool-worker-scan",
+            json={
+                "scan_mode": "full_pool_worker_fallback",
+                "operator_approved": True,
+                "worker_execution_scope_hash": worker_scope_hash,
+                "local_universe_candidates": [
+                    {"ticker": "002008.SZ", "name": "大族激光", "score": 61},
+                    {"ticker": "002837.SZ", "name": "英维克", "score": 47},
+                ],
+            },
+        ).json()
+        self.assertTrue(full_pool_worker["ok"])
+        deep_scan_worker = self.client.post(
+            "/api/candidate-radar/deep-scan-worker",
+            json={
+                "scan_mode": "deep_scan_worker_fallback",
+                "operator_approved": True,
+                "worker_execution_scope_hash": worker_scope_hash,
+            },
+        ).json()
+        self.assertTrue(deep_scan_worker["ok"])
         production_review = self.client.post(
             "/api/candidate-radar/production-replacement-review",
             json={"approved_by_user": True, "reviewer": "unit_test"},
@@ -24343,9 +24398,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         self.assertEqual(ltg13["status"], "observed_candidate_radar_direct_evidence_production_pending")
         self.assertEqual(ltg13["row_count"], 10)
-        self.assertEqual(ltg13["pending_stage_count"], 4)
-        self.assertEqual(ltg13["production_blocker_count"], 4)
-        self.assertEqual(ltg13["direct_evidence_stage_count"], 6)
+        self.assertEqual(ltg13["pending_stage_count"], 2)
+        self.assertEqual(ltg13["production_blocker_count"], 2)
+        self.assertEqual(ltg13["direct_evidence_stage_count"], 8)
         self.assertEqual(
             set(ltg13["direct_evidence_stage_keys"]),
             {
@@ -24353,6 +24408,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "quick_scan_task_pipeline",
                 "local_full_pool_execution_receipt",
                 "local_deep_scan_review_receipt",
+                "worker_full_pool_fallback_execution",
+                "worker_deep_scan_fallback_execution",
                 "browser_visual_performance_promotion",
                 "legacy_retirement_review",
             },
@@ -24361,12 +24418,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ltg13["quick_scan_task_pipeline_verified"])
         self.assertTrue(ltg13["local_full_pool_execution_receipt_verified"])
         self.assertTrue(ltg13["local_deep_scan_review_receipt_verified"])
+        self.assertTrue(ltg13["worker_full_pool_fallback_execution_verified"])
+        self.assertTrue(ltg13["worker_deep_scan_fallback_execution_verified"])
         self.assertTrue(ltg13["browser_visual_performance_evidence_verified"])
         self.assertTrue(ltg13["legacy_retirement_review_direct_evidence_verified"])
         self.assertTrue(ltg13["legacy_retirement_review_ready_for_local_review"])
         self.assertEqual(
             ltg13["candidate_direct_evidence_layer"],
-            "L3_local_candidate_radar_scan_browser_safety_evidence",
+            "L3_local_candidate_radar_worker_fallback_browser_safety_evidence",
         )
         self.assertFalse(ltg13["production_radar_replacement_complete"])
         self.assertFalse(ltg13["legacy_retirement_ready"])
@@ -24385,8 +24444,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg13["can_close_from_observed_row"])
 
         migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
-        self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_pending_count"], 4)
-        self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_direct_evidence_count"], 6)
+        self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_pending_count"], 2)
+        self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_direct_evidence_count"], 8)
         self.assertFalse(migration_goals["LTG-13"]["observed_stage_scope_can_close_goal"])
 
     def test_candidate_radar_worker_execution_request_blocks_scope_hash_mismatch(self):

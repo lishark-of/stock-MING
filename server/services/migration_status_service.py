@@ -2415,6 +2415,8 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
     task_pipeline = _dict_or_empty(packet_map.get("fast_scan_task_pipeline_contract"))
     full_pool = _dict_or_empty(packet_map.get("full_pool_local_execution_receipt"))
     deep_scan = _dict_or_empty(packet_map.get("deep_scan_local_review_receipt"))
+    full_pool_worker_fallback = _dict_or_empty(packet_map.get("candidate_radar_full_pool_worker_fallback_receipt"))
+    deep_scan_worker_fallback = _dict_or_empty(packet_map.get("candidate_radar_deep_scan_worker_fallback_receipt"))
     browser_review = _dict_or_empty(packet_map.get("candidate_browser_qa_review_contract"))
     production_review = _dict_or_empty(packet_map.get("candidate_radar_production_replacement_review_receipt"))
     legacy_retirement_review = _dict_or_empty(
@@ -2492,6 +2494,81 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         and deep_scan.get("does_not_modify_strategy_action") is True
         and deep_scan.get("candidate_is_not_buy_instruction") is True
     )
+    worker_full_pool_fallback_done = bool(
+        packet_safe
+        and full_pool_worker_fallback.get("schema_version") == "candidate_radar_full_pool_worker_fallback.v1"
+        and full_pool_worker_fallback.get("status")
+        == "candidate_radar_full_pool_worker_fallback_ready_worker_runtime_pending"
+        and full_pool_worker_fallback.get("explicit_full_pool_worker_fallback_done") is True
+        and full_pool_worker_fallback.get("operator_approved") is True
+        and full_pool_worker_fallback.get("worker_execution_request_ready") is True
+        and full_pool_worker_fallback.get("requested_worker_execution_scope_hash_matches_latest") is True
+        and full_pool_worker_fallback.get("local_worker_fallback_full_pool_done") is True
+        and full_pool_worker_fallback.get("local_worker_fallback_ready") is True
+        and int(full_pool_worker_fallback.get("candidate_row_count") or 0) > 0
+        and int(full_pool_worker_fallback.get("local_blocker_count") or 0) == 0
+        and int(full_pool_worker_fallback.get("production_blocker_count") or 0) > 0
+        and full_pool_worker_fallback.get("production_full_pool_scan_done") is False
+        and full_pool_worker_fallback.get("full_pool_scan_done") is False
+        and full_pool_worker_fallback.get("provider_backed_acceptance_done") is False
+        and full_pool_worker_fallback.get("worker_backed_execution_done") is False
+        and full_pool_worker_fallback.get("worker_execution_implemented") is False
+        and full_pool_worker_fallback.get("worker_started") is False
+        and full_pool_worker_fallback.get("worker_task_created") is False
+        and full_pool_worker_fallback.get("worker_task_executed") is False
+        and full_pool_worker_fallback.get("redis_broker_used") is False
+        and full_pool_worker_fallback.get("celery_worker_started") is False
+        and full_pool_worker_fallback.get("cache_get_external_calls") is False
+        and full_pool_worker_fallback.get("react_render_external_calls") is False
+        and full_pool_worker_fallback.get("external_calls_triggered") is False
+        and full_pool_worker_fallback.get("tushare_called") is False
+        and full_pool_worker_fallback.get("deepseek_called") is False
+        and full_pool_worker_fallback.get("github_called") is False
+        and full_pool_worker_fallback.get("does_not_execute_trades") is True
+        and full_pool_worker_fallback.get("does_not_modify_strategy_action") is True
+        and full_pool_worker_fallback.get("candidate_is_not_buy_instruction") is True
+        and full_pool_worker_fallback.get("contains_secret") is False
+    )
+    worker_deep_scan_fallback_done = bool(
+        packet_safe
+        and deep_scan_worker_fallback.get("schema_version") == "candidate_radar_deep_scan_worker_fallback.v1"
+        and deep_scan_worker_fallback.get("status")
+        == "candidate_radar_deep_scan_worker_fallback_ready_worker_runtime_pending"
+        and deep_scan_worker_fallback.get("explicit_deep_scan_worker_fallback_done") is True
+        and deep_scan_worker_fallback.get("operator_approved") is True
+        and deep_scan_worker_fallback.get("worker_execution_request_ready") is True
+        and deep_scan_worker_fallback.get("requested_worker_execution_scope_hash_matches_latest") is True
+        and deep_scan_worker_fallback.get("local_deep_scan_review_done") is True
+        and deep_scan_worker_fallback.get("local_worker_fallback_deep_scan_done") is True
+        and deep_scan_worker_fallback.get("local_worker_fallback_ready") is True
+        and int(deep_scan_worker_fallback.get("candidate_row_count") or 0) > 0
+        and int(deep_scan_worker_fallback.get("local_blocker_count") or 0) == 0
+        and int(deep_scan_worker_fallback.get("production_blocker_count") or 0) > 0
+        and deep_scan_worker_fallback.get("production_deep_scan_done") is False
+        and deep_scan_worker_fallback.get("deep_scan_done") is False
+        and deep_scan_worker_fallback.get("provider_backed_acceptance_done") is False
+        and deep_scan_worker_fallback.get("worker_backed_execution_done") is False
+        and deep_scan_worker_fallback.get("worker_deep_scan_execution_done") is False
+        and deep_scan_worker_fallback.get("worker_execution_implemented") is False
+        and deep_scan_worker_fallback.get("model_execution_implemented") is False
+        and deep_scan_worker_fallback.get("deepseek_model_execution_done") is False
+        and deep_scan_worker_fallback.get("deepseek_model_ledger_complete") is False
+        and deep_scan_worker_fallback.get("worker_started") is False
+        and deep_scan_worker_fallback.get("worker_task_created") is False
+        and deep_scan_worker_fallback.get("worker_task_executed") is False
+        and deep_scan_worker_fallback.get("redis_broker_used") is False
+        and deep_scan_worker_fallback.get("celery_worker_started") is False
+        and deep_scan_worker_fallback.get("cache_get_external_calls") is False
+        and deep_scan_worker_fallback.get("react_render_external_calls") is False
+        and deep_scan_worker_fallback.get("external_calls_triggered") is False
+        and deep_scan_worker_fallback.get("tushare_called") is False
+        and deep_scan_worker_fallback.get("deepseek_called") is False
+        and deep_scan_worker_fallback.get("github_called") is False
+        and deep_scan_worker_fallback.get("does_not_execute_trades") is True
+        and deep_scan_worker_fallback.get("does_not_modify_strategy_action") is True
+        and deep_scan_worker_fallback.get("candidate_is_not_buy_instruction") is True
+        and deep_scan_worker_fallback.get("contains_secret") is False
+    )
     browser_visual_performance_done = bool(
         packet_safe
         and browser_review.get("schema_version") == "candidate_radar_browser_qa_review.v1"
@@ -2566,6 +2643,10 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         direct_stage_keys.append("local_full_pool_execution_receipt")
     if local_deep_scan_done:
         direct_stage_keys.append("local_deep_scan_review_receipt")
+    if worker_full_pool_fallback_done:
+        direct_stage_keys.append("worker_full_pool_fallback_execution")
+    if worker_deep_scan_fallback_done:
+        direct_stage_keys.append("worker_deep_scan_fallback_execution")
     if browser_visual_performance_done:
         direct_stage_keys.append("browser_visual_performance_promotion")
     if legacy_retirement_review_done:
@@ -2584,6 +2665,8 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         "quick_scan_task_pipeline_verified": quick_task_pipeline_done,
         "local_full_pool_execution_receipt_verified": local_full_pool_done,
         "local_deep_scan_review_receipt_verified": local_deep_scan_done,
+        "worker_full_pool_fallback_execution_verified": worker_full_pool_fallback_done,
+        "worker_deep_scan_fallback_execution_verified": worker_deep_scan_fallback_done,
         "browser_visual_performance_evidence_verified": browser_visual_performance_done,
         "production_replacement_review_ready": production_review_ready,
         "legacy_retirement_review_direct_evidence_verified": legacy_retirement_review_done,
@@ -2600,7 +2683,9 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         "does_not_modify_strategy_action": True,
         "candidate_is_not_buy_instruction": True,
         "contains_secret": False,
-        "direct_evidence_layer": "L3_local_candidate_radar_scan_browser_safety_evidence"
+        "direct_evidence_layer": "L3_local_candidate_radar_worker_fallback_browser_safety_evidence"
+        if worker_full_pool_fallback_done or worker_deep_scan_fallback_done
+        else "L3_local_candidate_radar_scan_browser_safety_evidence"
         if direct_stage_keys
         else "L1_static_contract",
         "evidence_boundary": (
@@ -4179,6 +4264,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 ),
                 "local_deep_scan_review_receipt_verified": (
                     direct_evidence.get("local_deep_scan_review_receipt_verified") is True
+                ),
+                "worker_full_pool_fallback_execution_verified": (
+                    direct_evidence.get("worker_full_pool_fallback_execution_verified") is True
+                ),
+                "worker_deep_scan_fallback_execution_verified": (
+                    direct_evidence.get("worker_deep_scan_fallback_execution_verified") is True
                 ),
                 "browser_visual_performance_evidence_verified": (
                     direct_evidence.get("browser_visual_performance_evidence_verified") is True
