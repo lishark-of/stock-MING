@@ -21,6 +21,10 @@ FACTOR_TEST_LTG03_OBSERVED_STATUSES = {
     "observed_in_factor_test_lab_static_contract",
     "observed_factor_test_lab_direct_evidence_production_pending",
 }
+FACTOR_UNIVERSE_LTG04_OBSERVED_STATUSES = {
+    "observed_in_factor_universe_static_contract",
+    "observed_factor_universe_direct_research_evidence_production_pending",
+}
 RELEASE_GATE_LTG11_OBSERVED_STATUSES = {
     "observed_in_audit_cache_release_gate_contract",
     "observed_release_gate_direct_evidence_remote_ci_pending",
@@ -80,6 +84,67 @@ def assert_ltg03_migration_goal_stage_scope(
     test_case.assertEqual(row["observed_stage_scope_pending_count"], max(10 - direct_count, 0))
     if direct_count:
         test_case.assertIn("provider_small_pool_scope_ticket", row["observed_stage_scope_direct_evidence_keys"])
+    test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
+
+
+def assert_ltg04_factor_universe_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("direct_evidence_stage_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertEqual(row["stage_scope_manifest"], "factor_universe_worker_batch_stage_scope_manifest")
+    test_case.assertIn(row["status"], FACTOR_UNIVERSE_LTG04_OBSERVED_STATUSES)
+    test_case.assertEqual(row["row_count"], 8)
+    test_case.assertEqual(row["pending_stage_count"], max(8 - direct_count, 0))
+    test_case.assertEqual(row["local_evidence_stage_count"], 8)
+    if direct_count:
+        test_case.assertEqual(
+            row["status"],
+            "observed_factor_universe_direct_research_evidence_production_pending",
+        )
+        test_case.assertEqual(row["direct_evidence_stage_keys"], ["local_rank_zscore_research_preview"])
+        test_case.assertEqual(row["factor_universe_direct_evidence_layer"], "L3_local_factor_universe_research_preview")
+        test_case.assertTrue(row["local_rank_zscore_research_preview_verified"])
+        test_case.assertEqual(row["local_rank_zscore_status"], "local_rank_zscore_dry_run_ready_research_only")
+        test_case.assertGreater(row["local_rank_zscore_preview_row_count"], 0)
+        test_case.assertGreater(row["local_rank_zscore_eligible_group_count"], 0)
+        test_case.assertGreaterEqual(row["local_rank_zscore_usable_row_count"], 5)
+    else:
+        test_case.assertEqual(row["status"], "observed_in_factor_universe_static_contract")
+    test_case.assertFalse(row["worker_execution_implemented"])
+    test_case.assertFalse(row["worker_batch_executed"])
+    test_case.assertFalse(row["large_universe_pipeline_done"])
+    test_case.assertFalse(row["cross_sectional_rank_zscore_done"])
+    test_case.assertFalse(row["neutralization_done"])
+    test_case.assertFalse(row["factor_combination_research_done"])
+    test_case.assertFalse(row["full_pool_validation_done"])
+    test_case.assertFalse(row["production_factor_universe_complete"])
+    test_case.assertFalse(row["page_render_starts_full_pool"])
+    test_case.assertFalse(row["frontend_computes_rank_zscore"])
+    test_case.assertFalse(row["external_calls_triggered"])
+    test_case.assertFalse(row["tushare_called"])
+    test_case.assertFalse(row["deepseek_called"])
+    test_case.assertFalse(row["github_called"])
+    test_case.assertTrue(row["does_not_execute_trades"])
+    test_case.assertFalse(row["contains_secret"])
+    test_case.assertFalse(row["can_close_from_observed_row"])
+
+
+def assert_ltg04_migration_goal_stage_scope(
+    test_case: unittest.TestCase,
+    row: dict,
+    expected_direct_count: int | None = None,
+):
+    direct_count = int(row.get("observed_stage_scope_direct_evidence_count") or 0)
+    if expected_direct_count is not None:
+        test_case.assertEqual(direct_count, expected_direct_count)
+    test_case.assertIn(row["observed_stage_scope_manifest_status"], FACTOR_UNIVERSE_LTG04_OBSERVED_STATUSES)
+    test_case.assertEqual(row["observed_stage_scope_pending_count"], max(8 - direct_count, 0))
+    if direct_count:
+        test_case.assertEqual(row["observed_stage_scope_direct_evidence_keys"], ["local_rank_zscore_research_preview"])
     test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
 
 
@@ -734,30 +799,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(observed_stage_rows["LTG-02"]["does_not_execute_trades"])
         self.assertFalse(observed_stage_rows["LTG-02"]["can_close_from_observed_row"])
         assert_ltg03_factor_test_stage_scope(self, observed_stage_rows["LTG-03"])
-        self.assertEqual(
-            observed_stage_rows["LTG-04"]["stage_scope_manifest"],
-            "factor_universe_worker_batch_stage_scope_manifest",
-        )
-        self.assertEqual(observed_stage_rows["LTG-04"]["status"], "observed_in_factor_universe_static_contract")
-        self.assertEqual(observed_stage_rows["LTG-04"]["row_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-04"]["pending_stage_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-04"]["local_evidence_stage_count"], 8)
-        self.assertFalse(observed_stage_rows["LTG-04"]["worker_execution_implemented"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["worker_batch_executed"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["large_universe_pipeline_done"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["cross_sectional_rank_zscore_done"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["neutralization_done"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["factor_combination_research_done"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["full_pool_validation_done"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["production_factor_universe_complete"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["page_render_starts_full_pool"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["frontend_computes_rank_zscore"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["external_calls_triggered"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["tushare_called"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["deepseek_called"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["github_called"])
-        self.assertTrue(observed_stage_rows["LTG-04"]["does_not_execute_trades"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["can_close_from_observed_row"])
+        assert_ltg04_factor_universe_stage_scope(self, observed_stage_rows["LTG-04"])
         self.assertEqual(
             observed_stage_rows["LTG-05"]["stage_scope_manifest"],
             "storage_physical_migration_stage_scope_manifest",
@@ -1078,12 +1120,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("worker stage-scope manifest", migration_goals["LTG-04"]["current_state"])
         self.assertIn("worker batch execution", migration_goals["LTG-04"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-04"]["production_complete"])
-        self.assertEqual(
-            migration_goals["LTG-04"]["observed_stage_scope_manifest_status"],
-            "observed_in_factor_universe_static_contract",
-        )
-        self.assertEqual(migration_goals["LTG-04"]["observed_stage_scope_pending_count"], 8)
-        self.assertFalse(migration_goals["LTG-04"]["observed_stage_scope_can_close_goal"])
+        assert_ltg04_migration_goal_stage_scope(self, migration_goals["LTG-04"])
         self.assertEqual(migration_goals["LTG-05"]["stage_scope_manifest"], "storage_physical_migration_stage_scope_manifest")
         self.assertIn("physical stage-scope manifest", migration_goals["LTG-05"]["current_state"])
         self.assertIn("physical execution recipe", migration_goals["LTG-05"]["current_state"])
@@ -20109,30 +20146,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(observed_stage_rows["LTG-02"]["does_not_execute_trades"])
         self.assertFalse(observed_stage_rows["LTG-02"]["can_close_from_observed_row"])
         assert_ltg03_factor_test_stage_scope(self, observed_stage_rows["LTG-03"])
-        self.assertEqual(
-            observed_stage_rows["LTG-04"]["stage_scope_manifest"],
-            "factor_universe_worker_batch_stage_scope_manifest",
-        )
-        self.assertEqual(observed_stage_rows["LTG-04"]["status"], "observed_in_factor_universe_static_contract")
-        self.assertEqual(observed_stage_rows["LTG-04"]["row_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-04"]["pending_stage_count"], 8)
-        self.assertEqual(observed_stage_rows["LTG-04"]["local_evidence_stage_count"], 8)
-        self.assertFalse(observed_stage_rows["LTG-04"]["worker_execution_implemented"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["worker_batch_executed"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["large_universe_pipeline_done"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["cross_sectional_rank_zscore_done"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["neutralization_done"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["factor_combination_research_done"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["full_pool_validation_done"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["production_factor_universe_complete"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["page_render_starts_full_pool"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["frontend_computes_rank_zscore"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["external_calls_triggered"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["tushare_called"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["deepseek_called"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["github_called"])
-        self.assertTrue(observed_stage_rows["LTG-04"]["does_not_execute_trades"])
-        self.assertFalse(observed_stage_rows["LTG-04"]["can_close_from_observed_row"])
+        assert_ltg04_factor_universe_stage_scope(self, observed_stage_rows["LTG-04"])
         self.assertEqual(
             observed_stage_rows["LTG-05"]["stage_scope_manifest"],
             "storage_physical_migration_stage_scope_manifest",
@@ -20421,12 +20435,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration_goals["LTG-02"]["observed_stage_scope_pending_count"], 10)
         self.assertFalse(migration_goals["LTG-02"]["observed_stage_scope_can_close_goal"])
         assert_ltg03_migration_goal_stage_scope(self, migration_goals["LTG-03"])
-        self.assertEqual(
-            migration_goals["LTG-04"]["observed_stage_scope_manifest_status"],
-            "observed_in_factor_universe_static_contract",
-        )
-        self.assertEqual(migration_goals["LTG-04"]["observed_stage_scope_pending_count"], 8)
-        self.assertFalse(migration_goals["LTG-04"]["observed_stage_scope_can_close_goal"])
+        assert_ltg04_migration_goal_stage_scope(self, migration_goals["LTG-04"])
         self.assertEqual(
             migration_goals["LTG-05"]["observed_stage_scope_manifest_status"],
             "observed_storage_direct_execution_evidence_production_pending",
@@ -29816,6 +29825,79 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(handoff["worker_task_created_by_preview"])
         self.assertFalse(handoff["worker_execution_implemented_by_preview"])
         self.assertFalse(handoff["external_calls_triggered"])
+
+    def test_ltg_stage_scope_observes_factor_universe_rank_zscore_direct_evidence_without_completion(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        original_rows_from_hub = storage_service._factor_value_rows_from_hub
+        now = "2026-06-16T15:00:00"
+        factor_rows = [
+            {
+                "ts_code": f"00000{index}.SZ",
+                "trade_date": "20260616",
+                "factor_key": "momentum_20d",
+                "factor_name": "20日动量",
+                "category": "momentum",
+                "raw_value": float(index),
+                "zscore": None,
+                "rank_pct": None,
+                "direction": "support",
+                "status": "ready",
+                "data_status": "ready",
+                "status_note": None,
+                "pit_validated": True,
+                "excluded_from_score": False,
+                "calculated_at": now,
+                "packet_key": "command_center_factor_quant_hub_packet",
+                "source_packet": "runtime.factor_values",
+                "source": "unit_test_local_factor_values",
+                "source_mode": "local_research_fixture",
+            }
+            for index in range(1, 6)
+        ]
+        storage_service._factor_value_rows_from_hub = lambda _hub: list(factor_rows)
+        self.addCleanup(setattr, storage_service, "_factor_value_rows_from_hub", original_rows_from_hub)
+
+        write_result = storage_service.persist_factor_values_from_hub({"runtime": {"factor_values": factor_rows}})
+        self.assertEqual(write_result["status"], "written")
+        self.assertEqual(write_result["row_count"], 5)
+        self.assertFalse(write_result["external_calls_triggered"])
+
+        factor = self.client.get("/api/factor-quant/cache").json()
+        self.assertTrue(factor["ok"])
+        rank_zscore = factor["data"]["universe_local_rank_zscore_dry_run"]
+        self.assertEqual(rank_zscore["status"], "local_rank_zscore_dry_run_ready_research_only")
+        self.assertTrue(rank_zscore["rank_zscore_dry_run_executed"])
+        self.assertEqual(rank_zscore["eligible_group_count"], 1)
+        self.assertEqual(rank_zscore["rank_zscore_preview_row_count"], 5)
+        self.assertTrue(rank_zscore["metrics_are_research_only"])
+        self.assertFalse(rank_zscore["cross_sectional_rank_zscore_done"])
+        self.assertFalse(rank_zscore["neutralization_done"])
+        self.assertFalse(rank_zscore["full_pool_validation_done"])
+        self.assertFalse(rank_zscore["production_factor_universe_complete"])
+        self.assertFalse(rank_zscore["external_calls_triggered"])
+        self.assertFalse(rank_zscore["tushare_called"])
+        self.assertFalse(rank_zscore["deepseek_called"])
+        self.assertFalse(rank_zscore["github_called"])
+        self.assertTrue(rank_zscore["does_not_execute_trades"])
+        self.assertTrue(rank_zscore["does_not_modify_strategy_action"])
+
+        migration = migration_status_service.build_migration_status()
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg04 = observed_stage_rows["LTG-04"]
+        assert_ltg04_factor_universe_stage_scope(self, ltg04, expected_direct_count=1)
+        self.assertEqual(ltg04["pending_stage_count"], 7)
+        self.assertFalse(ltg04["worker_execution_implemented"])
+        self.assertFalse(ltg04["worker_batch_executed"])
+        self.assertFalse(ltg04["full_pool_validation_done"])
+        self.assertFalse(ltg04["production_factor_universe_complete"])
+
+        migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
+        assert_ltg04_migration_goal_stage_scope(self, migration_goals["LTG-04"], expected_direct_count=1)
+        self.assertEqual(migration_goals["LTG-04"]["observed_stage_scope_pending_count"], 7)
+        self.assertFalse(migration_goals["LTG-04"]["observed_stage_scope_can_close_goal"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(migration, ensure_ascii=False))
 
     def test_factor_universe_worker_batch_execution_request_rejects_scope_mismatch(self):
         self._with_meta_store()

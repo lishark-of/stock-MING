@@ -1245,6 +1245,105 @@ def _latest_factor_test_lab_direct_research_evidence_summary() -> dict[str, Any]
     }
 
 
+def _latest_factor_universe_direct_research_evidence_summary() -> dict[str, Any]:
+    try:
+        from server.services import factor_service
+
+        packet = factor_service.read_factor_quant_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    contract = _dict_or_empty(packet_map.get("universe_research_contract"))
+    rank_zscore = _dict_or_empty(packet_map.get("universe_local_rank_zscore_dry_run"))
+    worker_receipt = _dict_or_empty(packet_map.get("universe_worker_batch_research_receipt"))
+
+    packet_safe = bool(
+        packet_map.get("external_calls_triggered") is False
+        and packet_map.get("tushare_called") is False
+        and packet_map.get("deepseek_called") is False
+        and packet_map.get("github_called") is False
+        and packet_map.get("does_not_execute_trades") is True
+        and packet_map.get("does_not_modify_strategy_action") is True
+        and packet_map.get("contains_secret") is not True
+    )
+    local_rank_zscore_done = bool(
+        packet_safe
+        and rank_zscore.get("schema_version") == "factor_universe_local_rank_zscore_dry_run.v1"
+        and rank_zscore.get("status") == "local_rank_zscore_dry_run_ready_research_only"
+        and rank_zscore.get("rank_zscore_dry_run_executed") is True
+        and int(rank_zscore.get("eligible_group_count") or 0) > 0
+        and int(rank_zscore.get("rank_zscore_preview_row_count") or 0) > 0
+        and rank_zscore.get("metrics_are_research_only") is True
+        and rank_zscore.get("cross_sectional_rank_zscore_done") is False
+        and rank_zscore.get("neutralization_done") is False
+        and rank_zscore.get("large_universe_pipeline_done") is False
+        and rank_zscore.get("full_pool_validation_done") is False
+        and rank_zscore.get("production_factor_universe_complete") is False
+        and rank_zscore.get("page_render_starts_full_pool") is False
+        and rank_zscore.get("frontend_computes_rank_zscore") is False
+        and rank_zscore.get("partial_pool_is_full_market_proof") is False
+        and rank_zscore.get("external_calls_triggered") is False
+        and rank_zscore.get("tushare_called") is False
+        and rank_zscore.get("deepseek_called") is False
+        and rank_zscore.get("github_called") is False
+        and rank_zscore.get("does_not_execute_trades") is True
+        and rank_zscore.get("does_not_modify_strategy_action") is True
+    )
+    worker_research_receipt_ready = bool(
+        worker_receipt.get("schema_version") == "factor_universe_worker_batch_research_receipt.v1"
+        and worker_receipt.get("local_worker_research_receipt_ready") is True
+        and worker_receipt.get("ready_for_worker_runtime_evidence_collection") is True
+        and worker_receipt.get("local_worker_task_record_created") is True
+        and worker_receipt.get("worker_task_created") is False
+        and worker_receipt.get("worker_task_executed") is False
+        and worker_receipt.get("worker_execution_implemented") is False
+    )
+    direct_stage_keys = []
+    if local_rank_zscore_done:
+        direct_stage_keys.append("local_rank_zscore_research_preview")
+    return {
+        "schema_version": "migration_factor_universe_direct_research_evidence_summary.v1",
+        "source_packet_key": "command_center_factor_quant_hub_packet",
+        "status": "factor_universe_direct_research_evidence_visible_production_pending"
+        if direct_stage_keys
+        else "factor_universe_direct_research_evidence_missing",
+        "available": bool(direct_stage_keys),
+        "direct_evidence_stage_keys": direct_stage_keys,
+        "direct_evidence_stage_count": len(direct_stage_keys),
+        "local_rank_zscore_research_preview_verified": local_rank_zscore_done,
+        "local_rank_zscore_status": str(rank_zscore.get("status") or "missing"),
+        "local_rank_zscore_preview_row_count": int(rank_zscore.get("rank_zscore_preview_row_count") or 0),
+        "local_rank_zscore_eligible_group_count": int(rank_zscore.get("eligible_group_count") or 0),
+        "local_rank_zscore_usable_row_count": int(rank_zscore.get("usable_row_count") or 0),
+        "worker_batch_research_receipt_ready": worker_research_receipt_ready,
+        "worker_batch_research_receipt_is_not_worker_execution": worker_research_receipt_ready,
+        "worker_execution_implemented": False,
+        "worker_batch_executed": False,
+        "large_universe_pipeline_done": False,
+        "cross_sectional_rank_zscore_done": False,
+        "neutralization_done": False,
+        "factor_combination_research_done": False,
+        "full_pool_validation_done": False,
+        "production_factor_universe_complete": False,
+        "page_render_starts_full_pool": False,
+        "frontend_computes_rank_zscore": False,
+        "partial_pool_is_full_market_proof": False,
+        "metrics_remain_research_only": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "contract_worker_batch_research_receipt_ready": contract.get("worker_batch_research_receipt_ready") is True,
+        "direct_evidence_layer": "L3_local_factor_universe_research_preview"
+        if direct_stage_keys
+        else "L1_static_contract",
+        "evidence_boundary": "factor_universe_local_rank_zscore_preview_is_not_worker_backed_or_full_pool_validation",
+    }
+
+
 def _latest_release_gate_direct_evidence_summary() -> dict[str, Any]:
     try:
         from server.services import audit_service
@@ -3402,21 +3501,54 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         local_evidence_count = sum(
             1 for row in stage_rows if isinstance(row, dict) and row.get("selected_by_worker_dry_run_scope") is True
         )
+        direct_evidence = _latest_factor_universe_direct_research_evidence_summary()
+        direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
+        effective_pending_count = max(pending_count - direct_evidence_count, 0)
         rows.append(
             {
                 "id": "LTG-04",
                 "goal": "Factor 全市场 / 股票池研究",
                 "stage_scope_manifest": "factor_universe_worker_batch_stage_scope_manifest",
-                "status": "observed_in_factor_universe_static_contract"
-                if stage_rows
-                else "missing_from_factor_universe_static_contract",
-                "observed_source": "scripts/factor_universe_contract._worker_stage_scope_rows local static contract",
-                "cache_status": "factor_universe_static_contract",
+                "status": (
+                    "observed_factor_universe_direct_research_evidence_production_pending"
+                    if stage_rows and direct_evidence_count
+                    else (
+                        "observed_in_factor_universe_static_contract"
+                        if stage_rows
+                        else "missing_from_factor_universe_static_contract"
+                    )
+                ),
+                "observed_source": (
+                    "scripts/factor_universe_contract._worker_stage_scope_rows local static contract + "
+                    "read-only factor_quant_cache local rank/zscore evidence summary"
+                ),
+                "cache_status": direct_evidence.get("status") or "factor_universe_static_contract",
                 "cache_mode": "local_static_contract",
                 "row_count": row_count,
-                "pending_stage_count": pending_count,
+                "pending_stage_count": effective_pending_count,
                 "local_evidence_stage_count": local_evidence_count,
-                "production_blocker_count": pending_count,
+                "direct_evidence_stage_count": direct_evidence_count,
+                "direct_evidence_stage_keys": direct_evidence.get("direct_evidence_stage_keys", []),
+                "factor_universe_direct_evidence_layer": direct_evidence.get("direct_evidence_layer"),
+                "local_rank_zscore_research_preview_verified": direct_evidence.get(
+                    "local_rank_zscore_research_preview_verified"
+                )
+                is True,
+                "local_rank_zscore_status": direct_evidence.get("local_rank_zscore_status") or "missing",
+                "local_rank_zscore_preview_row_count": int(
+                    direct_evidence.get("local_rank_zscore_preview_row_count") or 0
+                ),
+                "local_rank_zscore_eligible_group_count": int(
+                    direct_evidence.get("local_rank_zscore_eligible_group_count") or 0
+                ),
+                "local_rank_zscore_usable_row_count": int(direct_evidence.get("local_rank_zscore_usable_row_count") or 0),
+                "worker_batch_research_receipt_ready": direct_evidence.get("worker_batch_research_receipt_ready")
+                is True,
+                "worker_batch_research_receipt_is_not_worker_execution": direct_evidence.get(
+                    "worker_batch_research_receipt_is_not_worker_execution"
+                )
+                is True,
+                "production_blocker_count": effective_pending_count,
                 "worker_execution_implemented": False,
                 "worker_batch_executed": False,
                 "large_universe_pipeline_done": False,
@@ -3437,7 +3569,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "does_not_modify_strategy_action": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
-                "evidence_boundary": "observed_local_static_factor_universe_stage_scope_not_production_completion",
+                "evidence_boundary": direct_evidence.get("evidence_boundary")
+                or "observed_local_static_factor_universe_stage_scope_not_production_completion",
             }
         )
     except Exception:
