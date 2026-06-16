@@ -2682,6 +2682,7 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
     packet_map = packet if isinstance(packet, dict) else {}
     review = _dict_or_empty(packet_map.get("tauri_package_artifact_review_contract"))
     launch_review = _dict_or_empty(packet_map.get("tauri_packaged_runtime_launch_review_contract"))
+    offline_ux_review = _dict_or_empty(packet_map.get("tauri_backend_offline_packaged_ux_review_contract"))
     packet_safe = bool(
         packet_map.get("external_calls_triggered") is not True
         and packet_map.get("tushare_called") is not True
@@ -2776,6 +2777,36 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         direct_stage_keys.append("dmg_distribution_artifact_qa")
     if packaged_app_launch_ready:
         direct_stage_keys.append("packaged_app_launch_smoke")
+    backend_offline_packaged_ux_ready = bool(
+        packet_safe
+        and packaged_app_launch_ready
+        and offline_ux_review.get("schema_version") == "tauri_backend_offline_packaged_ux_review.v1"
+        and offline_ux_review.get("status") == "tauri_backend_offline_packaged_ux_review_ready"
+        and offline_ux_review.get("explicit_review_task_done") is True
+        and offline_ux_review.get("local_backend_offline_packaged_ux_review_ready") is True
+        and offline_ux_review.get("backend_was_offline_during_review") is True
+        and offline_ux_review.get("offline_notice_observed") is True
+        and offline_ux_review.get("fastapi_guidance_visible") is True
+        and offline_ux_review.get("local_only_boundary_visible") is True
+        and offline_ux_review.get("no_provider_model_github_trade_visible") is True
+        and len(str(offline_ux_review.get("screenshot_sha256") or "")) == 64
+        and offline_ux_review.get("backend_offline_packaged_ux_verified") is True
+        and offline_ux_review.get("backend_offline_packaged_ux_is_completion") is False
+        and offline_ux_review.get("packaged_runtime_validated") is False
+        and offline_ux_review.get("production_package_complete") is False
+        and offline_ux_review.get("fastapi_started_by_review") is False
+        and offline_ux_review.get("config_values_read_by_review") is False
+        and offline_ux_review.get("log_files_written_by_review") is False
+        and offline_ux_review.get("external_calls_triggered") is False
+        and offline_ux_review.get("tushare_called") is False
+        and offline_ux_review.get("deepseek_called") is False
+        and offline_ux_review.get("github_called") is False
+        and offline_ux_review.get("does_not_execute_trades") is True
+        and offline_ux_review.get("does_not_modify_strategy_action") is True
+        and offline_ux_review.get("contains_secret") is False
+    )
+    if backend_offline_packaged_ux_ready:
+        direct_stage_keys.append("backend_offline_packaged_ux")
     return {
         "schema_version": "migration_tauri_package_direct_evidence_summary.v1",
         "source_packet_key": "command_center_3_tauri_package_artifact_review_packet",
@@ -2791,6 +2822,13 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         "dmg_distribution_artifact_qa_done": dmg_distribution_ready,
         "packaged_app_launch_smoke_done": packaged_app_launch_ready,
         "packaged_app_launch_qa_done": packaged_app_launch_ready,
+        "backend_offline_packaged_ux_verified": backend_offline_packaged_ux_ready,
+        "backend_offline_packaged_ux_screenshot_sha256": offline_ux_review.get("screenshot_sha256")
+        if backend_offline_packaged_ux_ready
+        else "",
+        "backend_offline_packaged_ux_observed_route": offline_ux_review.get("observed_route")
+        if backend_offline_packaged_ux_ready
+        else "",
         "build_command_reviewed_safe": review.get("build_command_reviewed_safe") if build_repeatability_ready else "",
         "launch_command_reviewed_safe": launch_review.get("launch_command_reviewed_safe")
         if packaged_app_launch_ready
@@ -2807,7 +2845,7 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         "dmg_distribution_detected": dmg_distribution_ready,
         "packaged_runtime_qa_done": False,
         "backend_startup_runtime_validated": False,
-        "backend_offline_packaged_ux_verified": False,
+        "backend_offline_packaged_ux_verified": backend_offline_packaged_ux_ready,
         "config_log_runtime_paths_validated": False,
         "signing_notarization_done": False,
         "production_package_complete": False,
@@ -5027,6 +5065,18 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "dmg_distribution_artifact_qa_done": direct_evidence.get("dmg_distribution_artifact_qa_done") is True,
                 "packaged_app_launch_smoke_done": direct_evidence.get("packaged_app_launch_smoke_done") is True,
                 "packaged_app_launch_qa_done": direct_evidence.get("packaged_app_launch_qa_done") is True,
+                "backend_offline_packaged_ux_verified": direct_evidence.get(
+                    "backend_offline_packaged_ux_verified"
+                )
+                is True,
+                "backend_offline_packaged_ux_screenshot_sha256": direct_evidence.get(
+                    "backend_offline_packaged_ux_screenshot_sha256"
+                )
+                or "",
+                "backend_offline_packaged_ux_observed_route": direct_evidence.get(
+                    "backend_offline_packaged_ux_observed_route"
+                )
+                or "",
                 "tauri_build_command_reviewed_safe": direct_evidence.get("build_command_reviewed_safe") or "",
                 "tauri_launch_command_reviewed_safe": direct_evidence.get("launch_command_reviewed_safe") or "",
                 "tauri_launch_observed_process_name": direct_evidence.get("observed_process_name") or "",
@@ -5053,7 +5103,6 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "app_bundle_detected": direct_evidence.get("app_bundle_detected") is True,
                 "dmg_distribution_detected": direct_evidence.get("dmg_distribution_detected") is True,
                 "backend_startup_runtime_validated": False,
-                "backend_offline_packaged_ux_verified": False,
                 "config_log_runtime_paths_validated": False,
                 "signing_notarization_done": False,
                 "external_calls_triggered": False,

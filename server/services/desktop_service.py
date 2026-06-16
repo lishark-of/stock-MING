@@ -22,6 +22,8 @@ TAURI_PACKAGE_ARTIFACT_REVIEW_PACKET_KEY = "command_center_3_tauri_package_artif
 TAURI_PACKAGE_ARTIFACT_REVIEW_TASK_TYPE = "run_tauri_package_artifact_review"
 TAURI_PACKAGED_RUNTIME_LAUNCH_REVIEW_PACKET_KEY = "command_center_3_tauri_packaged_runtime_launch_review_packet"
 TAURI_PACKAGED_RUNTIME_LAUNCH_REVIEW_TASK_TYPE = "run_tauri_packaged_runtime_launch_review"
+TAURI_BACKEND_OFFLINE_PACKAGED_UX_REVIEW_PACKET_KEY = "command_center_3_tauri_backend_offline_packaged_ux_review_packet"
+TAURI_BACKEND_OFFLINE_PACKAGED_UX_REVIEW_TASK_TYPE = "run_tauri_backend_offline_packaged_ux_review"
 FRONTEND_API_CLIENT = DESKTOP_ROOT / "src" / "api" / "client.ts"
 FRONTEND_PAGE_STATE_BANNER = DESKTOP_ROOT / "src" / "components" / "PageStateBanner.tsx"
 FRONTEND_BACKEND_OFFLINE_NOTICE = DESKTOP_ROOT / "src" / "components" / "BackendOfflineNotice.tsx"
@@ -2355,6 +2357,325 @@ def _write_tauri_packaged_runtime_launch_review_packet(
         SQLiteMetaStore(SQLITE_META_PATH).write_packet(TAURI_PACKAGED_RUNTIME_LAUNCH_REVIEW_PACKET_KEY, packet)
 
 
+def _tauri_backend_offline_packaged_ux_review_call_ledger(
+    review: dict[str, Any],
+    reviewed_at: str,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "api": "local_tauri_backend_offline_packaged_ux_review",
+            "request_params_safe": {
+                "review_scope": "local_tauri_backend_offline_packaged_ux",
+                "app_bundle_path": review.get("app_bundle_path"),
+                "offline_notice_observed": review.get("offline_notice_observed"),
+                "fastapi_guidance_visible": review.get("fastapi_guidance_visible"),
+                "local_only_boundary_visible": review.get("local_only_boundary_visible"),
+                "screenshot_sha256": review.get("screenshot_sha256"),
+                "external_sources_allowed": False,
+                "runs_build": False,
+                "starts_fastapi": False,
+                "reads_config_values": False,
+                "writes_log_files": False,
+                "production_package_complete": False,
+            },
+            "row_count": review.get("row_count", 0),
+            "data_date": reviewed_at,
+            "local_fetched_at": reviewed_at,
+            "call_status": review.get("status"),
+            "error_message_safe": "",
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+
+
+def _tauri_backend_offline_packaged_ux_review_contract(
+    *,
+    tauri_build_artifact: dict[str, Any],
+    launch_review: dict[str, Any],
+    backend_offline_ux_contract: dict[str, Any],
+    reviewed_at: str | None = None,
+    task_id: str = "",
+    explicit_review: bool = False,
+    explicit_packaged_app_launch_completed: bool = False,
+    backend_was_offline_during_review: bool = False,
+    offline_notice_observed: bool = False,
+    fastapi_guidance_visible: bool = False,
+    local_only_boundary_visible: bool = False,
+    no_provider_model_github_trade_visible: bool = False,
+    screenshot_sha256: str = "",
+    observed_route: str = "",
+) -> dict[str, Any]:
+    app_bundle_ready = bool(
+        tauri_build_artifact.get("schema_version") == "tauri_build_artifact_detection.v1"
+        and tauri_build_artifact.get("packaged_app_bundle_detected") is True
+        and int(tauri_build_artifact.get("bundle_app_count") or 0) > 0
+        and tauri_build_artifact.get("bundle_app_path")
+        and tauri_build_artifact.get("build_command_executed_by_get_cache") is False
+        and tauri_build_artifact.get("artifact_is_gitignored") is True
+    )
+    launch_smoke_ready = bool(
+        launch_review.get("schema_version") == "tauri_packaged_runtime_launch_review.v1"
+        and launch_review.get("status") == "tauri_packaged_runtime_launch_review_ready_local_launch_smoke"
+        and launch_review.get("packaged_app_launch_smoke_done") is True
+        and launch_review.get("packaged_app_launch_qa_done") is True
+        and launch_review.get("packaged_app_launch_is_completion") is False
+        and launch_review.get("production_package_complete") is False
+        and launch_review.get("external_calls_triggered") is False
+        and launch_review.get("tushare_called") is False
+        and launch_review.get("deepseek_called") is False
+        and launch_review.get("github_called") is False
+        and launch_review.get("does_not_execute_trades") is True
+        and launch_review.get("does_not_modify_strategy_action") is True
+        and launch_review.get("contains_secret") is False
+    )
+    frontend_contract_ready = bool(
+        backend_offline_ux_contract.get("schema_version") == "tauri_backend_offline_ux_contract.v1"
+        and backend_offline_ux_contract.get("frontend_contract_ready") is True
+        and backend_offline_ux_contract.get("offline_notice_component_ready") is True
+        and backend_offline_ux_contract.get("page_state_banner_integration_ready") is True
+        and backend_offline_ux_contract.get("external_calls_triggered") is False
+        and backend_offline_ux_contract.get("tushare_called") is False
+        and backend_offline_ux_contract.get("deepseek_called") is False
+        and backend_offline_ux_contract.get("github_called") is False
+        and backend_offline_ux_contract.get("does_not_execute_trades") is True
+        and backend_offline_ux_contract.get("does_not_modify_strategy_action") is True
+        and backend_offline_ux_contract.get("contains_secret") is False
+    )
+    screenshot_hash_safe = bool(
+        len(screenshot_sha256) == 64 and all(char in "0123456789abcdef" for char in screenshot_sha256)
+    )
+    observed_route_safe = observed_route[:120]
+    offline_ux_ready = bool(
+        explicit_review
+        and app_bundle_ready
+        and launch_smoke_ready
+        and frontend_contract_ready
+        and explicit_packaged_app_launch_completed
+        and backend_was_offline_during_review
+        and offline_notice_observed
+        and fastapi_guidance_visible
+        and local_only_boundary_visible
+        and no_provider_model_github_trade_visible
+        and screenshot_hash_safe
+    )
+
+    def _row(criterion: str, status: str, passed: bool, evidence: str, *, blocks_review: bool = True) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": status,
+            "passed": bool(passed),
+            "evidence": evidence,
+            "blocks_review": bool(blocks_review and not passed),
+            "blocks_production": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+
+    rows = [
+        _row(
+            "explicit_post_offline_ux_review_task",
+            "passed" if explicit_review else "pending_explicit_post",
+            explicit_review,
+            "POST /api/desktop/tauri-backend-offline-packaged-ux-review records a separately observed packaged offline UX run.",
+        ),
+        _row(
+            "app_bundle_and_launch_smoke_ready",
+            "passed_app_bundle_launch_smoke" if app_bundle_ready and launch_smoke_ready else "pending_launch_smoke",
+            app_bundle_ready and launch_smoke_ready,
+            (
+                f"app_bundle={tauri_build_artifact.get('packaged_app_bundle_detected')}; "
+                f"launch_smoke={launch_review.get('packaged_app_launch_smoke_done')}; "
+                f"app_path={tauri_build_artifact.get('bundle_app_path') or 'missing'}"
+            ),
+        ),
+        _row(
+            "frontend_offline_contract_ready",
+            "passed_frontend_contract" if frontend_contract_ready else "pending_frontend_contract",
+            frontend_contract_ready,
+            (
+                f"frontend_contract_ready={backend_offline_ux_contract.get('frontend_contract_ready')}; "
+                f"notice_ready={backend_offline_ux_contract.get('offline_notice_component_ready')}; "
+                f"banner_ready={backend_offline_ux_contract.get('page_state_banner_integration_ready')}"
+            ),
+        ),
+        _row(
+            "backend_offline_notice_observed_in_packaged_app",
+            "passed_packaged_offline_notice" if offline_ux_ready else "pending_packaged_offline_notice",
+            offline_ux_ready,
+            (
+                f"backend_offline={backend_was_offline_during_review}; "
+                f"notice={offline_notice_observed}; fastapi_guidance={fastapi_guidance_visible}; "
+                f"local_only={local_only_boundary_visible}; safe_boundary={no_provider_model_github_trade_visible}; "
+                f"screenshot_sha256={screenshot_sha256 if screenshot_hash_safe else 'missing'}; "
+                f"route={observed_route_safe or 'unknown'}"
+            ),
+        ),
+        _row(
+            "backend_startup_runtime_still_pending",
+            "pending_backend_startup_runtime",
+            False,
+            "Offline UX QA does not validate manual/sidecar backend startup strategy.",
+            blocks_review=False,
+        ),
+        _row(
+            "config_log_runtime_paths_still_pending",
+            "pending_config_log_runtime_paths",
+            False,
+            "Offline UX QA does not read config values or validate log-path behavior.",
+            blocks_review=False,
+        ),
+        _row(
+            "production_package_still_blocked",
+            "passed_production_blockers_visible",
+            True,
+            "DMG distribution, backend startup, config/log runtime paths, signing/notarization, and promotion review remain required.",
+            blocks_review=False,
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["blocks_review"]]
+    return {
+        "schema_version": "tauri_backend_offline_packaged_ux_review.v1",
+        "status": "tauri_backend_offline_packaged_ux_review_ready"
+        if offline_ux_ready
+        else "tauri_backend_offline_packaged_ux_review_pending",
+        "scope": "button_gated_local_tauri_backend_offline_packaged_ux_review_no_provider_no_trade",
+        "ltg": "LTG-09",
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "explicit_review_task_done": explicit_review,
+        "explicit_packaged_app_launch_completed_before_review": explicit_packaged_app_launch_completed,
+        "backend_was_offline_during_review": backend_was_offline_during_review,
+        "offline_notice_observed": offline_notice_observed,
+        "fastapi_guidance_visible": fastapi_guidance_visible,
+        "local_only_boundary_visible": local_only_boundary_visible,
+        "no_provider_model_github_trade_visible": no_provider_model_github_trade_visible,
+        "screenshot_sha256": screenshot_sha256 if screenshot_hash_safe else "",
+        "observed_route": observed_route_safe,
+        "local_backend_offline_packaged_ux_review_ready": offline_ux_ready,
+        "direct_evidence_stage_key": "backend_offline_packaged_ux" if offline_ux_ready else "",
+        "direct_evidence_stage_keys": ["backend_offline_packaged_ux"] if offline_ux_ready else [],
+        "app_bundle_path": tauri_build_artifact.get("bundle_app_path") or "",
+        "app_bundle_detected": tauri_build_artifact.get("packaged_app_bundle_detected") is True,
+        "packaged_app_launch_smoke_done": launch_smoke_ready,
+        "packaged_app_launch_qa_done": launch_smoke_ready,
+        "backend_offline_packaged_ux_verified": offline_ux_ready,
+        "backend_offline_packaged_ux_is_completion": False,
+        "packaged_runtime_validated": False,
+        "backend_startup_runtime_validated": False,
+        "config_log_runtime_paths_validated": False,
+        "dmg_distribution_artifact_qa_done": False,
+        "signing_notarization_done": False,
+        "production_package_complete": False,
+        "tauri_build_executed_by_review": False,
+        "npm_or_cargo_executed_by_review": False,
+        "tauri_runtime_started_by_review": False,
+        "packaged_app_opened_by_review": False,
+        "fastapi_started_by_review": False,
+        "config_values_read_by_review": False,
+        "log_files_written_by_review": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": rows,
+        "row_count": len(rows),
+        "blocking_review_count": len(blocking_rows),
+        "blocking_review_criteria": [row["criterion"] for row in blocking_rows],
+        "call_ledger": [],
+        "note": "This review records a separately observed packaged backend-offline UX smoke only. It is not backend startup validation, config/log runtime validation, signing/notarization, or production desktop package completion.",
+    }
+
+
+def _safe_persisted_tauri_backend_offline_packaged_ux_review(packet: dict[str, Any]) -> dict[str, Any]:
+    review = packet.get("tauri_backend_offline_packaged_ux_review_contract")
+    if not isinstance(review, dict):
+        return {}
+    safe = (
+        review.get("schema_version") == "tauri_backend_offline_packaged_ux_review.v1"
+        and review.get("scope") == "button_gated_local_tauri_backend_offline_packaged_ux_review_no_provider_no_trade"
+        and review.get("explicit_review_task_done") is True
+        and review.get("local_backend_offline_packaged_ux_review_ready") is True
+        and review.get("backend_offline_packaged_ux_verified") is True
+        and review.get("backend_offline_packaged_ux_is_completion") is False
+        and review.get("packaged_runtime_validated") is False
+        and review.get("production_package_complete") is False
+        and review.get("fastapi_started_by_review") is False
+        and review.get("config_values_read_by_review") is False
+        and review.get("log_files_written_by_review") is False
+        and review.get("external_calls_triggered") is False
+        and review.get("tushare_called") is False
+        and review.get("deepseek_called") is False
+        and review.get("github_called") is False
+        and review.get("does_not_execute_trades") is True
+        and review.get("does_not_modify_strategy_action") is True
+        and review.get("contains_secret") is False
+    )
+    return review if safe else {}
+
+
+def _read_tauri_backend_offline_packaged_ux_review_packet() -> dict[str, Any]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(TAURI_BACKEND_OFFLINE_PACKAGED_UX_REVIEW_PACKET_KEY)
+    except Exception:
+        return {}
+    if not isinstance(packet, dict):
+        return {}
+    return packet if _safe_persisted_tauri_backend_offline_packaged_ux_review(packet) else {}
+
+
+def _write_tauri_backend_offline_packaged_ux_review_packet(
+    *,
+    review_contract: dict[str, Any],
+    ledger: list[dict[str, Any]],
+    reviewed_at: str,
+    task_id: str,
+) -> None:
+    packet = {
+        "packet_key": TAURI_BACKEND_OFFLINE_PACKAGED_UX_REVIEW_PACKET_KEY,
+        "schema_version": "tauri_backend_offline_packaged_ux_review_packet.v1",
+        "status": review_contract.get("status"),
+        "ltg": "LTG-09",
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "tauri_backend_offline_packaged_ux_review_contract": dict(review_contract),
+        "tauri_backend_offline_packaged_ux_review_rows": list(review_contract.get("rows") or []),
+        "call_ledger": list(ledger),
+        "cache_only": True,
+        "runs_no_build": True,
+        "starts_no_fastapi": True,
+        "reads_no_config_values": True,
+        "writes_no_log_files": True,
+        "production_package_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "warnings": [
+            "This packet is a local review receipt for separately observed packaged backend-offline UX.",
+            "It is not backend startup validation, config/log runtime validation, signing/notarization evidence, or production package completion.",
+        ],
+    }
+    if _safe_persisted_tauri_backend_offline_packaged_ux_review(packet):
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(TAURI_BACKEND_OFFLINE_PACKAGED_UX_REVIEW_PACKET_KEY, packet)
+
+
 def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     package_summary = _package_json_summary()
     tauri_config = _tauri_config_summary()
@@ -2688,6 +3009,35 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         packet["warnings"].append(
             "tauri_packaged_runtime_launch_review 只记录显式本地 .app 启动 smoke；不等于离线 UX、配置/日志、签名/公证或 production package 完成。"
         )
+    persisted_offline_review_packet = _read_tauri_backend_offline_packaged_ux_review_packet()
+    persisted_offline_review = _safe_persisted_tauri_backend_offline_packaged_ux_review(
+        persisted_offline_review_packet
+    )
+    if persisted_offline_review:
+        packet["tauri_backend_offline_packaged_ux_review_contract"] = persisted_offline_review
+        packet["tauri_backend_offline_packaged_ux_review_rows"] = list(persisted_offline_review.get("rows") or [])
+        packet["tauri_backend_offline_packaged_ux_review_ready"] = True
+        packet["counts"]["tauri_backend_offline_packaged_ux_review_row_count"] = persisted_offline_review.get(
+            "row_count",
+            0,
+        )
+        packet["counts"]["tauri_backend_offline_packaged_ux_review_blocking_count"] = persisted_offline_review.get(
+            "blocking_review_count",
+            0,
+        )
+        packet["runtime"]["tauri_backend_offline_packaged_ux_review_ready"] = True
+        packet["runtime"]["tauri_backend_offline_packaged_ux_review_status"] = persisted_offline_review.get("status")
+        packet["runtime"]["backend_offline_packaged_ux_verified"] = True
+        packet["policy"]["tauri_backend_offline_packaged_ux_review_is_local"] = True
+        packet["policy"]["tauri_backend_offline_packaged_ux_review_is_not_build"] = True
+        packet["policy"]["tauri_backend_offline_packaged_ux_review_is_not_backend_start"] = True
+        packet["policy"]["tauri_backend_offline_packaged_ux_review_is_not_production_completion"] = True
+        packet["call_ledger"] = packet["call_ledger"] + [
+            row for row in persisted_offline_review_packet.get("call_ledger", []) if isinstance(row, dict)
+        ]
+        packet["warnings"].append(
+            "tauri_backend_offline_packaged_ux_review 只记录显式本地 packaged offline UX 观察；不等于 backend startup、配置/日志、签名/公证或 production package 完成。"
+        )
     return _json_safe(packet)
 
 
@@ -2805,4 +3155,64 @@ def run_tauri_packaged_runtime_launch_review_task(payload: Any = None) -> dict[s
         else "tauri_packaged_runtime_launch_review_pending",
         call_ledger=ledger,
         warning="tauri_packaged_runtime_launch_review_completed_no_build_no_backend_no_external_call",
+    ) or task
+
+
+def run_tauri_backend_offline_packaged_ux_review_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, dict) else {}
+    screenshot_sha256 = str(payload_map.get("screenshot_sha256") or "").strip().lower()
+    observed_route = str(payload_map.get("observed_route") or "").strip()
+    task = create_task_record(
+        TAURI_BACKEND_OFFLINE_PACKAGED_UX_REVIEW_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="tauri_backend_offline_packaged_ux_review_queued",
+        warnings=[
+            "Tauri backend offline packaged UX review 只记录用户/测试已显式观察到的本地 .app 离线提示。",
+            "review 不运行 npm/cargo/Tauri、不启动 FastAPI、不读取配置、不写日志、不调用 provider/model/GitHub、不交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="reading_local_tauri_backend_offline_packaged_ux_evidence",
+    )
+    packet = read_desktop_shell_preflight_cache()
+    reviewed_at = _now_iso()
+    review_contract = _tauri_backend_offline_packaged_ux_review_contract(
+        tauri_build_artifact=packet.get("tauri_build_artifact", {}),
+        launch_review=packet.get("tauri_packaged_runtime_launch_review_contract", {}),
+        backend_offline_ux_contract=packet.get("backend_offline_ux_contract", {}),
+        explicit_review=True,
+        explicit_packaged_app_launch_completed=payload_map.get("explicit_packaged_app_launch_completed") is True,
+        backend_was_offline_during_review=payload_map.get("backend_was_offline_during_review") is True,
+        offline_notice_observed=payload_map.get("offline_notice_observed") is True,
+        fastapi_guidance_visible=payload_map.get("fastapi_guidance_visible") is True,
+        local_only_boundary_visible=payload_map.get("local_only_boundary_visible") is True,
+        no_provider_model_github_trade_visible=payload_map.get("no_provider_model_github_trade_visible") is True,
+        screenshot_sha256=screenshot_sha256,
+        observed_route=observed_route,
+        task_id=str(task["task_id"]),
+        reviewed_at=reviewed_at,
+    )
+    ledger = _tauri_backend_offline_packaged_ux_review_call_ledger(review_contract, reviewed_at)
+    _write_tauri_backend_offline_packaged_ux_review_packet(
+        review_contract=review_contract,
+        ledger=ledger,
+        reviewed_at=reviewed_at,
+        task_id=str(task["task_id"]),
+    )
+    return update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="tauri_backend_offline_packaged_ux_review_ready"
+        if review_contract["local_backend_offline_packaged_ux_review_ready"]
+        else "tauri_backend_offline_packaged_ux_review_pending",
+        call_ledger=ledger,
+        warning="tauri_backend_offline_packaged_ux_review_completed_no_build_no_backend_no_external_call",
     ) or task

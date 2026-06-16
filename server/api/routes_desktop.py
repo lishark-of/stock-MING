@@ -28,3 +28,9 @@ def review_tauri_package_artifact(payload: dict[str, Any] | None = None) -> dict
 def review_tauri_packaged_runtime_launch(payload: dict[str, Any] | None = None) -> dict:
     task = desktop_service.run_tauri_packaged_runtime_launch_review_task(payload)
     return task_envelope(task)
+
+
+@router.post("/tauri-backend-offline-packaged-ux-review")
+def review_tauri_backend_offline_packaged_ux(payload: dict[str, Any] | None = None) -> dict:
+    task = desktop_service.run_tauri_backend_offline_packaged_ux_review_task(payload)
+    return task_envelope(task)

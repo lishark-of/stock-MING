@@ -13592,7 +13592,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 65)
+        self.assertEqual(catalog["task_count"], 66)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -13611,7 +13611,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 65)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 66)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -13622,8 +13622,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 67)
-        self.assertEqual(route_coverage["task_creation_route_count"], 65)
+        self.assertEqual(route_coverage["known_post_route_count"], 68)
+        self.assertEqual(route_coverage["task_creation_route_count"], 66)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -13632,11 +13632,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 65)
+        self.assertEqual(implementation_status["task_count"], 66)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 62)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 63)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 63)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 64)
         self.assertEqual(implementation_status["external_capable_task_count"], 6)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -13668,6 +13668,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_next_session_browser_qa_review",
                 "run_tauri_package_artifact_review",
                 "run_tauri_packaged_runtime_launch_review",
+                "run_tauri_backend_offline_packaged_ux_review",
                 "run_candidate_radar_quick_scan",
                 "run_candidate_radar_quant_projection",
                 "run_candidate_radar_quant_projection_acceptance_dry_run",
@@ -13736,6 +13737,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_next_session_browser_qa_review",
                 "run_tauri_package_artifact_review",
                 "run_tauri_packaged_runtime_launch_review",
+                "run_tauri_backend_offline_packaged_ux_review",
                 "run_candidate_radar_quick_scan",
                 "run_candidate_radar_quant_projection",
                 "run_candidate_radar_quant_projection_acceptance_dry_run",
@@ -13827,6 +13829,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/desktop/tauri-package-artifact-review", route_coverage["known_post_routes"])
         self.assertIn(
             "POST /api/desktop/tauri-packaged-runtime-launch-review",
+            route_coverage["known_post_routes"],
+        )
+        self.assertIn(
+            "POST /api/desktop/tauri-backend-offline-packaged-ux-review",
             route_coverage["known_post_routes"],
         )
         self.assertIn("POST /api/worker/synthetic-healthcheck", route_coverage["known_post_routes"])
@@ -15700,6 +15706,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket", discovered_routes)
         self.assertIn("POST /api/desktop/tauri-package-artifact-review", discovered_routes)
         self.assertIn("POST /api/desktop/tauri-packaged-runtime-launch-review", discovered_routes)
+        self.assertIn("POST /api/desktop/tauri-backend-offline-packaged-ux-review", discovered_routes)
         self.assertIn("POST /api/data-health/trade-cal-provider-acceptance-execution-request", discovered_routes)
         self.assertIn("POST /api/data-health/trade-cal-provider-acceptance-promotion-review", discovered_routes)
         self.assertIn("POST /api/data-health/producer-cache-refresh-execution-request", discovered_routes)
@@ -15753,16 +15760,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 62)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 63)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 63)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 64)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 62)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 63)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 63)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 64)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -16617,9 +16624,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 62)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 63)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 63)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 64)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -16843,9 +16850,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 62)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 63)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 63)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 64)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -16878,9 +16885,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 62)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 63)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 63)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 64)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -21216,13 +21223,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 65)
+        self.assertEqual(task_catalog["data"]["task_count"], 66)
         self.assertIn(
             "POST /api/desktop/tauri-package-artifact-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
         )
         self.assertIn(
             "POST /api/desktop/tauri-packaged-runtime-launch-review",
+            task_catalog["data"]["route_coverage"]["known_post_routes"],
+        )
+        self.assertIn(
+            "POST /api/desktop/tauri-backend-offline-packaged-ux-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
         )
         self.assertIn("POST /api/bootstrap/live-startup", task_catalog["data"]["route_coverage"]["known_post_routes"])
@@ -21971,6 +21982,170 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg09["packaged_runtime_qa_done"])
         self.assertFalse(ltg09["backend_startup_runtime_validated"])
         self.assertFalse(ltg09["backend_offline_packaged_ux_verified"])
+        self.assertFalse(ltg09["config_log_runtime_paths_validated"])
+        self.assertFalse(ltg09["dmg_distribution_artifact_qa_done"])
+        self.assertFalse(ltg09["dmg_distribution_detected"])
+        self.assertFalse(ltg09["signing_notarization_done"])
+        self.assertFalse(ltg09["production_package_complete"])
+        self.assertFalse(ltg09["external_calls_triggered"])
+        self.assertFalse(ltg09["tushare_called"])
+        self.assertFalse(ltg09["deepseek_called"])
+        self.assertFalse(ltg09["github_called"])
+        self.assertTrue(ltg09["does_not_execute_trades"])
+        self.assertFalse(ltg09["contains_secret"])
+        self.assertFalse(ltg09["can_close_from_observed_row"])
+
+    def test_tauri_backend_offline_packaged_ux_review_records_visual_evidence_without_completion(self):
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        temp_dir = tempfile.TemporaryDirectory()
+        root = Path(temp_dir.name)
+        release_binary = root / "stock_ming_command_center"
+        release_binary.write_bytes(b"\xcf\xfa\xed\xfe packaged backend offline ux fixture")
+        release_binary.chmod(0o755)
+        bundle_root = root / "bundle"
+        app_bundle = bundle_root / "macos" / "stock-MING Command Center.app"
+        (app_bundle / "Contents" / "MacOS").mkdir(parents=True)
+        (app_bundle / "Contents" / "Resources").mkdir()
+        original_release_binary = desktop_service.TAURI_RELEASE_BINARY
+        original_bundle_root = desktop_service.TAURI_BUNDLE_ROOT
+        desktop_service.TAURI_RELEASE_BINARY = release_binary
+        desktop_service.TAURI_BUNDLE_ROOT = bundle_root
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, desktop_service, "TAURI_RELEASE_BINARY", original_release_binary)
+        self.addCleanup(setattr, desktop_service, "TAURI_BUNDLE_ROOT", original_bundle_root)
+
+        artifact_response = self.client.post(
+            "/api/desktop/tauri-package-artifact-review",
+            json={
+                "operator": "local-offline-ux-seed",
+                "explicit_tauri_build_completed": True,
+                "build_command": "npm run tauri build",
+            },
+        ).json()
+        self.assertTrue(artifact_response["ok"])
+        launch_response = self.client.post(
+            "/api/desktop/tauri-packaged-runtime-launch-review",
+            json={
+                "operator": "local-offline-ux-launch",
+                "explicit_packaged_app_launch_completed": True,
+                "app_process_observed_after_launch": True,
+                "launch_command": "open -n desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app",
+                "observed_process_name": "stock-MING Command Center",
+            },
+        ).json()
+        self.assertTrue(launch_response["ok"])
+
+        screenshot_hash = "a" * 64
+        offline_response = self.client.post(
+            "/api/desktop/tauri-backend-offline-packaged-ux-review",
+            json={
+                "operator": "local-offline-ux-review",
+                "explicit_packaged_app_launch_completed": True,
+                "backend_was_offline_during_review": True,
+                "offline_notice_observed": True,
+                "fastapi_guidance_visible": True,
+                "local_only_boundary_visible": True,
+                "no_provider_model_github_trade_visible": True,
+                "screenshot_sha256": screenshot_hash,
+                "observed_route": "Command Center packaged backend offline notice",
+                "authorization": "Bearer SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(offline_response["ok"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(offline_response, ensure_ascii=False))
+        task = offline_response["data"]["task"]
+        self.assertEqual(task["task_type"], desktop_service.TAURI_BACKEND_OFFLINE_PACKAGED_UX_REVIEW_TASK_TYPE)
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "tauri_backend_offline_packaged_ux_review_ready")
+        self.assertNotIn("authorization", task["payload_safe"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+
+        persisted = SQLiteMetaStore(desktop_service.SQLITE_META_PATH).read_packet(
+            desktop_service.TAURI_BACKEND_OFFLINE_PACKAGED_UX_REVIEW_PACKET_KEY
+        )
+        self.assertEqual(persisted["packet_key"], desktop_service.TAURI_BACKEND_OFFLINE_PACKAGED_UX_REVIEW_PACKET_KEY)
+        review = persisted["tauri_backend_offline_packaged_ux_review_contract"]
+        self.assertEqual(review["schema_version"], "tauri_backend_offline_packaged_ux_review.v1")
+        self.assertEqual(review["status"], "tauri_backend_offline_packaged_ux_review_ready")
+        self.assertEqual(
+            review["scope"],
+            "button_gated_local_tauri_backend_offline_packaged_ux_review_no_provider_no_trade",
+        )
+        self.assertEqual(review["direct_evidence_stage_keys"], ["backend_offline_packaged_ux"])
+        self.assertTrue(review["explicit_review_task_done"])
+        self.assertTrue(review["backend_was_offline_during_review"])
+        self.assertTrue(review["offline_notice_observed"])
+        self.assertTrue(review["fastapi_guidance_visible"])
+        self.assertTrue(review["local_only_boundary_visible"])
+        self.assertTrue(review["no_provider_model_github_trade_visible"])
+        self.assertEqual(review["screenshot_sha256"], screenshot_hash)
+        self.assertTrue(review["packaged_app_launch_smoke_done"])
+        self.assertTrue(review["backend_offline_packaged_ux_verified"])
+        self.assertFalse(review["backend_offline_packaged_ux_is_completion"])
+        self.assertFalse(review["packaged_runtime_validated"])
+        self.assertFalse(review["backend_startup_runtime_validated"])
+        self.assertFalse(review["config_log_runtime_paths_validated"])
+        self.assertFalse(review["dmg_distribution_artifact_qa_done"])
+        self.assertFalse(review["signing_notarization_done"])
+        self.assertFalse(review["production_package_complete"])
+        self.assertFalse(review["tauri_build_executed_by_review"])
+        self.assertFalse(review["npm_or_cargo_executed_by_review"])
+        self.assertFalse(review["tauri_runtime_started_by_review"])
+        self.assertFalse(review["packaged_app_opened_by_review"])
+        self.assertFalse(review["fastapi_started_by_review"])
+        self.assertFalse(review["config_values_read_by_review"])
+        self.assertFalse(review["log_files_written_by_review"])
+        self.assertFalse(review["external_calls_triggered"])
+        self.assertFalse(review["tushare_called"])
+        self.assertFalse(review["deepseek_called"])
+        self.assertFalse(review["github_called"])
+        self.assertTrue(review["does_not_execute_trades"])
+        self.assertTrue(review["does_not_modify_strategy_action"])
+        self.assertFalse(review["contains_secret"])
+
+        refreshed = desktop_service.read_desktop_shell_preflight_cache()
+        self.assertTrue(refreshed["tauri_backend_offline_packaged_ux_review_ready"])
+        self.assertTrue(refreshed["runtime"]["backend_offline_packaged_ux_verified"])
+        self.assertTrue(refreshed["policy"]["tauri_backend_offline_packaged_ux_review_is_not_build"])
+        self.assertTrue(refreshed["policy"]["tauri_backend_offline_packaged_ux_review_is_not_backend_start"])
+        self.assertTrue(refreshed["policy"]["tauri_backend_offline_packaged_ux_review_is_not_production_completion"])
+        self.assertIn(
+            "local_tauri_backend_offline_packaged_ux_review",
+            {row.get("api") for row in refreshed["call_ledger"]},
+        )
+
+        migration = migration_status_service.build_migration_status()
+        ltg09 = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}["LTG-09"]
+        self.assertEqual(ltg09["direct_evidence_stage_count"], 5)
+        self.assertEqual(
+            ltg09["direct_evidence_stage_keys"],
+            [
+                "release_binary_artifact_qa",
+                "tauri_build_repeatability",
+                "app_bundle_artifact_qa",
+                "packaged_app_launch_smoke",
+                "backend_offline_packaged_ux",
+            ],
+        )
+        self.assertEqual(ltg09["pending_stage_count"], 3)
+        self.assertEqual(ltg09["production_blocker_count"], 3)
+        self.assertTrue(ltg09["backend_offline_packaged_ux_verified"])
+        self.assertEqual(ltg09["backend_offline_packaged_ux_screenshot_sha256"], screenshot_hash)
+        self.assertEqual(
+            ltg09["backend_offline_packaged_ux_observed_route"],
+            "Command Center packaged backend offline notice",
+        )
+        self.assertFalse(ltg09["packaged_runtime_qa_done"])
+        self.assertFalse(ltg09["backend_startup_runtime_validated"])
         self.assertFalse(ltg09["config_log_runtime_paths_validated"])
         self.assertFalse(ltg09["dmg_distribution_artifact_qa_done"])
         self.assertFalse(ltg09["dmg_distribution_detected"])
