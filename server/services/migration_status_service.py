@@ -622,6 +622,19 @@ def _build_ltg_next_action_local_step_rows(
         )
         task_found = bool(latest_task)
         receipt_visible = bool(receipt_map)
+        latest_task_storage_source = str(latest_task.get("storage_source") or "") if task_found else ""
+        receipt_durable_in_sqlite = bool(
+            receipt_visible and latest_task_storage_source in {"memory_and_sqlite", "sqlite_meta"}
+        )
+        receipt_memory_only = bool(receipt_visible and latest_task_storage_source == "memory")
+        if not receipt_visible:
+            receipt_durability_state = "receipt_missing"
+        elif receipt_durable_in_sqlite:
+            receipt_durability_state = "durable_sqlite_receipt_visible"
+        elif receipt_memory_only:
+            receipt_durability_state = "memory_only_receipt_visible"
+        else:
+            receipt_durability_state = "receipt_visible_without_sqlite_durability"
         target_payload_summary = _receipt_target_payload_safe_summary(receipt_map) if receipt_visible else {}
         step_rows.append(
             {
@@ -633,7 +646,11 @@ def _build_ltg_next_action_local_step_rows(
                 "latest_task_id": latest_task.get("task_id") if task_found else "",
                 "latest_task_status": latest_task.get("status") if task_found else "",
                 "latest_task_current_step": latest_task.get("current_step") if task_found else "",
-                "latest_task_storage_source": latest_task.get("storage_source") if task_found else "",
+                "latest_task_storage_source": latest_task_storage_source,
+                "receipt_durable_in_sqlite": receipt_durable_in_sqlite,
+                "receipt_memory_only": receipt_memory_only,
+                "receipt_durability_state": receipt_durability_state,
+                "receipt_durable_required_for_handoff": receipt_visible,
                 "receipt_status": receipt_map.get("status") or "",
                 "receipt_scope_hash": receipt_scope_hash,
                 "receipt_scope_hash_short": receipt_scope_hash_short,
@@ -934,8 +951,10 @@ def _build_ltg_future_handoff_preview_rows(
         latest_ready_step.get("receipt_target_post_task_route")
         or (next_local_step if next_local_step.startswith("POST /api/") else "")
     )
+    durable_local_receipt = latest_ready_step.get("receipt_durable_in_sqlite") is True
     handoff_ready = bool(
         latest_ready_step
+        and durable_local_receipt
         and latest_ready_step.get("receipt_target_payload_present") is True
         and latest_ready_step.get("receipt_creates_provider_task") is False
         and latest_ready_step.get("receipt_provider_task_created") is False
@@ -944,6 +963,9 @@ def _build_ltg_future_handoff_preview_rows(
     if handoff_ready:
         status = "future_provider_handoff_preview_ready"
         disabled_reason = ""
+    elif latest_ready_step and not durable_local_receipt:
+        status = "future_provider_handoff_waiting_for_durable_local_receipt"
+        disabled_reason = "local_execution_request_receipt_not_durable_in_sqlite"
     elif any(row.get("receipt_visible") for row in local_step_rows):
         status = "future_provider_handoff_waiting_for_ready_execution_request"
         disabled_reason = "latest_local_receipt_not_ready_for_provider_handoff"
@@ -965,6 +987,10 @@ def _build_ltg_future_handoff_preview_rows(
             "source_local_phase_key": latest_ready_step.get("phase_key") or "",
             "source_local_task_id": latest_ready_step.get("latest_task_id") or "",
             "source_local_receipt_status": latest_ready_step.get("receipt_status") or "",
+            "source_local_storage_source": latest_ready_step.get("latest_task_storage_source") or "",
+            "source_local_receipt_durable_in_sqlite": durable_local_receipt,
+            "source_local_receipt_memory_only": latest_ready_step.get("receipt_memory_only") is True,
+            "durable_local_receipt_required_for_handoff": True,
             "handoff_ready_from_local_receipt": handoff_ready,
             "disabled_reason": disabled_reason,
             "creates_provider_task_from_preview": False,
@@ -995,6 +1021,8 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
         local_step_rows = _build_ltg_next_action_local_step_rows(str(action["queue_id"]), tasks_by_type)
         observed_steps = [row for row in local_step_rows if row["receipt_visible"] is True]
         missing_steps = [row for row in local_step_rows if row["receipt_visible"] is False]
+        durable_observed_steps = [row for row in observed_steps if row.get("receipt_durable_in_sqlite") is True]
+        memory_only_observed_steps = [row for row in observed_steps if row.get("receipt_memory_only") is True]
         if not local_step_rows:
             local_status = "local_receipt_lookup_not_configured"
             next_local_step = ""
@@ -1052,6 +1080,11 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
                 "local_receipt_step_count": len(local_step_rows),
                 "observed_local_receipt_step_count": len(observed_steps),
                 "missing_local_receipt_step_count": len(missing_steps),
+                "durable_local_receipt_step_count": len(durable_observed_steps),
+                "memory_only_local_receipt_step_count": len(memory_only_observed_steps),
+                "local_receipts_all_durable": bool(observed_steps)
+                and len(durable_observed_steps) == len(observed_steps),
+                "local_receipts_require_sqlite_durability_for_handoff": True,
                 "observed_local_receipt_steps": [str(row.get("phase_key") or "") for row in observed_steps],
                 "missing_local_receipt_steps": [str(row.get("phase_key") or "") for row in missing_steps],
                 "latest_observed_task_id": latest_observed.get("latest_task_id") or "",

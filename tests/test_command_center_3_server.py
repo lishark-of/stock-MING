@@ -329,6 +329,24 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             )
         )
         self.assertTrue(
+            all(
+                "receipt_durable_in_sqlite" in step
+                and "receipt_memory_only" in step
+                and "receipt_durability_state" in step
+                for row in migration["ltg_next_acceptance_action_rows"]
+                for step in row["local_step_rows"]
+            )
+        )
+        self.assertTrue(
+            all(row["durable_local_receipt_step_count"] == 0 for row in migration["ltg_next_acceptance_action_rows"])
+        )
+        self.assertTrue(
+            all(row["memory_only_local_receipt_step_count"] == 0 for row in migration["ltg_next_acceptance_action_rows"])
+        )
+        self.assertTrue(
+            all(row["local_receipts_all_durable"] is False for row in migration["ltg_next_acceptance_action_rows"])
+        )
+        self.assertTrue(
             all(row["next_local_step_preview_row_count"] == 1 for row in migration["ltg_next_acceptance_action_rows"])
         )
         self.assertTrue(
@@ -370,6 +388,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 and preview["tushare_called"] is False
                 and preview["deepseek_called"] is False
                 and preview["github_called"] is False
+                and preview["durable_local_receipt_required_for_handoff"] is True
                 and preview["does_not_execute_trades"] is True
                 and preview["does_not_modify_strategy_action"] is True
                 and preview["contains_secret"] is False
@@ -377,6 +396,26 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 for preview in row["future_handoff_preview_rows"]
             )
         )
+        memory_only_handoff = migration_status_service._build_ltg_future_handoff_preview_rows(
+            "POST /api/tasks/refresh-tushare-facts",
+            [
+                {
+                    "phase_key": "trade_cal_execution_request_ticket",
+                    "receipt_visible": True,
+                    "receipt_ready_for_manual_provider_task_submission": True,
+                    "receipt_target_payload_present": True,
+                    "receipt_creates_provider_task": False,
+                    "receipt_provider_task_created": False,
+                    "receipt_provider_execution_implemented": False,
+                    "receipt_memory_only": True,
+                    "receipt_durable_in_sqlite": False,
+                    "latest_task_storage_source": "memory",
+                }
+            ],
+        )[0]
+        self.assertEqual(memory_only_handoff["status"], "future_provider_handoff_waiting_for_durable_local_receipt")
+        self.assertFalse(memory_only_handoff["handoff_ready_from_local_receipt"])
+        self.assertEqual(memory_only_handoff["disabled_reason"], "local_execution_request_receipt_not_durable_in_sqlite")
         self.assertTrue(all(row["local_receipt_lookup_creates_task"] is False for row in migration["ltg_next_acceptance_action_rows"]))
         self.assertTrue(all(row["local_receipt_lookup_calls_provider"] is False for row in migration["ltg_next_acceptance_action_rows"]))
         self.assertTrue(all(row["local_receipt_status"] for row in migration["ltg_next_acceptance_action_rows"]))
@@ -1649,6 +1688,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             p2_after_request["local_receipt_status"],
             "local_receipts_visible_provider_or_worker_evidence_pending",
         )
+        self.assertEqual(p2_after_request["durable_local_receipt_step_count"], 1)
+        self.assertEqual(p2_after_request["memory_only_local_receipt_step_count"], 0)
+        self.assertTrue(p2_after_request["local_receipts_all_durable"])
         self.assertTrue(p2_after_request["future_handoff_ready_from_local_receipt"])
         self.assertEqual(handoff["status"], "future_provider_handoff_preview_ready")
         self.assertEqual(handoff["future_route"], "POST /api/tasks/refresh-tushare-facts")
@@ -1658,6 +1700,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(handoff["target_payload_groups"], ["margin_financing"])
         self.assertEqual(handoff["target_payload_ts_code"], "002008.SZ")
         self.assertEqual(handoff["target_payload_trade_date"], "20260610")
+        self.assertIn(handoff["source_local_storage_source"], {"memory_and_sqlite", "sqlite_meta"})
+        self.assertTrue(handoff["source_local_receipt_durable_in_sqlite"])
+        self.assertFalse(handoff["source_local_receipt_memory_only"])
+        self.assertTrue(handoff["durable_local_receipt_required_for_handoff"])
         self.assertFalse(handoff["creates_provider_task_from_preview"])
         self.assertFalse(handoff["provider_task_created_by_preview"])
         self.assertFalse(handoff["provider_execution_implemented_by_preview"])

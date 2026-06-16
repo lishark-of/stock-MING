@@ -189,6 +189,9 @@ export default function MigrationStatus() {
     local_receipt_status: row.local_receipt_status,
     observed_steps: row.observed_local_receipt_step_count,
     missing_steps: row.missing_local_receipt_step_count,
+    durable_steps: row.durable_local_receipt_step_count,
+    memory_only_steps: row.memory_only_local_receipt_step_count,
+    all_receipts_durable: row.local_receipts_all_durable,
     next_local_step: row.next_local_step,
     lookup_creates_task: row.local_receipt_lookup_creates_task,
     lookup_calls_provider: row.local_receipt_lookup_calls_provider,
@@ -205,6 +208,10 @@ export default function MigrationStatus() {
       route: step.route,
       receipt_visible: step.receipt_visible,
       task_found: step.task_found,
+      storage_source: step.latest_task_storage_source,
+      receipt_durable_in_sqlite: step.receipt_durable_in_sqlite,
+      receipt_memory_only: step.receipt_memory_only,
+      receipt_durability_state: step.receipt_durability_state,
       receipt_status: step.receipt_status,
       blocker_count: step.receipt_blocker_count,
       lookup_calls_provider: step.lookup_calls_provider,
@@ -255,6 +262,10 @@ export default function MigrationStatus() {
       target_payload_end_date: handoff.target_payload_end_date,
       source_local_phase_key: handoff.source_local_phase_key,
       source_local_task_id: handoff.source_local_task_id,
+      source_local_storage_source: handoff.source_local_storage_source,
+      source_local_receipt_durable_in_sqlite: handoff.source_local_receipt_durable_in_sqlite,
+      source_local_receipt_memory_only: handoff.source_local_receipt_memory_only,
+      durable_local_receipt_required_for_handoff: handoff.durable_local_receipt_required_for_handoff,
       handoff_ready_from_local_receipt: handoff.handoff_ready_from_local_receipt,
       disabled_reason: handoff.disabled_reason,
       creates_provider_task_from_preview: handoff.creates_provider_task_from_preview,
@@ -268,6 +279,14 @@ export default function MigrationStatus() {
   );
   const observedLocalReceiptSteps = ltgNextAcceptanceActionRows.reduce(
     (total, row) => total + Number(row.observed_local_receipt_step_count ?? 0),
+    0
+  );
+  const durableLocalReceiptSteps = ltgNextAcceptanceActionRows.reduce(
+    (total, row) => total + Number(row.durable_local_receipt_step_count ?? 0),
+    0
+  );
+  const memoryOnlyLocalReceiptSteps = ltgNextAcceptanceActionRows.reduce(
+    (total, row) => total + Number(row.memory_only_local_receipt_step_count ?? 0),
     0
   );
   const policy = packet.api_policy as Record<string, unknown> | undefined;
@@ -391,6 +410,7 @@ export default function MigrationStatus() {
       <p className="risk-note">这里集中显示 P1/P2/P3 的下一步显式验收路径：只读展示允许的 POST 路由、未来 provider/worker 证据和禁止事项；GET cache 和页面渲染不会创建任务或调用外部服务。</p>
       <p className="risk-note">按钮会先看 `next_local_step_preview_rows`：如果缺前置本地回执、scope hash、review hash 或执行请求 task id，就只展示缺口并禁用按钮，避免生成已知 blocked 的回执。</p>
       <p className="risk-note">`future_handoff_preview_rows` 只把本地 execution-request 已绑定的未来 provider/worker payload 摘要列出来；它不提交 provider task、不调用 Tushare/DeepSeek/GitHub，也不能关闭 LTG。</p>
+      <p className="risk-note">handoff ready 还要求本地 execution-request receipt 已落到 SQLite；memory-only receipt 只算临时可见，不作为跨进程验收证据。</p>
       <div className="actions">
         {ltgNextAcceptanceActionRows.map((row) => {
           const nextLocalStep = String(row.next_local_step ?? "");
@@ -416,6 +436,8 @@ export default function MigrationStatus() {
           { label: "near-term actions", value: ltgNextAcceptanceActionRows.length },
           { label: "observed local receipts", value: observedLocalReceiptSteps, tone: observedLocalReceiptSteps ? "good" : "warn" },
           { label: "missing local receipts", value: missingLocalReceiptSteps, tone: missingLocalReceiptSteps ? "warn" : "good" },
+          { label: "durable local receipts", value: durableLocalReceiptSteps, tone: durableLocalReceiptSteps ? "good" : "warn" },
+          { label: "memory-only receipts", value: memoryOnlyLocalReceiptSteps, tone: memoryOnlyLocalReceiptSteps ? "bad" : "good" },
           { label: "local step rows", value: ltgNextAcceptanceLocalStepRows.length },
           {
             label: "ready local buttons",
