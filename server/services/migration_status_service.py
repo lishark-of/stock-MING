@@ -494,6 +494,84 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
             "compute action or mutate operation_zones in React",
         ],
     },
+    {
+        "queue_id": "p6_tauri_package_readiness_review",
+        "priority": "P6",
+        "ltg_ids": ["LTG-09"],
+        "action_label": "Review Tauri package readiness receipts",
+        "mode_layer": "cache_receipt_then_manual_packaged_runtime_qa",
+        "current_phase": "package_readiness_and_durable_evidence_visible",
+        "first_allowed_route": "GET /api/desktop/preflight-cache",
+        "second_allowed_route": "",
+        "future_provider_route": "future explicit Tauri build and packaged runtime QA",
+        "target_acceptance_mode": "tauri_packaged_runtime_build_launch_and_offline_ux_promotion",
+        "required_evidence": [
+            "production package readiness receipt",
+            "durable evidence recipe",
+            "repeatable tauri build log",
+            "packaged app launch QA",
+            "backend-offline packaged UX proof",
+            "signing/notarization or local distribution decision",
+        ],
+        "not_allowed_next_steps": [
+            "run npm/cargo/Tauri from GET cache",
+            "open packaged app from React render",
+            "treat release artifact detection as packaged runtime QA",
+            "mark LTG-09 complete from preflight receipts",
+        ],
+    },
+    {
+        "queue_id": "p7_streamlit_retirement_review",
+        "priority": "P7",
+        "ltg_ids": ["LTG-10"],
+        "action_label": "Review Streamlit retirement readiness receipts",
+        "mode_layer": "cache_receipt_then_manual_retirement_review",
+        "current_phase": "fallback_blockers_and_durable_evidence_visible",
+        "first_allowed_route": "GET /api/legacy/cache",
+        "second_allowed_route": "",
+        "future_provider_route": "future explicit replacement parity and Streamlit fallback retirement review",
+        "target_acceptance_mode": "streamlit_primary_workflow_exit_and_fallback_retirement",
+        "required_evidence": [
+            "ordinary workflow replacement parity",
+            "legacy fallback dependency inventory",
+            "retirement readiness receipt",
+            "durable retirement evidence recipe",
+            "admin/debug fallback decision",
+            "guardrail regression proof",
+        ],
+        "not_allowed_next_steps": [
+            "open Streamlit from GET cache",
+            "run legacy tools from React render",
+            "delete app.py before replacement parity",
+            "treat local receipt as Streamlit retirement completion",
+        ],
+    },
+    {
+        "queue_id": "p8_motion_production_promotion_review",
+        "priority": "P8",
+        "ltg_ids": ["LTG-14"],
+        "action_label": "Review motion production promotion receipts",
+        "mode_layer": "button_task_then_browser_or_release_evidence_promotion",
+        "current_phase": "local_browser_review_and_promotion_scope_required",
+        "first_allowed_route": "POST /api/audit/motion-browser-qa-review",
+        "second_allowed_route": "POST /api/audit/motion-production-promotion-dry-run",
+        "future_provider_route": "future explicit visual/performance promotion and durable CI/release evidence",
+        "target_acceptance_mode": "motion_visual_performance_durable_promotion",
+        "required_evidence": [
+            "local browser QA artifact review",
+            "motion production activation receipt",
+            "promotion dry-run scope ticket",
+            "durable visual QA evidence",
+            "performance trace/budget evidence",
+            "CI or release evidence",
+        ],
+        "not_allowed_next_steps": [
+            "open browser from GET audit cache",
+            "treat ignored local artifacts as durable CI evidence",
+            "call GitHub API from motion promotion dry-run",
+            "use motion to imply trade urgency or strategy action",
+        ],
+    },
 ]
 
 LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
@@ -613,6 +691,60 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "task_type": "run_next_session_browser_qa_review",
             "receipt_key": "next_session_browser_qa_review_contract",
             "route": "POST /api/next-session/browser-qa-review",
+        },
+    ],
+    "p6_tauri_package_readiness_review": [
+        {
+            "phase_key": "tauri_production_package_readiness_receipt",
+            "task_type": "",
+            "receipt_key": "production_package_readiness_receipt",
+            "route": "GET /api/desktop/preflight-cache",
+        },
+        {
+            "phase_key": "tauri_package_durable_evidence_recipe",
+            "task_type": "",
+            "receipt_key": "tauri_package_durable_evidence_recipe",
+            "route": "GET /api/desktop/preflight-cache",
+        },
+    ],
+    "p7_streamlit_retirement_review": [
+        {
+            "phase_key": "streamlit_retirement_readiness_receipt",
+            "task_type": "",
+            "receipt_key": "streamlit_retirement_readiness_receipt",
+            "route": "GET /api/legacy/cache",
+        },
+        {
+            "phase_key": "streamlit_retirement_durable_evidence_recipe",
+            "task_type": "",
+            "receipt_key": "streamlit_retirement_durable_evidence_recipe",
+            "route": "GET /api/legacy/cache",
+        },
+    ],
+    "p8_motion_production_promotion_review": [
+        {
+            "phase_key": "motion_production_activation_receipt",
+            "task_type": "",
+            "receipt_key": "motion_production_activation_receipt",
+            "route": "GET /api/audit/cache",
+        },
+        {
+            "phase_key": "motion_browser_qa_review_receipt",
+            "task_type": "run_motion_browser_qa_review",
+            "receipt_key": "motion_browser_qa_review_contract",
+            "route": "POST /api/audit/motion-browser-qa-review",
+        },
+        {
+            "phase_key": "motion_production_promotion_dry_run_ticket",
+            "task_type": "run_motion_production_promotion_dry_run",
+            "receipt_key": "motion_promotion_dry_run_receipt",
+            "route": "POST /api/audit/motion-production-promotion-dry-run",
+        },
+        {
+            "phase_key": "motion_durable_evidence_recipe",
+            "task_type": "",
+            "receipt_key": "motion_durable_evidence_recipe",
+            "route": "GET /api/audit/cache",
         },
     ],
 }
@@ -773,6 +905,36 @@ def _local_receipt_packet_fallback(queue_id: str, receipt_key: str) -> dict[str,
             packet = {}
         source = "next_session_cache_packet"
         source_packet_key = "command_center_next_session_projection_packet"
+    elif queue_id == "p6_tauri_package_readiness_review":
+        try:
+            from server.services import desktop_service
+
+            packet = desktop_service.read_desktop_shell_preflight_cache()
+        except Exception:
+            packet = {}
+        source = "desktop_shell_preflight_cache_packet"
+        source_packet_key = "command_center_3_desktop_shell_preflight_cache"
+    elif queue_id == "p7_streamlit_retirement_review":
+        try:
+            from server.services import legacy_service
+
+            packet = legacy_service.read_legacy_bridge_cache()
+        except Exception:
+            packet = {}
+        source = "legacy_bridge_cache_packet"
+        source_packet_key = "command_center_3_legacy_bridge_cache"
+    elif queue_id == "p8_motion_production_promotion_review":
+        try:
+            from server.services import audit_service
+            from storage.sqlite_meta import SQLiteMetaStore
+
+            packet = SQLiteMetaStore(audit_service.SQLITE_META_PATH).read_packet(
+                "command_center_3_call_ledger_audit_cache"
+            )
+        except Exception:
+            packet = {}
+        source = "call_ledger_audit_sqlite_packet"
+        source_packet_key = "command_center_3_call_ledger_audit_cache"
     else:
         return {}
     packet_map = packet if isinstance(packet, dict) else {}
@@ -797,6 +959,7 @@ def _receipt_blocker_count(receipt: dict[str, Any]) -> int:
         "blocking_phase_count",
         "blocking_review_count",
         "local_blocker_count",
+        "blocking_criterion_count",
         "production_blocker_count",
         "provider_evidence_blocker_count",
         "credential_missing_provider_count",
@@ -840,6 +1003,8 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "activation_review_ready",
         "evidence_plan_ready",
         "local_recipe_ready",
+        "local_receipt_ready",
+        "local_activation_receipt_ready",
         "local_scope_ticket_ready",
         "local_browser_qa_review_ready",
     )
@@ -907,6 +1072,7 @@ def _build_ltg_next_action_local_step_rows(
             or receipt_map.get("scope_ticket_sha256")
             or receipt_map.get("runtime_qa_scope_hash")
             or receipt_map.get("benchmark_scope_hash")
+            or receipt_map.get("scope_hash")
             or ""
         )
         receipt_scope_hash_short = str(
@@ -916,6 +1082,7 @@ def _build_ltg_next_action_local_step_rows(
             or receipt_map.get("physical_execution_scope_hash_short")
             or receipt_map.get("runtime_qa_scope_hash_short")
             or receipt_map.get("benchmark_scope_hash_short")
+            or receipt_map.get("scope_hash_short")
             or (receipt_scope_hash[:16] if receipt_scope_hash else "")
         )
         task_found = bool(latest_task)
@@ -1355,6 +1522,20 @@ def _build_ltg_next_action_submission_preview_rows(
             "required_prior_phase_key": "",
             "required_prior_material": "",
         },
+        "POST /api/audit/motion-browser-qa-review": {
+            "step_kind": "local_motion_browser_qa_artifact_review",
+            "safe_payload_summary": "review_scope=motion_browser_qa_local_artifact; reads ignored local reports only",
+            "expected_local_receipt": "motion_browser_qa_review_contract",
+            "required_prior_phase_key": "",
+            "required_prior_material": "",
+        },
+        "POST /api/audit/motion-production-promotion-dry-run": {
+            "step_kind": "local_motion_production_promotion_dry_run",
+            "safe_payload_summary": "user_approved, promote_visual=true, promote_performance=true; no browser/GitHub execution",
+            "expected_local_receipt": "motion_promotion_dry_run_receipt",
+            "required_prior_phase_key": "motion_browser_qa_review_receipt",
+            "required_prior_material": "receipt_local_ready",
+        },
     }
     spec = route_specs.get(next_local_step)
     if spec is None:
@@ -1393,6 +1574,8 @@ def _build_ltg_next_action_submission_preview_rows(
         material_visible = True
     elif required_material == "latest_task_id":
         material_visible = bool(prior_step.get("latest_task_id"))
+    elif required_material == "receipt_local_ready":
+        material_visible = prior_step.get("local_ready") is True
     else:
         material_visible = bool(
             prior_step.get(required_material)

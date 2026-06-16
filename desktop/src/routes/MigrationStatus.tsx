@@ -210,6 +210,24 @@ function ltgNextStepPayload(row: Record<string, unknown>): Record<string, unknow
       source: "migration_status_ltg_next_action"
     };
   }
+  if (route === "POST /api/audit/motion-browser-qa-review") {
+    return {
+      requested_from: "migration_status_ltg_next_action",
+      reviewer: "migration_status_ltg_queue",
+      review_scope: "motion_browser_qa_local_artifact",
+      source: "migration_status_ltg_next_action"
+    };
+  }
+  if (route === "POST /api/audit/motion-production-promotion-dry-run") {
+    return {
+      requested_from: "migration_status_ltg_next_action",
+      user_approved: true,
+      promote_visual: true,
+      promote_performance: true,
+      promotion_scope: "motion_visual_performance_local_promotion_dry_run",
+      source: "migration_status_ltg_next_action"
+    };
+  }
   return { requested_by: "migration_status_ltg_queue", source: "migration_status_ltg_next_action" };
 }
 

@@ -301,7 +301,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(migration["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["ltg_acceptance_runway_rows"]), 14)
-        self.assertEqual(len(migration["ltg_next_acceptance_action_rows"]), 8)
+        self.assertEqual(len(migration["ltg_next_acceptance_action_rows"]), 11)
         runway_rows = {row["id"]: row for row in migration["ltg_acceptance_runway_rows"]}
         action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
         self.assertIn("P1", runway_rows["LTG-01"]["priority"])
@@ -313,6 +313,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("P4", runway_rows["LTG-06"]["priority"])
         self.assertIn("P5", runway_rows["LTG-07"]["priority"])
         self.assertIn("P5", runway_rows["LTG-08"]["priority"])
+        self.assertIn("P6", runway_rows["LTG-09"]["priority"])
+        self.assertIn("P7", runway_rows["LTG-10"]["priority"])
+        self.assertIn("P8", runway_rows["LTG-14"]["priority"])
         self.assertEqual(
             action_rows["p1_trade_cal_provider_acceptance"]["first_allowed_route"],
             "POST /api/data-health/trade-cal-provider-acceptance-dry-run",
@@ -336,6 +339,28 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(
             action_rows["p5_next_session_map_browser_qa"]["first_allowed_route"],
             "POST /api/next-session/browser-qa-review",
+        )
+        self.assertIn("LTG-09", action_rows["p6_tauri_package_readiness_review"]["ltg_ids"])
+        self.assertIn("LTG-10", action_rows["p7_streamlit_retirement_review"]["ltg_ids"])
+        self.assertEqual(action_rows["p6_tauri_package_readiness_review"]["local_receipt_step_count"], 2)
+        self.assertEqual(action_rows["p7_streamlit_retirement_review"]["local_receipt_step_count"], 2)
+        self.assertEqual(action_rows["p6_tauri_package_readiness_review"]["ready_local_receipt_step_count"], 2)
+        self.assertEqual(action_rows["p7_streamlit_retirement_review"]["ready_local_receipt_step_count"], 2)
+        self.assertEqual(
+            action_rows["p6_tauri_package_readiness_review"]["next_local_step"],
+            "future explicit Tauri build and packaged runtime QA",
+        )
+        self.assertEqual(
+            action_rows["p7_streamlit_retirement_review"]["next_local_step"],
+            "future explicit replacement parity and Streamlit fallback retirement review",
+        )
+        self.assertGreater(action_rows["p6_tauri_package_readiness_review"]["local_receipt_blocker_count"], 0)
+        self.assertGreater(action_rows["p7_streamlit_retirement_review"]["local_receipt_blocker_count"], 0)
+        self.assertIn("LTG-14", action_rows["p8_motion_production_promotion_review"]["ltg_ids"])
+        self.assertEqual(action_rows["p8_motion_production_promotion_review"]["local_receipt_step_count"], 4)
+        self.assertEqual(
+            action_rows["p8_motion_production_promotion_review"]["first_allowed_route"],
+            "POST /api/audit/motion-browser-qa-review",
         )
         self.assertTrue(
             all(
@@ -19004,7 +19029,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_acceptance_runway_rows"]), 14)
-        self.assertEqual(len(migration["data"]["ltg_next_acceptance_action_rows"]), 8)
+        self.assertEqual(len(migration["data"]["ltg_next_acceptance_action_rows"]), 11)
         self.assertEqual(len(migration["data"]["ltg_stage_scope_observed_rows"]), 14)
         runway_rows = {row["id"]: row for row in migration["data"]["ltg_acceptance_runway_rows"]}
         action_rows = {row["queue_id"]: row for row in migration["data"]["ltg_next_acceptance_action_rows"]}
@@ -19015,6 +19040,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("P4", runway_rows["LTG-06"]["priority"])
         self.assertIn("P5", runway_rows["LTG-07"]["priority"])
         self.assertIn("P5", runway_rows["LTG-08"]["priority"])
+        self.assertIn("P6", runway_rows["LTG-09"]["priority"])
+        self.assertIn("P7", runway_rows["LTG-10"]["priority"])
+        self.assertIn("P8", runway_rows["LTG-14"]["priority"])
         self.assertIn("LTG-01", action_rows["p1_trade_cal_provider_acceptance"]["ltg_ids"])
         self.assertEqual(action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_step_count"], 3)
         self.assertIn("LTG-05", action_rows["p4_storage_physical_execution"]["ltg_ids"])
@@ -19025,6 +19053,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("LTG-08", action_rows["p5_next_session_map_browser_qa"]["ltg_ids"])
         self.assertEqual(action_rows["p5_deepseek_provider_benchmark_scope"]["local_receipt_step_count"], 1)
         self.assertEqual(action_rows["p5_next_session_map_browser_qa"]["local_receipt_step_count"], 1)
+        self.assertIn("LTG-09", action_rows["p6_tauri_package_readiness_review"]["ltg_ids"])
+        self.assertIn("LTG-10", action_rows["p7_streamlit_retirement_review"]["ltg_ids"])
+        self.assertEqual(action_rows["p6_tauri_package_readiness_review"]["local_receipt_step_count"], 2)
+        self.assertEqual(action_rows["p7_streamlit_retirement_review"]["local_receipt_step_count"], 2)
+        self.assertIn("LTG-14", action_rows["p8_motion_production_promotion_review"]["ltg_ids"])
+        self.assertEqual(action_rows["p8_motion_production_promotion_review"]["local_receipt_step_count"], 4)
         self.assertEqual(
             action_rows["p1_trade_cal_provider_acceptance"]["local_receipt_lookup_source"],
             "task_service.list_task_statuses_memory_plus_sqlite_read_only",
