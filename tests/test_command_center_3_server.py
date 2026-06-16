@@ -2206,6 +2206,36 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "contains_secret": False,
             },
         )
+        store.write_packet(
+            storage_service.COMPACTION_DRY_RUN_PACKET_KEY,
+            {
+                "packet_key": storage_service.COMPACTION_DRY_RUN_PACKET_KEY,
+                "schema_version": "command_center_3_storage_compaction_dry_run.v1",
+                "status": "dry_run_completed",
+                "dataset_count": len(datasets),
+                "physical_compaction_metadata_validated_count": len(datasets),
+                "physical_compaction_metadata_validation_done": True,
+                "compaction_not_needed_count": len(datasets),
+                "compaction_ready_count": 0,
+                "compaction_blocked_count": 0,
+                "missing_dataset_count": 0,
+                "compaction_executed": False,
+                "physical_compaction_executed": False,
+                "compaction_executed_count": 0,
+                "post_dry_run_writes_parquet": False,
+                "post_dry_run_reads_row_payloads": False,
+                "post_dry_run_reads_env_files": False,
+                "cache_get_writes_files": False,
+                "production_storage_complete": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            },
+        )
 
         migration = migration_status_service.build_migration_status()
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
@@ -2213,9 +2243,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
         self.assertEqual(ltg05["status"], "observed_storage_direct_execution_evidence_production_pending")
         self.assertEqual(ltg05["row_count"], 8)
-        self.assertEqual(ltg05["pending_stage_count"], 5)
-        self.assertEqual(ltg05["production_blocker_count"], 5)
-        self.assertEqual(ltg05["direct_evidence_stage_count"], 3)
+        self.assertEqual(ltg05["pending_stage_count"], 4)
+        self.assertEqual(ltg05["production_blocker_count"], 4)
+        self.assertEqual(ltg05["direct_evidence_stage_count"], 4)
         self.assertTrue(ltg05["physical_schema_validation_done"])
         self.assertEqual(ltg05["physical_schema_validation_done_count"], len(datasets))
         self.assertTrue(ltg05["dataset_version_manifest_validated"])
@@ -2225,6 +2255,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(ltg05["partition_migration_metadata_validation_status"], "dry_run_completed")
         self.assertEqual(ltg05["partition_migration_metadata_validated_count"], len(datasets))
         self.assertEqual(ltg05["partition_migration_dataset_count"], len(datasets))
+        self.assertTrue(ltg05["physical_compaction_metadata_validation_done"])
+        self.assertEqual(ltg05["physical_compaction_metadata_validation_status"], "dry_run_completed")
+        self.assertEqual(ltg05["physical_compaction_metadata_validated_count"], len(datasets))
+        self.assertEqual(ltg05["physical_compaction_dataset_count"], len(datasets))
+        self.assertEqual(ltg05["physical_compaction_not_needed_count"], len(datasets))
         self.assertEqual(ltg05["storage_direct_evidence_layer"], "L3_local_storage_physical_execution_evidence")
         self.assertFalse(ltg05["schema_migration_executed"])
         self.assertFalse(ltg05["partition_migration_executed"])
@@ -2240,7 +2275,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(ltg05["can_close_from_observed_row"])
 
         migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
-        self.assertEqual(migration_goals["LTG-05"]["observed_stage_scope_pending_count"], 5)
+        self.assertEqual(migration_goals["LTG-05"]["observed_stage_scope_pending_count"], 4)
         self.assertFalse(migration_goals["LTG-05"]["observed_stage_scope_can_close_goal"])
 
     def test_ltg_next_action_queue_reads_candidate_radar_packet_receipts(self):
@@ -5326,12 +5361,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(persisted["mode"], "dry_run")
         self.assertEqual(persisted["dataset_count"], 6)
         self.assertEqual(persisted["compaction_ready_count"], 1)
+        self.assertEqual(persisted["physical_compaction_metadata_validated_count"], 0)
+        self.assertFalse(persisted["physical_compaction_metadata_validation_done"])
         self.assertEqual(persisted["compaction_executed_count"], 0)
         self.assertFalse(persisted["post_dry_run_writes_parquet"])
         self.assertFalse(persisted["post_dry_run_reads_row_payloads"])
         self.assertFalse(persisted["post_dry_run_reads_env_files"])
         self.assertFalse(persisted["compaction_executed"])
         self.assertFalse(persisted["physical_compaction_executed"])
+        self.assertFalse(persisted["production_storage_complete"])
+        self.assertFalse(persisted["contains_secret"])
         self.assertFalse(persisted["external_calls_triggered"])
         self.assertFalse(persisted["tushare_called"])
         self.assertTrue(persisted["does_not_execute_trades"])
@@ -5339,9 +5378,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(rows_by_dataset["daily"]["compaction_dry_run_status"], "ready_for_manual_compaction")
         self.assertTrue(rows_by_dataset["daily"]["manual_compaction_recommended"])
         self.assertTrue(rows_by_dataset["daily"]["compaction_ready"])
+        self.assertFalse(rows_by_dataset["daily"]["physical_compaction_metadata_validation_done"])
+        self.assertFalse(rows_by_dataset["daily"]["production_storage_complete"])
+        self.assertFalse(rows_by_dataset["daily"]["contains_secret"])
         self.assertFalse(rows_by_dataset["daily"]["would_rewrite_parquet"])
         self.assertFalse(rows_by_dataset["daily"]["post_dry_run_writes_parquet"])
         self.assertEqual(rows_by_dataset["moneyflow"]["compaction_dry_run_status"], "missing_dataset")
+        self.assertFalse(rows_by_dataset["moneyflow"]["physical_compaction_metadata_validation_done"])
         dumped = json.dumps({"task": task, "packet": persisted}, ensure_ascii=False)
         self.assertNotIn("SHOULD_DROP", dumped)
         self.assertNotIn('"compaction_allowed": true', dumped)
@@ -20304,7 +20347,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
         self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 14)
-        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 113)
+        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 112)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_acceptance_runway_rows"]), 14)
@@ -20482,7 +20525,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(observed_stage_rows["LTG-05"]["row_count"], 8)
         ltg05_direct_count = int(observed_stage_rows["LTG-05"].get("direct_evidence_stage_count") or 0)
-        self.assertIn(ltg05_direct_count, {2, 3, 4})
+        self.assertIn(ltg05_direct_count, {2, 3, 4, 5})
         self.assertEqual(observed_stage_rows["LTG-05"]["pending_stage_count"], 8 - ltg05_direct_count)
         self.assertEqual(observed_stage_rows["LTG-05"]["local_evidence_stage_count"], 8)
         self.assertTrue(observed_stage_rows["LTG-05"]["physical_schema_validation_done"])
@@ -20500,6 +20543,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "dry_run_completed",
             )
             self.assertFalse(observed_stage_rows["LTG-05"]["partition_migration_executed"])
+        if observed_stage_rows["LTG-05"].get("physical_compaction_metadata_validation_done"):
+            self.assertEqual(
+                observed_stage_rows["LTG-05"]["physical_compaction_metadata_validation_status"],
+                "dry_run_completed",
+            )
+            self.assertEqual(
+                observed_stage_rows["LTG-05"]["physical_compaction_not_needed_count"],
+                observed_stage_rows["LTG-05"]["physical_compaction_dataset_count"],
+            )
+            self.assertFalse(observed_stage_rows["LTG-05"]["physical_compaction_executed"])
         self.assertEqual(
             observed_stage_rows["LTG-05"]["storage_direct_evidence_layer"],
             "L3_local_storage_physical_execution_evidence",

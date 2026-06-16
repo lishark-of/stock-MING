@@ -2446,8 +2446,10 @@ def _compaction_dry_run_row(dataset: str) -> dict[str, Any]:
         "manual_compaction_recommended": bool(compaction_plan.get("manual_compaction_recommended")),
         "manual_compaction_task_required": True,
         "compaction_ready": dry_run_status == "ready_for_manual_compaction",
+        "physical_compaction_metadata_validation_done": dry_run_status == "not_needed",
         "compaction_executed": False,
         "physical_compaction_executed": False,
+        "production_storage_complete": False,
         "would_rewrite_parquet": False,
         "post_dry_run_writes_parquet": False,
         "post_dry_run_reads_row_payloads": False,
@@ -2459,6 +2461,7 @@ def _compaction_dry_run_row(dataset: str) -> dict[str, Any]:
         "github_called": False,
         "does_not_modify_strategy_action": True,
         "does_not_execute_trades": True,
+        "contains_secret": False,
     }
 
 
@@ -2470,6 +2473,10 @@ def storage_compaction_dry_run_packet(
     rows = [_compaction_dry_run_row(dataset) for dataset in CANONICAL_PARQUET_DATASETS]
     status_counts = _count_values(row.get("compaction_dry_run_status") for row in rows)
     ready_count = sum(1 for row in rows if row.get("compaction_ready"))
+    metadata_validated_count = sum(
+        1 for row in rows if row.get("physical_compaction_metadata_validation_done")
+    )
+    metadata_validation_done = metadata_validated_count == len(rows)
     packet = {
         "schema_version": "command_center_3_storage_compaction_dry_run.v1",
         "packet_key": COMPACTION_DRY_RUN_PACKET_KEY,
@@ -2479,6 +2486,8 @@ def storage_compaction_dry_run_packet(
         "scope": "parquet_compaction_plan_before_rewrite",
         "dataset_count": len(rows),
         "compaction_ready_count": ready_count,
+        "physical_compaction_metadata_validated_count": metadata_validated_count,
+        "physical_compaction_metadata_validation_done": metadata_validation_done,
         "compaction_not_needed_count": status_counts.get("not_needed", 0),
         "missing_dataset_count": status_counts.get("missing_dataset", 0),
         "compaction_blocked_count": len(rows) - ready_count - status_counts.get("not_needed", 0),
@@ -2498,6 +2507,7 @@ def storage_compaction_dry_run_packet(
         "post_dry_run_reads_env_files": False,
         "compaction_executed": False,
         "physical_compaction_executed": False,
+        "production_storage_complete": False,
         "manual_compaction_task_required": True,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -2505,6 +2515,7 @@ def storage_compaction_dry_run_packet(
         "github_called": False,
         "does_not_modify_strategy_action": True,
         "does_not_execute_trades": True,
+        "contains_secret": False,
         "call_ledger": _storage_cache_call_ledger(
             "local_storage_compaction_dry_run",
             endpoint="POST /api/storage/compaction/dry-run",
