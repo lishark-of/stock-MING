@@ -10939,7 +10939,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["candidate_radar_next_execution_recipe_ready"])
         self.assertTrue(payload["candidate_radar_worker_execution_recipe_ready"])
         self.assertTrue(payload["candidate_radar_durable_evidence_recipe_ready"])
-        self.assertGreaterEqual(payload["candidate_radar_durable_evidence_blocker_count"], 9)
+        self.assertGreaterEqual(payload["candidate_radar_durable_evidence_blocker_count"], 8)
         self.assertFalse(payload["external_calls_triggered"])
         self.assertFalse(payload["tushare_called"])
         self.assertFalse(payload["deepseek_called"])
@@ -11024,7 +11024,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "candidate_radar_durable_evidence_recipe_ready_production_pending",
         )
         self.assertTrue(payload["observed"]["candidate_radar_durable_evidence_ready"])
-        self.assertGreaterEqual(payload["observed"]["candidate_radar_durable_evidence_blocker_count"], 9)
+        self.assertGreaterEqual(payload["observed"]["candidate_radar_durable_evidence_blocker_count"], 8)
         self.assertIn(
             "worker_full_pool_execution_evidence_required",
             payload["observed"]["candidate_radar_durable_evidence_missing"],
@@ -21222,6 +21222,26 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("provider_signal_coverage_complete", promotion["blocking_promotion_keys"])
         self.assertIn("full_pool_execution_complete", promotion["blocking_promotion_keys"])
         self.assertIn("deep_scan_execution_complete", promotion["blocking_promotion_keys"])
+        activation = cache["candidate_radar_production_activation_receipt"]
+        activation_rows = {row["activation_key"]: row for row in cache["candidate_radar_production_activation_rows"]}
+        self.assertTrue(activation["browser_visual_performance_reviewed"])
+        self.assertNotIn("browser_visual_performance_review", activation["missing_evidence_items"])
+        self.assertIn("durable_ci_or_packaged_runtime_evidence", activation["missing_evidence_items"])
+        self.assertEqual(
+            activation_rows["browser_visual_performance_review_required"]["status"],
+            "reviewed_local_artifact",
+        )
+        self.assertFalse(activation_rows["browser_visual_performance_review_required"]["production_blocker"])
+        self.assertFalse(activation["production_radar_replacement_complete"])
+        durable = cache["candidate_radar_durable_evidence_recipe"]
+        durable_rows = {row["evidence_key"]: row for row in cache["candidate_radar_durable_evidence_rows"]}
+        self.assertTrue(durable["browser_visual_performance_reviewed"])
+        self.assertNotIn("browser_visual_performance_evidence_required", durable["missing_durable_evidence"])
+        self.assertTrue(durable_rows["browser_visual_performance_evidence_required"]["passed"])
+        self.assertFalse(durable_rows["browser_visual_performance_evidence_required"]["production_blocker"])
+        self.assertIn("worker_full_pool_execution_evidence_required", durable["missing_durable_evidence"])
+        self.assertIn("provider_backed_parity_call_ledger_required", durable["missing_durable_evidence"])
+        self.assertFalse(durable["production_radar_replacement_complete"])
 
     def test_candidate_radar_production_replacement_review_is_button_gated_local_only(self):
         self._with_meta_store()

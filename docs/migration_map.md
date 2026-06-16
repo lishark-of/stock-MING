@@ -10,6 +10,8 @@
 
 队列状态现在区分 `local_queue_required=true` 的本地票据链和 durable evidence recipe 这类生产缺口清单。以 LTG-04 为例，worker-batch dry-run scope ticket、execution recipe、execution-request ticket 与 local research receipt 都 ready 后，`next_local_step` 才进入未来 worker runtime / storage / metric / promotion evidence；`future_handoff_preview_rows` 只读显示可提交的 worker route，`universe_durable_evidence_recipe` 仍继续展示生产 blocker，但不再把本地链路误判为 blocked。
 
+LTG-13 Candidate Radar 的本地浏览器 QA 现在也按同样口径分层：`candidate_browser_qa_review_ready_local_artifact` 可以清掉本地 browser visual/performance review 缺口，并让 activation / durable-evidence receipts 停止重复要求这一步；但它仍不是 durable CI/release evidence、provider-backed parity、worker full-pool/deep-scan execution、legacy retirement 或 production replacement。
+
 | Streamlit/现有模块 | 当前文件 | 3.0 API | 3.0 前端页面 | 是否重计算 | 是否任务化 |
 |---|---|---|---|---|---|
 | 调用审计 / 外部边界 | `server/services/*_service.py`, `server/services/task_service.py` | `GET /api/audit/cache` | `CallLedgerAudit.tsx` | cache GET 聚合本地 cache API 与任务 `call_ledger`；同时静态审计本地 push gate readiness、push readiness receipt 和 CI failure email triage；不刷新、不外联、不代表 CI 状态 | 否；只读审计 |

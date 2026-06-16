@@ -5408,6 +5408,11 @@ def _candidate_radar_production_activation_receipt(
     deep_scan_done = deep_scan_plan.get("deep_scan_done") is True
     provider_acceptance_done = promotion.get("provider_backed_acceptance_done") is True
     browser_review_ready = browser_review.get("local_browser_qa_review_ready") is True
+    browser_visual_perf_reviewed = bool(
+        browser_review_ready
+        and browser_review.get("candidate_visual_qa_evidence_passed") is True
+        and browser_review.get("candidate_browser_performance_evidence_passed") is True
+    )
     trade_guard_ready = (
         packet.get("does_not_execute_trades") is True
         and packet.get("does_not_modify_strategy_action") is True
@@ -5471,11 +5476,16 @@ def _candidate_radar_production_activation_receipt(
         _activation_receipt_row(
             "browser_visual_performance_review_required",
             "browser_qa",
-            "reviewed_local_artifact" if browser_review_ready else "pending_browser_review",
+            "reviewed_local_artifact" if browser_visual_perf_reviewed else "pending_browser_review",
             local_ready=True,
-            production_blocker=True,
-            evidence=f"local_browser_qa_review_ready={browser_review_ready}; durable_ci_evidence_complete=false",
-            next_action="Promote only durable visual and performance evidence after explicit review.",
+            production_blocker=not browser_visual_perf_reviewed,
+            evidence=(
+                f"local_browser_qa_review_ready={browser_review_ready}; "
+                f"visual={browser_review.get('candidate_visual_qa_evidence_passed') is True}; "
+                f"performance={browser_review.get('candidate_browser_performance_evidence_passed') is True}; "
+                "durable_ci_evidence_complete=false"
+            ),
+            next_action="Keep the reviewed local browser artifact visible, then promote durable CI/browser evidence separately.",
         ),
         _activation_receipt_row(
             "legacy_retirement_stays_blocked",
@@ -5530,7 +5540,7 @@ def _candidate_radar_production_activation_receipt(
             "full_pool_worker_execution_evidence": full_pool_done,
             "deep_scan_worker_execution_evidence": deep_scan_done,
             "provider_backed_parity_call_ledger": provider_acceptance_done,
-            "browser_visual_performance_review": False,
+            "browser_visual_performance_review": browser_visual_perf_reviewed,
             "durable_ci_or_packaged_runtime_evidence": False,
             "legacy_retirement_acceptance": replacement.get("legacy_retirement_ready") is True,
         }.items()
@@ -5553,7 +5563,7 @@ def _candidate_radar_production_activation_receipt(
         "full_pool_scan_done": full_pool_done,
         "deep_scan_done": deep_scan_done,
         "provider_backed_acceptance_done": provider_acceptance_done,
-        "browser_visual_performance_reviewed": False,
+        "browser_visual_performance_reviewed": browser_visual_perf_reviewed,
         "durable_ci_evidence_complete": False,
         "candidate_is_not_buy_instruction": True,
         "allowed_next_step": "explicit_worker_full_pool_and_deep_scan_acceptance_then_provider_backed_parity_and_browser_review",
@@ -5561,7 +5571,7 @@ def _candidate_radar_production_activation_receipt(
             "treat quick scan as production radar replacement",
             "treat full_pool_plan as full_pool_scan_done",
             "treat deep_scan_plan as deep_scan_done",
-            "promote local browser artifact without explicit review",
+            "treat local browser review as durable CI/release evidence",
             "call Tushare/DeepSeek/GitHub from GET cache or render",
             "treat candidates as buy instructions",
             "modify strategy action",
@@ -7325,7 +7335,7 @@ def _candidate_radar_durable_evidence_recipe(
         and browser_review.get("local_browser_qa_review_ready") is True
         and promotion.get("browser_evidence_blocker_count") == 0
     )
-    browser_visual_perf_done = False
+    browser_visual_perf_done = local_browser_visual_perf_reviewed
     deepseek_model_ledger_done = False
     legacy_retirement_ready = promotion.get("legacy_retirement_ready") is True
     promotion_ready = promotion.get("promotion_ready") is True
@@ -7511,7 +7521,7 @@ def _candidate_radar_durable_evidence_recipe(
             local_surface_required=False,
             production_blocker=not browser_visual_perf_done,
             evidence=f"local_reviewed={local_browser_visual_perf_reviewed}; visual={browser_evidence.get('candidate_visual_qa_evidence_passed')}; perf={browser_evidence.get('candidate_browser_performance_evidence_passed')}; review={browser_review.get('local_browser_qa_review_ready')}; durable_promotion=false",
-            next_action="Run and review browser visual/performance evidence before claiming no-stall radar replacement.",
+            next_action="Keep local browser visual/performance review visible; durable CI/release promotion still belongs to production review.",
             recommended_order=16,
         ),
         _candidate_radar_durable_evidence_recipe_row(

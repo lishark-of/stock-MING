@@ -70,7 +70,6 @@ REQUIRED_ACTIVATION_BLOCKERS = {
     "full_pool_worker_execution_required",
     "deep_scan_worker_execution_required",
     "provider_backed_acceptance_required",
-    "browser_visual_performance_review_required",
     "legacy_retirement_stays_blocked",
 }
 REQUIRED_PARITY_ACCEPTANCE_ITEMS = {
@@ -1231,7 +1230,7 @@ def build_contract() -> dict[str, Any]:
             and production_replacement_review.get("browser_visual_performance_promoted") is False
             and production_replacement_review.get("durable_evidence_complete") is False
             and int(production_replacement_review.get("row_count") or 0) == len(production_replacement_review_rows)
-            and int(production_replacement_review.get("production_blocker_count") or 0) >= 3
+            and int(production_replacement_review.get("production_blocker_count") or 0) >= 2
             and len(str(production_replacement_review.get("review_scope_hash") or "")) == 64
             and production_replacement_review.get("review_scope_hash_input_includes_secret") is False
             and "worker-backed full-pool execution evidence"
@@ -1361,7 +1360,7 @@ def build_contract() -> dict[str, Any]:
             and durable_evidence_recipe.get("full_pool_scan_done") is False
             and durable_evidence_recipe.get("deep_scan_done") is False
             and durable_evidence_recipe.get("provider_backed_acceptance_done") is False
-            and durable_evidence_recipe.get("browser_visual_performance_reviewed") is False
+            and durable_evidence_recipe.get("browser_visual_performance_reviewed") is not None
             and durable_evidence_recipe.get("deepseek_model_ledger_complete") is False
             and durable_evidence_recipe.get("provider_execution_implemented") is False
             and durable_evidence_recipe.get("model_execution_implemented") is False
@@ -1377,7 +1376,7 @@ def build_contract() -> dict[str, Any]:
             and int(durable_evidence_recipe.get("row_count") or 0) == len(durable_evidence_rows)
             and int(durable_evidence_recipe.get("evidence_key_count") or 0)
             == len(candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS)
-            and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) >= 9
+            and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) >= 8
             and "user-approved provider parity scope ticket"
             in _list(durable_evidence_recipe.get("required_evidence"))
             and "button-gated worker execution request ticket bound to the worker recipe hash"
@@ -1413,10 +1412,9 @@ def build_contract() -> dict[str, Any]:
                 "production_blocker"
             )
             is True
-            and _dict(durable_evidence_rows.get("browser_visual_performance_evidence_required")).get(
-                "production_blocker"
+            and _durable_row_blocked_or_local_visible(
+                durable_evidence_rows.get("browser_visual_performance_evidence_required")
             )
-            is True
             and _dict(durable_evidence_rows.get("deepseek_model_ledger_if_enabled_required")).get(
                 "production_blocker"
             )
