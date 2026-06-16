@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getBootstrapStatus, getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
+import { getBootstrapStatus, getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -154,6 +154,7 @@ export default function CandidateRadar() {
   const deepScanWorkerFallback = (cache.candidate_radar_deep_scan_worker_fallback_receipt as Record<string, unknown> | undefined) ?? {};
   const productionReplacementReview = (cache.candidate_radar_production_replacement_review_receipt as Record<string, unknown> | undefined) ?? {};
   const productionPromotionDryRun = (cache.candidate_radar_production_promotion_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
+  const legacyRetirementReview = (cache.candidate_radar_legacy_retirement_review_receipt as Record<string, unknown> | undefined) ?? {};
   const launchQuantProjectionExecutionRequest = () =>
     void postCandidateRadarQuantProjectionExecutionRequest({
       scan_mode: "quant_projection_execution_request",
@@ -213,6 +214,15 @@ export default function CandidateRadar() {
       setTaskReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
     });
+  const launchLegacyRetirementReview = () =>
+    void postCandidateRadarLegacyRetirementReview({
+      review_scope: "candidate_radar_legacy_retirement_local_review",
+      operator_approved: true,
+      reviewer: "candidate_radar_page"
+    }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
   const durableEvidenceRecipe = (cache.candidate_radar_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
   const productionStageScopeManifest = (cache.candidate_radar_production_stage_scope_manifest as Record<string, unknown> | undefined) ?? {};
   const resultDeltaClarity = (cache.result_delta_clarity_contract as Record<string, unknown> | undefined) ?? {};
@@ -262,6 +272,7 @@ export default function CandidateRadar() {
   const deepScanWorkerFallbackRows = rows(cache.candidate_radar_deep_scan_worker_fallback_rows);
   const productionReplacementReviewRows = rows(cache.candidate_radar_production_replacement_review_rows);
   const productionPromotionDryRunRows = rows(cache.candidate_radar_production_promotion_dry_run_rows);
+  const legacyRetirementReviewRows = rows(cache.candidate_radar_legacy_retirement_review_rows);
   const durableEvidenceRows = rows(cache.candidate_radar_durable_evidence_rows);
   const productionStageScopeRows = rows(cache.candidate_radar_production_stage_scope_rows);
   const resultDeltaClarityRows = rows(cache.result_delta_clarity_rows);
@@ -788,6 +799,24 @@ export default function CandidateRadar() {
         <p>这个 dry-run 只把“可以进入提升审查的本地 scope”绑定起来；真实 worker、provider call ledger、DeepSeek model ledger、浏览器 promotion 和 legacy retirement 仍是直接证据缺口。</p>
         <DataLineageTable rows={objectRow(productionPromotionDryRun)} />
         <DataLineageTable rows={productionPromotionDryRunRows} />
+      </PacketCard>
+
+      <PacketCard title="雷达 legacy retirement review" subtitle="POST /api/candidate-radar/legacy-retirement-review；审查旧雷达退场边界，不退掉 legacy、不运行外部任务" status={String(legacyRetirementReview.status ?? "missing")}>
+        <div className="actions">
+          <button onClick={launchLegacyRetirementReview} disabled={!productionPromotionDryRun.promotion_scope_hash}>
+            生成 legacy retirement review
+          </button>
+        </div>
+        <p>local_review_ready: {String(legacyRetirementReview.local_review_ready === true)}；ready_to_retire_legacy: {String(legacyRetirementReview.ready_to_retire_legacy === true)}</p>
+        <p>legacy_retirement_ready: {String(legacyRetirementReview.legacy_retirement_ready === true)}；legacy_fallback_required: {String(legacyRetirementReview.legacy_fallback_required !== false)}；production_radar_replacement_complete: {String(legacyRetirementReview.production_radar_replacement_complete === true)}</p>
+        <p>replacement review / promotion dry-run / durable recipe / stage manifest: {String(legacyRetirementReview.production_replacement_review_ready === true)} / {String(legacyRetirementReview.production_promotion_dry_run_visible === true)} / {String(legacyRetirementReview.durable_evidence_recipe_visible === true)} / {String(legacyRetirementReview.production_stage_manifest_visible === true)}</p>
+        <p>worker full/deep / provider / DeepSeek ledger / browser promoted: {String(legacyRetirementReview.worker_full_pool_execution_done === true)} / {String(legacyRetirementReview.worker_deep_scan_execution_done === true)} / {String(legacyRetirementReview.provider_backed_acceptance_done === true)} / {String(legacyRetirementReview.deepseek_model_ledger_complete === true)} / {String(legacyRetirementReview.browser_visual_performance_promoted === true)}</p>
+        <p>local_blocker_count / production_blocker_count: {String(legacyRetirementReview.local_blocker_count ?? 0)} / {String(legacyRetirementReview.production_blocker_count ?? 0)}；retirement scope: {String(legacyRetirementReview.retirement_scope_hash_short ?? "--")}</p>
+        <p>worker_started / provider_model_task / production complete: {String(legacyRetirementReview.worker_started === true)} / {String(legacyRetirementReview.creates_provider_model_task === true)} / {String(legacyRetirementReview.production_radar_replacement_complete === true)}</p>
+        <p>tushare_called / deepseek_called / github_called: {String(legacyRetirementReview.tushare_called === true)} / {String(legacyRetirementReview.deepseek_called === true)} / {String(legacyRetirementReview.github_called === true)}</p>
+        <p>这个 review 只把旧雷达何时可以退场讲清楚；真实 worker/provider/model/browser 证据和发布证据没有完成前，legacy/admin/debug fallback 继续保留。</p>
+        <DataLineageTable rows={objectRow(legacyRetirementReview)} />
+        <DataLineageTable rows={legacyRetirementReviewRows} />
       </PacketCard>
 
       <PacketCard title="雷达耐久证据配方" subtitle="candidate_radar_durable_evidence_recipe；生产替代前的直接证据清单，不运行扫描、不外联" status={String(durableEvidenceRecipe.status ?? "missing")}>

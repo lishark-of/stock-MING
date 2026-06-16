@@ -150,10 +150,10 @@ LONG_TERM_GOAL_PROGRESS = [
         "id": "LTG-13",
         "goal": "下一票雷达快扫生产化",
         "completion_bucket": "real_validation_required",
-        "completion_estimate": "35%-45%",
-        "current_state": "local quick-scan readiness, fast-scan task pipeline contract, no-feature-loss QA, legacy parity receipt, full/deep plan receipts, search-to-quant projection receipt, provider parity dry-run ticket, worker execution recipe, scope-bound worker execution-request ticket, scope-bound searched-symbol provider/model execution-request ticket, durable evidence recipe, production stage-scope manifest cache/React visibility, and result-delta clarity exist.",
-        "not_complete_because": "async worker execution, real provider-backed radar parity execution, full-pool/deep-scan execution, real searched-symbol provider/model projection execution, DeepSeek model-ledger evidence when enabled, browser performance promotion, legacy retirement review, and durable production replacement evidence are still pending.",
-        "next_step": "Use the worker execution-request, quant projection execution-request, and durable evidence recipe to bind real worker full-pool/deep-scan evidence, provider parity call ledger, real Tushare light call ledger, optional DeepSeek model ledger, browser performance/visual proof, and legacy retirement review before any production replacement claim.",
+        "completion_estimate": "40%-50%",
+        "current_state": "local quick-scan readiness, fast-scan task pipeline contract, no-feature-loss QA, legacy parity receipt, full/deep plan receipts, search-to-quant projection receipt, provider parity dry-run ticket, worker execution recipe, scope-bound worker execution-request ticket, scope-bound searched-symbol provider/model execution-request ticket, durable evidence recipe, production stage-scope manifest cache/React visibility, production promotion dry-run, legacy-retirement local review receipt, and result-delta clarity exist.",
+        "not_complete_because": "async worker execution, real provider-backed radar parity execution, full-pool/deep-scan execution, real searched-symbol provider/model projection execution, DeepSeek model-ledger evidence when enabled, browser performance promotion, production legacy-retirement approval, and durable production replacement evidence are still pending.",
+        "next_step": "Use the worker execution-request, quant projection execution-request, durable evidence recipe, promotion dry-run, and legacy-retirement local review to bind real worker full-pool/deep-scan evidence, provider parity call ledger, real Tushare light call ledger, optional DeepSeek model ledger, browser performance/visual proof, and release evidence before any production replacement or legacy retirement claim.",
         "production_complete": False,
     },
     {
@@ -746,6 +746,12 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "task_type": "run_candidate_radar_production_promotion_dry_run",
             "receipt_key": "candidate_radar_production_promotion_dry_run_receipt",
             "route": "POST /api/candidate-radar/production-promotion-dry-run",
+        },
+        {
+            "phase_key": "radar_legacy_retirement_review_receipt",
+            "task_type": "run_candidate_radar_legacy_retirement_review",
+            "receipt_key": "candidate_radar_legacy_retirement_review_receipt",
+            "route": "POST /api/candidate-radar/legacy-retirement-review",
         },
     ],
     "p4_storage_physical_execution": [
@@ -2847,6 +2853,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         counts = counts if isinstance(counts, dict) else {}
         promotion_dry_run = candidate_packet.get("candidate_radar_production_promotion_dry_run_receipt")
         promotion_dry_run = promotion_dry_run if isinstance(promotion_dry_run, dict) else {}
+        legacy_retirement_review = candidate_packet.get("candidate_radar_legacy_retirement_review_receipt")
+        legacy_retirement_review = legacy_retirement_review if isinstance(legacy_retirement_review, dict) else {}
         manifest_visible = bool(manifest)
         row_count = int(manifest.get("row_count") or len(stage_rows) or 0)
         pending_count = int(
@@ -2897,6 +2905,23 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     or 0
                 ),
                 "production_promotion_dry_run_can_close_goal": False,
+                "legacy_retirement_review_visible": bool(legacy_retirement_review),
+                "legacy_retirement_review_status": str(legacy_retirement_review.get("status") or "missing"),
+                "legacy_retirement_review_route": str(
+                    legacy_retirement_review.get("route") or "POST /api/candidate-radar/legacy-retirement-review"
+                ),
+                "legacy_retirement_review_explicit_task_done": (
+                    legacy_retirement_review.get("explicit_legacy_retirement_review_done") is True
+                ),
+                "legacy_retirement_review_ready_for_local_review": (
+                    legacy_retirement_review.get("local_review_ready") is True
+                ),
+                "legacy_retirement_review_production_blocker_count": int(
+                    legacy_retirement_review.get("production_blocker_count")
+                    or counts.get("candidate_radar_legacy_retirement_review_production_blocker_count")
+                    or 0
+                ),
+                "legacy_retirement_review_can_close_goal": False,
                 "external_calls_triggered": False,
                 "tushare_called": False,
                 "deepseek_called": False,
@@ -2930,6 +2955,13 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "production_promotion_dry_run_ready_for_local_review": False,
                 "production_promotion_dry_run_production_blocker_count": 0,
                 "production_promotion_dry_run_can_close_goal": False,
+                "legacy_retirement_review_visible": False,
+                "legacy_retirement_review_status": "observation_failed",
+                "legacy_retirement_review_route": "POST /api/candidate-radar/legacy-retirement-review",
+                "legacy_retirement_review_explicit_task_done": False,
+                "legacy_retirement_review_ready_for_local_review": False,
+                "legacy_retirement_review_production_blocker_count": 0,
+                "legacy_retirement_review_can_close_goal": False,
                 "external_calls_triggered": False,
                 "tushare_called": False,
                 "deepseek_called": False,
@@ -3600,6 +3632,15 @@ def _merge_ltg_stage_scope_observations(
                     "production_promotion_dry_run_production_blocker_count"
                 )
                 item["observed_production_promotion_dry_run_can_close_goal"] = False
+                item["observed_legacy_retirement_review_status"] = observed.get("legacy_retirement_review_status")
+                item["observed_legacy_retirement_review_visible"] = observed.get("legacy_retirement_review_visible")
+                item["observed_legacy_retirement_review_ready_for_local_review"] = observed.get(
+                    "legacy_retirement_review_ready_for_local_review"
+                )
+                item["observed_legacy_retirement_review_production_blocker_count"] = observed.get(
+                    "legacy_retirement_review_production_blocker_count"
+                )
+                item["observed_legacy_retirement_review_can_close_goal"] = False
         merged.append(item)
     return merged
 

@@ -599,8 +599,8 @@ export default function MigrationStatus() {
       <DataLineageTable rows={ltgNextAcceptanceLocalStepRows} />
       <DataLineageTable rows={ltgNextAcceptanceActionRows} />
       <DataLineageTable rows={longTermGoalRows} />
-      <h3>LTG-13 下一票雷达 promotion dry-run</h3>
-      <p className="risk-note">这里单独展示下一票雷达的本地 promotion dry-run：它只说明本地审查票据是否可见、是否进入 local review、还有多少生产证据 blocker；不能关闭 LTG-13。</p>
+      <h3>LTG-13 下一票雷达 promotion / legacy review</h3>
+      <p className="risk-note">这里单独展示下一票雷达的本地 promotion dry-run 与 legacy retirement review：它们只说明本地审查票据是否可见、是否进入 local review、还有多少生产证据 blocker；不能关闭 LTG-13，也不能退掉 legacy fallback。</p>
       <MetricGrid
         items={[
           {
@@ -627,6 +627,26 @@ export default function MigrationStatus() {
             label: "can close LTG-13",
             value: candidateRadarGoalRow.observed_production_promotion_dry_run_can_close_goal === true,
             tone: candidateRadarGoalRow.observed_production_promotion_dry_run_can_close_goal === true ? "bad" : "good"
+          },
+          {
+            label: "legacy review",
+            value: String(candidateRadarGoalRow.observed_legacy_retirement_review_status ?? "missing"),
+            tone: candidateRadarGoalRow.observed_legacy_retirement_review_ready_for_local_review === true ? "warn" : "neutral"
+          },
+          {
+            label: "legacy receipt visible",
+            value: candidateRadarGoalRow.observed_legacy_retirement_review_visible === true,
+            tone: candidateRadarGoalRow.observed_legacy_retirement_review_visible === true ? "good" : "warn"
+          },
+          {
+            label: "legacy blockers",
+            value: Number(candidateRadarGoalRow.observed_legacy_retirement_review_production_blocker_count ?? 0),
+            tone: Number(candidateRadarGoalRow.observed_legacy_retirement_review_production_blocker_count ?? 0) ? "bad" : "good"
+          },
+          {
+            label: "can retire legacy",
+            value: candidateRadarGoalRow.observed_legacy_retirement_review_can_close_goal === true,
+            tone: candidateRadarGoalRow.observed_legacy_retirement_review_can_close_goal === true ? "bad" : "good"
           }
         ]}
       />

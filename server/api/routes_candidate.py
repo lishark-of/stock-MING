@@ -106,3 +106,9 @@ def review_candidate_radar_production_replacement(payload: dict[str, Any] | None
 def dry_run_candidate_radar_production_promotion(payload: dict[str, Any] | None = None) -> dict:
     task = candidate_service.run_candidate_production_promotion_dry_run_task(payload)
     return task_envelope(task)
+
+
+@router.post("/legacy-retirement-review")
+def review_candidate_radar_legacy_retirement(payload: dict[str, Any] | None = None) -> dict:
+    task = candidate_service.run_candidate_legacy_retirement_review_task(payload)
+    return task_envelope(task)

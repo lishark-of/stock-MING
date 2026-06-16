@@ -42,6 +42,7 @@ REQUIRED_TASK_TYPES = {
     "run_candidate_radar_browser_qa_review",
     "run_candidate_radar_production_replacement_review",
     "run_candidate_radar_production_promotion_dry_run",
+    "run_candidate_radar_legacy_retirement_review",
 }
 REQUIRED_NO_FEATURE_LOSS_GAPS = {
     "browser_performance_trace_pending",
@@ -503,6 +504,24 @@ def build_contract() -> dict[str, Any]:
         for row in production_promotion_dry_run_rows_list
         if isinstance(row, dict)
     }
+    production_review_packet["candidate_radar_production_promotion_dry_run_receipt"] = production_promotion_dry_run
+    production_review_packet["candidate_radar_production_promotion_dry_run_rows"] = (
+        production_promotion_dry_run_rows_list
+    )
+    legacy_retirement_review, legacy_retirement_review_rows_list = (
+        candidate_service._candidate_radar_legacy_retirement_review_receipt(
+            production_review_packet,
+            payload_safe={"operator_approved": True, "reviewer": "local_contract"},
+            explicit_review=True,
+            task_id="local-contract-legacy-retirement-review",
+            reviewed_at=now,
+        )
+    )
+    legacy_retirement_review_rows = {
+        str(row.get("criterion") or ""): row
+        for row in legacy_retirement_review_rows_list
+        if isinstance(row, dict)
+    }
     durable_evidence_recipe = _dict(cache_packet.get("candidate_radar_durable_evidence_recipe"))
     durable_evidence_rows = {
         str(row.get("evidence_key") or ""): row
@@ -857,6 +876,42 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_candidate_radar_production_promotion_dry_run"].get("candidate_is_not_buy_instruction")
             is True,
             "Candidate Radar production promotion dry-run must be a button-gated local scope ticket that does not start workers, providers, models, GitHub, trades, or production replacement.",
+        ),
+        _row(
+            "candidate_radar_legacy_retirement_review_task_is_button_gated_local_only",
+            task_rows["run_candidate_radar_legacy_retirement_review"].get("route")
+            == "POST /api/candidate-radar/legacy-retirement-review"
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("local_review_only") is True
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("requires_production_replacement_review")
+            is True
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("requires_production_promotion_dry_run")
+            is True
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("requires_operator_approval") is True
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("requires_durable_evidence_recipe")
+            is True
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("creates_worker_task") is False
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("worker_started") is False
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("creates_provider_model_task") is False
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("provider_execution_implemented")
+            is False
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("model_execution_implemented")
+            is False
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("production_radar_replacement_complete")
+            is False
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("ready_to_retire_legacy") is False
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("legacy_retirement_ready") is False
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("legacy_fallback_required") is True
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("tushare_called") is False
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("deepseek_called") is False
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("github_called") is False
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("cache_get_external_calls") is False
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("page_render_external_calls") is False
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("does_not_execute_trades") is True
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("does_not_modify_strategy_action")
+            is True
+            and task_rows["run_candidate_radar_legacy_retirement_review"].get("candidate_is_not_buy_instruction")
+            is True,
+            "Candidate Radar legacy retirement review must be a button-gated local boundary review that keeps legacy fallback retained and starts no external, worker, model, provider, GitHub, or trading work.",
         ),
         _row(
             "candidate_radar_next_execution_recipe_is_local_fast_scan_path",
@@ -1342,6 +1397,84 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_production_promotion_dry_run_receipt" in candidate_frontend
             and "雷达 production promotion dry-run" in candidate_frontend,
             "Candidate Radar production promotion dry-run must only bind the latest replacement-review scope for human review while direct worker/provider/model/browser/legacy evidence remains production-blocking.",
+        ),
+        _row(
+            "candidate_radar_legacy_retirement_review_is_local_retirement_blocked",
+            legacy_retirement_review.get("schema_version")
+            == candidate_service.CANDIDATE_LEGACY_RETIREMENT_REVIEW_SCHEMA_VERSION
+            and legacy_retirement_review.get("status")
+            == "candidate_radar_legacy_retirement_review_ready_retirement_blocked"
+            and legacy_retirement_review.get("scope")
+            == "button_gated_local_candidate_radar_legacy_retirement_review_no_external_call"
+            and legacy_retirement_review.get("route")
+            == "POST /api/candidate-radar/legacy-retirement-review"
+            and legacy_retirement_review.get("task_type") == "run_candidate_radar_legacy_retirement_review"
+            and legacy_retirement_review.get("explicit_legacy_retirement_review_done") is True
+            and legacy_retirement_review.get("operator_approved") is True
+            and legacy_retirement_review.get("local_review_ready") is True
+            and legacy_retirement_review.get("ready_to_retire_legacy") is False
+            and legacy_retirement_review.get("legacy_retirement_ready") is False
+            and legacy_retirement_review.get("legacy_fallback_required") is True
+            and legacy_retirement_review.get("production_radar_replacement_complete") is False
+            and legacy_retirement_review.get("production_replacement_review_ready") is True
+            and legacy_retirement_review.get("production_promotion_dry_run_visible") is True
+            and legacy_retirement_review.get("durable_evidence_recipe_visible") is True
+            and legacy_retirement_review.get("production_stage_manifest_visible") is True
+            and len(str(legacy_retirement_review.get("retirement_scope_hash") or "")) == 64
+            and legacy_retirement_review.get("retirement_scope_hash_input_includes_secret") is False
+            and legacy_retirement_review.get("worker_full_pool_execution_done") is False
+            and legacy_retirement_review.get("worker_deep_scan_execution_done") is False
+            and legacy_retirement_review.get("provider_backed_acceptance_done") is False
+            and legacy_retirement_review.get("deepseek_model_ledger_complete") is False
+            and legacy_retirement_review.get("browser_visual_performance_promoted") is False
+            and legacy_retirement_review.get("durable_evidence_complete") is False
+            and int(legacy_retirement_review.get("local_blocker_count") or 0) == 0
+            and int(legacy_retirement_review.get("production_blocker_count") or 0) >= 6
+            and int(legacy_retirement_review.get("row_count") or 0) == len(legacy_retirement_review_rows)
+            and _dict(legacy_retirement_review_rows.get("worker_full_pool_execution_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(legacy_retirement_review_rows.get("worker_deep_scan_execution_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(legacy_retirement_review_rows.get("provider_backed_parity_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(legacy_retirement_review_rows.get("deepseek_model_ledger_if_enabled_required")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(legacy_retirement_review_rows.get("production_completion_stays_blocked")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(legacy_retirement_review_rows.get("no_provider_model_trade_secret_boundary")).get("passed")
+            is True
+            and "treat legacy retirement review as production retirement approval"
+            in _list(legacy_retirement_review.get("not_allowed_next_steps"))
+            and _flag_false(
+                legacy_retirement_review,
+                "cache_get_external_calls",
+                "react_render_external_calls",
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "worker_started",
+                "creates_worker_task",
+                "creates_provider_model_task",
+                "contains_secret",
+            )
+            and legacy_retirement_review.get("does_not_execute_trades") is True
+            and legacy_retirement_review.get("does_not_modify_strategy_action") is True
+            and legacy_retirement_review.get("does_not_modify_holdings") is True
+            and legacy_retirement_review.get("candidate_is_not_buy_instruction") is True
+            and "candidate_radar_legacy_retirement_review_receipt" in candidate_frontend
+            and "雷达 legacy retirement review" in candidate_frontend,
+            "Candidate Radar legacy retirement review must make legacy fallback retirement auditable while keeping retirement blocked until direct worker/provider/model/browser/release evidence exists.",
         ),
         _row(
             "candidate_radar_durable_evidence_recipe_is_local_production_pending",
@@ -2230,7 +2363,9 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_durable_evidence_recipe.v1" in this_script
             and "candidate_radar_production_replacement_review.v1" in this_script
             and "candidate_radar_production_promotion_dry_run.v1" in this_script
+            and "candidate_radar_legacy_retirement_review.v1" in this_script
             and "production-promotion-dry-run" in this_script
+            and "legacy-retirement-review" in this_script
             and "candidate_is_not_buy_instruction" in this_script
             and ("request" + "s") not in this_script
             and ("ht" + "tpx") not in this_script
@@ -2307,6 +2442,10 @@ def build_contract() -> dict[str, Any]:
         )
         is True,
         "candidate_radar_production_promotion_dry_run_blocker_count": production_promotion_dry_run.get(
+            "production_blocker_count"
+        ),
+        "candidate_radar_legacy_retirement_review_ready": legacy_retirement_review.get("local_review_ready") is True,
+        "candidate_radar_legacy_retirement_review_blocker_count": legacy_retirement_review.get(
             "production_blocker_count"
         ),
         "cache_only": True,
@@ -2387,6 +2526,11 @@ def build_contract() -> dict[str, Any]:
                 "ready_for_local_promotion_review"
             ),
             "candidate_radar_production_promotion_dry_run_blocker_count": production_promotion_dry_run.get(
+                "production_blocker_count"
+            ),
+            "candidate_radar_legacy_retirement_review_status": legacy_retirement_review.get("status"),
+            "candidate_radar_legacy_retirement_review_ready": legacy_retirement_review.get("local_review_ready"),
+            "candidate_radar_legacy_retirement_review_blocker_count": legacy_retirement_review.get(
                 "production_blocker_count"
             ),
             "result_delta_status": result_delta.get("status"),
