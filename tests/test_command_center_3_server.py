@@ -12989,6 +12989,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             missing_durable_keys.remove("runtime_qa_execution_request_visible")
         if payload["worker_runtime_qa_dry_run_ready"]:
             missing_durable_keys.remove("runtime_qa_dry_run_receipt_visible")
+        durable_rows = {row["evidence_key"]: row for row in payload["worker_runtime_durable_evidence_rows"]}
+        if durable_rows["local_fallback_rollback_evidence_required"]["status"] == "passed":
+            missing_durable_keys.remove("local_fallback_rollback_evidence_required")
         self.assertEqual(payload["observed"]["worker_runtime_durable_evidence_key_count"], len(required_durable_keys))
         self.assertEqual(payload["observed"]["worker_runtime_durable_evidence_keys"], required_durable_keys)
         self.assertEqual(payload["observed"]["worker_runtime_durable_evidence_missing_keys"], missing_durable_keys)
@@ -13000,7 +13003,6 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["observed"]["worker_runtime_durable_evidence_production_blocker_count"],
             len(missing_durable_keys),
         )
-        durable_rows = {row["evidence_key"]: row for row in payload["worker_runtime_durable_evidence_rows"]}
         self.assertEqual(set(durable_rows), set(required_durable_keys))
         self.assertEqual(durable_rows["production_blocker_audit_visible"]["status"], "passed")
         self.assertEqual(
@@ -29862,6 +29864,31 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(cached_receipt["cross_process_task_control_verified"])
         self.assertFalse(cached_receipt["production_worker_complete"])
         self.assertFalse(cached_receipt["external_calls_triggered"])
+        durable_recipe = cache["worker_runtime_durable_evidence_recipe"]
+        durable_rows = {row["evidence_key"]: row for row in durable_recipe["rows"]}
+        self.assertTrue(durable_recipe["runtime_qa_done"])
+        self.assertTrue(durable_recipe["local_fallback_rollback_evidence_ready"])
+        self.assertNotIn(
+            "local_fallback_rollback_evidence_required",
+            durable_recipe["missing_durable_evidence"],
+        )
+        self.assertEqual(
+            durable_rows["local_fallback_rollback_evidence_required"]["status"],
+            "passed",
+        )
+        self.assertFalse(durable_rows["local_fallback_rollback_evidence_required"]["production_blocker"])
+        self.assertIn("celery_process_evidence_required", durable_recipe["missing_durable_evidence"])
+        self.assertIn("redis_broker_reachability_evidence_required", durable_recipe["missing_durable_evidence"])
+        self.assertEqual(durable_rows["celery_process_evidence_required"]["status"], "blocked")
+        self.assertEqual(durable_rows["redis_broker_reachability_evidence_required"]["status"], "blocked")
+        self.assertFalse(durable_recipe["production_worker_complete"])
+        self.assertFalse(durable_recipe["external_calls_triggered"])
+        self.assertFalse(durable_recipe["tushare_called"])
+        self.assertFalse(durable_recipe["deepseek_called"])
+        self.assertFalse(durable_recipe["github_called"])
+        self.assertTrue(durable_recipe["does_not_execute_trades"])
+        self.assertTrue(durable_recipe["does_not_modify_strategy_action"])
+        self.assertFalse(durable_recipe["contains_secret"])
 
     def test_ltg_stage_scope_observes_worker_runtime_direct_evidence_without_completion(self):
         self._with_meta_store()

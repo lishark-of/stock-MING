@@ -357,6 +357,7 @@ def build_contract() -> dict[str, Any]:
     runtime_qa_dry_run_phase_rows = [
         row for row in _list(packet.get("worker_runtime_qa_dry_run_phase_rows")) if isinstance(row, dict)
     ]
+    runtime_qa_execution = _dict(packet.get("worker_runtime_qa_execution_receipt"))
     runtime_durable_recipe = _dict(packet.get("worker_runtime_durable_evidence_recipe"))
     runtime_durable_rows = [
         row for row in _list(packet.get("worker_runtime_durable_evidence_rows")) if isinstance(row, dict)
@@ -375,6 +376,31 @@ def build_contract() -> dict[str, Any]:
         expected_runtime_durable_missing.discard("runtime_qa_execution_request_visible")
     if runtime_qa_dry_run.get("local_dry_run_ready") is True:
         expected_runtime_durable_missing.discard("runtime_qa_dry_run_receipt_visible")
+    local_fallback_rollback_visible = bool(
+        runtime_qa_execution.get("schema_version") == "worker_runtime_qa_execution_receipt.v1"
+        and runtime_qa_execution.get("status") == "worker_runtime_qa_execution_ready_local_fallback_evidence"
+        and runtime_qa_execution.get("local_runtime_qa_execution_done") is True
+        and runtime_qa_execution.get("local_fallback_round_trip_verified") is True
+        and runtime_qa_execution.get("local_task_round_trip_verified") is True
+        and runtime_qa_execution.get("task_log_round_trip_verified") is True
+        and runtime_qa_execution.get("task_log_persistence_verified") is True
+        and runtime_qa_execution.get("production_worker_complete") is False
+        and runtime_qa_execution.get("worker_started") is False
+        and runtime_qa_execution.get("celery_worker_started") is False
+        and runtime_qa_execution.get("redis_pinged") is False
+        and runtime_qa_execution.get("scheduler_started") is False
+        and runtime_qa_execution.get("task_dispatched") is False
+        and runtime_qa_execution.get("provider_model_task_dispatched") is False
+        and runtime_qa_execution.get("external_calls_triggered") is False
+        and runtime_qa_execution.get("tushare_called") is False
+        and runtime_qa_execution.get("deepseek_called") is False
+        and runtime_qa_execution.get("github_called") is False
+        and runtime_qa_execution.get("does_not_execute_trades") is True
+        and runtime_qa_execution.get("does_not_modify_strategy_action") is True
+        and runtime_qa_execution.get("contains_secret") is False
+    )
+    if local_fallback_rollback_visible:
+        expected_runtime_durable_missing.discard("local_fallback_rollback_evidence_required")
 
     rows = [
         _row(
@@ -1000,7 +1026,9 @@ def build_contract() -> dict[str, Any]:
             and runtime_durable_recipe.get("local_recipe_ready") is True
             and runtime_durable_recipe.get("durable_evidence_complete") is False
             and runtime_durable_recipe.get("durable_promotion_ready") is False
-            and runtime_durable_recipe.get("runtime_qa_done") is False
+            and runtime_durable_recipe.get("runtime_qa_done") is local_fallback_rollback_visible
+            and runtime_durable_recipe.get("local_fallback_rollback_evidence_ready")
+            is local_fallback_rollback_visible
             and runtime_durable_recipe.get("production_worker_complete") is False
             and runtime_durable_recipe.get("worker_started") is False
             and runtime_durable_recipe.get("redis_pinged") is False

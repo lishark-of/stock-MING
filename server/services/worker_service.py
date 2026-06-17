@@ -3558,6 +3558,7 @@ def _worker_runtime_durable_evidence_recipe(
     runtime_qa_execution_recipe: dict[str, Any],
     runtime_qa_execution_request: dict[str, Any],
     runtime_qa_dry_run: dict[str, Any],
+    runtime_qa_execution: dict[str, Any],
 ) -> dict[str, Any]:
     blocker_visible = production_blocker_audit.get("schema_version") == "worker_production_blocker_audit.v1"
     healthcheck_visible = healthcheck_qa_contract.get("schema_version") == "worker_healthcheck_qa_contract.v1"
@@ -3583,6 +3584,29 @@ def _worker_runtime_durable_evidence_recipe(
         and runtime_qa_dry_run.get("requested_runtime_qa_scope_hash_matches_latest") is True
         and runtime_qa_dry_run.get("runtime_qa_task_created") is False
         and runtime_qa_dry_run.get("runtime_qa_task_executed") is False
+    )
+    local_fallback_rollback_visible = (
+        runtime_qa_execution.get("schema_version") == RUNTIME_QA_EXECUTION_SCHEMA_VERSION
+        and runtime_qa_execution.get("status") == "worker_runtime_qa_execution_ready_local_fallback_evidence"
+        and runtime_qa_execution.get("local_runtime_qa_execution_done") is True
+        and runtime_qa_execution.get("local_fallback_round_trip_verified") is True
+        and runtime_qa_execution.get("local_task_round_trip_verified") is True
+        and runtime_qa_execution.get("task_log_round_trip_verified") is True
+        and runtime_qa_execution.get("task_log_persistence_verified") is True
+        and runtime_qa_execution.get("production_worker_complete") is False
+        and runtime_qa_execution.get("worker_started") is False
+        and runtime_qa_execution.get("celery_worker_started") is False
+        and runtime_qa_execution.get("redis_pinged") is False
+        and runtime_qa_execution.get("scheduler_started") is False
+        and runtime_qa_execution.get("task_dispatched") is False
+        and runtime_qa_execution.get("provider_model_task_dispatched") is False
+        and runtime_qa_execution.get("external_calls_triggered") is False
+        and runtime_qa_execution.get("tushare_called") is False
+        and runtime_qa_execution.get("deepseek_called") is False
+        and runtime_qa_execution.get("github_called") is False
+        and runtime_qa_execution.get("does_not_execute_trades") is True
+        and runtime_qa_execution.get("does_not_modify_strategy_action") is True
+        and runtime_qa_execution.get("contains_secret") is False
     )
     no_process_boundary = (
         runtime_qa_execution_recipe.get("worker_started") is False
@@ -3781,11 +3805,19 @@ def _worker_runtime_durable_evidence_recipe(
         ),
         _worker_runtime_durable_evidence_recipe_row(
             "local_fallback_rollback_evidence_required",
-            passed=False,
-            source_contract="manual_worker_runtime_qa",
-            evidence="Local fallback is available, but rollback behavior from Celery/Redis to local fallback is not proven.",
+            passed=local_fallback_rollback_visible,
+            source_contract="worker_runtime_qa_execution_receipt",
+            evidence=(
+                "Local fallback rollback evidence is present from the button-gated runtime QA execution receipt."
+                if local_fallback_rollback_visible
+                else "Local fallback is available, but rollback behavior from Celery/Redis to local fallback is not proven."
+            ),
             required_evidence="graceful local fallback rollback evidence when Celery/Redis is unavailable or disabled",
-            next_action="prove fallback rollback before any production worker promotion",
+            next_action=(
+                "Keep this as local fallback rollback evidence only; Celery/Redis process proof remains separate."
+                if local_fallback_rollback_visible
+                else "prove fallback rollback before any production worker promotion"
+            ),
         ),
         _worker_runtime_durable_evidence_recipe_row(
             "production_worker_promotion_review_required",
@@ -3817,7 +3849,7 @@ def _worker_runtime_durable_evidence_recipe(
         "local_recipe_ready": local_recipe_ready,
         "durable_evidence_complete": False,
         "durable_promotion_ready": False,
-        "runtime_qa_done": False,
+        "runtime_qa_done": local_fallback_rollback_visible,
         "production_worker_complete": False,
         "worker_started": False,
         "redis_pinged": False,
@@ -3842,6 +3874,8 @@ def _worker_runtime_durable_evidence_recipe(
         "runtime_qa_execution_request_status": runtime_qa_execution_request.get("status"),
         "runtime_qa_dry_run_ready": runtime_dry_run_visible,
         "runtime_qa_dry_run_status": runtime_qa_dry_run.get("status"),
+        "local_fallback_rollback_evidence_ready": local_fallback_rollback_visible,
+        "runtime_qa_execution_status": runtime_qa_execution.get("status"),
         "evidence_keys": [row["evidence_key"] for row in rows],
         "missing_durable_evidence": blocked_rows,
         "required_evidence": [
@@ -5578,6 +5612,7 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         runtime_qa_execution_recipe=runtime_qa_execution_recipe,
         runtime_qa_execution_request=runtime_qa_execution_request,
         runtime_qa_dry_run=runtime_qa_dry_run,
+        runtime_qa_execution=runtime_qa_execution,
     )
     production_readiness["worker_runtime_durable_evidence_recipe"] = runtime_durable_evidence_recipe
     production_readiness["worker_runtime_durable_evidence_rows"] = runtime_durable_evidence_recipe["rows"]
