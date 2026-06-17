@@ -2475,7 +2475,82 @@ def _persistable_next_session_packet(packet: dict[str, Any]) -> bool:
     return packet.get("packet_key") == "command_center_next_session_projection_packet" and packet.get("status") != "cache_missing"
 
 
+def _local_exact_next_session_sample_packet(now: str) -> dict[str, Any]:
+    return {
+        "packet_key": "command_center_next_session_projection_packet",
+        "schema_version": "next_session_projection.v1",
+        "status": "ready",
+        "source_type": "local_exact_sample_for_same_packet_parity",
+        "cache_source": "button_gated_local_sample_no_provider",
+        "trade_date": "20260610",
+        "generated_at": now,
+        "chart_render_model": {
+            "historical_series": [
+                {"x": "2026-06-08", "price": 10.0, "source": "local_exact_sample"},
+                {"x": "2026-06-09", "close": 10.4, "source": "local_exact_sample"},
+            ],
+            "scenario_series": [
+                {
+                    "scenario_key": "neutral",
+                    "scenario_name": "中性路径",
+                    "trigger_condition": "放量但不追高",
+                    "confidence_note": "中性路径只作同包 parity 样例",
+                    "points": [
+                        {"x": "T0", "price": 10.4},
+                        {"x": "T+1_close", "price": 10.8},
+                    ],
+                }
+            ],
+            "cost_line": 9.8,
+            "current_price_line": 10.4,
+            "limit_lines": [
+                {"label": "涨停参考", "value": 11.44},
+                {"label": "跌停参考", "value": 9.36},
+            ],
+            "support_lines": [9.9],
+            "resistance_lines": [11.0],
+            "operation_zone_overlays": [
+                {
+                    "zone_key": "reduce_watch_zone",
+                    "zone_name": "止盈/减仓观察区",
+                    "price_range": [10.9, 11.3],
+                    "action_mode": "condition_only",
+                }
+            ],
+            "y_axis_range": [9.0, 12.0],
+        },
+        "position_context": {
+            "conflict_flags": ["cost_price_conflict"],
+            "source_packet": "local_exact_sample_position_context",
+        },
+        "data_trust_summary": {
+            "facts": [{"fact_key": "moneyflow", "call_status": "local_sample_not_provider_verified"}],
+            "human_summary": ["本地同包 parity 样例：不代表真实 provider 验收", "持仓冲突展示：仅验证可视化边界"],
+            "deepseek": {"label": "DeepSeek", "status": "not_called"},
+        },
+        "deepseek_synthesis": {"status": "not_called"},
+        "local_exact_sample_for_same_packet_parity": True,
+        "provider_backed": False,
+        "production_replacement_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_action": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_operation_zones": True,
+        "contains_secret": False,
+        "warnings": [
+            "This is a button-gated local exact sample for same-packet Streamlit parity review only.",
+            "It is not provider-backed market data, Streamlit reference capture, browser QA, durable CI evidence, or production ECharts replacement.",
+        ],
+    }
+
+
 def create_next_session_task(payload: Any = None) -> dict[str, Any]:
+    payload_dict = _as_dict(payload)
+    local_exact_sample_allowed = payload_dict.get("local_exact_sample_allowed") is True
     task = create_task_record(
         "build_next_session_projection",
         output_packet_key="command_center_next_session_projection_packet",
@@ -2492,7 +2567,21 @@ def create_next_session_task(payload: Any = None) -> dict[str, Any]:
     now = _now_iso()
     try:
         packet = dict(read_next_session_cache())
+        local_exact_sample_written = False
+        if packet.get("status") == "cache_missing" and local_exact_sample_allowed:
+            SQLiteMetaStore(SQLITE_META_PATH).write_packet(
+                "command_center_next_session_projection_packet",
+                _local_exact_next_session_sample_packet(now),
+            )
+            local_exact_sample_written = True
+            packet = dict(read_next_session_cache())
+            packet["local_exact_sample_for_same_packet_parity"] = True
+            packet["provider_backed"] = False
         packet["task_call_ledger"] = _next_session_cache_call_ledger(packet, now)
+        if local_exact_sample_written:
+            packet["task_call_ledger"][0]["call_status"] = "local_exact_sample_written"
+            packet["task_call_ledger"][0]["request_params_safe"]["local_exact_sample_allowed"] = True
+            packet["task_call_ledger"][0]["request_params_safe"]["provider_backed"] = False
         packet["does_not_modify_action"] = True
         packet["does_not_modify_operation_zones"] = True
         packet["external_calls_triggered"] = False

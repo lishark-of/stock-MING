@@ -2766,7 +2766,10 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
         and interaction_audit.get("schema_version") == "next_session_interaction_readiness.v1"
         and interaction_audit.get("status") == "interaction_contract_ready_parity_pending"
         and int(interaction_audit.get("blocking_count") or 0) == 0
-        and interaction_audit.get("frontend_read_only_boundary") is True
+        and interaction_audit.get("cache_only") is True
+        and interaction_audit.get("external_calls_triggered") is False
+        and interaction_audit.get("does_not_modify_action") is True
+        and interaction_audit.get("does_not_modify_operation_zones") is True
         and interaction_audit.get("streamlit_parity_complete") is False
     )
     review_ready = bool(

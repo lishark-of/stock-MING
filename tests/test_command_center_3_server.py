@@ -2542,6 +2542,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(packet["tushare_called"])
 
     def test_next_session_cache_missing_still_exposes_echarts_contract(self):
+        self._with_meta_store()
         self._with_snapshot_cache({})
 
         packet = packet_service.build_next_session_cache()
@@ -2593,6 +2594,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(packet["deepseek_called"])
 
     def test_next_session_cache_missing_does_not_promote_legacy_projection(self):
+        self._with_meta_store()
         self._with_snapshot_cache(
             {
                 "projection_packet": {
@@ -2988,6 +2990,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("next_session_durable_evidence_recipe", " ".join(service_packet["warnings"]))
 
     def test_next_session_cache_exact_packet_without_chart_model_still_has_contract(self):
+        self._with_meta_store()
         self._with_snapshot_cache(
             {
                 "command_center_next_session_projection_packet": {
@@ -3013,6 +3016,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("精确次日操作图谱 packet 未提供 chart_render_model", " ".join(chart["warnings"]))
 
     def test_next_session_cache_normalizes_existing_chart_payload_contract(self):
+        self._with_meta_store()
         self._with_snapshot_cache(
             {
                 "command_center_next_session_projection_packet": {
@@ -12326,7 +12330,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed"]["production_stage_scope_count"], 8)
         self.assertEqual(set(payload["observed"]["production_stage_scope_keys"]), required_production_stages)
         production_stage_direct_count = int(payload["observed"]["production_stage_scope_direct_evidence_count"] or 0)
-        self.assertIn(production_stage_direct_count, {2, 5})
+        self.assertIn(production_stage_direct_count, {2, 5, 6})
         self.assertEqual(
             payload["observed"]["production_stage_scope_pending_count"],
             8 - production_stage_direct_count,
@@ -12356,6 +12360,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "pending_exact_cache_payload",
             "pending_interaction_contract",
             "pending_same_packet_streamlit_parity",
+            "direct_evidence_ready_local_same_packet_no_loss_review_reference_pending",
             "direct_evidence_ready_local_artifact",
             "pending_browser_visual_qa_review",
             "pending_browser_performance_trace_review",
@@ -29928,6 +29933,107 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(cache["call_ledger"][0]["api"], "local_next_session_cache")
         self.assertIn(cache["call_ledger"][0]["call_status"], {"cache_read", "exact_cache_read"})
         self.assertFalse(cache["call_ledger"][0]["external"])
+
+    def test_next_session_generate_can_write_button_gated_local_exact_sample_for_parity(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache({})
+
+        created = self.client.post(
+            "/api/next-session/generate",
+            json={
+                "ts_code": "002008.SZ",
+                "local_exact_sample_allowed": True,
+                "authorization": "Bearer SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(created["ok"])
+        task = created["data"]["task"]
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "next_session_cache_written_to_sqlite")
+        self.assertEqual(task["call_ledger"][0]["api"], "local_next_session_cache")
+        self.assertEqual(task["call_ledger"][0]["call_status"], "local_exact_sample_written")
+        self.assertTrue(task["call_ledger"][0]["request_params_safe"]["local_exact_sample_allowed"])
+        self.assertFalse(task["call_ledger"][0]["request_params_safe"]["provider_backed"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("authorization", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(created, ensure_ascii=False))
+
+        cache = self.client.get("/api/next-session/cache").json()
+        self.assertTrue(cache["ok"])
+        packet = cache["data"]
+        self.assertEqual(packet["status"], "ready")
+        self.assertTrue(packet["local_exact_sample_for_same_packet_parity"])
+        self.assertFalse(packet["provider_backed"])
+        self.assertTrue(packet["chart_payload"]["is_exact_next_session_packet"])
+        self.assertEqual(packet["chart_payload"]["chart_contract"]["renderer"], "ECharts")
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_action"])
+        self.assertTrue(packet["does_not_modify_operation_zones"])
+
+        review_response = self.client.post(
+            "/api/next-session/streamlit-parity-review",
+            json={"reviewer": "local-exact-sample", "authorization": "Bearer SHOULD_DROP"},
+        ).json()
+
+        self.assertTrue(review_response["ok"])
+        review_task = review_response["data"]["task"]
+        self.assertEqual(review_task["task_type"], "run_next_session_streamlit_parity_review")
+        self.assertEqual(review_task["status"], "success")
+        self.assertEqual(review_task["current_step"], "next_session_streamlit_parity_review_ready")
+        self.assertEqual(
+            review_task["call_ledger"][0]["call_status"],
+            "next_session_streamlit_parity_review_ready_local_same_packet",
+        )
+        self.assertFalse(review_task["external_calls_triggered"])
+        self.assertFalse(review_task["tushare_called"])
+        self.assertFalse(review_task["deepseek_called"])
+        self.assertFalse(review_task["github_called"])
+        self.assertTrue(review_task["does_not_execute_trades"])
+        self.assertTrue(review_task["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(review_response, ensure_ascii=False))
+
+        refreshed = self.client.get("/api/next-session/cache").json()["data"]
+        streamlit_review = refreshed["next_session_streamlit_parity_review_contract"]
+        self.assertTrue(streamlit_review["local_streamlit_parity_review_ready"])
+        self.assertTrue(streamlit_review["same_packet_no_loss_review_ready"])
+        self.assertFalse(streamlit_review["streamlit_reference_captured"])
+        self.assertFalse(streamlit_review["streamlit_parity_complete"])
+        self.assertFalse(streamlit_review["production_replacement_complete"])
+        stage_scope = refreshed["next_session_production_stage_scope_manifest"]
+        self.assertIn("exact_cache_payload_contract", stage_scope["direct_evidence_stage_keys"])
+        self.assertIn("interaction_hover_click_contract", stage_scope["direct_evidence_stage_keys"])
+        self.assertIn("streamlit_parity_review", stage_scope["direct_evidence_stage_keys"])
+        self.assertTrue(stage_scope["same_packet_no_loss_review_ready"])
+        self.assertFalse(stage_scope["streamlit_parity_complete"])
+        self.assertFalse(stage_scope["production_replacement_complete"])
+        self.assertFalse(stage_scope["external_calls_triggered"])
+        self.assertFalse(stage_scope["tushare_called"])
+        self.assertFalse(stage_scope["deepseek_called"])
+        self.assertFalse(stage_scope["github_called"])
+        self.assertTrue(stage_scope["does_not_execute_trades"])
+        self.assertTrue(stage_scope["does_not_modify_strategy_action"])
+        self.assertTrue(stage_scope["does_not_modify_operation_zones"])
+        migration = migration_status_service.build_migration_status()
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg08 = observed_stage_rows["LTG-08"]
+        self.assertIn("exact_cache_payload_contract", ltg08["direct_evidence_stage_keys"])
+        self.assertIn("interaction_hover_click_contract", ltg08["direct_evidence_stage_keys"])
+        self.assertIn("streamlit_parity_review", ltg08["direct_evidence_stage_keys"])
+        self.assertTrue(ltg08["interaction_hover_click_contract_done"])
+        self.assertTrue(ltg08["same_packet_no_loss_review_ready"])
+        self.assertFalse(ltg08["streamlit_parity_complete"])
+        self.assertFalse(ltg08["production_replacement_complete"])
 
     def test_next_session_browser_qa_evidence_uses_generated_at_for_latest_report(self):
         original_root = next_session_service.MOTION_QA_ARTIFACT_ROOT
