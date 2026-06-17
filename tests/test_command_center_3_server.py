@@ -31093,6 +31093,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIsInstance(dependency_preflight["celery_package_available"], bool)
         self.assertIsInstance(dependency_preflight["redis_package_available"], bool)
         self.assertIsInstance(dependency_preflight["celery_command_available"], bool)
+        self.assertIsInstance(dependency_preflight["celery_command_path_available"], bool)
+        self.assertIsInstance(dependency_preflight["celery_project_venv_command_available"], bool)
+        self.assertIn(
+            dependency_preflight["celery_command_resolution"],
+            {"available_path", "available_project_venv", "missing"},
+        )
         self.assertIsInstance(dependency_preflight["redis_server_binary_available"], bool)
         self.assertIsInstance(dependency_preflight["redis_cli_binary_available"], bool)
         self.assertFalse(dependency_preflight["redis_url_exposed"])
@@ -31123,6 +31129,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("celery_command", dependency_rows)
         self.assertIn("redis_server_binary", dependency_rows)
         self.assertIn("redis_url_configured", dependency_rows)
+        celery_row = dependency_rows["celery_command"]
+        self.assertEqual(
+            dependency_preflight["celery_command_available"],
+            dependency_preflight["celery_command_path_available"]
+            or dependency_preflight["celery_project_venv_command_available"],
+        )
+        self.assertEqual(celery_row["blocks_manual_runtime_evidence"], not dependency_preflight["celery_command_available"])
+        self.assertEqual(celery_row["status"], dependency_preflight["celery_command_resolution"])
+        self.assertIn("project .venv/bin/celery", celery_row["evidence"])
+        if (worker_service.PROJECT_ROOT / ".venv" / "bin" / "celery").exists():
+            self.assertTrue(dependency_preflight["celery_project_venv_command_available"])
+            self.assertFalse(celery_row["blocks_manual_runtime_evidence"])
         self.assertTrue(packet["policy"]["worker_runtime_dependency_preflight_is_local"])
         self.assertTrue(packet["policy"]["worker_runtime_dependency_preflight_does_not_start_process"])
         self.assertTrue(packet["policy"]["worker_runtime_dependency_preflight_does_not_ping_redis"])

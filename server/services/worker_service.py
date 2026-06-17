@@ -257,6 +257,14 @@ def _command_available(command_name: str) -> bool:
         return False
 
 
+def _project_venv_command_available(command_name: str) -> bool:
+    try:
+        command_path = PROJECT_ROOT / ".venv" / "bin" / command_name
+        return command_path.is_file() and os.access(command_path, os.X_OK)
+    except Exception:
+        return False
+
+
 def _path_exists(path: str) -> bool:
     return (PROJECT_ROOT / path).exists()
 
@@ -268,9 +276,17 @@ def _worker_runtime_dependency_preflight(
     apscheduler_available: bool,
     redis_configured: bool,
 ) -> dict[str, Any]:
-    celery_command_available = _command_available("celery")
+    celery_command_path_available = _command_available("celery")
+    celery_project_venv_command_available = _project_venv_command_available("celery")
+    celery_command_available = celery_command_path_available or celery_project_venv_command_available
     redis_server_binary_available = _command_available("redis-server")
     redis_cli_binary_available = _command_available("redis-cli")
+    if celery_command_path_available:
+        celery_command_status = "available_path"
+    elif celery_project_venv_command_available:
+        celery_command_status = "available_project_venv"
+    else:
+        celery_command_status = "missing"
     rows = [
         {
             "check": "python_celery_package",
@@ -288,10 +304,10 @@ def _worker_runtime_dependency_preflight(
         },
         {
             "check": "celery_command",
-            "status": "available" if celery_command_available else "missing",
+            "status": celery_command_status,
             "required_for_production_worker": True,
             "blocks_manual_runtime_evidence": not celery_command_available,
-            "evidence": "PATH command lookup only",
+            "evidence": "PATH command lookup or project .venv/bin/celery executable check only",
         },
         {
             "check": "redis_server_binary",
@@ -335,6 +351,9 @@ def _worker_runtime_dependency_preflight(
         "redis_package_available": redis_available,
         "apscheduler_package_available": apscheduler_available,
         "celery_command_available": celery_command_available,
+        "celery_command_path_available": celery_command_path_available,
+        "celery_project_venv_command_available": celery_project_venv_command_available,
+        "celery_command_resolution": celery_command_status,
         "redis_server_binary_available": redis_server_binary_available,
         "redis_cli_binary_available": redis_cli_binary_available,
         "redis_url_configured": redis_configured,
