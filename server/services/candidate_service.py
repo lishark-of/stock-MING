@@ -152,6 +152,7 @@ CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS = (
     "quick_scan_task_pipeline",
     "local_full_pool_execution_receipt",
     "local_deep_scan_review_receipt",
+    "worker_runtime_round_trip_link",
     "worker_full_pool_execution",
     "worker_deep_scan_execution",
     "provider_parity_acceptance",
@@ -164,6 +165,7 @@ CANDIDATE_RADAR_PRODUCTION_STAGE_LABELS = {
     "quick_scan_task_pipeline": "quick radar scan runs through explicit task pipeline",
     "local_full_pool_execution_receipt": "local full-pool-like receipt stays local evidence",
     "local_deep_scan_review_receipt": "local deep-scan review stays local evidence",
+    "worker_runtime_round_trip_link": "local worker runtime round-trip evidence is linked",
     "worker_full_pool_execution": "worker-backed full-pool execution evidence is required",
     "worker_deep_scan_execution": "worker-backed deep-scan execution evidence is required",
     "provider_parity_acceptance": "provider-backed legacy signal parity is required",
@@ -176,6 +178,7 @@ LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS = {
     "quick_scan_task_pipeline",
     "local_full_pool_execution_receipt",
     "local_deep_scan_review_receipt",
+    "worker_runtime_round_trip_link",
 }
 CANDIDATE_TUSHARE_ACCEPTANCE_ENV_KEYS = ("TUSHARE_TOKEN",)
 CANDIDATE_DEEPSEEK_ACCEPTANCE_ENV_KEYS = ("DEEPSEEK_API_KEY", "DEEPSEEK_TOKEN_1", "DEEPSEEK_TOKEN_2")
@@ -8528,6 +8531,7 @@ def _candidate_radar_production_stage_scope_manifest(
     fast_pipeline = _as_dict(packet.get("fast_scan_task_pipeline_contract"))
     full_pool = _as_dict(packet.get("full_pool_local_execution_receipt"))
     deep_scan = _as_dict(packet.get("deep_scan_local_review_receipt"))
+    worker_runtime_link = _as_dict(packet.get("candidate_radar_worker_runtime_linked_evidence"))
     full_pool_worker = _as_dict(packet.get("candidate_radar_full_pool_worker_fallback_receipt"))
     deep_scan_worker = _as_dict(packet.get("candidate_radar_deep_scan_worker_fallback_receipt"))
     provider_dry_run = _as_dict(packet.get("provider_parity_dry_run_receipt"))
@@ -8552,6 +8556,33 @@ def _candidate_radar_production_stage_scope_manifest(
     quick_pipeline_ready = fast_pipeline.get("local_task_pipeline_ready") is True
     local_full_pool_ready = full_pool.get("local_full_pool_execution_done") is True
     local_deep_scan_ready = deep_scan.get("local_deep_scan_review_done") is True
+    worker_runtime_round_trip_ready = (
+        worker_runtime_link.get("schema_version") == CANDIDATE_WORKER_RUNTIME_LINKED_EVIDENCE_SCHEMA_VERSION
+        and worker_runtime_link.get("status") == "candidate_radar_worker_runtime_local_evidence_linked"
+        and worker_runtime_link.get("worker_runtime_local_evidence_linked") is True
+        and worker_runtime_link.get("local_fallback_round_trip_verified") is True
+        and worker_runtime_link.get("task_log_round_trip_verified") is True
+        and worker_runtime_link.get("append_only_worker_log_verified") is True
+        and worker_runtime_link.get("cross_process_task_control_verified") is True
+        and worker_runtime_link.get("scheduler_default_off_runtime_verified") is True
+        and worker_runtime_link.get("provider_model_no_autoschedule_boundary_verified") is True
+        and worker_runtime_link.get("production_worker_complete") is False
+        and worker_runtime_link.get("worker_started") is False
+        and worker_runtime_link.get("celery_worker_started") is False
+        and worker_runtime_link.get("redis_broker_used") is False
+        and worker_runtime_link.get("production_radar_replacement_complete") is False
+        and worker_runtime_link.get("worker_full_pool_execution_done") is False
+        and worker_runtime_link.get("worker_deep_scan_execution_done") is False
+        and worker_runtime_link.get("provider_backed_acceptance_done") is False
+        and worker_runtime_link.get("external_calls_triggered") is False
+        and worker_runtime_link.get("tushare_called") is False
+        and worker_runtime_link.get("deepseek_called") is False
+        and worker_runtime_link.get("github_called") is False
+        and worker_runtime_link.get("does_not_execute_trades") is True
+        and worker_runtime_link.get("does_not_modify_strategy_action") is True
+        and worker_runtime_link.get("candidate_is_not_buy_instruction") is True
+        and worker_runtime_link.get("contains_secret") is False
+    )
     worker_full_pool_fallback_visible = (
         full_pool_worker.get("local_worker_fallback_full_pool_done") is True
         and full_pool_worker.get("worker_started") is False
@@ -8611,6 +8642,20 @@ def _candidate_radar_production_stage_scope_manifest(
             "status": "direct_evidence_ready_local_deep_scan_review" if local_deep_scan_ready else "direct_evidence_pending",
             "evidence": f"local_deep_scan_review_done={local_deep_scan_ready}",
             "missing": [] if local_deep_scan_ready else ["local deep-scan review receipt"],
+        },
+        "worker_runtime_round_trip_link": {
+            "direct": worker_runtime_round_trip_ready,
+            "status": (
+                "direct_evidence_ready_worker_runtime_round_trip_link"
+                if worker_runtime_round_trip_ready
+                else "worker_runtime_round_trip_link_pending"
+            ),
+            "evidence": (
+                f"worker_runtime_linked={worker_runtime_round_trip_ready}; "
+                f"source_status={worker_runtime_link.get('source_worker_runtime_status') or 'missing'}; "
+                f"task_id={worker_runtime_link.get('worker_runtime_execution_task_id') or ''}"
+            ),
+            "missing": [] if worker_runtime_round_trip_ready else ["local worker runtime round-trip link"],
         },
         "worker_full_pool_execution": {
             "direct": worker_full_pool_execution_ready,
@@ -8711,6 +8756,7 @@ def _candidate_radar_production_stage_scope_manifest(
                 "worker_fallback_direct_evidence_done": stage_key
                 in {"worker_full_pool_execution", "worker_deep_scan_execution"}
                 and direct,
+                "worker_runtime_round_trip_linked": stage_key == "worker_runtime_round_trip_link" and direct,
                 "local_worker_fallback_evidence_done": bool(
                     state.get("local_worker_fallback_evidence_present")
                 ),

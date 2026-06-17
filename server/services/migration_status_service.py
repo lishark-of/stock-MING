@@ -3238,6 +3238,7 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
     deep_scan = _dict_or_empty(packet_map.get("deep_scan_local_review_receipt"))
     full_pool_worker_fallback = _dict_or_empty(packet_map.get("candidate_radar_full_pool_worker_fallback_receipt"))
     deep_scan_worker_fallback = _dict_or_empty(packet_map.get("candidate_radar_deep_scan_worker_fallback_receipt"))
+    worker_runtime_link = _dict_or_empty(packet_map.get("candidate_radar_worker_runtime_linked_evidence"))
     browser_review = _dict_or_empty(packet_map.get("candidate_browser_qa_review_contract"))
     production_review = _dict_or_empty(packet_map.get("candidate_radar_production_replacement_review_receipt"))
     legacy_retirement_review = _dict_or_empty(
@@ -3390,6 +3391,36 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         and deep_scan_worker_fallback.get("candidate_is_not_buy_instruction") is True
         and deep_scan_worker_fallback.get("contains_secret") is False
     )
+    worker_runtime_round_trip_link_done = bool(
+        packet_safe
+        and worker_runtime_link.get("schema_version") == "candidate_radar_worker_runtime_linked_evidence.v1"
+        and worker_runtime_link.get("status") == "candidate_radar_worker_runtime_local_evidence_linked"
+        and worker_runtime_link.get("worker_runtime_local_evidence_linked") is True
+        and worker_runtime_link.get("worker_runtime_direct_evidence_layer")
+        == "L3_local_worker_runtime_execution_evidence"
+        and worker_runtime_link.get("local_fallback_round_trip_verified") is True
+        and worker_runtime_link.get("task_log_round_trip_verified") is True
+        and worker_runtime_link.get("append_only_worker_log_verified") is True
+        and worker_runtime_link.get("cross_process_task_control_verified") is True
+        and worker_runtime_link.get("scheduler_default_off_runtime_verified") is True
+        and worker_runtime_link.get("provider_model_no_autoschedule_boundary_verified") is True
+        and worker_runtime_link.get("production_worker_complete") is False
+        and worker_runtime_link.get("worker_started") is False
+        and worker_runtime_link.get("celery_worker_started") is False
+        and worker_runtime_link.get("redis_broker_used") is False
+        and worker_runtime_link.get("production_radar_replacement_complete") is False
+        and worker_runtime_link.get("worker_full_pool_execution_done") is False
+        and worker_runtime_link.get("worker_deep_scan_execution_done") is False
+        and worker_runtime_link.get("provider_backed_acceptance_done") is False
+        and worker_runtime_link.get("external_calls_triggered") is False
+        and worker_runtime_link.get("tushare_called") is False
+        and worker_runtime_link.get("deepseek_called") is False
+        and worker_runtime_link.get("github_called") is False
+        and worker_runtime_link.get("does_not_execute_trades") is True
+        and worker_runtime_link.get("does_not_modify_strategy_action") is True
+        and worker_runtime_link.get("candidate_is_not_buy_instruction") is True
+        and worker_runtime_link.get("contains_secret") is False
+    )
     browser_visual_performance_done = bool(
         packet_safe
         and browser_review.get("schema_version") == "candidate_radar_browser_qa_review.v1"
@@ -3464,6 +3495,8 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         direct_stage_keys.append("local_full_pool_execution_receipt")
     if local_deep_scan_done:
         direct_stage_keys.append("local_deep_scan_review_receipt")
+    if worker_runtime_round_trip_link_done:
+        direct_stage_keys.append("worker_runtime_round_trip_link")
     if browser_visual_performance_done:
         direct_stage_keys.append("browser_visual_performance_promotion")
     if legacy_retirement_review_done:
@@ -3482,6 +3515,10 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         "quick_scan_task_pipeline_verified": quick_task_pipeline_done,
         "local_full_pool_execution_receipt_verified": local_full_pool_done,
         "local_deep_scan_review_receipt_verified": local_deep_scan_done,
+        "worker_runtime_round_trip_link_verified": worker_runtime_round_trip_link_done,
+        "worker_runtime_local_evidence_linked": worker_runtime_round_trip_link_done,
+        "worker_runtime_source_status": str(worker_runtime_link.get("source_worker_runtime_status") or "missing"),
+        "worker_runtime_execution_task_id": str(worker_runtime_link.get("worker_runtime_execution_task_id") or ""),
         "worker_full_pool_fallback_execution_verified": False,
         "worker_deep_scan_fallback_execution_verified": False,
         "local_worker_full_pool_fallback_evidence_visible": worker_full_pool_fallback_done,
@@ -3504,9 +3541,13 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         "does_not_modify_strategy_action": True,
         "candidate_is_not_buy_instruction": True,
         "contains_secret": False,
-        "direct_evidence_layer": "L3_local_candidate_radar_scan_browser_safety_evidence"
-        if direct_stage_keys
-        else "L1_static_contract",
+        "direct_evidence_layer": (
+            "L3_local_candidate_radar_scan_browser_worker_runtime_evidence"
+            if worker_runtime_round_trip_link_done
+            else "L3_local_candidate_radar_scan_browser_safety_evidence"
+            if direct_stage_keys
+            else "L1_static_contract"
+        ),
         "evidence_boundary": (
             "candidate_radar_local_scan_browser_evidence_is_not_production_replacement"
         ),
@@ -5211,6 +5252,18 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "local_deep_scan_review_receipt_verified": (
                     direct_evidence.get("local_deep_scan_review_receipt_verified") is True
                 ),
+                "worker_runtime_round_trip_link_verified": (
+                    direct_evidence.get("worker_runtime_round_trip_link_verified") is True
+                ),
+                "worker_runtime_local_evidence_linked": (
+                    direct_evidence.get("worker_runtime_local_evidence_linked") is True
+                ),
+                "worker_runtime_source_status": str(
+                    direct_evidence.get("worker_runtime_source_status") or "missing"
+                ),
+                "worker_runtime_execution_task_id": str(
+                    direct_evidence.get("worker_runtime_execution_task_id") or ""
+                ),
                 "worker_full_pool_fallback_execution_verified": (
                     direct_evidence.get("worker_full_pool_fallback_execution_verified") is True
                 ),
@@ -6277,6 +6330,14 @@ def _merge_ltg_stage_scope_observations(
             item["observed_stage_scope_can_close_goal"] = False
             if str(item.get("id") or "") == "LTG-13":
                 item["observed_candidate_direct_evidence_layer"] = observed.get("candidate_direct_evidence_layer")
+                item["observed_worker_runtime_round_trip_link_verified"] = observed.get(
+                    "worker_runtime_round_trip_link_verified"
+                )
+                item["observed_worker_runtime_local_evidence_linked"] = observed.get(
+                    "worker_runtime_local_evidence_linked"
+                )
+                item["observed_worker_runtime_source_status"] = observed.get("worker_runtime_source_status")
+                item["observed_worker_runtime_execution_task_id"] = observed.get("worker_runtime_execution_task_id")
                 item["observed_production_promotion_dry_run_status"] = observed.get(
                     "production_promotion_dry_run_status"
                 )

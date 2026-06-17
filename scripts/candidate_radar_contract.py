@@ -91,6 +91,7 @@ REQUIRED_CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS = {
     "quick_scan_task_pipeline",
     "local_full_pool_execution_receipt",
     "local_deep_scan_review_receipt",
+    "worker_runtime_round_trip_link",
     "worker_full_pool_execution",
     "worker_deep_scan_execution",
     "provider_parity_acceptance",
@@ -103,6 +104,7 @@ CANDIDATE_RADAR_PRODUCTION_STAGE_LABELS = {
     "quick_scan_task_pipeline": "quick radar scan runs through explicit task pipeline",
     "local_full_pool_execution_receipt": "local full-pool-like receipt stays local evidence",
     "local_deep_scan_review_receipt": "local deep-scan review stays local evidence",
+    "worker_runtime_round_trip_link": "local worker runtime round-trip evidence is linked",
     "worker_full_pool_execution": "worker-backed full-pool execution evidence is required",
     "worker_deep_scan_execution": "worker-backed deep-scan execution evidence is required",
     "provider_parity_acceptance": "provider-backed legacy signal parity is required",
@@ -115,6 +117,7 @@ LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS = {
     "quick_scan_task_pipeline",
     "local_full_pool_execution_receipt",
     "local_deep_scan_review_receipt",
+    "worker_runtime_round_trip_link",
 }
 
 
@@ -742,7 +745,7 @@ def build_contract() -> dict[str, Any]:
         if row.get("direct_evidence_complete") is True
     }
     production_stage_scope_pending_keys = production_stage_scope_keys - production_stage_scope_direct_keys
-    expected_direct_stage_keys = {
+    base_direct_stage_keys = {
         "cache_render_boundary",
         "quick_scan_task_pipeline",
         "local_full_pool_execution_receipt",
@@ -750,12 +753,18 @@ def build_contract() -> dict[str, Any]:
         "browser_visual_performance_promotion",
         "legacy_retirement_review",
     }
-    expected_pending_stage_keys = {
+    base_pending_stage_keys = {
         "worker_full_pool_execution",
         "worker_deep_scan_execution",
         "provider_parity_acceptance",
         "search_quant_provider_model_acceptance",
     }
+    expected_direct_stage_keys = set(base_direct_stage_keys)
+    expected_pending_stage_keys = set(base_pending_stage_keys)
+    if "worker_runtime_round_trip_link" in production_stage_scope_direct_keys:
+        expected_direct_stage_keys.add("worker_runtime_round_trip_link")
+    else:
+        expected_pending_stage_keys.add("worker_runtime_round_trip_link")
     production_stage_scope_ready = (
         production_stage_scope_keys == REQUIRED_CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS
         and production_stage_scope_direct_keys == expected_direct_stage_keys

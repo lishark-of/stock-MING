@@ -1093,9 +1093,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertGreaterEqual(observed_stage_rows["LTG-13"]["row_count"], 10)
         ltg13_direct_count = int(observed_stage_rows["LTG-13"].get("direct_evidence_stage_count") or 0)
+        ltg13_stage_count = int(observed_stage_rows["LTG-13"].get("row_count") or 0)
         self.assertEqual(
             observed_stage_rows["LTG-13"]["pending_stage_count"],
-            max(10 - ltg13_direct_count, 0) if ltg13_has_direct_evidence else 10,
+            max(ltg13_stage_count - ltg13_direct_count, 0)
+            if ltg13_has_direct_evidence
+            else ltg13_stage_count,
         )
         if ltg13_has_direct_evidence:
             self.assertGreaterEqual(observed_stage_rows["LTG-13"]["direct_evidence_stage_count"], 2)
@@ -1308,11 +1311,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         ltg13_goal_direct_count = int(
             migration_goals["LTG-13"].get("observed_stage_scope_direct_evidence_count") or 0
         )
+        ltg13_goal_stage_count = int(migration_goals["LTG-13"].get("observed_stage_scope_row_count") or 0)
         self.assertEqual(
             migration_goals["LTG-13"]["observed_stage_scope_pending_count"],
-            max(10 - ltg13_goal_direct_count, 0)
+            max(ltg13_goal_stage_count - ltg13_goal_direct_count, 0)
             if ltg13_goal_direct_count
-            else 10,
+            else ltg13_goal_stage_count,
         )
         self.assertFalse(migration_goals["LTG-13"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(
@@ -12497,6 +12501,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "quick_scan_task_pipeline",
             "local_full_pool_execution_receipt",
             "local_deep_scan_review_receipt",
+            "worker_runtime_round_trip_link",
             "worker_full_pool_execution",
             "worker_deep_scan_execution",
             "provider_parity_acceptance",
@@ -12504,7 +12509,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "browser_visual_performance_promotion",
             "legacy_retirement_review",
         }
-        expected_direct_stage_keys = {
+        base_direct_stage_keys = {
             "cache_render_boundary",
             "quick_scan_task_pipeline",
             "local_full_pool_execution_receipt",
@@ -12512,12 +12517,23 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "browser_visual_performance_promotion",
             "legacy_retirement_review",
         }
-        expected_pending_stage_keys = {
+        base_pending_stage_keys = {
             "worker_full_pool_execution",
             "worker_deep_scan_execution",
             "provider_parity_acceptance",
             "search_quant_provider_model_acceptance",
         }
+        stage_rows = payload["candidate_radar_production_stage_scope_rows"]
+        stage_rows_by_key = {row["stage_key"]: row for row in stage_rows}
+        worker_runtime_stage_is_direct = (
+            stage_rows_by_key["worker_runtime_round_trip_link"]["direct_evidence_complete"] is True
+        )
+        expected_direct_stage_keys = set(base_direct_stage_keys)
+        expected_pending_stage_keys = set(base_pending_stage_keys)
+        if worker_runtime_stage_is_direct:
+            expected_direct_stage_keys.add("worker_runtime_round_trip_link")
+        else:
+            expected_pending_stage_keys.add("worker_runtime_round_trip_link")
         self.assertEqual(
             payload["candidate_radar_production_stage_scope_count"],
             len(required_production_stages),
@@ -12530,7 +12546,6 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             payload["candidate_radar_production_stage_scope_pending_count"],
             len(expected_pending_stage_keys),
         )
-        stage_rows = payload["candidate_radar_production_stage_scope_rows"]
         self.assertEqual({row["stage_key"] for row in stage_rows}, required_production_stages)
         for row in stage_rows:
             self.assertEqual(row["scope"], "candidate_radar_production_stage_scope_manifest")
@@ -22063,9 +22078,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertGreaterEqual(observed_stage_rows["LTG-13"]["row_count"], 10)
         ltg13_direct_count = int(observed_stage_rows["LTG-13"].get("direct_evidence_stage_count") or 0)
+        ltg13_stage_count = int(observed_stage_rows["LTG-13"].get("row_count") or 0)
         self.assertEqual(
             observed_stage_rows["LTG-13"]["pending_stage_count"],
-            max(10 - ltg13_direct_count, 0) if ltg13_has_direct_evidence else 10,
+            max(ltg13_stage_count - ltg13_direct_count, 0)
+            if ltg13_has_direct_evidence
+            else ltg13_stage_count,
         )
         if ltg13_has_direct_evidence:
             self.assertGreaterEqual(observed_stage_rows["LTG-13"]["direct_evidence_stage_count"], 2)
@@ -22223,11 +22241,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         ltg13_goal_direct_count = int(
             migration_goals["LTG-13"].get("observed_stage_scope_direct_evidence_count") or 0
         )
+        ltg13_goal_stage_count = int(migration_goals["LTG-13"].get("observed_stage_scope_row_count") or 0)
         self.assertEqual(
             migration_goals["LTG-13"]["observed_stage_scope_pending_count"],
-            max(10 - ltg13_goal_direct_count, 0)
+            max(ltg13_goal_stage_count - ltg13_goal_direct_count, 0)
             if ltg13_goal_direct_count
-            else 10,
+            else ltg13_goal_stage_count,
         )
         self.assertFalse(migration_goals["LTG-13"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(
@@ -27415,6 +27434,58 @@ class CommandCenter3FastAPITests(unittest.TestCase):
     def test_ltg_stage_scope_observes_candidate_radar_direct_evidence_without_replacement(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
+        self.assertTrue(
+            self.client.post("/api/worker/synthetic-healthcheck", json={"requested_from": "test"}).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/worker/activation-review",
+                json={"requested_from": "test", "operator_approved": True},
+            ).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/worker/production-evidence-plan",
+                json={"requested_from": "test", "operator_approved": True},
+            ).json()["ok"]
+        )
+        worker_cache = self.client.get("/api/worker/cache").json()["data"]
+        plan_receipt = worker_cache["worker_production_evidence_plan_receipt"]
+        runtime_recipe = worker_cache["worker_runtime_qa_execution_recipe"]
+        runtime_request_response = self.client.post(
+            "/api/worker/runtime-qa-execution-request",
+            json={
+                "requested_from": "test",
+                "operator_approved": True,
+                "scope_ticket_sha256": plan_receipt["scope_ticket_sha256"],
+                "runtime_qa_scope_hash": runtime_recipe["runtime_qa_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(runtime_request_response["ok"])
+        runtime_request = runtime_request_response["data"]["worker_runtime_qa_execution_request_receipt"]
+        dry_run_response = self.client.post(
+            "/api/worker/runtime-qa-dry-run",
+            json={
+                "requested_from": "test",
+                "operator_approved": True,
+                "request_task_id": runtime_request["request_task_id"],
+                "evidence_plan_scope_hash": runtime_request["production_evidence_plan_scope_hash"],
+                "runtime_qa_scope_hash": runtime_request["runtime_qa_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(dry_run_response["ok"])
+        dry_run = dry_run_response["data"]["worker_runtime_qa_dry_run_receipt"]
+        runtime_execution_response = self.client.post(
+            "/api/worker/runtime-qa-execution",
+            json={
+                "requested_from": "test",
+                "operator_approved": True,
+                "dry_run_task_id": dry_run["dry_run_task_id"],
+                "evidence_plan_scope_hash": dry_run["production_evidence_plan_scope_hash"],
+                "runtime_qa_scope_hash": dry_run["runtime_qa_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(runtime_execution_response["ok"])
         self._with_snapshot_cache(
             {
                 "data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"},
@@ -27604,7 +27675,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(legacy_review["ok"])
         cache_after_legacy_review = self.client.get("/api/candidate-radar/cache").json()["data"]
         radar_stage_manifest = cache_after_legacy_review["candidate_radar_production_stage_scope_manifest"]
-        self.assertEqual(radar_stage_manifest["direct_evidence_stage_count"], 6)
+        self.assertEqual(radar_stage_manifest["direct_evidence_stage_count"], 7)
         self.assertEqual(radar_stage_manifest["pending_stage_count"], 4)
         self.assertEqual(
             set(radar_stage_manifest["direct_evidence_stage_keys"]),
@@ -27613,6 +27684,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "quick_scan_task_pipeline",
                 "local_full_pool_execution_receipt",
                 "local_deep_scan_review_receipt",
+                "worker_runtime_round_trip_link",
                 "browser_visual_performance_promotion",
                 "legacy_retirement_review",
             },
@@ -27644,10 +27716,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         ltg13 = observed_stage_rows["LTG-13"]
 
         self.assertEqual(ltg13["status"], "observed_candidate_radar_direct_evidence_production_pending")
-        self.assertEqual(ltg13["row_count"], 10)
+        self.assertEqual(ltg13["row_count"], 11)
         self.assertEqual(ltg13["pending_stage_count"], 4)
         self.assertEqual(ltg13["production_blocker_count"], 4)
-        self.assertEqual(ltg13["direct_evidence_stage_count"], 6)
+        self.assertEqual(ltg13["direct_evidence_stage_count"], 7)
         self.assertEqual(
             set(ltg13["direct_evidence_stage_keys"]),
             {
@@ -27655,6 +27727,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "quick_scan_task_pipeline",
                 "local_full_pool_execution_receipt",
                 "local_deep_scan_review_receipt",
+                "worker_runtime_round_trip_link",
                 "browser_visual_performance_promotion",
                 "legacy_retirement_review",
             },
@@ -27663,6 +27736,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ltg13["quick_scan_task_pipeline_verified"])
         self.assertTrue(ltg13["local_full_pool_execution_receipt_verified"])
         self.assertTrue(ltg13["local_deep_scan_review_receipt_verified"])
+        self.assertTrue(ltg13["worker_runtime_round_trip_link_verified"])
+        self.assertTrue(ltg13["worker_runtime_local_evidence_linked"])
         self.assertFalse(ltg13["worker_full_pool_fallback_execution_verified"])
         self.assertFalse(ltg13["worker_deep_scan_fallback_execution_verified"])
         self.assertTrue(ltg13["local_worker_full_pool_fallback_evidence_visible"])
@@ -27672,7 +27747,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ltg13["legacy_retirement_review_ready_for_local_review"])
         self.assertEqual(
             ltg13["candidate_direct_evidence_layer"],
-            "L3_local_candidate_radar_scan_browser_safety_evidence",
+            "L3_local_candidate_radar_scan_browser_worker_runtime_evidence",
         )
         self.assertFalse(ltg13["production_radar_replacement_complete"])
         self.assertFalse(ltg13["legacy_retirement_ready"])
@@ -27692,7 +27767,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
         self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_pending_count"], 4)
-        self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_direct_evidence_count"], 6)
+        self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_direct_evidence_count"], 7)
+        self.assertTrue(migration_goals["LTG-13"]["observed_worker_runtime_round_trip_link_verified"])
         self.assertFalse(migration_goals["LTG-13"]["observed_stage_scope_can_close_goal"])
 
     def test_candidate_radar_worker_execution_request_blocks_scope_hash_mismatch(self):
