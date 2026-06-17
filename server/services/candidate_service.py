@@ -8552,15 +8552,27 @@ def _candidate_radar_production_stage_scope_manifest(
     quick_pipeline_ready = fast_pipeline.get("local_task_pipeline_ready") is True
     local_full_pool_ready = full_pool.get("local_full_pool_execution_done") is True
     local_deep_scan_ready = deep_scan.get("local_deep_scan_review_done") is True
-    worker_full_pool_fallback_ready = (
+    worker_full_pool_fallback_visible = (
         full_pool_worker.get("local_worker_fallback_full_pool_done") is True
         and full_pool_worker.get("worker_started") is False
         and full_pool_worker.get("provider_backed_acceptance_done") is False
     )
-    worker_deep_scan_fallback_ready = (
+    worker_deep_scan_fallback_visible = (
         deep_scan_worker.get("local_deep_scan_review_done") is True
         and deep_scan_worker.get("worker_started") is False
         and deep_scan_worker.get("provider_backed_acceptance_done") is False
+    )
+    worker_full_pool_execution_ready = (
+        full_pool_worker.get("worker_backed_execution_done") is True
+        and full_pool_worker.get("worker_task_executed") is True
+        and full_pool_worker.get("worker_execution_implemented") is True
+        and full_pool_worker.get("production_full_pool_scan_done") is True
+    )
+    worker_deep_scan_execution_ready = (
+        deep_scan_worker.get("worker_backed_execution_done") is True
+        and deep_scan_worker.get("worker_task_executed") is True
+        and deep_scan_worker.get("worker_execution_implemented") is True
+        and deep_scan_worker.get("production_deep_scan_done") is True
     )
     provider_parity_ready = False
     search_quant_ready = False
@@ -8601,24 +8613,36 @@ def _candidate_radar_production_stage_scope_manifest(
             "missing": [] if local_deep_scan_ready else ["local deep-scan review receipt"],
         },
         "worker_full_pool_execution": {
-            "direct": worker_full_pool_fallback_ready,
+            "direct": worker_full_pool_execution_ready,
             "status": (
-                "direct_evidence_ready_worker_fallback_production_pending"
-                if worker_full_pool_fallback_ready
+                "direct_evidence_ready_worker_full_pool_execution"
+                if worker_full_pool_execution_ready
+                else "local_worker_fallback_visible_real_worker_pending"
+                if worker_full_pool_fallback_visible
                 else "direct_evidence_pending"
             ),
-            "evidence": f"local_worker_fallback_full_pool_done={worker_full_pool_fallback_ready}; real_worker_done=false",
-            "missing": [] if worker_full_pool_fallback_ready else ["worker full-pool execution evidence"],
+            "evidence": (
+                f"local_worker_fallback_full_pool_done={worker_full_pool_fallback_visible}; "
+                f"real_worker_done={worker_full_pool_execution_ready}"
+            ),
+            "missing": [] if worker_full_pool_execution_ready else ["worker full-pool execution evidence"],
+            "local_worker_fallback_evidence_present": worker_full_pool_fallback_visible,
         },
         "worker_deep_scan_execution": {
-            "direct": worker_deep_scan_fallback_ready,
+            "direct": worker_deep_scan_execution_ready,
             "status": (
-                "direct_evidence_ready_worker_fallback_production_pending"
-                if worker_deep_scan_fallback_ready
+                "direct_evidence_ready_worker_deep_scan_execution"
+                if worker_deep_scan_execution_ready
+                else "local_worker_fallback_visible_real_worker_pending"
+                if worker_deep_scan_fallback_visible
                 else "direct_evidence_pending"
             ),
-            "evidence": f"local_worker_deep_scan_fallback_done={worker_deep_scan_fallback_ready}; real_worker_done=false",
-            "missing": [] if worker_deep_scan_fallback_ready else ["worker deep-scan execution evidence"],
+            "evidence": (
+                f"local_worker_deep_scan_fallback_done={worker_deep_scan_fallback_visible}; "
+                f"real_worker_done={worker_deep_scan_execution_ready}"
+            ),
+            "missing": [] if worker_deep_scan_execution_ready else ["worker deep-scan execution evidence"],
+            "local_worker_fallback_evidence_present": worker_deep_scan_fallback_visible,
         },
         "provider_parity_acceptance": {
             "direct": provider_parity_ready,
@@ -8670,6 +8694,9 @@ def _candidate_radar_production_stage_scope_manifest(
                 "current_status": state["status"],
                 "target_status": "production_replacement_direct_evidence_required",
                 "local_stage_evidence_present": stage_key in LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS,
+                "local_worker_fallback_evidence_present": bool(
+                    state.get("local_worker_fallback_evidence_present")
+                ),
                 "direct_evidence_complete": direct,
                 "direct_evidence_layer": "L3_local_candidate_radar_direct_evidence" if direct else "",
                 "required_before_production_replacement": True,
@@ -8684,6 +8711,9 @@ def _candidate_radar_production_stage_scope_manifest(
                 "worker_fallback_direct_evidence_done": stage_key
                 in {"worker_full_pool_execution", "worker_deep_scan_execution"}
                 and direct,
+                "local_worker_fallback_evidence_done": bool(
+                    state.get("local_worker_fallback_evidence_present")
+                ),
                 "browser_performance_trace_done": stage_key == "browser_visual_performance_promotion" and direct,
                 "browser_visual_delta_qa_done": stage_key == "browser_visual_performance_promotion" and direct,
                 "durable_ci_evidence_complete": False,
@@ -8706,6 +8736,9 @@ def _candidate_radar_production_stage_scope_manifest(
     direct_evidence_keys = [row["stage_key"] for row in rows if row["direct_evidence_complete"] is True]
     pending_keys = [row["stage_key"] for row in rows if row["direct_evidence_complete"] is not True]
     local_evidence_count = sum(1 for row in rows if row["local_stage_evidence_present"] is True)
+    worker_fallback_evidence_keys = [
+        row["stage_key"] for row in rows if row["local_worker_fallback_evidence_present"] is True
+    ]
     manifest = {
         "schema_version": CANDIDATE_RADAR_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION,
         "status": "candidate_radar_production_stage_scope_manifest_ready_production_pending",
@@ -8742,6 +8775,8 @@ def _candidate_radar_production_stage_scope_manifest(
         "pending_stage_count": len(pending_keys),
         "pending_stage_keys": pending_keys,
         "local_evidence_stage_count": local_evidence_count,
+        "worker_fallback_evidence_stage_count": len(worker_fallback_evidence_keys),
+        "worker_fallback_evidence_stage_keys": worker_fallback_evidence_keys,
         "production_blocker_count": len(pending_keys),
         "missing_evidence": sorted({item for row in rows for item in _as_list(row.get("missing_evidence"))}),
         "not_allowed_next_steps": [
@@ -8767,6 +8802,9 @@ def _attach_candidate_radar_production_stage_scope_manifest(packet: Mapping[str,
         "direct_evidence_stage_count"
     ]
     counts["candidate_radar_production_stage_scope_local_evidence_count"] = manifest["local_evidence_stage_count"]
+    counts["candidate_radar_production_stage_scope_worker_fallback_evidence_count"] = manifest[
+        "worker_fallback_evidence_stage_count"
+    ]
     counts["candidate_radar_production_stage_scope_production_blocker_count"] = manifest["production_blocker_count"]
     policy = dict(_as_dict(view.get("policy")))
     policy["candidate_radar_production_stage_scope_manifest_is_local"] = True

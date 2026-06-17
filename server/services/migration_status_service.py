@@ -3435,10 +3435,6 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         direct_stage_keys.append("local_full_pool_execution_receipt")
     if local_deep_scan_done:
         direct_stage_keys.append("local_deep_scan_review_receipt")
-    if worker_full_pool_fallback_done:
-        direct_stage_keys.append("worker_full_pool_fallback_execution")
-    if worker_deep_scan_fallback_done:
-        direct_stage_keys.append("worker_deep_scan_fallback_execution")
     if browser_visual_performance_done:
         direct_stage_keys.append("browser_visual_performance_promotion")
     if legacy_retirement_review_done:
@@ -3457,8 +3453,10 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         "quick_scan_task_pipeline_verified": quick_task_pipeline_done,
         "local_full_pool_execution_receipt_verified": local_full_pool_done,
         "local_deep_scan_review_receipt_verified": local_deep_scan_done,
-        "worker_full_pool_fallback_execution_verified": worker_full_pool_fallback_done,
-        "worker_deep_scan_fallback_execution_verified": worker_deep_scan_fallback_done,
+        "worker_full_pool_fallback_execution_verified": False,
+        "worker_deep_scan_fallback_execution_verified": False,
+        "local_worker_full_pool_fallback_evidence_visible": worker_full_pool_fallback_done,
+        "local_worker_deep_scan_fallback_evidence_visible": worker_deep_scan_fallback_done,
         "browser_visual_performance_evidence_verified": browser_visual_performance_done,
         "production_replacement_review_ready": production_review_ready,
         "legacy_retirement_review_direct_evidence_verified": legacy_retirement_review_done,
@@ -3477,9 +3475,7 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         "does_not_modify_strategy_action": True,
         "candidate_is_not_buy_instruction": True,
         "contains_secret": False,
-        "direct_evidence_layer": "L3_local_candidate_radar_worker_fallback_browser_safety_evidence"
-        if worker_full_pool_fallback_done or worker_deep_scan_fallback_done
-        else "L3_local_candidate_radar_scan_browser_safety_evidence"
+        "direct_evidence_layer": "L3_local_candidate_radar_scan_browser_safety_evidence"
         if direct_stage_keys
         else "L1_static_contract",
         "evidence_boundary": (
@@ -5191,6 +5187,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 ),
                 "worker_deep_scan_fallback_execution_verified": (
                     direct_evidence.get("worker_deep_scan_fallback_execution_verified") is True
+                ),
+                "local_worker_full_pool_fallback_evidence_visible": (
+                    direct_evidence.get("local_worker_full_pool_fallback_evidence_visible") is True
+                ),
+                "local_worker_deep_scan_fallback_evidence_visible": (
+                    direct_evidence.get("local_worker_deep_scan_fallback_evidence_visible") is True
                 ),
                 "browser_visual_performance_evidence_verified": (
                     direct_evidence.get("browser_visual_performance_evidence_verified") is True
