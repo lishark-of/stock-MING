@@ -207,6 +207,9 @@ def build_contract() -> dict[str, Any]:
     durable_recipe = _dict(packet.get("tauri_package_durable_evidence_recipe"))
     durable_rows = [row for row in _list(packet.get("tauri_package_durable_evidence_rows")) if isinstance(row, dict)]
     durable_rows_by_key = {str(row.get("evidence_key") or ""): row for row in durable_rows}
+    durable_row_blockers = [
+        row for row in durable_rows if row.get("production_blocker") is True and row.get("passed") is False
+    ]
     build_artifact = _dict(packet.get("tauri_build_artifact"))
     release_binary_detected = build_artifact.get("binary_exists") is True
     app_bundle_detected = build_artifact.get("packaged_app_bundle_detected") is True
@@ -443,11 +446,7 @@ def build_contract() -> dict[str, Any]:
             and durable_recipe.get("durable_evidence_complete") is False
             and durable_recipe.get("durable_promotion_ready") is False
             and durable_recipe.get("production_package_complete") is False
-            and durable_recipe.get("tauri_build_repeatability_done") is False
-            and durable_recipe.get("packaged_app_launch_qa_done") is False
-            and durable_recipe.get("backend_startup_strategy_runtime_validated") is False
-            and durable_recipe.get("backend_offline_packaged_ux_verified") is False
-            and durable_recipe.get("config_log_runtime_paths_validated") is False
+            and durable_recipe.get("packaged_runtime_validated") is not True
             and durable_recipe.get("signing_notarization_done") is False
             and durable_recipe.get("provider_execution_implemented") is False
             and durable_recipe.get("model_execution_implemented") is False
@@ -464,7 +463,9 @@ def build_contract() -> dict[str, Any]:
             and int(durable_recipe.get("row_count") or 0) == len(durable_rows)
             and int(durable_recipe.get("evidence_key_count") or 0)
             == len(desktop_service.TAURI_PACKAGE_DURABLE_EVIDENCE_KEYS)
-            and int(durable_recipe.get("durable_evidence_blocker_count") or 0) >= 6
+            and int(durable_recipe.get("durable_evidence_blocker_count") or 0) == len(durable_row_blockers)
+            and int(durable_recipe.get("durable_evidence_blocker_count") or 0) >= 1
+            and durable_recipe.get("missing_durable_evidence") == [row.get("evidence_key") for row in durable_row_blockers]
             and ".app bundle and DMG artifact QA or explicit accepted equivalent"
             in _list(durable_recipe.get("required_evidence"))
             and "packaged app launch QA" in _list(durable_recipe.get("required_evidence"))
@@ -480,8 +481,20 @@ def build_contract() -> dict[str, Any]:
             and durable_rows_by_key.get("readiness_receipt_visible", {}).get("passed") is True
             and durable_rows_by_key.get("packaged_runtime_qa_matrix_visible", {}).get("passed") is True
             and durable_rows_by_key.get("release_artifact_shape_visible", {}).get("passed") is True
-            and durable_rows_by_key.get("packaged_app_launch_qa_required", {}).get("production_blocker") is True
-            and durable_rows_by_key.get("backend_offline_packaged_ux_required", {}).get("production_blocker") is True
+            and durable_rows_by_key.get("packaged_app_launch_qa_required", {}).get("passed")
+            is bool(durable_recipe.get("packaged_app_launch_qa_done"))
+            and durable_rows_by_key.get("backend_startup_runtime_evidence_required", {}).get("passed")
+            is bool(durable_recipe.get("backend_startup_strategy_runtime_validated"))
+            and durable_rows_by_key.get("backend_offline_packaged_ux_required", {}).get("passed")
+            is bool(durable_recipe.get("backend_offline_packaged_ux_verified"))
+            and durable_rows_by_key.get("config_log_runtime_path_evidence_required", {}).get("passed")
+            is bool(durable_recipe.get("config_log_runtime_paths_validated"))
+            and durable_rows_by_key.get("signing_notarization_review_required", {}).get("passed")
+            is bool(
+                durable_recipe.get("signing_notarization_done")
+                or durable_recipe.get("signing_notarization_review_done")
+            )
+            and durable_rows_by_key.get("production_package_promotion_review_required", {}).get("passed") is False
             and durable_rows_by_key.get("no_build_runtime_provider_trade_secret_boundary", {}).get("passed") is True
             and _flag_false(
                 durable_recipe,

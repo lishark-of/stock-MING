@@ -23624,6 +23624,33 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "local_tauri_signing_notarization_review",
             {row.get("api") for row in refreshed["call_ledger"]},
         )
+        durable_recipe = refreshed["tauri_package_durable_evidence_recipe"]
+        durable_rows = {row["evidence_key"]: row for row in refreshed["tauri_package_durable_evidence_rows"]}
+        self.assertEqual(durable_recipe["status"], "tauri_package_durable_evidence_recipe_ready_production_pending")
+        self.assertFalse(durable_recipe["durable_evidence_complete"])
+        self.assertFalse(durable_recipe["durable_promotion_ready"])
+        self.assertFalse(durable_recipe["production_package_complete"])
+        self.assertTrue(durable_recipe["tauri_build_repeatability_done"])
+        self.assertTrue(durable_recipe["app_bundle_artifact_qa_done"])
+        self.assertFalse(durable_recipe["dmg_distribution_artifact_qa_done"])
+        self.assertTrue(durable_recipe["packaged_app_launch_qa_done"])
+        self.assertTrue(durable_recipe["backend_startup_strategy_runtime_validated"])
+        self.assertTrue(durable_recipe["backend_offline_packaged_ux_verified"])
+        self.assertTrue(durable_recipe["config_log_runtime_paths_validated"])
+        self.assertTrue(durable_recipe["signing_notarization_review_done"])
+        self.assertFalse(durable_recipe["signing_notarization_done"])
+        self.assertEqual(
+            durable_recipe["missing_durable_evidence"],
+            ["app_bundle_dmg_evidence_required", "production_package_promotion_review_required"],
+        )
+        self.assertEqual(durable_recipe["durable_evidence_blocker_count"], 2)
+        self.assertTrue(durable_rows["packaged_app_launch_qa_required"]["passed"])
+        self.assertTrue(durable_rows["backend_startup_runtime_evidence_required"]["passed"])
+        self.assertTrue(durable_rows["backend_offline_packaged_ux_required"]["passed"])
+        self.assertTrue(durable_rows["config_log_runtime_path_evidence_required"]["passed"])
+        self.assertTrue(durable_rows["signing_notarization_review_required"]["passed"])
+        self.assertFalse(durable_rows["app_bundle_dmg_evidence_required"]["passed"])
+        self.assertFalse(durable_rows["production_package_promotion_review_required"]["passed"])
 
         migration = migration_status_service.build_migration_status()
         ltg09 = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}["LTG-09"]
