@@ -304,6 +304,44 @@ def _read_next_session_browser_qa_report(path: Path) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _browser_qa_report_sort_key(path: Path, report: Mapping[str, Any]) -> tuple[float, str]:
+    generated_at = str(report.get("generated_at") or "").strip()
+    if generated_at:
+        try:
+            parsed = _dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+            return parsed.timestamp(), str(path)
+        except Exception:
+            pass
+    try:
+        return path.stat().st_mtime, str(path)
+    except Exception:
+        return 0.0, str(path)
+
+
+def _next_session_report_rows_passed(report: Mapping[str, Any], rows: list[Mapping[str, Any]]) -> bool:
+    if not rows:
+        return False
+    for row in rows:
+        transition_observed = row.get("route_transition_observed_ms")
+        transition_budget = row.get("route_transition_budget_ms") or _as_dict(report.get("performance_budgets")).get(
+            "route_transition_observed_ms"
+        )
+        try:
+            transition_within_budget = float(transition_observed) <= float(transition_budget)
+        except Exception:
+            transition_within_budget = False
+        if (
+            str(row.get("status") or "") != "passed"
+            or row.get("visual_qa_complete") is not True
+            or row.get("performance_trace_complete") is not True
+            or int(row.get("long_task_over_50ms_count") or 0) != 0
+            or int(row.get("clipped_count") or 0) != 0
+            or not transition_within_budget
+        ):
+            return False
+    return True
+
+
 def _next_session_browser_qa_evidence_row(report: Mapping[str, Any], row: Mapping[str, Any], report_path: Path) -> dict[str, Any]:
     transition_observed = row.get("route_transition_observed_ms")
     transition_budget = row.get("route_transition_budget_ms") or _as_dict(report.get("performance_budgets")).get(
@@ -361,16 +399,22 @@ def _next_session_browser_qa_evidence_summary() -> tuple[dict[str, Any], list[di
         if MOTION_QA_ARTIFACT_ROOT.exists()
         else []
     )
+    report_entries: list[tuple[float, str, Path, dict[str, Any]]] = []
+    for path in report_paths:
+        report = _read_next_session_browser_qa_report(path)
+        sort_ts, sort_path = _browser_qa_report_sort_key(path, report)
+        report_entries.append((sort_ts, sort_path, path, report))
+    report_entries.sort(key=lambda item: (item[0], item[1]))
     next_rows: list[dict[str, Any]] = []
     scanned_report_count = 0
     valid_report_count = 0
     next_report_count = 0
+    passing_next_report_count = 0
     latest_report_path: str | None = None
     latest_run_id: str | None = None
     latest_generated_at: Any = None
-    for path in report_paths[-20:]:
+    for _sort_ts, _sort_path, path, report in report_entries[-20:]:
         scanned_report_count += 1
-        report = _read_next_session_browser_qa_report(path)
         if not report:
             continue
         valid_report = (
@@ -396,6 +440,8 @@ def _next_session_browser_qa_evidence_summary() -> tuple[dict[str, Any], list[di
         if not report_next_rows:
             continue
         next_report_count += 1
+        if _next_session_report_rows_passed(report, report_next_rows):
+            passing_next_report_count += 1
         latest_report_path = _relative_project_path(path)
         latest_run_id = str(report.get("run_id") or path.parent.name)
         latest_generated_at = report.get("generated_at")
@@ -441,6 +487,8 @@ def _next_session_browser_qa_evidence_summary() -> tuple[dict[str, Any], list[di
         "scanned_report_count": scanned_report_count,
         "valid_report_count": valid_report_count,
         "next_report_count": next_report_count,
+        "report_count": next_report_count,
+        "passing_report_count": passing_next_report_count,
         "next_route": "#next",
         "next_viewport_row_count": row_count,
         "review_required_count": review_required_count,

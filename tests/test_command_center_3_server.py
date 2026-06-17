@@ -29534,6 +29534,77 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn(cache["call_ledger"][0]["call_status"], {"cache_read", "exact_cache_read"})
         self.assertFalse(cache["call_ledger"][0]["external"])
 
+    def test_next_session_browser_qa_evidence_uses_generated_at_for_latest_report(self):
+        original_root = next_session_service.MOTION_QA_ARTIFACT_ROOT
+        temp_dir = tempfile.TemporaryDirectory()
+        motion_root = Path(temp_dir.name) / "motion_qa"
+        next_session_service.MOTION_QA_ARTIFACT_ROOT = motion_root
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, next_session_service, "MOTION_QA_ARTIFACT_ROOT", original_root)
+
+        def write_report(dirname: str, generated_at: str, reduced: bool) -> None:
+            report_dir = motion_root / dirname
+            report_dir.mkdir(parents=True, exist_ok=True)
+            rows = [
+                {
+                    "route": "#next",
+                    "label": "Next Session Map",
+                    "viewport": viewport,
+                    "width": 1440,
+                    "height": 960,
+                    "status": "passed",
+                    "visual_qa_complete": True,
+                    "performance_trace_complete": True,
+                    "route_transition_observed_ms": 210,
+                    "route_transition_budget_ms": 500,
+                    "long_task_over_50ms_count": 0,
+                    "clipped_count": 0,
+                    "offscreen_count": 0,
+                }
+                for viewport in ("desktop", "laptop", "tablet", "mobile")
+            ]
+            (report_dir / "motion_browser_qa_report.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "command_center_3_motion_browser_qa_result.v1",
+                        "scope": "explicit_local_browser_visual_performance_run",
+                        "run_id": dirname,
+                        "generated_at": generated_at,
+                        "status": "motion_browser_qa_passed",
+                        "reduced_motion": reduced,
+                        "local_urls_only": True,
+                        "starts_no_servers": True,
+                        "external_calls_triggered": False,
+                        "tushare_called": False,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                        "performance_budgets": {"route_transition_observed_ms": 500},
+                        "rows": rows,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+        write_report("zz-old-default", "2026-06-01T09:00:00Z", False)
+        write_report("zz-old-reduced", "2026-06-01T09:01:00Z", True)
+        write_report("00-fresh-default", "2026-06-18T09:00:00Z", False)
+        write_report("00-fresh-reduced", "2026-06-18T09:01:00Z", True)
+
+        evidence, rows = next_session_service._next_session_browser_qa_evidence_summary()
+
+        self.assertEqual(evidence["status"], "next_session_browser_qa_evidence_passed_local_artifact")
+        self.assertEqual(evidence["report_count"], 4)
+        self.assertEqual(evidence["passing_report_count"], 4)
+        self.assertEqual(evidence["latest_run_id"], "00-fresh-reduced")
+        self.assertIn("00-fresh-reduced", evidence["latest_report_path"])
+        self.assertEqual(evidence["latest_generated_at"], "2026-06-18T09:01:00Z")
+        self.assertTrue(evidence["default_motion_passed"])
+        self.assertTrue(evidence["reduced_motion_passed"])
+        self.assertEqual(len(rows), 16)
+
     def test_next_session_browser_qa_review_task_is_button_gated_local_only(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
