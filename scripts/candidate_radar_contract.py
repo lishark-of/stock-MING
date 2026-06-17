@@ -576,6 +576,9 @@ def build_contract() -> dict[str, Any]:
     production_review_packet = candidate_service._attach_candidate_radar_durable_evidence_recipe(
         production_review_packet
     )
+    production_review_packet = candidate_service._attach_candidate_radar_production_stage_scope_manifest(
+        production_review_packet
+    )
     durable_evidence_recipe = _dict(production_review_packet.get("candidate_radar_durable_evidence_recipe"))
     durable_evidence_rows = {
         str(row.get("evidence_key") or ""): row
@@ -701,10 +704,41 @@ def build_contract() -> dict[str, Any]:
     browser_qa_runbook = _read_script(CANDIDATE_BROWSER_QA_RUNBOOK_PATH)
     motion_runner = _read_script("scripts/motion_browser_qa_runner.mjs")
     candidate_frontend = _read_script("desktop/src/routes/CandidateRadar.tsx")
-    production_stage_scope_rows = _candidate_radar_production_stage_scope_rows()
+    production_stage_scope_manifest = _dict(
+        production_review_packet.get("candidate_radar_production_stage_scope_manifest")
+    )
+    production_stage_scope_rows = [
+        row
+        for row in _list(production_review_packet.get("candidate_radar_production_stage_scope_rows"))
+        if isinstance(row, dict)
+    ]
     production_stage_scope_keys = {str(row.get("stage_key") or "") for row in production_stage_scope_rows}
+    production_stage_scope_direct_keys = {
+        str(row.get("stage_key") or "")
+        for row in production_stage_scope_rows
+        if row.get("direct_evidence_complete") is True
+    }
+    production_stage_scope_pending_keys = production_stage_scope_keys - production_stage_scope_direct_keys
+    expected_direct_stage_keys = {
+        "cache_render_boundary",
+        "quick_scan_task_pipeline",
+        "local_full_pool_execution_receipt",
+        "local_deep_scan_review_receipt",
+        "worker_full_pool_execution",
+        "worker_deep_scan_execution",
+        "browser_visual_performance_promotion",
+        "legacy_retirement_review",
+    }
     production_stage_scope_ready = (
         production_stage_scope_keys == REQUIRED_CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS
+        and production_stage_scope_direct_keys == expected_direct_stage_keys
+        and production_stage_scope_pending_keys
+        == {"provider_parity_acceptance", "search_quant_provider_model_acceptance"}
+        and production_stage_scope_manifest.get("schema_version")
+        == candidate_service.CANDIDATE_RADAR_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION
+        and production_stage_scope_manifest.get("direct_evidence_stage_count") == len(expected_direct_stage_keys)
+        and production_stage_scope_manifest.get("pending_stage_count") == len(production_stage_scope_pending_keys)
+        and production_stage_scope_manifest.get("production_blocker_count") == len(production_stage_scope_pending_keys)
         and all(
             row.get("scope") == "candidate_radar_production_stage_scope_manifest"
             and row.get("target_status") == "production_replacement_direct_evidence_required"
@@ -716,8 +750,6 @@ def build_contract() -> dict[str, Any]:
             and row.get("deep_scan_done") is False
             and row.get("provider_backed_acceptance_done") is False
             and row.get("worker_backed_execution_done") is False
-            and row.get("browser_performance_trace_done") is False
-            and row.get("browser_visual_delta_qa_done") is False
             and row.get("durable_ci_evidence_complete") is False
             and row.get("provider_execution_implemented") is False
             and row.get("model_execution_implemented") is False
@@ -731,7 +763,10 @@ def build_contract() -> dict[str, Any]:
             and row.get("does_not_modify_strategy_action") is True
             and row.get("candidate_is_not_buy_instruction") is True
             and row.get("contains_secret") is False
-            and len(_list(row.get("missing_evidence"))) >= 7
+            and (
+                row.get("production_blocker") is not True
+                or len(_list(row.get("missing_evidence"))) >= 1
+            )
             for row in production_stage_scope_rows
         )
     )
@@ -2685,7 +2720,7 @@ def build_contract() -> dict[str, Any]:
         _row(
             "candidate_radar_production_stage_scope_manifest_is_complete_and_pending",
             production_stage_scope_ready,
-            "Candidate Radar production replacement stages are listed as pending direct evidence while full-pool, deep-scan, provider/model execution, browser promotion, legacy retirement, trade execution, and buy-signal mutation stay disabled.",
+            "Candidate Radar production replacement stages expose local direct evidence separately from provider/model pending evidence while production replacement, external calls, trade execution, and buy-signal mutation stay disabled.",
         ),
         _row(
             "script_is_local_no_provider_execution",
@@ -2810,6 +2845,8 @@ def build_contract() -> dict[str, Any]:
         "candidate_is_not_buy_instruction": True,
         "row_count": len(rows),
         "candidate_radar_production_stage_scope_count": len(production_stage_scope_rows),
+        "candidate_radar_production_stage_scope_direct_evidence_count": len(production_stage_scope_direct_keys),
+        "candidate_radar_production_stage_scope_pending_count": len(production_stage_scope_pending_keys),
         "blocking_criterion_count": len(blockers),
         "blockers": blockers,
         "observed": {
@@ -2904,12 +2941,12 @@ def build_contract() -> dict[str, Any]:
             "deep_scan_plan_blocker_count": deep_scan_plan.get("blocking_issue_count"),
             "candidate_radar_production_stage_scope_count": len(production_stage_scope_rows),
             "candidate_radar_production_stage_scope_keys": sorted(production_stage_scope_keys),
-            "candidate_radar_production_stage_scope_pending_count": sum(
-                1
-                for row in production_stage_scope_rows
-                if row.get("target_status") == "production_replacement_direct_evidence_required"
-                and row.get("production_radar_replacement_complete") is False
+            "candidate_radar_production_stage_scope_direct_evidence_count": len(production_stage_scope_direct_keys),
+            "candidate_radar_production_stage_scope_direct_evidence_keys": sorted(
+                production_stage_scope_direct_keys
             ),
+            "candidate_radar_production_stage_scope_pending_count": len(production_stage_scope_pending_keys),
+            "candidate_radar_production_stage_scope_pending_keys": sorted(production_stage_scope_pending_keys),
         },
         "rows": rows,
         "candidate_radar_production_stage_scope_rows": production_stage_scope_rows,

@@ -401,6 +401,7 @@ export default function CandidateRadar() {
           { label: "durable recipe", value: String(durableEvidenceRecipe.status ?? "missing"), tone: durableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
           { label: "durable blockers", value: counts.candidate_radar_durable_evidence_blocker_count as number | undefined, tone: Number(counts.candidate_radar_durable_evidence_blocker_count ?? 0) ? "warn" : "good" },
           { label: "stage manifest", value: String(productionStageScopeManifest.status ?? "missing"), tone: productionStageScopeManifest.local_manifest_ready === true ? "good" : "warn" },
+          { label: "stage direct", value: counts.candidate_radar_production_stage_scope_direct_evidence_count as number | undefined, tone: Number(counts.candidate_radar_production_stage_scope_direct_evidence_count ?? 0) ? "good" : "warn" },
           { label: "stage pending", value: counts.candidate_radar_production_stage_scope_pending_count as number | undefined, tone: Number(counts.candidate_radar_production_stage_scope_pending_count ?? 0) ? "warn" : "good" },
           { label: "delta clarity", value: String(resultDeltaClarity.status ?? "missing"), tone: resultDeltaClarity.local_result_delta_clarity_ready === true ? "good" : "warn" },
           { label: "delta gaps", value: counts.result_delta_clarity_visible_gap_count as number | undefined, tone: Number(counts.result_delta_clarity_visible_gap_count ?? 0) ? "warn" : "good" },
@@ -880,10 +881,12 @@ export default function CandidateRadar() {
         <DataLineageTable rows={durableEvidenceRows} />
       </PacketCard>
 
-      <PacketCard title="雷达生产阶段清单" subtitle="candidate_radar_production_stage_scope_manifest；剩余生产替代阶段的本地 pending manifest，不执行扫描、不外联" status={String(productionStageScopeManifest.status ?? "missing")}>
+      <PacketCard title="雷达生产阶段清单" subtitle="candidate_radar_production_stage_scope_manifest；本地 direct evidence / pending manifest，不执行扫描、不外联" status={String(productionStageScopeManifest.status ?? "missing")}>
         <p>scope: {String(productionStageScopeManifest.scope ?? "local_candidate_radar_production_stage_scope_manifest_no_execution")}</p>
         <p>local_manifest_ready: {String(productionStageScopeManifest.local_manifest_ready === true)}；production_radar_replacement_complete: {String(productionStageScopeManifest.production_radar_replacement_complete === true)}；legacy_retirement_ready: {String(productionStageScopeManifest.legacy_retirement_ready === true)}</p>
-        <p>stage_key_count / pending_stage_count / local_evidence_stage_count: {String(productionStageScopeManifest.stage_key_count ?? 0)} / {String(productionStageScopeManifest.pending_stage_count ?? 0)} / {String(productionStageScopeManifest.local_evidence_stage_count ?? 0)}</p>
+        <p>stage_key_count / direct_evidence_stage_count / pending_stage_count / local_evidence_stage_count: {String(productionStageScopeManifest.stage_key_count ?? 0)} / {String(productionStageScopeManifest.direct_evidence_stage_count ?? 0)} / {String(productionStageScopeManifest.pending_stage_count ?? 0)} / {String(productionStageScopeManifest.local_evidence_stage_count ?? 0)}</p>
+        <p>direct_evidence_stage_keys: {Array.isArray(productionStageScopeManifest.direct_evidence_stage_keys) ? productionStageScopeManifest.direct_evidence_stage_keys.join(" / ") : "--"}</p>
+        <p>pending_stage_keys: {Array.isArray(productionStageScopeManifest.pending_stage_keys) ? productionStageScopeManifest.pending_stage_keys.join(" / ") : "--"}</p>
         <p>full_pool_scan_done / deep_scan_done / provider_backed_acceptance_done: {String(productionStageScopeManifest.full_pool_scan_done === true)} / {String(productionStageScopeManifest.deep_scan_done === true)} / {String(productionStageScopeManifest.provider_backed_acceptance_done === true)}</p>
         <p>worker_backed_execution_done / browser_visual_delta_qa_done / durable_ci_evidence_complete: {String(productionStageScopeManifest.worker_backed_execution_done === true)} / {String(productionStageScopeManifest.browser_visual_delta_qa_done === true)} / {String(productionStageScopeManifest.durable_ci_evidence_complete === true)}</p>
         <p>tushare_called / deepseek_called / github_called: {String(productionStageScopeManifest.tushare_called === true)} / {String(productionStageScopeManifest.deepseek_called === true)} / {String(productionStageScopeManifest.github_called === true)}</p>

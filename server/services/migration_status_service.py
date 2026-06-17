@@ -5046,9 +5046,16 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             or counts.get("candidate_radar_production_stage_scope_local_evidence_count")
             or 0
         )
+        manifest_direct_evidence_count = int(
+            manifest.get("direct_evidence_stage_count")
+            or counts.get("candidate_radar_production_stage_scope_direct_evidence_count")
+            or 0
+        )
         direct_evidence = _latest_candidate_radar_direct_evidence_summary()
         direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
-        observed_pending_count = max(pending_count - direct_evidence_count, 0)
+        observed_pending_count = (
+            pending_count if manifest_direct_evidence_count else max(pending_count - direct_evidence_count, 0)
+        )
         candidate_status = (
             "observed_candidate_radar_direct_evidence_production_pending"
             if direct_evidence_count

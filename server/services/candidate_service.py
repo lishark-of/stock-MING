@@ -4986,6 +4986,7 @@ def _attach_no_feature_loss_acceptance_contract(packet: Mapping[str, Any]) -> di
     view = _attach_candidate_radar_production_promotion_dry_run(view)
     view = _attach_candidate_radar_legacy_retirement_review(view)
     view = _attach_candidate_radar_production_promotion_review(view)
+    view = _attach_candidate_radar_production_stage_scope_manifest(view)
     return view
 
 
@@ -8158,62 +8159,190 @@ def _attach_candidate_radar_durable_evidence_recipe(packet: Mapping[str, Any]) -
     return view
 
 
-def _candidate_radar_production_stage_scope_manifest() -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    missing_evidence = [
-        "worker full-pool execution evidence",
-        "worker deep-scan execution evidence",
-        "provider-backed parity call ledger",
-        "optional model ledger when enabled",
-        "browser visual and performance promotion",
-        "durable release evidence",
-        "legacy retirement review",
-    ]
-    rows = [
-        {
-            "schema_version": CANDIDATE_RADAR_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION,
-            "stage_key": stage_key,
-            "stage_label": CANDIDATE_RADAR_PRODUCTION_STAGE_LABELS[stage_key],
-            "scope": "candidate_radar_production_stage_scope_manifest",
-            "current_status": (
-                "local_evidence_ready_production_pending"
-                if stage_key in LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS
+def _candidate_radar_production_stage_scope_manifest(
+    packet: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    policy = _as_dict(packet.get("policy"))
+    fast_pipeline = _as_dict(packet.get("fast_scan_task_pipeline_contract"))
+    full_pool = _as_dict(packet.get("full_pool_local_execution_receipt"))
+    deep_scan = _as_dict(packet.get("deep_scan_local_review_receipt"))
+    full_pool_worker = _as_dict(packet.get("candidate_radar_full_pool_worker_fallback_receipt"))
+    deep_scan_worker = _as_dict(packet.get("candidate_radar_deep_scan_worker_fallback_receipt"))
+    provider_dry_run = _as_dict(packet.get("provider_parity_dry_run_receipt"))
+    quant_request = _as_dict(packet.get("search_quant_projection_execution_request_receipt"))
+    browser_evidence = _as_dict(packet.get("candidate_browser_qa_evidence_summary"))
+    browser_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
+    promotion = _as_dict(packet.get("candidate_radar_promotion_blocker_audit"))
+    production_review = _as_dict(packet.get("candidate_radar_production_replacement_review_receipt"))
+    production_promotion = _as_dict(packet.get("candidate_radar_production_promotion_review_receipt"))
+    legacy_review = _as_dict(packet.get("candidate_radar_legacy_retirement_review_receipt"))
+
+    cache_render_ready = bool(
+        packet.get("cache_only") is True
+        and packet.get("read_only") is True
+        and policy.get("does_not_scan_market") is True
+        and policy.get("post_task_required_for_scan") is True
+        and policy.get("does_not_call_tushare") is True
+        and policy.get("does_not_call_deepseek") is True
+        and policy.get("does_not_call_github") is True
+        and packet.get("external_calls_triggered") is False
+    )
+    quick_pipeline_ready = fast_pipeline.get("local_task_pipeline_ready") is True
+    local_full_pool_ready = full_pool.get("local_full_pool_execution_done") is True
+    local_deep_scan_ready = deep_scan.get("local_deep_scan_review_done") is True
+    worker_full_pool_fallback_ready = (
+        full_pool_worker.get("local_worker_fallback_full_pool_done") is True
+        and full_pool_worker.get("worker_started") is False
+        and full_pool_worker.get("provider_backed_acceptance_done") is False
+    )
+    worker_deep_scan_fallback_ready = (
+        deep_scan_worker.get("local_deep_scan_review_done") is True
+        and deep_scan_worker.get("worker_started") is False
+        and deep_scan_worker.get("provider_backed_acceptance_done") is False
+    )
+    provider_parity_ready = False
+    search_quant_ready = False
+    browser_promotion_ready = bool(
+        production_review.get("browser_visual_performance_promoted") is True
+        or production_promotion.get("browser_visual_performance_promoted") is True
+        or (
+            browser_evidence.get("candidate_visual_qa_evidence_passed") is True
+            and browser_evidence.get("candidate_browser_performance_evidence_passed") is True
+            and browser_review.get("local_browser_qa_review_ready") is True
+            and int(promotion.get("browser_evidence_blocker_count") or 0) == 0
+        )
+    )
+    legacy_review_ready = legacy_review.get("local_review_ready") is True
+    stage_state = {
+        "cache_render_boundary": {
+            "direct": cache_render_ready,
+            "status": "direct_evidence_ready_cache_render_boundary" if cache_render_ready else "direct_evidence_pending",
+            "evidence": f"cache_only={packet.get('cache_only')}; post_task_required={policy.get('post_task_required_for_scan')}",
+            "missing": [] if cache_render_ready else ["cache/render no-scan boundary evidence"],
+        },
+        "quick_scan_task_pipeline": {
+            "direct": quick_pipeline_ready,
+            "status": "direct_evidence_ready_quick_scan_pipeline" if quick_pipeline_ready else "direct_evidence_pending",
+            "evidence": f"fast_pipeline_status={fast_pipeline.get('status')}; local_ready={quick_pipeline_ready}",
+            "missing": [] if quick_pipeline_ready else ["button-gated quick scan task pipeline evidence"],
+        },
+        "local_full_pool_execution_receipt": {
+            "direct": local_full_pool_ready,
+            "status": "direct_evidence_ready_local_full_pool_receipt" if local_full_pool_ready else "direct_evidence_pending",
+            "evidence": f"local_full_pool_execution_done={local_full_pool_ready}",
+            "missing": [] if local_full_pool_ready else ["local full-pool receipt"],
+        },
+        "local_deep_scan_review_receipt": {
+            "direct": local_deep_scan_ready,
+            "status": "direct_evidence_ready_local_deep_scan_review" if local_deep_scan_ready else "direct_evidence_pending",
+            "evidence": f"local_deep_scan_review_done={local_deep_scan_ready}",
+            "missing": [] if local_deep_scan_ready else ["local deep-scan review receipt"],
+        },
+        "worker_full_pool_execution": {
+            "direct": worker_full_pool_fallback_ready,
+            "status": (
+                "direct_evidence_ready_worker_fallback_production_pending"
+                if worker_full_pool_fallback_ready
                 else "direct_evidence_pending"
             ),
-            "target_status": "production_replacement_direct_evidence_required",
-            "local_stage_evidence_present": stage_key in LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS,
-            "required_before_production_replacement": True,
-            "production_radar_replacement_complete": False,
-            "legacy_retirement_ready": False,
-            "legacy_fallback_required": True,
-            "full_pool_scan_done": False,
-            "deep_scan_done": False,
-            "provider_backed_acceptance_done": False,
-            "worker_backed_execution_done": False,
-            "browser_performance_trace_done": False,
-            "browser_visual_delta_qa_done": False,
-            "durable_ci_evidence_complete": False,
-            "provider_execution_implemented": False,
-            "model_execution_implemented": False,
-            "page_render_starts_full_pool": False,
-            "page_render_starts_deep_scan": False,
-            "external_calls_triggered": False,
-            "tushare_called": False,
-            "deepseek_called": False,
-            "github_called": False,
-            "does_not_execute_trades": True,
-            "does_not_modify_strategy_action": True,
-            "candidate_is_not_buy_instruction": True,
-            "contains_secret": False,
-            "missing_evidence": missing_evidence,
-        }
-        for stage_key in CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS
-    ]
-    pending_count = sum(
-        1
-        for row in rows
-        if row["target_status"] == "production_replacement_direct_evidence_required"
-        and row["production_radar_replacement_complete"] is False
-    )
+            "evidence": f"local_worker_fallback_full_pool_done={worker_full_pool_fallback_ready}; real_worker_done=false",
+            "missing": [] if worker_full_pool_fallback_ready else ["worker full-pool execution evidence"],
+        },
+        "worker_deep_scan_execution": {
+            "direct": worker_deep_scan_fallback_ready,
+            "status": (
+                "direct_evidence_ready_worker_fallback_production_pending"
+                if worker_deep_scan_fallback_ready
+                else "direct_evidence_pending"
+            ),
+            "evidence": f"local_worker_deep_scan_fallback_done={worker_deep_scan_fallback_ready}; real_worker_done=false",
+            "missing": [] if worker_deep_scan_fallback_ready else ["worker deep-scan execution evidence"],
+        },
+        "provider_parity_acceptance": {
+            "direct": provider_parity_ready,
+            "status": "provider_parity_call_ledger_pending",
+            "evidence": f"provider_scope_ticket={provider_dry_run.get('acceptance_scope_hash_short') or 'missing'}; provider_backed_acceptance_done=false",
+            "missing": ["provider-backed parity call ledger"],
+        },
+        "search_quant_provider_model_acceptance": {
+            "direct": search_quant_ready,
+            "status": "provider_model_execution_pending",
+            "evidence": f"quant_request={quant_request.get('status') or 'missing'}; provider_model_execution_done=false",
+            "missing": ["searched-symbol provider/model execution ledger"],
+        },
+        "browser_visual_performance_promotion": {
+            "direct": browser_promotion_ready,
+            "status": (
+                "direct_evidence_ready_browser_visual_performance"
+                if browser_promotion_ready
+                else "direct_evidence_pending"
+            ),
+            "evidence": (
+                f"browser_visual={browser_evidence.get('candidate_visual_qa_evidence_passed') is True}; "
+                f"browser_perf={browser_evidence.get('candidate_browser_performance_evidence_passed') is True}; "
+                f"review={browser_review.get('local_browser_qa_review_ready') is True}"
+            ),
+            "missing": [] if browser_promotion_ready else ["browser visual and performance promotion"],
+        },
+        "legacy_retirement_review": {
+            "direct": legacy_review_ready,
+            "status": (
+                "direct_evidence_ready_legacy_review_retirement_blocked"
+                if legacy_review_ready
+                else "direct_evidence_pending"
+            ),
+            "evidence": f"legacy_retirement_review_visible={legacy_review_ready}; legacy_retirement_ready=false",
+            "missing": [] if legacy_review_ready else ["legacy retirement review"],
+        },
+    }
+    rows = []
+    for stage_key in CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS:
+        state = stage_state[stage_key]
+        direct = bool(state["direct"])
+        rows.append(
+            {
+                "schema_version": CANDIDATE_RADAR_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION,
+                "stage_key": stage_key,
+                "stage_label": CANDIDATE_RADAR_PRODUCTION_STAGE_LABELS[stage_key],
+                "scope": "candidate_radar_production_stage_scope_manifest",
+                "current_status": state["status"],
+                "target_status": "production_replacement_direct_evidence_required",
+                "local_stage_evidence_present": stage_key in LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS,
+                "direct_evidence_complete": direct,
+                "direct_evidence_layer": "L3_local_candidate_radar_direct_evidence" if direct else "",
+                "required_before_production_replacement": True,
+                "production_blocker": not direct,
+                "production_radar_replacement_complete": False,
+                "legacy_retirement_ready": False,
+                "legacy_fallback_required": True,
+                "full_pool_scan_done": False,
+                "deep_scan_done": False,
+                "provider_backed_acceptance_done": False,
+                "worker_backed_execution_done": False,
+                "worker_fallback_direct_evidence_done": stage_key
+                in {"worker_full_pool_execution", "worker_deep_scan_execution"}
+                and direct,
+                "browser_performance_trace_done": stage_key == "browser_visual_performance_promotion" and direct,
+                "browser_visual_delta_qa_done": stage_key == "browser_visual_performance_promotion" and direct,
+                "durable_ci_evidence_complete": False,
+                "provider_execution_implemented": False,
+                "model_execution_implemented": False,
+                "page_render_starts_full_pool": False,
+                "page_render_starts_deep_scan": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "candidate_is_not_buy_instruction": True,
+                "contains_secret": False,
+                "evidence": state["evidence"],
+                "missing_evidence": state["missing"],
+            }
+        )
+    direct_evidence_keys = [row["stage_key"] for row in rows if row["direct_evidence_complete"] is True]
+    pending_keys = [row["stage_key"] for row in rows if row["direct_evidence_complete"] is not True]
     local_evidence_count = sum(1 for row in rows if row["local_stage_evidence_present"] is True)
     manifest = {
         "schema_version": CANDIDATE_RADAR_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION,
@@ -8246,10 +8375,13 @@ def _candidate_radar_production_stage_scope_manifest() -> tuple[dict[str, Any], 
         "stage_keys": list(CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS),
         "row_count": len(rows),
         "stage_key_count": len(CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS),
-        "pending_stage_count": pending_count,
+        "direct_evidence_stage_count": len(direct_evidence_keys),
+        "direct_evidence_stage_keys": direct_evidence_keys,
+        "pending_stage_count": len(pending_keys),
+        "pending_stage_keys": pending_keys,
         "local_evidence_stage_count": local_evidence_count,
-        "production_blocker_count": pending_count,
-        "missing_evidence": missing_evidence,
+        "production_blocker_count": len(pending_keys),
+        "missing_evidence": sorted({item for row in rows for item in _as_list(row.get("missing_evidence"))}),
         "not_allowed_next_steps": [
             "treat_stage_scope_manifest_as_worker_execution",
             "treat_stage_scope_manifest_as_provider_parity_acceptance",
@@ -8265,10 +8397,13 @@ def _candidate_radar_production_stage_scope_manifest() -> tuple[dict[str, Any], 
 
 def _attach_candidate_radar_production_stage_scope_manifest(packet: Mapping[str, Any]) -> dict[str, Any]:
     view = dict(packet)
-    manifest, rows = _candidate_radar_production_stage_scope_manifest()
+    manifest, rows = _candidate_radar_production_stage_scope_manifest(view)
     counts = dict(_as_dict(view.get("counts")))
     counts["candidate_radar_production_stage_scope_count"] = manifest["row_count"]
     counts["candidate_radar_production_stage_scope_pending_count"] = manifest["pending_stage_count"]
+    counts["candidate_radar_production_stage_scope_direct_evidence_count"] = manifest[
+        "direct_evidence_stage_count"
+    ]
     counts["candidate_radar_production_stage_scope_local_evidence_count"] = manifest["local_evidence_stage_count"]
     counts["candidate_radar_production_stage_scope_production_blocker_count"] = manifest["production_blocker_count"]
     policy = dict(_as_dict(view.get("policy")))
@@ -8276,7 +8411,11 @@ def _attach_candidate_radar_production_stage_scope_manifest(packet: Mapping[str,
     policy["candidate_radar_production_stage_scope_manifest_is_not_execution"] = True
     policy["candidate_radar_production_stage_scope_manifest_is_not_production_replacement"] = True
     policy["candidate_radar_production_stage_scope_requires_worker_provider_browser_ci_evidence"] = True
-    ledger = _as_list(view.get("call_ledger"))
+    ledger = [
+        row
+        for row in _as_list(view.get("call_ledger"))
+        if _as_dict(row).get("api") != "local_candidate_radar_production_stage_scope_manifest"
+    ]
     ledger.append(
         _candidate_call_ledger_row(
             api="local_candidate_radar_production_stage_scope_manifest",

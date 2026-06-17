@@ -7440,9 +7440,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             len(candidate_service.CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS),
         )
         self.assertEqual(
-            stage_manifest["pending_stage_count"],
+            stage_manifest["direct_evidence_stage_count"] + stage_manifest["pending_stage_count"],
             len(candidate_service.CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS),
         )
+        self.assertEqual(
+            set(stage_manifest["direct_evidence_stage_keys"]) | set(stage_manifest["pending_stage_keys"]),
+            set(candidate_service.CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS),
+        )
+        self.assertIn("cache_render_boundary", stage_manifest["direct_evidence_stage_keys"])
+        self.assertIn("quick_scan_task_pipeline", stage_manifest["direct_evidence_stage_keys"])
+        self.assertIn("provider_parity_acceptance", stage_manifest["pending_stage_keys"])
+        self.assertIn("search_quant_provider_model_acceptance", stage_manifest["pending_stage_keys"])
         self.assertEqual(
             packet["counts"]["candidate_radar_production_stage_scope_count"],
             stage_manifest["row_count"],
@@ -7451,6 +7459,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             packet["counts"]["candidate_radar_production_stage_scope_pending_count"],
             stage_manifest["pending_stage_count"],
         )
+        self.assertEqual(
+            packet["counts"]["candidate_radar_production_stage_scope_direct_evidence_count"],
+            stage_manifest["direct_evidence_stage_count"],
+        )
         self.assertTrue(packet["policy"]["candidate_radar_production_stage_scope_manifest_is_local"])
         self.assertTrue(packet["policy"]["candidate_radar_production_stage_scope_manifest_is_not_execution"])
         self.assertTrue(packet["policy"]["candidate_radar_production_stage_scope_manifest_is_not_production_replacement"])
@@ -7458,8 +7470,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             packet["policy"]["candidate_radar_production_stage_scope_requires_worker_provider_browser_ci_evidence"]
         )
         self.assertTrue(stage_rows["cache_render_boundary"]["local_stage_evidence_present"])
+        self.assertTrue(stage_rows["cache_render_boundary"]["direct_evidence_complete"])
+        self.assertFalse(stage_rows["cache_render_boundary"]["production_blocker"])
         self.assertFalse(stage_rows["worker_full_pool_execution"]["worker_backed_execution_done"])
         self.assertFalse(stage_rows["provider_parity_acceptance"]["provider_backed_acceptance_done"])
+        self.assertFalse(stage_rows["provider_parity_acceptance"]["direct_evidence_complete"])
+        self.assertTrue(stage_rows["provider_parity_acceptance"]["production_blocker"])
         self.assertTrue(
             any(row["api"] == "local_candidate_radar_production_stage_scope_manifest" for row in packet["call_ledger"])
         )
@@ -12298,9 +12314,31 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "browser_visual_performance_promotion",
             "legacy_retirement_review",
         }
+        expected_direct_stage_keys = {
+            "cache_render_boundary",
+            "quick_scan_task_pipeline",
+            "local_full_pool_execution_receipt",
+            "local_deep_scan_review_receipt",
+            "worker_full_pool_execution",
+            "worker_deep_scan_execution",
+            "browser_visual_performance_promotion",
+            "legacy_retirement_review",
+        }
+        expected_pending_stage_keys = {
+            "provider_parity_acceptance",
+            "search_quant_provider_model_acceptance",
+        }
         self.assertEqual(
             payload["candidate_radar_production_stage_scope_count"],
             len(required_production_stages),
+        )
+        self.assertEqual(
+            payload["candidate_radar_production_stage_scope_direct_evidence_count"],
+            len(expected_direct_stage_keys),
+        )
+        self.assertEqual(
+            payload["candidate_radar_production_stage_scope_pending_count"],
+            len(expected_pending_stage_keys),
         )
         stage_rows = payload["candidate_radar_production_stage_scope_rows"]
         self.assertEqual({row["stage_key"] for row in stage_rows}, required_production_stages)
@@ -12315,8 +12353,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(row["deep_scan_done"])
             self.assertFalse(row["provider_backed_acceptance_done"])
             self.assertFalse(row["worker_backed_execution_done"])
-            self.assertFalse(row["browser_performance_trace_done"])
-            self.assertFalse(row["browser_visual_delta_qa_done"])
+            if row["stage_key"] == "browser_visual_performance_promotion":
+                self.assertEqual(row["browser_performance_trace_done"], row["direct_evidence_complete"])
+                self.assertEqual(row["browser_visual_delta_qa_done"], row["direct_evidence_complete"])
+            else:
+                self.assertFalse(row["browser_performance_trace_done"])
+                self.assertFalse(row["browser_visual_delta_qa_done"])
             self.assertFalse(row["durable_ci_evidence_complete"])
             self.assertFalse(row["provider_execution_implemented"])
             self.assertFalse(row["model_execution_implemented"])
@@ -12330,7 +12372,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertTrue(row["does_not_modify_strategy_action"])
             self.assertTrue(row["candidate_is_not_buy_instruction"])
             self.assertFalse(row["contains_secret"])
-            self.assertGreaterEqual(len(row["missing_evidence"]), 7)
+            if row["stage_key"] in expected_direct_stage_keys:
+                self.assertTrue(row["direct_evidence_complete"])
+                self.assertFalse(row["production_blocker"])
+                self.assertEqual(row["direct_evidence_layer"], "L3_local_candidate_radar_direct_evidence")
+                self.assertEqual(row["missing_evidence"], [])
+            else:
+                self.assertFalse(row["direct_evidence_complete"])
+                self.assertTrue(row["production_blocker"])
+                self.assertGreaterEqual(len(row["missing_evidence"]), 1)
         self.assertEqual(payload["observed"]["fast_scan_readiness_status"], "fast_scan_local_ready_full_pool_pending")
         self.assertEqual(
             payload["observed"]["fast_scan_task_pipeline_status"],
@@ -12423,7 +12473,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(
             payload["observed"]["candidate_radar_production_stage_scope_pending_count"],
-            len(required_production_stages),
+            len(expected_pending_stage_keys),
+        )
+        self.assertEqual(
+            payload["observed"]["candidate_radar_production_stage_scope_direct_evidence_count"],
+            len(expected_direct_stage_keys),
+        )
+        self.assertEqual(
+            payload["observed"]["candidate_radar_production_stage_scope_direct_evidence_keys"],
+            sorted(expected_direct_stage_keys),
+        )
+        self.assertEqual(
+            payload["observed"]["candidate_radar_production_stage_scope_pending_keys"],
+            sorted(expected_pending_stage_keys),
         )
         criteria = {row["criterion"] for row in payload["rows"]}
         self.assertIn("cache_get_is_read_only_no_scan", criteria)
@@ -26943,6 +27005,35 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             },
         ).json()
         self.assertTrue(legacy_review["ok"])
+        cache_after_legacy_review = self.client.get("/api/candidate-radar/cache").json()["data"]
+        radar_stage_manifest = cache_after_legacy_review["candidate_radar_production_stage_scope_manifest"]
+        self.assertEqual(radar_stage_manifest["direct_evidence_stage_count"], 8)
+        self.assertEqual(radar_stage_manifest["pending_stage_count"], 2)
+        self.assertEqual(
+            set(radar_stage_manifest["direct_evidence_stage_keys"]),
+            {
+                "cache_render_boundary",
+                "quick_scan_task_pipeline",
+                "local_full_pool_execution_receipt",
+                "local_deep_scan_review_receipt",
+                "worker_full_pool_execution",
+                "worker_deep_scan_execution",
+                "browser_visual_performance_promotion",
+                "legacy_retirement_review",
+            },
+        )
+        self.assertEqual(
+            set(radar_stage_manifest["pending_stage_keys"]),
+            {"provider_parity_acceptance", "search_quant_provider_model_acceptance"},
+        )
+        self.assertFalse(radar_stage_manifest["production_radar_replacement_complete"])
+        self.assertFalse(radar_stage_manifest["provider_backed_acceptance_done"])
+        self.assertFalse(radar_stage_manifest["worker_backed_execution_done"])
+        self.assertFalse(radar_stage_manifest["external_calls_triggered"])
+        self.assertFalse(radar_stage_manifest["tushare_called"])
+        self.assertFalse(radar_stage_manifest["deepseek_called"])
+        self.assertFalse(radar_stage_manifest["github_called"])
+        self.assertTrue(radar_stage_manifest["does_not_execute_trades"])
 
         migration = migration_status_service.build_migration_status()
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
