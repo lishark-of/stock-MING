@@ -31040,6 +31040,54 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["runtime"]["scheduler_started"])
         self.assertTrue(packet["policy"]["post_task_required_for_work"])
         self.assertTrue(packet["policy"]["worker_runtime_is_diagnostic_only"])
+        dependency_preflight = packet["worker_runtime_dependency_preflight"]
+        self.assertEqual(dependency_preflight["schema_version"], "worker_runtime_dependency_preflight.v1")
+        self.assertEqual(
+            dependency_preflight["scope"],
+            "local_dependency_visibility_no_process_start_no_broker_ping",
+        )
+        self.assertIn(
+            dependency_preflight["status"],
+            {"manual_runtime_dependency_ready", "manual_runtime_dependency_blocked"},
+        )
+        self.assertIsInstance(dependency_preflight["local_preflight_ready"], bool)
+        self.assertIsInstance(dependency_preflight["celery_package_available"], bool)
+        self.assertIsInstance(dependency_preflight["redis_package_available"], bool)
+        self.assertIsInstance(dependency_preflight["celery_command_available"], bool)
+        self.assertIsInstance(dependency_preflight["redis_server_binary_available"], bool)
+        self.assertIsInstance(dependency_preflight["redis_cli_binary_available"], bool)
+        self.assertFalse(dependency_preflight["redis_url_exposed"])
+        self.assertFalse(dependency_preflight["worker_started"])
+        self.assertFalse(dependency_preflight["celery_worker_started"])
+        self.assertFalse(dependency_preflight["redis_pinged"])
+        self.assertFalse(dependency_preflight["scheduler_started"])
+        self.assertFalse(dependency_preflight["task_dispatched"])
+        self.assertFalse(dependency_preflight["external_calls_triggered"])
+        self.assertFalse(dependency_preflight["tushare_called"])
+        self.assertFalse(dependency_preflight["deepseek_called"])
+        self.assertFalse(dependency_preflight["github_called"])
+        self.assertTrue(dependency_preflight["does_not_execute_trades"])
+        self.assertTrue(dependency_preflight["does_not_modify_strategy_action"])
+        self.assertFalse(dependency_preflight["contains_secret"])
+        self.assertFalse(dependency_preflight["production_worker_complete"])
+        self.assertEqual(
+            packet["counts"]["worker_runtime_dependency_preflight_blocker_count"],
+            dependency_preflight["blocker_count"],
+        )
+        self.assertEqual(
+            packet["counts"]["worker_runtime_dependency_preflight_row_count"],
+            dependency_preflight["row_count"],
+        )
+        dependency_rows = {row["check"]: row for row in packet["worker_runtime_dependency_preflight_rows"]}
+        self.assertIn("python_celery_package", dependency_rows)
+        self.assertIn("python_redis_package", dependency_rows)
+        self.assertIn("celery_command", dependency_rows)
+        self.assertIn("redis_server_binary", dependency_rows)
+        self.assertIn("redis_url_configured", dependency_rows)
+        self.assertTrue(packet["policy"]["worker_runtime_dependency_preflight_is_local"])
+        self.assertTrue(packet["policy"]["worker_runtime_dependency_preflight_does_not_start_process"])
+        self.assertTrue(packet["policy"]["worker_runtime_dependency_preflight_does_not_ping_redis"])
+        self.assertTrue(packet["policy"]["worker_runtime_dependency_preflight_is_not_production_completion"])
         self.assertEqual(packet["worker_production_blocker_audit"]["status"], "production_worker_blocked")
         self.assertFalse(packet["worker_production_blocker_audit"]["production_worker_complete"])
         self.assertGreater(packet["worker_production_blocker_audit"]["blocking_criterion_count"], 0)

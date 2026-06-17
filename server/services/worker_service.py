@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -249,8 +250,110 @@ def _module_available(module_name: str) -> bool:
         return False
 
 
+def _command_available(command_name: str) -> bool:
+    try:
+        return shutil.which(command_name) is not None
+    except Exception:
+        return False
+
+
 def _path_exists(path: str) -> bool:
     return (PROJECT_ROOT / path).exists()
+
+
+def _worker_runtime_dependency_preflight(
+    *,
+    celery_available: bool,
+    redis_available: bool,
+    apscheduler_available: bool,
+    redis_configured: bool,
+) -> dict[str, Any]:
+    celery_command_available = _command_available("celery")
+    redis_server_binary_available = _command_available("redis-server")
+    redis_cli_binary_available = _command_available("redis-cli")
+    rows = [
+        {
+            "check": "python_celery_package",
+            "status": "available" if celery_available else "missing",
+            "required_for_production_worker": True,
+            "blocks_manual_runtime_evidence": not celery_available,
+            "evidence": "importlib.find_spec('celery')",
+        },
+        {
+            "check": "python_redis_package",
+            "status": "available" if redis_available else "missing",
+            "required_for_production_worker": True,
+            "blocks_manual_runtime_evidence": not redis_available,
+            "evidence": "importlib.find_spec('redis')",
+        },
+        {
+            "check": "celery_command",
+            "status": "available" if celery_command_available else "missing",
+            "required_for_production_worker": True,
+            "blocks_manual_runtime_evidence": not celery_command_available,
+            "evidence": "PATH command lookup only",
+        },
+        {
+            "check": "redis_server_binary",
+            "status": "available" if redis_server_binary_available else "missing",
+            "required_for_production_worker": True,
+            "blocks_manual_runtime_evidence": not redis_server_binary_available,
+            "evidence": "PATH command lookup only",
+        },
+        {
+            "check": "redis_cli_binary",
+            "status": "available" if redis_cli_binary_available else "missing",
+            "required_for_production_worker": False,
+            "blocks_manual_runtime_evidence": False,
+            "evidence": "PATH command lookup only",
+        },
+        {
+            "check": "redis_url_configured",
+            "status": "configured_not_pinged" if redis_configured else "missing",
+            "required_for_production_worker": True,
+            "blocks_manual_runtime_evidence": not redis_configured,
+            "evidence": "environment presence boolean only; value redacted",
+        },
+        {
+            "check": "apscheduler_package",
+            "status": "available" if apscheduler_available else "missing",
+            "required_for_production_worker": False,
+            "blocks_manual_runtime_evidence": False,
+            "evidence": "importlib.find_spec('apscheduler')",
+        },
+    ]
+    blocker_count = sum(1 for row in rows if row["blocks_manual_runtime_evidence"])
+    return {
+        "schema_version": "worker_runtime_dependency_preflight.v1",
+        "scope": "local_dependency_visibility_no_process_start_no_broker_ping",
+        "status": "manual_runtime_dependency_ready" if blocker_count == 0 else "manual_runtime_dependency_blocked",
+        "local_preflight_ready": blocker_count == 0,
+        "blocker_count": blocker_count,
+        "row_count": len(rows),
+        "rows": rows,
+        "celery_package_available": celery_available,
+        "redis_package_available": redis_available,
+        "apscheduler_package_available": apscheduler_available,
+        "celery_command_available": celery_command_available,
+        "redis_server_binary_available": redis_server_binary_available,
+        "redis_cli_binary_available": redis_cli_binary_available,
+        "redis_url_configured": redis_configured,
+        "redis_url_exposed": False,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "task_dispatched": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "production_worker_complete": False,
+        "evidence_boundary": "dependency_preflight_is_environment_visibility_not_runtime_process_evidence",
+    }
 
 
 def _worker_module_rows() -> list[dict[str, Any]]:
@@ -5913,6 +6016,12 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     apscheduler_available = _module_available("apscheduler")
     scheduled_refresh_enabled = os.getenv("COMMAND_CENTER_ENABLE_SCHEDULED_REFRESH") == "1"
     redis_configured = bool(os.getenv("COMMAND_CENTER_REDIS_URL"))
+    dependency_preflight = _worker_runtime_dependency_preflight(
+        celery_available=celery_available,
+        redis_available=redis_available,
+        apscheduler_available=apscheduler_available,
+        redis_configured=redis_configured,
+    )
     catalog = task_service.build_task_catalog()
     task_implementation_status = catalog.get("implementation_status") or {}
     task_retry_policy_summary = catalog.get("retry_policy_summary") or {}
@@ -6276,6 +6385,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         ),
         "worker_runtime_durable_evidence_recipe": runtime_durable_evidence_recipe,
         "worker_runtime_durable_evidence_rows": runtime_durable_evidence_recipe["rows"],
+        "worker_runtime_dependency_preflight": dependency_preflight,
+        "worker_runtime_dependency_preflight_rows": dependency_preflight["rows"],
         "dispatch_plan_status": "contract_ready_local_fallback",
         "dispatch_plan_rows": dispatch_plan_rows,
         "dispatch_plan_summary": {
@@ -6369,6 +6480,9 @@ def read_worker_runtime_cache() -> dict[str, Any]:
                 "production_blocker_count",
                 0,
             ),
+            "worker_runtime_dependency_preflight_blocker_count": dependency_preflight["blocker_count"],
+            "worker_runtime_dependency_preflight_row_count": dependency_preflight["row_count"],
+            "worker_runtime_dependency_preflight_ready": 1 if dependency_preflight["local_preflight_ready"] else 0,
             "manual_preflight_step_count": len(manual_preflight_steps),
             "manual_preflight_operator_action_count": sum(1 for row in manual_preflight_steps if row.get("operator_action_required")),
             "dispatch_plan_task_count": len(dispatch_plan_rows),
@@ -6428,6 +6542,10 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_runtime_durable_evidence_recipe_is_local": True,
             "worker_runtime_durable_evidence_recipe_is_not_process_start": True,
             "worker_runtime_durable_evidence_recipe_is_not_production_completion": True,
+            "worker_runtime_dependency_preflight_is_local": True,
+            "worker_runtime_dependency_preflight_does_not_start_process": True,
+            "worker_runtime_dependency_preflight_does_not_ping_redis": True,
+            "worker_runtime_dependency_preflight_is_not_production_completion": True,
             "task_implementation_status_is_read_only": True,
             "stub_tasks_must_not_be_reported_as_complete": True,
             "contains_secret": False,
