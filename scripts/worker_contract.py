@@ -358,6 +358,7 @@ def build_contract() -> dict[str, Any]:
         row for row in _list(packet.get("worker_runtime_qa_dry_run_phase_rows")) if isinstance(row, dict)
     ]
     runtime_qa_execution = _dict(packet.get("worker_runtime_qa_execution_receipt"))
+    production_promotion_review = _dict(packet.get("worker_production_promotion_review_receipt"))
     runtime_durable_recipe = _dict(packet.get("worker_runtime_durable_evidence_recipe"))
     runtime_durable_rows = [
         row for row in _list(packet.get("worker_runtime_durable_evidence_rows")) if isinstance(row, dict)
@@ -442,6 +443,30 @@ def build_contract() -> dict[str, Any]:
         expected_runtime_durable_missing.discard("scheduler_default_off_runtime_evidence_required")
     if provider_model_no_autoschedule_visible:
         expected_runtime_durable_missing.discard("provider_model_no_autoschedule_runtime_evidence_required")
+    production_promotion_review_visible = bool(
+        production_promotion_review.get("schema_version") == "worker_production_promotion_review_receipt.v1"
+        and production_promotion_review.get("status") == "worker_production_promotion_review_ready_production_blocked"
+        and production_promotion_review.get("local_promotion_review_ready") is True
+        and production_promotion_review.get("runtime_qa_execution_visible") is True
+        and production_promotion_review.get("production_worker_complete") is False
+        and production_promotion_review.get("worker_started") is False
+        and production_promotion_review.get("redis_pinged") is False
+        and production_promotion_review.get("scheduler_started") is False
+        and production_promotion_review.get("task_dispatched") is False
+        and production_promotion_review.get("provider_model_task_dispatched") is False
+        and _flag_false(
+            production_promotion_review,
+            "external_calls_triggered",
+            "tushare_called",
+            "deepseek_called",
+            "github_called",
+        )
+        and production_promotion_review.get("does_not_execute_trades") is True
+        and production_promotion_review.get("does_not_modify_strategy_action") is True
+        and production_promotion_review.get("contains_secret") is False
+    )
+    if production_promotion_review_visible:
+        expected_runtime_durable_missing.discard("production_worker_promotion_review_required")
 
     rows = [
         _row(

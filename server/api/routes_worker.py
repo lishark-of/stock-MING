@@ -51,3 +51,9 @@ def run_worker_runtime_qa_dry_run(payload: dict[str, Any] | None = None) -> dict
 def run_worker_runtime_qa_execution(payload: dict[str, Any] | None = None) -> dict:
     packet = worker_service.run_worker_runtime_qa_execution(payload or {})
     return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
+
+
+@router.post("/production-promotion-review")
+def run_worker_production_promotion_review(payload: dict[str, Any] | None = None) -> dict:
+    packet = worker_service.run_worker_production_promotion_review(payload or {})
+    return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))

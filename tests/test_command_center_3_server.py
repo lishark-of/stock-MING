@@ -13178,6 +13178,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         ]:
             if durable_rows[evidence_key]["status"] == "passed":
                 missing_durable_keys.remove(evidence_key)
+        if durable_rows["production_worker_promotion_review_required"]["status"] == "passed":
+            missing_durable_keys.remove("production_worker_promotion_review_required")
         self.assertEqual(payload["observed"]["worker_runtime_durable_evidence_key_count"], len(required_durable_keys))
         self.assertEqual(payload["observed"]["worker_runtime_durable_evidence_keys"], required_durable_keys)
         self.assertEqual(payload["observed"]["worker_runtime_durable_evidence_missing_keys"], missing_durable_keys)
@@ -13201,7 +13203,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(durable_rows["celery_process_evidence_required"]["status"], "blocked")
         self.assertEqual(durable_rows["redis_broker_reachability_evidence_required"]["status"], "blocked")
-        self.assertEqual(durable_rows["production_worker_promotion_review_required"]["status"], "blocked")
+        self.assertIn(durable_rows["production_worker_promotion_review_required"]["status"], {"blocked", "passed"})
         self.assertFalse(durable_rows["production_blocker_audit_visible"]["production_blocker"])
         self.assertTrue(durable_rows["celery_process_evidence_required"]["production_blocker"])
         for row in durable_rows.values():
@@ -14142,7 +14144,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 72)
+        self.assertEqual(catalog["task_count"], 73)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -14161,7 +14163,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 72)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 73)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -14172,8 +14174,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 74)
-        self.assertEqual(route_coverage["task_creation_route_count"], 72)
+        self.assertEqual(route_coverage["known_post_route_count"], 75)
+        self.assertEqual(route_coverage["task_creation_route_count"], 73)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -14182,11 +14184,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 72)
+        self.assertEqual(implementation_status["task_count"], 73)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 69)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 70)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 70)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 71)
         self.assertEqual(implementation_status["external_capable_task_count"], 6)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -14263,6 +14265,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_worker_runtime_qa_execution_request",
                 "run_worker_runtime_qa_dry_run",
                 "run_worker_runtime_qa_execution",
+                "run_worker_production_promotion_review",
                 "run_deepseek_provider_benchmark_scope_ticket",
             },
         )
@@ -14338,6 +14341,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_worker_runtime_qa_execution_request",
                 "run_worker_runtime_qa_dry_run",
                 "run_worker_runtime_qa_execution",
+                "run_worker_production_promotion_review",
                 "run_deepseek_factor_explanation",
                 "run_deepseek_provider_benchmark_scope_ticket",
             },
@@ -16373,6 +16377,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/worker/production-evidence-plan", discovered_routes)
         self.assertIn("POST /api/worker/runtime-qa-execution-request", discovered_routes)
         self.assertIn("POST /api/worker/runtime-qa-dry-run", discovered_routes)
+        self.assertIn("POST /api/worker/runtime-qa-execution", discovered_routes)
+        self.assertIn("POST /api/worker/production-promotion-review", discovered_routes)
 
     def test_worker_runtime_cache_reads_local_scaffold_without_starting_backends(self):
         self._with_meta_store()
@@ -16392,16 +16398,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 69)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 70)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 70)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 71)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 69)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 70)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 70)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 71)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -17257,9 +17263,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 69)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 70)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 70)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 71)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -17483,9 +17489,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 69)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 70)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 70)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 71)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -17518,9 +17524,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 69)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 70)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 70)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 71)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -21897,7 +21903,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 72)
+        self.assertEqual(task_catalog["data"]["task_count"], 73)
         self.assertIn(
             "POST /api/desktop/tauri-package-artifact-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
@@ -30265,6 +30271,132 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(durable_recipe["does_not_execute_trades"])
         self.assertTrue(durable_recipe["does_not_modify_strategy_action"])
         self.assertFalse(durable_recipe["contains_secret"])
+
+    def test_worker_production_promotion_review_is_local_and_keeps_celery_redis_blocked(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        self.assertTrue(
+            self.client.post("/api/worker/synthetic-healthcheck", json={"requested_from": "test"}).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/worker/activation-review",
+                json={"requested_from": "test", "operator_approved": True},
+            ).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/worker/production-evidence-plan",
+                json={"requested_from": "test", "operator_approved": True},
+            ).json()["ok"]
+        )
+        cache_before_request = self.client.get("/api/worker/cache").json()["data"]
+        plan_receipt = cache_before_request["worker_production_evidence_plan_receipt"]
+        runtime_recipe = cache_before_request["worker_runtime_qa_execution_recipe"]
+        request_response = self.client.post(
+            "/api/worker/runtime-qa-execution-request",
+            json={
+                "requested_from": "test",
+                "operator_approved": True,
+                "scope_ticket_sha256": plan_receipt["scope_ticket_sha256"],
+                "runtime_qa_scope_hash": runtime_recipe["runtime_qa_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(request_response["ok"])
+        runtime_request = request_response["data"]["worker_runtime_qa_execution_request_receipt"]
+        dry_run_response = self.client.post(
+            "/api/worker/runtime-qa-dry-run",
+            json={
+                "requested_from": "test",
+                "operator_approved": True,
+                "request_task_id": runtime_request["request_task_id"],
+                "evidence_plan_scope_hash": runtime_request["production_evidence_plan_scope_hash"],
+                "runtime_qa_scope_hash": runtime_request["runtime_qa_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(dry_run_response["ok"])
+        dry_run = dry_run_response["data"]["worker_runtime_qa_dry_run_receipt"]
+        execution_response = self.client.post(
+            "/api/worker/runtime-qa-execution",
+            json={
+                "requested_from": "test",
+                "operator_approved": True,
+                "dry_run_task_id": dry_run["dry_run_task_id"],
+                "evidence_plan_scope_hash": dry_run["production_evidence_plan_scope_hash"],
+                "runtime_qa_scope_hash": dry_run["runtime_qa_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(execution_response["ok"])
+
+        response = self.client.post(
+            "/api/worker/production-promotion-review",
+            json={"requested_from": "test", "operator_approved": True, "token": "SHOULD_DROP"},
+        ).json()
+
+        self.assertTrue(response["ok"])
+        packet = response["data"]
+        self.assertEqual(packet["packet_key"], "command_center_3_worker_production_promotion_review_packet")
+        self.assertEqual(packet["schema_version"], "worker_production_promotion_review_receipt.v1")
+        self.assertEqual(packet["status"], "worker_production_promotion_review_ready_production_blocked")
+        receipt = packet["worker_production_promotion_review_receipt"]
+        self.assertEqual(receipt["schema_version"], "worker_production_promotion_review_receipt.v1")
+        self.assertEqual(receipt["scope"], "button_gated_worker_production_promotion_review_no_process_start")
+        self.assertTrue(receipt["explicit_production_promotion_review_done"])
+        self.assertTrue(receipt["operator_approved"])
+        self.assertTrue(receipt["local_promotion_review_ready"])
+        self.assertTrue(receipt["runtime_durable_recipe_visible"])
+        self.assertTrue(receipt["runtime_qa_execution_visible"])
+        self.assertFalse(receipt["ready_to_mark_production_worker_complete"])
+        self.assertFalse(receipt["production_worker_complete"])
+        self.assertFalse(receipt["worker_started"])
+        self.assertFalse(receipt["redis_pinged"])
+        self.assertFalse(receipt["scheduler_started"])
+        self.assertFalse(receipt["task_dispatched"])
+        self.assertFalse(receipt["provider_model_task_dispatched"])
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertFalse(receipt["tushare_called"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(receipt["does_not_modify_strategy_action"])
+        self.assertFalse(receipt["contains_secret"])
+        self.assertIn("mark_production_worker_complete_from_review", receipt["not_allowed_next_steps"])
+        rows = {row["criterion"]: row for row in receipt["rows"]}
+        self.assertEqual(rows["explicit_production_promotion_review_task"]["status"], "passed_explicit_post")
+        self.assertEqual(rows["runtime_durable_recipe_visible"]["status"], "passed_durable_recipe_visible")
+        self.assertEqual(rows["runtime_qa_execution_visible"]["status"], "passed_local_runtime_qa_visible")
+        self.assertEqual(rows["celery_process_evidence_required"]["status"], "blocked_celery_process_evidence_missing")
+        self.assertEqual(rows["redis_broker_reachability_required"]["status"], "blocked_redis_broker_evidence_missing")
+        self.assertEqual(rows["live_queue_round_trip_required"]["status"], "blocked_live_queue_round_trip_missing")
+        self.assertFalse(any(row["worker_started"] for row in receipt["rows"]))
+        self.assertFalse(any(row["redis_pinged"] for row in receipt["rows"]))
+        self.assertFalse(any(row["task_dispatched"] for row in receipt["rows"]))
+        self.assertEqual(response["call_ledger"][0]["api"], "local_worker_production_promotion_review")
+        self.assertFalse(response["call_ledger"][0]["external_calls_triggered"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+        cache = self.client.get("/api/worker/cache").json()["data"]
+        cached_receipt = cache["worker_production_promotion_review_receipt"]
+        self.assertTrue(cached_receipt["local_promotion_review_ready"])
+        durable_recipe = cache["worker_runtime_durable_evidence_recipe"]
+        durable_rows = {row["evidence_key"]: row for row in durable_recipe["rows"]}
+        self.assertNotIn("production_worker_promotion_review_required", durable_recipe["missing_durable_evidence"])
+        self.assertIn("celery_process_evidence_required", durable_recipe["missing_durable_evidence"])
+        self.assertIn("redis_broker_reachability_evidence_required", durable_recipe["missing_durable_evidence"])
+        self.assertIn("queue_round_trip_evidence_required", durable_recipe["missing_durable_evidence"])
+        self.assertEqual(durable_rows["production_worker_promotion_review_required"]["status"], "passed")
+        self.assertEqual(durable_rows["celery_process_evidence_required"]["status"], "blocked")
+        self.assertEqual(durable_rows["redis_broker_reachability_evidence_required"]["status"], "blocked")
+        self.assertEqual(durable_rows["queue_round_trip_evidence_required"]["status"], "blocked")
+        self.assertFalse(durable_recipe["durable_evidence_complete"])
+        self.assertFalse(durable_recipe["production_worker_complete"])
+        self.assertFalse(durable_recipe["external_calls_triggered"])
+        self.assertFalse(durable_recipe["tushare_called"])
+        self.assertFalse(durable_recipe["deepseek_called"])
+        self.assertFalse(durable_recipe["github_called"])
+        self.assertTrue(durable_recipe["does_not_execute_trades"])
+        self.assertTrue(durable_recipe["does_not_modify_strategy_action"])
 
     def test_ltg_stage_scope_observes_worker_runtime_direct_evidence_without_completion(self):
         self._with_meta_store()

@@ -29,6 +29,8 @@ RUNTIME_QA_DRY_RUN_PACKET_KEY = "command_center_3_worker_runtime_qa_dry_run_pack
 RUNTIME_QA_DRY_RUN_SCHEMA_VERSION = "worker_runtime_qa_dry_run_receipt.v1"
 RUNTIME_QA_EXECUTION_PACKET_KEY = "command_center_3_worker_runtime_qa_execution_packet"
 RUNTIME_QA_EXECUTION_SCHEMA_VERSION = "worker_runtime_qa_execution_receipt.v1"
+PRODUCTION_PROMOTION_REVIEW_PACKET_KEY = "command_center_3_worker_production_promotion_review_packet"
+PRODUCTION_PROMOTION_REVIEW_SCHEMA_VERSION = "worker_production_promotion_review_receipt.v1"
 WORKER_RUNTIME_DURABLE_EVIDENCE_SCHEMA_VERSION = "worker_runtime_durable_evidence_recipe.v1"
 WORKER_RUNTIME_QA_EXECUTION_PHASES = [
     "evidence_plan_scope_ticket",
@@ -3559,7 +3561,9 @@ def _worker_runtime_durable_evidence_recipe(
     runtime_qa_execution_request: dict[str, Any],
     runtime_qa_dry_run: dict[str, Any],
     runtime_qa_execution: dict[str, Any],
+    production_promotion_review: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    promotion_review = production_promotion_review if isinstance(production_promotion_review, dict) else {}
     blocker_visible = production_blocker_audit.get("schema_version") == "worker_production_blocker_audit.v1"
     healthcheck_visible = healthcheck_qa_contract.get("schema_version") == "worker_healthcheck_qa_contract.v1"
     task_log_visible = task_log_persistence_audit.get("schema_version") == "worker_task_log_persistence_audit.v1"
@@ -3640,6 +3644,24 @@ def _worker_runtime_durable_evidence_recipe(
         and runtime_qa_execution.get("github_called") is False
         and runtime_execution_phase_rows.get("provider_model_no_autoschedule_boundary", {}).get("runtime_qa_done")
         is True
+    )
+    production_promotion_review_visible = (
+        promotion_review.get("schema_version") == PRODUCTION_PROMOTION_REVIEW_SCHEMA_VERSION
+        and promotion_review.get("local_promotion_review_ready") is True
+        and promotion_review.get("runtime_qa_execution_visible") is True
+        and promotion_review.get("worker_started") is False
+        and promotion_review.get("redis_pinged") is False
+        and promotion_review.get("scheduler_started") is False
+        and promotion_review.get("task_dispatched") is False
+        and promotion_review.get("provider_model_task_dispatched") is False
+        and promotion_review.get("production_worker_complete") is False
+        and promotion_review.get("external_calls_triggered") is False
+        and promotion_review.get("tushare_called") is False
+        and promotion_review.get("deepseek_called") is False
+        and promotion_review.get("github_called") is False
+        and promotion_review.get("does_not_execute_trades") is True
+        and promotion_review.get("does_not_modify_strategy_action") is True
+        and promotion_review.get("contains_secret") is False
     )
     no_process_boundary = (
         runtime_qa_execution_recipe.get("worker_started") is False
@@ -3886,11 +3908,19 @@ def _worker_runtime_durable_evidence_recipe(
         ),
         _worker_runtime_durable_evidence_recipe_row(
             "production_worker_promotion_review_required",
-            passed=False,
+            passed=production_promotion_review_visible,
             source_contract="worker_production_promotion_review",
-            evidence=f"production_blocker_count={production_evidence_plan.get('production_blocker_count')}",
+            evidence=(
+                f"status={promotion_review.get('status')}; production_blocker_count={promotion_review.get('production_blocker_count')}"
+                if production_promotion_review_visible
+                else f"production_blocker_count={production_evidence_plan.get('production_blocker_count')}"
+            ),
             required_evidence="all runtime QA receipts plus explicit production worker promotion review",
-            next_action="hold production_worker_complete=false until every durable evidence row is direct and reviewed",
+            next_action=(
+                "Keep production_worker_complete=false until Celery, Redis, and live queue round-trip evidence are reviewed."
+                if production_promotion_review_visible
+                else "hold production_worker_complete=false until every durable evidence row is direct and reviewed"
+            ),
         ),
         _worker_runtime_durable_evidence_recipe_row(
             "no_process_provider_trade_secret_boundary",
@@ -3944,6 +3974,8 @@ def _worker_runtime_durable_evidence_recipe(
         "append_only_worker_log_evidence_ready": append_only_worker_log_visible,
         "scheduler_default_off_runtime_evidence_ready": scheduler_default_off_runtime_visible,
         "provider_model_no_autoschedule_runtime_evidence_ready": provider_model_no_autoschedule_visible,
+        "production_worker_promotion_review_ready": production_promotion_review_visible,
+        "production_worker_promotion_review_status": promotion_review.get("status"),
         "runtime_qa_execution_status": runtime_qa_execution.get("status"),
         "evidence_keys": [row["evidence_key"] for row in rows],
         "missing_durable_evidence": blocked_rows,
@@ -5481,6 +5513,377 @@ def run_worker_runtime_qa_execution(payload: Any = None) -> dict[str, Any]:
     return packet
 
 
+def _worker_production_promotion_review_row(
+    criterion: str,
+    status: str,
+    evidence: str,
+    next_action: str,
+    *,
+    passed: bool,
+    production_blocker: bool,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "production_blocker": bool(production_blocker and not passed),
+        "worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "task_dispatched": False,
+        "provider_model_task_dispatched": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "evidence": evidence,
+        "next_action": next_action,
+    }
+
+
+def _worker_production_promotion_review_receipt(
+    *,
+    runtime_durable_evidence_recipe: dict[str, Any],
+    runtime_qa_execution: dict[str, Any],
+    payload_safe: dict[str, Any],
+    task_id: str,
+    reviewed_at: str,
+) -> dict[str, Any]:
+    approved = payload_safe.get("operator_approved") is True or payload_safe.get("approved") is True
+    runtime_qa_visible = (
+        runtime_qa_execution.get("schema_version") == RUNTIME_QA_EXECUTION_SCHEMA_VERSION
+        and runtime_qa_execution.get("local_runtime_qa_execution_done") is True
+        and runtime_qa_execution.get("local_fallback_round_trip_verified") is True
+        and runtime_qa_execution.get("production_worker_complete") is False
+        and runtime_qa_execution.get("external_calls_triggered") is False
+    )
+    durable_ready = runtime_durable_evidence_recipe.get("local_recipe_ready") is True
+    durable_missing = [
+        str(item)
+        for item in runtime_durable_evidence_recipe.get("missing_durable_evidence") or []
+        if item != "production_worker_promotion_review_required"
+    ]
+    celery_ready = "celery_process_evidence_required" not in durable_missing
+    redis_ready = "redis_broker_reachability_evidence_required" not in durable_missing
+    queue_ready = "queue_round_trip_evidence_required" not in durable_missing
+    local_ready = bool(approved and durable_ready and runtime_qa_visible)
+    rows = [
+        _worker_production_promotion_review_row(
+            "explicit_production_promotion_review_task",
+            "passed_explicit_post" if approved else "blocked_operator_approval_required",
+            f"operator_approved={approved}; task_id={task_id}",
+            "Run this review only from an explicit POST after local runtime QA evidence is visible.",
+            passed=approved,
+            production_blocker=True,
+        ),
+        _worker_production_promotion_review_row(
+            "runtime_durable_recipe_visible",
+            "passed_durable_recipe_visible" if durable_ready else "blocked_missing_durable_recipe",
+            f"durable_status={runtime_durable_evidence_recipe.get('status')}; missing={runtime_durable_evidence_recipe.get('missing_durable_evidence')}",
+            "Keep durable evidence rows visible before any promotion decision.",
+            passed=durable_ready,
+            production_blocker=True,
+        ),
+        _worker_production_promotion_review_row(
+            "runtime_qa_execution_visible",
+            "passed_local_runtime_qa_visible" if runtime_qa_visible else "blocked_missing_runtime_qa_execution",
+            f"runtime_status={runtime_qa_execution.get('status')}",
+            "Require button-gated local runtime QA execution before promotion review.",
+            passed=runtime_qa_visible,
+            production_blocker=True,
+        ),
+        _worker_production_promotion_review_row(
+            "celery_process_evidence_required",
+            "passed" if celery_ready else "blocked_celery_process_evidence_missing",
+            "Production worker still needs live Celery process identity and queue registration evidence.",
+            "Collect Celery process evidence in a separately approved runtime path.",
+            passed=celery_ready,
+            production_blocker=True,
+        ),
+        _worker_production_promotion_review_row(
+            "redis_broker_reachability_required",
+            "passed" if redis_ready else "blocked_redis_broker_evidence_missing",
+            "Production worker still needs redacted Redis broker reachability evidence.",
+            "Collect Redis broker evidence without exposing URL or credentials.",
+            passed=redis_ready,
+            production_blocker=True,
+        ),
+        _worker_production_promotion_review_row(
+            "live_queue_round_trip_required",
+            "passed" if queue_ready else "blocked_live_queue_round_trip_missing",
+            "Production worker still needs live queue binding and synthetic round-trip evidence.",
+            "Prove queue round-trip after Celery/Redis are available.",
+            passed=queue_ready,
+            production_blocker=True,
+        ),
+        _worker_production_promotion_review_row(
+            "no_process_provider_trade_secret_boundary",
+            "passed_no_side_effects",
+            "Promotion review starts no worker, pings no Redis, dispatches no task, calls no provider/model/GitHub, trades nothing, mutates no action, and exposes no secret.",
+            "Preserve this boundary for every later production promotion attempt.",
+            passed=True,
+            production_blocker=False,
+        ),
+    ]
+    production_blockers = [row for row in rows if row.get("production_blocker")]
+    scope_input = {
+        "route": "POST /api/worker/production-promotion-review",
+        "task_type": "run_worker_production_promotion_review",
+        "runtime_qa_execution_task_id": runtime_qa_execution.get("execution_task_id") or runtime_qa_execution.get("task_id"),
+        "runtime_durable_status": runtime_durable_evidence_recipe.get("status"),
+        "missing_durable_evidence": runtime_durable_evidence_recipe.get("missing_durable_evidence") or [],
+        "operator_approved": approved,
+    }
+    scope_hash = _json_sha256(scope_input)
+    return {
+        "packet_key": PRODUCTION_PROMOTION_REVIEW_PACKET_KEY,
+        "schema_version": PRODUCTION_PROMOTION_REVIEW_SCHEMA_VERSION,
+        "status": (
+            "worker_production_promotion_review_ready_production_blocked"
+            if local_ready
+            else "worker_production_promotion_review_blocked_local_evidence"
+        ),
+        "scope": "button_gated_worker_production_promotion_review_no_process_start",
+        "ltg": "LTG-06/LTG-11",
+        "mode": "button_gated_local_worker_production_promotion_review",
+        "explicit_production_promotion_review_done": True,
+        "review_task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "operator_approved": approved,
+        "local_promotion_review_ready": local_ready,
+        "ready_to_mark_production_worker_complete": False,
+        "production_worker_complete": False,
+        "runtime_durable_recipe_visible": durable_ready,
+        "runtime_qa_execution_visible": runtime_qa_visible,
+        "runtime_qa_execution_task_id": runtime_qa_execution.get("execution_task_id") or runtime_qa_execution.get("task_id"),
+        "runtime_qa_scope_hash": runtime_qa_execution.get("runtime_qa_scope_hash"),
+        "runtime_qa_scope_hash_short": runtime_qa_execution.get("runtime_qa_scope_hash_short"),
+        "promotion_review_scope_hash": scope_hash,
+        "promotion_review_scope_hash_short": scope_hash[:12],
+        "promotion_review_scope_hash_input_includes_secret": False,
+        "missing_durable_evidence_after_review": durable_missing,
+        "production_blocker_count": len(production_blockers),
+        "local_blocker_count": 0 if local_ready else len([row for row in rows[:3] if not row.get("passed")]),
+        "row_count": len(rows),
+        "rows": rows,
+        "call_ledger": [
+            {
+                "api": "local_worker_production_promotion_review",
+                "source": "worker_runtime_durable_evidence_recipe + worker_runtime_qa_execution_receipt",
+                "row_count": len(rows),
+                "task_id": task_id,
+                "local_fetched_at": reviewed_at,
+                "call_status": (
+                    "worker_production_promotion_review_ready_production_blocked"
+                    if local_ready
+                    else "worker_production_promotion_review_blocked_local_evidence"
+                ),
+                "external": False,
+                "external_calls_triggered": False,
+                "redis_pinged": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "not_allowed_next_steps": [
+            "treat_production_promotion_review_as_celery_runtime_evidence",
+            "start Celery from production promotion review",
+            "ping Redis from production promotion review",
+            "dispatch worker task from production promotion review",
+            "autoschedule Tushare DeepSeek GitHub tasks",
+            "mark_production_worker_complete_from_review",
+        ],
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "task_dispatched": False,
+        "provider_model_task_dispatched": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def _missing_worker_production_promotion_review_packet(read_status: str = "packet_missing") -> dict[str, Any]:
+    return {
+        "packet_key": PRODUCTION_PROMOTION_REVIEW_PACKET_KEY,
+        "schema_version": PRODUCTION_PROMOTION_REVIEW_SCHEMA_VERSION,
+        "status": "worker_production_promotion_review_missing",
+        "scope": "button_gated_worker_production_promotion_review_no_process_start",
+        "local_promotion_review_ready": False,
+        "production_worker_complete": False,
+        "ready_to_mark_production_worker_complete": False,
+        "source_packet_read_status": read_status,
+        "source_packet_present": False,
+        "cache_get_initializes_meta_store": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": [],
+        "call_ledger": [],
+    }
+
+
+def _read_worker_production_promotion_review_packet(
+    runtime_durable_evidence_recipe: dict[str, Any],
+    runtime_qa_execution: dict[str, Any],
+) -> dict[str, Any]:
+    packet, read_status = _read_worker_meta_packet_no_init(PRODUCTION_PROMOTION_REVIEW_PACKET_KEY)
+    if not isinstance(packet, dict):
+        return _missing_worker_production_promotion_review_packet(read_status)
+    receipt = _json_safe(packet.get("worker_production_promotion_review_receipt") or packet)
+    if receipt.get("schema_version") != PRODUCTION_PROMOTION_REVIEW_SCHEMA_VERSION:
+        return _missing_worker_production_promotion_review_packet("packet_invalid")
+    rebuilt = _worker_production_promotion_review_receipt(
+        runtime_durable_evidence_recipe=runtime_durable_evidence_recipe,
+        runtime_qa_execution=runtime_qa_execution,
+        payload_safe={"operator_approved": receipt.get("operator_approved") is True},
+        task_id=str(receipt.get("review_task_id") or ""),
+        reviewed_at=str(receipt.get("reviewed_at") or _now_iso()),
+    )
+    rebuilt["source_packet_read_status"] = read_status
+    rebuilt["source_packet_present"] = read_status == "packet_present"
+    rebuilt["cache_get_initializes_meta_store"] = False
+    return rebuilt
+
+
+def run_worker_production_promotion_review(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        "run_worker_production_promotion_review",
+        output_packet_key=PRODUCTION_PROMOTION_REVIEW_PACKET_KEY,
+        payload=payload,
+        current_step="worker_production_promotion_review_queued_no_process_start",
+        warnings=[
+            "Worker production promotion review 只审查本地 runtime QA 和 durable evidence；不会启动 Celery、ping Redis、启动 scheduler、派发任务或完成 production worker。"
+        ],
+    )
+    task = task_service.update_task_status(
+        str(task["task_id"]),
+        status="running",
+        progress=0.5,
+        current_step="worker_production_promotion_review_running_local_review",
+    ) or task
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    runtime_packet = read_worker_runtime_cache()
+    runtime_durable_evidence_recipe = (
+        runtime_packet.get("worker_runtime_durable_evidence_recipe")
+        if isinstance(runtime_packet.get("worker_runtime_durable_evidence_recipe"), dict)
+        else {}
+    )
+    runtime_qa_execution = (
+        runtime_packet.get("worker_runtime_qa_execution_receipt")
+        if isinstance(runtime_packet.get("worker_runtime_qa_execution_receipt"), dict)
+        else {}
+    )
+    reviewed_at = _now_iso()
+    receipt = _worker_production_promotion_review_receipt(
+        runtime_durable_evidence_recipe=runtime_durable_evidence_recipe,
+        runtime_qa_execution=runtime_qa_execution,
+        payload_safe=payload_safe,
+        task_id=str(task.get("task_id") or ""),
+        reviewed_at=reviewed_at,
+    )
+    rows = receipt.get("rows") if isinstance(receipt.get("rows"), list) else []
+    ledger = [
+        {
+            "api": "local_worker_production_promotion_review",
+            "source": "worker_runtime_durable_evidence_recipe + worker_runtime_qa_execution_receipt",
+            "row_count": len(rows),
+            "task_id": task.get("task_id"),
+            "local_fetched_at": reviewed_at,
+            "call_status": receipt["status"],
+            "request_params_safe": {
+                "requested_from": payload_safe.get("requested_from") or "",
+                "operator_approved": receipt["operator_approved"],
+                "runtime_qa_scope_hash_short": receipt.get("runtime_qa_scope_hash_short") or "",
+                "promotion_review_scope_hash_short": receipt["promotion_review_scope_hash_short"],
+                "external_sources_allowed": False,
+                "starts_celery_worker": False,
+                "pings_redis": False,
+                "starts_scheduler": False,
+                "task_dispatched": False,
+                "provider_model_task_dispatched": False,
+                "production_worker_complete": False,
+            },
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "redis_pinged": False,
+            "celery_started": False,
+            "scheduler_started": False,
+            "task_dispatched": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "error_message_safe": "",
+        }
+    ]
+    task = task_service.update_task_status(
+        str(task["task_id"]),
+        status="success",
+        progress=1.0,
+        current_step=receipt["status"],
+        call_ledger=ledger,
+        warning="worker_production_promotion_review_recorded_no_process_start",
+    ) or task
+    packet = {
+        "packet_key": PRODUCTION_PROMOTION_REVIEW_PACKET_KEY,
+        "schema_version": PRODUCTION_PROMOTION_REVIEW_SCHEMA_VERSION,
+        "status": receipt["status"],
+        "scope": receipt["scope"],
+        "mode": receipt["mode"],
+        "reviewed_at": reviewed_at,
+        "task_id": task.get("task_id"),
+        "task_status": task.get("status"),
+        "task_type": task.get("task_type"),
+        "output_packet_key": PRODUCTION_PROMOTION_REVIEW_PACKET_KEY,
+        "worker_production_promotion_review_receipt": receipt,
+        "worker_production_promotion_review_rows": rows,
+        "local_promotion_review_ready": receipt["local_promotion_review_ready"],
+        "production_worker_complete": False,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "task_dispatched": False,
+        "provider_model_task_dispatched": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": ledger,
+        "warnings": [
+            "这是显式 POST 的本地 Worker production promotion review；只审查 runtime QA 与 durable evidence。",
+            "它不启动 Celery、不 ping Redis、不启动 scheduler、不派发任务、不调用 Tushare/DeepSeek/GitHub、不执行真实交易，也不代表 production worker 完成。",
+        ],
+    }
+    packet = _json_safe(packet)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PRODUCTION_PROMOTION_REVIEW_PACKET_KEY, packet)
+    except Exception:
+        packet.setdefault("warnings", []).append("worker_production_promotion_review_packet_persist_failed_safe")
+    return packet
+
+
 def read_worker_runtime_cache() -> dict[str, Any]:
     celery_available = _module_available("celery")
     redis_available = _module_available("redis")
@@ -5683,6 +6086,33 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         runtime_qa_dry_run=runtime_qa_dry_run,
         runtime_qa_execution=runtime_qa_execution,
     )
+    production_promotion_review = _read_worker_production_promotion_review_packet(
+        runtime_durable_evidence_recipe,
+        runtime_qa_execution,
+    )
+    production_promotion_review_rows = production_promotion_review.get("rows") or []
+    runtime_durable_evidence_recipe = _worker_runtime_durable_evidence_recipe(
+        production_blocker_audit=production_blocker_audit,
+        healthcheck_qa_contract=healthcheck_qa_contract,
+        task_log_persistence_audit=task_log_persistence_audit,
+        queue_routing_contract=queue_routing_contract,
+        readiness_receipt=production_readiness_receipt,
+        production_activation_receipt=production_activation_receipt,
+        production_evidence_plan=production_evidence_plan_receipt,
+        runtime_qa_execution_recipe=runtime_qa_execution_recipe,
+        runtime_qa_execution_request=runtime_qa_execution_request,
+        runtime_qa_dry_run=runtime_qa_dry_run,
+        runtime_qa_execution=runtime_qa_execution,
+        production_promotion_review=production_promotion_review,
+    )
+    production_readiness["worker_production_promotion_review_receipt"] = production_promotion_review
+    production_readiness["worker_production_promotion_review_rows"] = production_promotion_review_rows
+    production_readiness["worker_production_promotion_review_source_packet_read_status"] = production_promotion_review.get(
+        "source_packet_read_status"
+    )
+    production_readiness["worker_production_promotion_review_source_packet_present"] = production_promotion_review.get(
+        "source_packet_present"
+    )
     production_readiness["worker_runtime_durable_evidence_recipe"] = runtime_durable_evidence_recipe
     production_readiness["worker_runtime_durable_evidence_rows"] = runtime_durable_evidence_recipe["rows"]
     module_ready_count = sum(1 for row in worker_module_rows if row["module_available"] and row["file_exists"])
@@ -5813,6 +6243,14 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         "worker_runtime_qa_execution_source_packet_present": runtime_qa_execution.get(
             "source_packet_present"
         ),
+        "worker_production_promotion_review_receipt": production_promotion_review,
+        "worker_production_promotion_review_rows": production_promotion_review_rows,
+        "worker_production_promotion_review_source_packet_read_status": production_promotion_review.get(
+            "source_packet_read_status"
+        ),
+        "worker_production_promotion_review_source_packet_present": production_promotion_review.get(
+            "source_packet_present"
+        ),
         "worker_runtime_durable_evidence_recipe": runtime_durable_evidence_recipe,
         "worker_runtime_durable_evidence_rows": runtime_durable_evidence_recipe["rows"],
         "dispatch_plan_status": "contract_ready_local_fallback",
@@ -5894,6 +6332,14 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             else 0,
             "worker_runtime_qa_execution_row_count": runtime_qa_execution.get("row_count", 0),
             "worker_runtime_qa_execution_phase_row_count": runtime_qa_execution.get("phase_row_count", 0),
+            "worker_production_promotion_review_ready": 1
+            if production_promotion_review.get("local_promotion_review_ready")
+            else 0,
+            "worker_production_promotion_review_row_count": production_promotion_review.get("row_count", 0),
+            "worker_production_promotion_review_production_blocker_count": production_promotion_review.get(
+                "production_blocker_count",
+                0,
+            ),
             "worker_runtime_durable_evidence_recipe_ready": 1 if runtime_durable_evidence_recipe.get("local_recipe_ready") else 0,
             "worker_runtime_durable_evidence_row_count": runtime_durable_evidence_recipe.get("row_count", 0),
             "worker_runtime_durable_evidence_production_blocker_count": runtime_durable_evidence_recipe.get(
@@ -5952,6 +6398,10 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_runtime_qa_execution_is_local_fallback_only": True,
             "worker_runtime_qa_execution_is_not_process_start": True,
             "worker_runtime_qa_execution_is_not_production_completion": True,
+            "worker_production_promotion_review_is_button_gated": True,
+            "worker_production_promotion_review_is_local": True,
+            "worker_production_promotion_review_is_not_process_start": True,
+            "worker_production_promotion_review_is_not_production_completion": True,
             "worker_runtime_durable_evidence_recipe_is_local": True,
             "worker_runtime_durable_evidence_recipe_is_not_process_start": True,
             "worker_runtime_durable_evidence_recipe_is_not_production_completion": True,
@@ -5976,6 +6426,7 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         + runtime_qa_execution_request["call_ledger"]
         + runtime_qa_dry_run["call_ledger"]
         + runtime_qa_execution["call_ledger"]
+        + production_promotion_review["call_ledger"]
         + runtime_durable_evidence_recipe["call_ledger"],
         "queue_call_ledger": queue_routing_contract["call_ledger"],
         "external_calls_triggered": False,
@@ -5994,6 +6445,7 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "Worker runtime QA execution request 只绑定后续手动 runtime QA 的 scope；不会启动 Celery、ping Redis、启动 scheduler 或派发任务。",
             "Worker runtime QA dry-run 只本地审查 request ticket 与 recipe；不会创建/执行 runtime QA task 或启动任何 worker 进程。",
             "Worker runtime QA execution 只执行本地 fallback round-trip 和 append-only event；不会启动 Celery/Redis 或证明 production worker。",
+            "Worker production promotion review 只本地审查 runtime QA 与 durable evidence；不会启动 Celery/Redis 或证明 production worker。",
             "Worker runtime 只做诊断说明，不执行真实交易，不修改 strategy action。",
         ],
     }
