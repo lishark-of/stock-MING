@@ -557,7 +557,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "POST /api/storage/backtest-results/schema-seed",
         )
         self.assertTrue(action_rows["p4_storage_physical_execution"]["next_local_step_ready_for_clean_receipt"])
-        self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 6)
+        self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 7)
         self.assertEqual(action_rows["p5_deepseek_provider_benchmark_scope"]["local_receipt_step_count"], 1)
         self.assertEqual(action_rows["p5_next_session_map_browser_qa"]["local_receipt_step_count"], 3)
         self.assertEqual(
@@ -21731,7 +21731,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         else:
             self.assertFalse(action_rows["p4_storage_physical_execution"]["next_local_step_ready_for_clean_receipt"])
             self.assertEqual(action_rows["p4_storage_physical_execution"]["ready_local_receipt_step_count"], 7)
-        self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 6)
+        self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 7)
         self.assertIn("LTG-07", action_rows["p5_deepseek_provider_benchmark_scope"]["ltg_ids"])
         self.assertIn("LTG-08", action_rows["p5_next_session_map_browser_qa"]["ltg_ids"])
         self.assertEqual(action_rows["p5_deepseek_provider_benchmark_scope"]["local_receipt_step_count"], 1)
@@ -32297,6 +32297,36 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(durable_recipe["github_called"])
         self.assertTrue(durable_recipe["does_not_execute_trades"])
         self.assertTrue(durable_recipe["does_not_modify_strategy_action"])
+        migration = migration_status_service.build_migration_status()
+        action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        worker_action = action_rows["p4_worker_runtime_qa"]
+        self.assertEqual(worker_action["ready_local_receipt_step_count"], 7)
+        self.assertEqual(worker_action["blocked_local_receipt_step_count"], 0)
+        self.assertEqual(worker_action["next_local_step"], "future explicit worker runtime QA execution task")
+        local_steps = {row["phase_key"]: row for row in worker_action["local_step_rows"]}
+        promotion_step = local_steps["worker_production_promotion_review_receipt"]
+        self.assertTrue(promotion_step["receipt_visible"])
+        self.assertTrue(promotion_step["receipt_durable_in_sqlite"])
+        self.assertTrue(promotion_step["local_ready"])
+        self.assertFalse(promotion_step["local_blocked"])
+        self.assertEqual(
+            promotion_step["receipt_status"],
+            "worker_production_promotion_review_ready_production_blocked",
+        )
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg06 = observed_stage_rows["LTG-06"]
+        self.assertEqual(ltg06["row_count"], 8)
+        self.assertEqual(ltg06["pending_stage_count"], 2)
+        self.assertEqual(ltg06["direct_evidence_stage_count"], 7)
+        self.assertIn("production_worker_promotion_review", ltg06["direct_evidence_stage_keys"])
+        self.assertTrue(ltg06["production_promotion_review_ready"])
+        self.assertEqual(
+            ltg06["production_promotion_review_status"],
+            "worker_production_promotion_review_ready_production_blocked",
+        )
+        self.assertEqual(ltg06["production_promotion_review_blocker_count"], 2)
+        self.assertFalse(ltg06["production_worker_complete"])
+        self.assertFalse(ltg06["can_close_from_observed_row"])
 
     def test_ltg_stage_scope_observes_worker_runtime_direct_evidence_without_completion(self):
         self._with_meta_store()
@@ -32460,7 +32490,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         migration = migration_status_service.build_migration_status()
         action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
         worker_action = action_rows["p4_worker_runtime_qa"]
-        self.assertEqual(worker_action["local_receipt_step_count"], 6)
+        self.assertEqual(worker_action["local_receipt_step_count"], 7)
         self.assertEqual(worker_action["ready_local_receipt_step_count"], 5)
         self.assertEqual(worker_action["next_local_step"], "POST /api/worker/runtime-qa-execution")
         self.assertTrue(worker_action["next_local_step_ready_for_clean_receipt"])
@@ -32505,28 +32535,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             row["queue_id"]: row for row in migration_after["ltg_next_acceptance_action_rows"]
         }["p4_worker_runtime_qa"]
         self.assertEqual(worker_action_after["ready_local_receipt_step_count"], 6)
-        self.assertEqual(worker_action_after["next_local_step"], "future explicit worker runtime QA execution task")
-        runtime_handoff = worker_action_after["future_handoff_preview_rows"][0]
-        self.assertTrue(runtime_handoff["supporting_worker_runtime_dependency_preflight_visible"])
-        self.assertIn(
-            runtime_handoff["supporting_worker_runtime_dependency_preflight_status"],
-            {"manual_runtime_dependency_ready", "manual_runtime_dependency_blocked"},
-        )
-        self.assertIsInstance(
-            runtime_handoff["supporting_worker_runtime_dependency_preflight_blocker_count"],
-            int,
-        )
-        self.assertIsInstance(
-            runtime_handoff["supporting_worker_runtime_dependency_preflight_blocking_checks"],
-            list,
-        )
-        self.assertTrue(runtime_handoff["supporting_worker_runtime_dependency_preflight_is_read_only"])
-        self.assertFalse(runtime_handoff["supporting_worker_runtime_dependency_preflight_starts_process"])
-        self.assertFalse(runtime_handoff["supporting_worker_runtime_dependency_preflight_pings_redis"])
-        self.assertFalse(runtime_handoff["external_calls_triggered"])
-        self.assertFalse(runtime_handoff["tushare_called"])
-        self.assertFalse(runtime_handoff["deepseek_called"])
-        self.assertFalse(runtime_handoff["github_called"])
+        self.assertEqual(worker_action_after["next_local_step"], "POST /api/worker/production-promotion-review")
+        self.assertTrue(worker_action_after["next_local_step_ready_for_clean_receipt"])
+        promotion_preview = worker_action_after["next_local_step_preview_rows"][0]
+        self.assertEqual(promotion_preview["step_kind"], "local_worker_production_promotion_review")
+        self.assertTrue(promotion_preview["ready_for_clean_local_receipt"])
+        self.assertEqual(promotion_preview["required_prior_phase_key"], "worker_runtime_qa_execution_receipt")
+        self.assertFalse(promotion_preview["would_start_worker"])
+        self.assertFalse(promotion_preview["external_calls_triggered"])
+        self.assertFalse(promotion_preview["tushare_called"])
+        self.assertFalse(promotion_preview["deepseek_called"])
+        self.assertFalse(promotion_preview["github_called"])
+        self.assertTrue(promotion_preview["does_not_execute_trades"])
+        self.assertTrue(promotion_preview["does_not_modify_strategy_action"])
+        self.assertFalse(promotion_preview["contains_secret"])
         observed_stage_rows = {row["id"]: row for row in migration_after["ltg_stage_scope_observed_rows"]}
         ltg06 = observed_stage_rows["LTG-06"]
         self.assertEqual(ltg06["pending_stage_count"], 2)

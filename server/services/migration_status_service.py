@@ -873,6 +873,12 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "receipt_key": "worker_runtime_qa_execution_receipt",
             "route": "POST /api/worker/runtime-qa-execution",
         },
+        {
+            "phase_key": "worker_production_promotion_review_receipt",
+            "task_type": "run_worker_production_promotion_review",
+            "receipt_key": "worker_production_promotion_review_receipt",
+            "route": "POST /api/worker/production-promotion-review",
+        },
     ],
     "p5_deepseek_provider_benchmark_scope": [
         {
@@ -1766,6 +1772,7 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "local_browser_qa_review_ready",
         "local_streamlit_parity_review_ready",
         "local_production_promotion_review_ready",
+        "local_promotion_review_ready",
         "local_worker_fallback_ready",
         "local_runtime_qa_execution_done",
         "local_gate_ready",
@@ -2659,10 +2666,12 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
     runtime_request = packet_map.get("worker_runtime_qa_execution_request_receipt")
     runtime_dry_run = packet_map.get("worker_runtime_qa_dry_run_receipt")
     runtime_execution = packet_map.get("worker_runtime_qa_execution_receipt")
+    production_promotion_review = packet_map.get("worker_production_promotion_review_receipt")
     synthetic_map = synthetic if isinstance(synthetic, dict) else {}
     request_map = runtime_request if isinstance(runtime_request, dict) else {}
     dry_run_map = runtime_dry_run if isinstance(runtime_dry_run, dict) else {}
     execution_map = runtime_execution if isinstance(runtime_execution, dict) else {}
+    promotion_map = production_promotion_review if isinstance(production_promotion_review, dict) else {}
     synthetic_done = bool(
         synthetic_map.get("schema_version") == "worker_synthetic_healthcheck.v1"
         and synthetic_map.get("status") == "synthetic_healthcheck_passed_local_task_store_only"
@@ -2779,6 +2788,28 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         and _dict_or_empty(execution_map.get("cross_process_task_control_probe")).get("deepseek_called") is False
         and _dict_or_empty(execution_map.get("cross_process_task_control_probe")).get("github_called") is False
     )
+    production_promotion_review_done = bool(
+        runtime_execution_done
+        and promotion_map.get("schema_version") == "worker_production_promotion_review_receipt.v1"
+        and promotion_map.get("status") == "worker_production_promotion_review_ready_production_blocked"
+        and promotion_map.get("local_promotion_review_ready") is True
+        and promotion_map.get("runtime_qa_execution_visible") is True
+        and promotion_map.get("ready_to_mark_production_worker_complete") is False
+        and promotion_map.get("production_worker_complete") is False
+        and promotion_map.get("worker_started") is False
+        and promotion_map.get("celery_worker_started") is False
+        and promotion_map.get("redis_pinged") is False
+        and promotion_map.get("scheduler_started") is False
+        and promotion_map.get("task_dispatched") is False
+        and promotion_map.get("provider_model_task_dispatched") is False
+        and promotion_map.get("external_calls_triggered") is False
+        and promotion_map.get("tushare_called") is False
+        and promotion_map.get("deepseek_called") is False
+        and promotion_map.get("github_called") is False
+        and promotion_map.get("does_not_execute_trades") is True
+        and promotion_map.get("does_not_modify_strategy_action") is True
+        and promotion_map.get("contains_secret") is False
+    )
     direct_stage_keys = []
     if runtime_execution_done:
         direct_stage_keys.append("local_fallback_round_trip")
@@ -2792,6 +2823,8 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         direct_stage_keys.append("provider_model_no_autoschedule_boundary")
     if no_trade_no_action_done:
         direct_stage_keys.append("no_trade_no_action_boundary")
+    if production_promotion_review_done:
+        direct_stage_keys.append("production_worker_promotion_review")
     return {
         "schema_version": "migration_worker_direct_runtime_evidence_summary.v1",
         "source_packet_key": "command_center_3_worker_runtime_cache",
@@ -2820,6 +2853,12 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         "runtime_qa_execution_request_status": str(request_map.get("status") or "packet_missing"),
         "runtime_qa_dry_run_status": str(dry_run_map.get("status") or "packet_missing"),
         "runtime_qa_execution_status": str(execution_map.get("status") or "packet_missing"),
+        "production_promotion_review_ready": production_promotion_review_done,
+        "production_promotion_review_status": str(promotion_map.get("status") or "packet_missing"),
+        "production_promotion_review_blocker_count": int(promotion_map.get("production_blocker_count") or 0),
+        "missing_durable_evidence_after_promotion_review": [
+            str(item) for item in promotion_map.get("missing_durable_evidence_after_review") or []
+        ],
         "production_worker_complete": False,
         "worker_started": False,
         "celery_worker_started": False,
@@ -3917,6 +3956,13 @@ def _build_ltg_next_action_submission_preview_rows(
             "required_prior_material": "latest_task_id",
             "manual_scope_hash_required": True,
             "context_key": "worker_runtime_qa_context_preview",
+        },
+        "POST /api/worker/production-promotion-review": {
+            "step_kind": "local_worker_production_promotion_review",
+            "safe_payload_summary": "operator_approved plus latest local runtime QA execution receipt; no Celery/Redis start",
+            "expected_local_receipt": "worker_production_promotion_review_receipt",
+            "required_prior_phase_key": "worker_runtime_qa_execution_receipt",
+            "required_prior_material": "receipt_local_ready",
         },
         "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket": {
             "step_kind": "local_model_benchmark_scope_ticket",
@@ -5154,9 +5200,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
     try:
         from scripts import worker_contract
 
-        evidence_scope = list(worker_contract.REQUIRED_RUNTIME_EVIDENCE_STAGES)
         direct_evidence = _latest_worker_direct_runtime_evidence_summary()
         direct_evidence_keys = list(direct_evidence.get("direct_evidence_stage_keys") or [])
+        evidence_scope = list(worker_contract.REQUIRED_RUNTIME_EVIDENCE_STAGES)
         stage_rows = worker_contract._worker_runtime_evidence_stage_scope_rows(
             evidence_scope,
             direct_stage_keys=direct_evidence_keys,
@@ -5238,6 +5284,16 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 )
                 is True,
                 "runtime_qa_executed": direct_evidence.get("runtime_qa_execution_done") is True,
+                "production_promotion_review_ready": direct_evidence.get(
+                    "production_promotion_review_ready"
+                )
+                is True,
+                "production_promotion_review_status": str(
+                    direct_evidence.get("production_promotion_review_status") or "packet_missing"
+                ),
+                "production_promotion_review_blocker_count": int(
+                    direct_evidence.get("production_promotion_review_blocker_count") or 0
+                ),
                 "local_fallback_round_trip_verified": direct_evidence.get(
                     "local_fallback_round_trip_verified"
                 )
