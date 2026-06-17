@@ -3784,6 +3784,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "observed_streamlit_direct_parity_evidence_retirement_pending",
         )
         self.assertEqual(observed_rows["LTG-10"]["direct_evidence_count"], 1)
+        self.assertEqual(observed_rows["LTG-10"]["direct_evidence_stage_count"], 1)
+        self.assertEqual(
+            observed_rows["LTG-10"]["direct_evidence_stage_keys"],
+            ["ordinary_workflow_replacement_parity"],
+        )
+        self.assertEqual(observed_rows["LTG-10"]["pending_stage_count"], 7)
+        self.assertEqual(observed_rows["LTG-10"]["production_blocker_count"], 7)
         self.assertTrue(observed_rows["LTG-10"]["streamlit_ordinary_workflow_parity_direct_evidence_verified"])
         self.assertFalse(observed_rows["LTG-10"]["ordinary_workflow_exit_complete"])
         self.assertFalse(observed_rows["LTG-10"]["streamlit_fallback_removal_ready"])

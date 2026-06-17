@@ -5473,6 +5473,11 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             for row in stage_rows
             if isinstance(row, dict) and row.get("current_status") == "local_exit_audit_or_dependency_contract_only"
         )
+        direct_evidence_count = 1 if parity_direct_evidence_verified else 0
+        direct_evidence_stage_keys = (
+            ["ordinary_workflow_replacement_parity"] if parity_direct_evidence_verified else []
+        )
+        observed_pending_count = max(pending_count - direct_evidence_count, 0)
         rows.append(
             {
                 "id": "LTG-10",
@@ -5491,10 +5496,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 if parity_direct_evidence_verified
                 else "local_static_contract",
                 "row_count": row_count,
-                "pending_stage_count": pending_count,
+                "pending_stage_count": observed_pending_count,
                 "local_evidence_stage_count": local_evidence_count,
-                "direct_evidence_count": 1 if parity_direct_evidence_verified else 0,
-                "production_blocker_count": pending_count,
+                "direct_evidence_count": direct_evidence_count,
+                "direct_evidence_stage_count": direct_evidence_count,
+                "direct_evidence_stage_keys": direct_evidence_stage_keys,
+                "production_blocker_count": observed_pending_count,
                 "ordinary_workflow_exit_complete": streamlit_contract.get("ordinary_workflow_exit_complete")
                 is True,
                 "streamlit_fallback_removal_ready": streamlit_contract.get("streamlit_fallback_removal_ready")
