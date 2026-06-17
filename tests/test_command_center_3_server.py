@@ -280,6 +280,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         original_candidate_path = candidate_service.SQLITE_META_PATH
         original_worker_path = worker_service.SQLITE_META_PATH
         original_desktop_path = desktop_service.SQLITE_META_PATH
+        original_legacy_path = legacy_service.SQLITE_META_PATH
         temp_dir = tempfile.TemporaryDirectory()
         db_path = Path(temp_dir.name) / "meta.sqlite"
         audit_service.SQLITE_META_PATH = db_path
@@ -292,6 +293,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         candidate_service.SQLITE_META_PATH = db_path
         worker_service.SQLITE_META_PATH = db_path
         desktop_service.SQLITE_META_PATH = db_path
+        legacy_service.SQLITE_META_PATH = db_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, audit_service, "SQLITE_META_PATH", original_audit_path)
         self.addCleanup(setattr, packet_service, "SQLITE_META_PATH", original_packet_path)
@@ -303,6 +305,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.addCleanup(setattr, candidate_service, "SQLITE_META_PATH", original_candidate_path)
         self.addCleanup(setattr, worker_service, "SQLITE_META_PATH", original_worker_path)
         self.addCleanup(setattr, desktop_service, "SQLITE_META_PATH", original_desktop_path)
+        self.addCleanup(setattr, legacy_service, "SQLITE_META_PATH", original_legacy_path)
         return db_path
 
     def _with_motion_qa_root(self):
@@ -3388,6 +3391,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         json.dumps(packet, ensure_ascii=False)
 
     def test_legacy_bridge_cache_reads_migration_checklist_without_running_legacy_tools(self):
+        self._with_meta_store()
         self._with_snapshot_cache(
             {
                 "legacy_migration_map": {
@@ -3640,6 +3644,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             packet["counts"]["streamlit_retirement_readiness_blocker_count"],
             retirement_receipt["blocking_criterion_count"],
         )
+        self.assertEqual(packet["streamlit_ordinary_workflow_parity_review_status"], "missing")
+        self.assertFalse(packet["streamlit_ordinary_workflow_parity_review_ready"])
+        self.assertFalse(packet["streamlit_ordinary_workflow_parity_review_direct_evidence_verified"])
+        self.assertTrue(packet["streamlit_ordinary_workflow_parity_review_is_not_retirement"])
+        self.assertEqual(packet["counts"]["streamlit_ordinary_workflow_parity_review_row_count"], 0)
+        self.assertEqual(packet["counts"]["streamlit_ordinary_workflow_parity_review_direct_evidence_count"], 0)
         self.assertEqual(packet["counts"]["primary_workflow_route_count"], exit_audit["ordinary_workflow_route_count"])
         self.assertEqual(packet["counts"]["primary_workflow_fallback_count"], exit_audit["ordinary_workflow_still_needs_fallback_count"])
         self.assertFalse(packet["external_calls_triggered"])
@@ -3651,6 +3661,123 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["does_not_modify_holdings"])
         self.assertEqual(packet["call_ledger"][0]["api"], "local_legacy_bridge_cache")
         json.dumps(packet, ensure_ascii=False)
+
+    def test_streamlit_ordinary_workflow_parity_review_creates_local_direct_evidence(self):
+        db_path = self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "legacy_migration_map": {"items": [{"label": "legacy route inventory"}]},
+                "legacy_packet_migration_checklist": {"items": [{"label": "candidate radar parity", "status": "pending"}]},
+                "old_workspace_packet_bridge": {"items": [{"label": "legacy packet bridge"}]},
+                "old_workspace_capability_overview": {"checklist_done_count": 0, "checklist_pending_count": 1},
+            }
+        )
+
+        before = legacy_service.read_legacy_bridge_cache()
+        self.assertEqual(before["streamlit_ordinary_workflow_parity_review_status"], "missing")
+        self.assertFalse(before["streamlit_ordinary_workflow_parity_review_direct_evidence_verified"])
+
+        task = legacy_service.run_streamlit_ordinary_workflow_parity_review_task(
+            {"operator": "local-ltg10-parity-review", "authorization": "Bearer SHOULD_DROP"}
+        )
+
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+        self.assertEqual(task["task_type"], legacy_service.STREAMLIT_ORDINARY_WORKFLOW_PARITY_REVIEW_TASK_TYPE)
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "streamlit_ordinary_workflow_parity_review_ready_fallback_required")
+        self.assertNotIn("authorization", task["payload_safe"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertEqual(task["call_ledger"][0]["api"], "local_streamlit_ordinary_workflow_parity_review")
+        self.assert_local_ledger_boundary(task["call_ledger"][0])
+
+        packet = legacy_service.read_legacy_bridge_cache()
+        review = packet["streamlit_ordinary_workflow_parity_review"]
+        self.assertEqual(
+            review["schema_version"],
+            legacy_service.STREAMLIT_ORDINARY_WORKFLOW_PARITY_REVIEW_SCHEMA_VERSION,
+        )
+        self.assertEqual(
+            review["scope"],
+            "local_streamlit_ordinary_workflow_parity_review_no_streamlit_execution",
+        )
+        self.assertEqual(review["status"], "streamlit_ordinary_workflow_parity_review_ready_fallback_required")
+        self.assertTrue(review["explicit_post_task_review"])
+        self.assertTrue(review["direct_evidence_verified"])
+        self.assertTrue(review["local_review_ready"])
+        self.assertFalse(review["replacement_parity_complete"])
+        self.assertFalse(review["candidate_radar_parity_complete"])
+        self.assertFalse(review["provider_backed_parity_done"])
+        self.assertFalse(review["browser_performance_qa_done"])
+        self.assertFalse(review["admin_debug_retention_decision_done"])
+        self.assertFalse(review["ordinary_workflow_exit_complete"])
+        self.assertFalse(review["streamlit_fallback_removal_ready"])
+        self.assertFalse(review["full_streamlit_removal_ready"])
+        self.assertTrue(review["streamlit_fallback_retained"])
+        self.assertTrue(review["legacy_fallback_required"])
+        self.assertTrue(review["feature_parity_required_before_removal"])
+        self.assertTrue(review["no_feature_cut_allowed"])
+        self.assertGreater(review["ordinary_workflow_migrated_without_fallback_count"], 0)
+        self.assertGreater(review["ordinary_fallback_dependency_count"], 0)
+        self.assertGreater(review["full_streamlit_removal_blocker_count"], 0)
+        self.assertIn("candidate_radar_quick_scan", review["ordinary_blocking_workflows"])
+        self.assertIn("legacy_admin_debug_tools", review["full_removal_blocking_workflows"])
+        self.assertFalse(review["streamlit_opened_by_review"])
+        self.assertFalse(review["legacy_tools_run_by_review"])
+        self.assertFalse(review["tasks_created_by_cache_render"])
+        self.assertFalse(review["fallback_removed_by_review"])
+        self.assertFalse(review["app_py_deleted_by_review"])
+        self.assertFalse(review["provider_model_task_dispatched_by_review"])
+        self.assertFalse(review["external_calls_triggered"])
+        self.assertFalse(review["tushare_called"])
+        self.assertFalse(review["deepseek_called"])
+        self.assertFalse(review["github_called"])
+        self.assertTrue(review["does_not_execute_trades"])
+        self.assertTrue(review["does_not_modify_strategy_action"])
+        self.assertTrue(review["does_not_modify_holdings"])
+        self.assertFalse(review["contains_secret"])
+        review_rows = {row["workflow"]: row for row in review["rows"]}
+        self.assertEqual(review_rows["candidate_radar_quick_scan"]["parity_status"], "partial_react_route_fallback_required")
+        self.assertTrue(review_rows["candidate_radar_quick_scan"]["blocks_ordinary_primary_exit"])
+        self.assertEqual(review_rows["legacy_admin_debug_tools"]["parity_status"], "legacy_admin_debug_fallback_retained")
+        self.assertFalse(review_rows["legacy_admin_debug_tools"]["ordinary_flow_supported"])
+        self.assertIn(
+            "local_streamlit_ordinary_workflow_parity_review",
+            {row["api"] for row in packet["call_ledger"]},
+        )
+        self.assertTrue(packet["streamlit_ordinary_workflow_parity_review_ready"])
+        self.assertTrue(packet["streamlit_ordinary_workflow_parity_review_direct_evidence_verified"])
+        self.assertTrue(packet["streamlit_ordinary_workflow_parity_review_is_not_retirement"])
+        self.assertEqual(
+            packet["counts"]["streamlit_ordinary_workflow_parity_review_direct_evidence_count"],
+            1,
+        )
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        persisted = SQLiteMetaStore(db_path).read_packet(
+            legacy_service.STREAMLIT_ORDINARY_WORKFLOW_PARITY_REVIEW_PACKET_KEY
+        )
+        self.assertEqual(persisted["task_id"], task["task_id"])
+        self.assertTrue(persisted["direct_evidence_verified"])
+
+        migration = migration_status_service.build_migration_status()
+        observed_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        self.assertEqual(
+            observed_rows["LTG-10"]["status"],
+            "observed_streamlit_direct_parity_evidence_retirement_pending",
+        )
+        self.assertEqual(observed_rows["LTG-10"]["direct_evidence_count"], 1)
+        self.assertTrue(observed_rows["LTG-10"]["streamlit_ordinary_workflow_parity_direct_evidence_verified"])
+        self.assertFalse(observed_rows["LTG-10"]["ordinary_workflow_exit_complete"])
+        self.assertFalse(observed_rows["LTG-10"]["streamlit_fallback_removal_ready"])
+        self.assertFalse(observed_rows["LTG-10"]["full_streamlit_removal_ready"])
+        self.assertFalse(observed_rows["LTG-10"]["can_close_from_observed_row"])
 
     def test_storage_factor_values_status_is_cache_only(self):
         self._with_parquet_root()
@@ -13592,7 +13719,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 69)
+        self.assertEqual(catalog["task_count"], 70)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -13611,7 +13738,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 69)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 70)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -13622,8 +13749,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 71)
-        self.assertEqual(route_coverage["task_creation_route_count"], 69)
+        self.assertEqual(route_coverage["known_post_route_count"], 72)
+        self.assertEqual(route_coverage["task_creation_route_count"], 70)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -13632,11 +13759,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 69)
+        self.assertEqual(implementation_status["task_count"], 70)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 66)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 67)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 67)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 68)
         self.assertEqual(implementation_status["external_capable_task_count"], 6)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -13672,6 +13799,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_tauri_backend_startup_runtime_review",
                 "run_tauri_config_log_runtime_review",
                 "run_tauri_signing_notarization_review",
+                "run_streamlit_ordinary_workflow_parity_review",
                 "run_candidate_radar_quick_scan",
                 "run_candidate_radar_quant_projection",
                 "run_candidate_radar_quant_projection_acceptance_dry_run",
@@ -13744,6 +13872,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_tauri_backend_startup_runtime_review",
                 "run_tauri_config_log_runtime_review",
                 "run_tauri_signing_notarization_review",
+                "run_streamlit_ordinary_workflow_parity_review",
                 "run_candidate_radar_quick_scan",
                 "run_candidate_radar_quant_projection",
                 "run_candidate_radar_quant_projection_acceptance_dry_run",
@@ -13853,6 +13982,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "POST /api/desktop/tauri-signing-notarization-review",
             route_coverage["known_post_routes"],
         )
+        self.assertIn("POST /api/legacy/ordinary-workflow-parity-review", route_coverage["known_post_routes"])
         self.assertIn("POST /api/worker/synthetic-healthcheck", route_coverage["known_post_routes"])
         self.assertIn("POST /api/worker/activation-review", route_coverage["known_post_routes"])
         self.assertIn("POST /api/worker/production-evidence-plan", route_coverage["known_post_routes"])
@@ -15728,6 +15858,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/desktop/tauri-backend-startup-runtime-review", discovered_routes)
         self.assertIn("POST /api/desktop/tauri-config-log-runtime-review", discovered_routes)
         self.assertIn("POST /api/desktop/tauri-signing-notarization-review", discovered_routes)
+        self.assertIn("POST /api/legacy/ordinary-workflow-parity-review", discovered_routes)
         self.assertIn("POST /api/data-health/trade-cal-provider-acceptance-execution-request", discovered_routes)
         self.assertIn("POST /api/data-health/trade-cal-provider-acceptance-promotion-review", discovered_routes)
         self.assertIn("POST /api/data-health/producer-cache-refresh-execution-request", discovered_routes)
@@ -15781,16 +15912,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 66)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 67)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 67)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 68)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 66)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 67)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 67)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 68)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -16645,9 +16776,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 66)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 67)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 67)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 68)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -16871,9 +17002,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 66)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 67)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 67)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 68)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -16906,9 +17037,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 66)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 67)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 67)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 68)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -17941,6 +18072,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         original_candidate_path = candidate_service.SQLITE_META_PATH
         original_worker_path = worker_service.SQLITE_META_PATH
         original_desktop_path = desktop_service.SQLITE_META_PATH
+        original_legacy_path = legacy_service.SQLITE_META_PATH
         temp_dir = tempfile.TemporaryDirectory()
         db_path = Path(temp_dir.name) / "meta.sqlite"
         audit_service.SQLITE_META_PATH = db_path
@@ -17952,6 +18084,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         candidate_service.SQLITE_META_PATH = db_path
         worker_service.SQLITE_META_PATH = db_path
         desktop_service.SQLITE_META_PATH = db_path
+        legacy_service.SQLITE_META_PATH = db_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, audit_service, "SQLITE_META_PATH", original_audit_path)
         self.addCleanup(setattr, packet_service, "SQLITE_META_PATH", original_packet_path)
@@ -17962,6 +18095,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.addCleanup(setattr, candidate_service, "SQLITE_META_PATH", original_candidate_path)
         self.addCleanup(setattr, worker_service, "SQLITE_META_PATH", original_worker_path)
         self.addCleanup(setattr, desktop_service, "SQLITE_META_PATH", original_desktop_path)
+        self.addCleanup(setattr, legacy_service, "SQLITE_META_PATH", original_legacy_path)
         return db_path
 
     def _with_motion_qa_root(self):
@@ -21244,7 +21378,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 69)
+        self.assertEqual(task_catalog["data"]["task_count"], 70)
         self.assertIn(
             "POST /api/desktop/tauri-package-artifact-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
@@ -21267,6 +21401,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertIn(
             "POST /api/desktop/tauri-signing-notarization-review",
+            task_catalog["data"]["route_coverage"]["known_post_routes"],
+        )
+        self.assertIn(
+            "POST /api/legacy/ordinary-workflow-parity-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
         )
         self.assertIn("POST /api/bootstrap/live-startup", task_catalog["data"]["route_coverage"]["known_post_routes"])

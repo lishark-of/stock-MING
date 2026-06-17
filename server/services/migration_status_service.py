@@ -5372,11 +5372,17 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             }
         )
     try:
+        from server.services import legacy_service
         from scripts import streamlit_legacy_contract
 
         streamlit_contract = streamlit_legacy_contract.build_contract()
         if not isinstance(streamlit_contract, dict):
             streamlit_contract = {}
+        legacy_packet = legacy_service.read_legacy_bridge_cache()
+        parity_review = legacy_packet.get("streamlit_ordinary_workflow_parity_review")
+        parity_review = parity_review if isinstance(parity_review, dict) else {}
+        parity_review_ready = parity_review.get("local_review_ready") is True
+        parity_direct_evidence_verified = parity_review.get("direct_evidence_verified") is True
         observed = streamlit_contract.get("observed")
         observed = observed if isinstance(observed, dict) else {}
         stage_rows = streamlit_contract.get("streamlit_retirement_stage_scope_rows")
@@ -5400,15 +5406,22 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "id": "LTG-10",
                 "goal": "Streamlit 完全退出普通主流程",
                 "stage_scope_manifest": "streamlit_retirement_stage_scope_manifest",
-                "status": "observed_in_streamlit_legacy_static_contract"
+                "status": "observed_streamlit_direct_parity_evidence_retirement_pending"
+                if parity_direct_evidence_verified
+                else "observed_in_streamlit_legacy_static_contract"
                 if stage_rows
                 else "missing_from_streamlit_legacy_static_contract",
-                "observed_source": "scripts/streamlit_legacy_contract.build_contract local static contract",
+                "observed_source": "POST /api/legacy/ordinary-workflow-parity-review local direct evidence"
+                if parity_direct_evidence_verified
+                else "scripts/streamlit_legacy_contract.build_contract local static contract",
                 "cache_status": str(streamlit_contract.get("status") or "missing"),
-                "cache_mode": "local_static_contract",
+                "cache_mode": "local_static_contract_plus_streamlit_parity_direct_evidence"
+                if parity_direct_evidence_verified
+                else "local_static_contract",
                 "row_count": row_count,
                 "pending_stage_count": pending_count,
                 "local_evidence_stage_count": local_evidence_count,
+                "direct_evidence_count": 1 if parity_direct_evidence_verified else 0,
                 "production_blocker_count": pending_count,
                 "ordinary_workflow_exit_complete": streamlit_contract.get("ordinary_workflow_exit_complete")
                 is True,
@@ -5426,17 +5439,37 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     "streamlit_retirement_durable_evidence_complete"
                 )
                 is True,
-                "replacement_parity_complete": False,
-                "candidate_radar_parity_complete": False,
-                "provider_backed_parity_done": False,
-                "browser_performance_qa_done": False,
-                "admin_debug_retention_decision_done": False,
+                "streamlit_ordinary_workflow_parity_review_ready": parity_review_ready,
+                "streamlit_ordinary_workflow_parity_review_status": str(
+                    parity_review.get("status") or "missing"
+                ),
+                "streamlit_ordinary_workflow_parity_direct_evidence_verified": parity_direct_evidence_verified,
+                "streamlit_ordinary_workflow_parity_review_is_not_retirement": True,
+                "ordinary_fallback_dependency_count": int(
+                    parity_review.get("ordinary_fallback_dependency_count") or 0
+                ),
+                "full_streamlit_removal_blocker_count": int(
+                    parity_review.get("full_streamlit_removal_blocker_count") or 0
+                ),
+                "ordinary_blocking_workflows": parity_review.get("ordinary_blocking_workflows") or [],
+                "full_removal_blocking_workflows": parity_review.get("full_removal_blocking_workflows")
+                or [],
+                "replacement_parity_complete": parity_review.get("replacement_parity_complete") is True,
+                "candidate_radar_parity_complete": parity_review.get("candidate_radar_parity_complete")
+                is True,
+                "provider_backed_parity_done": parity_review.get("provider_backed_parity_done") is True,
+                "browser_performance_qa_done": parity_review.get("browser_performance_qa_done") is True,
+                "admin_debug_retention_decision_done": parity_review.get("admin_debug_retention_decision_done")
+                is True,
                 "fallback_removed_by_contract": False,
                 "app_py_deleted_by_contract": False,
-                "streamlit_opened_by_contract": False,
-                "legacy_tools_run_by_contract": False,
-                "tasks_created_by_contract": False,
-                "provider_model_task_dispatched_by_contract": False,
+                "streamlit_opened_by_contract": parity_review.get("streamlit_opened_by_review") is True,
+                "legacy_tools_run_by_contract": parity_review.get("legacy_tools_run_by_review") is True,
+                "tasks_created_by_contract": parity_review.get("tasks_created_by_cache_render") is True,
+                "provider_model_task_dispatched_by_contract": parity_review.get(
+                    "provider_model_task_dispatched_by_review"
+                )
+                is True,
                 "external_calls_triggered": False,
                 "tushare_called": False,
                 "deepseek_called": False,
@@ -5446,7 +5479,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "does_not_modify_holdings": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
-                "evidence_boundary": "observed_local_static_streamlit_stage_scope_not_retirement_completion",
+                "evidence_boundary": "observed_l3_streamlit_parity_review_not_retirement_completion"
+                if parity_direct_evidence_verified
+                else "observed_local_static_streamlit_stage_scope_not_retirement_completion",
             }
         )
     except Exception:
