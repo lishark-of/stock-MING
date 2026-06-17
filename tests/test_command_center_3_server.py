@@ -33,6 +33,10 @@ TAURI_LTG09_OBSERVED_STATUSES = {
     "observed_in_tauri_desktop_static_contract",
     "observed_tauri_release_binary_direct_evidence_production_pending",
 }
+MOTION_LTG14_OBSERVED_STATUSES = {
+    "observed_in_motion_viewport_static_contract",
+    "observed_motion_browser_qa_direct_evidence_production_pending",
+}
 
 
 def assert_ltg03_factor_test_stage_scope(test_case: unittest.TestCase, row: dict, expected_direct_count: int | None = None):
@@ -1108,13 +1112,20 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(observed_stage_rows["LTG-13"]["does_not_execute_trades"])
         self.assertFalse(observed_stage_rows["LTG-13"]["can_close_from_observed_row"])
         self.assertEqual(observed_stage_rows["LTG-14"]["stage_scope_manifest"], "motion_production_stage_scope_manifest")
-        self.assertEqual(observed_stage_rows["LTG-14"]["status"], "observed_in_motion_viewport_static_contract")
+        self.assertIn(observed_stage_rows["LTG-14"]["status"], MOTION_LTG14_OBSERVED_STATUSES)
+        ltg14_direct_count = int(observed_stage_rows["LTG-14"].get("direct_evidence_stage_count") or 0)
         self.assertGreaterEqual(observed_stage_rows["LTG-14"]["row_count"], 10)
-        self.assertGreaterEqual(observed_stage_rows["LTG-14"]["pending_stage_count"], 10)
+        self.assertEqual(observed_stage_rows["LTG-14"]["pending_stage_count"], max(10 - ltg14_direct_count, 0) if ltg14_direct_count else 10)
         self.assertGreaterEqual(observed_stage_rows["LTG-14"]["local_evidence_stage_count"], 4)
         self.assertFalse(observed_stage_rows["LTG-14"]["production_motion_complete"])
-        self.assertFalse(observed_stage_rows["LTG-14"]["visual_qa_complete"])
-        self.assertFalse(observed_stage_rows["LTG-14"]["browser_performance_verified"])
+        if ltg14_direct_count:
+            self.assertEqual(ltg14_direct_count, 4)
+            self.assertTrue(observed_stage_rows["LTG-14"]["visual_qa_complete"])
+            self.assertTrue(observed_stage_rows["LTG-14"]["browser_performance_verified"])
+            self.assertTrue(observed_stage_rows["LTG-14"]["motion_browser_qa_review_ready"])
+        else:
+            self.assertFalse(observed_stage_rows["LTG-14"]["visual_qa_complete"])
+            self.assertFalse(observed_stage_rows["LTG-14"]["browser_performance_verified"])
         self.assertFalse(observed_stage_rows["LTG-14"]["external_calls_triggered"])
         self.assertFalse(observed_stage_rows["LTG-14"]["tushare_called"])
         self.assertFalse(observed_stage_rows["LTG-14"]["deepseek_called"])
@@ -21114,13 +21125,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(observed_stage_rows["LTG-13"]["does_not_execute_trades"])
         self.assertFalse(observed_stage_rows["LTG-13"]["can_close_from_observed_row"])
         self.assertEqual(observed_stage_rows["LTG-14"]["stage_scope_manifest"], "motion_production_stage_scope_manifest")
-        self.assertEqual(observed_stage_rows["LTG-14"]["status"], "observed_in_motion_viewport_static_contract")
+        self.assertIn(observed_stage_rows["LTG-14"]["status"], MOTION_LTG14_OBSERVED_STATUSES)
+        ltg14_direct_count = int(observed_stage_rows["LTG-14"].get("direct_evidence_stage_count") or 0)
         self.assertGreaterEqual(observed_stage_rows["LTG-14"]["row_count"], 10)
-        self.assertGreaterEqual(observed_stage_rows["LTG-14"]["pending_stage_count"], 10)
+        self.assertEqual(observed_stage_rows["LTG-14"]["pending_stage_count"], max(10 - ltg14_direct_count, 0) if ltg14_direct_count else 10)
         self.assertGreaterEqual(observed_stage_rows["LTG-14"]["local_evidence_stage_count"], 4)
         self.assertFalse(observed_stage_rows["LTG-14"]["production_motion_complete"])
-        self.assertFalse(observed_stage_rows["LTG-14"]["visual_qa_complete"])
-        self.assertFalse(observed_stage_rows["LTG-14"]["browser_performance_verified"])
+        if ltg14_direct_count:
+            self.assertEqual(ltg14_direct_count, 4)
+            self.assertTrue(observed_stage_rows["LTG-14"]["visual_qa_complete"])
+            self.assertTrue(observed_stage_rows["LTG-14"]["browser_performance_verified"])
+            self.assertTrue(observed_stage_rows["LTG-14"]["motion_browser_qa_review_ready"])
+        else:
+            self.assertFalse(observed_stage_rows["LTG-14"]["visual_qa_complete"])
+            self.assertFalse(observed_stage_rows["LTG-14"]["browser_performance_verified"])
         self.assertFalse(observed_stage_rows["LTG-14"]["external_calls_triggered"])
         self.assertFalse(observed_stage_rows["LTG-14"]["tushare_called"])
         self.assertFalse(observed_stage_rows["LTG-14"]["deepseek_called"])

@@ -5822,29 +5822,93 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         local_evidence_count = sum(
             1 for row in stage_rows if isinstance(row, dict) and row.get("local_stage_evidence_present") is True
         )
+        motion_evidence: dict[str, Any] = {}
+        motion_review: dict[str, Any] = {}
+        try:
+            from server.services import audit_service
+            from storage.sqlite_meta import SQLiteMetaStore
+
+            audit_packet = SQLiteMetaStore(audit_service.SQLITE_META_PATH).read_packet(
+                "command_center_3_call_ledger_audit_cache"
+            )
+            if isinstance(audit_packet, dict):
+                evidence_packet = audit_packet.get("motion_browser_qa_evidence_contract")
+                review_packet = audit_packet.get("motion_browser_qa_review_contract")
+                motion_evidence = evidence_packet if isinstance(evidence_packet, dict) else {}
+                motion_review = review_packet if isinstance(review_packet, dict) else {}
+        except Exception:
+            motion_evidence = {}
+            motion_review = {}
+        browser_visual_ready = motion_evidence.get("visual_qa_complete") is True
+        browser_performance_ready = motion_evidence.get("browser_performance_verified") is True
+        reduced_motion_ready = motion_evidence.get("reduced_motion_passed") is True
+        local_review_ready = motion_review.get("local_browser_qa_review_ready") is True
+        direct_stage_keys = []
+        if browser_visual_ready:
+            direct_stage_keys.append("viewport_visual_qa_execution")
+        if browser_performance_ready:
+            direct_stage_keys.append("browser_performance_trace_execution")
+        if reduced_motion_ready:
+            direct_stage_keys.append("reduced_motion_accessibility_review")
+        if local_review_ready:
+            direct_stage_keys.append("local_artifact_review")
+        direct_stage_key_set = set(direct_stage_keys)
+        local_evidence_count = max(
+            local_evidence_count,
+            sum(
+                1
+                for row in stage_rows
+                if isinstance(row, dict)
+                and (
+                    row.get("local_stage_evidence_present") is True
+                    or str(row.get("stage_key") or "") in direct_stage_key_set
+                )
+            ),
+        )
+        direct_evidence_count = len(direct_stage_keys)
+        pending_stage_count = max(row_count - direct_evidence_count, 0) if direct_evidence_count else pending_count
         rows.append(
             {
                 "id": "LTG-14",
                 "goal": "App 动效与可视化清晰度生产化",
                 "stage_scope_manifest": "motion_production_stage_scope_manifest",
-                "status": "observed_in_motion_viewport_static_contract"
-                if stage_rows
-                else "missing_from_motion_viewport_static_contract",
-                "observed_source": "scripts/motion_viewport_qa_contract.build_contract local static contract",
-                "cache_status": str(motion_contract.get("status") or "missing"),
+                "status": (
+                    "observed_motion_browser_qa_direct_evidence_production_pending"
+                    if direct_evidence_count
+                    else (
+                        "observed_in_motion_viewport_static_contract"
+                        if stage_rows
+                        else "missing_from_motion_viewport_static_contract"
+                    )
+                ),
+                "observed_source": "scripts/motion_viewport_qa_contract.build_contract plus local audit motion_browser_qa_evidence_contract",
+                "cache_status": str(
+                    motion_review.get("status")
+                    or motion_evidence.get("status")
+                    or motion_contract.get("status")
+                    or "missing"
+                ),
                 "cache_mode": "local_static_contract",
                 "row_count": row_count,
-                "pending_stage_count": pending_count,
+                "pending_stage_count": pending_stage_count,
                 "local_evidence_stage_count": local_evidence_count,
-                "production_blocker_count": pending_count,
+                "direct_evidence_stage_count": direct_evidence_count,
+                "direct_evidence_stage_keys": direct_stage_keys,
+                "production_blocker_count": pending_stage_count,
                 "production_motion_complete": motion_contract.get("production_motion_complete") is True,
-                "visual_qa_complete": motion_contract.get("visual_qa_complete") is True,
-                "browser_performance_verified": motion_contract.get("browser_performance_verified") is True,
-                "browser_visual_qa_promoted": False,
-                "browser_performance_promoted": False,
-                "durable_ci_evidence_complete": False,
-                "browser_runner_executed_by_contract": False,
-                "local_artifact_reviewed_for_production": False,
+                "visual_qa_complete": browser_visual_ready,
+                "browser_performance_verified": browser_performance_ready,
+                "browser_visual_qa_promoted": motion_review.get("browser_visual_qa_promoted") is True,
+                "browser_performance_promoted": motion_review.get("browser_performance_promoted") is True,
+                "durable_ci_evidence_complete": motion_review.get("ci_evidence_complete") is True,
+                "browser_runner_executed_by_contract": int(motion_evidence.get("passing_report_count") or 0) >= 2,
+                "local_artifact_reviewed_for_production": local_review_ready,
+                "motion_browser_qa_report_count": int(motion_evidence.get("report_count") or 0),
+                "motion_browser_qa_passing_report_count": int(motion_evidence.get("passing_report_count") or 0),
+                "motion_browser_qa_default_passed": motion_evidence.get("default_motion_passed") is True,
+                "motion_browser_qa_reduced_motion_passed": reduced_motion_ready,
+                "motion_browser_qa_review_ready": local_review_ready,
+                "motion_browser_qa_review_task_id": str(motion_review.get("review_task_id") or ""),
                 "external_calls_triggered": False,
                 "tushare_called": False,
                 "deepseek_called": False,
@@ -5853,7 +5917,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "does_not_modify_strategy_action": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
-                "evidence_boundary": "observed_local_static_motion_stage_scope_not_production_completion",
+                "evidence_boundary": "local_browser_visual_performance_artifacts_are_L3_direct_evidence_not_production_motion_completion",
             }
         )
     except Exception:
