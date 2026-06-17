@@ -550,7 +550,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(action_rows["p2_tushare_target_sample_acceptance"]["local_receipt_step_count"], 1)
         self.assertEqual(action_rows["p3_factor_small_pool_provider_validation"]["local_receipt_step_count"], 2)
         self.assertEqual(action_rows["p3_factor_universe_worker_batch_research"]["local_receipt_step_count"], 5)
-        self.assertEqual(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_step_count"], 5)
+        self.assertEqual(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_step_count"], 8)
         self.assertEqual(action_rows["p4_storage_physical_execution"]["local_receipt_step_count"], 7)
         self.assertEqual(
             action_rows["p4_storage_physical_execution"]["next_local_step"],
@@ -2474,9 +2474,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(p3["ready_local_receipt_step_count"], 2)
         self.assertGreaterEqual(p3["durable_local_receipt_step_count"], 2)
-        self.assertEqual(p3["next_local_step"], "POST /api/candidate-radar/production-promotion-dry-run")
+        self.assertEqual(p3["next_local_step"], "POST /api/candidate-radar/provider-parity-dry-run")
         self.assertTrue(steps["radar_quant_projection_dry_run_scope_ticket"]["receipt_visible"])
         self.assertTrue(steps["radar_quant_projection_execution_request_ticket"]["receipt_visible"])
+        self.assertFalse(steps["radar_provider_parity_dry_run_scope_ticket"]["receipt_visible"])
+        self.assertFalse(steps["radar_provider_parity_execution_request_ticket"]["receipt_visible"])
+        self.assertFalse(steps["radar_worker_execution_request_ticket"]["receipt_visible"])
         self.assertTrue(steps["radar_quant_projection_dry_run_scope_ticket"]["local_ready"])
         self.assertTrue(steps["radar_quant_projection_execution_request_ticket"]["local_ready"])
         self.assertEqual(
@@ -27720,6 +27723,26 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(radar_stage_manifest["does_not_execute_trades"])
 
         migration = migration_status_service.build_migration_status()
+        action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        radar_action = action_rows["p3_candidate_radar_provider_worker_promotion"]
+        self.assertEqual(radar_action["local_receipt_step_count"], 8)
+        self.assertEqual(radar_action["local_receipt_status"], "local_receipts_partially_visible_next_step_pending")
+        self.assertTrue(radar_action["future_handoff_ready_from_local_receipt"])
+        handoff = radar_action["future_handoff_preview_rows"][0]
+        self.assertEqual(handoff["status"], "future_worker_handoff_preview_ready")
+        self.assertEqual(handoff["future_route"], "POST /api/candidate-radar/full-pool-worker-scan")
+        self.assertEqual(handoff["future_task_type"], "run_candidate_radar_full_pool_worker_fallback")
+        self.assertEqual(handoff["source_local_phase_key"], "radar_worker_execution_request_ticket")
+        self.assertTrue(handoff["requires_separate_user_approved_worker_task"])
+        self.assertFalse(handoff["worker_task_created_by_preview"])
+        self.assertFalse(handoff["worker_execution_implemented_by_preview"])
+        self.assertFalse(handoff["worker_started_by_preview"])
+        self.assertFalse(handoff["external_calls_triggered"])
+        self.assertFalse(handoff["tushare_called"])
+        self.assertFalse(handoff["deepseek_called"])
+        self.assertFalse(handoff["github_called"])
+        self.assertTrue(handoff["does_not_execute_trades"])
+        self.assertFalse(handoff["production_complete"])
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
         ltg13 = observed_stage_rows["LTG-13"]
 

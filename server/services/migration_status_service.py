@@ -744,6 +744,24 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "route": "POST /api/candidate-radar/quant-projection-execution-request",
         },
         {
+            "phase_key": "radar_provider_parity_dry_run_scope_ticket",
+            "task_type": "run_candidate_radar_provider_parity_dry_run",
+            "receipt_key": "provider_parity_dry_run_receipt",
+            "route": "POST /api/candidate-radar/provider-parity-dry-run",
+        },
+        {
+            "phase_key": "radar_provider_parity_execution_request_ticket",
+            "task_type": "run_candidate_radar_provider_parity_execution_request",
+            "receipt_key": "provider_parity_execution_request_receipt",
+            "route": "POST /api/candidate-radar/provider-parity-execution-request",
+        },
+        {
+            "phase_key": "radar_worker_execution_request_ticket",
+            "task_type": "run_candidate_radar_worker_execution_request",
+            "receipt_key": "candidate_radar_worker_execution_request_receipt",
+            "route": "POST /api/candidate-radar/worker-execution-request",
+        },
+        {
             "phase_key": "radar_production_promotion_dry_run_ticket",
             "task_type": "run_candidate_radar_production_promotion_dry_run",
             "receipt_key": "candidate_radar_production_promotion_dry_run_receipt",
@@ -1668,8 +1686,20 @@ def _receipt_blocker_count(receipt: dict[str, Any]) -> int:
 def _receipt_target_payload_safe_summary(receipt: dict[str, Any]) -> dict[str, Any]:
     payload = receipt.get("target_payload_safe") if isinstance(receipt.get("target_payload_safe"), dict) else {}
     payload_map = payload if isinstance(payload, dict) else {}
-    target_route = str(receipt.get("target_post_task_route") or receipt.get("target_worker_task_route") or "")
-    target_task_type = str(receipt.get("target_task_type") or receipt.get("target_worker_task_type") or "")
+    target_route = str(
+        receipt.get("target_post_task_route")
+        or receipt.get("target_provider_task_route")
+        or receipt.get("target_worker_task_route")
+        or receipt.get("target_worker_full_pool_route")
+        or ""
+    )
+    target_task_type = str(
+        receipt.get("target_task_type")
+        or receipt.get("target_provider_task_type")
+        or receipt.get("target_worker_task_type")
+        or receipt.get("target_worker_full_pool_task_type")
+        or ""
+    )
     return {
         "target_payload_present": bool(payload_map),
         "target_route": target_route,
@@ -1697,6 +1727,7 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "promotion_review_ready_for_release",
         "recipe_ready_for_user_confirmation",
         "ready_for_manual_provider_task_submission",
+        "ready_for_manual_provider_parity_task_submission",
         "ready_for_manual_worker_task_submission",
         "ready_for_manual_provider_model_task_submission",
         "ready_for_manual_physical_task_submission",
@@ -1870,6 +1901,7 @@ def _build_ltg_next_action_local_step_rows(
                 ),
                 "receipt_ready_for_manual_provider_task_submission": (
                     receipt_map.get("ready_for_manual_provider_task_submission") is True
+                    or receipt_map.get("ready_for_manual_provider_parity_task_submission") is True
                 ),
                 "receipt_ready_for_manual_worker_task_submission": (
                     receipt_map.get("ready_for_manual_worker_task_submission") is True
