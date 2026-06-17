@@ -394,6 +394,59 @@ def build_contract() -> dict[str, Any]:
         and cleanup_review.get("does_not_execute_trades") is True
         and cleanup_review.get("does_not_modify_strategy_action") is True
     )
+    partition_metadata_validation_done = bool(
+        partition_packet.get("schema_version") == "command_center_3_storage_partition_migration_dry_run.v1"
+        and partition_packet.get("status") == "dry_run_completed"
+        and partition_packet.get("partition_migration_metadata_validation_done") is True
+        and int(partition_packet.get("dataset_count") or 0) > 0
+        and int(partition_packet.get("partition_migration_metadata_validated_count") or 0)
+        == int(partition_packet.get("dataset_count") or 0)
+        and int(partition_packet.get("partition_migration_blocked_count") or 0) == 0
+        and partition_packet.get("partition_migration_executed") is False
+        and int(partition_packet.get("partition_migration_executed_count") or 0) == 0
+        and partition_packet.get("post_dry_run_writes_parquet") is False
+        and partition_packet.get("post_dry_run_reads_row_payloads") is False
+        and partition_packet.get("post_dry_run_reads_env_files") is False
+        and partition_packet.get("cache_get_writes_files") is False
+        and _flag_false(partition_packet, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called", "contains_secret")
+        and partition_packet.get("does_not_execute_trades") is True
+    )
+    compaction_metadata_validation_done = bool(
+        compaction_packet.get("schema_version") == "command_center_3_storage_compaction_dry_run.v1"
+        and compaction_packet.get("status") == "dry_run_completed"
+        and compaction_packet.get("physical_compaction_metadata_validation_done") is True
+        and int(compaction_packet.get("dataset_count") or 0) > 0
+        and int(compaction_packet.get("physical_compaction_metadata_validated_count") or 0)
+        == int(compaction_packet.get("dataset_count") or 0)
+        and int(compaction_packet.get("compaction_not_needed_count") or 0)
+        == int(compaction_packet.get("dataset_count") or 0)
+        and int(compaction_packet.get("compaction_ready_count") or 0) == 0
+        and int(compaction_packet.get("compaction_blocked_count") or 0) == 0
+        and int(compaction_packet.get("missing_dataset_count") or 0) == 0
+        and compaction_packet.get("physical_compaction_executed") is False
+        and compaction_packet.get("compaction_executed") is False
+        and int(compaction_packet.get("compaction_executed_count") or 0) == 0
+        and compaction_packet.get("post_dry_run_writes_parquet") is False
+        and compaction_packet.get("post_dry_run_reads_row_payloads") is False
+        and compaction_packet.get("post_dry_run_reads_env_files") is False
+        and compaction_packet.get("cache_get_writes_files") is False
+        and _flag_false(compaction_packet, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called", "contains_secret")
+        and compaction_packet.get("does_not_execute_trades") is True
+    )
+    cache_ttl_metadata_validation_done = bool(
+        ttl_packet.get("schema_version") == "command_center_3_storage_cache_ttl_dry_run.v1"
+        and ttl_packet.get("status") == "dry_run_completed"
+        and int(ttl_packet.get("dataset_count") or 0) > 0
+        and int(ttl_packet.get("refresh_executed_count") or 0) == 0
+        and ttl_packet.get("refresh_executed") is False
+        and ttl_packet.get("auto_refresh_on_get") is False
+        and ttl_packet.get("post_dry_run_writes_parquet") is False
+        and ttl_packet.get("post_dry_run_reads_row_payloads") is False
+        and ttl_packet.get("post_dry_run_reads_env_files") is False
+        and ttl_packet.get("cache_get_writes_files") is False
+        and _flag_false(ttl_packet, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called", "contains_secret")
+        and ttl_packet.get("does_not_execute_trades") is True
+    )
     expected_durable_missing = {
         "dataset_version_manifest_validation_required",
         "partition_migration_evidence_required",
@@ -413,6 +466,12 @@ def build_contract() -> dict[str, Any]:
         expected_durable_missing.discard("duckdb_post_migration_validation_required")
     if artifact_cleanup_review_done:
         expected_durable_missing.discard("artifact_cleanup_delete_review_required")
+    if partition_metadata_validation_done:
+        expected_durable_missing.discard("partition_migration_evidence_required")
+    if compaction_metadata_validation_done:
+        expected_durable_missing.discard("physical_compaction_evidence_required")
+    if cache_ttl_metadata_validation_done:
+        expected_durable_missing.discard("cache_ttl_refresh_evidence_required")
 
     rows = [
         _row(
@@ -718,8 +777,14 @@ def build_contract() -> dict[str, Any]:
             and durable_evidence_recipe.get("schema_migration_executed") is schema_migration_noop_verified
             and durable_evidence_recipe.get("dataset_version_manifest_validated") is manifest_validation_done
             and durable_evidence_recipe.get("partition_migration_executed") is False
+            and durable_evidence_recipe.get("partition_migration_metadata_validation_done")
+            is partition_metadata_validation_done
             and durable_evidence_recipe.get("physical_compaction_executed") is False
+            and durable_evidence_recipe.get("physical_compaction_metadata_validation_done")
+            is compaction_metadata_validation_done
             and durable_evidence_recipe.get("cache_ttl_refresh_executed") is False
+            and durable_evidence_recipe.get("cache_ttl_refresh_metadata_validation_done")
+            is cache_ttl_metadata_validation_done
             and durable_evidence_recipe.get("artifact_cleanup_review_done") is artifact_cleanup_review_done
             and durable_evidence_recipe.get("artifact_cleanup_delete_executed") is False
             and durable_evidence_recipe.get("duckdb_read_validation_done") is duckdb_read_validation_done

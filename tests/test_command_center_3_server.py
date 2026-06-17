@@ -12579,8 +12579,33 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn(durable_rows["duckdb_post_migration_validation_required"]["status"], {"blocked", "passed"})
         if payload.get("duckdb_read_validation_done"):
             self.assertEqual(durable_rows["duckdb_post_migration_validation_required"]["status"], "passed")
-        self.assertEqual(durable_rows["partition_migration_evidence_required"]["status"], "blocked")
-        self.assertEqual(durable_rows["cache_ttl_refresh_evidence_required"]["status"], "blocked")
+        self.assertIn(
+            durable_rows["partition_migration_evidence_required"]["status"],
+            {"blocked", "passed_metadata_validation_execution_pending"},
+        )
+        if payload["observed"].get("partition_migration_status") == "dry_run_completed":
+            self.assertEqual(
+                durable_rows["partition_migration_evidence_required"]["status"],
+                "passed_metadata_validation_execution_pending",
+            )
+        self.assertIn(
+            durable_rows["physical_compaction_evidence_required"]["status"],
+            {"blocked", "passed_no_compaction_needed_metadata_validated"},
+        )
+        if payload["observed"].get("compaction_status") == "dry_run_completed":
+            self.assertEqual(
+                durable_rows["physical_compaction_evidence_required"]["status"],
+                "passed_no_compaction_needed_metadata_validated",
+            )
+        self.assertIn(
+            durable_rows["cache_ttl_refresh_evidence_required"]["status"],
+            {"blocked", "passed_ttl_metadata_validation_refresh_execution_pending"},
+        )
+        if payload["observed"].get("cache_ttl_status") == "dry_run_completed":
+            self.assertEqual(
+                durable_rows["cache_ttl_refresh_evidence_required"]["status"],
+                "passed_ttl_metadata_validation_refresh_execution_pending",
+            )
         self.assertIn(durable_rows["artifact_cleanup_delete_review_required"]["status"], {"blocked", "passed"})
         if payload.get("artifact_cleanup_review_done"):
             self.assertEqual(durable_rows["artifact_cleanup_delete_review_required"]["status"], "passed")

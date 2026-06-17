@@ -4742,11 +4742,12 @@ def _storage_physical_durable_evidence_recipe_row(
     required_evidence: str,
     next_step: str,
     source_contract: str,
+    status: str | None = None,
 ) -> dict[str, Any]:
     return {
         "evidence_key": evidence_key,
         "evidence_label": STORAGE_PHYSICAL_DURABLE_EVIDENCE_LABELS.get(evidence_key, evidence_key),
-        "status": "passed" if passed else "blocked",
+        "status": status or ("passed" if passed else "blocked"),
         "passed": bool(passed),
         "local_ready": bool(passed),
         "durable_evidence_present": False if not passed else True,
@@ -4796,6 +4797,12 @@ def storage_physical_durable_evidence_recipe(
     duckdb_read_validation = storage_duckdb_read_validation_evidence()
     artifact_hygiene = storage_artifact_hygiene_status()
     cleanup_review = dict(artifact_hygiene.get("artifact_cleanup_review_contract") or {})
+    partition_packet, _partition_read_status = _read_storage_meta_packet_no_init(PARTITION_MIGRATION_DRY_RUN_PACKET_KEY)
+    compaction_packet, _compaction_read_status = _read_storage_meta_packet_no_init(COMPACTION_DRY_RUN_PACKET_KEY)
+    cache_ttl_packet, _cache_ttl_read_status = _read_storage_meta_packet_no_init(CACHE_TTL_DRY_RUN_PACKET_KEY)
+    partition_migration_metadata = dict(partition_packet) if isinstance(partition_packet, Mapping) else {}
+    compaction_metadata = dict(compaction_packet) if isinstance(compaction_packet, Mapping) else {}
+    cache_ttl_metadata = dict(cache_ttl_packet) if isinstance(cache_ttl_packet, Mapping) else {}
     blocker_audit_visible = blocker_audit.get("schema_version") == STORAGE_PRODUCTION_BLOCKER_SCHEMA_VERSION
     readiness_visible = readiness.get("status") in {"foundation_ready", "partial_dependency_missing"}
     activation_visible = activation_receipt.get("local_activation_receipt_ready") is True
@@ -4937,6 +4944,71 @@ def storage_physical_durable_evidence_recipe(
         and cleanup_review.get("does_not_modify_strategy_action") is True
         and cleanup_review.get("contains_secret") is False
     )
+    partition_migration_metadata_validation_done = bool(
+        partition_migration_metadata.get("schema_version") == "command_center_3_storage_partition_migration_dry_run.v1"
+        and partition_migration_metadata.get("status") == "dry_run_completed"
+        and partition_migration_metadata.get("partition_migration_metadata_validation_done") is True
+        and int(partition_migration_metadata.get("dataset_count") or 0) > 0
+        and int(partition_migration_metadata.get("partition_migration_metadata_validated_count") or 0)
+        == int(partition_migration_metadata.get("dataset_count") or 0)
+        and int(partition_migration_metadata.get("partition_migration_blocked_count") or 0) == 0
+        and partition_migration_metadata.get("partition_migration_executed") is False
+        and int(partition_migration_metadata.get("partition_migration_executed_count") or 0) == 0
+        and partition_migration_metadata.get("post_dry_run_writes_parquet") is False
+        and partition_migration_metadata.get("post_dry_run_reads_row_payloads") is False
+        and partition_migration_metadata.get("post_dry_run_reads_env_files") is False
+        and partition_migration_metadata.get("cache_get_writes_files") is False
+        and partition_migration_metadata.get("external_calls_triggered") is False
+        and partition_migration_metadata.get("tushare_called") is False
+        and partition_migration_metadata.get("deepseek_called") is False
+        and partition_migration_metadata.get("github_called") is False
+        and partition_migration_metadata.get("does_not_execute_trades") is True
+        and partition_migration_metadata.get("contains_secret") is False
+    )
+    physical_compaction_metadata_validation_done = bool(
+        compaction_metadata.get("schema_version") == "command_center_3_storage_compaction_dry_run.v1"
+        and compaction_metadata.get("status") == "dry_run_completed"
+        and compaction_metadata.get("physical_compaction_metadata_validation_done") is True
+        and int(compaction_metadata.get("dataset_count") or 0) > 0
+        and int(compaction_metadata.get("physical_compaction_metadata_validated_count") or 0)
+        == int(compaction_metadata.get("dataset_count") or 0)
+        and int(compaction_metadata.get("compaction_not_needed_count") or 0)
+        == int(compaction_metadata.get("dataset_count") or 0)
+        and int(compaction_metadata.get("compaction_ready_count") or 0) == 0
+        and int(compaction_metadata.get("compaction_blocked_count") or 0) == 0
+        and int(compaction_metadata.get("missing_dataset_count") or 0) == 0
+        and compaction_metadata.get("physical_compaction_executed") is False
+        and compaction_metadata.get("compaction_executed") is False
+        and int(compaction_metadata.get("compaction_executed_count") or 0) == 0
+        and compaction_metadata.get("post_dry_run_writes_parquet") is False
+        and compaction_metadata.get("post_dry_run_reads_row_payloads") is False
+        and compaction_metadata.get("post_dry_run_reads_env_files") is False
+        and compaction_metadata.get("cache_get_writes_files") is False
+        and compaction_metadata.get("external_calls_triggered") is False
+        and compaction_metadata.get("tushare_called") is False
+        and compaction_metadata.get("deepseek_called") is False
+        and compaction_metadata.get("github_called") is False
+        and compaction_metadata.get("does_not_execute_trades") is True
+        and compaction_metadata.get("contains_secret") is False
+    )
+    cache_ttl_refresh_metadata_validation_done = bool(
+        cache_ttl_metadata.get("schema_version") == "command_center_3_storage_cache_ttl_dry_run.v1"
+        and cache_ttl_metadata.get("status") == "dry_run_completed"
+        and int(cache_ttl_metadata.get("dataset_count") or 0) > 0
+        and int(cache_ttl_metadata.get("refresh_executed_count") or 0) == 0
+        and cache_ttl_metadata.get("refresh_executed") is False
+        and cache_ttl_metadata.get("auto_refresh_on_get") is False
+        and cache_ttl_metadata.get("post_dry_run_writes_parquet") is False
+        and cache_ttl_metadata.get("post_dry_run_reads_row_payloads") is False
+        and cache_ttl_metadata.get("post_dry_run_reads_env_files") is False
+        and cache_ttl_metadata.get("cache_get_writes_files") is False
+        and cache_ttl_metadata.get("external_calls_triggered") is False
+        and cache_ttl_metadata.get("tushare_called") is False
+        and cache_ttl_metadata.get("deepseek_called") is False
+        and cache_ttl_metadata.get("github_called") is False
+        and cache_ttl_metadata.get("does_not_execute_trades") is True
+        and cache_ttl_metadata.get("contains_secret") is False
+    )
     rows = [
         _storage_physical_durable_evidence_recipe_row(
             "production_blocker_audit_visible",
@@ -5009,27 +5081,60 @@ def storage_physical_durable_evidence_recipe(
         ),
         _storage_physical_durable_evidence_recipe_row(
             "partition_migration_evidence_required",
-            passed=False,
+            passed=partition_migration_metadata_validation_done,
             source_contract="partition_migration_execution",
-            evidence="partition migration remains dry-run only.",
+            status="passed_metadata_validation_execution_pending"
+            if partition_migration_metadata_validation_done
+            else "blocked",
+            evidence=(
+                f"partition_metadata_validated_count={partition_migration_metadata.get('partition_migration_metadata_validated_count')}; "
+                f"dataset_count={partition_migration_metadata.get('dataset_count')}; "
+                f"partition_migration_executed_count={partition_migration_metadata.get('partition_migration_executed_count')}"
+            ),
             required_evidence="partition writer receipt plus partition metadata validation",
-            next_step="design a separate confirm-gated partition writer after manifest evidence is stable",
+            next_step=(
+                "Keep partition metadata validation as local direct evidence; any physical partition writer remains a separate approval."
+                if partition_migration_metadata_validation_done
+                else "design a separate confirm-gated partition writer after manifest evidence is stable"
+            ),
         ),
         _storage_physical_durable_evidence_recipe_row(
             "physical_compaction_evidence_required",
-            passed=False,
+            passed=physical_compaction_metadata_validation_done,
             source_contract="physical_compaction_execution",
-            evidence=f"compaction_executed_count={readiness.get('compaction_executed_count')}",
+            status="passed_no_compaction_needed_metadata_validated"
+            if physical_compaction_metadata_validation_done
+            else "blocked",
+            evidence=(
+                f"compaction_not_needed_count={compaction_metadata.get('compaction_not_needed_count')}; "
+                f"dataset_count={compaction_metadata.get('dataset_count')}; "
+                f"compaction_executed_count={compaction_metadata.get('compaction_executed_count')}"
+            ),
             required_evidence="physical compaction task ledger and rewritten artifact metadata",
-            next_step="execute compaction only through a separately approved maintenance task",
+            next_step=(
+                "Keep no-compaction-needed metadata as local direct evidence; any future compaction still needs a separate maintenance task."
+                if physical_compaction_metadata_validation_done
+                else "execute compaction only through a separately approved maintenance task"
+            ),
         ),
         _storage_physical_durable_evidence_recipe_row(
             "cache_ttl_refresh_evidence_required",
-            passed=False,
+            passed=cache_ttl_refresh_metadata_validation_done,
             source_contract="cache_ttl_refresh_execution",
-            evidence=f"cache_ttl_refresh_executed_count={readiness.get('cache_ttl_refresh_executed_count')}",
+            status="passed_ttl_metadata_validation_refresh_execution_pending"
+            if cache_ttl_refresh_metadata_validation_done
+            else "blocked",
+            evidence=(
+                f"refresh_recommended_count={cache_ttl_metadata.get('refresh_recommended_count')}; "
+                f"dataset_count={cache_ttl_metadata.get('dataset_count')}; "
+                f"refresh_executed_count={cache_ttl_metadata.get('refresh_executed_count')}"
+            ),
             required_evidence="explicit provider refresh task ledger and local fetched-at/date evidence",
-            next_step="bind refresh evidence to provider acceptance tasks; never refresh from GET cache",
+            next_step=(
+                "Keep TTL metadata validation as local direct evidence; provider refresh execution remains explicit and never runs from GET cache."
+                if cache_ttl_refresh_metadata_validation_done
+                else "bind refresh evidence to provider acceptance tasks; never refresh from GET cache"
+            ),
         ),
         _storage_physical_durable_evidence_recipe_row(
             "artifact_cleanup_delete_review_required",
@@ -5106,8 +5211,26 @@ def storage_physical_durable_evidence_recipe(
         "dataset_version_manifest_validate_status": manifest_validation.get("status"),
         "dataset_version_manifest_validated_count": int(manifest_validation.get("validated_dataset_count") or 0),
         "partition_migration_executed": False,
+        "partition_migration_metadata_validation_done": partition_migration_metadata_validation_done,
+        "partition_migration_metadata_validation_status": partition_migration_metadata.get("status"),
+        "partition_migration_metadata_validated_count": int(
+            partition_migration_metadata.get("partition_migration_metadata_validated_count") or 0
+        ),
+        "partition_migration_dataset_count": int(partition_migration_metadata.get("dataset_count") or 0),
         "physical_compaction_executed": False,
+        "physical_compaction_metadata_validation_done": physical_compaction_metadata_validation_done,
+        "physical_compaction_metadata_validation_status": compaction_metadata.get("status"),
+        "physical_compaction_metadata_validated_count": int(
+            compaction_metadata.get("physical_compaction_metadata_validated_count") or 0
+        ),
+        "physical_compaction_not_needed_count": int(compaction_metadata.get("compaction_not_needed_count") or 0),
+        "physical_compaction_dataset_count": int(compaction_metadata.get("dataset_count") or 0),
         "cache_ttl_refresh_executed": False,
+        "cache_ttl_refresh_metadata_validation_done": cache_ttl_refresh_metadata_validation_done,
+        "cache_ttl_refresh_metadata_validation_status": cache_ttl_metadata.get("status"),
+        "cache_ttl_refresh_recommended_count": int(cache_ttl_metadata.get("refresh_recommended_count") or 0),
+        "cache_ttl_refresh_executed_count": int(cache_ttl_metadata.get("refresh_executed_count") or 0),
+        "cache_ttl_dataset_count": int(cache_ttl_metadata.get("dataset_count") or 0),
         "artifact_cleanup_review_done": artifact_cleanup_review_done,
         "artifact_cleanup_review_status": cleanup_review.get("status"),
         "artifact_cleanup_review_required_step_count": int(cleanup_review.get("required_review_step_count") or 0),
