@@ -30231,6 +30231,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("local_same_packet_no_loss_review", stage_rows["streamlit_parity_review"]["current_status"])
         self.assertIn("legacy Streamlit reference capture", stage_rows["streamlit_parity_review"]["missing_evidence"])
 
+        migration = migration_status_service.build_migration_status()
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg08 = observed_stage_rows["LTG-08"]
+        self.assertEqual(ltg08["status"], "observed_next_session_direct_evidence_production_pending")
+        self.assertIn("streamlit_parity_review", ltg08["direct_evidence_stage_keys"])
+        self.assertTrue(ltg08["local_streamlit_parity_review_ready"])
+        self.assertTrue(ltg08["same_packet_no_loss_review_ready"])
+        self.assertFalse(ltg08["streamlit_parity_complete"])
+        self.assertFalse(ltg08["production_replacement_complete"])
+        self.assertFalse(ltg08["external_calls_triggered"])
+        self.assertFalse(ltg08["tushare_called"])
+        self.assertFalse(ltg08["deepseek_called"])
+        self.assertFalse(ltg08["github_called"])
+        self.assertTrue(ltg08["does_not_execute_trades"])
+        self.assertTrue(ltg08["does_not_modify_strategy_action"])
+
     def test_task_cancel_endpoint_marks_pending_task_without_external_work(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)

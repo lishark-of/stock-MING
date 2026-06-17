@@ -2743,6 +2743,7 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
     interaction_audit = _dict_or_empty(chart.get("interaction_readiness_audit"))
     browser_evidence = _dict_or_empty(packet_map.get("next_session_browser_qa_evidence_summary"))
     browser_review = _dict_or_empty(packet_map.get("next_session_browser_qa_review_contract"))
+    streamlit_review = _dict_or_empty(packet_map.get("next_session_streamlit_parity_review_contract"))
     packet_safe = bool(
         packet_map.get("external_calls_triggered") is not True
         and packet_map.get("tushare_called") is not True
@@ -2808,11 +2809,32 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
         and browser_review.get("reduced_motion_passed") is True
         and browser_review.get("motion_viewport_coverage_complete") is True
     )
+    streamlit_same_packet_review_ready = bool(
+        packet_safe
+        and streamlit_review.get("schema_version") == "next_session_streamlit_parity_review.v1"
+        and streamlit_review.get("status") == "next_session_streamlit_parity_review_ready_local_same_packet"
+        and streamlit_review.get("explicit_review_task_done") is True
+        and streamlit_review.get("local_streamlit_parity_review_ready") is True
+        and streamlit_review.get("same_packet_no_loss_review_ready") is True
+        and streamlit_review.get("streamlit_reference_captured") is False
+        and streamlit_review.get("streamlit_parity_complete") is False
+        and streamlit_review.get("production_replacement_complete") is False
+        and streamlit_review.get("opens_no_streamlit") is True
+        and streamlit_review.get("opens_no_browser") is True
+        and streamlit_review.get("external_calls_triggered") is False
+        and streamlit_review.get("tushare_called") is False
+        and streamlit_review.get("deepseek_called") is False
+        and streamlit_review.get("github_called") is False
+        and streamlit_review.get("does_not_execute_trades") is True
+        and streamlit_review.get("does_not_modify_strategy_action") is True
+    )
     direct_stage_keys = []
     if exact_payload_contract_done:
         direct_stage_keys.append("exact_cache_payload_contract")
     if interaction_contract_done:
         direct_stage_keys.append("interaction_hover_click_contract")
+    if streamlit_same_packet_review_ready:
+        direct_stage_keys.append("streamlit_parity_review")
     if visual_done:
         direct_stage_keys.append("browser_visual_qa")
     if performance_done:
@@ -2833,6 +2855,8 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
         "browser_visual_qa_done": visual_done,
         "browser_performance_trace_done": performance_done,
         "reduced_motion_accessibility_qa_done": reduced_motion_done,
+        "local_streamlit_parity_review_ready": streamlit_same_packet_review_ready,
+        "same_packet_no_loss_review_ready": streamlit_same_packet_review_ready,
         "local_browser_qa_review_ready": review_ready,
         "streamlit_parity_complete": False,
         "production_replacement_complete": False,
@@ -2847,7 +2871,7 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
         "direct_evidence_layer": "L3_local_next_session_cache_interaction_browser_evidence"
         if direct_stage_keys
         else "L1_static_contract",
-        "evidence_boundary": "next_session_local_cache_interaction_browser_evidence_is_not_streamlit_parity_or_production_replacement",
+        "evidence_boundary": "next_session_local_cache_interaction_browser_streamlit_review_evidence_is_not_streamlit_parity_or_production_replacement",
     }
 
 
@@ -5363,6 +5387,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "browser_performance_trace_done": direct_evidence.get("browser_performance_trace_done") is True,
                 "reduced_motion_accessibility_qa_done": (
                     direct_evidence.get("reduced_motion_accessibility_qa_done") is True
+                ),
+                "local_streamlit_parity_review_ready": (
+                    direct_evidence.get("local_streamlit_parity_review_ready") is True
+                ),
+                "same_packet_no_loss_review_ready": (
+                    direct_evidence.get("same_packet_no_loss_review_ready") is True
                 ),
                 "local_browser_qa_review_ready": direct_evidence.get("local_browser_qa_review_ready") is True,
                 "durable_ci_evidence_complete": next_session_contract.get("durable_evidence_complete") is True,
