@@ -5221,11 +5221,15 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             1
             for row in stage_rows
             if isinstance(row, dict)
-            and (row.get("exact_payload_contract_ready") is True or row.get("interaction_contract_ready") is True)
+            and (
+                row.get("exact_payload_contract_ready") is True
+                or row.get("interaction_contract_ready") is True
+                or row.get("local_contract_ready") is True
+            )
         )
         direct_evidence = _latest_next_session_direct_evidence_summary()
         direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
-        observed_pending_count = max(pending_count - direct_evidence_count, 0)
+        observed_pending_count = pending_count
         next_session_status = (
             "observed_next_session_browser_direct_evidence_production_pending"
             if direct_evidence_count

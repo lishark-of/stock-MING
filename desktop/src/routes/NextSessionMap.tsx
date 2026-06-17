@@ -87,6 +87,8 @@ export default function NextSessionMap() {
   const browserQaReviewRows = rowsFromArray(packet.next_session_browser_qa_review_rows);
   const durableEvidenceRecipe = (packet.next_session_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
   const durableEvidenceRows = rowsFromArray(packet.next_session_durable_evidence_rows);
+  const productionStageScope = (packet.next_session_production_stage_scope_manifest as Record<string, unknown> | undefined) ?? {};
+  const productionStageScopeRows = rowsFromArray(packet.next_session_production_stage_scope_rows);
   const latestCloseAnchor = (chartPayload?.latest_close_anchor as Record<string, unknown> | undefined) ?? {};
   const dataTrustSummary = (chartPayload?.data_trust_summary as Record<string, unknown> | undefined) ?? {};
   const positionConflict = (chartPayload?.position_conflict as Record<string, unknown> | undefined) ?? {};
@@ -185,6 +187,9 @@ export default function NextSessionMap() {
           { label: "QA 阻断", value: Number(browserQaReview.blocking_review_count ?? 0), tone: Number(browserQaReview.blocking_review_count ?? 0) > 0 ? "warn" : "good" },
           { label: "durable evidence", value: String(durableEvidenceRecipe.status ?? "missing"), tone: durableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
           { label: "durable 阻断", value: Number(durableEvidenceRecipe.durable_evidence_blocker_count ?? 0), tone: Number(durableEvidenceRecipe.durable_evidence_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "阶段清单", value: String(productionStageScope.status ?? "missing"), tone: productionStageScope.local_manifest_ready === true ? "good" : "warn" },
+          { label: "阶段 direct evidence", value: Number(productionStageScope.direct_evidence_stage_count ?? 0), tone: Number(productionStageScope.direct_evidence_stage_count ?? 0) > 0 ? "good" : "warn" },
+          { label: "阶段 pending", value: Number(productionStageScope.pending_stage_count ?? 0), tone: Number(productionStageScope.pending_stage_count ?? 0) > 0 ? "warn" : "good" },
           { label: "路径锚定", value: `${String(chartMaturity.scenario_anchored_count ?? chartSummary.scenario_anchored_count ?? 0)}/${String(chartMaturity.scenario_anchor_count ?? 0)}` },
           { label: "最新 close", value: String(latestCloseAnchor.price ?? "--") },
           { label: "持仓冲突", value: positionConflict.has_conflict === true ? "有" : "无", tone: positionConflict.has_conflict === true ? "bad" : "good" },
@@ -229,6 +234,13 @@ export default function NextSessionMap() {
       <p>not_allowed_next_steps: {Array.isArray(durableEvidenceRecipe.not_allowed_next_steps) ? durableEvidenceRecipe.not_allowed_next_steps.join(" / ") : "local browser artifact as durable evidence / interaction readiness as parity / provider calls from render / frontend action computation"}</p>
       <DataLineageTable rows={[durableEvidenceRecipe]} />
       <DataLineageTable rows={durableEvidenceRows} />
+      <h3>ECharts production stage scope</h3>
+      <p className="risk-note">next_session_production_stage_scope_manifest 只把本地阶段证据和剩余阻断展示到 cache/UI；它不运行浏览器、不调用 provider/model/GitHub、不计算 action、不证明生产替代完成。</p>
+      <p>scope: {String(productionStageScope.scope ?? "next_session_production_replacement_stage_scope_manifest")}</p>
+      <p>direct_evidence_stage_count: {String(productionStageScope.direct_evidence_stage_count ?? 0)}；pending_stage_count: {String(productionStageScope.pending_stage_count ?? 0)}；production_replacement_complete: {String(productionStageScope.production_replacement_complete === true)}</p>
+      <p>direct_evidence_stage_keys: {Array.isArray(productionStageScope.direct_evidence_stage_keys) ? productionStageScope.direct_evidence_stage_keys.join(" / ") : ""}</p>
+      <DataLineageTable rows={[productionStageScope]} />
+      <DataLineageTable rows={productionStageScopeRows} />
       <h3>ECharts 图表数据合同</h3>
       <DataLineageTable rows={chartContractRows} />
       <h3>缓存边界</h3>

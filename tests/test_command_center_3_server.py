@@ -12038,7 +12038,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("legacy_parity_execution_recipe_is_no_feature_loss_pending", script)
         self.assertIn("next_session_durable_evidence_recipe_is_local_production_pending", script)
         self.assertIn("next_session_production_replacement_stage_scope_manifest", script)
-        self.assertIn("production_replacement_stage_scope_manifest_is_complete_and_pending", script)
+        self.assertIn("production_replacement_stage_scope_manifest_is_cache_visible_and_pending", script)
         self.assertIn("chart_contract_is_read_only_no_external_no_action", script)
         self.assertIn("current_get_cache_envelope_is_read_only", script)
         self.assertIn("react_echarts_frontend_uses_api_client_and_read_only_display", script)
@@ -12126,7 +12126,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         }
         self.assertEqual(payload["observed"]["production_stage_scope_count"], 8)
         self.assertEqual(set(payload["observed"]["production_stage_scope_keys"]), required_production_stages)
-        self.assertEqual(payload["observed"]["production_stage_scope_pending_count"], 8)
+        production_stage_direct_count = int(payload["observed"]["production_stage_scope_direct_evidence_count"] or 0)
+        self.assertIn(production_stage_direct_count, {0, 3})
+        self.assertEqual(
+            payload["observed"]["production_stage_scope_pending_count"],
+            8 - production_stage_direct_count,
+        )
         legacy_rows = payload["legacy_parity_execution_rows"]
         self.assertEqual({row["phase"] for row in legacy_rows}, required_legacy_parity_phases)
         for row in legacy_rows:
@@ -12145,15 +12150,37 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(row["contains_secret"])
         stage_rows = payload["production_replacement_stage_scope_rows"]
         self.assertEqual({row["stage_key"] for row in stage_rows}, required_production_stages)
+        allowed_stage_statuses = {
+            "local_contract_ready",
+            "pending_exact_cache_payload",
+            "pending_interaction_contract",
+            "pending_same_packet_streamlit_parity",
+            "direct_evidence_ready_local_artifact",
+            "pending_browser_visual_qa_review",
+            "pending_browser_performance_trace_review",
+            "pending_reduced_motion_accessibility_review",
+            "pending_durable_ci_release_evidence",
+            "pending_production_replacement_promotion",
+        }
         for row in stage_rows:
             self.assertEqual(row["scope"], "next_session_production_replacement_stage_scope_manifest")
-            self.assertEqual(row["current_status"], "local_contract_or_runbook_only")
+            self.assertIn(row["current_status"], allowed_stage_statuses)
             self.assertEqual(row["target_status"], "browser_parity_or_release_evidence_required")
             self.assertTrue(row["required_before_production_replacement"])
             self.assertFalse(row["streamlit_parity_complete"])
-            self.assertFalse(row["browser_visual_qa_done"])
-            self.assertFalse(row["browser_performance_trace_done"])
-            self.assertFalse(row["reduced_motion_accessibility_qa_done"])
+            self.assertEqual(
+                row["browser_visual_qa_done"],
+                row["stage_key"] == "browser_visual_qa" and row.get("direct_evidence_complete") is True,
+            )
+            self.assertEqual(
+                row["browser_performance_trace_done"],
+                row["stage_key"] == "browser_performance_trace" and row.get("direct_evidence_complete") is True,
+            )
+            self.assertEqual(
+                row["reduced_motion_accessibility_qa_done"],
+                row["stage_key"] == "reduced_motion_accessibility_qa"
+                and row.get("direct_evidence_complete") is True,
+            )
             self.assertFalse(row["durable_ci_evidence_complete"])
             self.assertFalse(row["production_replacement_complete"])
             self.assertFalse(row["browser_opened_by_contract"])
@@ -12174,7 +12201,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("reference_zone_position_deepseek_status_are_visible", criteria)
         self.assertIn("current_get_cache_envelope_is_read_only", criteria)
         self.assertIn("replacement_activation_receipt_guides_next_safe_step", criteria)
-        self.assertIn("production_replacement_stage_scope_manifest_is_complete_and_pending", criteria)
+        self.assertIn("production_replacement_stage_scope_manifest_is_cache_visible_and_pending", criteria)
         self.assertIn("next_session_task_is_button_gated_local_cache_pipeline", criteria)
         self.assertIn("react_echarts_frontend_uses_api_client_and_read_only_display", criteria)
 
@@ -29427,6 +29454,45 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(review["github_called"])
         self.assertTrue(refreshed["next_session_browser_qa_review_ready"])
         self.assertIn("local_next_session_browser_qa_review", {row.get("api") for row in refreshed["call_ledger"]})
+        self.assertIn(
+            "local_next_session_production_stage_scope_manifest",
+            {row.get("api") for row in refreshed["call_ledger"]},
+        )
+        stage_scope = refreshed["next_session_production_stage_scope_manifest"]
+        self.assertEqual(
+            stage_scope["status"], "next_session_production_stage_scope_manifest_ready_production_pending"
+        )
+        self.assertTrue(stage_scope["local_manifest_ready"])
+        self.assertEqual(stage_scope["stage_count"], 8)
+        self.assertEqual(stage_scope["direct_evidence_stage_count"], 3)
+        self.assertEqual(stage_scope["pending_stage_count"], 5)
+        self.assertEqual(stage_scope["production_blocker_count"], 5)
+        self.assertEqual(
+            set(stage_scope["direct_evidence_stage_keys"]),
+            {"browser_visual_qa", "browser_performance_trace", "reduced_motion_accessibility_qa"},
+        )
+        self.assertTrue(stage_scope["browser_visual_qa_done"])
+        self.assertTrue(stage_scope["browser_performance_trace_done"])
+        self.assertTrue(stage_scope["reduced_motion_accessibility_qa_done"])
+        self.assertTrue(stage_scope["local_browser_qa_review_ready"])
+        self.assertFalse(stage_scope["streamlit_parity_complete"])
+        self.assertFalse(stage_scope["durable_ci_evidence_complete"])
+        self.assertFalse(stage_scope["production_replacement_complete"])
+        self.assertFalse(stage_scope["external_calls_triggered"])
+        self.assertFalse(stage_scope["tushare_called"])
+        self.assertFalse(stage_scope["deepseek_called"])
+        self.assertFalse(stage_scope["github_called"])
+        self.assertTrue(stage_scope["does_not_execute_trades"])
+        self.assertTrue(stage_scope["does_not_modify_strategy_action"])
+        self.assertTrue(stage_scope["does_not_modify_operation_zones"])
+        stage_rows = {row["stage_key"]: row for row in refreshed["next_session_production_stage_scope_rows"]}
+        self.assertTrue(stage_rows["browser_visual_qa"]["direct_evidence_complete"])
+        self.assertTrue(stage_rows["browser_performance_trace"]["direct_evidence_complete"])
+        self.assertTrue(stage_rows["reduced_motion_accessibility_qa"]["direct_evidence_complete"])
+        self.assertFalse(stage_rows["streamlit_parity_review"]["direct_evidence_complete"])
+        self.assertEqual(refreshed["counts"]["next_session_production_stage_scope_blocker_count"], 5)
+        self.assertTrue(refreshed["policy"]["next_session_production_stage_scope_manifest_is_local"])
+        self.assertTrue(refreshed["policy"]["next_session_production_stage_scope_is_not_production_completion"])
 
         migration = migration_status_service.build_migration_status()
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}

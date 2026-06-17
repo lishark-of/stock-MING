@@ -123,6 +123,7 @@ def _rows_by_key(rows: Any) -> dict[str, dict[str, Any]]:
             or row.get("activation_key")
             or row.get("phase")
             or row.get("evidence_key")
+            or row.get("stage_key")
             or ""
         ): row
         for row in _list(rows)
@@ -306,6 +307,8 @@ def build_contract() -> dict[str, Any]:
     browser_qa_review_rows = _rows_by_key(exact_service_packet.get("next_session_browser_qa_review_rows"))
     durable_evidence_recipe = _dict(exact_service_packet.get("next_session_durable_evidence_recipe"))
     durable_evidence_rows = _rows_by_key(exact_service_packet.get("next_session_durable_evidence_rows"))
+    production_stage_scope = _dict(exact_service_packet.get("next_session_production_stage_scope_manifest"))
+    production_stage_scope_rows = _rows_by_key(exact_service_packet.get("next_session_production_stage_scope_rows"))
 
     current_cache = next_session_service.read_next_session_cache()
     current_ledger = [row for row in _list(current_cache.get("call_ledger")) if isinstance(row, dict)]
@@ -333,7 +336,7 @@ def build_contract() -> dict[str, Any]:
     chart_component = _read_script("desktop/src/components/NextSessionChart.tsx")
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/next_session_map_contract.py")
-    production_stage_scope_rows = _next_session_production_stage_scope_rows()
+    static_production_stage_scope_rows = _next_session_production_stage_scope_rows()
 
     rows = [
         _row(
@@ -417,6 +420,7 @@ def build_contract() -> dict[str, Any]:
                     "local_next_session_cache",
                     "local_next_session_browser_qa_review",
                     "local_next_session_durable_evidence_recipe",
+                    "local_next_session_production_stage_scope_manifest",
                 }
                 for row in current_ledger
             )
@@ -660,38 +664,98 @@ def build_contract() -> dict[str, Any]:
             "Next-session durable evidence recipe must pin remaining Streamlit parity, browser visual/performance, CI/release, and promotion evidence without opening a browser, calling providers/models, executing trades, or claiming ECharts production replacement.",
         ),
         _row(
-            "production_replacement_stage_scope_manifest_is_complete_and_pending",
-            {row.get("stage_key") for row in production_stage_scope_rows}
+            "production_replacement_stage_scope_manifest_is_cache_visible_and_pending",
+            production_stage_scope.get("schema_version")
+            == next_session_service.NEXT_SESSION_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION
+            and production_stage_scope.get("status")
+            == "next_session_production_stage_scope_manifest_ready_production_pending"
+            and production_stage_scope.get("scope") == "next_session_production_replacement_stage_scope_manifest"
+            and production_stage_scope.get("local_manifest_ready") is True
+            and set(production_stage_scope_rows)
             == REQUIRED_NEXT_SESSION_PRODUCTION_STAGES
             and len(production_stage_scope_rows) == len(REQUIRED_NEXT_SESSION_PRODUCTION_STAGES)
+            and production_stage_scope.get("stage_keys")
+            == list(next_session_service.NEXT_SESSION_PRODUCTION_STAGE_KEYS)
+            and int(production_stage_scope.get("stage_count") or 0) == len(REQUIRED_NEXT_SESSION_PRODUCTION_STAGES)
+            and int(production_stage_scope.get("direct_evidence_stage_count") or 0)
+            == len(_list(production_stage_scope.get("direct_evidence_stage_keys")))
+            and set(_list(production_stage_scope.get("direct_evidence_stage_keys"))).issubset(
+                {"browser_visual_qa", "browser_performance_trace", "reduced_motion_accessibility_qa"}
+            )
+            and int(production_stage_scope.get("pending_stage_count") or 0)
+            + int(production_stage_scope.get("direct_evidence_stage_count") or 0)
+            == len(REQUIRED_NEXT_SESSION_PRODUCTION_STAGES)
             and all(
                 row.get("scope") == "next_session_production_replacement_stage_scope_manifest"
-                for row in production_stage_scope_rows
+                for row in production_stage_scope_rows.values()
             )
-            and all(row.get("required_before_production_replacement") is True for row in production_stage_scope_rows)
-            and all(row.get("current_status") == "local_contract_or_runbook_only" for row in production_stage_scope_rows)
+            and all(
+                row.get("required_before_production_replacement") is True
+                for row in production_stage_scope_rows.values()
+            )
+            and all(
+                row.get("current_status")
+                in {
+                    "local_contract_ready",
+                    "pending_exact_cache_payload",
+                    "pending_interaction_contract",
+                    "pending_same_packet_streamlit_parity",
+                    "direct_evidence_ready_local_artifact",
+                    "pending_browser_visual_qa_review",
+                    "pending_browser_performance_trace_review",
+                    "pending_reduced_motion_accessibility_review",
+                    "pending_durable_ci_release_evidence",
+                    "pending_production_replacement_promotion",
+                }
+                for row in production_stage_scope_rows.values()
+            )
             and all(
                 row.get("target_status") == "browser_parity_or_release_evidence_required"
-                for row in production_stage_scope_rows
+                for row in production_stage_scope_rows.values()
             )
-            and all(row.get("streamlit_parity_complete") is False for row in production_stage_scope_rows)
-            and all(row.get("browser_visual_qa_done") is False for row in production_stage_scope_rows)
-            and all(row.get("browser_performance_trace_done") is False for row in production_stage_scope_rows)
-            and all(row.get("reduced_motion_accessibility_qa_done") is False for row in production_stage_scope_rows)
-            and all(row.get("durable_ci_evidence_complete") is False for row in production_stage_scope_rows)
-            and all(row.get("production_replacement_complete") is False for row in production_stage_scope_rows)
-            and all(row.get("browser_opened_by_contract") is False for row in production_stage_scope_rows)
-            and all(row.get("artifacts_written_by_contract") is False for row in production_stage_scope_rows)
-            and all(row.get("external_calls_triggered") is False for row in production_stage_scope_rows)
-            and all(row.get("tushare_called") is False for row in production_stage_scope_rows)
-            and all(row.get("deepseek_called") is False for row in production_stage_scope_rows)
-            and all(row.get("github_called") is False for row in production_stage_scope_rows)
-            and all(row.get("does_not_execute_trades") is True for row in production_stage_scope_rows)
-            and all(row.get("does_not_modify_strategy_action") is True for row in production_stage_scope_rows)
-            and all(row.get("does_not_modify_operation_zones") is True for row in production_stage_scope_rows)
-            and all(row.get("frontend_computes_trade_action") is False for row in production_stage_scope_rows)
-            and all(row.get("contains_secret") is False for row in production_stage_scope_rows),
-            "Next-session production replacement stage rows must enumerate every remaining parity/browser/release evidence stage without opening a browser, writing artifacts, calling providers, executing trades, or claiming replacement completion.",
+            and _dict(production_stage_scope_rows.get("exact_cache_payload_contract")).get("local_contract_ready")
+            is True
+            and _dict(production_stage_scope_rows.get("interaction_hover_click_contract")).get(
+                "local_contract_ready"
+            )
+            is True
+            and all(row.get("streamlit_parity_complete") is False for row in production_stage_scope_rows.values())
+            and all(row.get("durable_ci_evidence_complete") is False for row in production_stage_scope_rows.values())
+            and all(row.get("production_replacement_complete") is False for row in production_stage_scope_rows.values())
+            and all(row.get("browser_opened_by_contract") is False for row in production_stage_scope_rows.values())
+            and all(row.get("artifacts_written_by_contract") is False for row in production_stage_scope_rows.values())
+            and all(row.get("external_calls_triggered") is False for row in production_stage_scope_rows.values())
+            and all(row.get("tushare_called") is False for row in production_stage_scope_rows.values())
+            and all(row.get("deepseek_called") is False for row in production_stage_scope_rows.values())
+            and all(row.get("github_called") is False for row in production_stage_scope_rows.values())
+            and all(row.get("does_not_execute_trades") is True for row in production_stage_scope_rows.values())
+            and all(
+                row.get("does_not_modify_strategy_action") is True for row in production_stage_scope_rows.values()
+            )
+            and all(
+                row.get("does_not_modify_operation_zones") is True for row in production_stage_scope_rows.values()
+            )
+            and all(row.get("frontend_computes_trade_action") is False for row in production_stage_scope_rows.values())
+            and all(row.get("contains_secret") is False for row in production_stage_scope_rows.values())
+            and _flag_false(
+                production_stage_scope,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+                "frontend_computes_trade_action",
+            )
+            and production_stage_scope.get("does_not_execute_trades") is True
+            and production_stage_scope.get("does_not_modify_strategy_action") is True
+            and production_stage_scope.get("does_not_modify_operation_zones") is True
+            and any(
+                _dict(row).get("api") == "local_next_session_production_stage_scope_manifest"
+                for row in _list(production_stage_scope.get("call_ledger"))
+            )
+            and "next_session_production_stage_scope_manifest" in next_page
+            and "productionStageScope" in next_page,
+            "Next-session production stage scope must be visible from cache/UI and reduce only local direct-evidence blockers while keeping Streamlit parity, durable CI/release evidence, and production replacement pending.",
         ),
         _row(
             "react_echarts_frontend_uses_api_client_and_read_only_display",
@@ -799,15 +863,17 @@ def build_contract() -> dict[str, Any]:
             "current_cache_status": current_cache.get("status"),
             "current_cache_call_status": current_ledger[0].get("call_status") if current_ledger else None,
             "task_backend": task.get("current_backend"),
+            "production_stage_scope_status": production_stage_scope.get("status"),
             "production_stage_scope_count": len(production_stage_scope_rows),
-            "production_stage_scope_keys": sorted(row.get("stage_key") for row in production_stage_scope_rows),
-            "production_stage_scope_pending_count": sum(
-                1 for row in production_stage_scope_rows if row.get("production_replacement_complete") is False
-            ),
+            "production_stage_scope_keys": sorted(production_stage_scope_rows),
+            "production_stage_scope_direct_evidence_count": production_stage_scope.get("direct_evidence_stage_count"),
+            "production_stage_scope_pending_count": production_stage_scope.get("pending_stage_count"),
+            "static_production_stage_scope_count": len(static_production_stage_scope_rows),
         },
         "legacy_parity_execution_rows": list(legacy_parity_rows.values()),
         "durable_evidence_rows": list(durable_evidence_rows.values()),
-        "production_replacement_stage_scope_rows": production_stage_scope_rows,
+        "production_replacement_stage_scope_rows": list(production_stage_scope_rows.values()),
+        "static_production_replacement_stage_scope_rows": static_production_stage_scope_rows,
         "rows": rows,
         "note": "This is a local push-gate contract. Browser visual QA, performance trace, legacy Streamlit parity, and production ECharts replacement remain pending.",
     }
