@@ -4141,7 +4141,13 @@ def _build_ltg_future_handoff_preview_rows(
     dependency_preflight = context_map.get("worker_runtime_dependency_preflight_preview")
     dependency_map = dependency_preflight if isinstance(dependency_preflight, dict) else {}
     requires_worker_task = latest_ready_step.get("receipt_ready_for_manual_worker_task_submission") is True
-    dependency_visible = requires_worker_task and dependency_map.get("preflight_visible") is True
+    requires_runtime_qa_task = (
+        latest_ready_step.get("receipt_ready_for_manual_runtime_qa_task_submission") is True
+        or latest_ready_step.get("receipt_target_task_type") == "run_worker_runtime_qa_execution"
+    )
+    dependency_visible = (
+        (requires_worker_task or requires_runtime_qa_task) and dependency_map.get("preflight_visible") is True
+    )
     dependency_blocker_count = int(dependency_map.get("blocker_count") or 0) if dependency_visible else 0
     return [
         {
@@ -4271,6 +4277,9 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             )
         if action["queue_id"] == "p4_worker_runtime_qa":
             safe_context["worker_runtime_qa_context_preview"] = _latest_worker_runtime_qa_context_preview()
+            safe_context["worker_runtime_dependency_preflight_preview"] = (
+                _latest_worker_runtime_dependency_preflight_preview()
+            )
         submission_preview_rows = _build_ltg_next_action_submission_preview_rows(
             next_local_step,
             local_step_rows,

@@ -32392,6 +32392,27 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         }["p4_worker_runtime_qa"]
         self.assertEqual(worker_action_after["ready_local_receipt_step_count"], 6)
         self.assertEqual(worker_action_after["next_local_step"], "future explicit worker runtime QA execution task")
+        runtime_handoff = worker_action_after["future_handoff_preview_rows"][0]
+        self.assertTrue(runtime_handoff["supporting_worker_runtime_dependency_preflight_visible"])
+        self.assertIn(
+            runtime_handoff["supporting_worker_runtime_dependency_preflight_status"],
+            {"manual_runtime_dependency_ready", "manual_runtime_dependency_blocked"},
+        )
+        self.assertIsInstance(
+            runtime_handoff["supporting_worker_runtime_dependency_preflight_blocker_count"],
+            int,
+        )
+        self.assertIsInstance(
+            runtime_handoff["supporting_worker_runtime_dependency_preflight_blocking_checks"],
+            list,
+        )
+        self.assertTrue(runtime_handoff["supporting_worker_runtime_dependency_preflight_is_read_only"])
+        self.assertFalse(runtime_handoff["supporting_worker_runtime_dependency_preflight_starts_process"])
+        self.assertFalse(runtime_handoff["supporting_worker_runtime_dependency_preflight_pings_redis"])
+        self.assertFalse(runtime_handoff["external_calls_triggered"])
+        self.assertFalse(runtime_handoff["tushare_called"])
+        self.assertFalse(runtime_handoff["deepseek_called"])
+        self.assertFalse(runtime_handoff["github_called"])
         observed_stage_rows = {row["id"]: row for row in migration_after["ltg_stage_scope_observed_rows"]}
         ltg06 = observed_stage_rows["LTG-06"]
         self.assertEqual(ltg06["pending_stage_count"], 2)
