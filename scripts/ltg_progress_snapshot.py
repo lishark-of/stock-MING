@@ -33,12 +33,57 @@ def _row_by_id(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return {str(row.get("id") or ""): row for row in rows if isinstance(row, dict)}
 
 
+def _compact_handoff_rows(rows: list[Any]) -> list[dict[str, Any]]:
+    compact: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        target_route = row.get("target_route") or row.get("future_route") or ""
+        target_task_type = row.get("target_task_type") or row.get("future_task_type") or ""
+        compact.append(
+            {
+                "target_route": target_route,
+                "target_task_type": target_task_type,
+                "target_acceptance_mode": row.get("target_acceptance_mode") or "",
+                "source_local_phase_key": row.get("source_local_phase_key") or "",
+                "source_local_task_id": row.get("source_local_task_id") or "",
+                "source_local_receipt_status": row.get("source_local_receipt_status") or "",
+                "source_local_receipt_durable_in_sqlite": row.get(
+                    "source_local_receipt_durable_in_sqlite"
+                )
+                is True,
+                "source_local_receipt_memory_only": row.get("source_local_receipt_memory_only") is True,
+                "handoff_ready_from_local_receipt": row.get("handoff_ready_from_local_receipt") is True,
+                "requires_separate_user_approved_provider_task": row.get(
+                    "requires_separate_user_approved_provider_task"
+                )
+                is True,
+                "requires_separate_user_approved_worker_task": row.get(
+                    "requires_separate_user_approved_worker_task"
+                )
+                is True,
+                "disabled_reason": row.get("disabled_reason") or "",
+                "external_calls_triggered": row.get("external_calls_triggered") is True,
+                "tushare_called": row.get("tushare_called") is True,
+                "deepseek_called": row.get("deepseek_called") is True,
+                "github_called": row.get("github_called") is True,
+                "does_not_execute_trades": row.get("does_not_execute_trades") is True,
+                "contains_secret": row.get("contains_secret") is True,
+                "can_close_goal": row.get("can_close_goal") is True,
+                "production_complete": row.get("production_complete") is True,
+                "evidence_boundary": row.get("evidence_boundary") or "",
+            }
+        )
+    return compact
+
+
 def build_snapshot() -> dict[str, Any]:
     status = migration_status_service.build_migration_status()
     goal_rows = _list(status.get("long_term_goal_rows"))
     runway_rows = _list(status.get("ltg_acceptance_runway_rows"))
     action_rows = _list(status.get("ltg_next_acceptance_action_rows"))
     runway_by_id = _row_by_id(runway_rows)
+    goal_by_id = _row_by_id(goal_rows)
 
     queue_rows: list[dict[str, Any]] = []
     ready_button_count = 0
@@ -48,12 +93,24 @@ def build_snapshot() -> dict[str, Any]:
             continue
         ltg_ids = [str(item) for item in _list(action.get("ltg_ids"))]
         linked = [runway_by_id.get(item, {}) for item in ltg_ids]
+        linked_goals = [goal_by_id.get(item, {}) for item in ltg_ids]
         ready_for_clean_receipt = action.get("next_local_step_ready_for_clean_receipt") is True
         future_handoff_ready = action.get("future_handoff_ready_from_local_receipt") is True
         if ready_for_clean_receipt:
             ready_button_count += 1
         if future_handoff_ready:
             durable_handoff_ready_count += 1
+        handoff_rows = _compact_handoff_rows(_list(action.get("future_handoff_preview_rows")))
+        linked_pending_counts = {
+            str(row.get("id") or ""): int(row.get("observed_stage_scope_pending_count") or 0)
+            for row in linked_goals
+            if row
+        }
+        linked_direct_counts = {
+            str(row.get("id") or ""): int(row.get("observed_stage_scope_direct_evidence_count") or 0)
+            for row in linked_goals
+            if row
+        }
         queue_rows.append(
             {
                 "queue_id": action.get("queue_id"),
@@ -64,12 +121,25 @@ def build_snapshot() -> dict[str, Any]:
                 "completion_estimates": [
                     f"{row.get('id')}:{row.get('completion_estimate')}" for row in linked if row
                 ],
+                "target_acceptance_mode": action.get("target_acceptance_mode") or "",
+                "required_evidence_count": action.get("required_evidence_count"),
+                "max_linked_observed_pending": action.get("max_linked_observed_pending"),
+                "linked_observed_stage_scope_pending_counts": linked_pending_counts,
+                "linked_observed_stage_scope_direct_evidence_counts": linked_direct_counts,
                 "next_local_step": action.get("next_local_step"),
                 "next_local_step_ready_for_clean_receipt": ready_for_clean_receipt,
                 "disabled_reason": action.get("next_local_step_disabled_reason") or "",
                 "future_handoff_ready_from_local_receipt": future_handoff_ready,
                 "future_provider_route": action.get("future_provider_route") or "",
+                "future_handoff_preview_row_count": action.get("future_handoff_preview_row_count"),
+                "future_handoff_preview_rows": handoff_rows,
+                "first_future_handoff_target_route": handoff_rows[0]["target_route"] if handoff_rows else "",
+                "first_future_handoff_target_task_type": (
+                    handoff_rows[0]["target_task_type"] if handoff_rows else ""
+                ),
                 "local_receipt_status": action.get("local_receipt_status"),
+                "local_receipt_step_count": action.get("local_receipt_step_count"),
+                "missing_local_receipt_step_count": action.get("missing_local_receipt_step_count"),
                 "ready_local_receipt_step_count": action.get("ready_local_receipt_step_count"),
                 "blocked_local_receipt_step_count": action.get("blocked_local_receipt_step_count"),
                 "durable_local_receipt_step_count": action.get("durable_local_receipt_step_count"),
@@ -168,9 +238,14 @@ def _print_text(snapshot: dict[str, Any]) -> None:
         ready = "ready" if row["next_local_step_ready_for_clean_receipt"] else "blocked"
         reason = f" ({row['disabled_reason']})" if row["disabled_reason"] else ""
         ltg_ids = ",".join(row["ltg_ids"])
+        handoff = (
+            f" handoff={row['first_future_handoff_target_route']}"
+            if row.get("first_future_handoff_target_route")
+            else ""
+        )
         print(
             f"- {row['queue_id']} [{ltg_ids}] {ready}{reason}: "
-            f"{row['next_local_step']}"
+            f"{row['next_local_step']}{handoff}"
         )
 
 

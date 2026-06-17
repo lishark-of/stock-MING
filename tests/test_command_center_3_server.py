@@ -10866,6 +10866,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("strict_closeout", script)
         self.assertIn("ready_local_button_count", script)
         self.assertIn("durable_handoff_ready_count", script)
+        self.assertIn("future_handoff_preview_rows", script)
+        self.assertIn("first_future_handoff_target_task_type", script)
+        self.assertIn("linked_observed_stage_scope_pending_counts", script)
         self.assertIn("observed_stage_scope_direct_evidence_count", script)
         self.assertIn("observed_stage_scope_direct_evidence_keys", script)
         self.assertIn("external_calls_triggered", script)
@@ -10916,6 +10919,29 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(all(row["does_not_execute_trades"] is True for row in snapshot["queue_rows"]))
         self.assertTrue(all(row["contains_secret"] is False for row in snapshot["queue_rows"]))
         self.assertTrue(all(row["can_close_goal"] is False for row in snapshot["queue_rows"]))
+        queue = {row["queue_id"]: row for row in snapshot["queue_rows"]}
+        worker_queue = queue["p4_worker_runtime_qa"]
+        self.assertEqual(worker_queue["target_acceptance_mode"], "worker_runtime_qa_and_promotion")
+        self.assertIn("LTG-06", worker_queue["linked_observed_stage_scope_pending_counts"])
+        self.assertIn("LTG-06", worker_queue["linked_observed_stage_scope_direct_evidence_counts"])
+        self.assertIn("future_handoff_preview_rows", worker_queue)
+        self.assertIsInstance(worker_queue["future_handoff_preview_rows"], list)
+        self.assertEqual(
+            worker_queue["future_handoff_preview_row_count"],
+            len(worker_queue["future_handoff_preview_rows"]),
+        )
+        for handoff in worker_queue["future_handoff_preview_rows"]:
+            self.assertIn("target_route", handoff)
+            self.assertIn("target_task_type", handoff)
+            self.assertIn("source_local_phase_key", handoff)
+            self.assertFalse(handoff["external_calls_triggered"])
+            self.assertFalse(handoff["tushare_called"])
+            self.assertFalse(handoff["deepseek_called"])
+            self.assertFalse(handoff["github_called"])
+            self.assertTrue(handoff["does_not_execute_trades"])
+            self.assertFalse(handoff["contains_secret"])
+            self.assertFalse(handoff["can_close_goal"])
+            self.assertFalse(handoff["production_complete"])
 
     def test_data_health_freshness_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/data_health_freshness_contract.py")
