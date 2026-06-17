@@ -19,6 +19,7 @@ SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 ARTIFACT_CLEANUP_DRY_RUN_PACKET_KEY = "command_center_3_storage_artifact_cleanup_dry_run_packet"
 SCHEMA_VALIDATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_schema_validation_dry_run_packet"
 SCHEMA_VALIDATION_ACCEPTANCE_PACKET_KEY = "command_center_3_storage_schema_validation_acceptance_packet"
+SCHEMA_MIGRATION_EXECUTION_PACKET_KEY = "command_center_3_storage_schema_migration_execution_packet"
 BACKTEST_RESULTS_SCHEMA_SEED_PACKET_KEY = "command_center_3_storage_backtest_results_schema_seed_packet"
 PARTITION_MIGRATION_DRY_RUN_PACKET_KEY = "command_center_3_storage_partition_migration_dry_run_packet"
 COMPACTION_DRY_RUN_PACKET_KEY = "command_center_3_storage_compaction_dry_run_packet"
@@ -599,12 +600,48 @@ def _schema_migration_row(dataset: str, metadata: Mapping[str, Any] | None = Non
 
 
 def storage_schema_migration_preflight() -> dict[str, Any]:
-    rows = [_schema_migration_row(dataset) for dataset in CANONICAL_PARQUET_DATASETS]
+    execution_evidence = storage_schema_migration_execution_evidence()
+    execution_rows = {
+        str(row.get("dataset") or ""): dict(row)
+        for row in execution_evidence.get("rows") or []
+        if isinstance(row, Mapping)
+    }
+    rows = []
+    for dataset in CANONICAL_PARQUET_DATASETS:
+        row = _schema_migration_row(dataset)
+        execution_row = execution_rows.get(dataset)
+        if execution_row and execution_row.get("schema_migration_executed") is True:
+            row.update(
+                {
+                    "status": "schema_migration_noop_verified",
+                    "migration_status": "schema_migration_noop_verified",
+                    "physical_column_validation_status": "accepted_physical_schema",
+                    "physical_validation_done": True,
+                    "schema_migration_executed": True,
+                    "schema_migration_ready_for_execution": True,
+                    "requires_manual_migration_task": False,
+                    "manual_migration_task_required": False,
+                    "reason": "current_schema_matches_target_no_rewrite_required",
+                    "schema_version_change_detected": False,
+                    "migration_execution_status": execution_row.get("migration_execution_status"),
+                    "schema_migration_rewrite_executed": execution_row.get("schema_migration_rewrite_executed"),
+                    "writes_parquet": execution_row.get("writes_parquet"),
+                    "reads_row_payloads": execution_row.get("reads_row_payloads"),
+                }
+            )
+        rows.append(row)
+    status = (
+        "schema_migration_execution_noop_verified"
+        if rows and all(row.get("schema_migration_executed") for row in rows)
+        else (
+            "preflight_ready"
+            if all(row.get("migration_status") == "contract_ready_physical_validation_pending" for row in rows)
+            else "contract_gap"
+        )
+    )
     return {
         "schema_version": "command_center_3_storage_schema_migration_preflight.v1",
-        "status": "preflight_ready"
-        if all(row.get("migration_status") == "contract_ready_physical_validation_pending" for row in rows)
-        else "contract_gap",
+        "status": status,
         "scope": "schema_version_migration_contract",
         "mode": "metadata_only_read_only_preflight",
         "dataset_count": len(rows),
@@ -612,8 +649,10 @@ def storage_schema_migration_preflight() -> dict[str, Any]:
         "physical_validation_done_count": sum(1 for row in rows if row.get("physical_validation_done")),
         "migration_executed_count": sum(1 for row in rows if row.get("schema_migration_executed")),
         "schema_migration_ready_count": sum(1 for row in rows if row.get("schema_migration_ready_for_execution")),
-        "manual_migration_task_required": True,
-        "schema_migration_task_executed": False,
+        "manual_migration_task_required": not all(row.get("schema_migration_executed") for row in rows),
+        "schema_migration_task_executed": execution_evidence.get("schema_migration_executed") is True,
+        "schema_migration_execution_status": execution_evidence.get("status"),
+        "schema_migration_execution_packet_key": SCHEMA_MIGRATION_EXECUTION_PACKET_KEY,
         "cache_get_writes_files": False,
         "cache_api_external_calls": False,
         "physical_validation_reads_payloads": False,
@@ -626,7 +665,7 @@ def storage_schema_migration_preflight() -> dict[str, Any]:
         "does_not_execute_trades": True,
         "status_counts": _count_values(row.get("migration_status") for row in rows),
         "rows": rows,
-        "note": "Schema migration preflight is contract-only; physical validation and migration remain explicit future tasks.",
+        "note": "Schema migration preflight is GET read-only. Execution evidence, when present, must come from explicit POST schema-migration task.",
     }
 
 
@@ -2200,6 +2239,274 @@ def storage_schema_validation_acceptance_evidence_audit() -> dict[str, Any]:
     }
 
 
+def _schema_migration_execution_row(
+    dataset: str,
+    *,
+    acceptance_row: Mapping[str, Any] | None,
+    manifest_row: Mapping[str, Any] | None,
+    confirm_schema_migration_execution: bool,
+) -> dict[str, Any]:
+    contract = _schema_contract(dataset)
+    acceptance_row = dict(acceptance_row or {})
+    manifest_row = dict(manifest_row or {})
+    physical_passed = acceptance_row.get("physical_schema_acceptance_passed") is True
+    manifest_passed = manifest_row.get("manifest_validation_passed") is True
+    ready = bool(confirm_schema_migration_execution and physical_passed and manifest_passed)
+    if not confirm_schema_migration_execution:
+        status = "schema_migration_confirmation_required"
+    elif not physical_passed:
+        status = "schema_migration_blocked_physical_schema_acceptance"
+    elif not manifest_passed:
+        status = "schema_migration_blocked_manifest_validation"
+    else:
+        status = "schema_migration_noop_verified"
+    return {
+        "dataset": dataset,
+        "status": status,
+        "migration_execution_status": status,
+        "current_schema_version": contract.get("schema_version"),
+        "target_schema_version": contract.get("schema_version"),
+        "schema_version_change_detected": False,
+        "physical_schema_acceptance_passed": physical_passed,
+        "manifest_validation_passed": manifest_passed,
+        "schema_migration_ready_for_execution": bool(physical_passed and manifest_passed),
+        "schema_migration_executed": ready,
+        "schema_migration_noop_verified": ready,
+        "schema_migration_rewrite_executed": False,
+        "rewrite_required": False,
+        "writes_parquet": False,
+        "writes_manifest": False,
+        "reads_row_payloads": False,
+        "reads_env_files": False,
+        "cache_get_writes_files": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "production_storage_complete": False,
+    }
+
+
+def storage_schema_migration_execution_packet(
+    *,
+    task_id: str | None = None,
+    payload_safe: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload_safe = payload_safe or {}
+    confirm = payload_safe.get("confirm_schema_migration_execution") is True
+    schema_acceptance = storage_schema_validation_acceptance_evidence_audit()
+    manifest_packet, manifest_read_status = _read_storage_meta_packet_no_init(DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY)
+    manifest_map = manifest_packet if isinstance(manifest_packet, Mapping) else {}
+    acceptance_rows = {
+        str(row.get("dataset") or ""): row
+        for row in schema_acceptance.get("rows") or []
+        if isinstance(row, Mapping)
+    }
+    manifest_rows = {
+        str(row.get("dataset") or ""): row
+        for row in manifest_map.get("rows") or []
+        if isinstance(row, Mapping)
+    }
+    rows = [
+        _schema_migration_execution_row(
+            dataset,
+            acceptance_row=acceptance_rows.get(dataset),
+            manifest_row=manifest_rows.get(dataset),
+            confirm_schema_migration_execution=confirm,
+        )
+        for dataset in CANONICAL_PARQUET_DATASETS
+    ]
+    dataset_count = len(rows)
+    executed_count = sum(1 for row in rows if row.get("schema_migration_executed"))
+    physical_ready_count = sum(1 for row in rows if row.get("physical_schema_acceptance_passed"))
+    manifest_ready_count = sum(1 for row in rows if row.get("manifest_validation_passed"))
+    if not confirm:
+        status = "schema_migration_execution_blocked_confirmation_required"
+    elif physical_ready_count < dataset_count:
+        status = "schema_migration_execution_blocked_physical_schema_acceptance"
+    elif manifest_ready_count < dataset_count:
+        status = "schema_migration_execution_blocked_manifest_validation"
+    else:
+        status = "schema_migration_execution_completed_noop_verified"
+    local_ready = status == "schema_migration_execution_completed_noop_verified"
+    return {
+        "schema_version": "command_center_3_storage_schema_migration_execution.v1",
+        "packet_key": SCHEMA_MIGRATION_EXECUTION_PACKET_KEY,
+        "task_id": str(task_id or ""),
+        "status": status,
+        "mode": "button_gated_local_schema_migration_execution",
+        "scope": "schema_migration_noop_verification_after_schema_acceptance_and_manifest_validation",
+        "ltg": "LTG-05",
+        "dataset_count": dataset_count,
+        "schema_migration_executed_count": executed_count if local_ready else 0,
+        "schema_migration_noop_verified_count": executed_count if local_ready else 0,
+        "physical_schema_acceptance_ready_count": physical_ready_count,
+        "manifest_validation_ready_count": manifest_ready_count,
+        "blocked_dataset_count": dataset_count - executed_count,
+        "rows": rows,
+        "status_counts": _count_values(row.get("migration_execution_status") for row in rows),
+        "confirm_schema_migration_execution": confirm,
+        "local_schema_migration_execution_ready": local_ready,
+        "schema_migration_executed": local_ready,
+        "schema_migration_noop_verified": local_ready,
+        "schema_migration_rewrite_executed": False,
+        "physical_schema_validation_done": physical_ready_count == dataset_count,
+        "dataset_version_manifest_validated": manifest_ready_count == dataset_count,
+        "source_schema_acceptance_packet_key": SCHEMA_VALIDATION_ACCEPTANCE_PACKET_KEY,
+        "source_schema_acceptance_status": schema_acceptance.get("status"),
+        "source_manifest_validate_packet_key": DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY,
+        "source_manifest_validate_read_status": manifest_read_status,
+        "source_manifest_validate_status": manifest_map.get("status") or "packet_missing",
+        "request_params_safe": {
+            "source": payload_safe.get("source") or "storage_page_button",
+            "confirm_schema_migration_execution": confirm,
+            "external_sources_allowed": False,
+            "write_parquet_allowed": False,
+            "write_manifest_allowed": False,
+            "read_row_payloads_allowed": False,
+        },
+        "post_task_writes_sqlite_packet": True,
+        "post_task_writes_parquet": False,
+        "post_task_writes_manifest": False,
+        "post_task_reads_row_payloads": False,
+        "post_task_reads_env_files": False,
+        "cache_get_writes_files": False,
+        "cache_get_reads_row_payloads": False,
+        "cache_get_reads_env_files": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "contains_secret": False,
+        "production_storage_complete": False,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_schema_migration_execution",
+            endpoint="POST /api/storage/schema-migration/execute",
+            status=status,
+            row_count=dataset_count,
+        ),
+        "warnings": [
+            "schema migration execution 只写入本地 SQLite 证据；当前实现为 no-op verified，不重写 Parquet、不写 manifest。",
+            "该任务需要显式确认，不调用 Tushare、DeepSeek、GitHub，不修改 strategy action，不执行真实交易，也不代表 production storage 完成。",
+        ],
+    }
+
+
+def storage_schema_migration_execution_evidence() -> dict[str, Any]:
+    packet, read_status = _read_storage_meta_packet_no_init(SCHEMA_MIGRATION_EXECUTION_PACKET_KEY)
+    if read_status == "packet_present" and isinstance(packet, Mapping):
+        evidence = dict(packet)
+        evidence["read_status"] = read_status
+        evidence.setdefault("schema_migration_executed", False)
+        evidence.setdefault("schema_migration_rewrite_executed", False)
+        evidence.setdefault("production_storage_complete", False)
+        evidence.setdefault("external_calls_triggered", False)
+        evidence.setdefault("tushare_called", False)
+        evidence.setdefault("deepseek_called", False)
+        evidence.setdefault("github_called", False)
+        evidence.setdefault("does_not_execute_trades", True)
+        evidence.setdefault("does_not_modify_strategy_action", True)
+        evidence.setdefault("contains_secret", False)
+        return evidence
+    status = f"schema_migration_execution_{read_status}"
+    return {
+        "schema_version": "command_center_3_storage_schema_migration_execution.v1",
+        "packet_key": SCHEMA_MIGRATION_EXECUTION_PACKET_KEY,
+        "task_id": "",
+        "status": status,
+        "mode": "cache_only_latest_schema_migration_execution_evidence",
+        "scope": "read_latest_button_gated_schema_migration_execution_packet",
+        "dataset_count": len(CANONICAL_PARQUET_DATASETS),
+        "schema_migration_executed_count": 0,
+        "schema_migration_noop_verified_count": 0,
+        "rows": [],
+        "schema_migration_executed": False,
+        "schema_migration_rewrite_executed": False,
+        "post_task_writes_parquet": False,
+        "post_task_reads_row_payloads": False,
+        "cache_get_writes_files": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_modify_strategy_action": True,
+        "does_not_execute_trades": True,
+        "contains_secret": False,
+        "production_storage_complete": False,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_schema_migration_execution_evidence",
+            endpoint="GET /api/storage",
+            status=status,
+            row_count=0,
+        ),
+        "warnings": [
+            "schema migration execution evidence 只读取已存在的本地 SQLite packet；meta 不存在时不会创建文件。",
+            "该 evidence 不写 Parquet、不调用 Tushare、DeepSeek、GitHub 或真实交易接口。",
+        ],
+    }
+
+
+def run_storage_schema_migration_execution_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_page_button",
+        "confirm_schema_migration_execution": payload_map.get("confirm_schema_migration_execution") is True,
+        "external_sources_allowed": False,
+        "write_parquet_allowed": False,
+        "write_manifest_allowed": False,
+        "read_row_payloads_allowed": False,
+    }
+    task = task_service.create_task_record(
+        "run_storage_schema_migration_execution",
+        output_packet_key=SCHEMA_MIGRATION_EXECUTION_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_schema_migration_execution_queued",
+        warnings=[
+            "storage schema migration execution 是显式确认的本地 no-op verification；只写 SQLite evidence，不重写 Parquet。",
+            "本任务不调用外部源、不修改 strategy action、不执行真实交易，也不代表 production storage 完成。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.45,
+        current_step="verifying_storage_schema_migration_noop_scope",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_schema_migration_execution_packet(task_id=task["task_id"], payload_safe=payload_safe)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(SCHEMA_MIGRATION_EXECUTION_PACKET_KEY, packet)
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="storage_schema_migration_execution_packet_persist_failed",
+            error_message_safe="storage_schema_migration_execution_sqlite_write_failed",
+            call_ledger=packet["call_ledger"],
+            warning="storage_schema_migration_execution_failed_no_external_call",
+        ) or task
+    success = packet.get("schema_migration_executed") is True
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success" if success else "failed",
+        progress=1.0,
+        current_step=str(packet.get("status") or "storage_schema_migration_execution_recorded"),
+        error_message_safe=None if success else str(packet.get("status") or "storage_schema_migration_execution_blocked"),
+        call_ledger=packet["call_ledger"],
+        warning="storage_schema_migration_execution_noop_verified_no_parquet_no_external_call"
+        if success
+        else "storage_schema_migration_execution_blocked_no_parquet_no_external_call",
+    ) or task
+
+
 def _partition_migration_dry_run_row(dataset: str) -> dict[str, Any]:
     metadata = parquet_store.dataset_metadata(root=PARQUET_ROOT, name=dataset)
     partition_plan = _partition_plan(dataset)
@@ -3304,6 +3611,7 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
     artifact_hygiene = storage_artifact_hygiene_status()
     artifact_cleanup_review = dict(artifact_hygiene.get("artifact_cleanup_review_contract") or {})
     schema_migration_preflight = storage_schema_migration_preflight()
+    schema_migration_execution_evidence = storage_schema_migration_execution_evidence()
     schema_acceptance_evidence = storage_schema_validation_acceptance_evidence_audit()
     backtest_schema_seed_evidence = storage_backtest_results_schema_seed_evidence()
     dataset_version_policy = storage_dataset_version_policy()
@@ -3325,6 +3633,17 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
             "current_backend": "metadata_only_contract_rows",
             "blocking_for_cache_read": False,
             "next_action": "add explicit physical schema validation and migration tasks; never run them from GET cache.",
+        },
+        {
+            "component": "schema_migration_execution_evidence",
+            "status": schema_migration_execution_evidence["status"],
+            "production_role": "latest button-gated schema migration noop verification packet",
+            "current_backend": "local_sqlite_packet_read_only_no_init",
+            "blocking_for_cache_read": False,
+            "schema_migration_executed": schema_migration_execution_evidence["schema_migration_executed"],
+            "schema_migration_executed_count": schema_migration_execution_evidence["schema_migration_executed_count"],
+            "schema_migration_rewrite_executed": schema_migration_execution_evidence["schema_migration_rewrite_executed"],
+            "next_action": "run explicit schema migration execution task only after schema acceptance and manifest validation are stable.",
         },
         {
             "component": "backtest_results_schema_seed_evidence",
@@ -3485,6 +3804,17 @@ def storage_production_readiness(sqlite_meta: Mapping[str, Any] | None = None) -
         "dataset_version_manifest_validate_requires_prior_write": True,
         "schema_contract_policy": "canonical datasets expose local schema contracts; physical validation remains explicit and non-refreshing.",
         "schema_migration_policy": "preflight_only_no_physical_migration_on_get",
+        "schema_migration_execution_evidence": schema_migration_execution_evidence,
+        "schema_migration_execution_route": "POST /api/storage/schema-migration/execute",
+        "schema_migration_execution_button_gated": True,
+        "schema_migration_execution_requires_confirm": True,
+        "schema_migration_execution_writes_parquet": False,
+        "schema_migration_execution_writes_manifest": False,
+        "schema_migration_execution_reads_row_payloads": False,
+        "schema_migration_execution_external_calls": False,
+        "schema_migration_execution_production_storage_complete": False,
+        "schema_migration_execution_status": schema_migration_execution_evidence["status"],
+        "schema_migration_rewrite_executed": schema_migration_execution_evidence["schema_migration_rewrite_executed"],
         "backtest_results_schema_seed_evidence": backtest_schema_seed_evidence,
         "backtest_results_schema_seed_route": "POST /api/storage/backtest-results/schema-seed",
         "backtest_results_schema_seed_button_gated": True,
@@ -3773,6 +4103,7 @@ def storage_production_readiness_receipt(
         for key in (
             "schema_validation_dry_run_button_gated",
             "schema_validation_acceptance_button_gated",
+            "schema_migration_execution_button_gated",
             "dataset_version_manifest_dry_run_button_gated",
             "dataset_version_manifest_review_button_gated",
             "dataset_version_manifest_write_button_gated",
@@ -5096,6 +5427,7 @@ def storage_dataset_catalog() -> dict[str, Any]:
     backtest_results_schema_seed_evidence = storage_backtest_results_schema_seed_evidence()
     schema_validation_acceptance_evidence = production_readiness.get("schema_validation_acceptance_evidence") or {}
     schema_migration_preflight = storage_schema_migration_preflight()
+    schema_migration_execution_evidence = production_readiness.get("schema_migration_execution_evidence") or {}
     duckdb_query_service = duckdb_query_service_policy()
     packet = {
         "schema_version": "command_center_3_storage_dataset_catalog.v1",
@@ -5152,6 +5484,9 @@ def storage_dataset_catalog() -> dict[str, Any]:
         "schema_migration_preflight": schema_migration_preflight,
         "schema_migration_rows": schema_migration_preflight["rows"],
         "schema_migration_status_counts": schema_migration_preflight["status_counts"],
+        "schema_migration_execution_evidence": schema_migration_execution_evidence,
+        "schema_migration_execution_status": schema_migration_execution_evidence.get("status"),
+        "schema_migration_task_executed": schema_migration_execution_evidence.get("schema_migration_executed"),
         "duckdb_query_service": duckdb_query_service,
         "duckdb_query_service_rows": duckdb_query_service["rows"],
         "duckdb_query_service_status": duckdb_query_service["status"],
@@ -5655,6 +5990,7 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
     backtest_results_schema_seed_evidence = storage_backtest_results_schema_seed_evidence()
     schema_validation_acceptance_evidence = production_readiness.get("schema_validation_acceptance_evidence") or {}
     schema_migration_preflight = storage_schema_migration_preflight()
+    schema_migration_execution_evidence = production_readiness.get("schema_migration_execution_evidence") or {}
     duckdb_query_service = duckdb_query_service_policy()
     packet = {
         "schema_version": "command_center_3_storage_overview.v1",
@@ -5699,6 +6035,12 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "schema_migration_status_counts": schema_migration_preflight["status_counts"],
         "schema_migration_preflight_status": schema_migration_preflight["status"],
         "schema_migration_executed_count": schema_migration_preflight["migration_executed_count"],
+        "schema_migration_execution_evidence": schema_migration_execution_evidence,
+        "schema_migration_execution_status": schema_migration_execution_evidence.get("status"),
+        "schema_migration_task_executed": schema_migration_execution_evidence.get("schema_migration_executed"),
+        "schema_migration_rewrite_executed": schema_migration_execution_evidence.get(
+            "schema_migration_rewrite_executed"
+        ),
         "schema_migration_preflight_physical_validation_done_count": schema_migration_preflight[
             "physical_validation_done_count"
         ],

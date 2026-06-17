@@ -2000,6 +2000,7 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
         from storage.sqlite_meta import SQLiteMetaStore
 
         schema_evidence = storage_service.storage_schema_validation_acceptance_evidence_audit()
+        schema_migration_execution = storage_service.storage_schema_migration_execution_evidence()
         execution_request = storage_service.storage_physical_execution_request_evidence()
         duckdb_read_validation = storage_service.storage_duckdb_read_validation_evidence()
         try:
@@ -2040,6 +2041,7 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
             "status": "storage_direct_evidence_read_failed_safe_fallback",
             "direct_evidence_stage_count": 0,
             "physical_schema_validation_done": False,
+            "schema_migration_executed": False,
             "dataset_version_manifest_validated": False,
             "duckdb_read_validation_done": False,
             "partition_migration_metadata_validation_done": False,
@@ -2059,6 +2061,7 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
         }
 
     schema_map = schema_evidence if isinstance(schema_evidence, dict) else {}
+    schema_migration_map = schema_migration_execution if isinstance(schema_migration_execution, dict) else {}
     manifest_map = manifest_packet if isinstance(manifest_packet, dict) else {}
     partition_map = partition_packet if isinstance(partition_packet, dict) else {}
     compaction_map = compaction_packet if isinstance(compaction_packet, dict) else {}
@@ -2091,6 +2094,32 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
         and manifest_map.get("github_called") is False
         and manifest_map.get("does_not_execute_trades") is True
         and manifest_map.get("production_storage_complete") is False
+    )
+    schema_migration_done = bool(
+        schema_migration_map.get("schema_version") == "command_center_3_storage_schema_migration_execution.v1"
+        and schema_migration_map.get("status") == "schema_migration_execution_completed_noop_verified"
+        and schema_migration_map.get("schema_migration_executed") is True
+        and schema_migration_map.get("schema_migration_noop_verified") is True
+        and schema_migration_map.get("schema_migration_rewrite_executed") is False
+        and int(schema_migration_map.get("dataset_count") or 0) > 0
+        and int(schema_migration_map.get("schema_migration_executed_count") or 0)
+        == int(schema_migration_map.get("dataset_count") or 0)
+        and int(schema_migration_map.get("schema_migration_noop_verified_count") or 0)
+        == int(schema_migration_map.get("dataset_count") or 0)
+        and schema_migration_map.get("physical_schema_validation_done") is True
+        and schema_migration_map.get("dataset_version_manifest_validated") is True
+        and schema_migration_map.get("post_task_writes_parquet") is False
+        and schema_migration_map.get("post_task_writes_manifest") is False
+        and schema_migration_map.get("post_task_reads_row_payloads") is False
+        and schema_migration_map.get("cache_get_writes_files") is False
+        and schema_migration_map.get("production_storage_complete") is False
+        and schema_migration_map.get("external_calls_triggered") is False
+        and schema_migration_map.get("tushare_called") is False
+        and schema_migration_map.get("deepseek_called") is False
+        and schema_migration_map.get("github_called") is False
+        and schema_migration_map.get("does_not_execute_trades") is True
+        and schema_migration_map.get("does_not_modify_strategy_action") is True
+        and schema_migration_map.get("contains_secret") is False
     )
     request_ready = bool(
         request_map.get("local_execution_request_ready") is True
@@ -2240,6 +2269,7 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
     )
     direct_evidence_count = (
         int(schema_done)
+        + int(schema_migration_done)
         + int(manifest_done)
         + int(duckdb_read_validation_done)
         + int(partition_metadata_validation_done)
@@ -2267,6 +2297,11 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
             "SCHEMA_VALIDATION_ACCEPTANCE_PACKET_KEY",
             "command_center_3_storage_schema_validation_acceptance_packet",
         ),
+        "source_schema_migration_execution_packet_key": getattr(
+            storage_service,
+            "SCHEMA_MIGRATION_EXECUTION_PACKET_KEY",
+            "command_center_3_storage_schema_migration_execution_packet",
+        ),
         "source_manifest_validate_packet_key": getattr(
             storage_service,
             "DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY",
@@ -2285,6 +2320,14 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
         "physical_schema_validation_done": schema_done,
         "physical_schema_validation_done_count": schema_done_count,
         "schema_validation_acceptance_evidence_status": str(schema_map.get("status") or ""),
+        "schema_migration_executed": schema_migration_done,
+        "schema_migration_execution_status": str(schema_migration_map.get("status") or "packet_missing"),
+        "schema_migration_executed_count": int(schema_migration_map.get("schema_migration_executed_count") or 0),
+        "schema_migration_dataset_count": int(schema_migration_map.get("dataset_count") or 0),
+        "schema_migration_noop_verified_count": int(
+            schema_migration_map.get("schema_migration_noop_verified_count") or 0
+        ),
+        "schema_migration_rewrite_executed": schema_migration_map.get("schema_migration_rewrite_executed") is True,
         "dataset_version_manifest_validated": manifest_done,
         "dataset_version_manifest_validate_packet_status": str(manifest_map.get("status") or "packet_missing"),
         "dataset_version_manifest_validated_count": manifest_validated_count,
@@ -4503,7 +4546,14 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     "schema_validation_acceptance_evidence_status"
                 )
                 or "",
-                "schema_migration_executed": False,
+                "schema_migration_executed": direct_evidence.get("schema_migration_executed") is True,
+                "schema_migration_execution_status": direct_evidence.get("schema_migration_execution_status") or "",
+                "schema_migration_executed_count": int(direct_evidence.get("schema_migration_executed_count") or 0),
+                "schema_migration_dataset_count": int(direct_evidence.get("schema_migration_dataset_count") or 0),
+                "schema_migration_noop_verified_count": int(
+                    direct_evidence.get("schema_migration_noop_verified_count") or 0
+                ),
+                "schema_migration_rewrite_executed": direct_evidence.get("schema_migration_rewrite_executed") is True,
                 "dataset_version_manifest_validated": direct_evidence.get(
                     "dataset_version_manifest_validated"
                 )

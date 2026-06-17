@@ -38,6 +38,7 @@ REQUIRED_STORAGE_TASK_TYPES = {
     "run_storage_schema_validation_dry_run",
     "run_storage_backtest_results_schema_seed",
     "run_storage_schema_validation_acceptance",
+    "run_storage_schema_migration_execution",
     "run_storage_dataset_version_manifest_dry_run",
     "run_storage_dataset_version_manifest_review",
     "run_storage_dataset_version_manifest_write",
@@ -259,6 +260,7 @@ def build_contract() -> dict[str, Any]:
         if isinstance(row, dict)
     }
     schema_preflight = _dict(overview.get("schema_migration_preflight"))
+    schema_migration_execution_evidence = _dict(overview.get("schema_migration_execution_evidence"))
     backtest_schema_seed_evidence = _dict(overview.get("backtest_results_schema_seed_evidence"))
     schema_acceptance_evidence = _dict(overview.get("schema_validation_acceptance_evidence"))
     dataset_version_policy = _dict(overview.get("dataset_version_policy"))
@@ -279,6 +281,24 @@ def build_contract() -> dict[str, Any]:
     }
     overview_datasets = set(_dict(overview.get("dataset_status")).keys())
     schema_evidence_done = schema_acceptance_evidence.get("physical_schema_validation_done") is True
+    schema_migration_executed = schema_migration_execution_evidence.get("schema_migration_executed") is True
+    schema_migration_noop_verified = bool(
+        schema_migration_execution_evidence.get("status") == "schema_migration_execution_completed_noop_verified"
+        and schema_migration_execution_evidence.get("schema_migration_noop_verified") is True
+        and schema_migration_execution_evidence.get("schema_migration_rewrite_executed") is False
+        and schema_migration_execution_evidence.get("post_task_writes_parquet") is False
+        and schema_migration_execution_evidence.get("post_task_reads_row_payloads") is False
+        and schema_migration_execution_evidence.get("production_storage_complete") is False
+        and _flag_false(
+            schema_migration_execution_evidence,
+            "external_calls_triggered",
+            "tushare_called",
+            "deepseek_called",
+            "github_called",
+            "contains_secret",
+        )
+        and schema_migration_execution_evidence.get("does_not_execute_trades") is True
+    )
     expected_durable_missing = {
         "dataset_version_manifest_validation_required",
         "partition_migration_evidence_required",
@@ -676,16 +696,29 @@ def build_contract() -> dict[str, Any]:
         _row(
             "schema_migration_preflight_is_not_physical_migration",
             schema_preflight.get("schema_version") == "command_center_3_storage_schema_migration_preflight.v1"
-            and schema_preflight.get("status") == "preflight_ready"
-            and schema_preflight.get("physical_validation_done_count") == 0
-            and schema_preflight.get("migration_executed_count") == 0
-            and schema_preflight.get("schema_migration_ready_count") == 0
-            and schema_preflight.get("manual_migration_task_required") is True
-            and schema_preflight.get("schema_migration_task_executed") is False
+            and (
+                (
+                    schema_preflight.get("status") == "preflight_ready"
+                    and schema_preflight.get("physical_validation_done_count") == 0
+                    and schema_preflight.get("migration_executed_count") == 0
+                    and schema_preflight.get("schema_migration_ready_count") == 0
+                    and schema_preflight.get("manual_migration_task_required") is True
+                    and schema_preflight.get("schema_migration_task_executed") is False
+                )
+                or (
+                    schema_preflight.get("status") == "schema_migration_execution_noop_verified"
+                    and schema_preflight.get("physical_validation_done_count") == len(canonical_datasets)
+                    and schema_preflight.get("migration_executed_count") == len(canonical_datasets)
+                    and schema_preflight.get("schema_migration_ready_count") == len(canonical_datasets)
+                    and schema_preflight.get("manual_migration_task_required") is False
+                    and schema_preflight.get("schema_migration_task_executed") is True
+                    and schema_migration_noop_verified
+                )
+            )
             and schema_preflight.get("cache_get_writes_files") is False
             and schema_preflight.get("payload_reads_on_get") is False
             and _flag_false(schema_preflight, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called"),
-            "Schema migration preflight may be ready, but physical validation and migration execution must remain pending.",
+            "Schema migration preflight may be pending or backed by no-op local evidence; neither state is production storage completion.",
         ),
         _row(
             "dataset_version_policy_is_not_manifest_validation",
@@ -947,6 +980,13 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_storage_schema_validation_acceptance"].get("reads_row_payloads") is False
             and task_rows["run_storage_schema_validation_acceptance"].get("schema_migration_executed") is False
             and task_rows["run_storage_schema_validation_acceptance"].get("production_storage_complete") is False
+            and task_rows["run_storage_schema_migration_execution"].get("requires_confirm_schema_migration_execution") is True
+            and task_rows["run_storage_schema_migration_execution"].get("writes_parquet_on_post") is False
+            and task_rows["run_storage_schema_migration_execution"].get("writes_manifest_on_post") is False
+            and task_rows["run_storage_schema_migration_execution"].get("reads_row_payloads") is False
+            and task_rows["run_storage_schema_migration_execution"].get("reads_env_files") is False
+            and task_rows["run_storage_schema_migration_execution"].get("schema_migration_rewrite_executed") is False
+            and task_rows["run_storage_schema_migration_execution"].get("production_storage_complete") is False
             and task_rows["run_storage_backtest_results_schema_seed"].get("current_backend") == "local_schema_seed_pipeline"
             and task_rows["run_storage_backtest_results_schema_seed"].get("requires_confirm_schema_seed") is True
             and task_rows["run_storage_backtest_results_schema_seed"].get("writes_parquet_on_post") is True
@@ -1038,7 +1078,9 @@ def build_contract() -> dict[str, Any]:
             "accepted_dataset_count"
         ),
         "schema_validation_acceptance_blocked_dataset_count": schema_acceptance_evidence.get("blocked_dataset_count"),
-        "schema_migration_executed": False,
+        "schema_migration_executed": schema_migration_executed,
+        "schema_migration_execution_status": schema_migration_execution_evidence.get("status"),
+        "schema_migration_rewrite_executed": False,
         "dataset_version_manifest_validated": False,
         "dataset_version_manifest_evidence_validated": bool(
             dataset_version_manifest_evidence.get("dataset_version_manifest_validated")
@@ -1125,6 +1167,8 @@ def build_contract() -> dict[str, Any]:
             ),
             "physical_schema_validation_done": schema_evidence_done,
             "schema_migration_preflight_status": schema_preflight.get("status"),
+            "schema_migration_execution_status": schema_migration_execution_evidence.get("status"),
+            "schema_migration_noop_verified": schema_migration_noop_verified,
             "dataset_version_policy_status": dataset_version_policy.get("status"),
             "dataset_version_manifest_evidence_status": dataset_version_manifest_evidence.get("status"),
             "dataset_version_manifest_evidence_validated_count": dataset_version_manifest_evidence.get("validated_dataset_count"),
@@ -1180,7 +1224,12 @@ def main() -> int:
         print(f"storage_contract: {contract['status']}")
         print(
             "rows: {row_count}; blockers: {blocking_criterion_count}; "
-            "production_storage_complete: false; schema_migration_executed: false".format(**contract)
+            "production_storage_complete: false; schema_migration_executed: {schema_migration_executed}".format(
+                **{
+                    **contract,
+                    "schema_migration_executed": str(bool(contract.get("schema_migration_executed"))).lower(),
+                }
+            )
         )
         print(
             "external_calls_triggered: false; tushare_called: false; "
