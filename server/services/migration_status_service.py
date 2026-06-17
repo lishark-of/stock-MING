@@ -1116,6 +1116,71 @@ def _latest_factor_test_lab_direct_research_evidence_summary() -> dict[str, Any]
     request = _dict_or_empty(factor_tests.get("provider_small_pool_execution_request_receipt"))
     items = factor_tests.get("items") if isinstance(factor_tests.get("items"), list) else []
 
+    task_rows = _task_statuses_by_type()
+
+    def _task_receipt(task_type: str, receipt_key: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        for task in task_rows.get(task_type, []):
+            payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+            receipt = payload_safe.get(receipt_key) if isinstance(payload_safe, dict) else {}
+            receipt_map = _dict_or_empty(receipt)
+            status = str(receipt_map.get("status") or "")
+            if status and not status.endswith("_missing"):
+                if "contains_secret" not in receipt_map:
+                    receipt_map["contains_secret"] = False
+                return receipt_map, dict(payload_safe)
+        return {}, {}
+
+    dry_run_payload: dict[str, Any] = {}
+    request_payload: dict[str, Any] = {}
+    if (
+        dry_run.get("schema_version") != "factor_test_provider_small_pool_acceptance_dry_run.v1"
+        or str(dry_run.get("status") or "").endswith("_missing")
+        or dry_run.get("local_dry_run_ready") is not True
+    ):
+        dry_run, dry_run_payload = _task_receipt(
+            "run_factor_test_provider_small_pool_acceptance_dry_run",
+            "provider_small_pool_acceptance_dry_run_receipt",
+        )
+    if (
+        request.get("schema_version") != "factor_test_provider_small_pool_execution_request.v1"
+        or str(request.get("status") or "").endswith("_missing")
+        or request.get("local_execution_request_ready") is not True
+    ):
+        request, request_payload = _task_receipt(
+            "run_factor_test_provider_small_pool_execution_request",
+            "provider_small_pool_execution_request_receipt",
+        )
+    if not request_payload and request:
+        request_payload = {
+            "execution_recipe_status": request.get("execution_recipe_status"),
+            "execution_recipe_ready": False,
+            "scope_ticket_ready": False,
+        }
+    recipe_ready_from_task = (
+        str(request_payload.get("execution_recipe_status") or "")
+        == "factor_test_provider_small_pool_execution_recipe_ready_execution_pending"
+        and request_payload.get("execution_recipe_ready") is True
+        and request_payload.get("scope_ticket_ready") is True
+    )
+    if recipe.get("local_recipe_ready") is not True and recipe_ready_from_task:
+        recipe = {
+            "schema_version": "factor_test_provider_small_pool_execution_recipe.v1",
+            "status": "factor_test_provider_small_pool_execution_recipe_ready_execution_pending",
+            "local_recipe_ready": True,
+            "scope_ticket_ready": True,
+            "provider_execution_implemented": False,
+            "provider_backed_small_pool_validation_done": False,
+            "production_factor_test_validation_complete": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "acceptance_scope_hash_short": request.get("acceptance_scope_hash_short") or "",
+        }
+
     packet_safe = bool(
         packet_map.get("external_calls_triggered") is False
         and packet_map.get("tushare_called") is False

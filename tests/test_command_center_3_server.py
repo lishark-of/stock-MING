@@ -515,7 +515,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(migration["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
         self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 14)
-        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_pending_count"], 115)
+        self.assertGreaterEqual(migration["long_term_goal_summary"]["observed_stage_scope_pending_count"], 114)
         self.assertEqual(migration["long_term_goal_summary"]["goals_with_next_evidence_count"], 14)
         self.assertEqual(migration["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
@@ -20896,7 +20896,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_count"], 14)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["stage_scope_manifest_pending_count"], 14)
         self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_manifest_count"], 14)
-        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 108)
+        self.assertGreaterEqual(migration["data"]["long_term_goal_summary"]["observed_stage_scope_pending_count"], 107)
         self.assertEqual(migration["data"]["long_term_goal_summary"]["can_close_from_local_contracts_count"], 0)
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_acceptance_runway_rows"]), 14)
@@ -31692,7 +31692,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
 
     def test_ltg_stage_scope_observes_factor_test_scope_direct_evidence_without_provider_completion(self):
-        self._with_meta_store()
+        db_path = self._with_meta_store()
         self._with_parquet_root()
         self._with_bootstrap_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE")
         clear_task_statuses_for_tests(clear_persisted=True)
@@ -31733,6 +31733,48 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             },
         ).json()
         self.assertTrue(execution_response["ok"])
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        factor_packet = factor_service.read_factor_quant_cache()
+        factor_tests = dict(factor_packet.get("factor_tests") if isinstance(factor_packet.get("factor_tests"), dict) else {})
+        factor_tests.pop("provider_small_pool_acceptance_dry_run_receipt", None)
+        factor_tests.pop("provider_small_pool_acceptance_dry_run_rows", None)
+        factor_tests["provider_small_pool_execution_recipe"] = {
+            "schema_version": "factor_test_provider_small_pool_execution_recipe.v1",
+            "status": "factor_test_provider_small_pool_execution_recipe_blocked_scope_or_preflight",
+            "local_recipe_ready": False,
+            "scope_ticket_ready": False,
+            "provider_execution_implemented": False,
+            "provider_backed_small_pool_validation_done": False,
+            "production_factor_test_validation_complete": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+        factor_tests["provider_small_pool_execution_request_receipt"] = {
+            "schema_version": "factor_test_provider_small_pool_execution_request.v1",
+            "status": "factor_test_provider_small_pool_execution_request_missing",
+            "local_execution_request_ready": False,
+            "ready_for_manual_provider_task_submission": False,
+            "provider_execution_implemented": False,
+            "provider_call_ledger_evidence_done": False,
+            "provider_backed_small_pool_validation_done": False,
+            "production_factor_test_validation_complete": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+        factor_packet["factor_tests"] = factor_tests
+        SQLiteMetaStore(db_path).write_packet("command_center_factor_quant_hub_packet", factor_packet)
 
         migration = migration_status_service.build_migration_status()
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
