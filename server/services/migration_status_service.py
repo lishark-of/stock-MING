@@ -4042,7 +4042,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         provider_call_ledger_done = (
             tushare_direct_evidence.get("trade_cal_provider_call_ledger_evidence_done") is True
         )
-        observed_pending_count = max(pending_count - (1 if provider_call_ledger_done else 0), 0)
+        direct_evidence_count = 1 if provider_call_ledger_done else 0
+        direct_evidence_stage_keys = ["trade_cal_provider_call_ledger"] if provider_call_ledger_done else []
+        observed_pending_count = max(pending_count - direct_evidence_count, 0)
         local_evidence_count = sum(
             1 for row in stage_rows if isinstance(row, dict) and row.get("local_stage_evidence_present") is True
         )
@@ -4064,6 +4066,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "row_count": row_count,
                 "pending_stage_count": observed_pending_count,
                 "local_evidence_stage_count": local_evidence_count + (1 if provider_call_ledger_done else 0),
+                "direct_evidence_stage_count": direct_evidence_count,
+                "direct_evidence_stage_keys": direct_evidence_stage_keys,
                 "production_blocker_count": observed_pending_count,
                 "provider_backed_trade_cal_acceptance_done": False,
                 "production_freshness_gate_complete": False,
@@ -4101,7 +4105,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "candidate_is_not_buy_instruction": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
-                "evidence_boundary": "observed_local_static_freshness_stage_scope_not_production_completion",
+                "evidence_boundary": "observed_l3_trade_cal_provider_call_ledger_not_production_completion"
+                if provider_call_ledger_done
+                else "observed_local_static_freshness_stage_scope_not_production_completion",
             }
         )
     except Exception:
@@ -4116,6 +4122,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "row_count": 0,
                 "pending_stage_count": 0,
                 "local_evidence_stage_count": 0,
+                "direct_evidence_stage_count": 0,
+                "direct_evidence_stage_keys": [],
                 "production_blocker_count": 0,
                 "provider_backed_trade_cal_acceptance_done": False,
                 "production_freshness_gate_complete": False,
@@ -4151,7 +4159,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             if isinstance(row, dict) and row.get("production_tushare_pipeline_complete") is False
         )
         provider_call_ledger_done = tushare_direct_evidence.get("provider_call_ledger_evidence_done") is True
-        observed_pending_count = max(pending_count - (1 if provider_call_ledger_done else 0), 0)
+        direct_evidence_count = 1 if provider_call_ledger_done else 0
+        direct_evidence_stage_keys = ["tushare_provider_call_ledger"] if provider_call_ledger_done else []
+        observed_pending_count = max(pending_count - direct_evidence_count, 0)
         local_evidence_count = sum(
             1 for row in stage_rows if isinstance(row, dict) and row.get("local_stage_evidence_present") is True
         )
@@ -4173,6 +4183,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "row_count": row_count,
                 "pending_stage_count": observed_pending_count,
                 "local_evidence_stage_count": local_evidence_count + (1 if provider_call_ledger_done else 0),
+                "direct_evidence_stage_count": direct_evidence_count,
+                "direct_evidence_stage_keys": direct_evidence_stage_keys,
                 "production_blocker_count": observed_pending_count,
                 "provider_backed_acceptance_done": False,
                 "production_tushare_pipeline_complete": False,
@@ -4202,7 +4214,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "candidate_is_not_buy_instruction": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
-                "evidence_boundary": "observed_local_static_tushare_stage_scope_not_production_completion",
+                "evidence_boundary": "observed_l3_tushare_provider_call_ledger_not_production_completion"
+                if provider_call_ledger_done
+                else "observed_local_static_tushare_stage_scope_not_production_completion",
             }
         )
     except Exception:
@@ -4217,6 +4231,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "row_count": 0,
                 "pending_stage_count": 0,
                 "local_evidence_stage_count": 0,
+                "direct_evidence_stage_count": 0,
+                "direct_evidence_stage_keys": [],
                 "production_blocker_count": 0,
                 "provider_backed_acceptance_done": False,
                 "production_tushare_pipeline_complete": False,

@@ -773,6 +773,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(observed_stage_rows["LTG-01"]["row_count"], 10)
         self.assertEqual(observed_stage_rows["LTG-01"]["pending_stage_count"], 10)
         self.assertGreaterEqual(observed_stage_rows["LTG-01"]["local_evidence_stage_count"], 5)
+        self.assertEqual(observed_stage_rows["LTG-01"]["direct_evidence_stage_count"], 0)
+        self.assertEqual(observed_stage_rows["LTG-01"]["direct_evidence_stage_keys"], [])
         self.assertFalse(observed_stage_rows["LTG-01"]["provider_backed_trade_cal_acceptance_done"])
         self.assertFalse(observed_stage_rows["LTG-01"]["production_freshness_gate_complete"])
         self.assertFalse(observed_stage_rows["LTG-01"]["provider_refresh_called_by_contract"])
@@ -795,6 +797,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(observed_stage_rows["LTG-02"]["row_count"], 10)
         self.assertEqual(observed_stage_rows["LTG-02"]["pending_stage_count"], 10)
         self.assertGreaterEqual(observed_stage_rows["LTG-02"]["local_evidence_stage_count"], 2)
+        self.assertEqual(observed_stage_rows["LTG-02"]["direct_evidence_stage_count"], 0)
+        self.assertEqual(observed_stage_rows["LTG-02"]["direct_evidence_stage_keys"], [])
         self.assertFalse(observed_stage_rows["LTG-02"]["provider_backed_acceptance_done"])
         self.assertFalse(observed_stage_rows["LTG-02"]["production_tushare_pipeline_complete"])
         self.assertFalse(observed_stage_rows["LTG-02"]["full_interface_acceptance_done"])
@@ -1148,6 +1152,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "observed_in_data_health_freshness_static_contract",
         )
         self.assertEqual(migration_goals["LTG-01"]["observed_stage_scope_pending_count"], 10)
+        self.assertEqual(migration_goals["LTG-01"]["observed_stage_scope_direct_evidence_count"], 0)
+        self.assertEqual(migration_goals["LTG-01"]["observed_stage_scope_direct_evidence_keys"], [])
         self.assertFalse(migration_goals["LTG-01"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-02"]["stage_scope_manifest"], "tushare_production_stage_scope_manifest")
         self.assertIn("production stage-scope manifest", migration_goals["LTG-02"]["current_state"])
@@ -1160,6 +1166,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "observed_in_tushare_acceptance_static_contract",
         )
         self.assertEqual(migration_goals["LTG-02"]["observed_stage_scope_pending_count"], 10)
+        self.assertEqual(migration_goals["LTG-02"]["observed_stage_scope_direct_evidence_count"], 0)
+        self.assertEqual(migration_goals["LTG-02"]["observed_stage_scope_direct_evidence_keys"], [])
         self.assertFalse(migration_goals["LTG-02"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-03"]["completion_estimate"], "45%-55%")
         self.assertEqual(
@@ -2049,6 +2057,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         ltg02 = observed_stage_rows["LTG-02"]
 
         self.assertEqual(ltg01["pending_stage_count"], 9)
+        self.assertEqual(ltg01["direct_evidence_stage_count"], 1)
+        self.assertEqual(ltg01["direct_evidence_stage_keys"], ["trade_cal_provider_call_ledger"])
         self.assertTrue(ltg01["provider_call_ledger_evidence_done"])
         self.assertEqual(ltg01["provider_direct_evidence_layer"], "L3_direct_provider_call_ledger")
         self.assertEqual(ltg01["trade_cal_provider_observed_row_count"], 31)
@@ -2058,8 +2068,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(ltg01["external_calls_triggered"])
         self.assertFalse(ltg01["tushare_called"])
         self.assertTrue(ltg01["does_not_execute_trades"])
+        self.assertFalse(ltg01["can_close_from_observed_row"])
 
         self.assertEqual(ltg02["pending_stage_count"], 9)
+        self.assertEqual(ltg02["direct_evidence_stage_count"], 1)
+        self.assertEqual(ltg02["direct_evidence_stage_keys"], ["tushare_provider_call_ledger"])
         self.assertTrue(ltg02["provider_call_ledger_evidence_done"])
         self.assertEqual(ltg02["provider_call_ledger_count"], len(selected_apis))
         self.assertEqual(ltg02["selected_api_count"], len(selected_apis))
@@ -2069,6 +2082,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(ltg02["external_calls_triggered"])
         self.assertFalse(ltg02["tushare_called"])
         self.assertTrue(ltg02["does_not_execute_trades"])
+        self.assertFalse(ltg02["can_close_from_observed_row"])
+
+        migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
+        self.assertEqual(migration_goals["LTG-01"]["observed_stage_scope_direct_evidence_count"], 1)
+        self.assertEqual(
+            migration_goals["LTG-01"]["observed_stage_scope_direct_evidence_keys"],
+            ["trade_cal_provider_call_ledger"],
+        )
+        self.assertEqual(migration_goals["LTG-02"]["observed_stage_scope_direct_evidence_count"], 1)
+        self.assertEqual(
+            migration_goals["LTG-02"]["observed_stage_scope_direct_evidence_keys"],
+            ["tushare_provider_call_ledger"],
+        )
+        self.assertFalse(migration_goals["LTG-01"]["observed_stage_scope_can_close_goal"])
+        self.assertFalse(migration_goals["LTG-02"]["observed_stage_scope_can_close_goal"])
 
     def test_ltg_next_action_queue_prebinds_tushare_target_sample_recipe(self):
         db_path = self._with_meta_store()
