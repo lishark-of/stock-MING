@@ -2744,6 +2744,7 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
     browser_evidence = _dict_or_empty(packet_map.get("next_session_browser_qa_evidence_summary"))
     browser_review = _dict_or_empty(packet_map.get("next_session_browser_qa_review_contract"))
     streamlit_review = _dict_or_empty(packet_map.get("next_session_streamlit_parity_review_contract"))
+    promotion_review = _dict_or_empty(packet_map.get("next_session_production_promotion_review_contract"))
     packet_safe = bool(
         packet_map.get("external_calls_triggered") is not True
         and packet_map.get("tushare_called") is not True
@@ -2831,6 +2832,27 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
         and streamlit_review.get("does_not_execute_trades") is True
         and streamlit_review.get("does_not_modify_strategy_action") is True
     )
+    production_promotion_review_ready = bool(
+        packet_safe
+        and promotion_review.get("schema_version") == "next_session_production_promotion_review.v1"
+        and promotion_review.get("status") == "next_session_production_promotion_review_ready_replacement_blocked"
+        and promotion_review.get("explicit_review_task_done") is True
+        and promotion_review.get("local_production_promotion_review_ready") is True
+        and promotion_review.get("ready_to_mark_production_replacement_complete") is False
+        and promotion_review.get("production_replacement_complete") is False
+        and promotion_review.get("durable_ci_evidence_complete") is False
+        and promotion_review.get("streamlit_parity_complete") is False
+        and promotion_review.get("legacy_fallback_removed") is False
+        and promotion_review.get("opens_no_streamlit") is True
+        and promotion_review.get("opens_no_browser") is True
+        and promotion_review.get("external_calls_triggered") is False
+        and promotion_review.get("tushare_called") is False
+        and promotion_review.get("deepseek_called") is False
+        and promotion_review.get("github_called") is False
+        and promotion_review.get("does_not_execute_trades") is True
+        and promotion_review.get("does_not_modify_strategy_action") is True
+        and promotion_review.get("does_not_modify_operation_zones") is True
+    )
     direct_stage_keys = []
     if exact_payload_contract_done:
         direct_stage_keys.append("exact_cache_payload_contract")
@@ -2844,9 +2866,14 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
         direct_stage_keys.append("browser_performance_trace")
     if reduced_motion_done:
         direct_stage_keys.append("reduced_motion_accessibility_qa")
+    if production_promotion_review_ready:
+        direct_stage_keys.append("production_replacement_promotion")
     return {
         "schema_version": "migration_next_session_direct_evidence_summary.v1",
-        "source_packet_key": "command_center_next_session_projection_packet + command_center_next_session_browser_qa_review_packet",
+        "source_packet_key": (
+            "command_center_next_session_projection_packet + command_center_next_session_browser_qa_review_packet"
+            " + command_center_next_session_production_promotion_review_packet"
+        ),
         "status": "next_session_direct_evidence_visible_production_pending"
         if direct_stage_keys
         else "next_session_direct_evidence_missing",
@@ -2861,6 +2888,7 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
         "local_streamlit_parity_review_ready": streamlit_same_packet_review_ready,
         "same_packet_no_loss_review_ready": streamlit_same_packet_review_ready,
         "local_browser_qa_review_ready": review_ready,
+        "local_production_promotion_review_ready": production_promotion_review_ready,
         "streamlit_parity_complete": False,
         "production_replacement_complete": False,
         "external_calls_triggered": False,

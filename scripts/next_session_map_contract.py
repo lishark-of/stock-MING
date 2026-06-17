@@ -316,6 +316,7 @@ def build_contract() -> dict[str, Any]:
     task = _next_session_task(task_catalog)
     browser_qa_task = _task_by_type(task_catalog, "run_next_session_browser_qa_review")
     streamlit_parity_task = _task_by_type(task_catalog, "run_next_session_streamlit_parity_review")
+    production_promotion_task = _task_by_type(task_catalog, "run_next_session_production_promotion_review")
     browser_qa_review_status = browser_qa_review.get("status")
     browser_qa_review_pending = (
         browser_qa_review_status == "next_session_browser_qa_review_pending"
@@ -354,6 +355,36 @@ def build_contract() -> dict[str, Any]:
         and _dict(streamlit_parity_review_rows.get("frontend_read_only_boundary_reviewed")).get("status")
         == "passed"
         and _dict(streamlit_parity_review_rows.get("production_replacement_stays_blocked")).get("status")
+        == "passed"
+    )
+    production_promotion_review = _dict(
+        exact_service_packet.get("next_session_production_promotion_review_contract")
+    )
+    production_promotion_review_rows = _rows_by_key(
+        exact_service_packet.get("next_session_production_promotion_review_rows")
+    )
+    production_promotion_review_status = production_promotion_review.get("status")
+    production_promotion_review_pending = (
+        production_promotion_review_status == "next_session_production_promotion_review_pending"
+        and production_promotion_review.get("explicit_review_task_done") is False
+        and production_promotion_review.get("local_production_promotion_review_ready") is False
+        and _dict(production_promotion_review_rows.get("explicit_post_review_task")).get("status")
+        == "pending_explicit_post"
+    )
+    production_promotion_review_ready = (
+        production_promotion_review_status
+        == "next_session_production_promotion_review_ready_replacement_blocked"
+        and production_promotion_review.get("explicit_review_task_done") is True
+        and production_promotion_review.get("local_production_promotion_review_ready") is True
+        and production_promotion_review.get("ready_to_mark_production_replacement_complete") is False
+        and production_promotion_review.get("production_replacement_complete") is False
+        and production_promotion_review.get("durable_ci_evidence_complete") is False
+        and _dict(production_promotion_review_rows.get("explicit_post_review_task")).get("status") == "passed"
+        and _dict(production_promotion_review_rows.get("durable_ci_release_evidence_still_required")).get(
+            "status"
+        )
+        == "passed_durable_release_still_missing"
+        and _dict(production_promotion_review_rows.get("production_replacement_stays_blocked")).get("status")
         == "passed"
     )
     next_page = _read_script("desktop/src/routes/NextSessionMap.tsx")
@@ -444,6 +475,7 @@ def build_contract() -> dict[str, Any]:
                     "local_next_session_cache",
                     "local_next_session_browser_qa_review",
                     "local_next_session_streamlit_parity_review",
+                    "local_next_session_production_promotion_review",
                     "local_next_session_durable_evidence_recipe",
                     "local_next_session_production_stage_scope_manifest",
                 }
@@ -650,6 +682,52 @@ def build_contract() -> dict[str, Any]:
             "Next-session Streamlit parity review must be explicit POST/local same-packet no-feature-loss evidence only; it must not open Streamlit/browser, remove fallback, or promote production replacement.",
         ),
         _row(
+            "next_session_production_promotion_review_is_button_gated_local_only",
+            production_promotion_task.get("route") == "POST /api/next-session/production-promotion-review"
+            and production_promotion_task.get("button_gated") is True
+            and production_promotion_task.get("production_promotion_review_only") is True
+            and production_promotion_task.get("opens_streamlit") is False
+            and production_promotion_task.get("opens_browser") is False
+            and production_promotion_task.get("starts_servers") is False
+            and production_promotion_task.get("writes_artifacts") is False
+            and production_promotion_task.get("requires_browser_qa_review") is True
+            and production_promotion_task.get("requires_streamlit_parity_review") is True
+            and production_promotion_task.get("requires_durable_evidence_recipe") is True
+            and production_promotion_task.get("requires_durable_ci_or_release_evidence") is True
+            and production_promotion_task.get("ready_to_mark_production_replacement_complete") is False
+            and production_promotion_task.get("production_replacement_complete") is False
+            and production_promotion_task.get("does_not_execute_trades") is True
+            and production_promotion_review.get("schema_version")
+            == next_session_service.NEXT_SESSION_PRODUCTION_PROMOTION_REVIEW_SCHEMA_VERSION
+            and production_promotion_review.get("scope")
+            == "button_gated_local_next_session_production_promotion_review_no_browser_no_provider"
+            and (production_promotion_review_pending or production_promotion_review_ready)
+            and production_promotion_review.get("ready_to_mark_production_replacement_complete") is False
+            and production_promotion_review.get("production_replacement_complete") is False
+            and production_promotion_review.get("durable_ci_evidence_complete") is False
+            and production_promotion_review.get("streamlit_parity_complete") is False
+            and production_promotion_review.get("legacy_fallback_removed") is False
+            and production_promotion_review.get("opens_no_streamlit") is True
+            and production_promotion_review.get("opens_no_browser") is True
+            and _dict(production_promotion_review_rows.get("durable_ci_release_evidence_still_required")).get(
+                "status"
+            )
+            == "passed_durable_release_still_missing"
+            and _dict(production_promotion_review_rows.get("production_replacement_stays_blocked")).get(
+                "status"
+            )
+            == "passed"
+            and _flag_false(
+                production_promotion_review,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "frontend_computes_trade_action",
+            ),
+            "Next-session production promotion review must be explicit POST/local blocker evidence only; it must not open Streamlit/browser, create durable CI/release evidence, or mark ECharts replacement complete.",
+        ),
+        _row(
             "next_session_durable_evidence_recipe_is_local_production_pending",
             durable_evidence_recipe.get("schema_version")
             == next_session_service.NEXT_SESSION_DURABLE_EVIDENCE_SCHEMA_VERSION
@@ -748,6 +826,7 @@ def build_contract() -> dict[str, Any]:
                     "browser_visual_qa",
                     "browser_performance_trace",
                     "reduced_motion_accessibility_qa",
+                    "production_replacement_promotion",
                 }
             )
             and int(production_stage_scope.get("pending_stage_count") or 0)
@@ -777,6 +856,7 @@ def build_contract() -> dict[str, Any]:
                     "pending_reduced_motion_accessibility_review",
                     "pending_durable_ci_release_evidence",
                     "pending_production_replacement_promotion",
+                    "direct_evidence_ready_local_promotion_review_durable_release_pending",
                 }
                 for row in production_stage_scope_rows.values()
             )
