@@ -225,6 +225,17 @@ function ltgNextStepPayload(row: Record<string, unknown>): Record<string, unknow
       source: "migration_status_ltg_next_action"
     };
   }
+  if (route === "POST /api/worker/runtime-qa-execution") {
+    const preview = nextLocalStepPreview(row);
+    return {
+      requested_from: "migration_status_ltg_next_action",
+      operator_approved: true,
+      dry_run_task_id: String(preview.prepared_runtime_qa_dry_run_task_id ?? ""),
+      evidence_plan_scope_hash: String(preview.prepared_evidence_plan_scope_hash ?? ""),
+      runtime_qa_scope_hash: String(preview.prepared_runtime_qa_scope_hash ?? ""),
+      source: "migration_status_ltg_next_action"
+    };
+  }
   if (route === "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket") {
     return {
       requested_from: "migration_status_ltg_next_action",
@@ -369,6 +380,7 @@ export default function MigrationStatus() {
       prepared_evidence_plan_scope_hash_short: preview.prepared_evidence_plan_scope_hash_short,
       prepared_runtime_qa_scope_hash_short: preview.prepared_runtime_qa_scope_hash_short,
       prepared_runtime_qa_request_task_id: preview.prepared_runtime_qa_request_task_id,
+      prepared_runtime_qa_dry_run_task_id: preview.prepared_runtime_qa_dry_run_task_id,
       would_create_provider_task: preview.would_create_provider_task,
       would_start_worker: preview.would_start_worker,
       would_call_model: preview.would_call_model,

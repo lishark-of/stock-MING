@@ -461,6 +461,7 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
             "production evidence plan",
             "runtime QA execution request",
             "runtime QA dry-run",
+            "local runtime QA execution fallback evidence",
             "real Celery/Redis runtime QA evidence",
         ],
         "not_allowed_next_steps": [
@@ -835,6 +836,12 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "task_type": "run_worker_runtime_qa_dry_run",
             "receipt_key": "worker_runtime_qa_dry_run_receipt",
             "route": "POST /api/worker/runtime-qa-dry-run",
+        },
+        {
+            "phase_key": "worker_runtime_qa_execution_receipt",
+            "task_type": "run_worker_runtime_qa_execution",
+            "receipt_key": "worker_runtime_qa_execution_receipt",
+            "route": "POST /api/worker/runtime-qa-execution",
         },
     ],
     "p5_deepseek_provider_benchmark_scope": [
@@ -1702,6 +1709,7 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "local_activation_receipt_ready",
         "local_scope_ticket_ready",
         "local_browser_qa_review_ready",
+        "local_runtime_qa_execution_done",
         "local_gate_ready",
         "ci_mirror_ready",
         "push_readiness_receipt_ready",
@@ -2454,17 +2462,25 @@ def _latest_worker_runtime_qa_context_preview() -> dict[str, Any]:
     plan = packet_map.get("worker_production_evidence_plan_receipt")
     recipe = packet_map.get("worker_runtime_qa_execution_recipe")
     request = packet_map.get("worker_runtime_qa_execution_request_receipt")
+    dry_run = packet_map.get("worker_runtime_qa_dry_run_receipt")
     plan_map = plan if isinstance(plan, dict) else {}
     recipe_map = recipe if isinstance(recipe, dict) else {}
     request_map = request if isinstance(request, dict) else {}
+    dry_run_map = dry_run if isinstance(dry_run, dict) else {}
     plan_scope_hash = str(plan_map.get("scope_ticket_sha256") or "")
     recipe_scope_hash = str(recipe_map.get("runtime_qa_scope_hash") or "")
     request_task_id = str(request_map.get("request_task_id") or "")
     request_evidence_plan_scope_hash = str(request_map.get("production_evidence_plan_scope_hash") or plan_scope_hash)
     request_runtime_scope_hash = str(request_map.get("runtime_qa_scope_hash") or recipe_scope_hash)
+    dry_run_task_id = str(dry_run_map.get("dry_run_task_id") or "")
+    dry_run_evidence_plan_scope_hash = str(
+        dry_run_map.get("production_evidence_plan_scope_hash") or request_evidence_plan_scope_hash
+    )
+    dry_run_runtime_scope_hash = str(dry_run_map.get("runtime_qa_scope_hash") or request_runtime_scope_hash)
     plan_ready = plan_map.get("evidence_plan_ready") is True
     recipe_ready = recipe_map.get("local_recipe_ready") is True
     request_ready = request_map.get("local_execution_request_ready") is True
+    dry_run_ready = dry_run_map.get("local_dry_run_ready") is True
     no_side_effects = bool(
         packet_map.get("external_calls_triggered") is not True
         and packet_map.get("tushare_called") is not True
@@ -2488,9 +2504,21 @@ def _latest_worker_runtime_qa_context_preview() -> dict[str, Any]:
         "runtime_qa_request_task_id": request_task_id,
         "runtime_qa_request_evidence_plan_scope_hash": request_evidence_plan_scope_hash,
         "runtime_qa_request_runtime_scope_hash": request_runtime_scope_hash,
+        "runtime_qa_dry_run_visible": bool(dry_run_map),
+        "runtime_qa_dry_run_status": str(dry_run_map.get("status") or ""),
+        "runtime_qa_dry_run_task_id": dry_run_task_id,
+        "runtime_qa_dry_run_evidence_plan_scope_hash": dry_run_evidence_plan_scope_hash,
+        "runtime_qa_dry_run_runtime_scope_hash": dry_run_runtime_scope_hash,
         "can_prebind_runtime_qa_execution_request_scope": bool(plan_ready and recipe_ready and no_side_effects),
         "can_prebind_runtime_qa_dry_run_scope": bool(
             request_ready and bool(request_task_id) and bool(request_evidence_plan_scope_hash) and bool(request_runtime_scope_hash)
+        ),
+        "can_prebind_runtime_qa_execution_scope": bool(
+            dry_run_ready
+            and bool(dry_run_task_id)
+            and bool(dry_run_evidence_plan_scope_hash)
+            and bool(dry_run_runtime_scope_hash)
+            and no_side_effects
         ),
         "source_packet_key": "command_center_3_worker_runtime_cache",
         "source_receipt_key": "worker_runtime_qa_execution_recipe",
@@ -3632,6 +3660,15 @@ def _build_ltg_next_action_submission_preview_rows(
             "manual_scope_hash_required": True,
             "context_key": "worker_runtime_qa_context_preview",
         },
+        "POST /api/worker/runtime-qa-execution": {
+            "step_kind": "scope_bound_local_runtime_qa_execution",
+            "safe_payload_summary": "operator_approved plus latest runtime QA dry-run task id and bound scope hashes; local fallback only",
+            "expected_local_receipt": "worker_runtime_qa_execution_receipt",
+            "required_prior_phase_key": "worker_runtime_qa_dry_run_receipt",
+            "required_prior_material": "latest_task_id",
+            "manual_scope_hash_required": True,
+            "context_key": "worker_runtime_qa_context_preview",
+        },
         "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket": {
             "step_kind": "local_model_benchmark_scope_ticket",
             "safe_payload_summary": "approved_by_user, sample_count=40, response_format=json_schema, max_retry_per_sample=2",
@@ -3734,6 +3771,14 @@ def _build_ltg_next_action_submission_preview_rows(
                 and context_map.get("runtime_qa_request_runtime_scope_hash")
             )
             manual_scope_hash_required = not bool(context_map.get("can_prebind_runtime_qa_dry_run_scope"))
+        elif next_local_step == "POST /api/worker/runtime-qa-execution":
+            prior_visible = bool(prior_step.get("receipt_visible")) and bool(context_map.get("runtime_qa_dry_run_visible"))
+            material_visible = bool(
+                context_map.get("runtime_qa_dry_run_task_id")
+                and context_map.get("runtime_qa_dry_run_evidence_plan_scope_hash")
+                and context_map.get("runtime_qa_dry_run_runtime_scope_hash")
+            )
+            manual_scope_hash_required = not bool(context_map.get("can_prebind_runtime_qa_execution_scope"))
     ready_for_clean_receipt = prior_visible and material_visible and not manual_scope_hash_required
     if ready_for_clean_receipt:
         disabled_reason = ""
@@ -3803,9 +3848,11 @@ def _build_ltg_next_action_submission_preview_rows(
             "prepared_evidence_plan_scope_hash_short": context_map.get("evidence_plan_scope_hash_short") or "",
             "prepared_runtime_qa_scope_hash": context_map.get("runtime_qa_scope_hash")
             or context_map.get("runtime_qa_request_runtime_scope_hash")
+            or context_map.get("runtime_qa_dry_run_runtime_scope_hash")
             or "",
             "prepared_runtime_qa_scope_hash_short": context_map.get("runtime_qa_scope_hash_short") or "",
             "prepared_runtime_qa_request_task_id": context_map.get("runtime_qa_request_task_id") or "",
+            "prepared_runtime_qa_dry_run_task_id": context_map.get("runtime_qa_dry_run_task_id") or "",
             "would_create_provider_task": False,
             "would_start_worker": False,
             "would_call_model": False,

@@ -557,7 +557,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "POST /api/storage/backtest-results/schema-seed",
         )
         self.assertTrue(action_rows["p4_storage_physical_execution"]["next_local_step_ready_for_clean_receipt"])
-        self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 5)
+        self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 6)
         self.assertEqual(action_rows["p5_deepseek_provider_benchmark_scope"]["local_receipt_step_count"], 1)
         self.assertEqual(action_rows["p5_next_session_map_browser_qa"]["local_receipt_step_count"], 1)
         self.assertEqual(
@@ -21302,7 +21302,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         else:
             self.assertFalse(action_rows["p4_storage_physical_execution"]["next_local_step_ready_for_clean_receipt"])
             self.assertEqual(action_rows["p4_storage_physical_execution"]["ready_local_receipt_step_count"], 7)
-        self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 5)
+        self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 6)
         self.assertIn("LTG-07", action_rows["p5_deepseek_provider_benchmark_scope"]["ltg_ids"])
         self.assertIn("LTG-08", action_rows["p5_next_session_map_browser_qa"]["ltg_ids"])
         self.assertEqual(action_rows["p5_deepseek_provider_benchmark_scope"]["local_receipt_step_count"], 1)
@@ -30926,6 +30926,108 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
         self.assertEqual(migration_goals["LTG-06"]["observed_stage_scope_pending_count"], 2)
         self.assertFalse(migration_goals["LTG-06"]["observed_stage_scope_can_close_goal"])
+
+    def test_ltg_next_action_queue_runs_worker_runtime_qa_execution_after_dry_run(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        self.assertTrue(
+            self.client.post("/api/worker/synthetic-healthcheck", json={"requested_from": "test"}).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/worker/activation-review",
+                json={"requested_from": "test", "operator_approved": True},
+            ).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/worker/production-evidence-plan",
+                json={"requested_from": "test", "operator_approved": True},
+            ).json()["ok"]
+        )
+        cache_before_request = self.client.get("/api/worker/cache").json()["data"]
+        plan_receipt = cache_before_request["worker_production_evidence_plan_receipt"]
+        runtime_recipe = cache_before_request["worker_runtime_qa_execution_recipe"]
+        request_response = self.client.post(
+            "/api/worker/runtime-qa-execution-request",
+            json={
+                "requested_from": "test",
+                "operator_approved": True,
+                "scope_ticket_sha256": plan_receipt["scope_ticket_sha256"],
+                "runtime_qa_scope_hash": runtime_recipe["runtime_qa_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(request_response["ok"])
+        runtime_request = request_response["data"]["worker_runtime_qa_execution_request_receipt"]
+        dry_run_response = self.client.post(
+            "/api/worker/runtime-qa-dry-run",
+            json={
+                "requested_from": "test",
+                "operator_approved": True,
+                "request_task_id": runtime_request["request_task_id"],
+                "evidence_plan_scope_hash": runtime_request["production_evidence_plan_scope_hash"],
+                "runtime_qa_scope_hash": runtime_request["runtime_qa_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(dry_run_response["ok"])
+        dry_run = dry_run_response["data"]["worker_runtime_qa_dry_run_receipt"]
+
+        migration = migration_status_service.build_migration_status()
+        action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        worker_action = action_rows["p4_worker_runtime_qa"]
+        self.assertEqual(worker_action["local_receipt_step_count"], 6)
+        self.assertEqual(worker_action["ready_local_receipt_step_count"], 5)
+        self.assertEqual(worker_action["next_local_step"], "POST /api/worker/runtime-qa-execution")
+        self.assertTrue(worker_action["next_local_step_ready_for_clean_receipt"])
+        self.assertEqual(worker_action["next_local_step_disabled_reason"], "")
+        preview = worker_action["next_local_step_preview_rows"][0]
+        self.assertEqual(preview["step_kind"], "scope_bound_local_runtime_qa_execution")
+        self.assertTrue(preview["ready_for_clean_local_receipt"])
+        self.assertEqual(preview["required_prior_phase_key"], "worker_runtime_qa_dry_run_receipt")
+        self.assertEqual(preview["prepared_runtime_qa_dry_run_task_id"], dry_run["dry_run_task_id"])
+        self.assertEqual(preview["prepared_evidence_plan_scope_hash"], dry_run["production_evidence_plan_scope_hash"])
+        self.assertEqual(preview["prepared_runtime_qa_scope_hash"], dry_run["runtime_qa_scope_hash"])
+        self.assertFalse(preview["would_start_worker"])
+        self.assertFalse(preview["external_calls_triggered"])
+        self.assertFalse(preview["tushare_called"])
+        self.assertFalse(preview["deepseek_called"])
+        self.assertFalse(preview["github_called"])
+        self.assertTrue(preview["does_not_execute_trades"])
+        self.assertTrue(preview["does_not_modify_strategy_action"])
+        self.assertFalse(preview["contains_secret"])
+
+        execution_response = self.client.post(
+            "/api/worker/runtime-qa-execution",
+            json={
+                "requested_from": "test",
+                "operator_approved": True,
+                "dry_run_task_id": preview["prepared_runtime_qa_dry_run_task_id"],
+                "evidence_plan_scope_hash": preview["prepared_evidence_plan_scope_hash"],
+                "runtime_qa_scope_hash": preview["prepared_runtime_qa_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(execution_response["ok"])
+        execution = execution_response["data"]["worker_runtime_qa_execution_receipt"]
+        self.assertTrue(execution["local_runtime_qa_execution_done"])
+        self.assertTrue(execution["local_fallback_round_trip_verified"])
+        self.assertFalse(execution["worker_started"])
+        self.assertFalse(execution["redis_pinged"])
+        self.assertFalse(execution["provider_model_task_dispatched"])
+        self.assertFalse(execution["external_calls_triggered"])
+
+        migration_after = migration_status_service.build_migration_status()
+        worker_action_after = {
+            row["queue_id"]: row for row in migration_after["ltg_next_acceptance_action_rows"]
+        }["p4_worker_runtime_qa"]
+        self.assertEqual(worker_action_after["ready_local_receipt_step_count"], 6)
+        self.assertEqual(worker_action_after["next_local_step"], "future explicit worker runtime QA execution task")
+        observed_stage_rows = {row["id"]: row for row in migration_after["ltg_stage_scope_observed_rows"]}
+        ltg06 = observed_stage_rows["LTG-06"]
+        self.assertEqual(ltg06["pending_stage_count"], 2)
+        self.assertEqual(ltg06["direct_evidence_stage_count"], 5)
+        self.assertFalse(ltg06["production_worker_complete"])
+        self.assertFalse(ltg06["external_calls_triggered"])
 
     def test_worker_runtime_qa_execution_request_rejects_scope_mismatch_without_process_start(self):
         self._with_meta_store()
