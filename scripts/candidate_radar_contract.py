@@ -632,6 +632,41 @@ def build_contract() -> dict[str, Any]:
     }
     browser_qa_evidence = _dict(cache_packet.get("candidate_browser_qa_evidence_summary"))
     browser_qa_review = _dict(cache_packet.get("candidate_browser_qa_review_contract"))
+    browser_visual_performance_promotion_ready = bool(
+        browser_qa_review.get("status") == "candidate_browser_qa_review_ready_local_artifact"
+        and browser_qa_review.get("local_browser_qa_review_ready") is True
+        and browser_qa_review.get("local_browser_qa_evidence_found") is True
+        and browser_qa_review.get("candidate_visual_qa_evidence_passed") is True
+        and browser_qa_review.get("candidate_browser_performance_evidence_passed") is True
+        and browser_qa_review.get("motion_viewport_coverage_complete") is True
+        and int(browser_qa_review.get("blocking_review_count") or 0) == 0
+        and int(browser_qa_review.get("review_required_count") or 0) == 0
+        and browser_qa_review.get("production_radar_replacement_complete") is False
+        and browser_qa_review.get("legacy_retirement_ready") is False
+        and browser_qa_review.get("external_calls_triggered") is not True
+        and browser_qa_review.get("tushare_called") is not True
+        and browser_qa_review.get("deepseek_called") is not True
+        and browser_qa_review.get("github_called") is not True
+        and browser_qa_review.get("does_not_execute_trades") is True
+        and browser_qa_review.get("does_not_modify_strategy_action") is True
+        and browser_qa_review.get("candidate_is_not_buy_instruction") is True
+        and browser_qa_evidence.get("status") == "candidate_browser_qa_evidence_passed_local_artifact"
+        and browser_qa_evidence.get("candidate_browser_qa_evidence_ready") is True
+        and browser_qa_evidence.get("local_browser_qa_evidence_found") is True
+        and browser_qa_evidence.get("candidate_visual_qa_evidence_passed") is True
+        and browser_qa_evidence.get("candidate_browser_performance_evidence_passed") is True
+        and browser_qa_evidence.get("motion_viewport_coverage_complete") is True
+        and int(browser_qa_evidence.get("review_required_count") or 0) == 0
+        and browser_qa_evidence.get("production_radar_replacement_complete") is False
+        and browser_qa_evidence.get("legacy_retirement_ready") is False
+        and browser_qa_evidence.get("external_calls_triggered") is not True
+        and browser_qa_evidence.get("tushare_called") is not True
+        and browser_qa_evidence.get("deepseek_called") is not True
+        and browser_qa_evidence.get("github_called") is not True
+        and browser_qa_evidence.get("does_not_execute_trades") is True
+        and browser_qa_evidence.get("does_not_modify_strategy_action") is True
+        and browser_qa_evidence.get("candidate_is_not_buy_instruction") is True
+    )
     policy = _dict(cache_packet.get("policy"))
     task_rows = _task_catalog_rows()
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
@@ -1607,7 +1642,14 @@ def build_contract() -> dict[str, Any]:
             and production_promotion_review.get("worker_deep_scan_execution_done") is False
             and production_promotion_review.get("provider_backed_acceptance_done") is False
             and production_promotion_review.get("deepseek_model_ledger_complete") is False
-            and production_promotion_review.get("browser_visual_performance_promoted") is False
+            and production_promotion_review.get("browser_visual_performance_promoted")
+            is browser_visual_performance_promotion_ready
+            and production_promotion_review.get("browser_visual_performance_promotion_source")
+            == (
+                "candidate_browser_qa_review_contract"
+                if browser_visual_performance_promotion_ready
+                else ""
+            )
             and production_promotion_review.get("durable_evidence_complete") is False
             and int(production_promotion_review.get("local_blocker_count") or 0) == 0
             and int(production_promotion_review.get("production_blocker_count") or 0) >= 6
@@ -1628,6 +1670,14 @@ def build_contract() -> dict[str, Any]:
                 "production_blocker"
             )
             is True
+            and _dict(production_promotion_review_rows.get("browser_visual_performance_promotion_required")).get(
+                "passed"
+            )
+            is browser_visual_performance_promotion_ready
+            and _dict(production_promotion_review_rows.get("browser_visual_performance_promotion_required")).get(
+                "production_blocker"
+            )
+            is (not browser_visual_performance_promotion_ready)
             and _dict(production_promotion_review_rows.get("production_completion_stays_blocked")).get(
                 "production_blocker"
             )

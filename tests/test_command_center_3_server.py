@@ -24885,6 +24885,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(receipt_rows["worker_deep_scan_execution_evidence_required"]["status"], "pending_worker_deep_scan_execution")
         self.assertEqual(receipt_rows["provider_backed_parity_call_ledger_required"]["status"], "pending_provider_call_ledger")
         self.assertEqual(receipt_rows["deepseek_model_ledger_if_enabled_required"]["status"], "pending_model_ledger")
+        self.assertEqual(
+            receipt_rows["browser_visual_performance_promotion_required"]["status"],
+            "pending_browser_visual_performance_promotion",
+        )
+        self.assertFalse(receipt_rows["browser_visual_performance_promotion_required"]["passed"])
+        self.assertTrue(receipt_rows["browser_visual_performance_promotion_required"]["production_blocker"])
         self.assertTrue(receipt_rows["production_completion_stays_blocked"]["production_blocker"])
         self.assertTrue(receipt_rows["no_provider_model_trade_secret_boundary"]["passed"])
         durable = packet["candidate_radar_durable_evidence_recipe"]
@@ -24926,6 +24932,124 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("DEEPSEEK_API_KEY", json.dumps(cache, ensure_ascii=False))
+
+    def test_candidate_radar_promotion_review_consumes_browser_qa_receipt_only(self):
+        browser_review = {
+            "status": "candidate_browser_qa_review_ready_local_artifact",
+            "local_browser_qa_review_ready": True,
+            "local_browser_qa_evidence_found": True,
+            "candidate_visual_qa_evidence_passed": True,
+            "candidate_browser_performance_evidence_passed": True,
+            "motion_viewport_coverage_complete": True,
+            "blocking_review_count": 0,
+            "review_required_count": 0,
+            "production_radar_replacement_complete": False,
+            "legacy_retirement_ready": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        }
+        browser_evidence = {
+            "status": "candidate_browser_qa_evidence_passed_local_artifact",
+            "candidate_browser_qa_evidence_ready": True,
+            "local_browser_qa_evidence_found": True,
+            "candidate_visual_qa_evidence_passed": True,
+            "candidate_browser_performance_evidence_passed": True,
+            "motion_viewport_coverage_complete": True,
+            "review_required_count": 0,
+            "production_radar_replacement_complete": False,
+            "legacy_retirement_ready": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        }
+        packet = {
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "candidate_radar_production_promotion_dry_run_receipt": {
+                "status": "candidate_radar_production_promotion_dry_run_ready_production_blocked",
+                "ready_for_local_promotion_review": True,
+                "promotion_scope_hash": "a" * 64,
+            },
+            "candidate_radar_legacy_retirement_review_receipt": {
+                "status": "candidate_radar_legacy_retirement_review_ready_production_blocked",
+                "local_review_ready": True,
+                "legacy_retirement_ready": False,
+                "retirement_scope_hash": "b" * 64,
+            },
+            "candidate_radar_durable_evidence_recipe": {
+                "status": "candidate_radar_durable_evidence_recipe_ready",
+                "local_recipe_ready": True,
+                "durable_evidence_blocker_count": 4,
+            },
+            "candidate_radar_production_stage_scope_manifest": {
+                "status": "candidate_radar_production_stage_scope_ready",
+                "local_manifest_ready": True,
+                "pending_stage_count": 7,
+            },
+            "candidate_radar_production_replacement_review_receipt": {
+                "status": "candidate_radar_production_replacement_review_ready_production_blocked",
+                "local_review_ready": True,
+                "review_scope_hash": "c" * 64,
+                "worker_full_pool_execution_done": False,
+                "worker_deep_scan_execution_done": False,
+                "provider_backed_acceptance_done": False,
+                "deepseek_model_ledger_complete": False,
+                "browser_visual_performance_promoted": False,
+                "durable_evidence_complete": False,
+            },
+            "candidate_browser_qa_review_contract": browser_review,
+            "candidate_browser_qa_evidence_summary": browser_evidence,
+        }
+
+        receipt, rows = candidate_service._candidate_radar_production_promotion_review_receipt(
+            packet,
+            payload_safe={"operator_approved": True, "promotion_scope_hash": "a" * 64, "reviewer": "unit_test"},
+            explicit_review=True,
+            task_id="unit-test",
+            reviewed_at="2026-06-17T00:00:00Z",
+        )
+
+        rows_by_criterion = {row["criterion"]: row for row in rows}
+        self.assertTrue(receipt["local_review_ready"])
+        self.assertTrue(receipt["browser_visual_performance_promoted"])
+        self.assertEqual(
+            receipt["browser_visual_performance_promotion_source"],
+            "candidate_browser_qa_review_contract",
+        )
+        self.assertFalse(receipt["production_radar_replacement_complete"])
+        self.assertFalse(receipt["legacy_retirement_ready"])
+        self.assertIn("worker_full_pool_execution_evidence_required", receipt["production_blockers"])
+        self.assertIn("provider_backed_parity_call_ledger_required", receipt["production_blockers"])
+        self.assertIn("deepseek_model_ledger_if_enabled_required", receipt["production_blockers"])
+        self.assertIn("production_completion_stays_blocked", receipt["production_blockers"])
+        self.assertNotIn("browser_visual_performance_promotion_required", receipt["production_blockers"])
+        self.assertEqual(
+            rows_by_criterion["browser_visual_performance_promotion_required"]["status"],
+            "promoted_local_browser_qa_review",
+        )
+        self.assertTrue(rows_by_criterion["browser_visual_performance_promotion_required"]["passed"])
+        self.assertFalse(rows_by_criterion["browser_visual_performance_promotion_required"]["production_blocker"])
+        self.assertTrue(rows_by_criterion["production_completion_stays_blocked"]["production_blocker"])
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertFalse(receipt["tushare_called"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(receipt["does_not_modify_strategy_action"])
 
     def test_candidate_radar_quick_scan_endpoint_is_button_gated_local_cache_only(self):
         self._with_meta_store()

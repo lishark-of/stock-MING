@@ -8899,6 +8899,8 @@ def _candidate_radar_production_promotion_review_receipt(
     durable_recipe = _as_dict(packet.get("candidate_radar_durable_evidence_recipe"))
     stage_manifest = _as_dict(packet.get("candidate_radar_production_stage_scope_manifest"))
     production_review = _as_dict(packet.get("candidate_radar_production_replacement_review_receipt"))
+    browser_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
+    browser_evidence = _as_dict(packet.get("candidate_browser_qa_evidence_summary"))
     requested_promotion_hash = _safe_text(
         payload.get("promotion_scope_hash")
         or payload.get("production_promotion_scope_hash")
@@ -8919,7 +8921,7 @@ def _candidate_radar_production_promotion_review_receipt(
     worker_deep_scan_done = production_review.get("worker_deep_scan_execution_done") is True
     provider_backed_done = production_review.get("provider_backed_acceptance_done") is True
     model_ledger_done = production_review.get("deepseek_model_ledger_complete") is True
-    browser_promoted = production_review.get("browser_visual_performance_promoted") is True
+    production_review_browser_promoted = production_review.get("browser_visual_performance_promoted") is True
     durable_evidence_complete = production_review.get("durable_evidence_complete") is True
     legacy_retirement_ready = legacy_review.get("legacy_retirement_ready") is True
     safety_ready = bool(
@@ -8931,6 +8933,45 @@ def _candidate_radar_production_promotion_review_receipt(
         and packet.get("github_called") is not True
         and packet.get("contains_secret") is not True
     )
+    browser_review_ready = bool(
+        browser_review.get("status") == "candidate_browser_qa_review_ready_local_artifact"
+        and browser_review.get("local_browser_qa_review_ready") is True
+        and browser_review.get("local_browser_qa_evidence_found") is True
+        and browser_review.get("candidate_visual_qa_evidence_passed") is True
+        and browser_review.get("candidate_browser_performance_evidence_passed") is True
+        and browser_review.get("motion_viewport_coverage_complete") is True
+        and (browser_review.get("blocking_review_count") or 0) == 0
+        and (browser_review.get("review_required_count") or 0) == 0
+        and browser_review.get("production_radar_replacement_complete") is False
+        and browser_review.get("legacy_retirement_ready") is False
+        and browser_review.get("external_calls_triggered") is not True
+        and browser_review.get("tushare_called") is not True
+        and browser_review.get("deepseek_called") is not True
+        and browser_review.get("github_called") is not True
+        and browser_review.get("does_not_execute_trades") is True
+        and browser_review.get("does_not_modify_strategy_action") is True
+        and browser_review.get("candidate_is_not_buy_instruction") is True
+    )
+    browser_evidence_ready = bool(
+        browser_evidence.get("status") == "candidate_browser_qa_evidence_passed_local_artifact"
+        and browser_evidence.get("candidate_browser_qa_evidence_ready") is True
+        and browser_evidence.get("local_browser_qa_evidence_found") is True
+        and browser_evidence.get("candidate_visual_qa_evidence_passed") is True
+        and browser_evidence.get("candidate_browser_performance_evidence_passed") is True
+        and browser_evidence.get("motion_viewport_coverage_complete") is True
+        and (browser_evidence.get("review_required_count") or 0) == 0
+        and browser_evidence.get("production_radar_replacement_complete") is False
+        and browser_evidence.get("legacy_retirement_ready") is False
+        and browser_evidence.get("external_calls_triggered") is not True
+        and browser_evidence.get("tushare_called") is not True
+        and browser_evidence.get("deepseek_called") is not True
+        and browser_evidence.get("github_called") is not True
+        and browser_evidence.get("does_not_execute_trades") is True
+        and browser_evidence.get("does_not_modify_strategy_action") is True
+        and browser_evidence.get("candidate_is_not_buy_instruction") is True
+    )
+    browser_promotion_from_local_qa = bool(browser_review_ready and browser_evidence_ready and safety_ready)
+    browser_promoted = production_review_browser_promoted or browser_promotion_from_local_qa
     rows = [
         _candidate_radar_production_promotion_review_row(
             "explicit_production_promotion_review_task",
@@ -9057,12 +9098,23 @@ def _candidate_radar_production_promotion_review_receipt(
         ),
         _candidate_radar_production_promotion_review_row(
             "browser_visual_performance_promotion_required",
-            "promoted" if browser_promoted else "pending_browser_visual_performance_promotion",
+            "promoted_local_browser_qa_review"
+            if browser_promotion_from_local_qa
+            else ("promoted" if browser_promoted else "pending_browser_visual_performance_promotion"),
             passed=browser_promoted,
             local_blocker=False,
             production_blocker=not browser_promoted,
-            evidence=f"browser_visual_performance_promoted={browser_promoted}",
-            next_action="Promote durable browser visual/performance evidence before production replacement.",
+            evidence=(
+                f"browser_visual_performance_promoted={browser_promoted}; "
+                f"browser_review_status={browser_review.get('status') or 'missing'}; "
+                f"browser_evidence_status={browser_evidence.get('status') or 'missing'}"
+            ),
+            next_action=(
+                "Keep local browser QA promotion evidence attached; production replacement still requires "
+                "worker/provider/model/release/legacy evidence."
+                if browser_promoted
+                else "Promote durable browser visual/performance evidence before production replacement."
+            ),
             recommended_order=13,
         ),
         _candidate_radar_production_promotion_review_row(
@@ -9177,6 +9229,11 @@ def _candidate_radar_production_promotion_review_receipt(
         "provider_backed_acceptance_done": provider_backed_done,
         "deepseek_model_ledger_complete": model_ledger_done,
         "browser_visual_performance_promoted": browser_promoted,
+        "browser_visual_performance_promotion_source": (
+            "candidate_browser_qa_review_contract" if browser_promotion_from_local_qa else "production_review"
+        )
+        if browser_promoted
+        else "",
         "durable_evidence_complete": durable_evidence_complete,
         "durable_ci_or_release_evidence_complete": False,
         "local_blocker_count": len(local_blockers),
@@ -9229,6 +9286,26 @@ def _attach_candidate_radar_production_promotion_review(packet: Mapping[str, Any
         ]
         if not rows:
             rows = [row for row in _as_list(receipt.get("rows")) if isinstance(row, dict)]
+        if (
+            receipt.get("explicit_production_promotion_review_done") is True
+            and receipt.get("browser_visual_performance_promoted") is not True
+        ):
+            refreshed_receipt, refreshed_rows = _candidate_radar_production_promotion_review_receipt(
+                view,
+                payload_safe={
+                    "operator_approved": receipt.get("operator_approved") is True,
+                    "promotion_scope_hash": receipt.get("requested_promotion_scope_hash")
+                    or receipt.get("promotion_scope_hash")
+                    or "",
+                    "reviewer": receipt.get("reviewer") or "local_operator",
+                },
+                explicit_review=True,
+                task_id=str(receipt.get("task_id") or ""),
+                reviewed_at=str(receipt.get("reviewed_at") or ""),
+            )
+            if refreshed_receipt.get("browser_visual_performance_promoted") is True:
+                receipt = refreshed_receipt
+                rows = refreshed_rows
     else:
         receipt, rows = _candidate_radar_production_promotion_review_receipt(view)
     counts = dict(_as_dict(view.get("counts")))
