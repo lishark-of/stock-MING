@@ -10868,6 +10868,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("durable_handoff_ready_count", script)
         self.assertIn("future_handoff_preview_rows", script)
         self.assertIn("first_future_handoff_target_task_type", script)
+        self.assertIn("supporting_worker_runtime_dependency_preflight_status", script)
+        self.assertIn("supporting_worker_runtime_dependency_preflight_blocking_checks", script)
         self.assertIn("linked_observed_stage_scope_pending_counts", script)
         self.assertIn("--ltg", script)
         self.assertIn("focus_ltg_ids", script)
@@ -10923,6 +10925,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(all(row["can_close_goal"] is False for row in snapshot["queue_rows"]))
         queue = {row["queue_id"]: row for row in snapshot["queue_rows"]}
         worker_queue = queue["p4_worker_runtime_qa"]
+        radar_queue = queue["p3_candidate_radar_provider_worker_promotion"]
+        radar_handoff = radar_queue["future_handoff_preview_rows"][0]
+        self.assertIn("supporting_worker_runtime_dependency_preflight_status", radar_handoff)
+        self.assertIn("supporting_worker_runtime_dependency_preflight_blocker_count", radar_handoff)
+        self.assertIn("supporting_worker_runtime_dependency_preflight_blocking_checks", radar_handoff)
+        self.assertIn(
+            radar_handoff["supporting_worker_runtime_dependency_preflight_status"],
+            {"manual_runtime_dependency_ready", "manual_runtime_dependency_blocked", ""},
+        )
+        self.assertIsInstance(
+            radar_handoff["supporting_worker_runtime_dependency_preflight_blocking_checks"],
+            list,
+        )
         self.assertEqual(worker_queue["target_acceptance_mode"], "worker_runtime_qa_and_promotion")
         self.assertIn("LTG-06", worker_queue["linked_observed_stage_scope_pending_counts"])
         self.assertIn("LTG-06", worker_queue["linked_observed_stage_scope_direct_evidence_counts"])
@@ -27796,6 +27811,30 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(handoff["worker_task_created_by_preview"])
         self.assertFalse(handoff["worker_execution_implemented_by_preview"])
         self.assertFalse(handoff["worker_started_by_preview"])
+        self.assertTrue(handoff["supporting_worker_runtime_dependency_preflight_visible"])
+        self.assertIn(
+            handoff["supporting_worker_runtime_dependency_preflight_status"],
+            {"manual_runtime_dependency_ready", "manual_runtime_dependency_blocked"},
+        )
+        self.assertIsInstance(
+            handoff["supporting_worker_runtime_dependency_preflight_blocker_count"],
+            int,
+        )
+        self.assertIsInstance(
+            handoff["supporting_worker_runtime_dependency_preflight_blocking_checks"],
+            list,
+        )
+        self.assertEqual(
+            handoff["supporting_worker_runtime_dependency_preflight_blocks_manual_runtime_evidence"],
+            handoff["supporting_worker_runtime_dependency_preflight_blocker_count"] > 0,
+        )
+        self.assertTrue(handoff["supporting_worker_runtime_dependency_preflight_is_read_only"])
+        self.assertFalse(handoff["supporting_worker_runtime_dependency_preflight_starts_process"])
+        self.assertFalse(handoff["supporting_worker_runtime_dependency_preflight_pings_redis"])
+        self.assertEqual(
+            handoff["supporting_worker_runtime_dependency_preflight_boundary"],
+            "worker_runtime_dependency_preflight_preview_is_read_only_not_runtime_execution",
+        )
         self.assertFalse(handoff["external_calls_triggered"])
         self.assertFalse(handoff["tushare_called"])
         self.assertFalse(handoff["deepseek_called"])

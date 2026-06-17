@@ -73,6 +73,25 @@ def _compact_handoff_rows(rows: list[Any]) -> list[dict[str, Any]]:
                     "requires_separate_user_approved_worker_task"
                 )
                 is True,
+                "supporting_worker_runtime_dependency_preflight_visible": row.get(
+                    "supporting_worker_runtime_dependency_preflight_visible"
+                )
+                is True,
+                "supporting_worker_runtime_dependency_preflight_status": row.get(
+                    "supporting_worker_runtime_dependency_preflight_status"
+                )
+                or "",
+                "supporting_worker_runtime_dependency_preflight_blocker_count": int(
+                    row.get("supporting_worker_runtime_dependency_preflight_blocker_count") or 0
+                ),
+                "supporting_worker_runtime_dependency_preflight_blocking_checks": row.get(
+                    "supporting_worker_runtime_dependency_preflight_blocking_checks"
+                )
+                or [],
+                "supporting_worker_runtime_dependency_preflight_blocks_manual_runtime_evidence": row.get(
+                    "supporting_worker_runtime_dependency_preflight_blocks_manual_runtime_evidence"
+                )
+                is True,
                 "disabled_reason": row.get("disabled_reason") or "",
                 "external_calls_triggered": row.get("external_calls_triggered") is True,
                 "tushare_called": row.get("tushare_called") is True,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Mapping
 
 from server.services import packet_service, task_service
 
@@ -2565,6 +2565,54 @@ def _latest_worker_runtime_qa_context_preview() -> dict[str, Any]:
     }
 
 
+def _latest_worker_runtime_dependency_preflight_preview() -> dict[str, Any]:
+    try:
+        from server.services import worker_service
+
+        packet = worker_service.read_worker_runtime_cache()
+    except Exception:
+        packet = {}
+    packet_map = packet if isinstance(packet, dict) else {}
+    preflight = packet_map.get("worker_runtime_dependency_preflight")
+    rows_source = packet_map.get("worker_runtime_dependency_preflight_rows")
+    preflight_map = preflight if isinstance(preflight, dict) else {}
+    rows = [
+        row
+        for row in (rows_source if isinstance(rows_source, list) else preflight_map.get("rows") or [])
+        if isinstance(row, dict)
+    ]
+    blocking_rows = [row for row in rows if row.get("blocks_manual_runtime_evidence") is True]
+    return {
+        "schema_version": "worker_runtime_dependency_preflight_preview.v1",
+        "source_packet_key": "command_center_3_worker_runtime_cache",
+        "source_receipt_key": "worker_runtime_dependency_preflight",
+        "preflight_visible": bool(preflight_map),
+        "preflight_status": str(preflight_map.get("status") or "missing"),
+        "preflight_scope": str(preflight_map.get("scope") or ""),
+        "local_preflight_ready": preflight_map.get("local_preflight_ready") is True,
+        "blocker_count": int(preflight_map.get("blocker_count") or len(blocking_rows)),
+        "blocking_checks": [str(row.get("check") or "") for row in blocking_rows if row.get("check")],
+        "row_count": len(rows),
+        "does_not_start_process": bool(
+            preflight_map
+            and preflight_map.get("worker_started") is not True
+            and preflight_map.get("celery_worker_started") is not True
+            and preflight_map.get("scheduler_started") is not True
+            and preflight_map.get("task_dispatched") is not True
+        ),
+        "does_not_ping_redis": bool(preflight_map and preflight_map.get("redis_pinged") is not True),
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "production_worker_complete": False,
+        "evidence_boundary": "worker_runtime_dependency_preflight_preview_is_read_only_not_runtime_execution",
+    }
+
+
 def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
     try:
         from server.services import worker_service
@@ -4026,6 +4074,8 @@ def _build_ltg_next_action_submission_preview_rows(
 def _build_ltg_future_handoff_preview_rows(
     next_local_step: str,
     local_step_rows: list[dict[str, Any]],
+    *,
+    safe_context: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     def _ready_for_future_handoff(row: dict[str, Any]) -> bool:
         return any(
@@ -4087,6 +4137,12 @@ def _build_ltg_future_handoff_preview_rows(
     else:
         status = "future_provider_handoff_waiting_for_local_receipt"
         disabled_reason = "local_execution_request_receipt_missing"
+    context_map = safe_context if isinstance(safe_context, dict) else {}
+    dependency_preflight = context_map.get("worker_runtime_dependency_preflight_preview")
+    dependency_map = dependency_preflight if isinstance(dependency_preflight, dict) else {}
+    requires_worker_task = latest_ready_step.get("receipt_ready_for_manual_worker_task_submission") is True
+    dependency_visible = requires_worker_task and dependency_map.get("preflight_visible") is True
+    dependency_blocker_count = int(dependency_map.get("blocker_count") or 0) if dependency_visible else 0
     return [
         {
             "status": status,
@@ -4122,6 +4178,23 @@ def _build_ltg_future_handoff_preview_rows(
                 "receipt_ready_for_manual_worker_task_submission"
             )
             is True,
+            "supporting_worker_runtime_dependency_preflight_visible": dependency_visible,
+            "supporting_worker_runtime_dependency_preflight_status": (
+                dependency_map.get("preflight_status") if dependency_visible else ""
+            ),
+            "supporting_worker_runtime_dependency_preflight_blocker_count": dependency_blocker_count,
+            "supporting_worker_runtime_dependency_preflight_blocking_checks": (
+                dependency_map.get("blocking_checks") if dependency_visible else []
+            ),
+            "supporting_worker_runtime_dependency_preflight_blocks_manual_runtime_evidence": bool(
+                dependency_visible and dependency_blocker_count > 0
+            ),
+            "supporting_worker_runtime_dependency_preflight_is_read_only": dependency_visible,
+            "supporting_worker_runtime_dependency_preflight_starts_process": False,
+            "supporting_worker_runtime_dependency_preflight_pings_redis": False,
+            "supporting_worker_runtime_dependency_preflight_boundary": (
+                dependency_map.get("evidence_boundary") if dependency_visible else ""
+            ),
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -4189,6 +4262,9 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             safe_context["candidate_radar_production_replacement_review_preview"] = (
                 _latest_candidate_radar_production_replacement_review_preview()
             )
+            safe_context["worker_runtime_dependency_preflight_preview"] = (
+                _latest_worker_runtime_dependency_preflight_preview()
+            )
         if action["queue_id"] == "p4_storage_physical_execution":
             safe_context["storage_physical_execution_recipe_preview"] = (
                 _latest_storage_physical_execution_recipe_preview()
@@ -4200,7 +4276,11 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             local_step_rows,
             safe_context=safe_context,
         )
-        future_handoff_preview_rows = _build_ltg_future_handoff_preview_rows(next_local_step, local_step_rows)
+        future_handoff_preview_rows = _build_ltg_future_handoff_preview_rows(
+            next_local_step,
+            local_step_rows,
+            safe_context=safe_context,
+        )
         next_step_ready_for_clean_receipt = any(
             row.get("ready_for_clean_local_receipt") is True for row in submission_preview_rows
         )
