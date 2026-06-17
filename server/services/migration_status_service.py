@@ -877,6 +877,18 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "receipt_key": "next_session_browser_qa_review_contract",
             "route": "POST /api/next-session/browser-qa-review",
         },
+        {
+            "phase_key": "next_session_streamlit_parity_review_receipt",
+            "task_type": "run_next_session_streamlit_parity_review",
+            "receipt_key": "next_session_streamlit_parity_review_contract",
+            "route": "POST /api/next-session/streamlit-parity-review",
+        },
+        {
+            "phase_key": "next_session_production_promotion_review_receipt",
+            "task_type": "run_next_session_production_promotion_review",
+            "receipt_key": "next_session_production_promotion_review_contract",
+            "route": "POST /api/next-session/production-promotion-review",
+        },
     ],
     "p6_tauri_package_readiness_review": [
         {
@@ -3889,6 +3901,20 @@ def _build_ltg_next_action_submission_preview_rows(
             "safe_payload_summary": "review_scope=next_session_browser_qa_local_artifact; reads ignored local reports only",
             "expected_local_receipt": "next_session_browser_qa_review_contract",
             "required_prior_phase_key": "",
+            "required_prior_material": "",
+        },
+        "POST /api/next-session/streamlit-parity-review": {
+            "step_kind": "local_same_packet_streamlit_parity_review",
+            "safe_payload_summary": "review_scope=next_session_same_packet_no_loss; reviews cache packet parity only",
+            "expected_local_receipt": "next_session_streamlit_parity_review_contract",
+            "required_prior_phase_key": "next_session_browser_qa_review_receipt",
+            "required_prior_material": "",
+        },
+        "POST /api/next-session/production-promotion-review": {
+            "step_kind": "local_next_session_production_promotion_review",
+            "safe_payload_summary": "review_scope=next_session_local_promotion_blocker_review; no browser/provider execution",
+            "expected_local_receipt": "next_session_production_promotion_review_contract",
+            "required_prior_phase_key": "next_session_streamlit_parity_review_receipt",
             "required_prior_material": "",
         },
         "POST /api/audit/motion-browser-qa-review": {

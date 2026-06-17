@@ -559,7 +559,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(action_rows["p4_storage_physical_execution"]["next_local_step_ready_for_clean_receipt"])
         self.assertEqual(action_rows["p4_worker_runtime_qa"]["local_receipt_step_count"], 6)
         self.assertEqual(action_rows["p5_deepseek_provider_benchmark_scope"]["local_receipt_step_count"], 1)
-        self.assertEqual(action_rows["p5_next_session_map_browser_qa"]["local_receipt_step_count"], 1)
+        self.assertEqual(action_rows["p5_next_session_map_browser_qa"]["local_receipt_step_count"], 3)
         self.assertEqual(
             action_rows["p5_deepseek_provider_benchmark_scope"]["first_allowed_route"],
             "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket",
@@ -21735,7 +21735,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("LTG-07", action_rows["p5_deepseek_provider_benchmark_scope"]["ltg_ids"])
         self.assertIn("LTG-08", action_rows["p5_next_session_map_browser_qa"]["ltg_ids"])
         self.assertEqual(action_rows["p5_deepseek_provider_benchmark_scope"]["local_receipt_step_count"], 1)
-        self.assertEqual(action_rows["p5_next_session_map_browser_qa"]["local_receipt_step_count"], 1)
+        self.assertEqual(action_rows["p5_next_session_map_browser_qa"]["local_receipt_step_count"], 3)
         self.assertIn("LTG-09", action_rows["p6_tauri_package_readiness_review"]["ltg_ids"])
         self.assertIn("LTG-10", action_rows["p7_streamlit_retirement_review"]["ltg_ids"])
         self.assertEqual(action_rows["p6_tauri_package_readiness_review"]["local_receipt_step_count"], 2)
