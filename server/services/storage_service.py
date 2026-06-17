@@ -29,6 +29,7 @@ DATASET_VERSION_MANIFEST_REVIEW_PACKET_KEY = "command_center_3_storage_dataset_v
 DATASET_VERSION_MANIFEST_WRITE_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_write_packet"
 DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_validate_packet"
 STORAGE_PHYSICAL_EXECUTION_REQUEST_PACKET_KEY = "command_center_3_storage_physical_execution_request_packet"
+STORAGE_PRODUCTION_PROMOTION_REVIEW_PACKET_KEY = "command_center_3_storage_production_promotion_review_packet"
 DUCKDB_READ_VALIDATION_PACKET_KEY = "command_center_3_storage_duckdb_read_validation_packet"
 STORAGE_PRODUCTION_BLOCKER_SCHEMA_VERSION = "command_center_3_storage_production_blocker_audit.v1"
 STORAGE_PHYSICAL_DURABLE_EVIDENCE_SCHEMA_VERSION = (
@@ -4792,6 +4793,7 @@ def storage_physical_durable_evidence_recipe(
         or storage_physical_execution_recipe(readiness, blocker_audit, activation_receipt)
     )
     execution_request = dict(physical_execution_request or storage_physical_execution_request_evidence())
+    production_promotion_review = storage_production_promotion_review_evidence()
     manifest_validation = storage_dataset_version_manifest_validate_evidence()
     schema_migration_execution = storage_schema_migration_execution_evidence()
     duckdb_read_validation = storage_duckdb_read_validation_evidence()
@@ -4829,6 +4831,13 @@ def storage_physical_durable_evidence_recipe(
         and execution_request.get("does_not_execute_trades") is True
         and execution_request.get("does_not_modify_strategy_action") is True
         and execution_request.get("contains_secret") is False
+        and production_promotion_review.get("external_calls_triggered") is False
+        and production_promotion_review.get("tushare_called") is False
+        and production_promotion_review.get("deepseek_called") is False
+        and production_promotion_review.get("github_called") is False
+        and production_promotion_review.get("does_not_execute_trades") is True
+        and production_promotion_review.get("does_not_modify_strategy_action") is True
+        and production_promotion_review.get("contains_secret") is False
     )
     local_recipe_ready = bool(blocker_audit_visible and readiness_visible and activation_visible and execution_ready and no_external_boundary)
     schema_acceptance_done = readiness.get("physical_schema_validation_done") is True
@@ -5009,6 +5018,31 @@ def storage_physical_durable_evidence_recipe(
         and cache_ttl_metadata.get("does_not_execute_trades") is True
         and cache_ttl_metadata.get("contains_secret") is False
     )
+    production_promotion_review_done = bool(
+        production_promotion_review.get("schema_version")
+        == "command_center_3_storage_production_promotion_review.v1"
+        and production_promotion_review.get("status")
+        == "storage_production_promotion_review_ready_production_still_blocked"
+        and production_promotion_review.get("explicit_production_promotion_review_done") is True
+        and production_promotion_review.get("local_promotion_review_ready") is True
+        and production_promotion_review.get("approved_by_user") is True
+        and production_promotion_review.get("requested_physical_execution_scope_hash_matches_latest") is True
+        and production_promotion_review.get("physical_execution_request_visible") is True
+        and production_promotion_review.get("durable_evidence_recipe_visible") is True
+        and production_promotion_review.get("ready_to_mark_production_storage_complete") is False
+        and production_promotion_review.get("production_storage_complete") is False
+        and production_promotion_review.get("writes_parquet") is False
+        and production_promotion_review.get("writes_manifest") is False
+        and production_promotion_review.get("deletes_artifacts") is False
+        and production_promotion_review.get("refreshes_providers") is False
+        and production_promotion_review.get("external_calls_triggered") is False
+        and production_promotion_review.get("tushare_called") is False
+        and production_promotion_review.get("deepseek_called") is False
+        and production_promotion_review.get("github_called") is False
+        and production_promotion_review.get("does_not_execute_trades") is True
+        and production_promotion_review.get("does_not_modify_strategy_action") is True
+        and production_promotion_review.get("contains_secret") is False
+    )
     rows = [
         _storage_physical_durable_evidence_recipe_row(
             "production_blocker_audit_visible",
@@ -5169,11 +5203,20 @@ def storage_physical_durable_evidence_recipe(
         ),
         _storage_physical_durable_evidence_recipe_row(
             "production_promotion_review_required",
-            passed=False,
+            passed=production_promotion_review_done,
             source_contract="storage_production_promotion_review",
-            evidence=f"production_blocker_count={blocker_audit.get('blocking_criterion_count')}",
+            status="review_visible_production_still_blocked" if production_promotion_review_done else "blocked",
+            evidence=(
+                f"promotion_review_status={production_promotion_review.get('status')}; "
+                f"scope_hash_short={production_promotion_review.get('physical_execution_scope_hash_short')}; "
+                f"production_blocker_count={production_promotion_review.get('production_blocker_count')}"
+            ),
             required_evidence="release review proving production_storage_complete may flip only after all physical evidence passes",
-            next_step="hold production_storage_complete=false until every durable evidence row is direct and reviewed",
+            next_step=(
+                "Keep production_storage_complete=false; this review only records the promotion boundary."
+                if production_promotion_review_done
+                else "hold production_storage_complete=false until explicit promotion review is recorded"
+            ),
         ),
         _storage_physical_durable_evidence_recipe_row(
             "no_provider_trade_action_secret_boundary",
@@ -5238,6 +5281,12 @@ def storage_physical_durable_evidence_recipe(
         "duckdb_read_validation_done": duckdb_read_validation_done,
         "duckdb_read_validation_status": duckdb_read_validation.get("status"),
         "duckdb_read_validation_contract_ready_count": int(duckdb_read_validation.get("contract_ready_count") or 0),
+        "production_promotion_review_done": production_promotion_review_done,
+        "production_promotion_review_status": production_promotion_review.get("status"),
+        "production_promotion_review_ready": production_promotion_review.get("local_promotion_review_ready") is True,
+        "production_promotion_review_production_blocker_count": int(
+            production_promotion_review.get("production_blocker_count") or 0
+        ),
         "dataset_version_manifest_written_by_recipe": False,
         "physical_task_created_by_request": False,
         "physical_task_executed_by_request": False,
@@ -5625,6 +5674,418 @@ def run_storage_physical_execution_request_task(payload: Any = None) -> dict[str
     ) or task
 
 
+def _storage_production_promotion_review_row(
+    criterion: str,
+    *,
+    passed: bool,
+    status: str,
+    evidence: str,
+    next_action: str,
+    production_blocker: bool = False,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "production_blocker": bool(production_blocker),
+        "local_ready": bool(passed) or bool(production_blocker),
+        "evidence": evidence,
+        "next_action": next_action,
+        "writes_parquet": False,
+        "writes_manifest": False,
+        "deletes_artifacts": False,
+        "refreshes_providers": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def storage_production_promotion_review_packet(
+    *,
+    task_id: str | None = None,
+    payload_safe: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload_safe = payload_safe or {}
+    production_readiness = storage_production_readiness()
+    blocker_audit = storage_production_blocker_audit(production_readiness)
+    readiness_receipt = storage_production_readiness_receipt(production_readiness, blocker_audit)
+    activation_receipt = storage_physical_migration_activation_receipt(
+        production_readiness,
+        blocker_audit,
+        readiness_receipt,
+    )
+    execution_recipe = storage_physical_execution_recipe(
+        production_readiness,
+        blocker_audit,
+        activation_receipt,
+    )
+    execution_request = storage_physical_execution_request_evidence()
+    durable_recipe = storage_physical_durable_evidence_recipe(
+        production_readiness,
+        blocker_audit,
+        activation_receipt,
+        execution_recipe,
+        execution_request,
+    )
+    approved_by_user = payload_safe.get("approved_by_user") is True
+    latest_scope_hash = str(
+        execution_request.get("physical_execution_scope_hash")
+        or execution_recipe.get("physical_execution_scope_hash")
+        or ""
+    )
+    requested_scope_hash = str(payload_safe.get("physical_execution_scope_hash") or payload_safe.get("scope_hash") or "")
+    request_ready = bool(
+        execution_request.get("local_execution_request_ready") is True
+        and execution_request.get("requested_scope_hash_matches_latest") is True
+        and execution_request.get("physical_task_created") is False
+        and execution_request.get("physical_task_executed") is False
+    )
+    requested_hash_matches_latest = bool(latest_scope_hash and requested_scope_hash == latest_scope_hash and request_ready)
+    durable_visible = durable_recipe.get("schema_version") == STORAGE_PHYSICAL_DURABLE_EVIDENCE_SCHEMA_VERSION
+    pre_review_missing = [str(key) for key in durable_recipe.get("missing_durable_evidence") or []]
+    remaining_durable_evidence = [key for key in pre_review_missing if key != "production_promotion_review_required"]
+    no_side_effect_boundary = bool(
+        durable_recipe.get("external_calls_triggered") is False
+        and durable_recipe.get("tushare_called") is False
+        and durable_recipe.get("deepseek_called") is False
+        and durable_recipe.get("github_called") is False
+        and durable_recipe.get("writes_parquet") is False
+        and durable_recipe.get("writes_manifest") is False
+        and durable_recipe.get("deletes_artifacts") is False
+        and durable_recipe.get("does_not_execute_trades") is True
+        and durable_recipe.get("does_not_modify_strategy_action") is True
+        and durable_recipe.get("contains_secret") is False
+        and execution_request.get("external_calls_triggered") is False
+        and execution_request.get("tushare_called") is False
+        and execution_request.get("deepseek_called") is False
+        and execution_request.get("github_called") is False
+        and execution_request.get("does_not_execute_trades") is True
+        and execution_request.get("does_not_modify_strategy_action") is True
+        and execution_request.get("contains_secret") is False
+    )
+    if not approved_by_user:
+        status = "storage_production_promotion_review_blocked_user_confirmation_required"
+    elif not request_ready:
+        status = "storage_production_promotion_review_blocked_physical_execution_request"
+    elif not requested_scope_hash:
+        status = "storage_production_promotion_review_blocked_scope_hash_required"
+    elif not requested_hash_matches_latest:
+        status = "storage_production_promotion_review_blocked_scope_hash_mismatch"
+    elif not durable_visible:
+        status = "storage_production_promotion_review_blocked_durable_evidence_recipe"
+    elif not no_side_effect_boundary:
+        status = "storage_production_promotion_review_blocked_boundary_regression"
+    else:
+        status = "storage_production_promotion_review_ready_production_still_blocked"
+    local_review_ready = status == "storage_production_promotion_review_ready_production_still_blocked"
+    rows = [
+        _storage_production_promotion_review_row(
+            "explicit_production_promotion_review_task",
+            passed=approved_by_user,
+            status="passed_explicit_post" if approved_by_user else "blocked_confirmation_required",
+            evidence=f"approved_by_user={approved_by_user}",
+            next_action="Require an explicit POST before recording any production promotion review.",
+        ),
+        _storage_production_promotion_review_row(
+            "physical_execution_request_visible",
+            passed=request_ready,
+            status="passed_execution_request_visible" if request_ready else "blocked_missing_execution_request",
+            evidence=f"request_status={execution_request.get('status')}",
+            next_action="Record a scope-bound physical execution request ticket before review.",
+        ),
+        _storage_production_promotion_review_row(
+            "physical_execution_scope_hash_bound",
+            passed=requested_hash_matches_latest,
+            status="passed_scope_bound" if requested_hash_matches_latest else "blocked_scope_hash_mismatch_or_missing",
+            evidence=(
+                f"requested_scope_hash_short={requested_scope_hash[:12]}; "
+                f"latest_scope_hash_short={latest_scope_hash[:12]}"
+            ),
+            next_action="Regenerate the review from the current Storage page if the execution request changes.",
+        ),
+        _storage_production_promotion_review_row(
+            "durable_evidence_recipe_visible",
+            passed=durable_visible,
+            status="passed_durable_recipe_visible" if durable_visible else "blocked_missing_durable_recipe",
+            evidence=(
+                f"durable_recipe_status={durable_recipe.get('status')}; "
+                f"pre_review_blocker_count={durable_recipe.get('production_blocker_count')}"
+            ),
+            next_action="Keep durable evidence rows visible before any production claim.",
+        ),
+        _storage_production_promotion_review_row(
+            "remaining_direct_evidence_reviewed",
+            passed=not remaining_durable_evidence,
+            status="passed_all_current_direct_evidence_reviewed"
+            if not remaining_durable_evidence
+            else "pending_remaining_durable_evidence",
+            evidence=f"remaining_durable_evidence={remaining_durable_evidence}",
+            next_action="Finish remaining direct evidence before any production storage promotion.",
+            production_blocker=bool(remaining_durable_evidence),
+        ),
+        _storage_production_promotion_review_row(
+            "production_completion_stays_blocked",
+            passed=False,
+            status="production_storage_still_blocked",
+            evidence="This review never flips production_storage_complete.",
+            next_action="Use a separate production gate before marking storage production complete.",
+            production_blocker=True,
+        ),
+        _storage_production_promotion_review_row(
+            "no_provider_model_github_trade_secret_boundary",
+            passed=no_side_effect_boundary,
+            status="passed_no_side_effects" if no_side_effect_boundary else "blocked_boundary_regression",
+            evidence="Review reads local receipts only and does not write data, call providers/models/GitHub, trade, or expose secrets.",
+            next_action="Preserve cache/render read-only and explicit POST task boundaries.",
+        ),
+    ]
+    local_blockers = [row["criterion"] for row in rows if not row.get("passed") and not row.get("production_blocker")]
+    production_blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
+    promotion_review_scope_input = {
+        "schema_version": "command_center_3_storage_production_promotion_review.v1",
+        "physical_execution_scope_hash": latest_scope_hash,
+        "durable_evidence_schema_version": durable_recipe.get("schema_version"),
+        "pre_review_missing_durable_evidence": pre_review_missing,
+        "remaining_durable_evidence": remaining_durable_evidence,
+        "production_storage_complete": False,
+    }
+    call_ledger = _storage_cache_call_ledger(
+        "local_storage_production_promotion_review",
+        endpoint="POST /api/storage/production-promotion-review",
+        status=status,
+        row_count=len(rows),
+    )
+    call_ledger[0]["request_params_safe"] = {
+        "source": payload_safe.get("source") or "storage_page_button",
+        "approved_by_user": approved_by_user,
+        "reviewer": _safe_scalar(payload_safe.get("reviewer")) or "",
+        "physical_execution_scope_hash_short": requested_scope_hash[:12],
+        "local_review_ready": local_review_ready,
+        "write_parquet_allowed": False,
+        "write_manifest_allowed": False,
+        "delete_allowed": False,
+        "external_sources_allowed": False,
+    }
+    return {
+        "schema_version": "command_center_3_storage_production_promotion_review.v1",
+        "packet_key": STORAGE_PRODUCTION_PROMOTION_REVIEW_PACKET_KEY,
+        "task_id": str(task_id or ""),
+        "status": status,
+        "mode": "button_gated_local_storage_production_promotion_review",
+        "scope": "button_gated_local_storage_production_promotion_review_no_write_no_external_call",
+        "route": "POST /api/storage/production-promotion-review",
+        "task_type": "run_storage_production_promotion_review",
+        "ltg": "LTG-05/LTG-11",
+        "explicit_production_promotion_review_done": local_review_ready,
+        "local_promotion_review_ready": local_review_ready,
+        "approved_by_user": approved_by_user,
+        "requires_user_confirmation": True,
+        "physical_execution_request_visible": request_ready,
+        "durable_evidence_recipe_visible": durable_visible,
+        "requested_physical_execution_scope_hash_matches_latest": requested_hash_matches_latest,
+        "physical_execution_scope_hash": latest_scope_hash if requested_hash_matches_latest else "",
+        "physical_execution_scope_hash_short": latest_scope_hash[:12] if latest_scope_hash else "",
+        "requested_physical_execution_scope_hash_short": requested_scope_hash[:12],
+        "promotion_review_scope_hash": _json_sha256(promotion_review_scope_input),
+        "promotion_review_scope_hash_input_includes_secret": False,
+        "pre_review_missing_durable_evidence": pre_review_missing,
+        "remaining_durable_evidence": remaining_durable_evidence,
+        "durable_evidence_blocker_count_before_review": int(durable_recipe.get("production_blocker_count") or 0),
+        "local_blocker_count": len(local_blockers),
+        "local_blockers": local_blockers,
+        "production_blocker_count": len(production_blockers),
+        "production_blockers": production_blockers,
+        "ready_to_mark_production_storage_complete": False,
+        "production_storage_complete": False,
+        "durable_evidence_complete": False,
+        "durable_promotion_ready": False,
+        "physical_task_created": False,
+        "physical_task_executed": False,
+        "schema_migration_executed": False,
+        "partition_migration_executed": False,
+        "physical_compaction_executed": False,
+        "cache_ttl_refresh_executed": False,
+        "artifact_cleanup_delete_executed": False,
+        "writes_parquet": False,
+        "writes_manifest": False,
+        "deletes_artifacts": False,
+        "refreshes_providers": False,
+        "runs_commands": False,
+        "reads_row_payloads": False,
+        "reads_env_files": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "not_allowed_next_steps": [
+            "treat_production_promotion_review_as_storage_production_complete",
+            "write_parquet_from_promotion_review",
+            "write_manifest_from_promotion_review",
+            "delete_artifacts_from_promotion_review",
+            "refresh_providers_from_promotion_review",
+            "call_Tushare_from_promotion_review",
+            "call_DeepSeek_from_promotion_review",
+            "call_GitHub_from_promotion_review",
+            "execute_trades_from_promotion_review",
+            "modify_strategy_action_from_promotion_review",
+        ],
+        "rows": rows,
+        "call_ledger": call_ledger,
+        "warnings": [
+            "Storage production promotion review 只记录本地 promotion boundary；不会写 Parquet、写 manifest、删除文件或调用外部源。",
+            "该 review 不代表 production storage 完成，production_storage_complete 必须保持 false。",
+        ],
+    }
+
+
+def _missing_storage_production_promotion_review(now: str | None = None) -> dict[str, Any]:
+    rows = [
+        _storage_production_promotion_review_row(
+            "production_promotion_review_visible",
+            passed=False,
+            status="blocked_missing_promotion_review",
+            evidence="No button-gated storage production promotion review has been recorded yet.",
+            next_action="Record the explicit promotion review after the physical execution request is scope-bound.",
+        )
+    ]
+    return {
+        "schema_version": "command_center_3_storage_production_promotion_review.v1",
+        "packet_key": STORAGE_PRODUCTION_PROMOTION_REVIEW_PACKET_KEY,
+        "task_id": "",
+        "status": "storage_production_promotion_review_missing",
+        "mode": "cache_only_missing_placeholder",
+        "scope": "button_gated_local_storage_production_promotion_review_no_write_no_external_call",
+        "route": "POST /api/storage/production-promotion-review",
+        "task_type": "run_storage_production_promotion_review",
+        "ltg": "LTG-05/LTG-11",
+        "explicit_production_promotion_review_done": False,
+        "local_promotion_review_ready": False,
+        "approved_by_user": False,
+        "requires_user_confirmation": True,
+        "physical_execution_request_visible": False,
+        "durable_evidence_recipe_visible": False,
+        "requested_physical_execution_scope_hash_matches_latest": False,
+        "physical_execution_scope_hash": "",
+        "physical_execution_scope_hash_short": "",
+        "promotion_review_scope_hash": "",
+        "promotion_review_scope_hash_input_includes_secret": False,
+        "remaining_durable_evidence": ["production_promotion_review_required"],
+        "local_blocker_count": 1,
+        "production_blocker_count": 1,
+        "ready_to_mark_production_storage_complete": False,
+        "production_storage_complete": False,
+        "durable_evidence_complete": False,
+        "durable_promotion_ready": False,
+        "writes_parquet": False,
+        "writes_manifest": False,
+        "deletes_artifacts": False,
+        "refreshes_providers": False,
+        "runs_commands": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": rows,
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_production_promotion_review",
+            endpoint="GET /api/storage",
+            status="storage_production_promotion_review_missing",
+            row_count=len(rows),
+            now=now,
+        ),
+        "warnings": [
+            "Storage production promotion review 尚未生成；这不是 production storage 完成证据。",
+        ],
+    }
+
+
+def storage_production_promotion_review_evidence() -> dict[str, Any]:
+    packet, read_status = _read_storage_meta_packet_no_init(STORAGE_PRODUCTION_PROMOTION_REVIEW_PACKET_KEY)
+    if read_status != "packet_present" or not isinstance(packet, Mapping):
+        return _missing_storage_production_promotion_review()
+    evidence = dict(packet)
+    evidence["read_status"] = read_status
+    evidence.setdefault("local_promotion_review_ready", False)
+    evidence.setdefault("production_storage_complete", False)
+    evidence.setdefault("ready_to_mark_production_storage_complete", False)
+    evidence.setdefault("external_calls_triggered", False)
+    evidence.setdefault("tushare_called", False)
+    evidence.setdefault("deepseek_called", False)
+    evidence.setdefault("github_called", False)
+    evidence.setdefault("does_not_execute_trades", True)
+    evidence.setdefault("does_not_modify_strategy_action", True)
+    evidence.setdefault("contains_secret", False)
+    return evidence
+
+
+def run_storage_production_promotion_review_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_page_button",
+        "approved_by_user": payload_map.get("approved_by_user") is True,
+        "reviewer": _safe_scalar(payload_map.get("reviewer")) or "",
+        "physical_execution_scope_hash": str(
+            payload_map.get("physical_execution_scope_hash") or payload_map.get("scope_hash") or ""
+        ),
+        "external_sources_allowed": False,
+        "write_parquet_allowed": False,
+        "write_manifest_allowed": False,
+        "delete_allowed": False,
+    }
+    task = task_service.create_task_record(
+        "run_storage_production_promotion_review",
+        output_packet_key=STORAGE_PRODUCTION_PROMOTION_REVIEW_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_production_promotion_review_queued",
+        warnings=[
+            "storage production promotion review 只生成本地审查 receipt；不会写 Parquet、写 manifest、删除文件或调用外部源。",
+            "该任务不修改 strategy action、不执行真实交易，不代表 production storage 完成。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.45,
+        current_step="building_storage_production_promotion_review",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_production_promotion_review_packet(task_id=task["task_id"], payload_safe=payload_safe)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(STORAGE_PRODUCTION_PROMOTION_REVIEW_PACKET_KEY, packet)
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="storage_production_promotion_review_packet_persist_failed",
+            error_message_safe="storage_production_promotion_review_sqlite_write_failed",
+            call_ledger=packet["call_ledger"],
+            warning="storage_production_promotion_review_failed_no_external_call",
+        ) or task
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step=str(packet.get("status") or "storage_production_promotion_review_recorded"),
+        call_ledger=packet["call_ledger"],
+        warning="storage_production_promotion_review_recorded_no_write_no_delete_no_external_call",
+    ) or task
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -5724,6 +6185,7 @@ def storage_dataset_catalog() -> dict[str, Any]:
         physical_execution_recipe,
         physical_execution_request,
     )
+    production_promotion_review = storage_production_promotion_review_evidence()
     artifact_hygiene = storage_artifact_hygiene_status()
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
@@ -5761,6 +6223,12 @@ def storage_dataset_catalog() -> dict[str, Any]:
         "storage_physical_durable_evidence_production_blocker_count": physical_durable_evidence_recipe[
             "production_blocker_count"
         ],
+        "storage_production_promotion_review": production_promotion_review,
+        "storage_production_promotion_review_rows": production_promotion_review.get("rows") or [],
+        "storage_production_promotion_review_status": production_promotion_review.get("status"),
+        "storage_production_promotion_review_ready": production_promotion_review.get(
+            "local_promotion_review_ready"
+        ),
         "artifact_hygiene": artifact_hygiene,
         "artifact_cleanup_review_contract": artifact_hygiene["artifact_cleanup_review_contract"],
         "artifact_cleanup_review_rows": artifact_hygiene["artifact_cleanup_review_rows"],
@@ -6288,6 +6756,7 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         physical_execution_recipe,
         physical_execution_request,
     )
+    production_promotion_review = storage_production_promotion_review_evidence()
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
     backtest_results_schema_seed_evidence = storage_backtest_results_schema_seed_evidence()
@@ -6393,6 +6862,12 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "storage_physical_durable_evidence_production_blocker_count": physical_durable_evidence_recipe[
             "production_blocker_count"
         ],
+        "storage_production_promotion_review": production_promotion_review,
+        "storage_production_promotion_review_rows": production_promotion_review.get("rows") or [],
+        "storage_production_promotion_review_status": production_promotion_review.get("status"),
+        "storage_production_promotion_review_ready": production_promotion_review.get(
+            "local_promotion_review_ready"
+        ),
         "artifact_hygiene": artifact_hygiene,
         "artifact_cleanup_review_contract": artifact_hygiene["artifact_cleanup_review_contract"],
         "artifact_cleanup_review_rows": artifact_hygiene["artifact_cleanup_review_rows"],

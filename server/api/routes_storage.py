@@ -134,6 +134,12 @@ def run_storage_physical_execution_request(payload: dict[str, Any] | None = None
     return task_envelope(task)
 
 
+@router.post("/production-promotion-review")
+def run_storage_production_promotion_review(payload: dict[str, Any] | None = None) -> dict:
+    task = storage_service.run_storage_production_promotion_review_task(payload)
+    return task_envelope(task)
+
+
 @router.get("/{dataset}")
 def get_parquet_dataset_status(
     dataset: str,
