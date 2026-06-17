@@ -52,6 +52,7 @@ function parseArgs(argv) {
   const args = {
     baseUrl: DEFAULT_BASE_URL,
     artifactRoot: DEFAULT_ARTIFACT_ROOT,
+    route: null,
     screenshots: true,
     reducedMotion: false,
     json: false,
@@ -61,16 +62,27 @@ function parseArgs(argv) {
     const arg = argv[index];
     if (arg === "--base-url") args.baseUrl = argv[++index] || args.baseUrl;
     else if (arg === "--out") args.artifactRoot = argv[++index] || args.artifactRoot;
+    else if (arg === "--route") args.route = argv[++index] || args.route;
     else if (arg === "--no-screenshots") args.screenshots = false;
     else if (arg === "--reduced-motion") args.reducedMotion = true;
     else if (arg === "--json") args.json = true;
     else if (arg === "--print-plan") args.printPlan = true;
     else if (arg === "--help") {
-      console.log("Usage: node scripts/motion_browser_qa_runner.mjs [--base-url http://127.0.0.1:5173] [--out .stock_ming_3/motion_qa] [--reduced-motion] [--no-screenshots] [--json] [--print-plan]");
+      console.log("Usage: node scripts/motion_browser_qa_runner.mjs [--base-url http://127.0.0.1:5173] [--out .stock_ming_3/motion_qa] [--route #candidates] [--reduced-motion] [--no-screenshots] [--json] [--print-plan]");
       process.exit(0);
     }
   }
   return args;
+}
+
+function selectedQaRoutes(args) {
+  if (!args.route) return QA_ROUTES;
+  const requested = args.route.startsWith("#") ? args.route : `#${args.route}`;
+  const routes = QA_ROUTES.filter((route) => route.route === requested);
+  if (!routes.length) {
+    throw new Error(`Unknown QA route: ${args.route}`);
+  }
+  return routes;
 }
 
 function timestampId() {
@@ -78,7 +90,8 @@ function timestampId() {
 }
 
 function makePlan(args) {
-  const matrix = QA_ROUTES.flatMap((route) =>
+  const routes = selectedQaRoutes(args);
+  const matrix = routes.flatMap((route) =>
     QA_VIEWPORTS.map((viewport) => ({
       route: route.route,
       label: route.label,
@@ -97,7 +110,8 @@ function makePlan(args) {
     scope: "explicit_local_browser_runner_plan",
     base_url: args.baseUrl,
     artifact_root: args.artifactRoot,
-    route_count: QA_ROUTES.length,
+    selected_route: args.route || "all",
+    route_count: routes.length,
     viewport_count: QA_VIEWPORTS.length,
     qa_matrix_count: matrix.length,
     visual_acceptance_criteria: VISUAL_ACCEPTANCE_CRITERIA,
@@ -217,6 +231,7 @@ async function inspectPage(page) {
 
 async function runQa(args) {
   const { chromium } = require("playwright");
+  const routes = selectedQaRoutes(args);
   const runId = timestampId();
   const outputDir = resolve(args.artifactRoot, runId);
   await mkdir(outputDir, { recursive: true });
@@ -236,9 +251,10 @@ async function runQa(args) {
       page.on("pageerror", (error) => {
         errors.push({ viewport: viewport.name, page_error: String(error.message || error) });
       });
-      await page.goto(`${args.baseUrl}/#home`, { waitUntil: "networkidle", timeout: 20000 });
+      const warmupRoute = routes.length === 1 ? routes[0].route : "#home";
+      await page.goto(`${args.baseUrl}/${warmupRoute}`, { waitUntil: "networkidle", timeout: 20000 });
       await page.waitForTimeout(args.reducedMotion ? 80 : 500);
-      for (const route of QA_ROUTES) {
+      for (const route of routes) {
         const startedAt = Date.now();
         const url = `${args.baseUrl}/${route.route}`;
         await page.goto(url, { waitUntil: "networkidle", timeout: 20000 });
@@ -297,8 +313,9 @@ async function runQa(args) {
     base_url: args.baseUrl,
     artifact_root: args.artifactRoot,
     output_dir: outputDir,
+    selected_route: args.route || "all",
     reduced_motion: args.reducedMotion,
-    route_count: QA_ROUTES.length,
+    route_count: routes.length,
     viewport_count: QA_VIEWPORTS.length,
     qa_matrix_count: rows.length,
     passed_count: rows.length - blockerRows.length,
