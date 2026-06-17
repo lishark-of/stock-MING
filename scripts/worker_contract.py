@@ -399,8 +399,49 @@ def build_contract() -> dict[str, Any]:
         and runtime_qa_execution.get("does_not_modify_strategy_action") is True
         and runtime_qa_execution.get("contains_secret") is False
     )
+    runtime_execution_phase_rows = {
+        str(row.get("phase") or ""): row
+        for row in _list(runtime_qa_execution.get("phase_rows"))
+        if isinstance(row, dict)
+    }
+    cross_process_controls_visible = bool(
+        local_fallback_rollback_visible
+        and runtime_qa_execution.get("cross_process_task_control_verified") is True
+        and runtime_execution_phase_rows.get("cross_process_retry_cancel_lock_dedupe", {}).get("runtime_qa_done")
+        is True
+    )
+    append_only_worker_log_visible = bool(
+        local_fallback_rollback_visible
+        and runtime_qa_execution.get("append_only_worker_log_verified") is True
+        and runtime_execution_phase_rows.get("append_only_worker_log_validation", {}).get("runtime_qa_done") is True
+    )
+    scheduler_default_off_runtime_visible = bool(
+        local_fallback_rollback_visible
+        and runtime_qa_execution.get("scheduler_default_off_runtime_verified") is True
+        and runtime_qa_execution.get("scheduler_started") is False
+        and runtime_execution_phase_rows.get("scheduler_default_off_runtime", {}).get("runtime_qa_done") is True
+    )
+    provider_model_no_autoschedule_visible = bool(
+        local_fallback_rollback_visible
+        and runtime_qa_execution.get("provider_model_no_autoschedule_boundary_verified") is True
+        and runtime_qa_execution.get("provider_model_task_dispatched") is False
+        and runtime_qa_execution.get("external_calls_triggered") is False
+        and runtime_qa_execution.get("tushare_called") is False
+        and runtime_qa_execution.get("deepseek_called") is False
+        and runtime_qa_execution.get("github_called") is False
+        and runtime_execution_phase_rows.get("provider_model_no_autoschedule_boundary", {}).get("runtime_qa_done")
+        is True
+    )
     if local_fallback_rollback_visible:
         expected_runtime_durable_missing.discard("local_fallback_rollback_evidence_required")
+    if cross_process_controls_visible:
+        expected_runtime_durable_missing.discard("cross_process_controls_evidence_required")
+    if append_only_worker_log_visible:
+        expected_runtime_durable_missing.discard("append_only_worker_log_evidence_required")
+    if scheduler_default_off_runtime_visible:
+        expected_runtime_durable_missing.discard("scheduler_default_off_runtime_evidence_required")
+    if provider_model_no_autoschedule_visible:
+        expected_runtime_durable_missing.discard("provider_model_no_autoschedule_runtime_evidence_required")
 
     rows = [
         _row(
@@ -1029,6 +1070,14 @@ def build_contract() -> dict[str, Any]:
             and runtime_durable_recipe.get("runtime_qa_done") is local_fallback_rollback_visible
             and runtime_durable_recipe.get("local_fallback_rollback_evidence_ready")
             is local_fallback_rollback_visible
+            and runtime_durable_recipe.get("cross_process_controls_evidence_ready")
+            is cross_process_controls_visible
+            and runtime_durable_recipe.get("append_only_worker_log_evidence_ready")
+            is append_only_worker_log_visible
+            and runtime_durable_recipe.get("scheduler_default_off_runtime_evidence_ready")
+            is scheduler_default_off_runtime_visible
+            and runtime_durable_recipe.get("provider_model_no_autoschedule_runtime_evidence_ready")
+            is provider_model_no_autoschedule_visible
             and runtime_durable_recipe.get("production_worker_complete") is False
             and runtime_durable_recipe.get("worker_started") is False
             and runtime_durable_recipe.get("redis_pinged") is False

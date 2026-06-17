@@ -3608,6 +3608,39 @@ def _worker_runtime_durable_evidence_recipe(
         and runtime_qa_execution.get("does_not_modify_strategy_action") is True
         and runtime_qa_execution.get("contains_secret") is False
     )
+    runtime_execution_phase_rows = {
+        str(row.get("phase") or ""): row
+        for row in runtime_qa_execution.get("phase_rows", [])
+        if isinstance(row, dict)
+    }
+    cross_process_controls_visible = (
+        local_fallback_rollback_visible
+        and runtime_qa_execution.get("cross_process_task_control_verified") is True
+        and runtime_execution_phase_rows.get("cross_process_retry_cancel_lock_dedupe", {}).get("runtime_qa_done")
+        is True
+    )
+    append_only_worker_log_visible = (
+        local_fallback_rollback_visible
+        and runtime_qa_execution.get("append_only_worker_log_verified") is True
+        and runtime_execution_phase_rows.get("append_only_worker_log_validation", {}).get("runtime_qa_done") is True
+    )
+    scheduler_default_off_runtime_visible = (
+        local_fallback_rollback_visible
+        and runtime_qa_execution.get("scheduler_default_off_runtime_verified") is True
+        and runtime_qa_execution.get("scheduler_started") is False
+        and runtime_execution_phase_rows.get("scheduler_default_off_runtime", {}).get("runtime_qa_done") is True
+    )
+    provider_model_no_autoschedule_visible = (
+        local_fallback_rollback_visible
+        and runtime_qa_execution.get("provider_model_no_autoschedule_boundary_verified") is True
+        and runtime_qa_execution.get("provider_model_task_dispatched") is False
+        and runtime_qa_execution.get("external_calls_triggered") is False
+        and runtime_qa_execution.get("tushare_called") is False
+        and runtime_qa_execution.get("deepseek_called") is False
+        and runtime_qa_execution.get("github_called") is False
+        and runtime_execution_phase_rows.get("provider_model_no_autoschedule_boundary", {}).get("runtime_qa_done")
+        is True
+    )
     no_process_boundary = (
         runtime_qa_execution_recipe.get("worker_started") is False
         and runtime_qa_execution_recipe.get("redis_pinged") is False
@@ -3773,35 +3806,67 @@ def _worker_runtime_durable_evidence_recipe(
         ),
         _worker_runtime_durable_evidence_recipe_row(
             "cross_process_controls_evidence_required",
-            passed=False,
+            passed=cross_process_controls_visible,
             source_contract="manual_worker_runtime_qa",
-            evidence="Retry/cancel/lock/dedupe are local-ready but not proven across worker process boundaries.",
+            evidence=(
+                "Local Python cross-process task-control probe verified retry/cancel/lock/dedupe metadata."
+                if cross_process_controls_visible
+                else "Retry/cancel/lock/dedupe are local-ready but not proven across worker process boundaries."
+            ),
             required_evidence="cross-process retry, cancel, lock, and dedupe evidence",
-            next_action="collect cross-process control proof during manual runtime QA",
+            next_action=(
+                "Keep this as local cross-process SQLite task-control evidence; Celery/Redis process proof remains separate."
+                if cross_process_controls_visible
+                else "collect cross-process control proof during manual runtime QA"
+            ),
         ),
         _worker_runtime_durable_evidence_recipe_row(
             "append_only_worker_log_evidence_required",
-            passed=False,
+            passed=append_only_worker_log_visible,
             source_contract="manual_worker_runtime_qa",
-            evidence="Local safe task logs exist, but append-only worker logs and cross-process log readback are not proven.",
+            evidence=(
+                "Append-only JSONL worker runtime QA event was written and read back with matching hash."
+                if append_only_worker_log_visible
+                else "Local safe task logs exist, but append-only worker logs and cross-process log readback are not proven."
+            ),
             required_evidence="append-only redacted worker log storage plus cross-process log readback",
-            next_action="collect append-only worker log proof without raw payload or secret leakage",
+            next_action=(
+                "Keep append-only local event evidence redacted; live Celery worker logs remain separate."
+                if append_only_worker_log_visible
+                else "collect append-only worker log proof without raw payload or secret leakage"
+            ),
         ),
         _worker_runtime_durable_evidence_recipe_row(
             "scheduler_default_off_runtime_evidence_required",
-            passed=False,
+            passed=scheduler_default_off_runtime_visible,
             source_contract="manual_worker_runtime_qa",
-            evidence="Scheduler is default-off in cache/review paths; runtime default-off evidence is not collected here.",
+            evidence=(
+                "Runtime QA execution recorded scheduler_started=false while collecting local fallback evidence."
+                if scheduler_default_off_runtime_visible
+                else "Scheduler is default-off in cache/review paths; runtime default-off evidence is not collected here."
+            ),
             required_evidence="runtime proof that scheduler remains disabled unless separately approved",
-            next_action="capture scheduler default-off evidence during runtime QA",
+            next_action=(
+                "Preserve scheduler default-off evidence; production scheduler enablement still requires separate approval."
+                if scheduler_default_off_runtime_visible
+                else "capture scheduler default-off evidence during runtime QA"
+            ),
         ),
         _worker_runtime_durable_evidence_recipe_row(
             "provider_model_no_autoschedule_runtime_evidence_required",
-            passed=False,
+            passed=provider_model_no_autoschedule_visible,
             source_contract="manual_worker_runtime_qa",
-            evidence="Provider/model/probe queues are button-gated locally, but live worker runtime no-autoschedule proof is pending.",
+            evidence=(
+                "Runtime QA execution dispatched no provider/model/probe task and called no Tushare, DeepSeek, or GitHub path."
+                if provider_model_no_autoschedule_visible
+                else "Provider/model/probe queues are button-gated locally, but live worker runtime no-autoschedule proof is pending."
+            ),
             required_evidence="runtime evidence that Tushare/DeepSeek/GitHub-capable work remains explicit and ledgered",
-            next_action="prove provider/model no-autoschedule boundary in worker runtime QA",
+            next_action=(
+                "Keep provider/model/probe tasks explicit and ledgered; no autoschedule boundary is locally proven."
+                if provider_model_no_autoschedule_visible
+                else "prove provider/model no-autoschedule boundary in worker runtime QA"
+            ),
         ),
         _worker_runtime_durable_evidence_recipe_row(
             "local_fallback_rollback_evidence_required",
@@ -3875,6 +3940,10 @@ def _worker_runtime_durable_evidence_recipe(
         "runtime_qa_dry_run_ready": runtime_dry_run_visible,
         "runtime_qa_dry_run_status": runtime_qa_dry_run.get("status"),
         "local_fallback_rollback_evidence_ready": local_fallback_rollback_visible,
+        "cross_process_controls_evidence_ready": cross_process_controls_visible,
+        "append_only_worker_log_evidence_ready": append_only_worker_log_visible,
+        "scheduler_default_off_runtime_evidence_ready": scheduler_default_off_runtime_visible,
+        "provider_model_no_autoschedule_runtime_evidence_ready": provider_model_no_autoschedule_visible,
         "runtime_qa_execution_status": runtime_qa_execution.get("status"),
         "evidence_keys": [row["evidence_key"] for row in rows],
         "missing_durable_evidence": blocked_rows,
