@@ -550,7 +550,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(action_rows["p2_tushare_target_sample_acceptance"]["local_receipt_step_count"], 1)
         self.assertEqual(action_rows["p3_factor_small_pool_provider_validation"]["local_receipt_step_count"], 2)
         self.assertEqual(action_rows["p3_factor_universe_worker_batch_research"]["local_receipt_step_count"], 5)
-        self.assertEqual(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_step_count"], 8)
+        self.assertEqual(action_rows["p3_candidate_radar_provider_worker_promotion"]["local_receipt_step_count"], 10)
         self.assertEqual(action_rows["p4_storage_physical_execution"]["local_receipt_step_count"], 7)
         self.assertEqual(
             action_rows["p4_storage_physical_execution"]["next_local_step"],
@@ -27810,7 +27810,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         migration = migration_status_service.build_migration_status()
         action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
         radar_action = action_rows["p3_candidate_radar_provider_worker_promotion"]
-        self.assertEqual(radar_action["local_receipt_step_count"], 8)
+        self.assertEqual(radar_action["local_receipt_step_count"], 10)
+        self.assertEqual(radar_action["ready_local_receipt_step_count"], 7)
+        self.assertEqual(radar_action["blocked_local_receipt_step_count"], 0)
         self.assertEqual(radar_action["local_receipt_status"], "local_receipts_partially_visible_next_step_pending")
         self.assertTrue(radar_action["future_handoff_ready_from_local_receipt"])
         handoff = radar_action["future_handoff_preview_rows"][0]

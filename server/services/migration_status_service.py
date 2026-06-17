@@ -762,6 +762,18 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "route": "POST /api/candidate-radar/worker-execution-request",
         },
         {
+            "phase_key": "radar_full_pool_worker_fallback_receipt",
+            "task_type": "run_candidate_radar_full_pool_worker_fallback",
+            "receipt_key": "candidate_radar_full_pool_worker_fallback_receipt",
+            "route": "POST /api/candidate-radar/full-pool-worker-scan",
+        },
+        {
+            "phase_key": "radar_deep_scan_worker_fallback_receipt",
+            "task_type": "run_candidate_radar_deep_scan_worker_fallback",
+            "receipt_key": "candidate_radar_deep_scan_worker_fallback_receipt",
+            "route": "POST /api/candidate-radar/deep-scan-worker",
+        },
+        {
             "phase_key": "radar_production_promotion_dry_run_ticket",
             "task_type": "run_candidate_radar_production_promotion_dry_run",
             "receipt_key": "candidate_radar_production_promotion_dry_run_receipt",
@@ -1752,6 +1764,7 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "local_activation_receipt_ready",
         "local_scope_ticket_ready",
         "local_browser_qa_review_ready",
+        "local_worker_fallback_ready",
         "local_runtime_qa_execution_done",
         "local_gate_ready",
         "ci_mirror_ready",
@@ -3765,6 +3778,20 @@ def _build_ltg_next_action_submission_preview_rows(
             "safe_payload_summary": "operator_approved plus latest radar quant-projection dry-run scope hash",
             "expected_local_receipt": "search_quant_projection_execution_request_receipt",
             "required_prior_phase_key": "radar_quant_projection_dry_run_scope_ticket",
+            "required_prior_material": "receipt_scope_hash",
+        },
+        "POST /api/candidate-radar/full-pool-worker-scan": {
+            "step_kind": "scope_bound_local_full_pool_worker_fallback",
+            "safe_payload_summary": "operator_approved plus worker execution scope hash and local universe rows; no worker start",
+            "expected_local_receipt": "candidate_radar_full_pool_worker_fallback_receipt",
+            "required_prior_phase_key": "radar_worker_execution_request_ticket",
+            "required_prior_material": "receipt_scope_hash",
+        },
+        "POST /api/candidate-radar/deep-scan-worker": {
+            "step_kind": "scope_bound_local_deep_scan_worker_fallback",
+            "safe_payload_summary": "operator_approved plus worker execution scope hash; no worker/model/provider execution",
+            "expected_local_receipt": "candidate_radar_deep_scan_worker_fallback_receipt",
+            "required_prior_phase_key": "radar_full_pool_worker_fallback_receipt",
             "required_prior_material": "receipt_scope_hash",
         },
         "POST /api/candidate-radar/production-promotion-dry-run": {
