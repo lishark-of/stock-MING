@@ -10870,6 +10870,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("first_future_handoff_target_task_type", script)
         self.assertIn("supporting_worker_runtime_dependency_preflight_status", script)
         self.assertIn("supporting_worker_runtime_dependency_preflight_blocking_checks", script)
+        self.assertIn("supporting_worker_runtime_dependency_redis_server_resolution", script)
+        self.assertIn("supporting_worker_runtime_dependency_redis_manual_resolution_blockers", script)
         self.assertIn("linked_observed_stage_scope_pending_counts", script)
         self.assertIn("--ltg", script)
         self.assertIn("focus_ltg_ids", script)
@@ -10930,12 +10932,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("supporting_worker_runtime_dependency_preflight_status", radar_handoff)
         self.assertIn("supporting_worker_runtime_dependency_preflight_blocker_count", radar_handoff)
         self.assertIn("supporting_worker_runtime_dependency_preflight_blocking_checks", radar_handoff)
+        self.assertIn("supporting_worker_runtime_dependency_redis_server_resolution", radar_handoff)
+        self.assertIn("supporting_worker_runtime_dependency_redis_url_configured", radar_handoff)
+        self.assertIn("supporting_worker_runtime_dependency_redis_manual_resolution_required", radar_handoff)
+        self.assertIn("supporting_worker_runtime_dependency_redis_manual_resolution_blockers", radar_handoff)
+        self.assertIn("supporting_worker_runtime_dependency_redis_checked_path_count", radar_handoff)
         self.assertIn(
             radar_handoff["supporting_worker_runtime_dependency_preflight_status"],
             {"manual_runtime_dependency_ready", "manual_runtime_dependency_blocked", ""},
         )
         self.assertIsInstance(
             radar_handoff["supporting_worker_runtime_dependency_preflight_blocking_checks"],
+            list,
+        )
+        self.assertIsInstance(
+            radar_handoff["supporting_worker_runtime_dependency_redis_manual_resolution_blockers"],
             list,
         )
         self.assertEqual(worker_queue["target_acceptance_mode"], "worker_runtime_qa_and_promotion")
@@ -31100,7 +31111,19 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             {"available_path", "available_project_venv", "missing"},
         )
         self.assertIsInstance(dependency_preflight["redis_server_binary_available"], bool)
+        self.assertIsInstance(dependency_preflight["redis_server_path_available"], bool)
+        self.assertIsInstance(dependency_preflight["redis_server_known_path_available"], bool)
+        self.assertIn(dependency_preflight["redis_server_resolution"], {"available_path", "available_known_path", "missing"})
+        self.assertIsInstance(dependency_preflight["redis_server_checked_paths"], list)
         self.assertIsInstance(dependency_preflight["redis_cli_binary_available"], bool)
+        self.assertIsInstance(dependency_preflight["redis_cli_path_available"], bool)
+        self.assertIsInstance(dependency_preflight["redis_cli_known_path_available"], bool)
+        self.assertIn(dependency_preflight["redis_cli_resolution"], {"available_path", "available_known_path", "missing"})
+        self.assertIsInstance(dependency_preflight["redis_cli_checked_paths"], list)
+        self.assertIsInstance(dependency_preflight["redis_config_sources_present"], list)
+        self.assertIsInstance(dependency_preflight["redis_manual_resolution_required"], bool)
+        self.assertIsInstance(dependency_preflight["redis_manual_resolution_blockers"], list)
+        self.assertIsInstance(dependency_preflight["redis_manual_resolution_next_steps"], list)
         self.assertFalse(dependency_preflight["redis_url_exposed"])
         self.assertFalse(dependency_preflight["worker_started"])
         self.assertFalse(dependency_preflight["celery_worker_started"])
@@ -31141,6 +31164,28 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         if (worker_service.PROJECT_ROOT / ".venv" / "bin" / "celery").exists():
             self.assertTrue(dependency_preflight["celery_project_venv_command_available"])
             self.assertFalse(celery_row["blocks_manual_runtime_evidence"])
+        redis_server_row = dependency_rows["redis_server_binary"]
+        redis_url_row = dependency_rows["redis_url_configured"]
+        self.assertEqual(
+            dependency_preflight["redis_server_binary_available"],
+            dependency_preflight["redis_server_path_available"]
+            or dependency_preflight["redis_server_known_path_available"],
+        )
+        self.assertEqual(redis_server_row["status"], dependency_preflight["redis_server_resolution"])
+        self.assertIn("does not start redis-server", redis_server_row["evidence"])
+        self.assertIn("value redacted", redis_url_row["evidence"])
+        self.assertEqual(
+            set(dependency_preflight["redis_manual_resolution_blockers"]),
+            {
+                row["check"]
+                for row in (redis_server_row, redis_url_row)
+                if row["blocks_manual_runtime_evidence"]
+            },
+        )
+        self.assertEqual(
+            dependency_preflight["redis_manual_resolution_required"],
+            bool(dependency_preflight["redis_manual_resolution_blockers"]),
+        )
         self.assertTrue(packet["policy"]["worker_runtime_dependency_preflight_is_local"])
         self.assertTrue(packet["policy"]["worker_runtime_dependency_preflight_does_not_start_process"])
         self.assertTrue(packet["policy"]["worker_runtime_dependency_preflight_does_not_ping_redis"])

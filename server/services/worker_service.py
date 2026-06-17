@@ -103,6 +103,18 @@ WORKER_RUNTIME_DURABLE_EVIDENCE_LABELS = {
 }
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
+LOCAL_REDIS_SERVER_CANDIDATE_PATHS = (
+    "/opt/homebrew/bin/redis-server",
+    "/usr/local/bin/redis-server",
+    "/opt/local/bin/redis-server",
+    "/usr/bin/redis-server",
+)
+LOCAL_REDIS_CLI_CANDIDATE_PATHS = (
+    "/opt/homebrew/bin/redis-cli",
+    "/usr/local/bin/redis-cli",
+    "/opt/local/bin/redis-cli",
+    "/usr/bin/redis-cli",
+)
 WORKER_TASK_CONTROL_PROBE_PATH = PROJECT_ROOT / "scripts" / "worker_task_control_probe.py"
 TASK_CONTROL_PROJECTION_KEYS = (
     "task_id",
@@ -265,6 +277,13 @@ def _project_venv_command_available(command_name: str) -> bool:
         return False
 
 
+def _known_executable_path_available(paths: tuple[str, ...]) -> bool:
+    try:
+        return any(Path(path).is_file() and os.access(path, os.X_OK) for path in paths)
+    except Exception:
+        return False
+
+
 def _path_exists(path: str) -> bool:
     return (PROJECT_ROOT / path).exists()
 
@@ -279,14 +298,37 @@ def _worker_runtime_dependency_preflight(
     celery_command_path_available = _command_available("celery")
     celery_project_venv_command_available = _project_venv_command_available("celery")
     celery_command_available = celery_command_path_available or celery_project_venv_command_available
-    redis_server_binary_available = _command_available("redis-server")
-    redis_cli_binary_available = _command_available("redis-cli")
+    redis_server_path_available = _command_available("redis-server")
+    redis_server_known_path_available = _known_executable_path_available(LOCAL_REDIS_SERVER_CANDIDATE_PATHS)
+    redis_server_binary_available = redis_server_path_available or redis_server_known_path_available
+    redis_cli_path_available = _command_available("redis-cli")
+    redis_cli_known_path_available = _known_executable_path_available(LOCAL_REDIS_CLI_CANDIDATE_PATHS)
+    redis_cli_binary_available = redis_cli_path_available or redis_cli_known_path_available
     if celery_command_path_available:
         celery_command_status = "available_path"
     elif celery_project_venv_command_available:
         celery_command_status = "available_project_venv"
     else:
         celery_command_status = "missing"
+    redis_server_resolution = (
+        "available_path"
+        if redis_server_path_available
+        else "available_known_path"
+        if redis_server_known_path_available
+        else "missing"
+    )
+    redis_cli_resolution = (
+        "available_path"
+        if redis_cli_path_available
+        else "available_known_path"
+        if redis_cli_known_path_available
+        else "missing"
+    )
+    redis_config_sources = [
+        name
+        for name in ("REDIS_URL", "CELERY_BROKER_URL")
+        if bool(os.environ.get(name))
+    ]
     rows = [
         {
             "check": "python_celery_package",
@@ -311,24 +353,24 @@ def _worker_runtime_dependency_preflight(
         },
         {
             "check": "redis_server_binary",
-            "status": "available" if redis_server_binary_available else "missing",
+            "status": redis_server_resolution,
             "required_for_production_worker": True,
             "blocks_manual_runtime_evidence": not redis_server_binary_available,
-            "evidence": "PATH command lookup only",
+            "evidence": "PATH command lookup plus known local Redis binary paths; does not start redis-server",
         },
         {
             "check": "redis_cli_binary",
-            "status": "available" if redis_cli_binary_available else "missing",
+            "status": redis_cli_resolution,
             "required_for_production_worker": False,
             "blocks_manual_runtime_evidence": False,
-            "evidence": "PATH command lookup only",
+            "evidence": "PATH command lookup plus known local Redis CLI paths; does not ping Redis",
         },
         {
             "check": "redis_url_configured",
             "status": "configured_not_pinged" if redis_configured else "missing",
             "required_for_production_worker": True,
             "blocks_manual_runtime_evidence": not redis_configured,
-            "evidence": "environment presence boolean only; value redacted",
+            "evidence": "REDIS_URL/CELERY_BROKER_URL presence boolean only; value redacted",
         },
         {
             "check": "apscheduler_package",
@@ -355,8 +397,29 @@ def _worker_runtime_dependency_preflight(
         "celery_project_venv_command_available": celery_project_venv_command_available,
         "celery_command_resolution": celery_command_status,
         "redis_server_binary_available": redis_server_binary_available,
+        "redis_server_path_available": redis_server_path_available,
+        "redis_server_known_path_available": redis_server_known_path_available,
+        "redis_server_resolution": redis_server_resolution,
+        "redis_server_checked_paths": list(LOCAL_REDIS_SERVER_CANDIDATE_PATHS),
         "redis_cli_binary_available": redis_cli_binary_available,
+        "redis_cli_path_available": redis_cli_path_available,
+        "redis_cli_known_path_available": redis_cli_known_path_available,
+        "redis_cli_resolution": redis_cli_resolution,
+        "redis_cli_checked_paths": list(LOCAL_REDIS_CLI_CANDIDATE_PATHS),
         "redis_url_configured": redis_configured,
+        "redis_config_sources_present": redis_config_sources,
+        "redis_manual_resolution_required": (not redis_server_binary_available) or (not redis_configured),
+        "redis_manual_resolution_blockers": [
+            row["check"]
+            for row in rows
+            if row["check"] in {"redis_server_binary", "redis_url_configured"}
+            and row["blocks_manual_runtime_evidence"]
+        ],
+        "redis_manual_resolution_next_steps": [
+            "install or expose a local redis-server binary, or provide an approved remote broker URL",
+            "configure REDIS_URL or CELERY_BROKER_URL without exposing the value",
+            "run a separate approved broker reachability QA before production promotion",
+        ],
         "redis_url_exposed": False,
         "worker_started": False,
         "celery_worker_started": False,

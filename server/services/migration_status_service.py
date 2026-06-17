@@ -2592,6 +2592,13 @@ def _latest_worker_runtime_dependency_preflight_preview() -> dict[str, Any]:
         "local_preflight_ready": preflight_map.get("local_preflight_ready") is True,
         "blocker_count": int(preflight_map.get("blocker_count") or len(blocking_rows)),
         "blocking_checks": [str(row.get("check") or "") for row in blocking_rows if row.get("check")],
+        "redis_server_resolution": str(preflight_map.get("redis_server_resolution") or ""),
+        "redis_server_checked_paths": preflight_map.get("redis_server_checked_paths") or [],
+        "redis_url_configured": preflight_map.get("redis_url_configured") is True,
+        "redis_config_sources_present": preflight_map.get("redis_config_sources_present") or [],
+        "redis_manual_resolution_required": preflight_map.get("redis_manual_resolution_required") is True,
+        "redis_manual_resolution_blockers": preflight_map.get("redis_manual_resolution_blockers") or [],
+        "redis_manual_resolution_next_steps": preflight_map.get("redis_manual_resolution_next_steps") or [],
         "row_count": len(rows),
         "does_not_start_process": bool(
             preflight_map
@@ -4191,6 +4198,21 @@ def _build_ltg_future_handoff_preview_rows(
             "supporting_worker_runtime_dependency_preflight_blocker_count": dependency_blocker_count,
             "supporting_worker_runtime_dependency_preflight_blocking_checks": (
                 dependency_map.get("blocking_checks") if dependency_visible else []
+            ),
+            "supporting_worker_runtime_dependency_redis_server_resolution": (
+                dependency_map.get("redis_server_resolution") if dependency_visible else ""
+            ),
+            "supporting_worker_runtime_dependency_redis_url_configured": (
+                dependency_map.get("redis_url_configured") is True if dependency_visible else False
+            ),
+            "supporting_worker_runtime_dependency_redis_manual_resolution_required": (
+                dependency_map.get("redis_manual_resolution_required") is True if dependency_visible else False
+            ),
+            "supporting_worker_runtime_dependency_redis_manual_resolution_blockers": (
+                dependency_map.get("redis_manual_resolution_blockers") if dependency_visible else []
+            ),
+            "supporting_worker_runtime_dependency_redis_checked_path_count": (
+                len(dependency_map.get("redis_server_checked_paths") or []) if dependency_visible else 0
             ),
             "supporting_worker_runtime_dependency_preflight_blocks_manual_runtime_evidence": bool(
                 dependency_visible and dependency_blocker_count > 0
