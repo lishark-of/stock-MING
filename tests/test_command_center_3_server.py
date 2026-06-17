@@ -10869,6 +10869,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("future_handoff_preview_rows", script)
         self.assertIn("first_future_handoff_target_task_type", script)
         self.assertIn("linked_observed_stage_scope_pending_counts", script)
+        self.assertIn("--ltg", script)
+        self.assertIn("focus_ltg_ids", script)
         self.assertIn("observed_stage_scope_direct_evidence_count", script)
         self.assertIn("observed_stage_scope_direct_evidence_keys", script)
         self.assertIn("external_calls_triggered", script)
@@ -10942,6 +10944,37 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(handoff["contains_secret"])
             self.assertFalse(handoff["can_close_goal"])
             self.assertFalse(handoff["production_complete"])
+
+        focused_result = subprocess.run(
+            [sys.executable, str(path), "--json", "--ltg", "13", "--ltg", "LTG-06"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        focused = json.loads(focused_result.stdout)
+        self.assertEqual(focused["focus_ltg_ids"], ["LTG-06", "LTG-13"])
+        self.assertEqual({row["id"] for row in focused["goal_rows"]}, {"LTG-06", "LTG-13"})
+        self.assertEqual(focused["focus_goal_count"], 2)
+        self.assertGreaterEqual(focused["focus_queue_count"], 2)
+        self.assertTrue(
+            all(
+                {"LTG-06", "LTG-13"}.intersection(set(row["ltg_ids"]))
+                for row in focused["queue_rows"]
+            )
+        )
+        self.assertEqual(
+            focused["ready_local_button_count"],
+            sum(1 for row in focused["queue_rows"] if row["next_local_step_ready_for_clean_receipt"]),
+        )
+        self.assertEqual(
+            focused["durable_handoff_ready_count"],
+            sum(1 for row in focused["queue_rows"] if row["future_handoff_ready_from_local_receipt"]),
+        )
+        self.assertFalse(focused["safety"]["external_calls_triggered"])
+        self.assertFalse(focused["safety"]["tushare_called"])
+        self.assertFalse(focused["safety"]["deepseek_called"])
+        self.assertFalse(focused["safety"]["github_called"])
+        self.assertTrue(focused["safety"]["does_not_execute_trades"])
 
     def test_data_health_freshness_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/data_health_freshness_contract.py")

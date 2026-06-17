@@ -33,6 +33,17 @@ def _row_by_id(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return {str(row.get("id") or ""): row for row in rows if isinstance(row, dict)}
 
 
+def _normalize_ltg_id(value: str) -> str:
+    text = str(value or "").strip().upper()
+    if not text:
+        return ""
+    if text.startswith("LTG-"):
+        return text
+    if text.isdigit():
+        return f"LTG-{int(text):02d}"
+    return text
+
+
 def _compact_handoff_rows(rows: list[Any]) -> list[dict[str, Any]]:
     compact: list[dict[str, Any]] = []
     for row in rows:
@@ -205,6 +216,39 @@ def build_snapshot() -> dict[str, Any]:
     }
 
 
+def filter_snapshot(snapshot: dict[str, Any], focus_ltg_ids: set[str]) -> dict[str, Any]:
+    focus = {item for item in (_normalize_ltg_id(value) for value in focus_ltg_ids) if item}
+    if not focus:
+        snapshot["focus_ltg_ids"] = []
+        snapshot["focus_goal_count"] = len(_list(snapshot.get("goal_rows")))
+        snapshot["focus_queue_count"] = len(_list(snapshot.get("queue_rows")))
+        return snapshot
+
+    goal_rows = [
+        row
+        for row in _list(snapshot.get("goal_rows"))
+        if isinstance(row, dict) and str(row.get("id") or "") in focus
+    ]
+    queue_rows = [
+        row
+        for row in _list(snapshot.get("queue_rows"))
+        if isinstance(row, dict) and focus.intersection({str(item) for item in _list(row.get("ltg_ids"))})
+    ]
+    filtered = dict(snapshot)
+    filtered["focus_ltg_ids"] = sorted(focus)
+    filtered["focus_goal_count"] = len(goal_rows)
+    filtered["focus_queue_count"] = len(queue_rows)
+    filtered["ready_local_button_count"] = sum(
+        1 for row in queue_rows if isinstance(row, dict) and row.get("next_local_step_ready_for_clean_receipt") is True
+    )
+    filtered["durable_handoff_ready_count"] = sum(
+        1 for row in queue_rows if isinstance(row, dict) and row.get("future_handoff_ready_from_local_receipt") is True
+    )
+    filtered["goal_rows"] = goal_rows
+    filtered["queue_rows"] = queue_rows
+    return filtered
+
+
 def _print_text(snapshot: dict[str, Any]) -> None:
     print(
         "LTG snapshot:"
@@ -212,6 +256,9 @@ def _print_text(snapshot: dict[str, Any]) -> None:
         f" ready_local_buttons={snapshot['ready_local_button_count']}"
         f" durable_handoffs={snapshot['durable_handoff_ready_count']}"
     )
+    focus_ltg_ids = snapshot.get("focus_ltg_ids") or []
+    if focus_ltg_ids:
+        print(f"Focus: {','.join(str(item) for item in focus_ltg_ids)}")
     safety = snapshot["safety"]
     print(
         "Safety:"
@@ -252,8 +299,14 @@ def _print_text(snapshot: dict[str, Any]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Print the local 14-LTG progress snapshot.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
+    parser.add_argument(
+        "--ltg",
+        action="append",
+        default=[],
+        help="Limit goal_rows and queue_rows to one LTG id, e.g. LTG-13 or 13. May be repeated.",
+    )
     args = parser.parse_args()
-    snapshot = build_snapshot()
+    snapshot = filter_snapshot(build_snapshot(), set(args.ltg))
     if args.json:
         print(json.dumps(snapshot, ensure_ascii=False, indent=2, sort_keys=True))
     else:
