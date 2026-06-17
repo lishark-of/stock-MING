@@ -17,6 +17,7 @@ MOTION_QA_ARTIFACT_ROOT = PROJECT_ROOT / ".stock_ming_3" / "motion_qa"
 MOTION_BROWSER_QA_RUNNER_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runner.mjs"
 NEXT_SESSION_ROUTE_SOURCE_PATH = PROJECT_ROOT / "desktop" / "src" / "routes" / "NextSessionMap.tsx"
 NEXT_SESSION_BROWSER_QA_REVIEW_PACKET_KEY = "command_center_next_session_browser_qa_review_packet"
+NEXT_SESSION_STREAMLIT_PARITY_REVIEW_PACKET_KEY = "command_center_next_session_streamlit_parity_review_packet"
 NEXT_SESSION_DURABLE_EVIDENCE_SCHEMA_VERSION = "next_session_durable_evidence_recipe.v1"
 NEXT_SESSION_DURABLE_EVIDENCE_KEYS = (
     "cache_render_boundary_visible",
@@ -760,6 +761,279 @@ def _write_next_session_browser_qa_review_packet(
     }
     if _safe_persisted_browser_qa_review(packet):
         SQLiteMetaStore(SQLITE_META_PATH).write_packet(NEXT_SESSION_BROWSER_QA_REVIEW_PACKET_KEY, packet)
+
+
+def _next_session_streamlit_parity_review_row(
+    criterion: str,
+    status: str,
+    *,
+    passed: bool,
+    evidence: str,
+    next_action: str,
+    feature_group: str,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "blocking": not bool(passed),
+        "feature_group": feature_group,
+        "evidence": evidence,
+        "next_action": next_action,
+        "review_only": True,
+        "same_packet_review": True,
+        "streamlit_reference_captured": False,
+        "streamlit_parity_complete": False,
+        "production_replacement_complete": False,
+        "opens_no_streamlit": True,
+        "opens_no_browser": True,
+        "starts_no_servers": True,
+        "writes_no_artifacts": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_operation_zones": True,
+        "frontend_computes_trade_action": False,
+        "contains_secret": False,
+    }
+
+
+def _next_session_streamlit_parity_review_contract(
+    parity_recipe: Mapping[str, Any],
+    parity_rows: list[Mapping[str, Any]],
+    *,
+    explicit_review: bool = False,
+    task_id: str = "",
+    reviewed_at: str = "",
+) -> dict[str, Any]:
+    rows_by_phase = {
+        str(row.get("phase")): row for row in parity_rows if isinstance(row, Mapping) and row.get("phase")
+    }
+    preserved_groups = set(_as_list(parity_recipe.get("preserved_feature_groups")))
+    required_groups = {
+        "latest close anchor",
+        "scenario paths",
+        "reference and limit lines",
+        "operation zones and guardrails",
+        "position conflict warnings",
+        "freshness and data trust",
+        "DeepSeek status display",
+        "hover and click drilldown",
+        "read-only action boundary",
+    }
+    cache_payload_ready = rows_by_phase.get("cache_payload_snapshot", {}).get("local_ready") is True
+    feature_matrix_ready = rows_by_phase.get("chart_visual_feature_matrix", {}).get("local_ready") is True
+    zone_guardrail_ready = rows_by_phase.get("operation_zone_and_guardrail_parity", {}).get("local_ready") is True
+    context_ready = rows_by_phase.get("position_conflict_and_data_trust_parity", {}).get("local_ready") is True
+    hover_click_ready = rows_by_phase.get("hover_click_interaction_parity", {}).get("local_ready") is True
+    read_only_ready = rows_by_phase.get("frontend_read_only_no_feature_loss_boundary", {}).get("local_ready") is True
+    no_group_loss_ready = required_groups.issubset(preserved_groups)
+    rows = [
+        _next_session_streamlit_parity_review_row(
+            "explicit_post_review_task",
+            "passed" if explicit_review else "pending_explicit_post",
+            passed=explicit_review,
+            evidence=f"task_id={task_id or 'not_started'}; reviewed_at={reviewed_at or 'not_reviewed'}",
+            next_action="Run the explicit POST review before treating same-packet parity evidence as direct.",
+            feature_group="button-gated review",
+        ),
+        _next_session_streamlit_parity_review_row(
+            "exact_cache_payload_snapshot_ready",
+            "passed" if cache_payload_ready else "blocked_exact_packet",
+            passed=cache_payload_ready,
+            evidence=str(rows_by_phase.get("cache_payload_snapshot", {}).get("evidence", "")),
+            next_action="Keep the exact React/ECharts packet available for same-packet review.",
+            feature_group="exact ECharts packet",
+        ),
+        _next_session_streamlit_parity_review_row(
+            "legacy_reference_capture_stays_pending",
+            "passed_reference_capture_not_claimed",
+            passed=True,
+            evidence="This local review intentionally does not claim a captured Streamlit screenshot or reference packet.",
+            next_action="Capture legacy Streamlit reference separately before production replacement.",
+            feature_group="legacy reference baseline",
+        ),
+        _next_session_streamlit_parity_review_row(
+            "chart_visual_feature_matrix_reviewed",
+            "passed" if feature_matrix_ready else "blocked_feature_matrix",
+            passed=feature_matrix_ready,
+            evidence=str(rows_by_phase.get("chart_visual_feature_matrix", {}).get("evidence", "")),
+            next_action="Compare latest close, scenarios, reference lines, zones, data trust, and DeepSeek status against legacy behavior.",
+            feature_group="visual signal groups",
+        ),
+        _next_session_streamlit_parity_review_row(
+            "operation_zone_and_guardrail_reviewed",
+            "passed" if zone_guardrail_ready else "blocked_operation_zone_guardrail",
+            passed=zone_guardrail_ready,
+            evidence=str(rows_by_phase.get("operation_zone_and_guardrail_parity", {}).get("evidence", "")),
+            next_action="Keep operation-zone labels, ranges, and guardrails visible without frontend mutation.",
+            feature_group="operation zones and guardrails",
+        ),
+        _next_session_streamlit_parity_review_row(
+            "position_conflict_and_data_trust_reviewed",
+            "passed" if context_ready else "blocked_context_review",
+            passed=context_ready,
+            evidence=str(rows_by_phase.get("position_conflict_and_data_trust_parity", {}).get("evidence", "")),
+            next_action="Keep conflict warnings, freshness/data trust, and model/provider status visible.",
+            feature_group="position and data trust context",
+        ),
+        _next_session_streamlit_parity_review_row(
+            "hover_click_contract_reviewed",
+            "passed" if hover_click_ready else "blocked_hover_click_contract",
+            passed=hover_click_ready,
+            evidence=str(rows_by_phase.get("hover_click_interaction_parity", {}).get("evidence", "")),
+            next_action="Capture hover/click parity notes against the legacy UI before production replacement.",
+            feature_group="hover/click/source display",
+        ),
+        _next_session_streamlit_parity_review_row(
+            "frontend_read_only_boundary_reviewed",
+            "passed" if read_only_ready else "blocked_frontend_read_only_boundary",
+            passed=read_only_ready,
+            evidence=str(rows_by_phase.get("frontend_read_only_no_feature_loss_boundary", {}).get("evidence", "")),
+            next_action="Keep React/ECharts render-only; do not compute action or mutate operation zones.",
+            feature_group="read-only frontend boundary",
+        ),
+        _next_session_streamlit_parity_review_row(
+            "no_feature_group_dropped",
+            "passed" if no_group_loss_ready else "blocked_feature_group_loss",
+            passed=no_group_loss_ready,
+            evidence=f"preserved_feature_groups={len(preserved_groups)}; required_feature_groups={len(required_groups)}",
+            next_action="Do not remove legacy signal groups to make the migration easier.",
+            feature_group="feature parity inventory",
+        ),
+        _next_session_streamlit_parity_review_row(
+            "production_replacement_stays_blocked",
+            "passed",
+            passed=True,
+            evidence="Same-packet local review is not durable CI/release evidence and does not remove Streamlit fallback.",
+            next_action="Require durable browser/release evidence and explicit promotion before replacement.",
+            feature_group="production boundary",
+        ),
+    ]
+    blocking_rows = [row["criterion"] for row in rows if row["blocking"]]
+    same_packet_ready = explicit_review and not blocking_rows
+    status = (
+        "next_session_streamlit_parity_review_ready_local_same_packet"
+        if same_packet_ready
+        else "next_session_streamlit_parity_review_pending"
+    )
+    return {
+        "schema_version": "next_session_streamlit_parity_review.v1",
+        "status": status,
+        "scope": "button_gated_local_next_session_streamlit_parity_review_no_streamlit_no_browser_no_provider",
+        "ltg": "LTG-08/LTG-10",
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "explicit_review_task_done": bool(explicit_review),
+        "local_streamlit_parity_review_ready": same_packet_ready,
+        "same_packet_no_loss_review_ready": same_packet_ready,
+        "feature_by_feature_parity_reviewed": same_packet_ready,
+        "hover_click_parity_reviewed": same_packet_ready and hover_click_ready,
+        "streamlit_reference_captured": False,
+        "streamlit_parity_complete": False,
+        "production_replacement_complete": False,
+        "legacy_fallback_removed": False,
+        "no_feature_loss_required": True,
+        "preserved_feature_groups": sorted(preserved_groups),
+        "required_feature_groups": sorted(required_groups),
+        "review_row_count": len(rows),
+        "blocking_review_count": len(blocking_rows),
+        "blocking_review_rows": blocking_rows,
+        "rows": rows,
+        "opens_no_streamlit": True,
+        "opens_no_browser": True,
+        "starts_no_servers": True,
+        "writes_no_artifacts": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_operation_zones": True,
+        "frontend_computes_trade_action": False,
+        "contains_secret": False,
+        "note": "This is a button-gated same-packet no-feature-loss review. It does not start Streamlit, capture a Streamlit reference, run browser QA, remove fallback, or complete production replacement.",
+    }
+
+
+def _safe_persisted_streamlit_parity_review(packet: Mapping[str, Any]) -> dict[str, Any]:
+    review = _as_dict(packet.get("next_session_streamlit_parity_review_contract"))
+    safe = (
+        review.get("schema_version") == "next_session_streamlit_parity_review.v1"
+        and review.get("scope")
+        == "button_gated_local_next_session_streamlit_parity_review_no_streamlit_no_browser_no_provider"
+        and review.get("explicit_review_task_done") is True
+        and review.get("local_streamlit_parity_review_ready") is True
+        and review.get("same_packet_no_loss_review_ready") is True
+        and review.get("streamlit_reference_captured") is False
+        and review.get("streamlit_parity_complete") is False
+        and review.get("production_replacement_complete") is False
+        and review.get("opens_no_streamlit") is True
+        and review.get("opens_no_browser") is True
+        and review.get("starts_no_servers") is True
+        and review.get("writes_no_artifacts") is True
+        and review.get("external_calls_triggered") is False
+        and review.get("tushare_called") is False
+        and review.get("deepseek_called") is False
+        and review.get("github_called") is False
+        and review.get("does_not_execute_trades") is True
+        and review.get("does_not_modify_strategy_action") is True
+        and review.get("does_not_modify_operation_zones") is True
+    )
+    return review if safe else {}
+
+
+def _read_next_session_streamlit_parity_review_packet() -> dict[str, Any]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(NEXT_SESSION_STREAMLIT_PARITY_REVIEW_PACKET_KEY)
+    except Exception:
+        return {}
+    if not isinstance(packet, dict):
+        return {}
+    return packet if _safe_persisted_streamlit_parity_review(packet) else {}
+
+
+def _write_next_session_streamlit_parity_review_packet(
+    *,
+    review_contract: Mapping[str, Any],
+    ledger: list[dict[str, Any]],
+    reviewed_at: str,
+    task_id: str,
+) -> None:
+    packet = {
+        "packet_key": NEXT_SESSION_STREAMLIT_PARITY_REVIEW_PACKET_KEY,
+        "schema_version": "next_session_streamlit_parity_review_packet.v1",
+        "status": review_contract.get("status"),
+        "ltg": "LTG-08/LTG-10",
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "next_session_streamlit_parity_review_contract": dict(review_contract),
+        "next_session_streamlit_parity_review_rows": _as_list(review_contract.get("rows")),
+        "call_ledger": list(ledger),
+        "cache_only": True,
+        "opens_no_streamlit": True,
+        "opens_no_browser": True,
+        "starts_no_servers": True,
+        "writes_no_artifacts": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_operation_zones": True,
+        "contains_secret": False,
+        "warnings": [
+            "This packet is a local same-packet Streamlit parity/no-feature-loss review receipt only.",
+            "It does not open Streamlit or a browser, call providers/models/GitHub, execute trades, remove fallback, mutate action or operation zones, or complete production replacement.",
+        ],
+    }
+    if _safe_persisted_streamlit_parity_review(packet):
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(NEXT_SESSION_STREAMLIT_PARITY_REVIEW_PACKET_KEY, packet)
 
 
 def _next_session_replacement_activation_receipt(packet: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -1548,11 +1822,13 @@ def _next_session_production_stage_scope_row(
     *,
     local_contract_ready: bool,
     direct_evidence_complete: bool,
+    production_blocker: bool | None = None,
     current_status: str,
     evidence: str,
     missing_evidence: list[str],
     recommended_order: int,
 ) -> dict[str, Any]:
+    blocker = not bool(direct_evidence_complete) if production_blocker is None else bool(production_blocker)
     return {
         "schema_version": NEXT_SESSION_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION,
         "stage_key": stage_key,
@@ -1566,7 +1842,7 @@ def _next_session_production_stage_scope_row(
         "direct_evidence_complete": bool(direct_evidence_complete),
         "local_only_direct_evidence": bool(direct_evidence_complete),
         "durable_evidence_complete": False,
-        "production_blocker": not bool(direct_evidence_complete),
+        "production_blocker": blocker,
         "evidence": evidence,
         "missing_evidence": missing_evidence,
         "streamlit_parity_complete": False,
@@ -1598,6 +1874,7 @@ def _next_session_production_stage_scope_manifest(packet: Mapping[str, Any], now
     interaction_audit = _as_dict(chart.get("interaction_readiness_audit"))
     browser_review = _as_dict(packet.get("next_session_browser_qa_review_contract"))
     browser_evidence = _as_dict(packet.get("next_session_browser_qa_evidence_summary"))
+    streamlit_review = _as_dict(packet.get("next_session_streamlit_parity_review_contract"))
     activation = _as_dict(packet.get("next_session_replacement_activation_receipt"))
 
     exact_payload_contract_ready = (
@@ -1613,6 +1890,16 @@ def _next_session_production_stage_scope_manifest(packet: Mapping[str, Any], now
         and int(interaction_audit.get("blocking_count") or 0) == 0
     )
     local_review_ready = browser_review.get("local_browser_qa_review_ready") is True
+    streamlit_same_packet_review_ready = (
+        streamlit_review.get("schema_version") == "next_session_streamlit_parity_review.v1"
+        and streamlit_review.get("scope")
+        == "button_gated_local_next_session_streamlit_parity_review_no_streamlit_no_browser_no_provider"
+        and streamlit_review.get("local_streamlit_parity_review_ready") is True
+        and streamlit_review.get("same_packet_no_loss_review_ready") is True
+        and streamlit_review.get("streamlit_reference_captured") is False
+        and streamlit_review.get("streamlit_parity_complete") is False
+        and streamlit_review.get("production_replacement_complete") is False
+    )
     browser_visual_done = (
         local_review_ready
         and browser_evidence.get("next_visual_qa_evidence_passed") is True
@@ -1665,11 +1952,24 @@ def _next_session_production_stage_scope_manifest(packet: Mapping[str, Any], now
         ),
         _next_session_production_stage_scope_row(
             "streamlit_parity_review",
-            local_contract_ready=False,
-            direct_evidence_complete=False,
-            current_status="pending_same_packet_streamlit_parity",
-            evidence=f"streamlit_parity_complete={activation.get('streamlit_parity_complete') is True}",
-            missing_evidence=["explicit same-packet Streamlit reference capture", "feature-by-feature parity matrix"],
+            local_contract_ready=streamlit_same_packet_review_ready,
+            direct_evidence_complete=streamlit_same_packet_review_ready,
+            production_blocker=True,
+            current_status=(
+                "direct_evidence_ready_local_same_packet_no_loss_review_reference_pending"
+                if streamlit_same_packet_review_ready
+                else "pending_same_packet_streamlit_parity"
+            ),
+            evidence=(
+                f"same_packet_no_loss_review_ready={streamlit_review.get('same_packet_no_loss_review_ready') is True}; "
+                f"streamlit_reference_captured={streamlit_review.get('streamlit_reference_captured') is True}; "
+                f"streamlit_parity_complete={activation.get('streamlit_parity_complete') is True}"
+            ),
+            missing_evidence=(
+                ["legacy Streamlit reference capture", "durable CI/release evidence", "production replacement promotion"]
+                if streamlit_same_packet_review_ready
+                else ["explicit same-packet Streamlit reference capture", "feature-by-feature parity matrix"]
+            ),
             recommended_order=3,
         ),
         _next_session_production_stage_scope_row(
@@ -1740,20 +2040,22 @@ def _next_session_production_stage_scope_manifest(packet: Mapping[str, Any], now
     ]
     direct_stage_keys = [row["stage_key"] for row in rows if row["direct_evidence_complete"] is True]
     pending_stage_keys = [row["stage_key"] for row in rows if row["direct_evidence_complete"] is not True]
+    production_blocker_keys = [row["stage_key"] for row in rows if row["production_blocker"] is True]
     local_contract_stage_keys = [row["stage_key"] for row in rows if row["local_contract_ready"] is True]
     manifest = {
         "schema_version": NEXT_SESSION_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION,
         "status": "next_session_production_stage_scope_manifest_ready_production_pending",
         "scope": "next_session_production_replacement_stage_scope_manifest",
-        "ltg": "LTG-08/LTG-13",
+        "ltg": "LTG-08/LTG-10",
         "local_manifest_ready": True,
         "stage_count": len(rows),
         "direct_evidence_stage_count": len(direct_stage_keys),
         "pending_stage_count": len(pending_stage_keys),
-        "production_blocker_count": len(pending_stage_keys),
+        "production_blocker_count": len(production_blocker_keys),
         "stage_keys": list(NEXT_SESSION_PRODUCTION_STAGE_KEYS),
         "direct_evidence_stage_keys": direct_stage_keys,
         "pending_stage_keys": pending_stage_keys,
+        "production_blocker_stage_keys": production_blocker_keys,
         "local_contract_stage_keys": local_contract_stage_keys,
         "exact_cache_payload_contract_done": exact_payload_contract_ready,
         "interaction_hover_click_contract_done": interaction_contract_ready,
@@ -1761,6 +2063,8 @@ def _next_session_production_stage_scope_manifest(packet: Mapping[str, Any], now
         "browser_performance_trace_done": browser_performance_done,
         "reduced_motion_accessibility_qa_done": reduced_motion_done,
         "local_browser_qa_review_ready": local_review_ready,
+        "local_streamlit_parity_review_ready": streamlit_same_packet_review_ready,
+        "same_packet_no_loss_review_ready": streamlit_same_packet_review_ready,
         "streamlit_parity_complete": False,
         "durable_ci_evidence_complete": False,
         "production_replacement_complete": False,
@@ -1820,6 +2124,10 @@ def read_next_session_cache() -> dict[str, Any]:
     persisted_browser_qa_review = _as_dict(
         persisted_browser_qa_review_packet.get("next_session_browser_qa_review_contract")
     )
+    persisted_streamlit_parity_review_packet = _read_next_session_streamlit_parity_review_packet()
+    persisted_streamlit_parity_review = _as_dict(
+        persisted_streamlit_parity_review_packet.get("next_session_streamlit_parity_review_contract")
+    )
     existing_browser_qa_review = _as_dict(packet.get("next_session_browser_qa_review_contract"))
     if persisted_browser_qa_review.get("explicit_review_task_done") is True:
         browser_qa_review = persisted_browser_qa_review
@@ -1827,6 +2135,16 @@ def read_next_session_cache() -> dict[str, Any]:
         browser_qa_review = existing_browser_qa_review
     else:
         browser_qa_review = _next_session_browser_qa_review_contract(browser_qa_evidence, browser_qa_evidence_rows)
+    existing_streamlit_parity_review = _as_dict(packet.get("next_session_streamlit_parity_review_contract"))
+    if persisted_streamlit_parity_review.get("explicit_review_task_done") is True:
+        streamlit_parity_review = persisted_streamlit_parity_review
+    elif existing_streamlit_parity_review.get("explicit_review_task_done") is True:
+        streamlit_parity_review = existing_streamlit_parity_review
+    else:
+        streamlit_parity_review = _next_session_streamlit_parity_review_contract(
+            legacy_parity_recipe,
+            legacy_parity_rows,
+        )
     packet["next_session_replacement_activation_receipt"] = activation_receipt
     packet["next_session_replacement_activation_rows"] = activation_rows
     packet["next_session_legacy_parity_execution_recipe"] = legacy_parity_recipe
@@ -1840,6 +2158,8 @@ def read_next_session_cache() -> dict[str, Any]:
     packet["next_session_browser_qa_evidence_rows"] = browser_qa_evidence_rows
     packet["next_session_browser_qa_review_contract"] = browser_qa_review
     packet["next_session_browser_qa_review_rows"] = _as_list(browser_qa_review.get("rows"))
+    packet["next_session_streamlit_parity_review_contract"] = streamlit_parity_review
+    packet["next_session_streamlit_parity_review_rows"] = _as_list(streamlit_parity_review.get("rows"))
     durable_evidence_recipe = _next_session_durable_evidence_recipe(packet, _now_iso())
     packet["next_session_durable_evidence_recipe"] = durable_evidence_recipe
     packet["next_session_durable_evidence_rows"] = durable_evidence_recipe["rows"]
@@ -1853,6 +2173,12 @@ def read_next_session_cache() -> dict[str, Any]:
     packet["next_session_browser_qa_evidence_ready"] = browser_qa_evidence["next_browser_qa_evidence_ready"]
     packet["next_session_browser_qa_review_ready"] = browser_qa_review["local_browser_qa_review_ready"]
     packet["next_session_browser_qa_review_blocking_count"] = browser_qa_review["blocking_review_count"]
+    packet["next_session_streamlit_parity_review_ready"] = streamlit_parity_review[
+        "local_streamlit_parity_review_ready"
+    ]
+    packet["next_session_streamlit_parity_review_blocking_count"] = streamlit_parity_review[
+        "blocking_review_count"
+    ]
     packet["next_session_durable_evidence_recipe_ready"] = durable_evidence_recipe["local_recipe_ready"]
     packet["next_session_durable_evidence_blocker_count"] = durable_evidence_recipe["durable_evidence_blocker_count"]
     packet["next_session_production_stage_scope_ready"] = production_stage_scope["local_manifest_ready"]
@@ -1870,6 +2196,12 @@ def read_next_session_cache() -> dict[str, Any]:
             ],
             "next_session_production_stage_scope_pending_count": production_stage_scope["pending_stage_count"],
             "next_session_production_stage_scope_blocker_count": production_stage_scope["production_blocker_count"],
+            "next_session_streamlit_parity_review_ready": streamlit_parity_review[
+                "local_streamlit_parity_review_ready"
+            ],
+            "next_session_streamlit_parity_review_blocking_count": streamlit_parity_review[
+                "blocking_review_count"
+            ],
         }
     )
     packet["counts"] = counts
@@ -1880,6 +2212,9 @@ def read_next_session_cache() -> dict[str, Any]:
             "next_session_production_stage_scope_is_not_browser_execution": True,
             "next_session_production_stage_scope_is_not_production_completion": True,
             "next_session_production_stage_scope_calls_no_provider_model_or_github": True,
+            "next_session_streamlit_parity_review_is_button_gated": True,
+            "next_session_streamlit_parity_review_opens_no_streamlit": True,
+            "next_session_streamlit_parity_review_is_not_production_completion": True,
         }
     )
     packet["policy"] = policy
@@ -1891,6 +2226,13 @@ def read_next_session_cache() -> dict[str, Any]:
     ]
     if review_ledger:
         existing_ledger.extend(review_ledger)
+    streamlit_review_ledger = [
+        row
+        for row in _as_list(persisted_streamlit_parity_review_packet.get("call_ledger"))
+        if isinstance(row, dict)
+    ]
+    if streamlit_review_ledger:
+        existing_ledger.extend(streamlit_review_ledger)
     packet["call_ledger"] = (
         existing_ledger + durable_evidence_recipe["call_ledger"] + production_stage_scope["call_ledger"]
     )
@@ -1898,6 +2240,7 @@ def read_next_session_cache() -> dict[str, Any]:
     for warning in [
         "GET /api/next-session/cache 只读取本地次日图谱 cache；不会调用 Tushare、DeepSeek、GitHub 或真实交易接口。"
         " next_session_replacement_activation_receipt 只是替代验收路径，不运行浏览器、不证明生产替代完成。",
+        "next_session_streamlit_parity_review 只审查本地同包 no-feature-loss 证据；不会打开 Streamlit、不会运行浏览器、不会移除 fallback、不会证明生产替代完成。",
         "next_session_durable_evidence_recipe 只固定 ECharts 生产替代前的 durable evidence 清单；不会打开浏览器、调用 provider/model、执行交易或证明生产替代完成。",
         "next_session_production_stage_scope_manifest 只把本地阶段证据和剩余阻断暴露到 cache/UI；不会运行浏览器、不会调用 provider/model/GitHub、不会证明生产替代完成。",
     ]:
@@ -1986,6 +2329,86 @@ def run_next_session_browser_qa_review_task(payload: Any = None) -> dict[str, An
         else "next_session_browser_qa_review_pending",
         call_ledger=ledger,
         warning="next_session_browser_qa_review_completed_no_external_call",
+    ) or task
+
+
+def _next_session_streamlit_parity_review_call_ledger(review_contract: Mapping[str, Any], now: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "api": "local_next_session_streamlit_parity_review",
+            "request_params_safe": {
+                "review_scope": "next_session_same_packet_no_feature_loss",
+                "next_route": "#next",
+                "external_sources_allowed": False,
+                "opens_no_streamlit": True,
+                "opens_no_browser": True,
+                "writes_no_artifacts": True,
+                "streamlit_parity_complete": False,
+                "production_replacement_complete": False,
+            },
+            "row_count": review_contract.get("review_row_count", 0),
+            "data_date": review_contract.get("reviewed_at"),
+            "local_fetched_at": now,
+            "call_status": review_contract.get("status"),
+            "error_message_safe": "",
+            **_local_ledger_boundary(),
+        }
+    ]
+
+
+def run_next_session_streamlit_parity_review_task(payload: Any = None) -> dict[str, Any]:
+    task = create_task_record(
+        "run_next_session_streamlit_parity_review",
+        output_packet_key="command_center_next_session_projection_packet",
+        payload=payload,
+        current_step="next_session_streamlit_parity_review_queued",
+        warnings=[
+            "次日图谱 Streamlit parity review 只审查当前本地同包 no-feature-loss 合同；不会打开 Streamlit、浏览器或启动服务。",
+            "review 结果不代表 Streamlit reference capture、durable CI evidence、fallback removal 或 production ECharts replacement。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="reading_next_session_same_packet_parity_contract",
+    )
+    packet = read_next_session_cache()
+    parity_recipe = _as_dict(packet.get("next_session_legacy_parity_execution_recipe"))
+    parity_rows = [row for row in _as_list(packet.get("next_session_legacy_parity_execution_rows")) if isinstance(row, dict)]
+    reviewed_at = _now_iso()
+    review_contract = _next_session_streamlit_parity_review_contract(
+        parity_recipe,
+        parity_rows,
+        explicit_review=True,
+        task_id=task["task_id"],
+        reviewed_at=reviewed_at,
+    )
+    ledger = _next_session_streamlit_parity_review_call_ledger(review_contract, reviewed_at)
+    _write_next_session_streamlit_parity_review_packet(
+        review_contract=review_contract,
+        ledger=ledger,
+        reviewed_at=reviewed_at,
+        task_id=str(task["task_id"]),
+    )
+    refreshed = read_next_session_cache()
+    refreshed["task_id"] = task["task_id"]
+    refreshed["next_session_streamlit_parity_review_completed_at"] = reviewed_at
+    refreshed["task_call_ledger"] = ledger
+    if _persistable_next_session_packet(refreshed):
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet("command_center_next_session_projection_packet", refreshed)
+    return update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step="next_session_streamlit_parity_review_ready"
+        if review_contract["local_streamlit_parity_review_ready"]
+        else "next_session_streamlit_parity_review_pending",
+        call_ledger=ledger,
+        warning="next_session_streamlit_parity_review_completed_no_external_call",
     ) or task
 
 

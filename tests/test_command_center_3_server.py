@@ -14361,7 +14361,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 74)
+        self.assertEqual(catalog["task_count"], 75)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -14380,7 +14380,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 74)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 75)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -14391,8 +14391,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 76)
-        self.assertEqual(route_coverage["task_creation_route_count"], 74)
+        self.assertEqual(route_coverage["known_post_route_count"], 77)
+        self.assertEqual(route_coverage["task_creation_route_count"], 75)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -14401,11 +14401,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 74)
+        self.assertEqual(implementation_status["task_count"], 75)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 71)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 72)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 72)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 73)
         self.assertEqual(implementation_status["external_capable_task_count"], 6)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -14435,6 +14435,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_factor_test_provider_small_pool_execution_request",
                 "build_next_session_projection",
                 "run_next_session_browser_qa_review",
+                "run_next_session_streamlit_parity_review",
                 "run_tauri_package_artifact_review",
                 "run_tauri_packaged_runtime_launch_review",
                 "run_tauri_backend_offline_packaged_ux_review",
@@ -14512,6 +14513,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_factor_test_provider_small_pool_execution_request",
                 "build_next_session_projection",
                 "run_next_session_browser_qa_review",
+                "run_next_session_streamlit_parity_review",
                 "run_tauri_package_artifact_review",
                 "run_tauri_packaged_runtime_launch_review",
                 "run_tauri_backend_offline_packaged_ux_review",
@@ -16596,6 +16598,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/factor-quant/provider-small-pool-execution-request", discovered_routes)
         self.assertIn("POST /api/factor-quant/deepseek-explain", discovered_routes)
         self.assertIn("POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket", discovered_routes)
+        self.assertIn("POST /api/next-session/streamlit-parity-review", discovered_routes)
         self.assertIn("POST /api/desktop/tauri-package-artifact-review", discovered_routes)
         self.assertIn("POST /api/desktop/tauri-packaged-runtime-launch-review", discovered_routes)
         self.assertIn("POST /api/desktop/tauri-backend-offline-packaged-ux-review", discovered_routes)
@@ -16658,16 +16661,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 71)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 72)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 72)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 73)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 71)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 72)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 72)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 73)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -17523,9 +17526,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 71)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 72)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 72)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 73)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -17749,9 +17752,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 71)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 72)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 72)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 73)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -17784,9 +17787,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 71)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 72)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 72)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 73)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -22163,7 +22166,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 74)
+        self.assertEqual(task_catalog["data"]["task_count"], 75)
         self.assertIn(
             "POST /api/desktop/tauri-package-artifact-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
@@ -22210,6 +22213,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             task_catalog["data"]["route_coverage"]["known_post_routes"],
         )
         self.assertIn("POST /api/next-session/browser-qa-review", task_catalog["data"]["route_coverage"]["known_post_routes"])
+        self.assertIn(
+            "POST /api/next-session/streamlit-parity-review",
+            task_catalog["data"]["route_coverage"]["known_post_routes"],
+        )
         self.assertIn("POST /api/tasks/refresh-tushare-facts", task_catalog["data"]["route_coverage"]["known_post_routes"])
         self.assertIn(
             "POST /api/tasks/tushare-provider-target-sample-execution-recipe-seed",
@@ -30104,6 +30111,125 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("durable CI/release evidence", ltg08_goal["next_step"])
         self.assertIn("do not rerun local browser QA", ltg08_goal["next_step"])
         self.assertIn("local browser visual/performance/reduced-motion QA is observed", ltg08_goal["not_complete_because"])
+
+    def test_next_session_streamlit_parity_review_is_same_packet_local_only(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "command_center_next_session_projection_packet": {
+                    "packet_key": "command_center_next_session_projection_packet",
+                    "status": "ready",
+                    "trade_date": "20260610",
+                    "chart_render_model": {
+                        "historical_series": [
+                            {"x": "2026-06-08", "price": 10.0, "source": "local_contract_fixture"},
+                            {"x": "2026-06-09", "close": 10.4, "source": "local_contract_fixture"},
+                        ],
+                        "scenario_series": [
+                            {
+                                "scenario_key": "neutral",
+                                "scenario_name": "中性路径",
+                                "trigger_condition": "放量但不追高",
+                                "confidence_note": "中性路径只作基准",
+                                "points": [{"x": "T0", "price": 10.4}, {"x": "T+1_close", "price": 10.8}],
+                            }
+                        ],
+                        "cost_line": 9.8,
+                        "current_price_line": 10.4,
+                        "limit_lines": [{"label": "涨停参考", "value": 11.44}, {"label": "跌停参考", "value": 9.36}],
+                        "support_lines": [9.9],
+                        "resistance_lines": [11.0],
+                        "operation_zone_overlays": [
+                            {
+                                "zone_key": "reduce_watch_zone",
+                                "zone_name": "止盈/减仓观察区",
+                                "price_range": [10.9, 11.3],
+                                "action_mode": "condition_only",
+                            }
+                        ],
+                        "y_axis_range": [9.0, 12.0],
+                    },
+                    "position_context": {
+                        "conflict_flags": ["cost_price_conflict"],
+                        "source_packet": "position_profile",
+                    },
+                    "data_trust_summary": {
+                        "facts": [{"fact_key": "moneyflow", "call_status": "verified_present"}],
+                        "human_summary": ["真实日线：已接入", "持仓：存在冲突，需先核验"],
+                        "deepseek": {"label": "DeepSeek", "status": "not_called"},
+                    },
+                    "deepseek_synthesis": {"status": "not_called"},
+                }
+            }
+        )
+
+        response = self.client.post(
+            "/api/next-session/streamlit-parity-review",
+            json={"reviewer": "local", "authorization": "Bearer SHOULD_DROP"},
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["task_type"], "run_next_session_streamlit_parity_review")
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "next_session_streamlit_parity_review_ready")
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("authorization", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        ledger = task["call_ledger"][0]
+        self.assertEqual(ledger["api"], "local_next_session_streamlit_parity_review")
+        self.assertEqual(ledger["call_status"], "next_session_streamlit_parity_review_ready_local_same_packet")
+        self.assertFalse(ledger["external"])
+        self.assertFalse(ledger["external_calls_triggered"])
+
+        persisted = next_session_service.SQLiteMetaStore(next_session_service.SQLITE_META_PATH).read_packet(
+            next_session_service.NEXT_SESSION_STREAMLIT_PARITY_REVIEW_PACKET_KEY
+        )
+        self.assertEqual(persisted["packet_key"], next_session_service.NEXT_SESSION_STREAMLIT_PARITY_REVIEW_PACKET_KEY)
+        self.assertEqual(persisted["status"], "next_session_streamlit_parity_review_ready_local_same_packet")
+        self.assertFalse(persisted["external_calls_triggered"])
+        self.assertFalse(persisted["tushare_called"])
+        self.assertFalse(persisted["deepseek_called"])
+        self.assertFalse(persisted["github_called"])
+
+        refreshed = self.client.get("/api/next-session/cache").json()["data"]
+        review = refreshed["next_session_streamlit_parity_review_contract"]
+        self.assertEqual(review["status"], "next_session_streamlit_parity_review_ready_local_same_packet")
+        self.assertTrue(review["explicit_review_task_done"])
+        self.assertTrue(review["local_streamlit_parity_review_ready"])
+        self.assertTrue(review["same_packet_no_loss_review_ready"])
+        self.assertTrue(review["feature_by_feature_parity_reviewed"])
+        self.assertTrue(review["hover_click_parity_reviewed"])
+        self.assertFalse(review["streamlit_reference_captured"])
+        self.assertFalse(review["streamlit_parity_complete"])
+        self.assertFalse(review["production_replacement_complete"])
+        self.assertFalse(review["legacy_fallback_removed"])
+        self.assertTrue(review["opens_no_streamlit"])
+        self.assertTrue(review["opens_no_browser"])
+        self.assertFalse(review["external_calls_triggered"])
+        self.assertFalse(review["tushare_called"])
+        self.assertFalse(review["deepseek_called"])
+        self.assertFalse(review["github_called"])
+        self.assertTrue(refreshed["next_session_streamlit_parity_review_ready"])
+        self.assertIn("local_next_session_streamlit_parity_review", {row.get("api") for row in refreshed["call_ledger"]})
+
+        stage_scope = refreshed["next_session_production_stage_scope_manifest"]
+        self.assertTrue(stage_scope["local_streamlit_parity_review_ready"])
+        self.assertTrue(stage_scope["same_packet_no_loss_review_ready"])
+        self.assertFalse(stage_scope["streamlit_parity_complete"])
+        self.assertFalse(stage_scope["production_replacement_complete"])
+        self.assertEqual(stage_scope["production_blocker_count"], 6)
+        stage_rows = {row["stage_key"]: row for row in refreshed["next_session_production_stage_scope_rows"]}
+        self.assertTrue(stage_rows["streamlit_parity_review"]["direct_evidence_complete"])
+        self.assertTrue(stage_rows["streamlit_parity_review"]["production_blocker"])
+        self.assertIn("local_same_packet_no_loss_review", stage_rows["streamlit_parity_review"]["current_status"])
+        self.assertIn("legacy Streamlit reference capture", stage_rows["streamlit_parity_review"]["missing_evidence"])
 
     def test_task_cancel_endpoint_marks_pending_task_without_external_work(self):
         self._with_meta_store()

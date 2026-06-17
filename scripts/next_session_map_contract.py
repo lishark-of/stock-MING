@@ -315,6 +315,7 @@ def build_contract() -> dict[str, Any]:
     task_catalog = task_service.build_task_catalog()
     task = _next_session_task(task_catalog)
     browser_qa_task = _task_by_type(task_catalog, "run_next_session_browser_qa_review")
+    streamlit_parity_task = _task_by_type(task_catalog, "run_next_session_streamlit_parity_review")
     browser_qa_review_status = browser_qa_review.get("status")
     browser_qa_review_pending = (
         browser_qa_review_status == "next_session_browser_qa_review_pending"
@@ -331,6 +332,29 @@ def build_contract() -> dict[str, Any]:
         and _dict(browser_qa_review_rows.get("visual_evidence_passed")).get("status") == "passed"
         and _dict(browser_qa_review_rows.get("performance_evidence_passed")).get("status") == "passed"
         and _dict(browser_qa_review_rows.get("default_and_reduced_motion_coverage")).get("status") == "passed"
+    )
+    streamlit_parity_review = _dict(exact_service_packet.get("next_session_streamlit_parity_review_contract"))
+    streamlit_parity_review_rows = _rows_by_key(exact_service_packet.get("next_session_streamlit_parity_review_rows"))
+    streamlit_parity_review_status = streamlit_parity_review.get("status")
+    streamlit_parity_review_pending = (
+        streamlit_parity_review_status == "next_session_streamlit_parity_review_pending"
+        and streamlit_parity_review.get("explicit_review_task_done") is False
+        and streamlit_parity_review.get("local_streamlit_parity_review_ready") is False
+        and _dict(streamlit_parity_review_rows.get("explicit_post_review_task")).get("status")
+        == "pending_explicit_post"
+    )
+    streamlit_parity_review_ready = (
+        streamlit_parity_review_status == "next_session_streamlit_parity_review_ready_local_same_packet"
+        and streamlit_parity_review.get("explicit_review_task_done") is True
+        and streamlit_parity_review.get("local_streamlit_parity_review_ready") is True
+        and streamlit_parity_review.get("same_packet_no_loss_review_ready") is True
+        and _dict(streamlit_parity_review_rows.get("explicit_post_review_task")).get("status") == "passed"
+        and _dict(streamlit_parity_review_rows.get("chart_visual_feature_matrix_reviewed")).get("status")
+        == "passed"
+        and _dict(streamlit_parity_review_rows.get("frontend_read_only_boundary_reviewed")).get("status")
+        == "passed"
+        and _dict(streamlit_parity_review_rows.get("production_replacement_stays_blocked")).get("status")
+        == "passed"
     )
     next_page = _read_script("desktop/src/routes/NextSessionMap.tsx")
     chart_component = _read_script("desktop/src/components/NextSessionChart.tsx")
@@ -419,6 +443,7 @@ def build_contract() -> dict[str, Any]:
                 in {
                     "local_next_session_cache",
                     "local_next_session_browser_qa_review",
+                    "local_next_session_streamlit_parity_review",
                     "local_next_session_durable_evidence_recipe",
                     "local_next_session_production_stage_scope_manifest",
                 }
@@ -589,6 +614,42 @@ def build_contract() -> dict[str, Any]:
             "Next-session browser QA review must be explicit POST/local artifact only when ready, or remain pending before POST; neither state may execute a browser or promote production replacement.",
         ),
         _row(
+            "next_session_streamlit_parity_review_is_button_gated_local_only",
+            streamlit_parity_task.get("route") == "POST /api/next-session/streamlit-parity-review"
+            and streamlit_parity_task.get("button_gated") is True
+            and streamlit_parity_task.get("streamlit_parity_review_only") is True
+            and streamlit_parity_task.get("opens_streamlit") is False
+            and streamlit_parity_task.get("opens_browser") is False
+            and streamlit_parity_task.get("starts_servers") is False
+            and streamlit_parity_task.get("writes_artifacts") is False
+            and streamlit_parity_task.get("same_packet_no_loss_review") is True
+            and streamlit_parity_task.get("production_replacement_complete") is False
+            and streamlit_parity_task.get("does_not_execute_trades") is True
+            and streamlit_parity_review.get("schema_version") == "next_session_streamlit_parity_review.v1"
+            and streamlit_parity_review.get("scope")
+            == "button_gated_local_next_session_streamlit_parity_review_no_streamlit_no_browser_no_provider"
+            and (streamlit_parity_review_pending or streamlit_parity_review_ready)
+            and streamlit_parity_review.get("streamlit_reference_captured") is False
+            and streamlit_parity_review.get("streamlit_parity_complete") is False
+            and streamlit_parity_review.get("production_replacement_complete") is False
+            and streamlit_parity_review.get("legacy_fallback_removed") is False
+            and streamlit_parity_review.get("opens_no_streamlit") is True
+            and streamlit_parity_review.get("opens_no_browser") is True
+            and _dict(streamlit_parity_review_rows.get("legacy_reference_capture_stays_pending")).get("status")
+            == "passed_reference_capture_not_claimed"
+            and _dict(streamlit_parity_review_rows.get("production_replacement_stays_blocked")).get("status")
+            == "passed"
+            and _flag_false(
+                streamlit_parity_review,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "frontend_computes_trade_action",
+            ),
+            "Next-session Streamlit parity review must be explicit POST/local same-packet no-feature-loss evidence only; it must not open Streamlit/browser, remove fallback, or promote production replacement.",
+        ),
+        _row(
             "next_session_durable_evidence_recipe_is_local_production_pending",
             durable_evidence_recipe.get("schema_version")
             == next_session_service.NEXT_SESSION_DURABLE_EVIDENCE_SCHEMA_VERSION
@@ -683,6 +744,7 @@ def build_contract() -> dict[str, Any]:
                 {
                     "exact_cache_payload_contract",
                     "interaction_hover_click_contract",
+                    "streamlit_parity_review",
                     "browser_visual_qa",
                     "browser_performance_trace",
                     "reduced_motion_accessibility_qa",
@@ -708,6 +770,7 @@ def build_contract() -> dict[str, Any]:
                     "pending_exact_cache_payload",
                     "pending_interaction_contract",
                     "pending_same_packet_streamlit_parity",
+                    "direct_evidence_ready_local_same_packet_no_loss_review_reference_pending",
                     "direct_evidence_ready_local_artifact",
                     "pending_browser_visual_qa_review",
                     "pending_browser_performance_trace_review",
