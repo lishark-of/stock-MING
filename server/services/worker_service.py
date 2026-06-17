@@ -115,6 +115,11 @@ LOCAL_REDIS_CLI_CANDIDATE_PATHS = (
     "/opt/local/bin/redis-cli",
     "/usr/bin/redis-cli",
 )
+REDIS_CONFIG_ENV_SOURCES = (
+    ("COMMAND_CENTER_REDIS_URL", "command_center_redis_url"),
+    ("REDIS_URL", "standard_redis_url"),
+    ("CELERY_BROKER_URL", "celery_broker_url"),
+)
 WORKER_TASK_CONTROL_PROBE_PATH = PROJECT_ROOT / "scripts" / "worker_task_control_probe.py"
 TASK_CONTROL_PROJECTION_KEYS = (
     "task_id",
@@ -284,6 +289,10 @@ def _known_executable_path_available(paths: tuple[str, ...]) -> bool:
         return False
 
 
+def _redis_config_source_labels_present() -> list[str]:
+    return [label for env_name, label in REDIS_CONFIG_ENV_SOURCES if bool(os.environ.get(env_name))]
+
+
 def _path_exists(path: str) -> bool:
     return (PROJECT_ROOT / path).exists()
 
@@ -294,6 +303,7 @@ def _worker_runtime_dependency_preflight(
     redis_available: bool,
     apscheduler_available: bool,
     redis_configured: bool,
+    redis_config_source_labels: list[str] | None = None,
 ) -> dict[str, Any]:
     celery_command_path_available = _command_available("celery")
     celery_project_venv_command_available = _project_venv_command_available("celery")
@@ -324,11 +334,7 @@ def _worker_runtime_dependency_preflight(
         if redis_cli_known_path_available
         else "missing"
     )
-    redis_config_sources = [
-        name
-        for name in ("REDIS_URL", "CELERY_BROKER_URL")
-        if bool(os.environ.get(name))
-    ]
+    redis_config_sources = list(redis_config_source_labels or [])
     rows = [
         {
             "check": "python_celery_package",
@@ -370,7 +376,7 @@ def _worker_runtime_dependency_preflight(
             "status": "configured_not_pinged" if redis_configured else "missing",
             "required_for_production_worker": True,
             "blocks_manual_runtime_evidence": not redis_configured,
-            "evidence": "REDIS_URL/CELERY_BROKER_URL presence boolean only; value redacted",
+            "evidence": "supported broker URL env presence boolean only; safe source label only; value redacted",
         },
         {
             "check": "apscheduler_package",
@@ -408,6 +414,9 @@ def _worker_runtime_dependency_preflight(
         "redis_cli_checked_paths": list(LOCAL_REDIS_CLI_CANDIDATE_PATHS),
         "redis_url_configured": redis_configured,
         "redis_config_sources_present": redis_config_sources,
+        "redis_config_source_count": len(redis_config_sources),
+        "redis_config_values_exposed": False,
+        "redis_config_env_names_exposed": False,
         "redis_manual_resolution_required": (not redis_server_binary_available) or (not redis_configured),
         "redis_manual_resolution_blockers": [
             row["check"]
@@ -6097,12 +6106,14 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     redis_available = _module_available("redis")
     apscheduler_available = _module_available("apscheduler")
     scheduled_refresh_enabled = os.getenv("COMMAND_CENTER_ENABLE_SCHEDULED_REFRESH") == "1"
-    redis_configured = bool(os.getenv("COMMAND_CENTER_REDIS_URL"))
+    redis_config_source_labels = _redis_config_source_labels_present()
+    redis_configured = bool(redis_config_source_labels)
     dependency_preflight = _worker_runtime_dependency_preflight(
         celery_available=celery_available,
         redis_available=redis_available,
         apscheduler_available=apscheduler_available,
         redis_configured=redis_configured,
+        redis_config_source_labels=redis_config_source_labels,
     )
     catalog = task_service.build_task_catalog()
     task_implementation_status = catalog.get("implementation_status") or {}

@@ -31123,6 +31123,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn(dependency_preflight["redis_cli_resolution"], {"available_path", "available_known_path", "missing"})
         self.assertIsInstance(dependency_preflight["redis_cli_checked_paths"], list)
         self.assertIsInstance(dependency_preflight["redis_config_sources_present"], list)
+        self.assertIsInstance(dependency_preflight["redis_config_source_count"], int)
+        self.assertEqual(
+            dependency_preflight["redis_config_source_count"],
+            len(dependency_preflight["redis_config_sources_present"]),
+        )
+        self.assertFalse(dependency_preflight["redis_config_values_exposed"])
+        self.assertFalse(dependency_preflight["redis_config_env_names_exposed"])
         self.assertIsInstance(dependency_preflight["redis_manual_resolution_required"], bool)
         self.assertIsInstance(dependency_preflight["redis_manual_resolution_blockers"], list)
         self.assertIsInstance(dependency_preflight["redis_manual_resolution_next_steps"], list)
@@ -31176,6 +31183,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(redis_server_row["status"], dependency_preflight["redis_server_resolution"])
         self.assertIn("does not start redis-server", redis_server_row["evidence"])
         self.assertIn("value redacted", redis_url_row["evidence"])
+        self.assertIn("safe source label", redis_url_row["evidence"])
         self.assertEqual(
             set(dependency_preflight["redis_manual_resolution_blockers"]),
             {
@@ -31439,6 +31447,35 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(response["call_ledger"][0]["api"], "local_worker_runtime_cache")
         self.assertFalse(response["call_ledger"][0]["external"])
         self.assertIn("GET /api/worker/cache", response["warnings"][0])
+
+    def test_worker_runtime_cache_detects_redis_config_without_exposing_env_or_value(self):
+        old_values = {name: os.environ.get(name) for name, _label in worker_service.REDIS_CONFIG_ENV_SOURCES}
+        for name, _label in worker_service.REDIS_CONFIG_ENV_SOURCES:
+            os.environ.pop(name, None)
+        os.environ["COMMAND_CENTER_REDIS_URL"] = "redis://SHOULD_DROP@127.0.0.1:6379/0"
+        self.addCleanup(
+            lambda: [
+                os.environ.pop(name, None) if value is None else os.environ.__setitem__(name, value)
+                for name, value in old_values.items()
+            ]
+        )
+
+        packet = worker_service.read_worker_runtime_cache()
+        preflight = packet["worker_runtime_dependency_preflight"]
+        packet_dump = json.dumps(packet, ensure_ascii=False)
+
+        self.assertTrue(preflight["redis_url_configured"])
+        self.assertEqual(preflight["redis_config_sources_present"], ["command_center_redis_url"])
+        self.assertEqual(preflight["redis_config_source_count"], 1)
+        self.assertFalse(preflight["redis_config_values_exposed"])
+        self.assertFalse(preflight["redis_config_env_names_exposed"])
+        self.assertNotIn("redis://SHOULD_DROP", packet_dump)
+        self.assertNotIn("COMMAND_CENTER_REDIS_URL", packet_dump)
+        self.assertFalse(preflight["redis_pinged"])
+        self.assertFalse(preflight["worker_started"])
+        self.assertFalse(preflight["celery_worker_started"])
+        self.assertFalse(preflight["external_calls_triggered"])
+        self.assertTrue(preflight["does_not_execute_trades"])
 
     def test_worker_synthetic_healthcheck_endpoint_runs_local_task_only(self):
         self._with_meta_store()
