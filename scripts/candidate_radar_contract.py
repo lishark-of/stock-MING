@@ -46,18 +46,17 @@ REQUIRED_TASK_TYPES = {
     "run_candidate_radar_production_promotion_review",
 }
 REQUIRED_NO_FEATURE_LOSS_GAPS = {
-    "browser_performance_trace_pending",
     "full_pool_execution_pending",
     "deep_scan_execution_pending",
     "provider_backed_acceptance_pending",
 }
+NO_FEATURE_LOSS_BROWSER_REVIEW_KEY = "browser_performance_trace_pending"
 REQUIRED_REPLACEMENT_GAPS = {
-    "browser_visual_delta_qa",
-    "browser_performance_trace",
     "full_pool_worker_execution",
     "deep_scan_execution",
     "provider_backed_acceptance",
 }
+REPLACEMENT_BROWSER_GAPS = {"browser_visual_delta_qa", "browser_performance_trace"}
 REQUIRED_PROMOTION_ROWS = {
     "legacy_retirement_triage_clear",
     "provider_signal_coverage_complete",
@@ -674,6 +673,26 @@ def build_contract() -> dict[str, Any]:
             for row in production_stage_scope_rows
         )
     )
+    no_loss_browser_row = _dict(no_loss_rows.get(NO_FEATURE_LOSS_BROWSER_REVIEW_KEY))
+    no_loss_browser_review_pending = (
+        no_loss.get("browser_performance_trace_done") is False
+        and no_loss_browser_row.get("blocks_production_replacement") is True
+        and no_loss_browser_row.get("status") == "pending_visual_perf_trace"
+    )
+    no_loss_browser_reviewed_local_artifact = (
+        no_loss.get("browser_performance_trace_done") is True
+        and no_loss.get("browser_visual_delta_qa_done") is True
+        and no_loss_browser_row.get("blocks_production_replacement") is False
+        and no_loss_browser_row.get("status") == "reviewed_local_artifact"
+    )
+    no_loss_browser_state_is_safe = no_loss_browser_review_pending or no_loss_browser_reviewed_local_artifact
+    triage_browser_rows = {key: _dict(triage_rows.get(key)) for key in REPLACEMENT_BROWSER_GAPS}
+    triage_browser_pending = all(row.get("blocks_legacy_retirement") is True for row in triage_browser_rows.values())
+    triage_browser_reviewed_local_artifact = all(
+        row.get("blocks_legacy_retirement") is False and row.get("status") == "passed"
+        for row in triage_browser_rows.values()
+    )
+    triage_browser_state_is_safe = triage_browser_pending or triage_browser_reviewed_local_artifact
 
     rows = [
         _row(
@@ -2123,12 +2142,12 @@ def build_contract() -> dict[str, Any]:
             and no_loss.get("full_pool_scan_done") is False
             and no_loss.get("deep_scan_done") is False
             and no_loss.get("provider_backed_acceptance_done") is False
-            and no_loss.get("browser_performance_trace_done") is False
             and int(no_loss.get("production_blocker_count") or 0) > 0
             and all(_dict(no_loss_rows.get(key)).get("blocks_production_replacement") is True for key in REQUIRED_NO_FEATURE_LOSS_GAPS)
+            and no_loss_browser_state_is_safe
             and _flag_false(no_loss, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
             and no_loss.get("candidate_is_not_buy_instruction") is True,
-            "No-feature-loss QA is visible locally, but production radar replacement and legacy retirement must stay blocked.",
+            "No-feature-loss QA is visible locally; browser artifact review may be accepted, but production radar replacement and legacy retirement must stay blocked by provider/worker evidence.",
         ),
         _row(
             "replacement_gap_triage_blocks_legacy_retirement",
@@ -2140,8 +2159,9 @@ def build_contract() -> dict[str, Any]:
             and triage.get("legacy_fallback_required") is True
             and int(triage.get("blocking_gap_count") or 0) > 0
             and all(_dict(triage_rows.get(key)).get("blocks_legacy_retirement") is True for key in REQUIRED_REPLACEMENT_GAPS)
+            and triage_browser_state_is_safe
             and _flag_false(triage, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called"),
-            "Replacement-gap triage must keep legacy radar retirement blocked until browser/performance/full/deep/provider gaps are resolved.",
+            "Replacement-gap triage must keep legacy radar retirement blocked until full/deep/provider gaps and durable promotion are resolved; local browser artifact review alone is not retirement evidence.",
         ),
         _row(
             "promotion_blocker_audit_keeps_replacement_pending",

@@ -3289,6 +3289,8 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         "legacy_retirement_ready": False,
         "provider_backed_acceptance_done": False,
         "worker_backed_execution_done": False,
+        "browser_visual_delta_qa_done": browser_visual_performance_done,
+        "browser_performance_trace_done": browser_visual_performance_done,
         "model_execution_implemented": False,
         "external_calls_triggered": False,
         "tushare_called": False,
@@ -4927,7 +4929,10 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "deep_scan_done": manifest.get("deep_scan_done") is True,
                 "provider_backed_acceptance_done": manifest.get("provider_backed_acceptance_done") is True,
                 "worker_backed_execution_done": manifest.get("worker_backed_execution_done") is True,
-                "browser_visual_delta_qa_done": manifest.get("browser_visual_delta_qa_done") is True,
+                "browser_visual_delta_qa_done": (
+                    direct_evidence.get("browser_visual_delta_qa_done") is True
+                    or manifest.get("browser_visual_delta_qa_done") is True
+                ),
                 "cache_render_boundary_verified": direct_evidence.get("cache_render_boundary_verified") is True,
                 "quick_scan_task_pipeline_verified": (
                     direct_evidence.get("quick_scan_task_pipeline_verified") is True

@@ -4526,6 +4526,26 @@ def _candidate_browser_qa_review_contract(
     }
 
 
+def _candidate_browser_visual_performance_reviewed(packet: Mapping[str, Any]) -> bool:
+    browser_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
+    return bool(
+        browser_review.get("status") == "candidate_browser_qa_review_ready_local_artifact"
+        and browser_review.get("explicit_review_task_done") is True
+        and browser_review.get("local_browser_qa_review_ready") is True
+        and browser_review.get("candidate_visual_qa_evidence_passed") is True
+        and browser_review.get("candidate_browser_performance_evidence_passed") is True
+        and browser_review.get("motion_viewport_coverage_complete") is True
+        and browser_review.get("production_radar_replacement_complete") is False
+        and browser_review.get("external_calls_triggered") is False
+        and browser_review.get("tushare_called") is False
+        and browser_review.get("deepseek_called") is False
+        and browser_review.get("github_called") is False
+        and browser_review.get("does_not_execute_trades") is True
+        and browser_review.get("does_not_modify_strategy_action") is True
+        and browser_review.get("candidate_is_not_buy_instruction") is True
+    )
+
+
 def _fast_scan_readiness_row(
     criterion: str,
     status: str,
@@ -4748,6 +4768,7 @@ def _no_feature_loss_acceptance_rows(packet: Mapping[str, Any]) -> list[dict[str
     freshness = _as_dict(packet.get("freshness_state"))
     full_pool_plan = _as_dict(packet.get("full_pool_scan_plan"))
     deep_scan_plan = _as_dict(packet.get("deep_scan_plan"))
+    browser_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
     output_total = int(parity.get("output_contract_field_count") or len(_as_list(packet.get("legacy_output_contract_rows"))))
     output_mapped = int(parity.get("output_contract_mapped_count") or counts.get("legacy_output_mapped_count") or 0)
     missing_signal_count = int(coverage.get("missing_signal_group_count") or 0)
@@ -4764,6 +4785,7 @@ def _no_feature_loss_acceptance_rows(packet: Mapping[str, Any]) -> list[dict[str
     }
     full_pool_done = bool(full_pool_plan.get("full_pool_scan_done") is True)
     deep_scan_done = bool(deep_scan_plan.get("deep_scan_done") is True)
+    browser_visual_perf_reviewed = _candidate_browser_visual_performance_reviewed(packet)
     return [
         _no_feature_loss_acceptance_row(
             "page_render_zero_scan",
@@ -4844,11 +4866,20 @@ def _no_feature_loss_acceptance_rows(packet: Mapping[str, Any]) -> list[dict[str
         ),
         _no_feature_loss_acceptance_row(
             "browser_performance_trace_pending",
-            "pending_visual_perf_trace",
+            "reviewed_local_artifact" if browser_visual_perf_reviewed else "pending_visual_perf_trace",
             local_contract_passed=True,
-            production_ready=False,
-            evidence="Browser performance trace is not executed by this local cache contract.",
-            next_action="Run desktop/mobile browser trace validation before claiming the scan is stall-free in production.",
+            production_ready=browser_visual_perf_reviewed,
+            evidence=(
+                f"local_browser_qa_review_ready={browser_review.get('local_browser_qa_review_ready') is True}; "
+                f"visual={browser_review.get('candidate_visual_qa_evidence_passed') is True}; "
+                f"performance={browser_review.get('candidate_browser_performance_evidence_passed') is True}; "
+                f"motion_viewport_coverage_complete={browser_review.get('motion_viewport_coverage_complete') is True}"
+            ),
+            next_action=(
+                "Promote durable CI/browser evidence separately; local artifact review alone does not retire legacy radar."
+                if browser_visual_perf_reviewed
+                else "Run desktop/mobile browser trace validation before claiming the scan is stall-free in production."
+            ),
         ),
         _no_feature_loss_acceptance_row(
             "full_pool_execution_pending",
@@ -4903,7 +4934,8 @@ def _attach_no_feature_loss_acceptance_contract(packet: Mapping[str, Any]) -> di
         "full_pool_scan_done": False,
         "deep_scan_done": False,
         "provider_backed_acceptance_done": False,
-        "browser_performance_trace_done": False,
+        "browser_performance_trace_done": _candidate_browser_visual_performance_reviewed(view),
+        "browser_visual_delta_qa_done": _candidate_browser_visual_performance_reviewed(view),
         "row_count": len(rows),
         "local_blocker_count": len(local_blockers),
         "production_blocker_count": len(production_blockers),
@@ -4920,7 +4952,7 @@ def _attach_no_feature_loss_acceptance_contract(packet: Mapping[str, Any]) -> di
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "candidate_is_not_buy_instruction": True,
-        "note": "This contract proves local no-feature-loss acceptance is visible. It does not prove production radar replacement, full-pool execution, deep-scan execution, provider-backed acceptance, or browser performance.",
+        "note": "This contract proves local no-feature-loss acceptance is visible and may include button-gated local browser QA artifact review. It does not prove production radar replacement, full-pool execution, deep-scan execution, provider-backed acceptance, or durable browser release evidence.",
     }
     counts = dict(_as_dict(view.get("counts")))
     counts["no_feature_loss_acceptance_row_count"] = contract["row_count"]
@@ -5011,7 +5043,9 @@ def _replacement_gap_triage_rows(packet: Mapping[str, Any]) -> list[dict[str, An
     full_pool_done = bool(full_pool_plan.get("full_pool_scan_done") is True)
     deep_scan_done = bool(deep_scan_plan.get("deep_scan_done") is True)
     previous_diff_done = bool(result_delta.get("previous_cache_diff_done") is True)
-    browser_delta_done = bool(result_delta.get("browser_visual_delta_qa_done") is True)
+    browser_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
+    browser_visual_perf_reviewed = _candidate_browser_visual_performance_reviewed(packet)
+    browser_delta_done = bool(result_delta.get("browser_visual_delta_qa_done") is True or browser_visual_perf_reviewed)
     return [
         _replacement_gap_triage_row(
             "page_render_zero_scan_guardrail",
@@ -5076,22 +5110,37 @@ def _replacement_gap_triage_rows(packet: Mapping[str, Any]) -> list[dict[str, An
         _replacement_gap_triage_row(
             "browser_visual_delta_qa",
             "visual_qa",
-            "blocking_pending",
+            "ok" if browser_delta_done else "blocking_pending",
             "pending_visual_qa" if not browser_delta_done else "passed",
             passed=browser_delta_done,
             blocks_legacy_retirement=True,
-            evidence=f"browser_visual_delta_qa_done={browser_delta_done}",
-            next_action="Run viewport visual QA so result changes are visible without overlap or occlusion.",
+            evidence=(
+                f"browser_visual_delta_qa_done={browser_delta_done}; "
+                f"local_browser_qa_review_ready={browser_review.get('local_browser_qa_review_ready') is True}"
+            ),
+            next_action=(
+                "Keep durable browser/CI promotion separate from legacy retirement."
+                if browser_delta_done
+                else "Run viewport visual QA so result changes are visible without overlap or occlusion."
+            ),
         ),
         _replacement_gap_triage_row(
             "browser_performance_trace",
             "performance",
-            "blocking_pending",
-            "pending_perf_trace",
-            passed=False,
+            "ok" if browser_visual_perf_reviewed else "blocking_pending",
+            "passed" if browser_visual_perf_reviewed else "pending_perf_trace",
+            passed=browser_visual_perf_reviewed,
             blocks_legacy_retirement=True,
-            evidence="Browser performance trace is not executed by the local cache contract.",
-            next_action="Run desktop/mobile trace validation before claiming the radar is stall-free in production.",
+            evidence=(
+                f"local_browser_qa_review_ready={browser_review.get('local_browser_qa_review_ready') is True}; "
+                f"visual={browser_review.get('candidate_visual_qa_evidence_passed') is True}; "
+                f"performance={browser_review.get('candidate_browser_performance_evidence_passed') is True}"
+            ),
+            next_action=(
+                "Keep provider/worker/durable-release blockers in place before legacy retirement."
+                if browser_visual_perf_reviewed
+                else "Run desktop/mobile trace validation before claiming the radar is stall-free in production."
+            ),
         ),
         _replacement_gap_triage_row(
             "full_pool_worker_execution",

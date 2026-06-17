@@ -23981,6 +23981,24 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(cache["policy"]["candidate_browser_qa_review_is_button_gated"])
         self.assertTrue(cache["policy"]["candidate_browser_qa_review_does_not_open_browser"])
         self.assertTrue(cache["policy"]["candidate_browser_qa_review_is_not_production_replacement"])
+        no_loss = cache["no_feature_loss_acceptance_contract"]
+        no_loss_rows = {row["criterion"]: row for row in cache["no_feature_loss_acceptance_rows"]}
+        self.assertTrue(no_loss["browser_performance_trace_done"])
+        self.assertTrue(no_loss["browser_visual_delta_qa_done"])
+        self.assertEqual(no_loss_rows["browser_performance_trace_pending"]["status"], "reviewed_local_artifact")
+        self.assertTrue(no_loss_rows["browser_performance_trace_pending"]["production_ready"])
+        triage = cache["replacement_gap_triage_contract"]
+        triage_rows = {row["gap_key"]: row for row in cache["replacement_gap_triage_rows"]}
+        self.assertFalse(triage["legacy_retirement_ready"])
+        self.assertEqual(triage_rows["browser_visual_delta_qa"]["status"], "passed")
+        self.assertFalse(triage_rows["browser_visual_delta_qa"]["blocks_legacy_retirement"])
+        self.assertEqual(triage_rows["browser_performance_trace"]["status"], "passed")
+        self.assertFalse(triage_rows["browser_performance_trace"]["blocks_legacy_retirement"])
+        self.assertIn("provider_backed_acceptance", triage["blocking_gap_keys"])
+        self.assertIn("full_pool_worker_execution", triage["blocking_gap_keys"])
+        self.assertIn("deep_scan_execution", triage["blocking_gap_keys"])
+        self.assertNotIn("browser_visual_delta_qa", triage["blocking_gap_keys"])
+        self.assertNotIn("browser_performance_trace", triage["blocking_gap_keys"])
         promotion = cache["candidate_radar_promotion_blocker_audit"]
         promotion_rows = {row["criterion"]: row for row in cache["candidate_radar_promotion_blocker_rows"]}
         self.assertFalse(promotion["promotion_ready"])
