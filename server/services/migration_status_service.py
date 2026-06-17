@@ -6266,6 +6266,26 @@ def _merge_ltg_stage_scope_observations(
                     "legacy_retirement_review_production_blocker_count"
                 )
                 item["observed_legacy_retirement_review_can_close_goal"] = False
+            if str(item.get("id") or "") == "LTG-08":
+                next_browser_evidence_done = bool(
+                    observed.get("local_browser_qa_review_ready") is True
+                    and observed.get("browser_visual_qa_done") is True
+                    and observed.get("browser_performance_trace_done") is True
+                    and observed.get("reduced_motion_accessibility_qa_done") is True
+                )
+                item["observed_next_session_browser_qa_direct_evidence_done"] = next_browser_evidence_done
+                item["observed_next_session_browser_qa_is_production_replacement"] = False
+                if next_browser_evidence_done:
+                    item["not_complete_because"] = (
+                        "same-packet Streamlit reference capture, feature-by-feature parity, durable CI/release "
+                        "evidence, and production replacement promotion are pending; local browser "
+                        "visual/performance/reduced-motion QA is observed but not production replacement."
+                    )
+                    item["next_step"] = (
+                        "Run explicit same-packet Streamlit parity and feature-by-feature no-loss review, then "
+                        "attach durable CI/release evidence and production replacement promotion; do not rerun "
+                        "local browser QA unless the route or packet contract changes."
+                    )
         merged.append(item)
     return merged
 

@@ -30096,6 +30096,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ltg08["does_not_modify_strategy_action"])
         self.assertTrue(ltg08["does_not_modify_operation_zones"])
         self.assertFalse(ltg08["can_close_from_observed_row"])
+        long_term_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
+        ltg08_goal = long_term_goals["LTG-08"]
+        self.assertTrue(ltg08_goal["observed_next_session_browser_qa_direct_evidence_done"])
+        self.assertFalse(ltg08_goal["observed_next_session_browser_qa_is_production_replacement"])
+        self.assertIn("same-packet Streamlit parity", ltg08_goal["next_step"])
+        self.assertIn("durable CI/release evidence", ltg08_goal["next_step"])
+        self.assertIn("do not rerun local browser QA", ltg08_goal["next_step"])
+        self.assertIn("local browser visual/performance/reduced-motion QA is observed", ltg08_goal["not_complete_because"])
 
     def test_task_cancel_endpoint_marks_pending_task_without_external_work(self):
         self._with_meta_store()
