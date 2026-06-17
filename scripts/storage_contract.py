@@ -47,6 +47,7 @@ REQUIRED_STORAGE_TASK_TYPES = {
     "run_storage_compaction_dry_run",
     "run_storage_cache_ttl_dry_run",
     "run_storage_physical_execution_request",
+    "run_storage_physical_execution_phase_a",
     "run_storage_production_promotion_review",
 }
 REQUIRED_PHYSICAL_MIGRATION_STAGES = (
@@ -253,6 +254,20 @@ def build_contract() -> dict[str, Any]:
     durable_evidence_rows = {
         str(row.get("evidence_key") or ""): row
         for row in _list(overview.get("storage_physical_durable_evidence_rows"))
+        if isinstance(row, dict)
+    }
+    physical_execution_phase_a_packet = storage_service.storage_physical_execution_phase_a_packet(
+        payload_safe={
+            "source": "storage_contract",
+            "approved_by_user": True,
+            "physical_execution_scope_hash": physical_execution_request_packet.get("physical_execution_scope_hash"),
+        },
+        physical_execution_request=physical_execution_request_packet,
+        durable_evidence_recipe=durable_evidence_recipe,
+    )
+    physical_execution_phase_a_rows = {
+        str(row.get("criterion") or ""): row
+        for row in _list(physical_execution_phase_a_packet.get("rows"))
         if isinstance(row, dict)
     }
     manifest_validate_evidence = storage_service.storage_dataset_version_manifest_validate_evidence()
@@ -762,6 +777,75 @@ def build_contract() -> dict[str, Any]:
             "Storage physical execution request must bind the current recipe scope hash without writing Parquet, writing manifests, deleting files, calling providers/models/GitHub, trading, or completing production storage.",
         ),
         _row(
+            "physical_execution_phase_a_is_local_direct_evidence_not_production",
+            physical_execution_phase_a_packet.get("schema_version")
+            == "command_center_3_storage_physical_execution_phase_a.v1"
+            and physical_execution_phase_a_packet.get("scope")
+            == "local_storage_physical_execution_phase_a_no_write_no_delete_no_provider"
+            and physical_execution_phase_a_packet.get("status")
+            == "storage_physical_execution_phase_a_ready_local_evidence_production_pending"
+            and physical_execution_phase_a_packet.get("local_phase_a_execution_ready") is True
+            and physical_execution_phase_a_packet.get("phase_a_local_evidence_done") is True
+            and physical_execution_phase_a_packet.get("phase_a_local_evidence_stage_count")
+            == len(REQUIRED_STORAGE_PHYSICAL_DURABLE_EVIDENCE_KEYS)
+            and physical_execution_phase_a_packet.get("phase_a_blocker_count") == 0
+            and physical_execution_phase_a_packet.get("approved_by_user") is True
+            and physical_execution_phase_a_packet.get("requested_scope_hash_matches_latest") is True
+            and _is_sha256(physical_execution_phase_a_packet.get("physical_execution_scope_hash"))
+            and physical_execution_phase_a_packet.get("source_physical_execution_request_status")
+            == "storage_physical_execution_request_ready_manual_physical_tasks_pending"
+            and physical_execution_phase_a_packet.get("source_durable_evidence_status")
+            == "storage_physical_durable_evidence_recipe_ready_production_pending"
+            and physical_execution_phase_a_packet.get("source_durable_evidence_production_blocker_count") == 0
+            and physical_execution_phase_a_packet.get("direct_evidence_layer")
+            == "L3_local_storage_physical_execution_phase_a"
+            and physical_execution_phase_a_packet.get("physical_task_created") is True
+            and physical_execution_phase_a_packet.get("physical_task_executed") is True
+            and physical_execution_phase_a_packet.get("physical_execution_implemented") is True
+            and physical_execution_phase_a_packet.get("physical_execution_complete") is False
+            and physical_execution_phase_a_packet.get("production_storage_complete") is False
+            and physical_execution_phase_a_packet.get("writes_parquet") is False
+            and physical_execution_phase_a_packet.get("writes_manifest") is False
+            and physical_execution_phase_a_packet.get("deletes_artifacts") is False
+            and physical_execution_phase_a_packet.get("refreshes_providers") is False
+            and physical_execution_phase_a_packet.get("reads_row_payloads") is False
+            and physical_execution_phase_a_packet.get("reads_env_files") is False
+            and _flag_false(
+                physical_execution_phase_a_packet,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+            )
+            and physical_execution_phase_a_packet.get("does_not_execute_trades") is True
+            and physical_execution_phase_a_packet.get("does_not_modify_strategy_action") is True
+            and physical_execution_phase_a_packet.get("contains_secret") is False
+            and {
+                "treat_phase_a_as_production_storage_complete",
+                "write_parquet_from_phase_a",
+                "delete_artifacts_from_phase_a",
+                "call_Tushare_from_phase_a",
+                "mutate_strategy_action_from_phase_a",
+            }.issubset(set(physical_execution_phase_a_packet.get("not_allowed_next_steps") or []))
+            and {
+                "user_confirmation_bound",
+                "physical_execution_request_ready",
+                "physical_execution_scope_hash_bound",
+                "durable_local_evidence_complete",
+                "no_write_delete_provider_trade_action_secret_boundary",
+                "production_storage_stays_pending",
+            }.issubset(set(physical_execution_phase_a_rows))
+            and all(row.get("passed") is True for row in physical_execution_phase_a_rows.values())
+            and all(row.get("production_blocker") is False for row in physical_execution_phase_a_rows.values())
+            and all(row.get("writes_parquet") is False for row in physical_execution_phase_a_rows.values())
+            and all(row.get("writes_manifest") is False for row in physical_execution_phase_a_rows.values())
+            and all(row.get("deletes_artifacts") is False for row in physical_execution_phase_a_rows.values())
+            and all(row.get("external_calls_triggered") is False for row in physical_execution_phase_a_rows.values())
+            and all(row.get("does_not_execute_trades") is True for row in physical_execution_phase_a_rows.values())
+            and all(row.get("does_not_modify_strategy_action") is True for row in physical_execution_phase_a_rows.values()),
+            "Storage physical execution Phase A must bind request and durable local evidence while keeping all storage writes, provider calls, trades, and production completion false.",
+        ),
+        _row(
             "schema_validation_acceptance_evidence_is_read_only",
             schema_acceptance_evidence.get("schema_version")
             == "command_center_3_storage_schema_validation_acceptance_evidence.v1"
@@ -1233,6 +1317,21 @@ def build_contract() -> dict[str, Any]:
             and task_rows["run_storage_physical_execution_request"].get("deletes_artifacts_on_post") is False
             and task_rows["run_storage_physical_execution_request"].get("refreshes_external_sources_on_post") is False
             and task_rows["run_storage_physical_execution_request"].get("production_storage_complete") is False
+            and task_rows["run_storage_physical_execution_phase_a"].get("route")
+            == "POST /api/storage/physical-execution/phase-a"
+            and task_rows["run_storage_physical_execution_phase_a"].get("local_phase_a_execution_only") is True
+            and task_rows["run_storage_physical_execution_phase_a"].get("requires_physical_execution_request")
+            is True
+            and task_rows["run_storage_physical_execution_phase_a"].get("requires_durable_evidence_recipe")
+            is True
+            and task_rows["run_storage_physical_execution_phase_a"].get("physical_execution_implemented") is True
+            and task_rows["run_storage_physical_execution_phase_a"].get("physical_execution_complete") is False
+            and task_rows["run_storage_physical_execution_phase_a"].get("production_storage_complete") is False
+            and task_rows["run_storage_physical_execution_phase_a"].get("writes_parquet_on_post") is False
+            and task_rows["run_storage_physical_execution_phase_a"].get("writes_manifest_on_post") is False
+            and task_rows["run_storage_physical_execution_phase_a"].get("deletes_artifacts_on_post") is False
+            and task_rows["run_storage_physical_execution_phase_a"].get("refreshes_external_sources_on_post")
+            is False
             and task_rows["run_storage_production_promotion_review"].get("local_promotion_review_only") is True
             and task_rows["run_storage_production_promotion_review"].get("requires_bound_scope_hash") is True
             and task_rows["run_storage_production_promotion_review"].get("requires_physical_execution_request") is True
@@ -1314,6 +1413,13 @@ def build_contract() -> dict[str, Any]:
         "storage_physical_migration_activation_status": activation_receipt.get("status"),
         "storage_physical_execution_recipe_ready": bool(physical_execution_recipe.get("local_recipe_ready")),
         "storage_physical_execution_recipe_status": physical_execution_recipe.get("status"),
+        "storage_physical_execution_phase_a_status": physical_execution_phase_a_packet.get("status"),
+        "storage_physical_execution_phase_a_ready": physical_execution_phase_a_packet.get(
+            "local_phase_a_execution_ready"
+        ),
+        "storage_physical_execution_phase_a_stage_count": physical_execution_phase_a_packet.get(
+            "phase_a_local_evidence_stage_count"
+        ),
         "storage_physical_durable_evidence_recipe_ready": bool(
             durable_evidence_recipe.get("local_recipe_ready")
         ),
@@ -1369,6 +1475,13 @@ def build_contract() -> dict[str, Any]:
             ),
             "storage_physical_execution_request_scope_hash_present": _is_sha256(
                 physical_execution_request_packet.get("physical_execution_scope_hash")
+            ),
+            "storage_physical_execution_phase_a_status": physical_execution_phase_a_packet.get("status"),
+            "storage_physical_execution_phase_a_ready": physical_execution_phase_a_packet.get(
+                "local_phase_a_execution_ready"
+            ),
+            "storage_physical_execution_phase_a_stage_count": physical_execution_phase_a_packet.get(
+                "phase_a_local_evidence_stage_count"
             ),
             "storage_physical_durable_evidence_recipe_status": durable_evidence_recipe.get("status"),
             "storage_physical_durable_evidence_recipe_ready": durable_evidence_recipe.get("local_recipe_ready"),
@@ -1436,7 +1549,9 @@ def build_contract() -> dict[str, Any]:
             ),
         },
         "storage_physical_execution_request_packet": physical_execution_request_packet,
+        "storage_physical_execution_phase_a_packet": physical_execution_phase_a_packet,
         "storage_physical_execution_recipe_rows": list(physical_execution_rows.values()),
+        "storage_physical_execution_phase_a_rows": list(physical_execution_phase_a_rows.values()),
         "storage_physical_durable_evidence_rows": list(durable_evidence_rows.values()),
         "physical_migration_stage_scope_rows": physical_migration_stage_scope_rows,
         "rows": rows,

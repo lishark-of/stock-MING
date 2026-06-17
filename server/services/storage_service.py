@@ -29,6 +29,7 @@ DATASET_VERSION_MANIFEST_REVIEW_PACKET_KEY = "command_center_3_storage_dataset_v
 DATASET_VERSION_MANIFEST_WRITE_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_write_packet"
 DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY = "command_center_3_storage_dataset_version_manifest_validate_packet"
 STORAGE_PHYSICAL_EXECUTION_REQUEST_PACKET_KEY = "command_center_3_storage_physical_execution_request_packet"
+STORAGE_PHYSICAL_EXECUTION_PHASE_A_PACKET_KEY = "command_center_3_storage_physical_execution_phase_a_packet"
 STORAGE_PRODUCTION_PROMOTION_REVIEW_PACKET_KEY = "command_center_3_storage_production_promotion_review_packet"
 DUCKDB_READ_VALIDATION_PACKET_KEY = "command_center_3_storage_duckdb_read_validation_packet"
 STORAGE_PRODUCTION_BLOCKER_SCHEMA_VERSION = "command_center_3_storage_production_blocker_audit.v1"
@@ -5674,6 +5675,330 @@ def run_storage_physical_execution_request_task(payload: Any = None) -> dict[str
     ) or task
 
 
+def _storage_physical_execution_phase_a_row(
+    criterion: str,
+    *,
+    passed: bool,
+    status: str,
+    evidence: str,
+    next_action: str,
+    production_blocker: bool = False,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "evidence": evidence,
+        "next_action": next_action,
+        "phase_a_local_evidence": True,
+        "production_blocker": bool(production_blocker),
+        "writes_parquet": False,
+        "writes_manifest": False,
+        "deletes_artifacts": False,
+        "refreshes_providers": False,
+        "reads_row_payloads": False,
+        "runs_commands": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+
+
+def storage_physical_execution_phase_a_packet(
+    *,
+    task_id: str | None = None,
+    payload_safe: Mapping[str, Any] | None = None,
+    physical_execution_request: Mapping[str, Any] | None = None,
+    durable_evidence_recipe: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload_safe = payload_safe or {}
+    execution_request = dict(physical_execution_request or storage_physical_execution_request_evidence())
+    durable_recipe = dict(
+        durable_evidence_recipe or storage_physical_durable_evidence_recipe(physical_execution_request=execution_request)
+    )
+    approved_by_user = payload_safe.get("approved_by_user") is True
+    latest_scope_hash = str(execution_request.get("physical_execution_scope_hash") or "")
+    requested_scope_hash = str(payload_safe.get("physical_execution_scope_hash") or payload_safe.get("scope_hash") or "")
+    request_ready = (
+        execution_request.get("schema_version") == "command_center_3_storage_physical_execution_request.v1"
+        and execution_request.get("local_execution_request_ready") is True
+        and execution_request.get("requested_scope_hash_matches_latest") is True
+        and execution_request.get("production_storage_complete") is False
+    )
+    scope_matches = bool(latest_scope_hash and requested_scope_hash == latest_scope_hash)
+    durable_ready = (
+        durable_recipe.get("schema_version") == STORAGE_PHYSICAL_DURABLE_EVIDENCE_SCHEMA_VERSION
+        and durable_recipe.get("local_recipe_ready") is True
+        and int(durable_recipe.get("production_blocker_count") or 0) == 0
+        and int(durable_recipe.get("evidence_key_count") or 0) == len(STORAGE_PHYSICAL_DURABLE_EVIDENCE_KEYS)
+        and durable_recipe.get("production_storage_complete") is False
+    )
+    no_side_effects = (
+        execution_request.get("external_calls_triggered") is False
+        and durable_recipe.get("external_calls_triggered") is False
+        and execution_request.get("tushare_called") is False
+        and durable_recipe.get("tushare_called") is False
+        and execution_request.get("deepseek_called") is False
+        and durable_recipe.get("deepseek_called") is False
+        and execution_request.get("github_called") is False
+        and durable_recipe.get("github_called") is False
+        and execution_request.get("does_not_execute_trades") is True
+        and durable_recipe.get("does_not_execute_trades") is True
+        and execution_request.get("does_not_modify_strategy_action") is True
+        and durable_recipe.get("does_not_modify_strategy_action") is True
+        and execution_request.get("contains_secret") is False
+        and durable_recipe.get("contains_secret") is False
+    )
+    if not approved_by_user:
+        status = "storage_physical_execution_phase_a_blocked_user_confirmation_required"
+    elif not request_ready:
+        status = "storage_physical_execution_phase_a_blocked_request_not_ready"
+    elif not requested_scope_hash:
+        status = "storage_physical_execution_phase_a_blocked_scope_hash_required"
+    elif not scope_matches:
+        status = "storage_physical_execution_phase_a_blocked_scope_hash_mismatch"
+    elif not durable_ready:
+        status = "storage_physical_execution_phase_a_blocked_durable_evidence"
+    elif not no_side_effects:
+        status = "storage_physical_execution_phase_a_blocked_boundary_regression"
+    else:
+        status = "storage_physical_execution_phase_a_ready_local_evidence_production_pending"
+    ready = status == "storage_physical_execution_phase_a_ready_local_evidence_production_pending"
+    rows = [
+        _storage_physical_execution_phase_a_row(
+            "user_confirmation_bound",
+            passed=approved_by_user,
+            status="passed" if approved_by_user else "blocked_confirmation_required",
+            evidence=f"approved_by_user={approved_by_user}",
+            next_action="Run Phase A only from explicit POST after reviewing the request ticket.",
+            production_blocker=not approved_by_user,
+        ),
+        _storage_physical_execution_phase_a_row(
+            "physical_execution_request_ready",
+            passed=request_ready,
+            status="passed" if request_ready else "blocked_request_not_ready",
+            evidence=f"request_status={execution_request.get('status')}",
+            next_action="Bind Phase A to the latest physical execution request before collecting local evidence.",
+            production_blocker=not request_ready,
+        ),
+        _storage_physical_execution_phase_a_row(
+            "physical_execution_scope_hash_bound",
+            passed=scope_matches,
+            status="passed" if scope_matches else "blocked_scope_hash_mismatch_or_missing",
+            evidence=f"requested_scope_hash_short={requested_scope_hash[:12]}; latest_scope_hash_short={latest_scope_hash[:12]}",
+            next_action="Regenerate Phase A from the current Storage page if the request scope changes.",
+            production_blocker=not scope_matches,
+        ),
+        _storage_physical_execution_phase_a_row(
+            "durable_local_evidence_complete",
+            passed=durable_ready,
+            status="passed_local_durable_evidence" if durable_ready else "blocked_durable_evidence_incomplete",
+            evidence=(
+                f"durable_status={durable_recipe.get('status')}; "
+                f"evidence_key_count={durable_recipe.get('evidence_key_count')}; "
+                f"production_blocker_count={durable_recipe.get('production_blocker_count')}"
+            ),
+            next_action="Keep the durable evidence recipe visible; production promotion remains separate.",
+            production_blocker=not durable_ready,
+        ),
+        _storage_physical_execution_phase_a_row(
+            "no_write_delete_provider_trade_action_secret_boundary",
+            passed=no_side_effects,
+            status="passed_no_side_effects" if no_side_effects else "blocked_boundary_regression",
+            evidence="Phase A reads SQLite evidence only and writes no storage artifacts.",
+            next_action="Preserve false side-effect flags before any later physical writer task.",
+            production_blocker=not no_side_effects,
+        ),
+        _storage_physical_execution_phase_a_row(
+            "production_storage_stays_pending",
+            passed=True,
+            status="passed_production_pending",
+            evidence="Phase A is local evidence consolidation; production_storage_complete remains false.",
+            next_action="Only a later release/promotion gate may decide whether production storage can close.",
+        ),
+    ]
+    blocker_count = sum(1 for row in rows if row.get("production_blocker"))
+    return {
+        "schema_version": "command_center_3_storage_physical_execution_phase_a.v1",
+        "packet_key": STORAGE_PHYSICAL_EXECUTION_PHASE_A_PACKET_KEY,
+        "task_id": str(task_id or ""),
+        "status": status,
+        "mode": "button_gated_local_physical_execution_phase_a",
+        "scope": "local_storage_physical_execution_phase_a_no_write_no_delete_no_provider",
+        "ltg": "LTG-05",
+        "local_phase_a_execution_ready": ready,
+        "phase_a_local_evidence_done": ready,
+        "phase_a_local_evidence_stage_count": int(durable_recipe.get("evidence_key_count") or 0) if ready else 0,
+        "phase_a_blocker_count": blocker_count,
+        "approved_by_user": approved_by_user,
+        "requested_scope_hash_matches_latest": scope_matches,
+        "physical_execution_scope_hash": latest_scope_hash if scope_matches else "",
+        "physical_execution_scope_hash_short": latest_scope_hash[:12] if latest_scope_hash else "",
+        "requested_scope_hash_short": requested_scope_hash[:12],
+        "source_physical_execution_request_status": execution_request.get("status"),
+        "source_durable_evidence_status": durable_recipe.get("status"),
+        "source_durable_evidence_key_count": int(durable_recipe.get("evidence_key_count") or 0),
+        "source_durable_evidence_production_blocker_count": int(durable_recipe.get("production_blocker_count") or 0),
+        "direct_evidence_layer": "L3_local_storage_physical_execution_phase_a",
+        "rows": rows,
+        "not_allowed_next_steps": [
+            "treat_phase_a_as_production_storage_complete",
+            "write_parquet_from_phase_a",
+            "write_manifest_from_phase_a",
+            "delete_artifacts_from_phase_a",
+            "refresh_providers_from_phase_a",
+            "call_Tushare_from_phase_a",
+            "call_DeepSeek_from_phase_a",
+            "call_GitHub_from_phase_a",
+            "mutate_strategy_action_from_phase_a",
+        ],
+        "physical_task_created": ready,
+        "physical_task_executed": ready,
+        "physical_execution_implemented": ready,
+        "physical_execution_complete": False,
+        "production_storage_complete": False,
+        "writes_parquet": False,
+        "writes_manifest": False,
+        "deletes_artifacts": False,
+        "refreshes_providers": False,
+        "runs_commands": False,
+        "reads_row_payloads": False,
+        "reads_env_files": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "request_params_safe": {
+            "source": payload_safe.get("source") or "storage_page_button",
+            "approved_by_user": approved_by_user,
+            "physical_execution_scope_hash_short": requested_scope_hash[:12],
+            "phase": "phase_a_local_evidence_consolidation",
+            "external_sources_allowed": False,
+            "write_parquet_allowed": False,
+            "write_manifest_allowed": False,
+            "delete_allowed": False,
+        },
+        "call_ledger": _storage_cache_call_ledger(
+            "local_storage_physical_execution_phase_a",
+            endpoint="POST /api/storage/physical-execution/phase-a",
+            status=status,
+            row_count=len(rows),
+        ),
+        "warnings": [
+            "POST /api/storage/physical-execution/phase-a 只整合本地 SQLite evidence；不会写 Parquet、写 manifest 或删除文件。",
+            "Phase A 不是 production storage complete；真实生产提升仍需后续独立 gate。",
+        ],
+    }
+
+
+def storage_physical_execution_phase_a_evidence() -> dict[str, Any]:
+    packet, read_status = _read_storage_meta_packet_no_init(STORAGE_PHYSICAL_EXECUTION_PHASE_A_PACKET_KEY)
+    if read_status != "packet_present" or not isinstance(packet, Mapping):
+        return {
+            "schema_version": "command_center_3_storage_physical_execution_phase_a.v1",
+            "packet_key": STORAGE_PHYSICAL_EXECUTION_PHASE_A_PACKET_KEY,
+            "status": "storage_physical_execution_phase_a_missing",
+            "local_phase_a_execution_ready": False,
+            "phase_a_local_evidence_done": False,
+            "phase_a_local_evidence_stage_count": 0,
+            "phase_a_blocker_count": 1,
+            "production_storage_complete": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "rows": [
+                _storage_physical_execution_phase_a_row(
+                    "phase_a_evidence_visible",
+                    passed=False,
+                    status="blocked_missing_phase_a",
+                    evidence="No button-gated storage physical execution Phase A packet has been recorded yet.",
+                    next_action="Run Phase A after physical execution request and durable evidence are ready.",
+                    production_blocker=True,
+                )
+            ],
+        }
+    evidence = dict(packet)
+    evidence["read_status"] = read_status
+    evidence.setdefault("local_phase_a_execution_ready", False)
+    evidence.setdefault("phase_a_local_evidence_done", False)
+    evidence.setdefault("production_storage_complete", False)
+    evidence.setdefault("external_calls_triggered", False)
+    evidence.setdefault("tushare_called", False)
+    evidence.setdefault("deepseek_called", False)
+    evidence.setdefault("github_called", False)
+    evidence.setdefault("does_not_execute_trades", True)
+    evidence.setdefault("does_not_modify_strategy_action", True)
+    evidence.setdefault("contains_secret", False)
+    return evidence
+
+
+def run_storage_physical_execution_phase_a_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, Mapping) else {}
+    task_payload = {
+        "source": payload_map.get("source") or "storage_page_button",
+        "approved_by_user": payload_map.get("approved_by_user") is True,
+        "physical_execution_scope_hash": str(
+            payload_map.get("physical_execution_scope_hash") or payload_map.get("scope_hash") or ""
+        ),
+        "external_sources_allowed": False,
+        "write_parquet_allowed": False,
+        "write_manifest_allowed": False,
+        "delete_allowed": False,
+    }
+    task = task_service.create_task_record(
+        "run_storage_physical_execution_phase_a",
+        output_packet_key=STORAGE_PHYSICAL_EXECUTION_PHASE_A_PACKET_KEY,
+        payload=task_payload,
+        current_step="storage_physical_execution_phase_a_queued",
+        warnings=[
+            "storage physical execution Phase A 只整合本地 SQLite evidence；不会写 Parquet、manifest、删除文件或调用外部源。",
+            "Phase A 不修改 strategy action、不执行真实交易，也不代表 production storage 完成。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    task_service.update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.55,
+        current_step="building_storage_physical_execution_phase_a_evidence",
+    )
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = storage_physical_execution_phase_a_packet(task_id=task["task_id"], payload_safe=payload_safe)
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(STORAGE_PHYSICAL_EXECUTION_PHASE_A_PACKET_KEY, packet)
+    except Exception:
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="storage_physical_execution_phase_a_packet_persist_failed",
+            error_message_safe="storage_physical_execution_phase_a_sqlite_write_failed",
+            call_ledger=packet["call_ledger"],
+            warning="storage_physical_execution_phase_a_failed_no_external_call",
+        ) or task
+    return task_service.update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step=str(packet.get("status") or "storage_physical_execution_phase_a_recorded"),
+        call_ledger=packet["call_ledger"],
+        warning="storage_physical_execution_phase_a_recorded_no_write_no_delete_no_external_call",
+    ) or task
+
+
 def _storage_production_promotion_review_row(
     criterion: str,
     *,
@@ -6185,6 +6510,7 @@ def storage_dataset_catalog() -> dict[str, Any]:
         physical_execution_recipe,
         physical_execution_request,
     )
+    physical_execution_phase_a = storage_physical_execution_phase_a_evidence()
     production_promotion_review = storage_production_promotion_review_evidence()
     artifact_hygiene = storage_artifact_hygiene_status()
     dataset_version_policy = storage_dataset_version_policy()
@@ -6223,6 +6549,12 @@ def storage_dataset_catalog() -> dict[str, Any]:
         "storage_physical_durable_evidence_production_blocker_count": physical_durable_evidence_recipe[
             "production_blocker_count"
         ],
+        "storage_physical_execution_phase_a": physical_execution_phase_a,
+        "storage_physical_execution_phase_a_rows": physical_execution_phase_a.get("rows") or [],
+        "storage_physical_execution_phase_a_status": physical_execution_phase_a.get("status"),
+        "storage_physical_execution_phase_a_ready": physical_execution_phase_a.get(
+            "local_phase_a_execution_ready"
+        ),
         "storage_production_promotion_review": production_promotion_review,
         "storage_production_promotion_review_rows": production_promotion_review.get("rows") or [],
         "storage_production_promotion_review_status": production_promotion_review.get("status"),
@@ -6756,6 +7088,7 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         physical_execution_recipe,
         physical_execution_request,
     )
+    physical_execution_phase_a = storage_physical_execution_phase_a_evidence()
     production_promotion_review = storage_production_promotion_review_evidence()
     dataset_version_policy = storage_dataset_version_policy()
     dataset_version_manifest_evidence = storage_dataset_version_manifest_evidence_audit()
@@ -6862,6 +7195,12 @@ def storage_overview(*, limit: int = 20) -> dict[str, Any]:
         "storage_physical_durable_evidence_production_blocker_count": physical_durable_evidence_recipe[
             "production_blocker_count"
         ],
+        "storage_physical_execution_phase_a": physical_execution_phase_a,
+        "storage_physical_execution_phase_a_rows": physical_execution_phase_a.get("rows") or [],
+        "storage_physical_execution_phase_a_status": physical_execution_phase_a.get("status"),
+        "storage_physical_execution_phase_a_ready": physical_execution_phase_a.get(
+            "local_phase_a_execution_ready"
+        ),
         "storage_production_promotion_review": production_promotion_review,
         "storage_production_promotion_review_rows": production_promotion_review.get("rows") or [],
         "storage_production_promotion_review_status": production_promotion_review.get("status"),

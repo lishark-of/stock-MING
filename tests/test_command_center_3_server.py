@@ -4923,6 +4923,159 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         durable_rows = {row["evidence_key"]: row for row in refreshed["storage_physical_durable_evidence_rows"]}
         self.assertEqual(durable_rows["physical_execution_request_visible"]["status"], "passed")
 
+    def test_storage_physical_execution_phase_a_records_local_evidence_without_writes(self):
+        missing_dependency = next(
+            (
+                package
+                for package in ("pyarrow", "pandas", "duckdb")
+                if importlib.util.find_spec(package) is None
+            ),
+            None,
+        )
+        if missing_dependency is not None:
+            self.skipTest(f"{missing_dependency} dependency missing")
+
+        db_path = self._with_meta_store()
+        root = self._with_parquet_root()
+        original_project_root = storage_service.PROJECT_ROOT
+        temp_project_root = tempfile.TemporaryDirectory()
+        storage_service.PROJECT_ROOT = Path(temp_project_root.name)
+        self.addCleanup(temp_project_root.cleanup)
+        self.addCleanup(setattr, storage_service, "PROJECT_ROOT", original_project_root)
+        for dataset in storage_service.CANONICAL_PARQUET_DATASETS:
+            self._write_minimal_storage_dataset(root, dataset)
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        prerequisite_tasks = [
+            storage_service.run_storage_schema_validation_acceptance_task({"source": "api_test_phase_a"}),
+            storage_service.run_storage_dataset_version_manifest_write_task(
+                {"source": "api_test_phase_a", "confirm_manifest_write": True}
+            ),
+            storage_service.run_storage_dataset_version_manifest_validate_task({"source": "api_test_phase_a"}),
+            storage_service.run_storage_schema_migration_execution_task(
+                {"source": "api_test_phase_a", "confirm_schema_migration_execution": True}
+            ),
+            storage_service.run_storage_partition_migration_dry_run_task({"source": "api_test_phase_a"}),
+            storage_service.run_storage_compaction_dry_run_task({"source": "api_test_phase_a"}),
+            storage_service.run_storage_cache_ttl_dry_run_task({"source": "api_test_phase_a"}),
+            storage_service.run_storage_artifact_cleanup_dry_run_task({"source": "api_test_phase_a"}),
+            storage_service.run_storage_duckdb_read_validation_task({"source": "api_test_phase_a"}),
+        ]
+        self.assertTrue(all(task["status"] == "success" for task in prerequisite_tasks))
+
+        from fastapi.testclient import TestClient
+        from server.main import app
+
+        client = TestClient(app)
+        overview = storage_service.storage_overview()
+        scope_hash = overview["storage_physical_execution_recipe"]["physical_execution_scope_hash"]
+        request_response = client.post(
+            "/api/storage/physical-execution-request",
+            json={
+                "source": "api_test",
+                "approved_by_user": True,
+                "physical_execution_scope_hash": scope_hash,
+            },
+        ).json()
+        self.assertTrue(request_response["ok"])
+
+        promotion_response = client.post(
+            "/api/storage/production-promotion-review",
+            json={
+                "source": "api_test_phase_a",
+                "approved_by_user": True,
+                "physical_execution_scope_hash": scope_hash,
+                "reviewer": "unit_test",
+            },
+        ).json()
+        self.assertTrue(promotion_response["ok"])
+        self.assertEqual(
+            promotion_response["data"]["task"]["current_step"],
+            "storage_production_promotion_review_ready_production_still_blocked",
+        )
+
+        response = client.post(
+            "/api/storage/physical-execution/phase-a",
+            json={
+                "source": "api_test",
+                "approved_by_user": True,
+                "physical_execution_scope_hash": scope_hash,
+                "token": "SHOULD_DROP",
+                "write_parquet_allowed": True,
+                "delete_allowed": True,
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["task_type"], "run_storage_physical_execution_phase_a")
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(
+            task["current_step"],
+            "storage_physical_execution_phase_a_ready_local_evidence_production_pending",
+        )
+        self.assertEqual(task["output_packet_key"], "command_center_3_storage_physical_execution_phase_a_packet")
+        self.assertEqual(task["call_ledger"][0]["api"], "local_storage_physical_execution_phase_a")
+        self.assertEqual(task["call_ledger"][0]["endpoint"], "POST /api/storage/physical-execution/phase-a")
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertNotIn("token", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        persisted = SQLiteMetaStore(db_path).read_packet("command_center_3_storage_physical_execution_phase_a_packet")
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted["schema_version"], "command_center_3_storage_physical_execution_phase_a.v1")
+        self.assertEqual(
+            persisted["status"],
+            "storage_physical_execution_phase_a_ready_local_evidence_production_pending",
+        )
+        self.assertTrue(persisted["local_phase_a_execution_ready"])
+        self.assertTrue(persisted["phase_a_local_evidence_done"])
+        self.assertEqual(persisted["phase_a_blocker_count"], 0)
+        self.assertTrue(persisted["approved_by_user"])
+        self.assertTrue(persisted["requested_scope_hash_matches_latest"])
+        self.assertEqual(persisted["physical_execution_scope_hash"], scope_hash)
+        self.assertEqual(persisted["source_durable_evidence_production_blocker_count"], 0)
+        self.assertEqual(persisted["direct_evidence_layer"], "L3_local_storage_physical_execution_phase_a")
+        self.assertTrue(persisted["physical_task_created"])
+        self.assertTrue(persisted["physical_task_executed"])
+        self.assertTrue(persisted["physical_execution_implemented"])
+        self.assertFalse(persisted["physical_execution_complete"])
+        self.assertFalse(persisted["production_storage_complete"])
+        self.assertFalse(persisted["writes_parquet"])
+        self.assertFalse(persisted["writes_manifest"])
+        self.assertFalse(persisted["deletes_artifacts"])
+        self.assertFalse(persisted["refreshes_providers"])
+        self.assertFalse(persisted["runs_commands"])
+        self.assertFalse(persisted["reads_row_payloads"])
+        self.assertFalse(persisted["reads_env_files"])
+        self.assertFalse(persisted["external_calls_triggered"])
+        self.assertFalse(persisted["tushare_called"])
+        self.assertFalse(persisted["deepseek_called"])
+        self.assertFalse(persisted["github_called"])
+        self.assertTrue(persisted["does_not_execute_trades"])
+        self.assertTrue(persisted["does_not_modify_strategy_action"])
+        self.assertFalse(persisted["contains_secret"])
+        self.assertIn("treat_phase_a_as_production_storage_complete", persisted["not_allowed_next_steps"])
+        self.assertIn("write_parquet_from_phase_a", persisted["not_allowed_next_steps"])
+        rows = {row["criterion"]: row for row in persisted["rows"]}
+        self.assertEqual(rows["durable_local_evidence_complete"]["status"], "passed_local_durable_evidence")
+        self.assertEqual(rows["production_storage_stays_pending"]["status"], "passed_production_pending")
+        self.assertTrue(all(row["passed"] for row in rows.values()))
+        self.assertTrue(all(row["production_blocker"] is False for row in rows.values()))
+
+        refreshed = storage_service.storage_overview()
+        phase_a = refreshed["storage_physical_execution_phase_a"]
+        self.assertTrue(phase_a["local_phase_a_execution_ready"])
+        self.assertFalse(phase_a["production_storage_complete"])
+        self.assertEqual(refreshed["storage_physical_execution_phase_a_status"], persisted["status"])
+
     def test_storage_physical_execution_request_rejects_scope_mismatch(self):
         self._with_meta_store()
         self._with_parquet_root()
@@ -14361,7 +14514,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 75)
+        self.assertEqual(catalog["task_count"], 76)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -14380,7 +14533,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 75)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 76)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -14391,8 +14544,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 77)
-        self.assertEqual(route_coverage["task_creation_route_count"], 75)
+        self.assertEqual(route_coverage["known_post_route_count"], 78)
+        self.assertEqual(route_coverage["task_creation_route_count"], 76)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -14401,11 +14554,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 75)
+        self.assertEqual(implementation_status["task_count"], 76)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 72)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 73)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 73)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 74)
         self.assertEqual(implementation_status["external_capable_task_count"], 6)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -14477,6 +14630,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_storage_cache_ttl_dry_run",
                 "run_storage_duckdb_read_validation",
                 "run_storage_physical_execution_request",
+                "run_storage_physical_execution_phase_a",
                 "run_storage_production_promotion_review",
                 "run_worker_synthetic_healthcheck",
                 "run_worker_activation_review",
@@ -14555,6 +14709,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_storage_cache_ttl_dry_run",
                 "run_storage_duckdb_read_validation",
                 "run_storage_physical_execution_request",
+                "run_storage_physical_execution_phase_a",
                 "run_storage_production_promotion_review",
                 "run_worker_synthetic_healthcheck",
                 "run_worker_activation_review",
@@ -16404,6 +16559,26 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(by_type["run_storage_physical_execution_request"]["production_storage_complete"])
         self.assertTrue(by_type["run_storage_physical_execution_request"]["call_ledger_required"])
         self.assertEqual(
+            by_type["run_storage_physical_execution_phase_a"]["route"],
+            "POST /api/storage/physical-execution/phase-a",
+        )
+        self.assertEqual(
+            by_type["run_storage_physical_execution_phase_a"]["current_backend"],
+            "local_physical_execution_phase_a_evidence_pipeline",
+        )
+        self.assertEqual(by_type["run_storage_physical_execution_phase_a"]["possible_external_sources"], [])
+        self.assertTrue(by_type["run_storage_physical_execution_phase_a"]["local_phase_a_execution_only"])
+        self.assertTrue(by_type["run_storage_physical_execution_phase_a"]["requires_physical_execution_request"])
+        self.assertTrue(by_type["run_storage_physical_execution_phase_a"]["requires_durable_evidence_recipe"])
+        self.assertTrue(by_type["run_storage_physical_execution_phase_a"]["physical_execution_implemented"])
+        self.assertFalse(by_type["run_storage_physical_execution_phase_a"]["physical_execution_complete"])
+        self.assertFalse(by_type["run_storage_physical_execution_phase_a"]["writes_parquet_on_post"])
+        self.assertFalse(by_type["run_storage_physical_execution_phase_a"]["writes_manifest_on_post"])
+        self.assertFalse(by_type["run_storage_physical_execution_phase_a"]["deletes_artifacts_on_post"])
+        self.assertFalse(by_type["run_storage_physical_execution_phase_a"]["refreshes_external_sources_on_post"])
+        self.assertFalse(by_type["run_storage_physical_execution_phase_a"]["production_storage_complete"])
+        self.assertTrue(by_type["run_storage_physical_execution_phase_a"]["call_ledger_required"])
+        self.assertEqual(
             by_type["run_storage_production_promotion_review"]["route"],
             "POST /api/storage/production-promotion-review",
         )
@@ -16635,6 +16810,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/storage/partition-migration/dry-run", discovered_routes)
         self.assertIn("POST /api/storage/compaction/dry-run", discovered_routes)
         self.assertIn("POST /api/storage/cache-ttl/dry-run", discovered_routes)
+        self.assertIn("POST /api/storage/physical-execution/phase-a", discovered_routes)
         self.assertIn("POST /api/worker/synthetic-healthcheck", discovered_routes)
         self.assertIn("POST /api/worker/activation-review", discovered_routes)
         self.assertIn("POST /api/worker/production-evidence-plan", discovered_routes)
@@ -16661,16 +16837,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 72)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 73)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 73)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 74)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 72)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 73)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 73)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 74)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -16745,6 +16921,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("run_storage_partition_migration_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_storage_compaction_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_storage_cache_ttl_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
+        self.assertIn("run_storage_physical_execution_phase_a", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_worker_synthetic_healthcheck", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_worker_activation_review", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_worker_production_evidence_plan", packet["task_implementation_status"]["local_pipeline_task_types"])
@@ -17526,9 +17703,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 72)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 73)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 73)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 74)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -17752,9 +17929,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 72)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 73)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 73)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 74)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -17787,9 +17964,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 72)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 73)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 73)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 74)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -22166,7 +22343,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 75)
+        self.assertEqual(task_catalog["data"]["task_count"], 76)
         self.assertIn(
             "POST /api/desktop/tauri-package-artifact-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
@@ -22177,6 +22354,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertIn(
             "POST /api/desktop/tauri-backend-offline-packaged-ux-review",
+            task_catalog["data"]["route_coverage"]["known_post_routes"],
+        )
+        self.assertIn(
+            "POST /api/storage/physical-execution/phase-a",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
         )
         self.assertIn(

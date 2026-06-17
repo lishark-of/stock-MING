@@ -134,6 +134,12 @@ def run_storage_physical_execution_request(payload: dict[str, Any] | None = None
     return task_envelope(task)
 
 
+@router.post("/physical-execution/phase-a")
+def run_storage_physical_execution_phase_a(payload: dict[str, Any] | None = None) -> dict:
+    task = storage_service.run_storage_physical_execution_phase_a_task(payload)
+    return task_envelope(task)
+
+
 @router.post("/production-promotion-review")
 def run_storage_production_promotion_review(payload: dict[str, Any] | None = None) -> dict:
     task = storage_service.run_storage_production_promotion_review_task(payload)
