@@ -5772,25 +5772,52 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             for row in stage_rows
             if isinstance(row, dict) and row.get("current_status") == "current_research_client_isolated"
         )
+        release_receipt_ready = (
+            isolation_contract.get("trade_isolation_release_receipt_ready") is True
+            and isolation_contract.get("trade_isolation_release_receipt_status")
+            == "trade_isolation_release_receipt_ready_research_release_only"
+            and isolation_contract.get("real_trading_connected") is False
+            and isolation_contract.get("broker_adapter_connected") is False
+            and isolation_contract.get("order_endpoint_present") is False
+            and isolation_contract.get("trade_execution_api_enabled") is False
+            and isolation_contract.get("external_calls_triggered") is False
+            and isolation_contract.get("tushare_called") is False
+            and isolation_contract.get("deepseek_called") is False
+            and isolation_contract.get("github_called") is False
+            and isolation_contract.get("does_not_execute_trades") is True
+            and isolation_contract.get("does_not_modify_strategy_action") is True
+            and isolation_contract.get("does_not_modify_holdings") is True
+            and isolation_contract.get("contains_secret") is False
+        )
+        direct_evidence_count = 1 if release_receipt_ready else 0
+        direct_evidence_stage_keys = (
+            ["research_release_trade_isolation_receipt"] if release_receipt_ready else []
+        )
+        observed_pending_count = max(pending_count - direct_evidence_count, 0)
         rows.append(
             {
                 "id": "LTG-12",
                 "goal": "真实交易链路继续保持隔离",
                 "stage_scope_manifest": "trade_isolation_stage_scope_manifest",
-                "status": "observed_in_trade_isolation_static_contract"
+                "status": "observed_trade_isolation_release_direct_evidence_research_only"
+                if release_receipt_ready
+                else "observed_in_trade_isolation_static_contract"
                 if stage_rows
                 else "missing_from_trade_isolation_static_contract",
-                "observed_source": "scripts/trade_isolation_contract.build_contract local static contract",
+                "observed_source": "scripts/trade_isolation_contract.build_contract local static contract + research release isolation receipt"
+                if release_receipt_ready
+                else "scripts/trade_isolation_contract.build_contract local static contract",
                 "cache_status": str(isolation_contract.get("status") or "missing"),
-                "cache_mode": "local_static_contract",
+                "cache_mode": "local_static_contract_plus_trade_isolation_release_receipt"
+                if release_receipt_ready
+                else "local_static_contract",
                 "row_count": row_count,
-                "pending_stage_count": pending_count,
+                "pending_stage_count": observed_pending_count,
                 "local_evidence_stage_count": local_evidence_count,
-                "production_blocker_count": pending_count,
-                "trade_isolation_release_receipt_ready": isolation_contract.get(
-                    "trade_isolation_release_receipt_ready"
-                )
-                is True,
+                "direct_evidence_stage_count": direct_evidence_count,
+                "direct_evidence_stage_keys": direct_evidence_stage_keys,
+                "production_blocker_count": observed_pending_count,
+                "trade_isolation_release_receipt_ready": release_receipt_ready,
                 "trade_isolation_release_receipt_status": isolation_contract.get(
                     "trade_isolation_release_receipt_status"
                 ),
@@ -5818,7 +5845,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "does_not_modify_holdings": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
-                "evidence_boundary": "observed_local_static_trade_isolation_not_real_trading_integration",
+                "evidence_boundary": "observed_l3_trade_isolation_release_receipt_not_real_trading_approval"
+                if release_receipt_ready
+                else "observed_local_static_trade_isolation_not_real_trading_integration",
             }
         )
     except Exception:
