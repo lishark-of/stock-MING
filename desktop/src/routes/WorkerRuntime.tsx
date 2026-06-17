@@ -4,6 +4,7 @@ import {
   runWorkerActivationReview,
   runWorkerProductionEvidencePlan,
   runWorkerRuntimeQaDryRun,
+  runWorkerRuntimeQaExecution,
   runWorkerRuntimeQaExecutionRequest,
   runWorkerSyntheticHealthcheck
 } from "../api/client";
@@ -36,6 +37,9 @@ export default function WorkerRuntime() {
   const [runtimeQaDryRunResult, setRuntimeQaDryRunResult] = useState<Record<string, unknown>>({});
   const [runtimeQaDryRunRunning, setRuntimeQaDryRunRunning] = useState(false);
   const [runtimeQaDryRunError, setRuntimeQaDryRunError] = useState("");
+  const [runtimeQaExecutionResult, setRuntimeQaExecutionResult] = useState<Record<string, unknown>>({});
+  const [runtimeQaExecutionRunning, setRuntimeQaExecutionRunning] = useState(false);
+  const [runtimeQaExecutionError, setRuntimeQaExecutionError] = useState("");
 
   const refreshCache = () => {
     return getWorkerRuntimeCache().then((res) => {
@@ -146,6 +150,15 @@ export default function WorkerRuntime() {
   const workerRuntimeQaDryRunPhaseRows =
     (productionReadiness.worker_runtime_qa_dry_run_phase_rows as Array<Record<string, unknown>> | undefined) ??
     ((cache.worker_runtime_qa_dry_run_phase_rows as Array<Record<string, unknown>> | undefined) ?? []);
+  const workerRuntimeQaExecutionReceipt =
+    (productionReadiness.worker_runtime_qa_execution_receipt as Record<string, unknown> | undefined) ??
+    ((cache.worker_runtime_qa_execution_receipt as Record<string, unknown> | undefined) ?? {});
+  const workerRuntimeQaExecutionEvidenceRows =
+    (productionReadiness.worker_runtime_qa_execution_rows as Array<Record<string, unknown>> | undefined) ??
+    ((cache.worker_runtime_qa_execution_rows as Array<Record<string, unknown>> | undefined) ?? []);
+  const workerRuntimeQaExecutionPhaseRows =
+    (productionReadiness.worker_runtime_qa_execution_phase_rows as Array<Record<string, unknown>> | undefined) ??
+    ((cache.worker_runtime_qa_execution_phase_rows as Array<Record<string, unknown>> | undefined) ?? []);
   const workerRuntimeDurableEvidenceRecipe =
     (productionReadiness.worker_runtime_durable_evidence_recipe as Record<string, unknown> | undefined) ??
     ((cache.worker_runtime_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {});
@@ -165,6 +178,9 @@ export default function WorkerRuntime() {
   const visibleRuntimeQaDryRun = Object.keys(runtimeQaDryRunResult).length
     ? ((runtimeQaDryRunResult.worker_runtime_qa_dry_run_receipt as Record<string, unknown> | undefined) ?? runtimeQaDryRunResult)
     : workerRuntimeQaDryRun;
+  const visibleRuntimeQaExecution = Object.keys(runtimeQaExecutionResult).length
+    ? ((runtimeQaExecutionResult.worker_runtime_qa_execution_receipt as Record<string, unknown> | undefined) ?? runtimeQaExecutionResult)
+    : workerRuntimeQaExecutionReceipt;
   const launchRuntimeQaExecutionRequest = () => {
     setRuntimeQaExecutionRequestRunning(true);
     setRuntimeQaExecutionRequestError("");
@@ -197,6 +213,23 @@ export default function WorkerRuntime() {
       })
       .catch((err: unknown) => setRuntimeQaDryRunError(err instanceof Error ? err.message : String(err)))
       .finally(() => setRuntimeQaDryRunRunning(false));
+  };
+  const launchRuntimeQaExecution = () => {
+    setRuntimeQaExecutionRunning(true);
+    setRuntimeQaExecutionError("");
+    void runWorkerRuntimeQaExecution({
+      requested_from: "worker_runtime_page",
+      operator_approved: true,
+      dry_run_task_id: String(visibleRuntimeQaDryRun.dry_run_task_id ?? ""),
+      evidence_plan_scope_hash: String(visibleRuntimeQaDryRun.production_evidence_plan_scope_hash ?? ""),
+      runtime_qa_scope_hash: String(visibleRuntimeQaDryRun.runtime_qa_scope_hash ?? "")
+    })
+      .then((res) => {
+        setRuntimeQaExecutionResult(res.data);
+        return refreshCache();
+      })
+      .catch((err: unknown) => setRuntimeQaExecutionError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setRuntimeQaExecutionRunning(false));
   };
   const workerPacketEvidenceRows = [
     {
@@ -289,6 +322,25 @@ export default function WorkerRuntime() {
         cache.worker_runtime_qa_dry_run_source_packet_present ??
         false,
       cache_get_initializes_meta_store: workerRuntimeQaDryRun.cache_get_initializes_meta_store ?? false,
+      worker_started: false,
+      redis_pinged: false,
+      task_dispatched_by_get: false,
+      external_calls_triggered: false
+    },
+    {
+      packet: "runtime_qa_execution",
+      route: "POST /api/worker/runtime-qa-execution",
+      source_packet_read_status:
+        workerRuntimeQaExecutionReceipt.source_packet_read_status ??
+        productionReadiness.worker_runtime_qa_execution_source_packet_read_status ??
+        cache.worker_runtime_qa_execution_source_packet_read_status ??
+        "meta_missing",
+      source_packet_present:
+        workerRuntimeQaExecutionReceipt.source_packet_present ??
+        productionReadiness.worker_runtime_qa_execution_source_packet_present ??
+        cache.worker_runtime_qa_execution_source_packet_present ??
+        false,
+      cache_get_initializes_meta_store: workerRuntimeQaExecutionReceipt.cache_get_initializes_meta_store ?? false,
       worker_started: false,
       redis_pinged: false,
       task_dispatched_by_get: false,
@@ -630,6 +682,45 @@ export default function WorkerRuntime() {
         <p>该 dry-run 只审查 request ticket 与 runtime recipe；不会创建或执行 runtime QA task，不能当作 production worker complete。</p>
         <DataLineageTable rows={rows(productionReadiness.worker_runtime_qa_dry_run_rows ?? cache.worker_runtime_qa_dry_run_rows ?? visibleRuntimeQaDryRun.rows ?? workerRuntimeQaDryRunRows)} />
         <DataLineageTable rows={rows(productionReadiness.worker_runtime_qa_dry_run_phase_rows ?? cache.worker_runtime_qa_dry_run_phase_rows ?? visibleRuntimeQaDryRun.phase_rows ?? workerRuntimeQaDryRunPhaseRows)} />
+      </PacketCard>
+
+      <PacketCard title="Worker runtime QA execution" subtitle="POST /api/worker/runtime-qa-execution：本地 fallback round-trip，不启动 Celery/Redis" status={String(visibleRuntimeQaExecution.status ?? "worker_runtime_qa_execution_missing")}>
+        <div className="actions">
+          <button
+            onClick={launchRuntimeQaExecution}
+            disabled={
+              runtimeQaExecutionRunning ||
+              runtimeQaDryRunRunning ||
+              runtimeQaExecutionRequestRunning ||
+              productionEvidencePlanRunning ||
+              activationReviewRunning ||
+              healthcheckRunning ||
+              !visibleRuntimeQaDryRun.dry_run_task_id ||
+              !visibleRuntimeQaDryRun.production_evidence_plan_scope_hash ||
+              !visibleRuntimeQaDryRun.runtime_qa_scope_hash
+            }
+          >
+            {runtimeQaExecutionRunning ? "执行中" : "运行 runtime QA execution"}
+          </button>
+        </div>
+        {runtimeQaExecutionError ? <p className="risk-note">runtime_qa_execution_error: {runtimeQaExecutionError}</p> : null}
+        <p>schema_version: {String(visibleRuntimeQaExecution.schema_version ?? "worker_runtime_qa_execution_receipt.v1")}</p>
+        <p>scope: {String(visibleRuntimeQaExecution.scope ?? "button_gated_worker_runtime_qa_execution_local_fallback_no_process_start")}</p>
+        <p>explicit_runtime_qa_execution_done / operator_approved: {String(visibleRuntimeQaExecution.explicit_runtime_qa_execution_done === true)} / {String(visibleRuntimeQaExecution.operator_approved === true)}</p>
+        <p>local_runtime_qa_execution_done / runtime_qa_done: {String(visibleRuntimeQaExecution.local_runtime_qa_execution_done === true)} / {String(visibleRuntimeQaExecution.runtime_qa_done === true)}</p>
+        <p>local_fallback_round_trip / task_log_round_trip: {String(visibleRuntimeQaExecution.local_fallback_round_trip_verified === true)} / {String(visibleRuntimeQaExecution.task_log_round_trip_verified === true)}</p>
+        <p>task_control_metadata / cross_process_probe / append_only_log: {String(visibleRuntimeQaExecution.local_task_control_metadata_verified === true)} / {String(visibleRuntimeQaExecution.cross_process_task_control_verified === true)} / {String(visibleRuntimeQaExecution.append_only_worker_log_verified === true)}</p>
+        <p>scheduler_default_off / provider_model_no_autoschedule: {String(visibleRuntimeQaExecution.scheduler_default_off_runtime_verified === true)} / {String(visibleRuntimeQaExecution.provider_model_no_autoschedule_boundary_verified === true)}</p>
+        <p>dry_run_task_id: {String(visibleRuntimeQaExecution.runtime_qa_dry_run_task_id ?? visibleRuntimeQaDryRun.dry_run_task_id ?? "")}</p>
+        <p>evidence_plan_scope_hash_short / runtime_qa_scope_hash_short: {String(visibleRuntimeQaExecution.production_evidence_plan_scope_hash_short ?? "")} / {String(visibleRuntimeQaExecution.runtime_qa_scope_hash_short ?? "")}</p>
+        <p>production_blocker_count: {String(visibleRuntimeQaExecution.production_blocker_count ?? 0)}；production_blockers: {Array.isArray(visibleRuntimeQaExecution.production_blockers) ? visibleRuntimeQaExecution.production_blockers.join(" / ") : ""}</p>
+        <p>worker_started / redis_pinged / scheduler_started / task_dispatched: {String(visibleRuntimeQaExecution.worker_started === true)} / {String(visibleRuntimeQaExecution.redis_pinged === true)} / {String(visibleRuntimeQaExecution.scheduler_started === true)} / {String(visibleRuntimeQaExecution.task_dispatched === true)}</p>
+        <p>external_calls_triggered / tushare_called / deepseek_called / github_called: {String(visibleRuntimeQaExecution.external_calls_triggered === true)} / {String(visibleRuntimeQaExecution.tushare_called === true)} / {String(visibleRuntimeQaExecution.deepseek_called === true)} / {String(visibleRuntimeQaExecution.github_called === true)}</p>
+        <p>does_not_execute_trades / does_not_modify_strategy_action / contains_secret: {String(visibleRuntimeQaExecution.does_not_execute_trades === true)} / {String(visibleRuntimeQaExecution.does_not_modify_strategy_action === true)} / {String(visibleRuntimeQaExecution.contains_secret === true)}</p>
+        <p>该 execution 只证明本地 fallback、task readback、append-only JSONL 和本地 Python process probe；不能当作 Celery/Redis process proof、live queue proof 或 production worker complete。</p>
+        <DataLineageTable rows={rows(productionReadiness.worker_runtime_qa_execution_rows ?? cache.worker_runtime_qa_execution_rows ?? visibleRuntimeQaExecution.rows ?? workerRuntimeQaExecutionEvidenceRows)} />
+        <DataLineageTable rows={rows(productionReadiness.worker_runtime_qa_execution_phase_rows ?? cache.worker_runtime_qa_execution_phase_rows ?? visibleRuntimeQaExecution.phase_rows ?? workerRuntimeQaExecutionPhaseRows)} />
+        <DataLineageTable rows={rows(visibleRuntimeQaExecution.call_ledger ?? runtimeQaExecutionResult.call_ledger)} />
       </PacketCard>
 
       <PacketCard title="Worker runtime QA execution recipe" subtitle="LTG-06 runtime QA 执行顺序 recipe；只读、不启动 Celery、不 ping Redis、不派发任务" status={String(workerRuntimeQaExecutionRecipe.status ?? "missing")}>

@@ -483,6 +483,7 @@ const LTG_NEXT_ACCEPTANCE_LOCAL_ROUTES = new Set([
   "/api/worker/production-evidence-plan",
   "/api/worker/runtime-qa-execution-request",
   "/api/worker/runtime-qa-dry-run",
+  "/api/worker/runtime-qa-execution",
   "/api/factor-quant/deepseek-provider-benchmark-scope-ticket",
   "/api/next-session/browser-qa-review",
   "/api/audit/motion-browser-qa-review",
@@ -709,6 +710,13 @@ export function runWorkerRuntimeQaExecutionRequest(payload: Record<string, unkno
 
 export function runWorkerRuntimeQaDryRun(payload: Record<string, unknown> = {}) {
   return request<Record<string, unknown>>("/api/worker/runtime-qa-dry-run", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function runWorkerRuntimeQaExecution(payload: Record<string, unknown> = {}) {
+  return request<Record<string, unknown>>("/api/worker/runtime-qa-execution", {
     method: "POST",
     body: JSON.stringify(payload)
   });
