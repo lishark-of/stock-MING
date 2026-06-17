@@ -913,10 +913,14 @@ def build_contract() -> dict[str, Any]:
             "getNextSessionCache" in next_page
             and 'postTask("/api/next-session/generate")' in next_page
             and 'postTask("/api/next-session/browser-qa-review"' in next_page
+            and 'postTask("/api/next-session/production-promotion-review"' in next_page
             and "next_session_browser_qa_evidence_summary" in next_page
             and "next_session_browser_qa_review_contract" in next_page
             and "next_session_durable_evidence_recipe" in next_page
             and "durableEvidenceRecipe" in next_page
+            and "next_session_production_promotion_review_contract" in next_page
+            and "productionPromotionReview" in next_page
+            and "production_replacement_complete" in next_page
             and "NextSessionChart" in next_page
             and "frontend_computes_trade_action" in next_page
             and "does_not_modify_operation_zones" in next_page

@@ -31,6 +31,7 @@ export default function NextSessionMap() {
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [browserQaReceipt, setBrowserQaReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [productionPromotionReceipt, setProductionPromotionReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -64,6 +65,11 @@ export default function NextSessionMap() {
       setBrowserQaReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
     });
+  const reviewProductionPromotion = () =>
+    void postTask("/api/next-session/production-promotion-review", { review_scope: "next_session_local_promotion_blocker_review" }).then((res) => {
+      setProductionPromotionReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
 
   useEffect(() => {
     refreshCache();
@@ -85,6 +91,8 @@ export default function NextSessionMap() {
   const browserQaEvidenceRows = rowsFromArray(packet.next_session_browser_qa_evidence_rows);
   const browserQaReview = (packet.next_session_browser_qa_review_contract as Record<string, unknown> | undefined) ?? {};
   const browserQaReviewRows = rowsFromArray(packet.next_session_browser_qa_review_rows);
+  const productionPromotionReview = (packet.next_session_production_promotion_review_contract as Record<string, unknown> | undefined) ?? {};
+  const productionPromotionReviewRows = rowsFromArray(packet.next_session_production_promotion_review_rows);
   const durableEvidenceRecipe = (packet.next_session_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
   const durableEvidenceRows = rowsFromArray(packet.next_session_durable_evidence_rows);
   const productionStageScope = (packet.next_session_production_stage_scope_manifest as Record<string, unknown> | undefined) ?? {};
@@ -156,9 +164,11 @@ export default function NextSessionMap() {
         <button onClick={refreshCache}>查看缓存</button>
         <button onClick={launchTask}>生成任务</button>
         <button onClick={reviewBrowserQa}>审查本地 QA</button>
+        <button onClick={reviewProductionPromotion}>审查 promotion</button>
       </div>
       <TaskLaunchReceipt receipt={taskReceipt} />
       <TaskLaunchReceipt receipt={browserQaReceipt} />
+      <TaskLaunchReceipt receipt={productionPromotionReceipt} />
       <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
       <MetricGrid
         items={[
@@ -187,6 +197,8 @@ export default function NextSessionMap() {
           { label: "QA 阻断", value: Number(browserQaReview.blocking_review_count ?? 0), tone: Number(browserQaReview.blocking_review_count ?? 0) > 0 ? "warn" : "good" },
           { label: "durable evidence", value: String(durableEvidenceRecipe.status ?? "missing"), tone: durableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
           { label: "durable 阻断", value: Number(durableEvidenceRecipe.durable_evidence_blocker_count ?? 0), tone: Number(durableEvidenceRecipe.durable_evidence_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "promotion review", value: String(productionPromotionReview.status ?? "missing"), tone: productionPromotionReview.local_production_promotion_review_ready === true ? "good" : "warn" },
+          { label: "promotion 阻断", value: Number(productionPromotionReview.production_blocker_count ?? 0), tone: Number(productionPromotionReview.production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "阶段清单", value: String(productionStageScope.status ?? "missing"), tone: productionStageScope.local_manifest_ready === true ? "good" : "warn" },
           { label: "阶段 direct evidence", value: Number(productionStageScope.direct_evidence_stage_count ?? 0), tone: Number(productionStageScope.direct_evidence_stage_count ?? 0) > 0 ? "good" : "warn" },
           { label: "阶段 pending", value: Number(productionStageScope.pending_stage_count ?? 0), tone: Number(productionStageScope.pending_stage_count ?? 0) > 0 ? "warn" : "good" },
@@ -234,6 +246,11 @@ export default function NextSessionMap() {
       <p>not_allowed_next_steps: {Array.isArray(durableEvidenceRecipe.not_allowed_next_steps) ? durableEvidenceRecipe.not_allowed_next_steps.join(" / ") : "local browser artifact as durable evidence / interaction readiness as parity / provider calls from render / frontend action computation"}</p>
       <DataLineageTable rows={[durableEvidenceRecipe]} />
       <DataLineageTable rows={durableEvidenceRows} />
+      <h3>ECharts production promotion review</h3>
+      <p className="risk-note">next_session_production_promotion_review 只审查本地 promotion 阻断状态；它不调用 provider/model/GitHub、不移除 fallback、不证明生产替代完成。</p>
+      <p>local_production_promotion_review_ready: {String(productionPromotionReview.local_production_promotion_review_ready === true)}；ready_to_mark_production_replacement_complete: {String(productionPromotionReview.ready_to_mark_production_replacement_complete === true)}；production_replacement_complete: {String(productionPromotionReview.production_replacement_complete === true)}</p>
+      <DataLineageTable rows={[productionPromotionReview]} />
+      <DataLineageTable rows={productionPromotionReviewRows} />
       <h3>ECharts production stage scope</h3>
       <p className="risk-note">next_session_production_stage_scope_manifest 只把本地阶段证据和剩余阻断展示到 cache/UI；它不运行浏览器、不调用 provider/model/GitHub、不计算 action、不证明生产替代完成。</p>
       <p>scope: {String(productionStageScope.scope ?? "next_session_production_replacement_stage_scope_manifest")}</p>
