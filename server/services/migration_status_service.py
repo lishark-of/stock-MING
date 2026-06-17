@@ -2735,6 +2735,10 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
     except Exception:
         packet = {}
     packet_map = packet if isinstance(packet, dict) else {}
+    chart = _dict_or_empty(packet_map.get("chart_payload"))
+    chart_summary = _dict_or_empty(packet_map.get("chart_summary"))
+    chart_contract = _dict_or_empty(chart.get("chart_contract"))
+    interaction_audit = _dict_or_empty(chart.get("interaction_readiness_audit"))
     browser_evidence = _dict_or_empty(packet_map.get("next_session_browser_qa_evidence_summary"))
     browser_review = _dict_or_empty(packet_map.get("next_session_browser_qa_review_contract"))
     packet_safe = bool(
@@ -2744,6 +2748,23 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
         and packet_map.get("github_called") is not True
         and packet_map.get("does_not_execute_trades") is not False
         and packet_map.get("does_not_modify_strategy_action") is not False
+    )
+    exact_payload_contract_done = bool(
+        packet_safe
+        and chart.get("status") == "ready"
+        and chart.get("is_exact_next_session_packet") is True
+        and chart_summary.get("has_drawable_data") is True
+        and chart_contract.get("schema_version") == "next_session_echarts_payload.v1"
+        and chart_contract.get("renderer") == "ECharts"
+        and chart_contract.get("source_packet") == "command_center_next_session_projection_packet"
+    )
+    interaction_contract_done = bool(
+        packet_safe
+        and interaction_audit.get("schema_version") == "next_session_interaction_readiness.v1"
+        and interaction_audit.get("status") == "interaction_contract_ready_parity_pending"
+        and int(interaction_audit.get("blocking_count") or 0) == 0
+        and interaction_audit.get("frontend_read_only_boundary") is True
+        and interaction_audit.get("streamlit_parity_complete") is False
     )
     review_ready = bool(
         browser_review.get("schema_version") == "next_session_browser_qa_review.v1"
@@ -2786,6 +2807,10 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
         and browser_review.get("motion_viewport_coverage_complete") is True
     )
     direct_stage_keys = []
+    if exact_payload_contract_done:
+        direct_stage_keys.append("exact_cache_payload_contract")
+    if interaction_contract_done:
+        direct_stage_keys.append("interaction_hover_click_contract")
     if visual_done:
         direct_stage_keys.append("browser_visual_qa")
     if performance_done:
@@ -2795,12 +2820,14 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
     return {
         "schema_version": "migration_next_session_direct_evidence_summary.v1",
         "source_packet_key": "command_center_next_session_projection_packet + command_center_next_session_browser_qa_review_packet",
-        "status": "next_session_direct_browser_evidence_visible_production_pending"
+        "status": "next_session_direct_evidence_visible_production_pending"
         if direct_stage_keys
-        else "next_session_direct_browser_evidence_missing",
+        else "next_session_direct_evidence_missing",
         "available": bool(direct_stage_keys),
         "direct_evidence_stage_keys": direct_stage_keys,
         "direct_evidence_stage_count": len(direct_stage_keys),
+        "exact_cache_payload_contract_done": exact_payload_contract_done,
+        "interaction_hover_click_contract_done": interaction_contract_done,
         "browser_visual_qa_done": visual_done,
         "browser_performance_trace_done": performance_done,
         "reduced_motion_accessibility_qa_done": reduced_motion_done,
@@ -2815,10 +2842,10 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
         "does_not_modify_strategy_action": True,
         "does_not_modify_operation_zones": True,
         "contains_secret": False,
-        "direct_evidence_layer": "L3_local_next_session_browser_visual_performance_evidence"
+        "direct_evidence_layer": "L3_local_next_session_cache_interaction_browser_evidence"
         if direct_stage_keys
         else "L1_static_contract",
-        "evidence_boundary": "next_session_browser_qa_review_is_not_streamlit_parity_or_production_replacement",
+        "evidence_boundary": "next_session_local_cache_interaction_browser_evidence_is_not_streamlit_parity_or_production_replacement",
     }
 
 
@@ -5297,9 +5324,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         )
         direct_evidence = _latest_next_session_direct_evidence_summary()
         direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
-        observed_pending_count = pending_count
+        observed_pending_count = max(0, row_count - direct_evidence_count) if row_count else pending_count
         next_session_status = (
-            "observed_next_session_browser_direct_evidence_production_pending"
+            "observed_next_session_direct_evidence_production_pending"
             if direct_evidence_count
             else "observed_in_next_session_map_static_contract"
         )
@@ -5324,6 +5351,10 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "production_blocker_count": observed_pending_count,
                 "production_replacement_complete": next_session_contract.get("production_replacement_complete") is True,
                 "streamlit_parity_complete": next_session_contract.get("streamlit_parity_complete") is True,
+                "exact_cache_payload_contract_done": direct_evidence.get("exact_cache_payload_contract_done") is True,
+                "interaction_hover_click_contract_done": (
+                    direct_evidence.get("interaction_hover_click_contract_done") is True
+                ),
                 "browser_visual_qa_done": direct_evidence.get("browser_visual_qa_done") is True,
                 "browser_performance_trace_done": direct_evidence.get("browser_performance_trace_done") is True,
                 "reduced_motion_accessibility_qa_done": (

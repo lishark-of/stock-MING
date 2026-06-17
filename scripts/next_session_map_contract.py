@@ -680,7 +680,13 @@ def build_contract() -> dict[str, Any]:
             and int(production_stage_scope.get("direct_evidence_stage_count") or 0)
             == len(_list(production_stage_scope.get("direct_evidence_stage_keys")))
             and set(_list(production_stage_scope.get("direct_evidence_stage_keys"))).issubset(
-                {"browser_visual_qa", "browser_performance_trace", "reduced_motion_accessibility_qa"}
+                {
+                    "exact_cache_payload_contract",
+                    "interaction_hover_click_contract",
+                    "browser_visual_qa",
+                    "browser_performance_trace",
+                    "reduced_motion_accessibility_qa",
+                }
             )
             and int(production_stage_scope.get("pending_stage_count") or 0)
             + int(production_stage_scope.get("direct_evidence_stage_count") or 0)
@@ -697,6 +703,8 @@ def build_contract() -> dict[str, Any]:
                 row.get("current_status")
                 in {
                     "local_contract_ready",
+                    "direct_evidence_ready_local_cache_contract",
+                    "direct_evidence_ready_local_interaction_contract",
                     "pending_exact_cache_payload",
                     "pending_interaction_contract",
                     "pending_same_packet_streamlit_parity",

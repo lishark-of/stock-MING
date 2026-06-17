@@ -1586,25 +1586,33 @@ def _next_session_production_stage_scope_manifest(packet: Mapping[str, Any], now
         _next_session_production_stage_scope_row(
             "exact_cache_payload_contract",
             local_contract_ready=exact_payload_contract_ready,
-            direct_evidence_complete=False,
-            current_status="local_contract_ready" if exact_payload_contract_ready else "pending_exact_cache_payload",
+            direct_evidence_complete=exact_payload_contract_ready,
+            current_status=(
+                "direct_evidence_ready_local_cache_contract"
+                if exact_payload_contract_ready
+                else "pending_exact_cache_payload"
+            ),
             evidence=(
                 f"chart_status={chart.get('status')}; exact={chart.get('is_exact_next_session_packet')}; "
                 f"renderer={chart_contract.get('renderer')}"
             ),
-            missing_evidence=["same-packet Streamlit reference capture", "browser parity review"],
+            missing_evidence=[] if exact_payload_contract_ready else ["exact ECharts cache payload contract"],
             recommended_order=1,
         ),
         _next_session_production_stage_scope_row(
             "interaction_hover_click_contract",
             local_contract_ready=interaction_contract_ready,
-            direct_evidence_complete=False,
-            current_status="local_contract_ready" if interaction_contract_ready else "pending_interaction_contract",
+            direct_evidence_complete=interaction_contract_ready,
+            current_status=(
+                "direct_evidence_ready_local_interaction_contract"
+                if interaction_contract_ready
+                else "pending_interaction_contract"
+            ),
             evidence=(
                 f"status={interaction_audit.get('status')}; "
                 f"blocking_count={interaction_audit.get('blocking_count')}"
             ),
-            missing_evidence=["hover/click parity notes against Streamlit", "browser interaction QA review"],
+            missing_evidence=[] if interaction_contract_ready else ["hover/click interaction contract"],
             recommended_order=2,
         ),
         _next_session_production_stage_scope_row(
@@ -1699,6 +1707,8 @@ def _next_session_production_stage_scope_manifest(packet: Mapping[str, Any], now
         "direct_evidence_stage_keys": direct_stage_keys,
         "pending_stage_keys": pending_stage_keys,
         "local_contract_stage_keys": local_contract_stage_keys,
+        "exact_cache_payload_contract_done": exact_payload_contract_ready,
+        "interaction_hover_click_contract_done": interaction_contract_ready,
         "browser_visual_qa_done": browser_visual_done,
         "browser_performance_trace_done": browser_performance_done,
         "reduced_motion_accessibility_qa_done": reduced_motion_done,

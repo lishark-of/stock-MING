@@ -937,10 +937,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             observed_stage_rows["LTG-08"]["stage_scope_manifest"],
             "next_session_production_replacement_stage_scope_manifest",
         )
-        self.assertEqual(observed_stage_rows["LTG-08"]["status"], "observed_in_next_session_map_static_contract")
+        self.assertIn(
+            observed_stage_rows["LTG-08"]["status"],
+            {
+                "observed_in_next_session_map_static_contract",
+                "observed_next_session_direct_evidence_production_pending",
+            },
+        )
         self.assertGreaterEqual(observed_stage_rows["LTG-08"]["row_count"], 8)
-        self.assertGreaterEqual(observed_stage_rows["LTG-08"]["pending_stage_count"], 8)
         self.assertGreaterEqual(observed_stage_rows["LTG-08"]["local_evidence_stage_count"], 2)
+        self.assertGreaterEqual(observed_stage_rows["LTG-08"]["pending_stage_count"], 3)
+        self.assertGreaterEqual(observed_stage_rows["LTG-08"]["direct_evidence_stage_count"], 0)
         self.assertFalse(observed_stage_rows["LTG-08"]["production_replacement_complete"])
         self.assertFalse(observed_stage_rows["LTG-08"]["browser_visual_qa_done"])
         self.assertFalse(observed_stage_rows["LTG-08"]["browser_performance_trace_done"])
@@ -12143,7 +12150,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed"]["production_stage_scope_count"], 8)
         self.assertEqual(set(payload["observed"]["production_stage_scope_keys"]), required_production_stages)
         production_stage_direct_count = int(payload["observed"]["production_stage_scope_direct_evidence_count"] or 0)
-        self.assertIn(production_stage_direct_count, {0, 3})
+        self.assertIn(production_stage_direct_count, {2, 5})
         self.assertEqual(
             payload["observed"]["production_stage_scope_pending_count"],
             8 - production_stage_direct_count,
@@ -12168,6 +12175,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual({row["stage_key"] for row in stage_rows}, required_production_stages)
         allowed_stage_statuses = {
             "local_contract_ready",
+            "direct_evidence_ready_local_cache_contract",
+            "direct_evidence_ready_local_interaction_contract",
             "pending_exact_cache_payload",
             "pending_interaction_contract",
             "pending_same_packet_streamlit_parity",
@@ -29605,8 +29614,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(stage_scope["production_blocker_count"], 5)
         self.assertEqual(
             set(stage_scope["direct_evidence_stage_keys"]),
-            {"browser_visual_qa", "browser_performance_trace", "reduced_motion_accessibility_qa"},
+            {
+                "browser_visual_qa",
+                "browser_performance_trace",
+                "reduced_motion_accessibility_qa",
+            },
         )
+        self.assertFalse(stage_scope["exact_cache_payload_contract_done"])
+        self.assertFalse(stage_scope["interaction_hover_click_contract_done"])
         self.assertTrue(stage_scope["browser_visual_qa_done"])
         self.assertTrue(stage_scope["browser_performance_trace_done"])
         self.assertTrue(stage_scope["reduced_motion_accessibility_qa_done"])
@@ -29622,6 +29637,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(stage_scope["does_not_modify_strategy_action"])
         self.assertTrue(stage_scope["does_not_modify_operation_zones"])
         stage_rows = {row["stage_key"]: row for row in refreshed["next_session_production_stage_scope_rows"]}
+        self.assertFalse(stage_rows["exact_cache_payload_contract"]["direct_evidence_complete"])
+        self.assertFalse(stage_rows["interaction_hover_click_contract"]["direct_evidence_complete"])
         self.assertTrue(stage_rows["browser_visual_qa"]["direct_evidence_complete"])
         self.assertTrue(stage_rows["browser_performance_trace"]["direct_evidence_complete"])
         self.assertTrue(stage_rows["reduced_motion_accessibility_qa"]["direct_evidence_complete"])
@@ -29633,15 +29650,21 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         migration = migration_status_service.build_migration_status()
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
         ltg08 = observed_stage_rows["LTG-08"]
-        self.assertEqual(ltg08["status"], "observed_next_session_browser_direct_evidence_production_pending")
+        self.assertEqual(ltg08["status"], "observed_next_session_direct_evidence_production_pending")
         self.assertEqual(ltg08["row_count"], 8)
         self.assertEqual(ltg08["pending_stage_count"], 5)
         self.assertEqual(ltg08["production_blocker_count"], 5)
         self.assertEqual(ltg08["direct_evidence_stage_count"], 3)
         self.assertEqual(
             set(ltg08["direct_evidence_stage_keys"]),
-            {"browser_visual_qa", "browser_performance_trace", "reduced_motion_accessibility_qa"},
+            {
+                "browser_visual_qa",
+                "browser_performance_trace",
+                "reduced_motion_accessibility_qa",
+            },
         )
+        self.assertFalse(ltg08["exact_cache_payload_contract_done"])
+        self.assertFalse(ltg08["interaction_hover_click_contract_done"])
         self.assertTrue(ltg08["browser_visual_qa_done"])
         self.assertTrue(ltg08["browser_performance_trace_done"])
         self.assertTrue(ltg08["reduced_motion_accessibility_qa_done"])
