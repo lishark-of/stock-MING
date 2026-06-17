@@ -254,6 +254,8 @@ def build_contract() -> dict[str, Any]:
         for row in _list(overview.get("storage_physical_durable_evidence_rows"))
         if isinstance(row, dict)
     }
+    manifest_validate_evidence = storage_service.storage_dataset_version_manifest_validate_evidence()
+    duckdb_read_validation_evidence = storage_service.storage_duckdb_read_validation_evidence()
     blocker_criteria = {
         str(row.get("criterion") or "")
         for row in _list(overview.get("storage_production_blocker_rows"))
@@ -299,6 +301,67 @@ def build_contract() -> dict[str, Any]:
         )
         and schema_migration_execution_evidence.get("does_not_execute_trades") is True
     )
+    manifest_validation_done = bool(
+        manifest_validate_evidence.get("schema_version")
+        == "command_center_3_storage_dataset_version_manifest_validate.v1"
+        and manifest_validate_evidence.get("status") == "manifest_validate_passed_local_only"
+        and manifest_validate_evidence.get("dataset_version_manifest_validated") is True
+        and int(manifest_validate_evidence.get("validated_dataset_count") or 0) > 0
+        and int(manifest_validate_evidence.get("validated_dataset_count") or 0)
+        == int(manifest_validate_evidence.get("dataset_count") or 0)
+        and manifest_validate_evidence.get("manifest_write_executed") is False
+        and manifest_validate_evidence.get("manifest_written_on_post") is False
+        and manifest_validate_evidence.get("post_validate_writes_manifest") is False
+        and manifest_validate_evidence.get("post_validate_writes_parquet") is False
+        and manifest_validate_evidence.get("post_validate_reads_parquet_payloads") is False
+        and manifest_validate_evidence.get("post_validate_reads_env_files") is False
+        and manifest_validate_evidence.get("production_storage_complete") is False
+        and _flag_false(
+            manifest_validate_evidence,
+            "external_calls_triggered",
+            "tushare_called",
+            "deepseek_called",
+            "github_called",
+            "contains_secret",
+        )
+        and manifest_validate_evidence.get("does_not_execute_trades") is True
+        and manifest_validate_evidence.get("does_not_modify_strategy_action") is True
+    )
+    duckdb_read_validation_done = bool(
+        duckdb_read_validation_evidence.get("schema_version")
+        == "command_center_3_storage_duckdb_read_validation.v1"
+        and duckdb_read_validation_evidence.get("status")
+        == "storage_duckdb_read_validation_ready_local_query_contract"
+        and duckdb_read_validation_evidence.get("local_duckdb_read_validation_ready") is True
+        and duckdb_read_validation_evidence.get("duckdb_dependency_available") is True
+        and int(duckdb_read_validation_evidence.get("dataset_count") or 0) > 0
+        and int(duckdb_read_validation_evidence.get("contract_ready_count") or 0)
+        == int(duckdb_read_validation_evidence.get("dataset_count") or 0)
+        and duckdb_read_validation_evidence.get("query_result_contract_schema_version")
+        == "duckdb_query_result_contract.v1"
+        and duckdb_read_validation_evidence.get("query_wrapper") == "duckdb_filtered_parquet.v1"
+        and duckdb_read_validation_evidence.get("safe_parameter_binding") is True
+        and duckdb_read_validation_evidence.get("typed_projection_enabled") is True
+        and duckdb_read_validation_evidence.get("cursor_pagination_enabled") is True
+        and duckdb_read_validation_evidence.get("frontend_executes_query") is False
+        and duckdb_read_validation_evidence.get("cache_get_writes_files") is False
+        and duckdb_read_validation_evidence.get("writes_parquet_on_get") is False
+        and duckdb_read_validation_evidence.get("writes_parquet") is False
+        and duckdb_read_validation_evidence.get("writes_manifest") is False
+        and duckdb_read_validation_evidence.get("deletes_artifacts") is False
+        and duckdb_read_validation_evidence.get("refreshes_providers") is False
+        and duckdb_read_validation_evidence.get("production_storage_complete") is False
+        and _flag_false(
+            duckdb_read_validation_evidence,
+            "external_calls_triggered",
+            "tushare_called",
+            "deepseek_called",
+            "github_called",
+            "contains_secret",
+        )
+        and duckdb_read_validation_evidence.get("does_not_execute_trades") is True
+        and duckdb_read_validation_evidence.get("does_not_modify_strategy_action") is True
+    )
     expected_durable_missing = {
         "dataset_version_manifest_validation_required",
         "partition_migration_evidence_required",
@@ -312,6 +375,10 @@ def build_contract() -> dict[str, Any]:
         expected_durable_missing.add("physical_execution_request_visible")
     if not schema_evidence_done:
         expected_durable_missing.add("physical_schema_validation_evidence_required")
+    if manifest_validation_done:
+        expected_durable_missing.discard("dataset_version_manifest_validation_required")
+    if duckdb_read_validation_done:
+        expected_durable_missing.discard("duckdb_post_migration_validation_required")
 
     rows = [
         _row(
@@ -614,12 +681,13 @@ def build_contract() -> dict[str, Any]:
             and durable_evidence_recipe.get("durable_promotion_ready") is False
             and durable_evidence_recipe.get("production_storage_complete") is False
             and durable_evidence_recipe.get("physical_schema_validation_done") is schema_evidence_done
-            and durable_evidence_recipe.get("schema_migration_executed") is False
-            and durable_evidence_recipe.get("dataset_version_manifest_validated") is False
+            and durable_evidence_recipe.get("schema_migration_executed") is schema_migration_noop_verified
+            and durable_evidence_recipe.get("dataset_version_manifest_validated") is manifest_validation_done
             and durable_evidence_recipe.get("partition_migration_executed") is False
             and durable_evidence_recipe.get("physical_compaction_executed") is False
             and durable_evidence_recipe.get("cache_ttl_refresh_executed") is False
             and durable_evidence_recipe.get("artifact_cleanup_delete_executed") is False
+            and durable_evidence_recipe.get("duckdb_read_validation_done") is duckdb_read_validation_done
             and durable_evidence_recipe.get("dataset_version_manifest_written_by_recipe") is False
             and durable_evidence_recipe.get("provider_refresh_called_by_recipe") is False
             and durable_evidence_recipe.get("cache_get_writes_files") is False
@@ -1081,7 +1149,8 @@ def build_contract() -> dict[str, Any]:
         "schema_migration_executed": schema_migration_executed,
         "schema_migration_execution_status": schema_migration_execution_evidence.get("status"),
         "schema_migration_rewrite_executed": False,
-        "dataset_version_manifest_validated": False,
+        "dataset_version_manifest_validated": manifest_validation_done,
+        "dataset_version_manifest_validate_status": manifest_validate_evidence.get("status"),
         "dataset_version_manifest_evidence_validated": bool(
             dataset_version_manifest_evidence.get("dataset_version_manifest_validated")
         ),
@@ -1104,6 +1173,8 @@ def build_contract() -> dict[str, Any]:
         "storage_physical_durable_evidence_production_blocker_count": durable_evidence_recipe.get(
             "production_blocker_count"
         ),
+        "duckdb_read_validation_done": duckdb_read_validation_done,
+        "duckdb_read_validation_status": duckdb_read_validation_evidence.get("status"),
         "partition_migration_executed": False,
         "physical_compaction_executed": False,
         "cache_ttl_refresh_executed": False,

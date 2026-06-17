@@ -1456,6 +1456,42 @@ def storage_dataset_version_manifest_validate_packet(
     }
 
 
+def storage_dataset_version_manifest_validate_evidence() -> dict[str, Any]:
+    packet, read_status = _read_storage_meta_packet_no_init(DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY)
+    if read_status != "packet_present" or not isinstance(packet, Mapping):
+        return {
+            "schema_version": "command_center_3_storage_dataset_version_manifest_validate.v1",
+            "packet_key": DATASET_VERSION_MANIFEST_VALIDATE_PACKET_KEY,
+            "status": "manifest_validate_missing",
+            "read_status": read_status,
+            "dataset_version_manifest_validated": False,
+            "validated_dataset_count": 0,
+            "dataset_count": 0,
+            "production_storage_complete": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+    evidence = dict(packet)
+    evidence["read_status"] = read_status
+    evidence.setdefault("dataset_version_manifest_validated", False)
+    evidence.setdefault("validated_dataset_count", 0)
+    evidence.setdefault("dataset_count", 0)
+    evidence.setdefault("production_storage_complete", False)
+    evidence.setdefault("external_calls_triggered", False)
+    evidence.setdefault("tushare_called", False)
+    evidence.setdefault("deepseek_called", False)
+    evidence.setdefault("github_called", False)
+    evidence.setdefault("does_not_execute_trades", True)
+    evidence.setdefault("does_not_modify_strategy_action", True)
+    evidence.setdefault("contains_secret", False)
+    return evidence
+
+
 def run_storage_dataset_version_manifest_validate_task(payload: Any = None) -> dict[str, Any]:
     payload_map = payload if isinstance(payload, Mapping) else {}
     task_payload = {
@@ -4755,6 +4791,9 @@ def storage_physical_durable_evidence_recipe(
         or storage_physical_execution_recipe(readiness, blocker_audit, activation_receipt)
     )
     execution_request = dict(physical_execution_request or storage_physical_execution_request_evidence())
+    manifest_validation = storage_dataset_version_manifest_validate_evidence()
+    schema_migration_execution = storage_schema_migration_execution_evidence()
+    duckdb_read_validation = storage_duckdb_read_validation_evidence()
     blocker_audit_visible = blocker_audit.get("schema_version") == STORAGE_PRODUCTION_BLOCKER_SCHEMA_VERSION
     readiness_visible = readiness.get("status") in {"foundation_ready", "partial_dependency_missing"}
     activation_visible = activation_receipt.get("local_activation_receipt_ready") is True
@@ -4785,6 +4824,90 @@ def storage_physical_durable_evidence_recipe(
     local_recipe_ready = bool(blocker_audit_visible and readiness_visible and activation_visible and execution_ready and no_external_boundary)
     schema_acceptance_done = readiness.get("physical_schema_validation_done") is True
     schema_acceptance_status = readiness.get("schema_validation_acceptance_evidence_status")
+    manifest_validation_done = bool(
+        manifest_validation.get("schema_version") == "command_center_3_storage_dataset_version_manifest_validate.v1"
+        and manifest_validation.get("status") == "manifest_validate_passed_local_only"
+        and manifest_validation.get("dataset_version_manifest_validated") is True
+        and int(manifest_validation.get("validated_dataset_count") or 0) > 0
+        and int(manifest_validation.get("validated_dataset_count") or 0)
+        == int(manifest_validation.get("dataset_count") or 0)
+        and manifest_validation.get("manifest_write_executed") is False
+        and manifest_validation.get("manifest_written_on_post") is False
+        and manifest_validation.get("post_validate_writes_manifest") is False
+        and manifest_validation.get("post_validate_writes_parquet") is False
+        and manifest_validation.get("post_validate_reads_parquet_payloads") is False
+        and manifest_validation.get("post_validate_reads_env_files") is False
+        and manifest_validation.get("schema_migration_executed") is False
+        and manifest_validation.get("partition_migration_executed") is False
+        and manifest_validation.get("physical_compaction_executed") is False
+        and manifest_validation.get("cache_ttl_refresh_executed") is False
+        and manifest_validation.get("production_storage_complete") is False
+        and manifest_validation.get("external_calls_triggered") is False
+        and manifest_validation.get("tushare_called") is False
+        and manifest_validation.get("deepseek_called") is False
+        and manifest_validation.get("github_called") is False
+        and manifest_validation.get("does_not_execute_trades") is True
+        and manifest_validation.get("does_not_modify_strategy_action") is True
+        and manifest_validation.get("contains_secret") is False
+    )
+    schema_migration_done = bool(
+        schema_migration_execution.get("schema_version")
+        == "command_center_3_storage_schema_migration_execution.v1"
+        and schema_migration_execution.get("status") == "schema_migration_execution_completed_noop_verified"
+        and schema_migration_execution.get("schema_migration_executed") is True
+        and schema_migration_execution.get("schema_migration_noop_verified") is True
+        and schema_migration_execution.get("schema_migration_rewrite_executed") is False
+        and int(schema_migration_execution.get("dataset_count") or 0) > 0
+        and int(schema_migration_execution.get("schema_migration_executed_count") or 0)
+        == int(schema_migration_execution.get("dataset_count") or 0)
+        and schema_migration_execution.get("post_task_writes_manifest") is False
+        and schema_migration_execution.get("post_task_writes_parquet") is False
+        and schema_migration_execution.get("post_task_reads_row_payloads") is False
+        and schema_migration_execution.get("cache_get_writes_files") is False
+        and schema_migration_execution.get("production_storage_complete") is False
+        and schema_migration_execution.get("external_calls_triggered") is False
+        and schema_migration_execution.get("tushare_called") is False
+        and schema_migration_execution.get("deepseek_called") is False
+        and schema_migration_execution.get("github_called") is False
+        and schema_migration_execution.get("does_not_execute_trades") is True
+        and schema_migration_execution.get("does_not_modify_strategy_action") is True
+        and schema_migration_execution.get("contains_secret") is False
+    )
+    duckdb_read_validation_done = bool(
+        duckdb_read_validation.get("schema_version") == "command_center_3_storage_duckdb_read_validation.v1"
+        and duckdb_read_validation.get("status") == "storage_duckdb_read_validation_ready_local_query_contract"
+        and duckdb_read_validation.get("local_duckdb_read_validation_ready") is True
+        and duckdb_read_validation.get("duckdb_dependency_available") is True
+        and int(duckdb_read_validation.get("dataset_count") or 0) > 0
+        and int(duckdb_read_validation.get("contract_ready_count") or 0)
+        == int(duckdb_read_validation.get("dataset_count") or 0)
+        and duckdb_read_validation.get("query_result_contract_schema_version") == "duckdb_query_result_contract.v1"
+        and duckdb_read_validation.get("query_wrapper") == "duckdb_filtered_parquet.v1"
+        and duckdb_read_validation.get("safe_parameter_binding") is True
+        and duckdb_read_validation.get("typed_projection_enabled") is True
+        and duckdb_read_validation.get("cursor_pagination_enabled") is True
+        and duckdb_read_validation.get("frontend_executes_query") is False
+        and duckdb_read_validation.get("cache_get_writes_files") is False
+        and duckdb_read_validation.get("writes_parquet_on_get") is False
+        and duckdb_read_validation.get("writes_parquet") is False
+        and duckdb_read_validation.get("writes_manifest") is False
+        and duckdb_read_validation.get("deletes_artifacts") is False
+        and duckdb_read_validation.get("refreshes_providers") is False
+        and duckdb_read_validation.get("schema_migration_executed") is False
+        and duckdb_read_validation.get("partition_migration_executed") is False
+        and duckdb_read_validation.get("physical_compaction_executed") is False
+        and duckdb_read_validation.get("cache_ttl_refresh_executed") is False
+        and duckdb_read_validation.get("artifact_cleanup_delete_executed") is False
+        and duckdb_read_validation.get("post_migration_validation_done") is False
+        and duckdb_read_validation.get("production_storage_complete") is False
+        and duckdb_read_validation.get("external_calls_triggered") is False
+        and duckdb_read_validation.get("tushare_called") is False
+        and duckdb_read_validation.get("deepseek_called") is False
+        and duckdb_read_validation.get("github_called") is False
+        and duckdb_read_validation.get("does_not_execute_trades") is True
+        and duckdb_read_validation.get("does_not_modify_strategy_action") is True
+        and duckdb_read_validation.get("contains_secret") is False
+    )
     rows = [
         _storage_physical_durable_evidence_recipe_row(
             "production_blocker_audit_visible",
@@ -4842,14 +4965,18 @@ def storage_physical_durable_evidence_recipe(
         ),
         _storage_physical_durable_evidence_recipe_row(
             "dataset_version_manifest_validation_required",
-            passed=False,
+            passed=manifest_validation_done,
             source_contract="dataset_version_manifest_validate",
             evidence=(
-                f"manifest_evidence_status={readiness.get('dataset_version_manifest_evidence_status')}; "
-                f"validated_count={readiness.get('dataset_version_manifest_evidence_validated_count')}"
+                f"manifest_validate_status={manifest_validation.get('status')}; "
+                f"validated_count={manifest_validation.get('validated_dataset_count')}"
             ),
             required_evidence="confirm-gated manifest write receipt plus read-only manifest validation receipt",
-            next_step="validate an ignored local manifest only after schema acceptance evidence is reviewed",
+            next_step=(
+                "Keep this as read-only manifest validation evidence; manifest write and production promotion remain separate."
+                if manifest_validation_done
+                else "validate an ignored local manifest only after schema acceptance evidence is reviewed"
+            ),
         ),
         _storage_physical_durable_evidence_recipe_row(
             "partition_migration_evidence_required",
@@ -4888,11 +5015,18 @@ def storage_physical_durable_evidence_recipe(
         ),
         _storage_physical_durable_evidence_recipe_row(
             "duckdb_post_migration_validation_required",
-            passed=False,
-            source_contract="duckdb_query_service",
-            evidence=f"duckdb_query_service_status={readiness.get('duckdb_query_service_status')}",
+            passed=duckdb_read_validation_done,
+            source_contract="storage_duckdb_read_validation",
+            evidence=(
+                f"duckdb_read_validation_status={duckdb_read_validation.get('status')}; "
+                f"contract_ready_count={duckdb_read_validation.get('contract_ready_count')}"
+            ),
             required_evidence="post-migration DuckDB read-only query contract for every canonical dataset",
-            next_step="validate migrated datasets through FastAPI/DuckDB wrappers after physical storage tasks complete",
+            next_step=(
+                "Keep this as read-only DuckDB query contract evidence; physical writers and promotion remain separate."
+                if duckdb_read_validation_done
+                else "validate migrated datasets through FastAPI/DuckDB wrappers after physical storage tasks complete"
+            ),
         ),
         _storage_physical_durable_evidence_recipe_row(
             "production_promotion_review_required",
@@ -4929,12 +5063,21 @@ def storage_physical_durable_evidence_recipe(
         "physical_execution_request_status": execution_request.get("status"),
         "physical_schema_validation_done": schema_acceptance_done,
         "schema_validation_acceptance_evidence_status": schema_acceptance_status,
-        "schema_migration_executed": False,
-        "dataset_version_manifest_validated": False,
+        "schema_migration_executed": schema_migration_done,
+        "schema_migration_execution_status": schema_migration_execution.get("status"),
+        "schema_migration_noop_verified": bool(
+            schema_migration_execution.get("schema_migration_noop_verified") is True
+        ),
+        "dataset_version_manifest_validated": manifest_validation_done,
+        "dataset_version_manifest_validate_status": manifest_validation.get("status"),
+        "dataset_version_manifest_validated_count": int(manifest_validation.get("validated_dataset_count") or 0),
         "partition_migration_executed": False,
         "physical_compaction_executed": False,
         "cache_ttl_refresh_executed": False,
         "artifact_cleanup_delete_executed": False,
+        "duckdb_read_validation_done": duckdb_read_validation_done,
+        "duckdb_read_validation_status": duckdb_read_validation.get("status"),
+        "duckdb_read_validation_contract_ready_count": int(duckdb_read_validation.get("contract_ready_count") or 0),
         "dataset_version_manifest_written_by_recipe": False,
         "physical_task_created_by_request": False,
         "physical_task_executed_by_request": False,

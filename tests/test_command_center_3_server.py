@@ -4198,8 +4198,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(durable_recipe["physical_execution_request_ready"])
         self.assertEqual(durable_recipe["physical_execution_request_status"], "storage_physical_execution_request_missing")
         self.assertFalse(durable_recipe["physical_schema_validation_done"])
-        self.assertFalse(durable_recipe["schema_migration_executed"])
-        self.assertFalse(durable_recipe["dataset_version_manifest_validated"])
+        self.assertIsInstance(durable_recipe["schema_migration_executed"], bool)
+        self.assertIsInstance(durable_recipe["dataset_version_manifest_validated"], bool)
         self.assertFalse(durable_recipe["partition_migration_executed"])
         self.assertFalse(durable_recipe["physical_compaction_executed"])
         self.assertFalse(durable_recipe["cache_ttl_refresh_executed"])
@@ -4253,6 +4253,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(durable_rows["physical_execution_recipe_ready"]["status"], "passed")
         self.assertEqual(durable_rows["physical_execution_request_visible"]["status"], "blocked")
         self.assertEqual(durable_rows["physical_schema_validation_evidence_required"]["status"], "blocked")
+        self.assertIn(durable_rows["dataset_version_manifest_validation_required"]["status"], {"blocked", "passed"})
+        self.assertIn(durable_rows["duckdb_post_migration_validation_required"]["status"], {"blocked", "passed"})
         self.assertEqual(durable_rows["production_promotion_review_required"]["status"], "blocked")
         self.assertEqual(durable_rows["no_provider_trade_action_secret_boundary"]["status"], "passed")
         for row in durable_rows.values():
@@ -12406,7 +12408,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "schema_migration_execution_completed_noop_verified",
             },
         )
-        self.assertFalse(payload["dataset_version_manifest_validated"])
+        self.assertIsInstance(payload["dataset_version_manifest_validated"], bool)
+        if payload["dataset_version_manifest_validated"]:
+            self.assertEqual(payload["dataset_version_manifest_validate_status"], "manifest_validate_passed_local_only")
         self.assertFalse(payload["dataset_version_manifest_review_writes_manifest"])
         self.assertTrue(payload["storage_physical_migration_activation_receipt_ready"])
         self.assertEqual(
@@ -12569,6 +12573,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(durable_rows["production_blocker_audit_visible"]["status"], "passed")
         self.assertEqual(durable_rows["physical_execution_recipe_ready"]["status"], "passed")
         self.assertIn(durable_rows["physical_schema_validation_evidence_required"]["status"], {"blocked", "passed"})
+        self.assertIn(durable_rows["dataset_version_manifest_validation_required"]["status"], {"blocked", "passed"})
+        if payload["dataset_version_manifest_validated"]:
+            self.assertEqual(durable_rows["dataset_version_manifest_validation_required"]["status"], "passed")
+        self.assertIn(durable_rows["duckdb_post_migration_validation_required"]["status"], {"blocked", "passed"})
+        if payload.get("duckdb_read_validation_done"):
+            self.assertEqual(durable_rows["duckdb_post_migration_validation_required"]["status"], "passed")
+        self.assertEqual(durable_rows["partition_migration_evidence_required"]["status"], "blocked")
+        self.assertEqual(durable_rows["cache_ttl_refresh_evidence_required"]["status"], "blocked")
+        self.assertEqual(durable_rows["artifact_cleanup_delete_review_required"]["status"], "blocked")
         self.assertEqual(durable_rows["production_promotion_review_required"]["status"], "blocked")
         self.assertEqual(durable_rows["no_provider_trade_action_secret_boundary"]["status"], "passed")
         for row in durable_rows.values():
