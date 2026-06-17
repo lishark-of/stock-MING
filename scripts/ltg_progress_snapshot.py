@@ -93,7 +93,15 @@ def build_snapshot() -> dict[str, Any]:
             "production_complete": row.get("production_complete") is True,
             "can_close_from_local_contracts": row.get("can_close_from_local_contracts") is True,
             "stage_scope_manifest_status": row.get("stage_scope_manifest_status"),
+            "observed_stage_scope_manifest_status": row.get("observed_stage_scope_manifest_status"),
+            "observed_stage_scope_row_count": row.get("observed_stage_scope_row_count"),
+            "observed_stage_scope_local_evidence_count": row.get("observed_stage_scope_local_evidence_count"),
+            "observed_stage_scope_direct_evidence_count": row.get("observed_stage_scope_direct_evidence_count"),
+            "observed_stage_scope_direct_evidence_keys": _list(
+                row.get("observed_stage_scope_direct_evidence_keys")
+            ),
             "observed_stage_scope_pending_count": row.get("observed_stage_scope_pending_count"),
+            "observed_stage_scope_can_close_goal": row.get("observed_stage_scope_can_close_goal") is True,
             "next_step": row.get("next_step"),
         }
         for row in goal_rows
@@ -151,6 +159,7 @@ def _print_text(snapshot: dict[str, Any]) -> None:
         print(
             f"- {row['id']} {row['completion_estimate']} {row['bucket']}: "
             f"production_complete={row['production_complete']} "
+            f"direct_evidence={row.get('observed_stage_scope_direct_evidence_count')} "
             f"pending_stage_rows={row.get('observed_stage_scope_pending_count')}"
         )
     print()
