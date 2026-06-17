@@ -48,6 +48,12 @@ def dry_run_candidate_radar_provider_parity(payload: dict[str, Any] | None = Non
     return task_envelope(task)
 
 
+@router.post("/provider-parity-execution-request")
+def request_candidate_radar_provider_parity_execution(payload: dict[str, Any] | None = None) -> dict:
+    task = candidate_service.run_candidate_provider_parity_execution_request_task(payload)
+    return task_envelope(task)
+
+
 @router.post("/worker-execution-request")
 def request_candidate_radar_worker_execution(payload: dict[str, Any] | None = None) -> dict:
     task = candidate_service.run_candidate_worker_execution_request_task(payload)
