@@ -14197,6 +14197,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn('if [[ ! -x "$PYTHON_BIN" ]]', script)
         self.assertIn('"$PYTHON_BIN" -m uvicorn server.main:app --reload --port 8710', script)
 
+    def test_worker_script_prefers_project_python(self):
+        path = Path("scripts/run_worker.sh")
+        script = path.read_text(encoding="utf-8")
+
+        self.assertTrue(path.exists())
+        self.assertIn('PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"', script)
+        self.assertIn('if [[ ! -x "$PYTHON_BIN" ]]', script)
+        self.assertIn('"$PYTHON_BIN" - <<', script)
+        self.assertIn('"$PYTHON_BIN" -m celery -A worker.celery_app.celery_app worker --loglevel=INFO', script)
+        self.assertNotIn("python3 -m celery", script)
+
     def test_next_session_generate_task_writes_exact_cache_packet_without_external_work(self):
         db_path = self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
