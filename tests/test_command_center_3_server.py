@@ -24747,6 +24747,95 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("provider_backed_parity_call_ledger_required", durable["missing_durable_evidence"])
         self.assertFalse(durable["production_radar_replacement_complete"])
 
+    def test_candidate_radar_browser_qa_evidence_uses_generated_at_for_latest_report(self):
+        artifact_root = self._with_candidate_motion_qa_root()
+
+        def write_report(run_id: str, generated_at: str, *, reduced: bool) -> None:
+            report_dir = artifact_root / run_id
+            report_dir.mkdir(parents=True)
+            rows = [
+                {
+                    "route": "#candidates",
+                    "label": "Candidate Radar",
+                    "viewport": viewport,
+                    "width": width,
+                    "height": height,
+                    "url": "http://127.0.0.1:5173/#candidates",
+                    "status": "passed",
+                    "visual_qa_complete": True,
+                    "performance_trace_complete": True,
+                    "route_transition_observed_ms": 120,
+                    "route_transition_budget_ms": 500,
+                    "long_task_over_50ms_count": 0,
+                    "largest_motion_layout_shift": 0,
+                    "clipped_count": 0,
+                    "offscreen_count": 0,
+                }
+                for viewport, width, height in [
+                    ("desktop", 1440, 900),
+                    ("laptop", 1280, 800),
+                    ("tablet", 834, 1112),
+                    ("mobile", 390, 844),
+                ]
+            ]
+            (report_dir / "motion_browser_qa_report.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "command_center_3_motion_browser_qa_result.v1",
+                        "status": "motion_browser_qa_passed",
+                        "scope": "explicit_local_browser_visual_performance_run",
+                        "run_id": run_id,
+                        "generated_at": generated_at,
+                        "base_url": "http://127.0.0.1:5173",
+                        "artifact_root": ".stock_ming_3/motion_qa",
+                        "reduced_motion": reduced,
+                        "route_count": 5,
+                        "viewport_count": 4,
+                        "qa_matrix_count": 20,
+                        "passed_count": 20,
+                        "review_required_count": 0,
+                        "console_error_count": 0,
+                        "visual_qa_complete": True,
+                        "browser_performance_verified": True,
+                        "production_motion_complete": False,
+                        "performance_budgets": {"route_transition_observed_ms": 500},
+                        "rows": rows,
+                        "errors": [],
+                        "cache_only": True,
+                        "starts_no_servers": True,
+                        "local_urls_only": True,
+                        "external_calls_triggered": False,
+                        "tushare_called": False,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+        write_report("zz-old-default", "2026-06-14T01:00:00.000Z", reduced=False)
+        write_report("zz-old-reduced", "2026-06-14T01:10:00.000Z", reduced=True)
+        write_report("00-fresh-default", "2026-06-15T01:00:00.000Z", reduced=False)
+        write_report("00-fresh-reduced", "2026-06-15T01:10:00.000Z", reduced=True)
+
+        evidence, rows = candidate_service._candidate_browser_qa_evidence_summary()
+
+        self.assertEqual(evidence["status"], "candidate_browser_qa_evidence_passed_local_artifact")
+        self.assertEqual(evidence["report_count"], 4)
+        self.assertEqual(evidence["passing_report_count"], 4)
+        self.assertEqual(evidence["latest_run_id"], "00-fresh-reduced")
+        self.assertIn("00-fresh-reduced", evidence["latest_report_path"])
+        self.assertEqual(evidence["latest_generated_at"], "2026-06-15T01:10:00.000Z")
+        self.assertTrue(evidence["default_motion_passed"])
+        self.assertTrue(evidence["reduced_motion_passed"])
+        self.assertTrue(evidence["candidate_browser_qa_evidence_ready"])
+        self.assertEqual(len(rows), 16)
+        self.assertTrue(all(row["route"] == "#candidates" for row in rows))
+        self.assertTrue(all(row["production_radar_replacement_complete"] is False for row in rows))
+
     def test_candidate_radar_production_replacement_review_is_button_gated_local_only(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)
