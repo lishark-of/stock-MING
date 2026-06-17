@@ -258,26 +258,41 @@ def _read_script(path: str) -> str:
         return ""
 
 
-def _worker_runtime_evidence_stage_scope_rows(evidence_scope: list[str]) -> list[dict[str, Any]]:
+def _worker_runtime_evidence_stage_scope_rows(
+    evidence_scope: list[str],
+    *,
+    direct_stage_keys: list[str] | tuple[str, ...] | set[str] | None = None,
+    stage_evidence: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
     selected = set(evidence_scope)
+    direct = set(direct_stage_keys or [])
+    evidence_by_stage = dict(stage_evidence or {})
     return [
         {
             "stage_key": stage_key,
             "stage_label": RUNTIME_EVIDENCE_STAGE_LABELS.get(stage_key, stage_key),
             "scope": "worker_runtime_evidence_stage_scope_manifest",
-            "current_status": "local_evidence_plan_scope_ticket_only",
+            "current_status": (
+                "direct_evidence_ready_local_runtime_qa_production_pending"
+                if stage_key in direct
+                else "local_evidence_plan_scope_ticket_only"
+            ),
             "target_status": "manual_runtime_qa_evidence_required",
             "selected_by_evidence_plan_scope": stage_key in selected,
+            "direct_evidence_complete": stage_key in direct,
+            "direct_evidence_layer": "L3_local_worker_runtime_execution_evidence" if stage_key in direct else "",
             "required_before_production": True,
+            "production_blocker": stage_key not in direct,
             "worker_started": False,
             "redis_pinged": False,
             "scheduler_started": False,
             "task_dispatched": False,
             "provider_model_task_dispatched": False,
             "healthcheck_executed": False,
-            "task_log_persistence_verified": False,
-            "append_only_worker_log_verified": False,
-            "cross_process_task_control_verified": False,
+            "task_log_persistence_verified": stage_key == "append_only_worker_logs" and stage_key in direct,
+            "append_only_worker_log_verified": stage_key == "append_only_worker_logs" and stage_key in direct,
+            "cross_process_task_control_verified": stage_key == "cross_process_retry_cancel_lock_dedupe"
+            and stage_key in direct,
             "activation_ready": False,
             "production_worker_complete": False,
             "external_calls_triggered": False,
@@ -287,6 +302,10 @@ def _worker_runtime_evidence_stage_scope_rows(evidence_scope: list[str]) -> list
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
             "contains_secret": False,
+            "evidence": evidence_by_stage.get(stage_key, "manual runtime QA direct evidence pending"),
+            "missing_evidence": []
+            if stage_key in direct
+            else [f"{RUNTIME_EVIDENCE_STAGE_LABELS.get(stage_key, stage_key)} direct runtime evidence"],
             "required_real_evidence": [
                 "explicit manual runtime QA evidence",
                 "safe runtime task log rows",
@@ -467,6 +486,36 @@ def build_contract() -> dict[str, Any]:
     )
     if production_promotion_review_visible:
         expected_runtime_durable_missing.discard("production_worker_promotion_review_required")
+    direct_runtime_stage_keys: list[str] = []
+    if cross_process_controls_visible:
+        direct_runtime_stage_keys.append("cross_process_retry_cancel_lock_dedupe")
+    if append_only_worker_log_visible:
+        direct_runtime_stage_keys.append("append_only_worker_logs")
+    if scheduler_default_off_runtime_visible:
+        direct_runtime_stage_keys.append("scheduler_default_off_runtime")
+    if provider_model_no_autoschedule_visible:
+        direct_runtime_stage_keys.append("provider_model_no_autoschedule_boundary")
+    if (
+        local_fallback_rollback_visible
+        and runtime_qa_execution.get("no_trade_no_action_boundary_verified") is True
+        and runtime_qa_execution.get("does_not_execute_trades") is True
+        and runtime_qa_execution.get("does_not_modify_strategy_action") is True
+    ):
+        direct_runtime_stage_keys.append("no_trade_no_action_boundary")
+    worker_runtime_evidence_stage_scope_rows = _worker_runtime_evidence_stage_scope_rows(
+        production_evidence_scope,
+        direct_stage_keys=direct_runtime_stage_keys,
+        stage_evidence={
+            "cross_process_retry_cancel_lock_dedupe": "local runtime QA cross-process control probe verified without worker start",
+            "append_only_worker_logs": "local runtime QA task log persistence and append-only worker log evidence verified",
+            "scheduler_default_off_runtime": "local runtime QA verified scheduler remains off during runtime path",
+            "provider_model_no_autoschedule_boundary": "local runtime QA verified provider/model autoscheduling remains disabled",
+            "no_trade_no_action_boundary": "local runtime QA verified no trade execution and no strategy action mutation",
+        },
+    )
+    worker_runtime_stage_pending_count = sum(
+        1 for row in worker_runtime_evidence_stage_scope_rows if row.get("production_blocker") is True
+    )
 
     rows = [
         _row(
@@ -1171,20 +1220,36 @@ def build_contract() -> dict[str, Any]:
             [row.get("stage_key") for row in worker_runtime_evidence_stage_scope_rows]
             == list(REQUIRED_RUNTIME_EVIDENCE_STAGES)
             and production_evidence_scope == list(REQUIRED_RUNTIME_EVIDENCE_STAGES)
+            and set(direct_runtime_stage_keys).issubset(set(REQUIRED_RUNTIME_EVIDENCE_STAGES))
+            and worker_runtime_stage_pending_count
+            + len(direct_runtime_stage_keys)
+            == len(REQUIRED_RUNTIME_EVIDENCE_STAGES)
             and all(
                 isinstance(row, dict)
                 and row.get("scope") == "worker_runtime_evidence_stage_scope_manifest"
                 and row.get("selected_by_evidence_plan_scope") is True
                 and row.get("required_before_production") is True
+                and row.get("production_blocker") is (row.get("direct_evidence_complete") is not True)
+                and (
+                    row.get("direct_evidence_layer") == "L3_local_worker_runtime_execution_evidence"
+                    if row.get("direct_evidence_complete") is True
+                    else row.get("direct_evidence_layer") == ""
+                )
                 and row.get("worker_started") is False
                 and row.get("redis_pinged") is False
                 and row.get("scheduler_started") is False
                 and row.get("task_dispatched") is False
                 and row.get("provider_model_task_dispatched") is False
                 and row.get("healthcheck_executed") is False
-                and row.get("task_log_persistence_verified") is False
-                and row.get("append_only_worker_log_verified") is False
-                and row.get("cross_process_task_control_verified") is False
+                and row.get("task_log_persistence_verified")
+                is (row.get("stage_key") == "append_only_worker_logs" and row.get("direct_evidence_complete") is True)
+                and row.get("append_only_worker_log_verified")
+                is (row.get("stage_key") == "append_only_worker_logs" and row.get("direct_evidence_complete") is True)
+                and row.get("cross_process_task_control_verified")
+                is (
+                    row.get("stage_key") == "cross_process_retry_cancel_lock_dedupe"
+                    and row.get("direct_evidence_complete") is True
+                )
                 and row.get("activation_ready") is False
                 and row.get("production_worker_complete") is False
                 and row.get("external_calls_triggered") is False
@@ -1194,9 +1259,14 @@ def build_contract() -> dict[str, Any]:
                 and row.get("does_not_execute_trades") is True
                 and row.get("does_not_modify_strategy_action") is True
                 and row.get("contains_secret") is False
+                and (
+                    row.get("missing_evidence") == []
+                    if row.get("direct_evidence_complete") is True
+                    else len(_list(row.get("missing_evidence"))) >= 1
+                )
                 for row in worker_runtime_evidence_stage_scope_rows
             ),
-            "Worker runtime evidence stages must be visible as a pending local scope manifest without process start, Redis ping, scheduler start, task dispatch, provider/model calls, trades, or production completion.",
+            "Worker runtime evidence stages must expose local direct runtime evidence separately from Celery/Redis/live-queue pending evidence without process start, Redis ping, scheduler start, task dispatch, provider/model calls, trades, or production completion.",
         ),
         _row(
             "production_activation_receipt_keeps_worker_blocked",
@@ -1341,6 +1411,15 @@ def build_contract() -> dict[str, Any]:
         "does_not_modify_strategy_action": True,
         "contains_secret": False,
         "row_count": len(rows),
+        "worker_runtime_evidence_stage_scope_count": len(worker_runtime_evidence_stage_scope_rows),
+        "worker_runtime_evidence_stage_scope_direct_evidence_count": len(direct_runtime_stage_keys),
+        "worker_runtime_evidence_stage_scope_direct_evidence_keys": direct_runtime_stage_keys,
+        "worker_runtime_evidence_stage_scope_pending_count": worker_runtime_stage_pending_count,
+        "worker_runtime_evidence_stage_scope_pending_keys": [
+            row.get("stage_key")
+            for row in worker_runtime_evidence_stage_scope_rows
+            if row.get("production_blocker") is True
+        ],
         "blocking_criterion_count": len(blockers),
         "blockers": blockers,
         "observed": {
@@ -1433,11 +1512,18 @@ def build_contract() -> dict[str, Any]:
             "worker_runtime_evidence_stage_scope_keys": [
                 row.get("stage_key") for row in worker_runtime_evidence_stage_scope_rows
             ],
+            "worker_runtime_evidence_stage_scope_direct_evidence_count": len(direct_runtime_stage_keys),
+            "worker_runtime_evidence_stage_scope_direct_evidence_keys": direct_runtime_stage_keys,
             "worker_runtime_evidence_stage_scope_pending_count": sum(
                 1
                 for row in worker_runtime_evidence_stage_scope_rows
-                if row.get("production_worker_complete") is False
+                if row.get("production_blocker") is True
             ),
+            "worker_runtime_evidence_stage_scope_pending_keys": [
+                row.get("stage_key")
+                for row in worker_runtime_evidence_stage_scope_rows
+                if row.get("production_blocker") is True
+            ],
             "scheduler_auto_task_count": dispatch_summary.get("scheduler_auto_task_count"),
             "cache_get_external_call_count": dispatch_summary.get("cache_get_external_call_count"),
         },

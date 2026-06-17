@@ -4789,22 +4789,36 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         from scripts import worker_contract
 
         evidence_scope = list(worker_contract.REQUIRED_RUNTIME_EVIDENCE_STAGES)
-        stage_rows = worker_contract._worker_runtime_evidence_stage_scope_rows(evidence_scope)
+        direct_evidence = _latest_worker_direct_runtime_evidence_summary()
+        direct_evidence_keys = list(direct_evidence.get("direct_evidence_stage_keys") or [])
+        stage_rows = worker_contract._worker_runtime_evidence_stage_scope_rows(
+            evidence_scope,
+            direct_stage_keys=direct_evidence_keys,
+        )
         stage_rows = stage_rows if isinstance(stage_rows, list) else []
         row_count = len(stage_rows)
         pending_count = sum(
             1
             for row in stage_rows
-            if isinstance(row, dict) and row.get("production_worker_complete") is False
+            if isinstance(row, dict)
+            and (
+                row.get("production_blocker") is True
+                if "production_blocker" in row
+                else row.get("production_worker_complete") is False
+            )
         )
         local_evidence_count = sum(
             1
             for row in stage_rows
             if isinstance(row, dict) and row.get("selected_by_evidence_plan_scope") is True
         )
-        direct_evidence = _latest_worker_direct_runtime_evidence_summary()
         direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
-        observed_pending_count = max(pending_count - direct_evidence_count, 0)
+        stage_rows_are_direct_aware = any(
+            isinstance(row, dict) and "direct_evidence_complete" in row for row in stage_rows
+        )
+        observed_pending_count = (
+            pending_count if stage_rows_are_direct_aware else max(pending_count - direct_evidence_count, 0)
+        )
         worker_status = (
             "observed_worker_direct_runtime_evidence_production_pending"
             if direct_evidence_count

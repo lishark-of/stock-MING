@@ -13320,24 +13320,69 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "provider_model_no_autoschedule_boundary",
             "no_trade_no_action_boundary",
         ]
+        expected_direct_stages = {
+            "cross_process_retry_cancel_lock_dedupe",
+            "append_only_worker_logs",
+            "scheduler_default_off_runtime",
+            "provider_model_no_autoschedule_boundary",
+            "no_trade_no_action_boundary",
+        }
+        expected_pending_stages = {"celery_process", "redis_broker"}
         self.assertEqual(payload["observed"]["worker_runtime_evidence_stage_scope_count"], len(required_stages))
         self.assertEqual(payload["observed"]["worker_runtime_evidence_stage_scope_keys"], required_stages)
-        self.assertEqual(payload["observed"]["worker_runtime_evidence_stage_scope_pending_count"], len(required_stages))
+        self.assertEqual(
+            payload["worker_runtime_evidence_stage_scope_direct_evidence_count"],
+            len(expected_direct_stages),
+        )
+        self.assertEqual(
+            set(payload["worker_runtime_evidence_stage_scope_direct_evidence_keys"]),
+            expected_direct_stages,
+        )
+        self.assertEqual(
+            payload["observed"]["worker_runtime_evidence_stage_scope_direct_evidence_count"],
+            len(expected_direct_stages),
+        )
+        self.assertEqual(
+            set(payload["observed"]["worker_runtime_evidence_stage_scope_direct_evidence_keys"]),
+            expected_direct_stages,
+        )
+        self.assertEqual(payload["observed"]["worker_runtime_evidence_stage_scope_pending_count"], 2)
+        self.assertEqual(
+            set(payload["observed"]["worker_runtime_evidence_stage_scope_pending_keys"]),
+            expected_pending_stages,
+        )
         stage_rows = {row["stage_key"]: row for row in payload["worker_runtime_evidence_stage_scope_rows"]}
         self.assertEqual(set(stage_rows), set(required_stages))
         for row in stage_rows.values():
             self.assertEqual(row["scope"], "worker_runtime_evidence_stage_scope_manifest")
             self.assertTrue(row["selected_by_evidence_plan_scope"])
             self.assertTrue(row["required_before_production"])
+            self.assertEqual(row["production_blocker"], row["stage_key"] in expected_pending_stages)
+            self.assertEqual(row["direct_evidence_complete"], row["stage_key"] in expected_direct_stages)
+            if row["stage_key"] in expected_direct_stages:
+                self.assertEqual(row["direct_evidence_layer"], "L3_local_worker_runtime_execution_evidence")
+                self.assertEqual(row["missing_evidence"], [])
+            else:
+                self.assertEqual(row["direct_evidence_layer"], "")
+                self.assertGreaterEqual(len(row["missing_evidence"]), 1)
             self.assertFalse(row["worker_started"])
             self.assertFalse(row["redis_pinged"])
             self.assertFalse(row["scheduler_started"])
             self.assertFalse(row["task_dispatched"])
             self.assertFalse(row["provider_model_task_dispatched"])
             self.assertFalse(row["healthcheck_executed"])
-            self.assertFalse(row["task_log_persistence_verified"])
-            self.assertFalse(row["append_only_worker_log_verified"])
-            self.assertFalse(row["cross_process_task_control_verified"])
+            self.assertEqual(
+                row["task_log_persistence_verified"],
+                row["stage_key"] == "append_only_worker_logs",
+            )
+            self.assertEqual(
+                row["append_only_worker_log_verified"],
+                row["stage_key"] == "append_only_worker_logs",
+            )
+            self.assertEqual(
+                row["cross_process_task_control_verified"],
+                row["stage_key"] == "cross_process_retry_cancel_lock_dedupe",
+            )
             self.assertFalse(row["activation_ready"])
             self.assertFalse(row["production_worker_complete"])
             self.assertFalse(row["external_calls_triggered"])
