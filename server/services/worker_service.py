@@ -3646,6 +3646,19 @@ def _worker_runtime_durable_evidence_recipe(
         and runtime_execution_phase_rows.get("provider_model_no_autoschedule_boundary", {}).get("runtime_qa_done")
         is True
     )
+    queue_round_trip_visible = (
+        local_fallback_rollback_visible
+        and queue_routing_visible
+        and runtime_execution_phase_rows.get("queue_binding_and_synthetic_round_trip", {}).get("runtime_qa_done")
+        is True
+        and runtime_qa_execution.get("local_task_round_trip_verified") is True
+        and runtime_qa_execution.get("task_log_round_trip_verified") is True
+        and runtime_qa_execution.get("worker_started") is False
+        and runtime_qa_execution.get("celery_worker_started") is False
+        and runtime_qa_execution.get("redis_pinged") is False
+        and runtime_qa_execution.get("task_dispatched") is False
+        and runtime_qa_execution.get("external_calls_triggered") is False
+    )
     production_promotion_review_visible = (
         promotion_review.get("schema_version") == PRODUCTION_PROMOTION_REVIEW_SCHEMA_VERSION
         and promotion_review.get("local_promotion_review_ready") is True
@@ -3821,11 +3834,19 @@ def _worker_runtime_durable_evidence_recipe(
         ),
         _worker_runtime_durable_evidence_recipe_row(
             "queue_round_trip_evidence_required",
-            passed=False,
-            source_contract="manual_worker_runtime_qa",
-            evidence="No live worker queue binding or synthetic cross-process task round trip has run.",
-            required_evidence="live queue binding plus synthetic task enqueue/execute/readback evidence",
-            next_action="prove queue round trip after Celery/Redis runtime evidence exists",
+            passed=queue_round_trip_visible,
+            source_contract="worker_runtime_qa_execution_receipt",
+            evidence=(
+                "Local queue binding and synthetic task/status/log round trip are visible from runtime QA without Celery or Redis."
+                if queue_round_trip_visible
+                else "No local queue binding or synthetic task/status/log round trip has run."
+            ),
+            required_evidence="queue binding plus synthetic task enqueue/execute/readback evidence",
+            next_action=(
+                "Keep this as local synthetic queue evidence; Celery process and Redis reachability remain separate blockers."
+                if queue_round_trip_visible
+                else "prove queue round trip through the explicit runtime QA execution path"
+            ),
         ),
         _worker_runtime_durable_evidence_recipe_row(
             "cross_process_controls_evidence_required",
@@ -3973,6 +3994,7 @@ def _worker_runtime_durable_evidence_recipe(
         "local_fallback_rollback_evidence_ready": local_fallback_rollback_visible,
         "cross_process_controls_evidence_ready": cross_process_controls_visible,
         "append_only_worker_log_evidence_ready": append_only_worker_log_visible,
+        "queue_round_trip_evidence_ready": queue_round_trip_visible,
         "scheduler_default_off_runtime_evidence_ready": scheduler_default_off_runtime_visible,
         "provider_model_no_autoschedule_runtime_evidence_ready": provider_model_no_autoschedule_visible,
         "production_worker_promotion_review_ready": production_promotion_review_visible,

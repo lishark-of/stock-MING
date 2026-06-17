@@ -454,6 +454,18 @@ def build_contract() -> dict[str, Any]:
         and runtime_execution_phase_rows.get("provider_model_no_autoschedule_boundary", {}).get("runtime_qa_done")
         is True
     )
+    queue_round_trip_visible = bool(
+        local_fallback_rollback_visible
+        and runtime_execution_phase_rows.get("queue_binding_and_synthetic_round_trip", {}).get("runtime_qa_done")
+        is True
+        and runtime_qa_execution.get("local_task_round_trip_verified") is True
+        and runtime_qa_execution.get("task_log_round_trip_verified") is True
+        and runtime_qa_execution.get("worker_started") is False
+        and runtime_qa_execution.get("celery_worker_started") is False
+        and runtime_qa_execution.get("redis_pinged") is False
+        and runtime_qa_execution.get("task_dispatched") is False
+        and runtime_qa_execution.get("external_calls_triggered") is False
+    )
     if local_fallback_rollback_visible:
         expected_runtime_durable_missing.discard("local_fallback_rollback_evidence_required")
     if cross_process_controls_visible:
@@ -464,6 +476,8 @@ def build_contract() -> dict[str, Any]:
         expected_runtime_durable_missing.discard("scheduler_default_off_runtime_evidence_required")
     if provider_model_no_autoschedule_visible:
         expected_runtime_durable_missing.discard("provider_model_no_autoschedule_runtime_evidence_required")
+    if queue_round_trip_visible:
+        expected_runtime_durable_missing.discard("queue_round_trip_evidence_required")
     production_promotion_review_visible = bool(
         production_promotion_review.get("schema_version") == "worker_production_promotion_review_receipt.v1"
         and production_promotion_review.get("status") == "worker_production_promotion_review_ready_production_blocked"
@@ -1157,6 +1171,7 @@ def build_contract() -> dict[str, Any]:
             is scheduler_default_off_runtime_visible
             and runtime_durable_recipe.get("provider_model_no_autoschedule_runtime_evidence_ready")
             is provider_model_no_autoschedule_visible
+            and runtime_durable_recipe.get("queue_round_trip_evidence_ready") is queue_round_trip_visible
             and runtime_durable_recipe.get("production_worker_complete") is False
             and runtime_durable_recipe.get("worker_started") is False
             and runtime_durable_recipe.get("redis_pinged") is False

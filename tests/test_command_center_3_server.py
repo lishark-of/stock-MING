@@ -13500,6 +13500,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         for evidence_key in [
             "cross_process_controls_evidence_required",
             "append_only_worker_log_evidence_required",
+            "queue_round_trip_evidence_required",
             "scheduler_default_off_runtime_evidence_required",
             "provider_model_no_autoschedule_runtime_evidence_required",
         ]:
@@ -31543,12 +31544,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "provider_model_no_autoschedule_runtime_evidence_required",
             durable_recipe["missing_durable_evidence"],
         )
+        self.assertNotIn("queue_round_trip_evidence_required", durable_recipe["missing_durable_evidence"])
+        self.assertTrue(durable_recipe["queue_round_trip_evidence_ready"])
         self.assertEqual(
             durable_rows["local_fallback_rollback_evidence_required"]["status"],
             "passed",
         )
         self.assertEqual(durable_rows["cross_process_controls_evidence_required"]["status"], "passed")
         self.assertEqual(durable_rows["append_only_worker_log_evidence_required"]["status"], "passed")
+        self.assertEqual(durable_rows["queue_round_trip_evidence_required"]["status"], "passed")
         self.assertEqual(durable_rows["scheduler_default_off_runtime_evidence_required"]["status"], "passed")
         self.assertEqual(
             durable_rows["provider_model_no_autoschedule_runtime_evidence_required"]["status"],
@@ -31557,15 +31561,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(durable_rows["local_fallback_rollback_evidence_required"]["production_blocker"])
         self.assertFalse(durable_rows["cross_process_controls_evidence_required"]["production_blocker"])
         self.assertFalse(durable_rows["append_only_worker_log_evidence_required"]["production_blocker"])
+        self.assertFalse(durable_rows["queue_round_trip_evidence_required"]["production_blocker"])
         self.assertFalse(durable_rows["scheduler_default_off_runtime_evidence_required"]["production_blocker"])
         self.assertFalse(durable_rows["provider_model_no_autoschedule_runtime_evidence_required"]["production_blocker"])
         self.assertIn("celery_process_evidence_required", durable_recipe["missing_durable_evidence"])
         self.assertIn("redis_broker_reachability_evidence_required", durable_recipe["missing_durable_evidence"])
-        self.assertIn("queue_round_trip_evidence_required", durable_recipe["missing_durable_evidence"])
         self.assertIn("production_worker_promotion_review_required", durable_recipe["missing_durable_evidence"])
         self.assertEqual(durable_rows["celery_process_evidence_required"]["status"], "blocked")
         self.assertEqual(durable_rows["redis_broker_reachability_evidence_required"]["status"], "blocked")
-        self.assertEqual(durable_rows["queue_round_trip_evidence_required"]["status"], "blocked")
         self.assertEqual(durable_rows["production_worker_promotion_review_required"]["status"], "blocked")
         self.assertFalse(durable_recipe["production_worker_complete"])
         self.assertFalse(durable_recipe["external_calls_triggered"])
@@ -31672,7 +31675,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(rows["runtime_qa_execution_visible"]["status"], "passed_local_runtime_qa_visible")
         self.assertEqual(rows["celery_process_evidence_required"]["status"], "blocked_celery_process_evidence_missing")
         self.assertEqual(rows["redis_broker_reachability_required"]["status"], "blocked_redis_broker_evidence_missing")
-        self.assertEqual(rows["live_queue_round_trip_required"]["status"], "blocked_live_queue_round_trip_missing")
+        self.assertEqual(rows["live_queue_round_trip_required"]["status"], "passed")
         self.assertFalse(any(row["worker_started"] for row in receipt["rows"]))
         self.assertFalse(any(row["redis_pinged"] for row in receipt["rows"]))
         self.assertFalse(any(row["task_dispatched"] for row in receipt["rows"]))
@@ -31688,11 +31691,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("production_worker_promotion_review_required", durable_recipe["missing_durable_evidence"])
         self.assertIn("celery_process_evidence_required", durable_recipe["missing_durable_evidence"])
         self.assertIn("redis_broker_reachability_evidence_required", durable_recipe["missing_durable_evidence"])
-        self.assertIn("queue_round_trip_evidence_required", durable_recipe["missing_durable_evidence"])
+        self.assertNotIn("queue_round_trip_evidence_required", durable_recipe["missing_durable_evidence"])
+        self.assertTrue(durable_recipe["queue_round_trip_evidence_ready"])
         self.assertEqual(durable_rows["production_worker_promotion_review_required"]["status"], "passed")
         self.assertEqual(durable_rows["celery_process_evidence_required"]["status"], "blocked")
         self.assertEqual(durable_rows["redis_broker_reachability_evidence_required"]["status"], "blocked")
-        self.assertEqual(durable_rows["queue_round_trip_evidence_required"]["status"], "blocked")
+        self.assertEqual(durable_rows["queue_round_trip_evidence_required"]["status"], "passed")
         self.assertFalse(durable_recipe["durable_evidence_complete"])
         self.assertFalse(durable_recipe["production_worker_complete"])
         self.assertFalse(durable_recipe["external_calls_triggered"])
