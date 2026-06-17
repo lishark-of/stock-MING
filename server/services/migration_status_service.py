@@ -2666,6 +2666,8 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         and _dict_or_empty(execution_map.get("cross_process_task_control_probe")).get("github_called") is False
     )
     direct_stage_keys = []
+    if runtime_execution_done:
+        direct_stage_keys.append("local_fallback_round_trip")
     if cross_process_task_control_done:
         direct_stage_keys.append("cross_process_retry_cancel_lock_dedupe")
     if runtime_execution_done:

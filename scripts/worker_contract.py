@@ -140,6 +140,7 @@ REQUIRED_READINESS_RECEIPT_CRITERIA = {
 REQUIRED_RUNTIME_EVIDENCE_STAGES = (
     "celery_process",
     "redis_broker",
+    "local_fallback_round_trip",
     "cross_process_retry_cancel_lock_dedupe",
     "append_only_worker_logs",
     "scheduler_default_off_runtime",
@@ -201,6 +202,7 @@ ALLOWED_WORKER_PACKET_READ_STATUSES = {
 RUNTIME_EVIDENCE_STAGE_LABELS = {
     "celery_process": "Celery process evidence",
     "redis_broker": "Redis broker evidence",
+    "local_fallback_round_trip": "Local fallback round-trip evidence",
     "cross_process_retry_cancel_lock_dedupe": "Cross-process controls evidence",
     "append_only_worker_logs": "Append-only worker log evidence",
     "scheduler_default_off_runtime": "Scheduler default-off runtime evidence",
@@ -487,6 +489,8 @@ def build_contract() -> dict[str, Any]:
     if production_promotion_review_visible:
         expected_runtime_durable_missing.discard("production_worker_promotion_review_required")
     direct_runtime_stage_keys: list[str] = []
+    if local_fallback_rollback_visible:
+        direct_runtime_stage_keys.append("local_fallback_round_trip")
     if cross_process_controls_visible:
         direct_runtime_stage_keys.append("cross_process_retry_cancel_lock_dedupe")
     if append_only_worker_log_visible:
@@ -506,6 +510,7 @@ def build_contract() -> dict[str, Any]:
         production_evidence_scope,
         direct_stage_keys=direct_runtime_stage_keys,
         stage_evidence={
+            "local_fallback_round_trip": "local runtime QA fallback task/status/log round trip verified without Celery or Redis",
             "cross_process_retry_cancel_lock_dedupe": "local runtime QA cross-process control probe verified without worker start",
             "append_only_worker_logs": "local runtime QA task log persistence and append-only worker log evidence verified",
             "scheduler_default_off_runtime": "local runtime QA verified scheduler remains off during runtime path",

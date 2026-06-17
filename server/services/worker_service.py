@@ -1817,6 +1817,7 @@ def _worker_production_evidence_plan_receipt(
         "evidence_scope": [
             "celery_process",
             "redis_broker",
+            "local_fallback_round_trip",
             "cross_process_retry_cancel_lock_dedupe",
             "append_only_worker_logs",
             "scheduler_default_off_runtime",

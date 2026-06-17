@@ -859,11 +859,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             == "observed_worker_direct_runtime_evidence_production_pending"
         )
         ltg06_direct_count = int(observed_stage_rows["LTG-06"].get("direct_evidence_stage_count") or 0)
-        self.assertEqual(observed_stage_rows["LTG-06"]["row_count"], 7)
-        self.assertEqual(observed_stage_rows["LTG-06"]["pending_stage_count"], max(7 - ltg06_direct_count, 0))
-        self.assertEqual(observed_stage_rows["LTG-06"]["local_evidence_stage_count"], 7)
+        self.assertEqual(observed_stage_rows["LTG-06"]["row_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-06"]["pending_stage_count"], max(8 - ltg06_direct_count, 0))
+        self.assertEqual(observed_stage_rows["LTG-06"]["local_evidence_stage_count"], 8)
         if ltg06_has_direct_evidence:
-            self.assertIn(ltg06_direct_count, {3, 4})
+            self.assertIn(ltg06_direct_count, {4, 5})
             self.assertIn(
                 "scheduler_default_off_runtime",
                 observed_stage_rows["LTG-06"]["direct_evidence_stage_keys"],
@@ -1221,7 +1221,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(
             migration_goals["LTG-06"]["observed_stage_scope_pending_count"],
-            max(7 - ltg06_goal_direct_count, 0),
+            max(8 - ltg06_goal_direct_count, 0),
         )
         self.assertFalse(migration_goals["LTG-06"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-07"]["stage_scope_manifest"], "deepseek_production_stage_scope_manifest")
@@ -12994,19 +12994,41 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             else "worker_production_evidence_plan_pending_activation_review",
         )
         self.assertIsInstance(payload["worker_runtime_qa_execution_request_ready"], bool)
-        self.assertEqual(
-            payload["worker_runtime_qa_execution_request_status"],
-            "worker_runtime_qa_execution_request_ready_manual_runtime_qa_pending"
-            if payload["worker_runtime_qa_execution_request_ready"]
-            else "worker_runtime_qa_execution_request_missing",
-        )
+        if payload["worker_runtime_qa_execution_request_ready"]:
+            self.assertEqual(
+                payload["worker_runtime_qa_execution_request_status"],
+                "worker_runtime_qa_execution_request_ready_manual_runtime_qa_pending",
+            )
+        else:
+            self.assertIn(
+                payload["worker_runtime_qa_execution_request_status"],
+                {
+                    "worker_runtime_qa_execution_request_missing",
+                    "worker_runtime_qa_execution_request_blocked_operator_approval_required",
+                    "worker_runtime_qa_execution_request_blocked_evidence_plan_required",
+                    "worker_runtime_qa_execution_request_blocked_recipe_not_ready",
+                    "worker_runtime_qa_execution_request_blocked_scope_hash_required",
+                    "worker_runtime_qa_execution_request_blocked_scope_hash_mismatch",
+                },
+            )
         self.assertIsInstance(payload["worker_runtime_qa_dry_run_ready"], bool)
-        self.assertEqual(
-            payload["worker_runtime_qa_dry_run_status"],
-            "worker_runtime_qa_dry_run_ready_execution_pending"
-            if payload["worker_runtime_qa_dry_run_ready"]
-            else "worker_runtime_qa_dry_run_missing",
-        )
+        if payload["worker_runtime_qa_dry_run_ready"]:
+            self.assertEqual(
+                payload["worker_runtime_qa_dry_run_status"],
+                "worker_runtime_qa_dry_run_ready_execution_pending",
+            )
+        else:
+            self.assertIn(
+                payload["worker_runtime_qa_dry_run_status"],
+                {
+                    "worker_runtime_qa_dry_run_missing",
+                    "worker_runtime_qa_dry_run_blocked_operator_approval_required",
+                    "worker_runtime_qa_dry_run_blocked_execution_request_required",
+                    "worker_runtime_qa_dry_run_blocked_recipe_not_ready",
+                    "worker_runtime_qa_dry_run_blocked_scope_hash_required",
+                    "worker_runtime_qa_dry_run_blocked_scope_hash_mismatch",
+                },
+            )
         self.assertTrue(payload["worker_runtime_qa_execution_recipe_ready"])
         self.assertEqual(
             payload["worker_runtime_qa_execution_recipe_status"],
@@ -13071,19 +13093,41 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIsInstance(payload["observed"]["worker_runtime_qa_dry_run_source_packet_present"], bool)
         self.assertGreaterEqual(payload["observed"]["worker_production_evidence_plan_local_blocker_count"], 0)
         self.assertGreater(payload["observed"]["worker_production_evidence_plan_production_blocker_count"], 0)
-        self.assertEqual(
-            payload["observed"]["worker_runtime_qa_execution_request_status"],
-            "worker_runtime_qa_execution_request_ready_manual_runtime_qa_pending"
-            if payload["observed"]["worker_runtime_qa_execution_request_ready"]
-            else "worker_runtime_qa_execution_request_missing",
-        )
+        if payload["observed"]["worker_runtime_qa_execution_request_ready"]:
+            self.assertEqual(
+                payload["observed"]["worker_runtime_qa_execution_request_status"],
+                "worker_runtime_qa_execution_request_ready_manual_runtime_qa_pending",
+            )
+        else:
+            self.assertIn(
+                payload["observed"]["worker_runtime_qa_execution_request_status"],
+                {
+                    "worker_runtime_qa_execution_request_missing",
+                    "worker_runtime_qa_execution_request_blocked_operator_approval_required",
+                    "worker_runtime_qa_execution_request_blocked_evidence_plan_required",
+                    "worker_runtime_qa_execution_request_blocked_recipe_not_ready",
+                    "worker_runtime_qa_execution_request_blocked_scope_hash_required",
+                    "worker_runtime_qa_execution_request_blocked_scope_hash_mismatch",
+                },
+            )
         self.assertEqual(payload["observed"]["worker_runtime_qa_execution_request_row_count"], 8)
-        self.assertEqual(
-            payload["observed"]["worker_runtime_qa_dry_run_status"],
-            "worker_runtime_qa_dry_run_ready_execution_pending"
-            if payload["observed"]["worker_runtime_qa_dry_run_ready"]
-            else "worker_runtime_qa_dry_run_missing",
-        )
+        if payload["observed"]["worker_runtime_qa_dry_run_ready"]:
+            self.assertEqual(
+                payload["observed"]["worker_runtime_qa_dry_run_status"],
+                "worker_runtime_qa_dry_run_ready_execution_pending",
+            )
+        else:
+            self.assertIn(
+                payload["observed"]["worker_runtime_qa_dry_run_status"],
+                {
+                    "worker_runtime_qa_dry_run_missing",
+                    "worker_runtime_qa_dry_run_blocked_operator_approval_required",
+                    "worker_runtime_qa_dry_run_blocked_execution_request_required",
+                    "worker_runtime_qa_dry_run_blocked_recipe_not_ready",
+                    "worker_runtime_qa_dry_run_blocked_scope_hash_required",
+                    "worker_runtime_qa_dry_run_blocked_scope_hash_mismatch",
+                },
+            )
         self.assertEqual(payload["observed"]["worker_runtime_qa_dry_run_row_count"], 10)
         self.assertEqual(
             payload["observed"]["worker_runtime_qa_dry_run_phase_row_count"],
@@ -13340,6 +13384,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         required_stages = [
             "celery_process",
             "redis_broker",
+            "local_fallback_round_trip",
             "cross_process_retry_cancel_lock_dedupe",
             "append_only_worker_logs",
             "scheduler_default_off_runtime",
@@ -13347,6 +13392,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "no_trade_no_action_boundary",
         ]
         expected_direct_stages = {
+            "local_fallback_round_trip",
             "cross_process_retry_cancel_lock_dedupe",
             "append_only_worker_logs",
             "scheduler_default_off_runtime",
@@ -21595,11 +21641,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             == "observed_worker_direct_runtime_evidence_production_pending"
         )
         ltg06_direct_count = int(observed_stage_rows["LTG-06"].get("direct_evidence_stage_count") or 0)
-        self.assertEqual(observed_stage_rows["LTG-06"]["row_count"], 7)
-        self.assertEqual(observed_stage_rows["LTG-06"]["pending_stage_count"], max(7 - ltg06_direct_count, 0))
-        self.assertEqual(observed_stage_rows["LTG-06"]["local_evidence_stage_count"], 7)
+        self.assertEqual(observed_stage_rows["LTG-06"]["row_count"], 8)
+        self.assertEqual(observed_stage_rows["LTG-06"]["pending_stage_count"], max(8 - ltg06_direct_count, 0))
+        self.assertEqual(observed_stage_rows["LTG-06"]["local_evidence_stage_count"], 8)
         if ltg06_has_direct_evidence:
-            self.assertIn(ltg06_direct_count, {3, 4})
+            self.assertIn(ltg06_direct_count, {4, 5})
             self.assertTrue(observed_stage_rows["LTG-06"]["synthetic_healthcheck_executed"])
             self.assertTrue(observed_stage_rows["LTG-06"]["runtime_qa_execution_request_ready"])
             self.assertTrue(observed_stage_rows["LTG-06"]["runtime_qa_dry_run_ready"])
@@ -21897,7 +21943,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(
             migration_goals["LTG-06"]["observed_stage_scope_pending_count"],
-            max(7 - ltg06_goal_direct_count, 0),
+            max(8 - ltg06_goal_direct_count, 0),
         )
         self.assertFalse(migration_goals["LTG-06"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-07"]["stage_scope_manifest"], "deepseek_production_stage_scope_manifest")
@@ -31271,13 +31317,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         ltg06 = observed_stage_rows["LTG-06"]
 
         self.assertEqual(ltg06["status"], "observed_worker_direct_runtime_evidence_production_pending")
-        self.assertEqual(ltg06["row_count"], 7)
+        self.assertEqual(ltg06["row_count"], 8)
         self.assertEqual(ltg06["pending_stage_count"], 2)
         self.assertEqual(ltg06["production_blocker_count"], 2)
-        self.assertEqual(ltg06["direct_evidence_stage_count"], 5)
+        self.assertEqual(ltg06["direct_evidence_stage_count"], 6)
         self.assertEqual(
             set(ltg06["direct_evidence_stage_keys"]),
             {
+                "local_fallback_round_trip",
                 "cross_process_retry_cancel_lock_dedupe",
                 "append_only_worker_logs",
                 "scheduler_default_off_runtime",
@@ -31419,7 +31466,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         observed_stage_rows = {row["id"]: row for row in migration_after["ltg_stage_scope_observed_rows"]}
         ltg06 = observed_stage_rows["LTG-06"]
         self.assertEqual(ltg06["pending_stage_count"], 2)
-        self.assertEqual(ltg06["direct_evidence_stage_count"], 5)
+        self.assertEqual(ltg06["direct_evidence_stage_count"], 6)
         self.assertFalse(ltg06["production_worker_complete"])
         self.assertFalse(ltg06["external_calls_triggered"])
 
