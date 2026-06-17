@@ -12581,7 +12581,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertEqual(durable_rows["duckdb_post_migration_validation_required"]["status"], "passed")
         self.assertEqual(durable_rows["partition_migration_evidence_required"]["status"], "blocked")
         self.assertEqual(durable_rows["cache_ttl_refresh_evidence_required"]["status"], "blocked")
-        self.assertEqual(durable_rows["artifact_cleanup_delete_review_required"]["status"], "blocked")
+        self.assertIn(durable_rows["artifact_cleanup_delete_review_required"]["status"], {"blocked", "passed"})
+        if payload.get("artifact_cleanup_review_done"):
+            self.assertEqual(durable_rows["artifact_cleanup_delete_review_required"]["status"], "passed")
         self.assertEqual(durable_rows["production_promotion_review_required"]["status"], "blocked")
         self.assertEqual(durable_rows["no_provider_trade_action_secret_boundary"]["status"], "passed")
         for row in durable_rows.values():

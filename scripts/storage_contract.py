@@ -362,6 +362,38 @@ def build_contract() -> dict[str, Any]:
         and duckdb_read_validation_evidence.get("does_not_execute_trades") is True
         and duckdb_read_validation_evidence.get("does_not_modify_strategy_action") is True
     )
+    artifact_cleanup_review_done = bool(
+        cleanup_review.get("schema_version")
+        == "command_center_3_storage_artifact_cleanup_review_contract.v1"
+        and cleanup_review.get("status")
+        in {"manual_review_ready_delete_pending", "manual_review_ready_no_candidates"}
+        and cleanup_review.get("artifact_cleanup_review_done") is True
+        and int(cleanup_review.get("required_review_step_count") or 0) > 0
+        and cleanup_review.get("manual_approval_required") is True
+        and cleanup_review.get("dry_run_required_before_delete") is True
+        and cleanup_review.get("delete_execution_task_available") is False
+        and cleanup_review.get("delete_executed") is False
+        and int(cleanup_review.get("delete_executed_count") or 0) == 0
+        and cleanup_review.get("safe_delete_command_generated") is False
+        and cleanup_review.get("delete_command_not_generated") is True
+        and cleanup_review.get("cleanup_review_is_not_delete_execution") is True
+        and cleanup_review.get("production_cleanup_complete") is False
+        and cleanup_review.get("reads_payloads") is False
+        and cleanup_review.get("reads_file_payloads") is False
+        and cleanup_review.get("reads_env_files") is False
+        and cleanup_review.get("scans_secret_values") is False
+        and cleanup_review.get("does_not_scan_secret_values") is True
+        and _flag_false(
+            cleanup_review,
+            "external_calls_triggered",
+            "tushare_called",
+            "deepseek_called",
+            "github_called",
+            "contains_secret",
+        )
+        and cleanup_review.get("does_not_execute_trades") is True
+        and cleanup_review.get("does_not_modify_strategy_action") is True
+    )
     expected_durable_missing = {
         "dataset_version_manifest_validation_required",
         "partition_migration_evidence_required",
@@ -379,6 +411,8 @@ def build_contract() -> dict[str, Any]:
         expected_durable_missing.discard("dataset_version_manifest_validation_required")
     if duckdb_read_validation_done:
         expected_durable_missing.discard("duckdb_post_migration_validation_required")
+    if artifact_cleanup_review_done:
+        expected_durable_missing.discard("artifact_cleanup_delete_review_required")
 
     rows = [
         _row(
@@ -686,6 +720,7 @@ def build_contract() -> dict[str, Any]:
             and durable_evidence_recipe.get("partition_migration_executed") is False
             and durable_evidence_recipe.get("physical_compaction_executed") is False
             and durable_evidence_recipe.get("cache_ttl_refresh_executed") is False
+            and durable_evidence_recipe.get("artifact_cleanup_review_done") is artifact_cleanup_review_done
             and durable_evidence_recipe.get("artifact_cleanup_delete_executed") is False
             and durable_evidence_recipe.get("duckdb_read_validation_done") is duckdb_read_validation_done
             and durable_evidence_recipe.get("dataset_version_manifest_written_by_recipe") is False
@@ -1264,6 +1299,9 @@ def build_contract() -> dict[str, Any]:
             "compaction_status": compaction_packet.get("status"),
             "cache_ttl_status": ttl_packet.get("status"),
             "artifact_cleanup_status": cleanup_packet.get("status"),
+            "artifact_cleanup_review_done": artifact_cleanup_review_done,
+            "artifact_cleanup_review_status": cleanup_review.get("status"),
+            "artifact_cleanup_review_required_step_count": cleanup_review.get("required_review_step_count"),
             "physical_migration_stage_scope_count": len(physical_migration_stage_scope_rows),
             "physical_migration_stage_scope_keys": [
                 row.get("stage_key") for row in physical_migration_stage_scope_rows

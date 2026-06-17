@@ -4794,6 +4794,8 @@ def storage_physical_durable_evidence_recipe(
     manifest_validation = storage_dataset_version_manifest_validate_evidence()
     schema_migration_execution = storage_schema_migration_execution_evidence()
     duckdb_read_validation = storage_duckdb_read_validation_evidence()
+    artifact_hygiene = storage_artifact_hygiene_status()
+    cleanup_review = dict(artifact_hygiene.get("artifact_cleanup_review_contract") or {})
     blocker_audit_visible = blocker_audit.get("schema_version") == STORAGE_PRODUCTION_BLOCKER_SCHEMA_VERSION
     readiness_visible = readiness.get("status") in {"foundation_ready", "partial_dependency_missing"}
     activation_visible = activation_receipt.get("local_activation_receipt_ready") is True
@@ -4908,6 +4910,33 @@ def storage_physical_durable_evidence_recipe(
         and duckdb_read_validation.get("does_not_modify_strategy_action") is True
         and duckdb_read_validation.get("contains_secret") is False
     )
+    artifact_cleanup_review_done = bool(
+        cleanup_review.get("schema_version") == ARTIFACT_CLEANUP_REVIEW_SCHEMA_VERSION
+        and cleanup_review.get("status") in {"manual_review_ready_delete_pending", "manual_review_ready_no_candidates"}
+        and cleanup_review.get("artifact_cleanup_review_done") is True
+        and int(cleanup_review.get("required_review_step_count") or 0) > 0
+        and cleanup_review.get("manual_approval_required") is True
+        and cleanup_review.get("dry_run_required_before_delete") is True
+        and cleanup_review.get("delete_execution_task_available") is False
+        and cleanup_review.get("delete_executed") is False
+        and int(cleanup_review.get("delete_executed_count") or 0) == 0
+        and cleanup_review.get("safe_delete_command_generated") is False
+        and cleanup_review.get("delete_command_not_generated") is True
+        and cleanup_review.get("cleanup_review_is_not_delete_execution") is True
+        and cleanup_review.get("production_cleanup_complete") is False
+        and cleanup_review.get("reads_payloads") is False
+        and cleanup_review.get("reads_file_payloads") is False
+        and cleanup_review.get("reads_env_files") is False
+        and cleanup_review.get("scans_secret_values") is False
+        and cleanup_review.get("does_not_scan_secret_values") is True
+        and cleanup_review.get("external_calls_triggered") is False
+        and cleanup_review.get("tushare_called") is False
+        and cleanup_review.get("deepseek_called") is False
+        and cleanup_review.get("github_called") is False
+        and cleanup_review.get("does_not_execute_trades") is True
+        and cleanup_review.get("does_not_modify_strategy_action") is True
+        and cleanup_review.get("contains_secret") is False
+    )
     rows = [
         _storage_physical_durable_evidence_recipe_row(
             "production_blocker_audit_visible",
@@ -5004,14 +5033,19 @@ def storage_physical_durable_evidence_recipe(
         ),
         _storage_physical_durable_evidence_recipe_row(
             "artifact_cleanup_delete_review_required",
-            passed=False,
+            passed=artifact_cleanup_review_done,
             source_contract="artifact_cleanup_review",
             evidence=(
-                f"cleanup_review_status={readiness.get('artifact_cleanup_review_status')}; "
-                f"delete_executed_count={readiness.get('artifact_cleanup_delete_executed_count')}"
+                f"cleanup_review_status={cleanup_review.get('status')}; "
+                f"required_review_step_count={cleanup_review.get('required_review_step_count')}; "
+                f"delete_executed_count={cleanup_review.get('delete_executed_count')}"
             ),
             required_evidence="manual cleanup approval and separate delete execution receipt if cleanup is needed",
-            next_step="review cleanup candidates manually before any separately approved delete executor",
+            next_step=(
+                "Keep cleanup review as manual approval evidence only; any real delete still needs a separate approval."
+                if artifact_cleanup_review_done
+                else "review cleanup candidates manually before any separately approved delete executor"
+            ),
         ),
         _storage_physical_durable_evidence_recipe_row(
             "duckdb_post_migration_validation_required",
@@ -5074,6 +5108,9 @@ def storage_physical_durable_evidence_recipe(
         "partition_migration_executed": False,
         "physical_compaction_executed": False,
         "cache_ttl_refresh_executed": False,
+        "artifact_cleanup_review_done": artifact_cleanup_review_done,
+        "artifact_cleanup_review_status": cleanup_review.get("status"),
+        "artifact_cleanup_review_required_step_count": int(cleanup_review.get("required_review_step_count") or 0),
         "artifact_cleanup_delete_executed": False,
         "duckdb_read_validation_done": duckdb_read_validation_done,
         "duckdb_read_validation_status": duckdb_read_validation.get("status"),
