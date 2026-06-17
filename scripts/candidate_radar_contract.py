@@ -461,6 +461,33 @@ def build_contract() -> dict[str, Any]:
     }
     production_review_packet["candidate_radar_deep_scan_worker_fallback_receipt"] = deep_scan_worker_fallback
     production_review_packet["candidate_radar_deep_scan_worker_fallback_rows"] = deep_scan_worker_fallback_rows_list
+    production_review_packet = candidate_service._attach_candidate_radar_worker_runtime_linked_evidence(
+        production_review_packet
+    )
+    full_pool_worker_fallback = _dict(
+        production_review_packet.get("candidate_radar_full_pool_worker_fallback_receipt")
+    )
+    full_pool_worker_fallback_rows = {
+        str(row.get("criterion") or ""): row
+        for row in _list(production_review_packet.get("candidate_radar_full_pool_worker_fallback_rows"))
+        if isinstance(row, dict)
+    }
+    deep_scan_worker_fallback = _dict(
+        production_review_packet.get("candidate_radar_deep_scan_worker_fallback_receipt")
+    )
+    deep_scan_worker_fallback_rows = {
+        str(row.get("criterion") or ""): row
+        for row in _list(production_review_packet.get("candidate_radar_deep_scan_worker_fallback_rows"))
+        if isinstance(row, dict)
+    }
+    worker_runtime_linked_evidence = _dict(
+        production_review_packet.get("candidate_radar_worker_runtime_linked_evidence")
+    )
+    worker_runtime_link_rows = {
+        str(row.get("criterion") or ""): row
+        for row in _list(production_review_packet.get("candidate_radar_worker_runtime_link_rows"))
+        if isinstance(row, dict)
+    }
     production_review_packet["search_quant_projection_execution_request_receipt"] = quant_execution_request
     production_review_packet["search_quant_projection_execution_request_rows"] = quant_execution_request_rows_list
     production_review_packet = candidate_service._attach_candidate_radar_next_execution_recipe(production_review_packet)
@@ -1383,6 +1410,86 @@ def build_contract() -> dict[str, Any]:
             and "candidate_radar_deep_scan_worker_fallback_receipt" in candidate_frontend
             and "Deep-scan worker fallback" in candidate_frontend,
             "Candidate Radar deep-scan worker fallback must prove only the local route shape and explicit scope binding while preserving real worker/model/provider/browser production blockers.",
+        ),
+        _row(
+            "candidate_radar_worker_runtime_linked_evidence_is_read_only_l3_local_link",
+            worker_runtime_linked_evidence.get("schema_version")
+            == candidate_service.CANDIDATE_WORKER_RUNTIME_LINKED_EVIDENCE_SCHEMA_VERSION
+            and worker_runtime_linked_evidence.get("scope")
+            == "local_candidate_radar_worker_runtime_link_no_worker_or_provider_execution"
+            and (
+                (
+                    worker_runtime_linked_evidence.get("status")
+                    == "candidate_radar_worker_runtime_local_evidence_linked"
+                    and worker_runtime_linked_evidence.get("worker_runtime_local_evidence_linked") is True
+                    and worker_runtime_linked_evidence.get("worker_runtime_direct_evidence_layer")
+                    == "L3_local_worker_runtime_execution_evidence"
+                )
+                or (
+                    worker_runtime_linked_evidence.get("status")
+                    == "candidate_radar_worker_runtime_local_evidence_missing"
+                    and worker_runtime_linked_evidence.get("worker_runtime_local_evidence_linked") is False
+                    and worker_runtime_linked_evidence.get("worker_runtime_direct_evidence_layer") == ""
+                )
+            )
+            and worker_runtime_linked_evidence.get("production_worker_complete") is False
+            and worker_runtime_linked_evidence.get("worker_started") is False
+            and worker_runtime_linked_evidence.get("celery_worker_started") is False
+            and worker_runtime_linked_evidence.get("redis_broker_used") is False
+            and worker_runtime_linked_evidence.get("production_radar_replacement_complete") is False
+            and worker_runtime_linked_evidence.get("worker_full_pool_execution_done") is False
+            and worker_runtime_linked_evidence.get("worker_deep_scan_execution_done") is False
+            and worker_runtime_linked_evidence.get("provider_backed_acceptance_done") is False
+            and worker_runtime_linked_evidence.get("legacy_retirement_ready") is False
+            and worker_runtime_linked_evidence.get("legacy_fallback_required") is True
+            and int(worker_runtime_linked_evidence.get("row_count") or 0) == len(worker_runtime_link_rows)
+            and _dict(worker_runtime_link_rows.get("celery_redis_live_worker_still_pending")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(worker_runtime_link_rows.get("radar_full_deep_provider_still_pending")).get(
+                "production_blocker"
+            )
+            is True
+            and _dict(worker_runtime_link_rows.get("no_external_trade_secret_boundary")).get("passed") is True
+            and _dict(full_pool_worker_fallback_rows.get("worker_runtime_local_qa_execution_linked")).get(
+                "production_blocker"
+            )
+            is False
+            and _dict(deep_scan_worker_fallback_rows.get("worker_runtime_local_qa_execution_linked")).get(
+                "production_blocker"
+            )
+            is False
+            and full_pool_worker_fallback.get("worker_runtime_link_is_not_production_worker_completion") is True
+            and deep_scan_worker_fallback.get("worker_runtime_link_is_not_production_worker_completion") is True
+            and _dict(production_review_packet.get("policy")).get("candidate_radar_worker_runtime_link_is_read_only")
+            is True
+            and _dict(production_review_packet.get("policy")).get(
+                "candidate_radar_worker_runtime_link_does_not_start_worker"
+            )
+            is True
+            and _dict(production_review_packet.get("policy")).get(
+                "candidate_radar_worker_runtime_link_calls_provider_or_model"
+            )
+            is False
+            and _dict(production_review_packet.get("policy")).get(
+                "candidate_radar_worker_runtime_link_is_not_production_worker_completion"
+            )
+            is True
+            and _flag_false(
+                worker_runtime_linked_evidence,
+                "external_calls_triggered",
+                "tushare_called",
+                "deepseek_called",
+                "github_called",
+                "contains_secret",
+            )
+            and worker_runtime_linked_evidence.get("does_not_execute_trades") is True
+            and worker_runtime_linked_evidence.get("does_not_modify_strategy_action") is True
+            and "candidate_radar_worker_runtime_linked_evidence" in candidate_frontend
+            and "candidate_radar_worker_runtime_link_rows" in candidate_frontend
+            and "雷达 worker runtime link" in candidate_frontend,
+            "Candidate Radar worker runtime link must surface LTG-06 local runtime QA evidence when present while staying read-only, no-worker-start, no-provider/model, no-trade, and production-blocked.",
         ),
         _row(
             "candidate_radar_production_replacement_review_is_local_production_blocked",

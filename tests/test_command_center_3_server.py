@@ -26511,6 +26511,221 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("DEEPSEEK_API_KEY", json.dumps(cache, ensure_ascii=False))
 
+    def test_candidate_radar_links_worker_runtime_qa_local_evidence_without_worker_start(self):
+        self._with_meta_store()
+        self._with_bootstrap_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE", DEEPSEEK_API_KEY="REAL_DEEPSEEK_SECRET_VALUE")
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        self.assertTrue(
+            self.client.post("/api/worker/synthetic-healthcheck", json={"requested_from": "test"}).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/worker/activation-review",
+                json={"requested_from": "test", "operator_approved": True},
+            ).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/worker/production-evidence-plan",
+                json={"requested_from": "test", "operator_approved": True},
+            ).json()["ok"]
+        )
+        worker_cache = self.client.get("/api/worker/cache").json()["data"]
+        plan_receipt = worker_cache["worker_production_evidence_plan_receipt"]
+        runtime_recipe = worker_cache["worker_runtime_qa_execution_recipe"]
+        runtime_request_response = self.client.post(
+            "/api/worker/runtime-qa-execution-request",
+            json={
+                "requested_from": "test",
+                "operator_approved": True,
+                "scope_ticket_sha256": plan_receipt["scope_ticket_sha256"],
+                "runtime_qa_scope_hash": runtime_recipe["runtime_qa_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(runtime_request_response["ok"])
+        runtime_request = runtime_request_response["data"]["worker_runtime_qa_execution_request_receipt"]
+        dry_run_response = self.client.post(
+            "/api/worker/runtime-qa-dry-run",
+            json={
+                "requested_from": "test",
+                "operator_approved": True,
+                "request_task_id": runtime_request["request_task_id"],
+                "evidence_plan_scope_hash": runtime_request["production_evidence_plan_scope_hash"],
+                "runtime_qa_scope_hash": runtime_request["runtime_qa_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(dry_run_response["ok"])
+        dry_run = dry_run_response["data"]["worker_runtime_qa_dry_run_receipt"]
+        runtime_execution_response = self.client.post(
+            "/api/worker/runtime-qa-execution",
+            json={
+                "requested_from": "test",
+                "operator_approved": True,
+                "dry_run_task_id": dry_run["dry_run_task_id"],
+                "evidence_plan_scope_hash": dry_run["production_evidence_plan_scope_hash"],
+                "runtime_qa_scope_hash": dry_run["runtime_qa_scope_hash"],
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+        self.assertTrue(runtime_execution_response["ok"])
+        runtime_execution = runtime_execution_response["data"]["worker_runtime_qa_execution_receipt"]
+        self.assertEqual(runtime_execution["status"], "worker_runtime_qa_execution_ready_local_fallback_evidence")
+        self.assertTrue(runtime_execution["local_runtime_qa_execution_done"])
+        self.assertFalse(runtime_execution["production_worker_complete"])
+        self.assertFalse(runtime_execution["external_calls_triggered"])
+
+        self._with_snapshot_cache(
+            {
+                "data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"},
+                "radar_packet": {
+                    "status": "ready",
+                    "top_candidates": [
+                        {"rank": 1, "ticker": "002008.SZ", "name": "大族激光", "score": 61},
+                        {"rank": 2, "ticker": "002837.SZ", "name": "英维克", "score": 47},
+                    ],
+                    "authorization": "Bearer SHOULD_DROP",
+                },
+                "next_ticket_candidates": [
+                    {"rank": 1, "ticker": "002008.SZ", "name": "大族激光", "score": 61},
+                    {"rank": 2, "ticker": "002837.SZ", "name": "英维克", "score": 47},
+                ],
+                "a_share_capability_matrix": [
+                    {"provider": "Tushare", "api": "moneyflow", "capability_state": "available", "status": "可用"},
+                    {"provider": "Tushare", "api": "top_inst", "capability_state": "permission_denied", "status": "权限不足"},
+                ],
+            }
+        )
+        self.client.post(
+            "/api/candidate-radar/full-pool-local-scan",
+            json={
+                "scan_mode": "full_pool_local_scan",
+                "local_execution_only": True,
+                "local_universe_candidates": [
+                    {"ticker": "002008.SZ", "name": "大族激光", "score": 61},
+                    {"ticker": "002837.SZ", "name": "英维克", "score": 47},
+                ],
+            },
+        )
+        self.client.post(
+            "/api/candidate-radar/deep-scan-local-review",
+            json={"scan_mode": "deep_scan_local_review", "local_review_only": True},
+        )
+        self.client.post(
+            "/api/candidate-radar/provider-parity-dry-run",
+            json={
+                "candidate_symbols": ["002008.SZ", "002837.SZ"],
+                "selected_signal_groups": ["moneyflow", "dragon_tiger", "hard_risk"],
+                "include_tushare": True,
+                "include_deepseek": True,
+                "user_approved": True,
+            },
+        )
+        self.client.post(
+            "/api/candidate-radar/quant-projection-acceptance-dry-run",
+            json={
+                "symbol": "002008",
+                "include_tushare": True,
+                "include_deepseek": True,
+                "user_approved": True,
+                "selected_apis": ["trade_cal", "daily", "daily_basic", "moneyflow"],
+            },
+        )
+        cache_before = self.client.get("/api/candidate-radar/cache").json()["data"]
+        scope_hash = cache_before["candidate_radar_worker_execution_recipe"]["worker_execution_scope_hash"]
+        self.assertEqual(len(scope_hash), 64)
+        self.assertTrue(
+            self.client.post(
+                "/api/candidate-radar/worker-execution-request",
+                json={
+                    "scan_mode": "worker_execution_request",
+                    "operator_approved": True,
+                    "worker_execution_scope_hash": scope_hash,
+                },
+            ).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/candidate-radar/full-pool-worker-scan",
+                json={
+                    "scan_mode": "full_pool_worker_fallback",
+                    "operator_approved": True,
+                    "worker_execution_scope_hash": scope_hash,
+                    "local_universe_candidates": [
+                        {"ticker": "002008.SZ", "name": "大族激光", "score": 61},
+                        {"ticker": "002837.SZ", "name": "英维克", "score": 47},
+                    ],
+                },
+            ).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/candidate-radar/deep-scan-worker",
+                json={
+                    "scan_mode": "deep_scan_worker_fallback",
+                    "operator_approved": True,
+                    "worker_execution_scope_hash": scope_hash,
+                },
+            ).json()["ok"]
+        )
+
+        cache = self.client.get("/api/candidate-radar/cache").json()
+        self.assertTrue(cache["ok"])
+        packet = cache["data"]
+        link = packet["candidate_radar_worker_runtime_linked_evidence"]
+        link_rows = {row["criterion"]: row for row in packet["candidate_radar_worker_runtime_link_rows"]}
+        full_rows = {row["criterion"]: row for row in packet["candidate_radar_full_pool_worker_fallback_rows"]}
+        deep_rows = {row["criterion"]: row for row in packet["candidate_radar_deep_scan_worker_fallback_rows"]}
+        full_receipt = packet["candidate_radar_full_pool_worker_fallback_receipt"]
+        deep_receipt = packet["candidate_radar_deep_scan_worker_fallback_receipt"]
+
+        self.assertEqual(link["schema_version"], "candidate_radar_worker_runtime_linked_evidence.v1")
+        self.assertEqual(link["status"], "candidate_radar_worker_runtime_local_evidence_linked")
+        self.assertTrue(link["worker_runtime_local_evidence_linked"])
+        self.assertEqual(link["worker_runtime_direct_evidence_layer"], "L3_local_worker_runtime_execution_evidence")
+        self.assertEqual(link["worker_runtime_execution_task_id"], runtime_execution["execution_task_id"])
+        self.assertTrue(link["local_fallback_round_trip_verified"])
+        self.assertTrue(link["task_log_round_trip_verified"])
+        self.assertTrue(link["append_only_worker_log_verified"])
+        self.assertTrue(link["cross_process_task_control_verified"])
+        self.assertTrue(link["scheduler_default_off_runtime_verified"])
+        self.assertTrue(link["provider_model_no_autoschedule_boundary_verified"])
+        self.assertFalse(link["production_worker_complete"])
+        self.assertFalse(link["production_radar_replacement_complete"])
+        self.assertFalse(link["worker_full_pool_execution_done"])
+        self.assertFalse(link["worker_deep_scan_execution_done"])
+        self.assertFalse(link["provider_backed_acceptance_done"])
+        self.assertTrue(link_rows["worker_runtime_qa_execution_packet_visible"]["passed"])
+        self.assertTrue(link_rows["task_log_append_only_and_control_verified"]["passed"])
+        self.assertTrue(link_rows["celery_redis_live_worker_still_pending"]["production_blocker"])
+        self.assertTrue(link_rows["radar_full_deep_provider_still_pending"]["production_blocker"])
+        self.assertTrue(link_rows["no_external_trade_secret_boundary"]["passed"])
+        self.assertTrue(full_receipt["worker_runtime_local_evidence_linked"])
+        self.assertTrue(deep_receipt["worker_runtime_local_evidence_linked"])
+        self.assertTrue(full_receipt["worker_runtime_link_is_not_production_worker_completion"])
+        self.assertTrue(deep_receipt["worker_runtime_link_is_not_production_worker_completion"])
+        self.assertEqual(full_rows["worker_runtime_local_qa_execution_linked"]["status"], "passed_local_runtime_qa_linked")
+        self.assertEqual(deep_rows["worker_runtime_local_qa_execution_linked"]["status"], "passed_local_runtime_qa_linked")
+        self.assertFalse(full_rows["worker_runtime_local_qa_execution_linked"]["production_blocker"])
+        self.assertFalse(deep_rows["worker_runtime_local_qa_execution_linked"]["production_blocker"])
+        self.assertTrue(packet["policy"]["candidate_radar_worker_runtime_link_is_read_only"])
+        self.assertTrue(packet["policy"]["candidate_radar_worker_runtime_link_does_not_start_worker"])
+        self.assertFalse(packet["policy"]["candidate_radar_worker_runtime_link_calls_provider_or_model"])
+        self.assertTrue(packet["policy"]["candidate_radar_worker_runtime_link_is_not_production_worker_completion"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+        self.assertIn("worker_full_pool_execution_evidence_required", packet["candidate_radar_durable_evidence_recipe"]["missing_durable_evidence"])
+        self.assertIn("provider_backed_parity_call_ledger_required", packet["candidate_radar_durable_evidence_recipe"]["missing_durable_evidence"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
+        self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
+        self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache, ensure_ascii=False))
+        self.assertNotIn("DEEPSEEK_API_KEY", json.dumps(cache, ensure_ascii=False))
+
     def test_ltg_stage_scope_observes_candidate_radar_direct_evidence_without_replacement(self):
         self._with_meta_store()
         clear_task_statuses_for_tests(clear_persisted=True)

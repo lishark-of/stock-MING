@@ -152,6 +152,7 @@ export default function CandidateRadar() {
   const workerExecutionRequest = (cache.candidate_radar_worker_execution_request_receipt as Record<string, unknown> | undefined) ?? {};
   const fullPoolWorkerFallback = (cache.candidate_radar_full_pool_worker_fallback_receipt as Record<string, unknown> | undefined) ?? {};
   const deepScanWorkerFallback = (cache.candidate_radar_deep_scan_worker_fallback_receipt as Record<string, unknown> | undefined) ?? {};
+  const workerRuntimeLinkedEvidence = (cache.candidate_radar_worker_runtime_linked_evidence as Record<string, unknown> | undefined) ?? {};
   const productionReplacementReview = (cache.candidate_radar_production_replacement_review_receipt as Record<string, unknown> | undefined) ?? {};
   const productionPromotionDryRun = (cache.candidate_radar_production_promotion_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
   const legacyRetirementReview = (cache.candidate_radar_legacy_retirement_review_receipt as Record<string, unknown> | undefined) ?? {};
@@ -281,6 +282,7 @@ export default function CandidateRadar() {
   const workerExecutionRequestRows = rows(cache.candidate_radar_worker_execution_request_rows);
   const fullPoolWorkerFallbackRows = rows(cache.candidate_radar_full_pool_worker_fallback_rows);
   const deepScanWorkerFallbackRows = rows(cache.candidate_radar_deep_scan_worker_fallback_rows);
+  const workerRuntimeLinkedRows = rows(cache.candidate_radar_worker_runtime_link_rows);
   const productionReplacementReviewRows = rows(cache.candidate_radar_production_replacement_review_rows);
   const productionPromotionDryRunRows = rows(cache.candidate_radar_production_promotion_dry_run_rows);
   const legacyRetirementReviewRows = rows(cache.candidate_radar_legacy_retirement_review_rows);
@@ -390,6 +392,8 @@ export default function CandidateRadar() {
           { label: "full fallback blockers", value: counts.candidate_radar_full_pool_worker_fallback_local_blocker_count as number | undefined, tone: Number(counts.candidate_radar_full_pool_worker_fallback_local_blocker_count ?? 0) ? "warn" : "good" },
           { label: "deep fallback", value: String(deepScanWorkerFallback.status ?? "missing"), tone: deepScanWorkerFallback.local_worker_fallback_deep_scan_done === true ? "good" : "warn" },
           { label: "deep fallback blockers", value: counts.candidate_radar_deep_scan_worker_fallback_local_blocker_count as number | undefined, tone: Number(counts.candidate_radar_deep_scan_worker_fallback_local_blocker_count ?? 0) ? "warn" : "good" },
+          { label: "worker runtime link", value: String(workerRuntimeLinkedEvidence.status ?? "missing"), tone: workerRuntimeLinkedEvidence.worker_runtime_local_evidence_linked === true ? "good" : "warn" },
+          { label: "runtime link blockers", value: counts.candidate_radar_worker_runtime_link_production_blocker_count as number | undefined, tone: Number(counts.candidate_radar_worker_runtime_link_production_blocker_count ?? 0) ? "warn" : "good" },
           { label: "replacement review", value: String(productionReplacementReview.status ?? "missing"), tone: productionReplacementReview.local_review_ready === true ? "good" : "warn" },
           { label: "review blockers", value: counts.candidate_radar_production_replacement_review_production_blocker_count as number | undefined, tone: Number(counts.candidate_radar_production_replacement_review_production_blocker_count ?? 0) ? "warn" : "good" },
           { label: "promotion dry-run", value: String(productionPromotionDryRun.status ?? "missing"), tone: productionPromotionDryRun.ready_for_local_promotion_review === true ? "good" : "warn" },
@@ -777,6 +781,19 @@ export default function CandidateRadar() {
         <p>tushare_called / deepseek_called / github_called: {String(deepScanWorkerFallback.tushare_called === true)} / {String(deepScanWorkerFallback.deepseek_called === true)} / {String(deepScanWorkerFallback.github_called === true)}</p>
         <DataLineageTable rows={objectRow(deepScanWorkerFallback)} />
         <DataLineageTable rows={deepScanWorkerFallbackRows} />
+      </PacketCard>
+
+      <PacketCard title="雷达 worker runtime link" subtitle="candidate_radar_worker_runtime_linked_evidence；只读连接 LTG-06 本地 runtime QA 证据，不启动 worker、不外联" status={String(workerRuntimeLinkedEvidence.status ?? "missing")}>
+        <p>worker_runtime_local_evidence_linked: {String(workerRuntimeLinkedEvidence.worker_runtime_local_evidence_linked === true)}；direct layer: {String(workerRuntimeLinkedEvidence.worker_runtime_direct_evidence_layer ?? "--")}</p>
+        <p>source packet: {String(workerRuntimeLinkedEvidence.source_packet_key ?? "command_center_3_worker_runtime_qa_execution_packet")}；read status: {String(workerRuntimeLinkedEvidence.source_packet_read_status ?? "missing")}</p>
+        <p>execution task: {String(workerRuntimeLinkedEvidence.worker_runtime_execution_task_id ?? "--")}；runtime scope: {String(workerRuntimeLinkedEvidence.worker_runtime_qa_scope_hash_short ?? "--")}</p>
+        <p>local fallback / task log / append-only / cross-process: {String(workerRuntimeLinkedEvidence.local_fallback_round_trip_verified === true)} / {String(workerRuntimeLinkedEvidence.task_log_round_trip_verified === true)} / {String(workerRuntimeLinkedEvidence.append_only_worker_log_verified === true)} / {String(workerRuntimeLinkedEvidence.cross_process_task_control_verified === true)}</p>
+        <p>scheduler off / provider-model no autoschedule / no-trade: {String(workerRuntimeLinkedEvidence.scheduler_default_off_runtime_verified === true)} / {String(workerRuntimeLinkedEvidence.provider_model_no_autoschedule_boundary_verified === true)} / {String(workerRuntimeLinkedEvidence.no_trade_no_action_boundary_verified === true)}</p>
+        <p>production worker / radar replacement / provider-backed: {String(workerRuntimeLinkedEvidence.production_worker_complete === true)} / {String(workerRuntimeLinkedEvidence.production_radar_replacement_complete === true)} / {String(workerRuntimeLinkedEvidence.provider_backed_acceptance_done === true)}</p>
+        <p>tushare_called / deepseek_called / github_called: {String(workerRuntimeLinkedEvidence.tushare_called === true)} / {String(workerRuntimeLinkedEvidence.deepseek_called === true)} / {String(workerRuntimeLinkedEvidence.github_called === true)}</p>
+        <p>这个 link 只证明已有 LTG-06 本地 runtime QA 证据可被雷达迁移审查看见；真实 Redis/Celery worker、全池/深扫、provider parity、browser promotion 和 legacy retirement 仍未完成。</p>
+        <DataLineageTable rows={objectRow(workerRuntimeLinkedEvidence)} />
+        <DataLineageTable rows={workerRuntimeLinkedRows} />
       </PacketCard>
 
       <PacketCard title="雷达生产替代审查" subtitle="POST /api/candidate-radar/production-replacement-review；汇总快扫、不降能、worker/provider/browser 缺口，不执行外部任务" status={String(productionReplacementReview.status ?? "missing")}>

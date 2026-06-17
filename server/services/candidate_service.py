@@ -46,6 +46,9 @@ CANDIDATE_FULL_POOL_WORKER_FALLBACK_ROUTE = "POST /api/candidate-radar/full-pool
 CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_SCHEMA_VERSION = "candidate_radar_deep_scan_worker_fallback.v1"
 CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_TASK_TYPE = "run_candidate_radar_deep_scan_worker_fallback"
 CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_ROUTE = "POST /api/candidate-radar/deep-scan-worker"
+CANDIDATE_WORKER_RUNTIME_LINKED_EVIDENCE_SCHEMA_VERSION = "candidate_radar_worker_runtime_linked_evidence.v1"
+WORKER_RUNTIME_QA_EXECUTION_PACKET_KEY = "command_center_3_worker_runtime_qa_execution_packet"
+WORKER_RUNTIME_QA_EXECUTION_SCHEMA_VERSION = "worker_runtime_qa_execution_receipt.v1"
 CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_SCHEMA_VERSION = "candidate_radar_production_replacement_review.v1"
 CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_TASK_TYPE = "run_candidate_radar_production_replacement_review"
 CANDIDATE_PRODUCTION_REPLACEMENT_REVIEW_ROUTE = "POST /api/candidate-radar/production-replacement-review"
@@ -4975,6 +4978,7 @@ def _attach_no_feature_loss_acceptance_contract(packet: Mapping[str, Any]) -> di
     view = _attach_candidate_radar_worker_execution_request(view)
     view = _attach_candidate_radar_full_pool_worker_fallback(view)
     view = _attach_candidate_radar_deep_scan_worker_fallback(view)
+    view = _attach_candidate_radar_worker_runtime_linked_evidence(view)
     view = _attach_candidate_radar_next_execution_recipe(view)
     view = _attach_candidate_radar_durable_evidence_recipe(view)
     view = _attach_candidate_radar_production_stage_scope_manifest(view)
@@ -7013,6 +7017,344 @@ def _attach_candidate_radar_deep_scan_worker_fallback(packet: Mapping[str, Any])
     view["call_ledger"] = ledger
     view["candidate_radar_deep_scan_worker_fallback_receipt"] = receipt
     view["candidate_radar_deep_scan_worker_fallback_rows"] = rows
+    return view
+
+
+def _read_candidate_worker_runtime_qa_execution_receipt() -> tuple[dict[str, Any], str]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(WORKER_RUNTIME_QA_EXECUTION_PACKET_KEY)
+    except Exception:
+        return {}, "packet_read_failed"
+    if not isinstance(packet, dict):
+        return {}, "packet_missing"
+    receipt = _as_dict(packet.get("worker_runtime_qa_execution_receipt") or packet)
+    if receipt.get("schema_version") != WORKER_RUNTIME_QA_EXECUTION_SCHEMA_VERSION:
+        return {}, "schema_mismatch"
+    return _json_safe(receipt), "packet_found"
+
+
+def _candidate_worker_runtime_link_row(
+    criterion: str,
+    status: str,
+    *,
+    passed: bool,
+    production_blocker: bool,
+    evidence: str,
+    next_action: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": CANDIDATE_WORKER_RUNTIME_LINKED_EVIDENCE_SCHEMA_VERSION,
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "local_blocker": False,
+        "production_blocker": bool(production_blocker),
+        "evidence": evidence,
+        "next_action": next_action,
+        "linked_from_ltg": "LTG-06",
+        "linked_to_ltg": "LTG-13",
+        "read_only_link": True,
+        "worker_task_created": False,
+        "worker_started": False,
+        "redis_broker_used": False,
+        "celery_worker_started": False,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "production_worker_complete": False,
+        "production_radar_replacement_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+    }
+
+
+def _candidate_radar_worker_runtime_linked_evidence() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    receipt, read_status = _read_candidate_worker_runtime_qa_execution_receipt()
+    receipt_visible = receipt.get("schema_version") == WORKER_RUNTIME_QA_EXECUTION_SCHEMA_VERSION
+    linked = bool(
+        receipt_visible
+        and receipt.get("status") == "worker_runtime_qa_execution_ready_local_fallback_evidence"
+        and receipt.get("local_runtime_qa_execution_done") is True
+        and receipt.get("local_fallback_round_trip_verified") is True
+        and receipt.get("task_log_round_trip_verified") is True
+        and receipt.get("append_only_worker_log_verified") is True
+        and receipt.get("cross_process_task_control_verified") is True
+        and receipt.get("scheduler_default_off_runtime_verified") is True
+        and receipt.get("provider_model_no_autoschedule_boundary_verified") is True
+        and receipt.get("no_trade_no_action_boundary_verified") is True
+        and receipt.get("production_worker_complete") is False
+        and receipt.get("external_calls_triggered") is False
+        and receipt.get("tushare_called") is False
+        and receipt.get("deepseek_called") is False
+        and receipt.get("github_called") is False
+        and receipt.get("contains_secret") is False
+    )
+    rows = [
+        _candidate_worker_runtime_link_row(
+            "worker_runtime_qa_execution_packet_visible",
+            "passed_worker_runtime_packet_visible" if receipt_visible else "pending_worker_runtime_packet",
+            passed=receipt_visible,
+            production_blocker=False,
+            evidence=f"source_packet={WORKER_RUNTIME_QA_EXECUTION_PACKET_KEY}; read_status={read_status}; status={receipt.get('status') or 'missing'}",
+            next_action="Run the explicit Worker Runtime QA execution task before relying on this local link.",
+        ),
+        _candidate_worker_runtime_link_row(
+            "local_fallback_round_trip_verified",
+            "passed_local_round_trip" if receipt.get("local_fallback_round_trip_verified") is True else "pending_local_round_trip",
+            passed=receipt.get("local_fallback_round_trip_verified") is True,
+            production_blocker=False,
+            evidence=f"execution_task_id={receipt.get('execution_task_id') or ''}; local_runtime_done={receipt.get('local_runtime_qa_execution_done') is True}",
+            next_action="Keep this as local fallback evidence only; live worker proof remains separate.",
+        ),
+        _candidate_worker_runtime_link_row(
+            "task_log_append_only_and_control_verified",
+            "passed_local_task_log_control"
+            if (
+                receipt.get("task_log_round_trip_verified") is True
+                and receipt.get("append_only_worker_log_verified") is True
+                and receipt.get("cross_process_task_control_verified") is True
+            )
+            else "pending_task_log_append_only_control",
+            passed=bool(
+                receipt.get("task_log_round_trip_verified") is True
+                and receipt.get("append_only_worker_log_verified") is True
+                and receipt.get("cross_process_task_control_verified") is True
+            ),
+            production_blocker=False,
+            evidence=(
+                f"task_log={receipt.get('task_log_round_trip_verified') is True}; "
+                f"append_only={receipt.get('append_only_worker_log_verified') is True}; "
+                f"cross_process={receipt.get('cross_process_task_control_verified') is True}"
+            ),
+            next_action="Use this as local task-store evidence, not Celery/Redis runtime evidence.",
+        ),
+        _candidate_worker_runtime_link_row(
+            "scheduler_provider_model_boundary_verified",
+            "passed_scheduler_provider_model_boundary"
+            if (
+                receipt.get("scheduler_default_off_runtime_verified") is True
+                and receipt.get("provider_model_no_autoschedule_boundary_verified") is True
+            )
+            else "pending_scheduler_provider_model_boundary",
+            passed=bool(
+                receipt.get("scheduler_default_off_runtime_verified") is True
+                and receipt.get("provider_model_no_autoschedule_boundary_verified") is True
+            ),
+            production_blocker=False,
+            evidence=(
+                f"scheduler_default_off={receipt.get('scheduler_default_off_runtime_verified') is True}; "
+                f"provider_model_no_autoschedule={receipt.get('provider_model_no_autoschedule_boundary_verified') is True}"
+            ),
+            next_action="Keep radar worker execution/provider/model tasks button-gated and separate.",
+        ),
+        _candidate_worker_runtime_link_row(
+            "celery_redis_live_worker_still_pending",
+            "pending_live_celery_redis_worker",
+            passed=False,
+            production_blocker=True,
+            evidence="The linked LTG-06 receipt is local runtime QA evidence; it does not start Celery or ping Redis.",
+            next_action="Collect live Celery/Redis worker evidence in a separate approved worker-runtime cycle.",
+        ),
+        _candidate_worker_runtime_link_row(
+            "radar_full_deep_provider_still_pending",
+            "pending_radar_worker_provider_browser_evidence",
+            passed=False,
+            production_blocker=True,
+            evidence="The link does not run Candidate Radar full-pool/deep-scan execution, provider parity, model ledger, or browser promotion.",
+            next_action="Run explicit radar worker/provider/browser evidence tasks before any production replacement claim.",
+        ),
+        _candidate_worker_runtime_link_row(
+            "no_external_trade_secret_boundary",
+            "passed_no_external_trade_secret",
+            passed=True,
+            production_blocker=False,
+            evidence="This read-only linkage calls no Tushare, DeepSeek, GitHub, worker process, browser, or trading path and stores no secrets.",
+            next_action="Preserve this boundary when attaching future provider/model/worker evidence.",
+        ),
+    ]
+    production_blockers = [str(row["criterion"]) for row in rows if row.get("production_blocker")]
+    evidence = {
+        "schema_version": CANDIDATE_WORKER_RUNTIME_LINKED_EVIDENCE_SCHEMA_VERSION,
+        "status": (
+            "candidate_radar_worker_runtime_local_evidence_linked"
+            if linked
+            else "candidate_radar_worker_runtime_local_evidence_missing"
+        ),
+        "scope": "local_candidate_radar_worker_runtime_link_no_worker_or_provider_execution",
+        "ltg": "LTG-13/LTG-06",
+        "source_packet_key": WORKER_RUNTIME_QA_EXECUTION_PACKET_KEY,
+        "source_packet_read_status": read_status,
+        "source_worker_runtime_status": receipt.get("status") or "missing",
+        "worker_runtime_evidence_visible": receipt_visible,
+        "worker_runtime_local_evidence_linked": linked,
+        "worker_runtime_direct_evidence_layer": "L3_local_worker_runtime_execution_evidence" if linked else "",
+        "worker_runtime_execution_task_id": receipt.get("execution_task_id") or "",
+        "worker_runtime_qa_scope_hash_short": receipt.get("runtime_qa_scope_hash_short") or "",
+        "production_evidence_plan_scope_hash_short": receipt.get("production_evidence_plan_scope_hash_short") or "",
+        "local_fallback_round_trip_verified": receipt.get("local_fallback_round_trip_verified") is True,
+        "task_log_round_trip_verified": receipt.get("task_log_round_trip_verified") is True,
+        "append_only_worker_log_verified": receipt.get("append_only_worker_log_verified") is True,
+        "cross_process_task_control_verified": receipt.get("cross_process_task_control_verified") is True,
+        "scheduler_default_off_runtime_verified": receipt.get("scheduler_default_off_runtime_verified") is True,
+        "provider_model_no_autoschedule_boundary_verified": receipt.get(
+            "provider_model_no_autoschedule_boundary_verified"
+        )
+        is True,
+        "no_trade_no_action_boundary_verified": receipt.get("no_trade_no_action_boundary_verified") is True,
+        "production_worker_complete": False,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_broker_used": False,
+        "production_radar_replacement_complete": False,
+        "worker_full_pool_execution_done": False,
+        "worker_deep_scan_execution_done": False,
+        "provider_backed_acceptance_done": False,
+        "browser_visual_performance_promoted": False,
+        "legacy_retirement_ready": False,
+        "legacy_fallback_required": True,
+        "local_blocker_count": 0,
+        "production_blocker_count": len(production_blockers),
+        "production_blockers": production_blockers,
+        "allowed_next_step": "run_explicit_radar_worker_provider_browser_evidence_after_runtime_link_review",
+        "not_allowed_next_steps": [
+            "treat linked local runtime QA as Celery/Redis worker execution",
+            "treat linked local runtime QA as radar full-pool or deep-scan execution",
+            "treat linked local runtime QA as provider-backed parity",
+            "call Tushare or DeepSeek from GET cache or React render",
+            "retire legacy radar fallback from worker runtime linkage",
+            "turn candidate rows into buy/sell instructions",
+            "store raw token/key in packet, cache, ledger, log, or frontend",
+        ],
+        "row_count": len(rows),
+        "rows": rows,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+        "note": "This link surfaces existing LTG-06 local runtime QA evidence for LTG-13 review. It is not live worker execution, provider parity, browser promotion, or production radar replacement.",
+    }
+    return evidence, rows
+
+
+def _with_candidate_worker_runtime_link_row(
+    receipt: Mapping[str, Any],
+    rows: list[dict[str, Any]],
+    evidence: Mapping[str, Any],
+    *,
+    row_factory: Any,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    linked = evidence.get("worker_runtime_local_evidence_linked") is True
+    link_row = row_factory(
+        "worker_runtime_local_qa_execution_linked",
+        "passed_local_runtime_qa_linked" if linked else "pending_local_runtime_qa_link",
+        passed=linked,
+        local_blocker=False,
+        production_blocker=False,
+        evidence=(
+            f"linked={linked}; worker_runtime_status={evidence.get('source_worker_runtime_status')}; "
+            f"task_id={evidence.get('worker_runtime_execution_task_id') or ''}"
+        ),
+        next_action="Use this as LTG-06 local runtime QA linkage only; real radar worker/provider/browser evidence remains separate.",
+    )
+    next_rows = [row for row in rows if row.get("criterion") != "worker_runtime_local_qa_execution_linked"]
+    next_rows.append(link_row)
+    next_receipt = dict(receipt)
+    next_receipt["worker_runtime_local_evidence_linked"] = linked
+    next_receipt["worker_runtime_direct_evidence_layer"] = evidence.get("worker_runtime_direct_evidence_layer") or ""
+    next_receipt["worker_runtime_qa_execution_task_id"] = evidence.get("worker_runtime_execution_task_id") or ""
+    next_receipt["worker_runtime_qa_source_status"] = evidence.get("source_worker_runtime_status") or "missing"
+    next_receipt["worker_runtime_link_is_not_production_worker_completion"] = True
+    next_receipt["row_count"] = len(next_rows)
+    next_receipt["rows"] = next_rows
+    return next_receipt, next_rows
+
+
+def _attach_candidate_radar_worker_runtime_linked_evidence(packet: Mapping[str, Any]) -> dict[str, Any]:
+    view = dict(packet)
+    evidence, rows = _candidate_radar_worker_runtime_linked_evidence()
+
+    full_pool_receipt = _as_dict(view.get("candidate_radar_full_pool_worker_fallback_receipt"))
+    if full_pool_receipt.get("schema_version") == CANDIDATE_FULL_POOL_WORKER_FALLBACK_SCHEMA_VERSION:
+        full_pool_rows = [
+            row
+            for row in _as_list(view.get("candidate_radar_full_pool_worker_fallback_rows"))
+            if isinstance(row, dict)
+        ]
+        full_pool_receipt, full_pool_rows = _with_candidate_worker_runtime_link_row(
+            full_pool_receipt,
+            full_pool_rows,
+            evidence,
+            row_factory=_candidate_full_pool_worker_fallback_row,
+        )
+        view["candidate_radar_full_pool_worker_fallback_receipt"] = full_pool_receipt
+        view["candidate_radar_full_pool_worker_fallback_rows"] = full_pool_rows
+
+    deep_scan_receipt = _as_dict(view.get("candidate_radar_deep_scan_worker_fallback_receipt"))
+    if deep_scan_receipt.get("schema_version") == CANDIDATE_DEEP_SCAN_WORKER_FALLBACK_SCHEMA_VERSION:
+        deep_scan_rows = [
+            row
+            for row in _as_list(view.get("candidate_radar_deep_scan_worker_fallback_rows"))
+            if isinstance(row, dict)
+        ]
+        deep_scan_receipt, deep_scan_rows = _with_candidate_worker_runtime_link_row(
+            deep_scan_receipt,
+            deep_scan_rows,
+            evidence,
+            row_factory=_candidate_deep_scan_worker_fallback_row,
+        )
+        view["candidate_radar_deep_scan_worker_fallback_receipt"] = deep_scan_receipt
+        view["candidate_radar_deep_scan_worker_fallback_rows"] = deep_scan_rows
+
+    counts = dict(_as_dict(view.get("counts")))
+    counts["candidate_radar_worker_runtime_link_row_count"] = len(rows)
+    counts["candidate_radar_worker_runtime_local_evidence_linked"] = (
+        evidence.get("worker_runtime_local_evidence_linked") is True
+    )
+    counts["candidate_radar_worker_runtime_link_production_blocker_count"] = evidence.get(
+        "production_blocker_count", 0
+    )
+    if full_pool_receipt:
+        counts["candidate_radar_full_pool_worker_fallback_row_count"] = len(
+            _as_list(view.get("candidate_radar_full_pool_worker_fallback_rows"))
+        )
+    if deep_scan_receipt:
+        counts["candidate_radar_deep_scan_worker_fallback_row_count"] = len(
+            _as_list(view.get("candidate_radar_deep_scan_worker_fallback_rows"))
+        )
+
+    policy = dict(_as_dict(view.get("policy")))
+    policy["candidate_radar_worker_runtime_link_is_read_only"] = True
+    policy["candidate_radar_worker_runtime_link_does_not_start_worker"] = True
+    policy["candidate_radar_worker_runtime_link_calls_provider_or_model"] = False
+    policy["candidate_radar_worker_runtime_link_is_not_production_worker_completion"] = True
+    policy["candidate_radar_worker_runtime_link_is_not_production_radar_replacement"] = True
+
+    ledger = _as_list(view.get("call_ledger"))
+    ledger.append(
+        _candidate_call_ledger_row(
+            api="local_candidate_radar_worker_runtime_linked_evidence",
+            source_snapshot=WORKER_RUNTIME_QA_EXECUTION_PACKET_KEY,
+            row_count=len(rows),
+            call_status=str(evidence.get("status") or "candidate_radar_worker_runtime_local_evidence_missing"),
+        )
+    )
+    view["counts"] = counts
+    view["policy"] = policy
+    view["call_ledger"] = ledger
+    view["candidate_radar_worker_runtime_linked_evidence"] = evidence
+    view["candidate_radar_worker_runtime_link_rows"] = rows
     return view
 
 
