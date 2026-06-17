@@ -30762,6 +30762,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg08["github_called"])
         self.assertTrue(ltg08["does_not_execute_trades"])
         self.assertTrue(ltg08["does_not_modify_strategy_action"])
+        queue_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
+        next_session_queue = queue_rows["p5_next_session_map_browser_qa"]
+        local_steps = {row["phase_key"]: row for row in next_session_queue["local_step_rows"]}
+        streamlit_step = local_steps["next_session_streamlit_parity_review_receipt"]
+        self.assertTrue(streamlit_step["receipt_visible"])
+        self.assertTrue(streamlit_step["receipt_durable_in_sqlite"])
+        self.assertTrue(streamlit_step["local_ready"])
+        self.assertFalse(streamlit_step["local_blocked"])
+        self.assertEqual(
+            streamlit_step["receipt_status"],
+            "next_session_streamlit_parity_review_ready_local_same_packet",
+        )
 
     def test_next_session_production_promotion_review_is_local_blocker_evidence_only(self):
         self._with_meta_store()

@@ -1764,6 +1764,8 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "local_activation_receipt_ready",
         "local_scope_ticket_ready",
         "local_browser_qa_review_ready",
+        "local_streamlit_parity_review_ready",
+        "local_production_promotion_review_ready",
         "local_worker_fallback_ready",
         "local_runtime_qa_execution_done",
         "local_gate_ready",
