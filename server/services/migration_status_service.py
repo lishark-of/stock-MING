@@ -2517,7 +2517,21 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         and execution_map.get("does_not_modify_strategy_action") is True
         and execution_map.get("contains_secret") is False
     )
+    cross_process_task_control_done = bool(
+        runtime_execution_done
+        and execution_map.get("cross_process_task_control_verified") is True
+        and _dict_or_empty(execution_map.get("cross_process_task_control_probe")).get("status")
+        == "cross_process_task_control_verified"
+        and _dict_or_empty(execution_map.get("cross_process_task_control_probe")).get("readback_hash_matches") is True
+        and _dict_or_empty(execution_map.get("cross_process_task_control_probe")).get("external_calls_triggered")
+        is False
+        and _dict_or_empty(execution_map.get("cross_process_task_control_probe")).get("tushare_called") is False
+        and _dict_or_empty(execution_map.get("cross_process_task_control_probe")).get("deepseek_called") is False
+        and _dict_or_empty(execution_map.get("cross_process_task_control_probe")).get("github_called") is False
+    )
     direct_stage_keys = []
+    if cross_process_task_control_done:
+        direct_stage_keys.append("cross_process_retry_cancel_lock_dedupe")
     if runtime_execution_done:
         direct_stage_keys.append("append_only_worker_logs")
     if scheduler_default_off_done:
@@ -2545,7 +2559,7 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         "local_fallback_round_trip_verified": execution_map.get("local_fallback_round_trip_verified") is True,
         "task_log_persistence_verified": execution_map.get("task_log_persistence_verified") is True,
         "local_task_control_metadata_verified": execution_map.get("local_task_control_metadata_verified") is True,
-        "cross_process_task_control_verified": False,
+        "cross_process_task_control_verified": cross_process_task_control_done,
         "append_only_worker_log_verified": execution_map.get("append_only_worker_log_verified") is True,
         "scheduler_default_off_runtime_verified": scheduler_default_off_done,
         "provider_model_no_autoschedule_boundary_verified": provider_boundary_done,
@@ -4725,7 +4739,10 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 is True,
                 "append_only_worker_log_verified": direct_evidence.get("append_only_worker_log_verified")
                 is True,
-                "cross_process_task_control_verified": False,
+                "cross_process_task_control_verified": direct_evidence.get(
+                    "cross_process_task_control_verified"
+                )
+                is True,
                 "activation_ready": False,
                 "production_worker_complete": False,
                 "cache_get_external_calls": False,

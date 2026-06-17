@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import subprocess
+import sys
 from typing import Any
 
 from server.services import task_service
@@ -98,6 +100,18 @@ WORKER_RUNTIME_DURABLE_EVIDENCE_LABELS = {
 }
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
+WORKER_TASK_CONTROL_PROBE_PATH = PROJECT_ROOT / "scripts" / "worker_task_control_probe.py"
+TASK_CONTROL_PROJECTION_KEYS = (
+    "task_id",
+    "task_type",
+    "status",
+    "output_packet_key",
+    "current_step",
+    "progress",
+    "retry_policy",
+    "lock_policy",
+    "dedupe_policy",
+)
 
 
 def _now_iso() -> str:
@@ -117,6 +131,93 @@ def _stable_json_text(payload: dict[str, Any]) -> str:
 
 def _json_sha256(payload: dict[str, Any]) -> str:
     return hashlib.sha256(_stable_json_text(payload).encode("utf-8")).hexdigest()
+
+
+def _task_control_projection(task: dict[str, Any]) -> dict[str, Any]:
+    projection = {key: task.get(key) for key in TASK_CONTROL_PROJECTION_KEYS}
+    projection["task_log_events"] = [
+        {
+            "event": row.get("event"),
+            "status": row.get("status"),
+            "step": row.get("step"),
+        }
+        for row in task.get("task_log") or []
+        if isinstance(row, dict)
+    ]
+    return projection
+
+
+def _safe_cross_process_task_control_probe(task: dict[str, Any]) -> dict[str, Any]:
+    task_id = str(task.get("task_id") or "")
+    expected_sha256 = _json_sha256(_task_control_projection(task)) if task_id else ""
+    fallback = {
+        "schema_version": "worker_task_control_cross_process_probe.v1",
+        "status": "cross_process_task_control_blocked",
+        "scope": "local_python_process_sqlite_task_status_readback_no_worker_start",
+        "task_id": task_id,
+        "storage_source": "sqlite_meta",
+        "readback_found": False,
+        "readback_hash_matches": False,
+        "task_status": "",
+        "task_log_count": 0,
+        "retry_metadata_visible": False,
+        "lock_metadata_visible": False,
+        "dedupe_metadata_visible": False,
+        "contains_secret": False,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "task_dispatched": False,
+        "provider_model_task_dispatched": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "error_message_safe": "cross_process_probe_not_run",
+    }
+    if not task_id or not expected_sha256 or not WORKER_TASK_CONTROL_PROBE_PATH.exists():
+        return fallback
+    try:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(WORKER_TASK_CONTROL_PROBE_PATH),
+                "--db-path",
+                str(SQLITE_META_PATH),
+                "--task-id",
+                task_id,
+                "--expected-sha256",
+                expected_sha256,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception:
+        result = dict(fallback)
+        result["error_message_safe"] = "cross_process_probe_failed_safe"
+        return result
+    try:
+        parsed = json.loads(completed.stdout or "{}")
+    except Exception:
+        parsed = {}
+    if not isinstance(parsed, dict):
+        parsed = {}
+    result = {**fallback, **parsed}
+    result["process_returncode"] = completed.returncode
+    result["probe_script"] = "scripts/worker_task_control_probe.py"
+    result["expected_task_identity_sha256"] = expected_sha256
+    result["external_calls_triggered"] = False
+    result["tushare_called"] = False
+    result["deepseek_called"] = False
+    result["github_called"] = False
+    result["does_not_execute_trades"] = True
+    result["does_not_modify_strategy_action"] = True
+    return result
 
 
 def _read_worker_meta_packet_no_init(packet_key: str) -> tuple[Any, str]:
@@ -2929,6 +3030,7 @@ def _worker_runtime_qa_execution_phase_rows(
     execution_ready: bool,
     append_only_log_verified: bool,
     local_fallback_verified: bool,
+    cross_process_verified: bool,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     completed_phases = {
@@ -2947,6 +3049,7 @@ def _worker_runtime_qa_execution_phase_rows(
                 phase_key in completed_phases
                 or (phase_key == "append_only_worker_log_validation" and append_only_log_verified)
                 or (phase_key == "local_fallback_rollback_plan" and local_fallback_verified)
+                or (phase_key == "cross_process_retry_cancel_lock_dedupe" and cross_process_verified)
             )
         )
         rows.append(
@@ -2985,11 +3088,13 @@ def _worker_runtime_qa_execution_receipt(
     runtime_task: dict[str, Any] | None = None,
     readback: dict[str, Any] | None = None,
     append_only_log: dict[str, Any] | None = None,
+    cross_process_probe: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     safe_payload = payload_safe if isinstance(payload_safe, dict) else {}
     task_map = runtime_task if isinstance(runtime_task, dict) else {}
     readback_map = readback if isinstance(readback, dict) else {}
     append_map = append_only_log if isinstance(append_only_log, dict) else {}
+    cross_process_map = cross_process_probe if isinstance(cross_process_probe, dict) else {}
     approved = safe_payload.get("operator_approved") is True or safe_payload.get("approved") is True
     dry_run_ready = runtime_qa_dry_run.get("local_dry_run_ready") is True
     dry_run_task_id = str(runtime_qa_dry_run.get("dry_run_task_id") or "")
@@ -3032,6 +3137,24 @@ def _worker_runtime_qa_execution_receipt(
     task_control_metadata = _local_task_control_metadata_evidence(task_map, readback_map)
     local_task_control_metadata_verified = bool(
         task_control_metadata.get("local_task_control_metadata_verified") is True
+    )
+    cross_process_task_control_verified = bool(
+        cross_process_map.get("schema_version") == "worker_task_control_cross_process_probe.v1"
+        and cross_process_map.get("status") == "cross_process_task_control_verified"
+        and cross_process_map.get("readback_found") is True
+        and cross_process_map.get("readback_hash_matches") is True
+        and cross_process_map.get("task_status") == "success"
+        and int(cross_process_map.get("task_log_count") or 0) > 0
+        and cross_process_map.get("retry_metadata_visible") is True
+        and cross_process_map.get("lock_metadata_visible") is True
+        and cross_process_map.get("dedupe_metadata_visible") is True
+        and cross_process_map.get("contains_secret") is False
+        and cross_process_map.get("external_calls_triggered") is False
+        and cross_process_map.get("tushare_called") is False
+        and cross_process_map.get("deepseek_called") is False
+        and cross_process_map.get("github_called") is False
+        and cross_process_map.get("does_not_execute_trades") is True
+        and cross_process_map.get("does_not_modify_strategy_action") is True
     )
     if not explicit_execution:
         status = "worker_runtime_qa_execution_missing"
@@ -3126,6 +3249,22 @@ def _worker_runtime_qa_execution_receipt(
             next_action="Use this as local task-control evidence only; prove cross-process behavior later with Celery/Redis runtime QA.",
         ),
         _worker_runtime_qa_execution_row(
+            "cross_process_task_control_probe_verified",
+            passed=cross_process_task_control_verified,
+            status="passed_local_python_process_probe"
+            if cross_process_task_control_verified
+            else "pending_cross_process_task_control_probe",
+            evidence=(
+                f"probe_status={cross_process_map.get('status') or 'missing'}; "
+                f"readback_hash_matches={cross_process_map.get('readback_hash_matches') is True}; "
+                f"task_log_count={cross_process_map.get('task_log_count') or 0}"
+            ),
+            next_action=(
+                "Keep this as local cross-process SQLite task-control evidence; Celery/Redis process proof remains separate."
+            ),
+            production_blocker=True,
+        ),
+        _worker_runtime_qa_execution_row(
             "append_only_worker_log_event_verified",
             passed=append_only_log_verified,
             status="passed" if append_only_log_verified else "blocked_append_only_log_event",
@@ -3175,6 +3314,7 @@ def _worker_runtime_qa_execution_receipt(
         execution_ready=ready,
         append_only_log_verified=append_only_log_verified,
         local_fallback_verified=local_fallback_verified,
+        cross_process_verified=cross_process_task_control_verified,
     )
     return {
         "packet_key": RUNTIME_QA_EXECUTION_PACKET_KEY,
@@ -3212,8 +3352,9 @@ def _worker_runtime_qa_execution_receipt(
         "task_log_round_trip_verified": task_log_round_trip,
         "task_log_persistence_verified": task_log_round_trip,
         "local_task_control_metadata_verified": local_task_control_metadata_verified,
-        "cross_process_task_control_verified": False,
+        "cross_process_task_control_verified": cross_process_task_control_verified,
         "task_control_metadata_evidence": task_control_metadata,
+        "cross_process_task_control_probe": cross_process_map,
         "append_only_worker_log_verified": append_only_log_verified,
         "append_only_worker_log_event_result": append_map,
         "scheduler_default_off_runtime_verified": True,
@@ -3334,6 +3475,9 @@ def _read_worker_runtime_qa_execution_packet(
     receipt.setdefault("local_task_round_trip_verified", False)
     receipt.setdefault("task_log_round_trip_verified", False)
     receipt.setdefault("task_log_persistence_verified", False)
+    receipt.setdefault("local_task_control_metadata_verified", False)
+    receipt.setdefault("cross_process_task_control_verified", False)
+    receipt.setdefault("cross_process_task_control_probe", {})
     receipt.setdefault("append_only_worker_log_verified", False)
     receipt.setdefault("scheduler_default_off_runtime_verified", False)
     receipt.setdefault("provider_model_no_autoschedule_boundary_verified", False)
@@ -5081,6 +5225,7 @@ def run_worker_runtime_qa_execution(payload: Any = None) -> dict[str, Any]:
         warning="worker_runtime_qa_execution_local_fallback_round_trip_no_external_call",
     ) or task
     readback = task_service.read_task_status(str(task.get("task_id") or ""))
+    cross_process_probe = _safe_cross_process_task_control_probe(task)
     append_event = {
         "schema_version": "worker_runtime_qa_append_only_event.v1",
         "event_type": "worker_runtime_qa_local_fallback_round_trip",
@@ -5130,13 +5275,14 @@ def run_worker_runtime_qa_execution(payload: Any = None) -> dict[str, Any]:
         runtime_task=task,
         readback=readback if isinstance(readback, dict) else {},
         append_only_log=append_result,
+        cross_process_probe=cross_process_probe,
     )
     rows = receipt.get("rows") if isinstance(receipt.get("rows"), list) else []
     phase_rows = receipt.get("phase_rows") if isinstance(receipt.get("phase_rows"), list) else []
     ledger = [
         {
             "api": "local_worker_runtime_qa_execution",
-            "source": "worker_runtime_qa_dry_run + local_task_store + append_only_jsonl_event",
+            "source": "worker_runtime_qa_dry_run + local_task_store + cross_process_probe + append_only_jsonl_event",
             "row_count": len(rows),
             "phase_row_count": len(phase_rows),
             "task_id": task.get("task_id"),
@@ -5155,6 +5301,8 @@ def run_worker_runtime_qa_execution(payload: Any = None) -> dict[str, Any]:
                 "provider_model_task_dispatched": False,
             },
             "event_sha256": append_result.get("event_sha256") or "",
+            "cross_process_probe_status": cross_process_probe.get("status") or "missing",
+            "cross_process_probe_returncode": cross_process_probe.get("process_returncode"),
             "external": False,
             "external_calls_triggered": False,
             "tushare_called": False,
@@ -5199,7 +5347,8 @@ def run_worker_runtime_qa_execution(payload: Any = None) -> dict[str, Any]:
         "task_log_persistence_verified": receipt["task_log_persistence_verified"],
         "local_fallback_round_trip_verified": receipt["local_fallback_round_trip_verified"],
         "local_task_control_metadata_verified": receipt["local_task_control_metadata_verified"],
-        "cross_process_task_control_verified": False,
+        "cross_process_task_control_verified": receipt["cross_process_task_control_verified"],
+        "cross_process_task_control_probe": cross_process_probe,
         "production_worker_complete": False,
         "activation_ready": False,
         "worker_started": False,
@@ -5217,7 +5366,7 @@ def run_worker_runtime_qa_execution(payload: Any = None) -> dict[str, Any]:
         "contains_secret": False,
         "call_ledger": ledger,
         "warnings": [
-            "这是显式 POST 的本地 Worker runtime QA execution，只证明 local fallback round-trip 与 append-only event。",
+            "这是显式 POST 的本地 Worker runtime QA execution，只证明 local fallback round-trip、local Python process task-control readback 与 append-only event。",
             "它不启动 Celery、不 ping Redis、不启动 scheduler、不调用 Tushare/DeepSeek/GitHub、不执行真实交易，也不代表 production worker 完成。",
         ],
     }

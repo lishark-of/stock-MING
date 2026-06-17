@@ -29481,7 +29481,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(receipt["task_log_round_trip_verified"])
         self.assertTrue(receipt["task_log_persistence_verified"])
         self.assertTrue(receipt["local_task_control_metadata_verified"])
-        self.assertFalse(receipt["cross_process_task_control_verified"])
+        self.assertTrue(receipt["cross_process_task_control_verified"])
+        cross_process_probe = receipt["cross_process_task_control_probe"]
+        self.assertEqual(cross_process_probe["schema_version"], "worker_task_control_cross_process_probe.v1")
+        self.assertEqual(cross_process_probe["status"], "cross_process_task_control_verified")
+        self.assertTrue(cross_process_probe["readback_found"])
+        self.assertTrue(cross_process_probe["readback_hash_matches"])
+        self.assertEqual(cross_process_probe["task_status"], "success")
+        self.assertFalse(cross_process_probe["external_calls_triggered"])
+        self.assertFalse(cross_process_probe["tushare_called"])
+        self.assertFalse(cross_process_probe["deepseek_called"])
+        self.assertFalse(cross_process_probe["github_called"])
+        self.assertFalse(cross_process_probe["contains_secret"])
         self.assertTrue(receipt["append_only_worker_log_verified"])
         self.assertTrue(receipt["scheduler_default_off_runtime_verified"])
         self.assertTrue(receipt["provider_model_no_autoschedule_boundary_verified"])
@@ -29517,6 +29528,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(rows["local_fallback_round_trip_executed"]["status"], "passed")
         self.assertEqual(rows["append_only_worker_log_event_verified"]["status"], "passed")
         self.assertEqual(rows["local_task_control_metadata_verified"]["status"], "passed_local_metadata")
+        self.assertEqual(rows["cross_process_task_control_probe_verified"]["status"], "passed_local_python_process_probe")
+        self.assertFalse(rows["cross_process_task_control_probe_verified"]["production_blocker"])
         self.assertEqual(rows["celery_redis_process_evidence_still_pending"]["status"], "pending_manual_celery_redis_runtime_evidence")
         self.assertFalse(any(row["worker_started"] for row in receipt["rows"]))
         self.assertFalse(any(row["redis_pinged"] for row in receipt["rows"]))
@@ -29524,6 +29537,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(any(row["provider_model_task_dispatched"] for row in receipt["rows"]))
         phase_rows = {row["phase"]: row for row in receipt["phase_rows"]}
         self.assertTrue(phase_rows["append_only_worker_log_validation"]["runtime_qa_done"])
+        self.assertTrue(phase_rows["cross_process_retry_cancel_lock_dedupe"]["runtime_qa_done"])
         self.assertTrue(phase_rows["local_fallback_rollback_plan"]["runtime_qa_done"])
         self.assertFalse(phase_rows["celery_process_manual_start"]["runtime_qa_done"])
         self.assertFalse(phase_rows["redis_broker_redacted_reachability"]["runtime_qa_done"])
@@ -29545,7 +29559,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(cached_receipt["append_only_worker_log_verified"])
         self.assertTrue(cached_receipt["task_log_persistence_verified"])
         self.assertTrue(cached_receipt["local_task_control_metadata_verified"])
-        self.assertFalse(cached_receipt["cross_process_task_control_verified"])
+        self.assertTrue(cached_receipt["cross_process_task_control_verified"])
         self.assertFalse(cached_receipt["production_worker_complete"])
         self.assertFalse(cached_receipt["external_calls_triggered"])
 
@@ -29612,12 +29626,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         self.assertEqual(ltg06["status"], "observed_worker_direct_runtime_evidence_production_pending")
         self.assertEqual(ltg06["row_count"], 7)
-        self.assertEqual(ltg06["pending_stage_count"], 3)
-        self.assertEqual(ltg06["production_blocker_count"], 3)
-        self.assertEqual(ltg06["direct_evidence_stage_count"], 4)
+        self.assertEqual(ltg06["pending_stage_count"], 2)
+        self.assertEqual(ltg06["production_blocker_count"], 2)
+        self.assertEqual(ltg06["direct_evidence_stage_count"], 5)
         self.assertEqual(
             set(ltg06["direct_evidence_stage_keys"]),
             {
+                "cross_process_retry_cancel_lock_dedupe",
                 "append_only_worker_logs",
                 "scheduler_default_off_runtime",
                 "provider_model_no_autoschedule_boundary",
@@ -29645,7 +29660,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ltg06["task_log_persistence_verified"])
         self.assertTrue(ltg06["local_task_control_metadata_verified"])
         self.assertTrue(ltg06["append_only_worker_log_verified"])
-        self.assertFalse(ltg06["cross_process_task_control_verified"])
+        self.assertTrue(ltg06["cross_process_task_control_verified"])
         self.assertFalse(ltg06["activation_ready"])
         self.assertFalse(ltg06["production_worker_complete"])
         self.assertFalse(ltg06["external_calls_triggered"])
@@ -29657,7 +29672,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg06["can_close_from_observed_row"])
 
         migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
-        self.assertEqual(migration_goals["LTG-06"]["observed_stage_scope_pending_count"], 3)
+        self.assertEqual(migration_goals["LTG-06"]["observed_stage_scope_pending_count"], 2)
         self.assertFalse(migration_goals["LTG-06"]["observed_stage_scope_can_close_goal"])
 
     def test_worker_runtime_qa_execution_request_rejects_scope_mismatch_without_process_start(self):
