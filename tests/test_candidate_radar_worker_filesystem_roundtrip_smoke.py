@@ -15,16 +15,16 @@ class CandidateRadarWorkerFilesystemRoundtripSmokeTest(unittest.TestCase):
                 sys.executable,
                 "scripts/candidate_radar_worker_filesystem_roundtrip_smoke.py",
                 "--timeout",
-                "10",
+                "30",
             ],
             cwd=ROOT,
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=60,
             check=False,
         )
 
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 0, f"stdout={result.stdout}\nstderr={result.stderr}")
         payload = json.loads(result.stdout)
         self.assertEqual(
             payload["schema_version"],

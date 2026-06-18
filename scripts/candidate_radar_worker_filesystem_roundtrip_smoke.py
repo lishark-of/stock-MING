@@ -225,8 +225,8 @@ def run_smoke(timeout: float) -> dict[str, Any]:
                     }
                 )
                 deep_scan_returned = deep_scan_result.get(timeout=timeout)
-    except Exception:
-        return _failure("candidate_radar_worker_filesystem_roundtrip_exception")
+    except Exception as exc:
+        return _failure(f"candidate_radar_worker_filesystem_roundtrip_exception:{type(exc).__name__}")
 
     full_pool_call_rows = full_pool_returned.get("call_ledger") if isinstance(full_pool_returned, dict) else []
     full_pool_first_call = next((row for row in full_pool_call_rows if isinstance(row, dict)), {})

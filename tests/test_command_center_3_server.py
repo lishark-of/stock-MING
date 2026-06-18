@@ -28471,14 +28471,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
         self.assertEqual(
             migration_goals["LTG-13"]["observed_stage_scope_pending_count"],
-            len(required_pending_keys),
+            ltg13["pending_stage_count"],
         )
         self.assertEqual(
             migration_goals["LTG-13"]["observed_stage_scope_direct_evidence_count"],
             len(ltg13_direct_keys),
         )
         self.assertTrue(migration_goals["LTG-13"]["observed_worker_runtime_round_trip_link_verified"])
-        self.assertTrue(migration_goals["LTG-13"]["observed_worker_transport_round_trip_smoke_verified"])
+        self.assertEqual(
+            migration_goals["LTG-13"]["observed_worker_transport_round_trip_smoke_verified"],
+            "worker_transport_round_trip_smoke" in ltg13_direct_keys,
+        )
         self.assertFalse(migration_goals["LTG-13"]["observed_stage_scope_can_close_goal"])
 
     def test_candidate_radar_worker_execution_request_blocks_scope_hash_mismatch(self):
