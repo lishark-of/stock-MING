@@ -3732,6 +3732,10 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         direct_stage_keys.append("local_deep_scan_review_receipt")
     if worker_runtime_round_trip_link_done:
         direct_stage_keys.append("worker_runtime_round_trip_link")
+    if worker_full_pool_fallback_done:
+        direct_stage_keys.append("local_worker_full_pool_fallback_receipt")
+    if worker_deep_scan_fallback_done:
+        direct_stage_keys.append("local_worker_deep_scan_fallback_receipt")
     if browser_visual_performance_done:
         direct_stage_keys.append("browser_visual_performance_promotion")
     if legacy_retirement_review_done:

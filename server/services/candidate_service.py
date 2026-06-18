@@ -153,6 +153,8 @@ CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS = (
     "local_full_pool_execution_receipt",
     "local_deep_scan_review_receipt",
     "worker_runtime_round_trip_link",
+    "local_worker_full_pool_fallback_receipt",
+    "local_worker_deep_scan_fallback_receipt",
     "worker_full_pool_execution",
     "worker_deep_scan_execution",
     "provider_parity_acceptance",
@@ -166,6 +168,8 @@ CANDIDATE_RADAR_PRODUCTION_STAGE_LABELS = {
     "local_full_pool_execution_receipt": "local full-pool-like receipt stays local evidence",
     "local_deep_scan_review_receipt": "local deep-scan review stays local evidence",
     "worker_runtime_round_trip_link": "local worker runtime round-trip evidence is linked",
+    "local_worker_full_pool_fallback_receipt": "local full-pool worker-fallback execution receipt is visible",
+    "local_worker_deep_scan_fallback_receipt": "local deep-scan worker-fallback execution receipt is visible",
     "worker_full_pool_execution": "worker-backed full-pool execution evidence is required",
     "worker_deep_scan_execution": "worker-backed deep-scan execution evidence is required",
     "provider_parity_acceptance": "provider-backed legacy signal parity is required",
@@ -179,6 +183,8 @@ LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS = {
     "local_full_pool_execution_receipt",
     "local_deep_scan_review_receipt",
     "worker_runtime_round_trip_link",
+    "local_worker_full_pool_fallback_receipt",
+    "local_worker_deep_scan_fallback_receipt",
 }
 CANDIDATE_TUSHARE_ACCEPTANCE_ENV_KEYS = ("TUSHARE_TOKEN",)
 CANDIDATE_DEEPSEEK_ACCEPTANCE_ENV_KEYS = ("DEEPSEEK_API_KEY", "DEEPSEEK_TOKEN_1", "DEEPSEEK_TOKEN_2")
@@ -8656,6 +8662,34 @@ def _candidate_radar_production_stage_scope_manifest(
                 f"task_id={worker_runtime_link.get('worker_runtime_execution_task_id') or ''}"
             ),
             "missing": [] if worker_runtime_round_trip_ready else ["local worker runtime round-trip link"],
+        },
+        "local_worker_full_pool_fallback_receipt": {
+            "direct": worker_full_pool_fallback_visible,
+            "status": (
+                "direct_evidence_ready_local_full_pool_worker_fallback"
+                if worker_full_pool_fallback_visible
+                else "local_worker_fallback_receipt_pending"
+            ),
+            "evidence": (
+                f"local_worker_fallback_full_pool_done={worker_full_pool_fallback_visible}; "
+                "real_worker_done=false"
+            ),
+            "missing": [] if worker_full_pool_fallback_visible else ["local full-pool worker-fallback receipt"],
+            "local_worker_fallback_evidence_present": worker_full_pool_fallback_visible,
+        },
+        "local_worker_deep_scan_fallback_receipt": {
+            "direct": worker_deep_scan_fallback_visible,
+            "status": (
+                "direct_evidence_ready_local_deep_scan_worker_fallback"
+                if worker_deep_scan_fallback_visible
+                else "local_worker_fallback_receipt_pending"
+            ),
+            "evidence": (
+                f"local_worker_deep_scan_fallback_done={worker_deep_scan_fallback_visible}; "
+                "real_worker_done=false"
+            ),
+            "missing": [] if worker_deep_scan_fallback_visible else ["local deep-scan worker-fallback receipt"],
+            "local_worker_fallback_evidence_present": worker_deep_scan_fallback_visible,
         },
         "worker_full_pool_execution": {
             "direct": worker_full_pool_execution_ready,

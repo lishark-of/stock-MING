@@ -7626,7 +7626,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("search_quant_provider_model_acceptance", stage_manifest["pending_stage_keys"])
         self.assertTrue(
             set(stage_manifest["worker_fallback_evidence_stage_keys"]).issubset(
-                {"worker_full_pool_execution", "worker_deep_scan_execution"}
+                {
+                    "local_worker_full_pool_fallback_receipt",
+                    "local_worker_deep_scan_fallback_receipt",
+                    "worker_full_pool_execution",
+                    "worker_deep_scan_execution",
+                }
             )
         )
         self.assertEqual(
@@ -12591,6 +12596,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "local_full_pool_execution_receipt",
             "local_deep_scan_review_receipt",
             "worker_runtime_round_trip_link",
+            "local_worker_full_pool_fallback_receipt",
+            "local_worker_deep_scan_fallback_receipt",
             "worker_full_pool_execution",
             "worker_deep_scan_execution",
             "provider_parity_acceptance",
@@ -12603,6 +12610,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "quick_scan_task_pipeline",
             "local_full_pool_execution_receipt",
             "local_deep_scan_review_receipt",
+            "local_worker_full_pool_fallback_receipt",
+            "local_worker_deep_scan_fallback_receipt",
             "browser_visual_performance_promotion",
             "legacy_retirement_review",
         }
@@ -14634,7 +14643,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 77)
+        self.assertEqual(catalog["task_count"], 78)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -14653,7 +14662,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 77)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 78)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -14664,8 +14673,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 79)
-        self.assertEqual(route_coverage["task_creation_route_count"], 77)
+        self.assertEqual(route_coverage["known_post_route_count"], 80)
+        self.assertEqual(route_coverage["task_creation_route_count"], 78)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -14674,11 +14683,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 77)
+        self.assertEqual(implementation_status["task_count"], 78)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 74)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 75)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 75)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 76)
         self.assertEqual(implementation_status["external_capable_task_count"], 6)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -14716,6 +14725,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_tauri_backend_startup_runtime_review",
                 "run_tauri_config_log_runtime_review",
                 "run_tauri_signing_notarization_review",
+                "run_tauri_production_package_promotion_review",
                 "run_streamlit_ordinary_workflow_parity_review",
                 "run_candidate_radar_quick_scan",
                 "run_candidate_radar_quant_projection",
@@ -14796,6 +14806,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_tauri_backend_startup_runtime_review",
                 "run_tauri_config_log_runtime_review",
                 "run_tauri_signing_notarization_review",
+                "run_tauri_production_package_promotion_review",
                 "run_streamlit_ordinary_workflow_parity_review",
                 "run_candidate_radar_quick_scan",
                 "run_candidate_radar_quant_projection",
@@ -14909,6 +14920,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertIn(
             "POST /api/desktop/tauri-signing-notarization-review",
+            route_coverage["known_post_routes"],
+        )
+        self.assertIn(
+            "POST /api/desktop/tauri-production-package-promotion-review",
             route_coverage["known_post_routes"],
         )
         self.assertIn("POST /api/legacy/ordinary-workflow-parity-review", route_coverage["known_post_routes"])
@@ -16903,6 +16918,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/desktop/tauri-backend-startup-runtime-review", discovered_routes)
         self.assertIn("POST /api/desktop/tauri-config-log-runtime-review", discovered_routes)
         self.assertIn("POST /api/desktop/tauri-signing-notarization-review", discovered_routes)
+        self.assertIn("POST /api/desktop/tauri-production-package-promotion-review", discovered_routes)
         self.assertIn("POST /api/legacy/ordinary-workflow-parity-review", discovered_routes)
         self.assertIn("POST /api/data-health/trade-cal-provider-acceptance-execution-request", discovered_routes)
         self.assertIn("POST /api/data-health/trade-cal-provider-acceptance-promotion-review", discovered_routes)
@@ -16960,16 +16976,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 74)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 75)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 75)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 76)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 74)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 75)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 75)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 76)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -17826,9 +17842,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 74)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 75)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 75)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 76)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -18052,9 +18068,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 74)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 75)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 75)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 76)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 6)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -18087,9 +18103,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 74)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 75)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 75)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 76)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -22470,7 +22486,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 77)
+        self.assertEqual(task_catalog["data"]["task_count"], 78)
         self.assertIn(
             "POST /api/desktop/tauri-package-artifact-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
@@ -22497,6 +22513,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertIn(
             "POST /api/desktop/tauri-signing-notarization-review",
+            task_catalog["data"]["route_coverage"]["known_post_routes"],
+        )
+        self.assertIn(
+            "POST /api/desktop/tauri-production-package-promotion-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
         )
         self.assertIn(
@@ -27990,7 +28010,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(legacy_review["ok"])
         cache_after_legacy_review = self.client.get("/api/candidate-radar/cache").json()["data"]
         radar_stage_manifest = cache_after_legacy_review["candidate_radar_production_stage_scope_manifest"]
-        self.assertEqual(radar_stage_manifest["direct_evidence_stage_count"], 7)
+        self.assertEqual(radar_stage_manifest["direct_evidence_stage_count"], 9)
         self.assertEqual(radar_stage_manifest["pending_stage_count"], 4)
         self.assertEqual(
             set(radar_stage_manifest["direct_evidence_stage_keys"]),
@@ -28000,6 +28020,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "local_full_pool_execution_receipt",
                 "local_deep_scan_review_receipt",
                 "worker_runtime_round_trip_link",
+                "local_worker_full_pool_fallback_receipt",
+                "local_worker_deep_scan_fallback_receipt",
                 "browser_visual_performance_promotion",
                 "legacy_retirement_review",
             },
@@ -28015,7 +28037,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(
             set(radar_stage_manifest["worker_fallback_evidence_stage_keys"]),
-            {"worker_full_pool_execution", "worker_deep_scan_execution"},
+            {
+                "local_worker_full_pool_fallback_receipt",
+                "local_worker_deep_scan_fallback_receipt",
+                "worker_full_pool_execution",
+                "worker_deep_scan_execution",
+            },
         )
         self.assertFalse(radar_stage_manifest["production_radar_replacement_complete"])
         self.assertFalse(radar_stage_manifest["provider_backed_acceptance_done"])
@@ -28077,10 +28104,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         ltg13 = observed_stage_rows["LTG-13"]
 
         self.assertEqual(ltg13["status"], "observed_candidate_radar_direct_evidence_production_pending")
-        self.assertEqual(ltg13["row_count"], 11)
+        self.assertEqual(ltg13["row_count"], 13)
         self.assertEqual(ltg13["pending_stage_count"], 4)
         self.assertEqual(ltg13["production_blocker_count"], 4)
-        self.assertEqual(ltg13["direct_evidence_stage_count"], 7)
+        self.assertEqual(ltg13["direct_evidence_stage_count"], 9)
         self.assertEqual(
             set(ltg13["direct_evidence_stage_keys"]),
             {
@@ -28089,6 +28116,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "local_full_pool_execution_receipt",
                 "local_deep_scan_review_receipt",
                 "worker_runtime_round_trip_link",
+                "local_worker_full_pool_fallback_receipt",
+                "local_worker_deep_scan_fallback_receipt",
                 "browser_visual_performance_promotion",
                 "legacy_retirement_review",
             },
@@ -28128,7 +28157,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
         self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_pending_count"], 4)
-        self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_direct_evidence_count"], 7)
+        self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_direct_evidence_count"], 9)
         self.assertTrue(migration_goals["LTG-13"]["observed_worker_runtime_round_trip_link_verified"])
         self.assertFalse(migration_goals["LTG-13"]["observed_stage_scope_can_close_goal"])
 

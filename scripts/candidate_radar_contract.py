@@ -92,6 +92,8 @@ REQUIRED_CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS = {
     "local_full_pool_execution_receipt",
     "local_deep_scan_review_receipt",
     "worker_runtime_round_trip_link",
+    "local_worker_full_pool_fallback_receipt",
+    "local_worker_deep_scan_fallback_receipt",
     "worker_full_pool_execution",
     "worker_deep_scan_execution",
     "provider_parity_acceptance",
@@ -105,6 +107,8 @@ CANDIDATE_RADAR_PRODUCTION_STAGE_LABELS = {
     "local_full_pool_execution_receipt": "local full-pool-like receipt stays local evidence",
     "local_deep_scan_review_receipt": "local deep-scan review stays local evidence",
     "worker_runtime_round_trip_link": "local worker runtime round-trip evidence is linked",
+    "local_worker_full_pool_fallback_receipt": "local full-pool worker-fallback execution receipt is visible",
+    "local_worker_deep_scan_fallback_receipt": "local deep-scan worker-fallback execution receipt is visible",
     "worker_full_pool_execution": "worker-backed full-pool execution evidence is required",
     "worker_deep_scan_execution": "worker-backed deep-scan execution evidence is required",
     "provider_parity_acceptance": "provider-backed legacy signal parity is required",
@@ -118,6 +122,8 @@ LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS = {
     "local_full_pool_execution_receipt",
     "local_deep_scan_review_receipt",
     "worker_runtime_round_trip_link",
+    "local_worker_full_pool_fallback_receipt",
+    "local_worker_deep_scan_fallback_receipt",
 }
 
 
@@ -750,6 +756,8 @@ def build_contract() -> dict[str, Any]:
         "quick_scan_task_pipeline",
         "local_full_pool_execution_receipt",
         "local_deep_scan_review_receipt",
+        "local_worker_full_pool_fallback_receipt",
+        "local_worker_deep_scan_fallback_receipt",
         "browser_visual_performance_promotion",
         "legacy_retirement_review",
     }
@@ -774,9 +782,14 @@ def build_contract() -> dict[str, Any]:
         and production_stage_scope_manifest.get("direct_evidence_stage_count") == len(expected_direct_stage_keys)
         and production_stage_scope_manifest.get("pending_stage_count") == len(production_stage_scope_pending_keys)
         and production_stage_scope_manifest.get("production_blocker_count") == len(production_stage_scope_pending_keys)
-        and production_stage_scope_manifest.get("worker_fallback_evidence_stage_count") == 2
+        and production_stage_scope_manifest.get("worker_fallback_evidence_stage_count") == 4
         and set(production_stage_scope_manifest.get("worker_fallback_evidence_stage_keys") or [])
-        == {"worker_full_pool_execution", "worker_deep_scan_execution"}
+        == {
+            "local_worker_full_pool_fallback_receipt",
+            "local_worker_deep_scan_fallback_receipt",
+            "worker_full_pool_execution",
+            "worker_deep_scan_execution",
+        }
         and all(
             row.get("scope") == "candidate_radar_production_stage_scope_manifest"
             and row.get("target_status") == "production_replacement_direct_evidence_required"
@@ -816,6 +829,17 @@ def build_contract() -> dict[str, Any]:
             and len(_list(row.get("missing_evidence"))) >= 1
             for row in production_stage_scope_rows
             if row.get("stage_key") in {"worker_full_pool_execution", "worker_deep_scan_execution"}
+        )
+        and all(
+            row.get("direct_evidence_complete") is True
+            and row.get("production_blocker") is False
+            and row.get("worker_fallback_direct_evidence_done") is False
+            and row.get("local_worker_fallback_evidence_present") is True
+            and row.get("local_worker_fallback_evidence_done") is True
+            and _list(row.get("missing_evidence")) == []
+            for row in production_stage_scope_rows
+            if row.get("stage_key")
+            in {"local_worker_full_pool_fallback_receipt", "local_worker_deep_scan_fallback_receipt"}
         )
     )
     no_loss_browser_row = _dict(no_loss_rows.get(NO_FEATURE_LOSS_BROWSER_REVIEW_KEY))
