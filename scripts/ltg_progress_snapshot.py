@@ -104,6 +104,22 @@ def _compact_handoff_rows(rows: list[Any]) -> list[dict[str, Any]]:
                     "supporting_worker_runtime_dependency_redis_manual_resolution_blockers"
                 )
                 or [],
+                "supporting_worker_runtime_dependency_local_non_redis_runtime_ready": row.get(
+                    "supporting_worker_runtime_dependency_local_non_redis_runtime_ready"
+                )
+                is True,
+                "supporting_worker_runtime_dependency_local_non_redis_runtime_blocking_checks": row.get(
+                    "supporting_worker_runtime_dependency_local_non_redis_runtime_blocking_checks"
+                )
+                or [],
+                "supporting_worker_runtime_dependency_production_redis_evidence_blocked": row.get(
+                    "supporting_worker_runtime_dependency_production_redis_evidence_blocked"
+                )
+                is True,
+                "supporting_worker_runtime_dependency_production_redis_evidence_blockers": row.get(
+                    "supporting_worker_runtime_dependency_production_redis_evidence_blockers"
+                )
+                or [],
                 "supporting_worker_runtime_dependency_redis_checked_path_count": int(
                     row.get("supporting_worker_runtime_dependency_redis_checked_path_count") or 0
                 ),

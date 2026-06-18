@@ -2643,6 +2643,16 @@ def _latest_worker_runtime_dependency_preflight_preview() -> dict[str, Any]:
         "redis_server_checked_paths": preflight_map.get("redis_server_checked_paths") or [],
         "redis_url_configured": preflight_map.get("redis_url_configured") is True,
         "redis_config_sources_present": preflight_map.get("redis_config_sources_present") or [],
+        "local_non_redis_runtime_evidence_ready": preflight_map.get(
+            "local_non_redis_runtime_evidence_ready"
+        )
+        is True,
+        "local_non_redis_runtime_blocking_checks": preflight_map.get(
+            "local_non_redis_runtime_blocking_checks"
+        )
+        or [],
+        "production_redis_evidence_blocked": preflight_map.get("production_redis_evidence_blocked") is True,
+        "production_redis_evidence_blockers": preflight_map.get("production_redis_evidence_blockers") or [],
         "redis_manual_resolution_required": preflight_map.get("redis_manual_resolution_required") is True,
         "redis_manual_resolution_blockers": preflight_map.get("redis_manual_resolution_blockers") or [],
         "redis_manual_resolution_next_steps": preflight_map.get("redis_manual_resolution_next_steps") or [],
@@ -4502,6 +4512,20 @@ def _build_ltg_future_handoff_preview_rows(
             ),
             "supporting_worker_runtime_dependency_redis_manual_resolution_blockers": (
                 dependency_map.get("redis_manual_resolution_blockers") if dependency_visible else []
+            ),
+            "supporting_worker_runtime_dependency_local_non_redis_runtime_ready": (
+                dependency_map.get("local_non_redis_runtime_evidence_ready") is True
+                if dependency_visible
+                else False
+            ),
+            "supporting_worker_runtime_dependency_local_non_redis_runtime_blocking_checks": (
+                dependency_map.get("local_non_redis_runtime_blocking_checks") if dependency_visible else []
+            ),
+            "supporting_worker_runtime_dependency_production_redis_evidence_blocked": (
+                dependency_map.get("production_redis_evidence_blocked") is True if dependency_visible else False
+            ),
+            "supporting_worker_runtime_dependency_production_redis_evidence_blockers": (
+                dependency_map.get("production_redis_evidence_blockers") if dependency_visible else []
             ),
             "supporting_worker_runtime_dependency_redis_checked_path_count": (
                 len(dependency_map.get("redis_server_checked_paths") or []) if dependency_visible else 0

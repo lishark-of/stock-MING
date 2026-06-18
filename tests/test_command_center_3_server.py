@@ -11073,6 +11073,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("supporting_worker_runtime_dependency_preflight_blocking_checks", script)
         self.assertIn("supporting_worker_runtime_dependency_redis_server_resolution", script)
         self.assertIn("supporting_worker_runtime_dependency_redis_manual_resolution_blockers", script)
+        self.assertIn("supporting_worker_runtime_dependency_local_non_redis_runtime_ready", script)
+        self.assertIn("supporting_worker_runtime_dependency_production_redis_evidence_blocked", script)
         self.assertIn("linked_observed_stage_scope_pending_counts", script)
         self.assertIn("--ltg", script)
         self.assertIn("focus_ltg_ids", script)
@@ -11137,6 +11139,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("supporting_worker_runtime_dependency_redis_url_configured", radar_handoff)
         self.assertIn("supporting_worker_runtime_dependency_redis_manual_resolution_required", radar_handoff)
         self.assertIn("supporting_worker_runtime_dependency_redis_manual_resolution_blockers", radar_handoff)
+        self.assertIn("supporting_worker_runtime_dependency_local_non_redis_runtime_ready", radar_handoff)
+        self.assertIn("supporting_worker_runtime_dependency_local_non_redis_runtime_blocking_checks", radar_handoff)
+        self.assertIn("supporting_worker_runtime_dependency_production_redis_evidence_blocked", radar_handoff)
+        self.assertIn("supporting_worker_runtime_dependency_production_redis_evidence_blockers", radar_handoff)
         self.assertIn("supporting_worker_runtime_dependency_redis_checked_path_count", radar_handoff)
         self.assertIn(
             radar_handoff["supporting_worker_runtime_dependency_preflight_status"],
@@ -11149,6 +11155,26 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIsInstance(
             radar_handoff["supporting_worker_runtime_dependency_redis_manual_resolution_blockers"],
             list,
+        )
+        self.assertIsInstance(
+            radar_handoff["supporting_worker_runtime_dependency_local_non_redis_runtime_blocking_checks"],
+            list,
+        )
+        self.assertIsInstance(
+            radar_handoff["supporting_worker_runtime_dependency_production_redis_evidence_blockers"],
+            list,
+        )
+        self.assertEqual(
+            radar_handoff["supporting_worker_runtime_dependency_preflight_blocks_manual_runtime_evidence"],
+            radar_handoff["supporting_worker_runtime_dependency_preflight_blocker_count"] > 0,
+        )
+        self.assertEqual(
+            radar_handoff["supporting_worker_runtime_dependency_local_non_redis_runtime_ready"],
+            not radar_handoff["supporting_worker_runtime_dependency_local_non_redis_runtime_blocking_checks"],
+        )
+        self.assertEqual(
+            radar_handoff["supporting_worker_runtime_dependency_production_redis_evidence_blocked"],
+            bool(radar_handoff["supporting_worker_runtime_dependency_production_redis_evidence_blockers"]),
         )
         self.assertEqual(worker_queue["target_acceptance_mode"], "worker_runtime_qa_and_promotion")
         self.assertIn("LTG-06", worker_queue["linked_observed_stage_scope_pending_counts"])
@@ -31842,6 +31868,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIsInstance(dependency_preflight["redis_manual_resolution_required"], bool)
         self.assertIsInstance(dependency_preflight["redis_manual_resolution_blockers"], list)
         self.assertIsInstance(dependency_preflight["redis_manual_resolution_next_steps"], list)
+        self.assertIsInstance(dependency_preflight["local_non_redis_runtime_evidence_ready"], bool)
+        self.assertIsInstance(dependency_preflight["local_non_redis_runtime_blocking_checks"], list)
+        self.assertIsInstance(dependency_preflight["production_redis_evidence_blocked"], bool)
+        self.assertIsInstance(dependency_preflight["production_redis_evidence_blockers"], list)
         self.assertFalse(dependency_preflight["redis_url_exposed"])
         self.assertFalse(dependency_preflight["worker_started"])
         self.assertFalse(dependency_preflight["celery_worker_started"])
@@ -31891,15 +31921,46 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(redis_server_row["status"], dependency_preflight["redis_server_resolution"])
         self.assertIn("does not start redis-server", redis_server_row["evidence"])
+        self.assertFalse(redis_server_row["blocks_manual_runtime_evidence"])
+        self.assertEqual(
+            redis_server_row["blocks_production_redis_evidence"],
+            not dependency_preflight["redis_server_binary_available"],
+        )
         self.assertIn("value redacted", redis_url_row["evidence"])
         self.assertIn("safe source label", redis_url_row["evidence"])
+        self.assertFalse(redis_url_row["blocks_manual_runtime_evidence"])
+        self.assertEqual(
+            redis_url_row["blocks_production_redis_evidence"],
+            not dependency_preflight["redis_url_configured"],
+        )
+        self.assertEqual(
+            set(dependency_preflight["local_non_redis_runtime_blocking_checks"]),
+            {
+                row["check"]
+                for row in dependency_rows.values()
+                if row["check"] in {"python_celery_package", "python_redis_package", "celery_command"}
+                and row["blocks_manual_runtime_evidence"]
+            },
+        )
+        self.assertEqual(
+            dependency_preflight["local_non_redis_runtime_evidence_ready"],
+            not dependency_preflight["local_non_redis_runtime_blocking_checks"],
+        )
         self.assertEqual(
             set(dependency_preflight["redis_manual_resolution_blockers"]),
             {
                 row["check"]
                 for row in (redis_server_row, redis_url_row)
-                if row["blocks_manual_runtime_evidence"]
+                if row["blocks_production_redis_evidence"]
             },
+        )
+        self.assertEqual(
+            set(dependency_preflight["production_redis_evidence_blockers"]),
+            set(dependency_preflight["redis_manual_resolution_blockers"]),
+        )
+        self.assertEqual(
+            dependency_preflight["production_redis_evidence_blocked"],
+            bool(dependency_preflight["production_redis_evidence_blockers"]),
         )
         self.assertEqual(
             dependency_preflight["redis_manual_resolution_required"],

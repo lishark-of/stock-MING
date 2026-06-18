@@ -358,6 +358,11 @@ def _worker_runtime_dependency_preflight(
         else "missing"
     )
     redis_config_sources = list(redis_config_source_labels or [])
+    local_runtime_blocking_checks = {
+        "python_celery_package",
+        "python_redis_package",
+        "celery_command",
+    }
     rows = [
         {
             "check": "python_celery_package",
@@ -384,7 +389,8 @@ def _worker_runtime_dependency_preflight(
             "check": "redis_server_binary",
             "status": redis_server_resolution,
             "required_for_production_worker": True,
-            "blocks_manual_runtime_evidence": not redis_server_binary_available,
+            "blocks_manual_runtime_evidence": False,
+            "blocks_production_redis_evidence": not redis_server_binary_available,
             "evidence": "PATH command lookup plus known local Redis binary paths; does not start redis-server",
         },
         {
@@ -398,7 +404,8 @@ def _worker_runtime_dependency_preflight(
             "check": "redis_url_configured",
             "status": "configured_not_pinged" if redis_configured else "missing",
             "required_for_production_worker": True,
-            "blocks_manual_runtime_evidence": not redis_configured,
+            "blocks_manual_runtime_evidence": False,
+            "blocks_production_redis_evidence": not redis_configured,
             "evidence": "supported broker URL env presence boolean only; safe source label only; value redacted",
         },
         {
@@ -410,6 +417,9 @@ def _worker_runtime_dependency_preflight(
         },
     ]
     blocker_count = sum(1 for row in rows if row["blocks_manual_runtime_evidence"])
+    production_redis_blockers = [
+        row["check"] for row in rows if row.get("blocks_production_redis_evidence") is True
+    ]
     return {
         "schema_version": "worker_runtime_dependency_preflight.v1",
         "scope": "local_dependency_visibility_no_process_start_no_broker_ping",
@@ -440,12 +450,21 @@ def _worker_runtime_dependency_preflight(
         "redis_config_source_count": len(redis_config_sources),
         "redis_config_values_exposed": False,
         "redis_config_env_names_exposed": False,
+        "local_non_redis_runtime_evidence_ready": blocker_count == 0,
+        "local_non_redis_runtime_blocking_checks": [
+            row["check"]
+            for row in rows
+            if row["check"] in local_runtime_blocking_checks
+            and row["blocks_manual_runtime_evidence"]
+        ],
+        "production_redis_evidence_blocked": bool(production_redis_blockers),
+        "production_redis_evidence_blockers": production_redis_blockers,
         "redis_manual_resolution_required": (not redis_server_binary_available) or (not redis_configured),
         "redis_manual_resolution_blockers": [
             row["check"]
             for row in rows
             if row["check"] in {"redis_server_binary", "redis_url_configured"}
-            and row["blocks_manual_runtime_evidence"]
+            and row.get("blocks_production_redis_evidence") is True
         ],
         "redis_manual_resolution_next_steps": [
             "install or expose a local redis-server binary, or provide an approved remote broker URL",
