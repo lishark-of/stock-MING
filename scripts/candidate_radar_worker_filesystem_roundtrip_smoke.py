@@ -38,10 +38,12 @@ from worker.celery_app import CELERY_AVAILABLE, celery_app  # noqa: E402
 
 if celery_app is not None:
     from server.services import candidate_service  # noqa: E402
+    from server.services import task_service  # noqa: E402
     from worker.tasks_candidate import run_candidate_radar_deep_scan_worker_fallback  # noqa: E402
     from worker.tasks_candidate import run_candidate_radar_full_pool_local_scan  # noqa: E402
 else:
     candidate_service = None
+    task_service = None
     run_candidate_radar_deep_scan_worker_fallback = None
     run_candidate_radar_full_pool_local_scan = None
 
@@ -179,7 +181,11 @@ def run_smoke(timeout: float) -> dict[str, Any]:
         with tempfile.TemporaryDirectory(prefix="stock_ming_candidate_worker_fs_") as tmp:
             _configure_filesystem_broker(Path(tmp))
             if candidate_service is not None:
-                candidate_service.SQLITE_META_PATH = Path(tmp) / "candidate_radar_worker_meta.sqlite"
+                isolated_meta_path = Path(tmp) / "candidate_radar_worker_meta.sqlite"
+                candidate_service.SQLITE_META_PATH = isolated_meta_path
+                if task_service is not None:
+                    task_service.SQLITE_META_PATH = isolated_meta_path
+                    task_service._TASKS.clear()
             with start_worker(celery_app, perform_ping_check=False, pool="solo", loglevel="WARNING"):
                 full_pool_result = run_candidate_radar_full_pool_local_scan.delay(
                     {

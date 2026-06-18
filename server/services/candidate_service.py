@@ -12035,6 +12035,12 @@ def _build_candidate_radar_packet(
     excluded_candidates = _as_list(radar_packet.get("excluded_candidates"))[:10]
     evidence_recovery_actions = _as_list(snapshot_map.get("next_ticket_evidence_recovery_actions"))[:10]
     candidate_rows = _candidate_rows(candidates)
+    previous_candidate_rows = [
+        dict(row) for row in _as_list(previous_map.get("candidate_rows")) if isinstance(row, dict)
+    ]
+    if not candidate_rows and previous_candidate_rows and scan_mode in PERSISTED_TASK_SCAN_MODES:
+        candidate_rows = previous_candidate_rows[:FAST_SCAN_DISPLAY_CANDIDATE_LIMIT]
+        candidate_input_count = max(candidate_input_count, len(previous_candidate_rows))
     candidate_display_truncated_count = max(0, candidate_input_count - len(candidate_rows))
     counts = _candidate_counts(candidate_rows)
     parity_inventory = _legacy_parity_inventory(

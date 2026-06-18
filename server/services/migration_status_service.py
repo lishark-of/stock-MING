@@ -4454,10 +4454,20 @@ def _build_ltg_future_handoff_preview_rows(
         latest_ready_step.get("receipt_ready_for_manual_runtime_qa_task_submission") is True
         or latest_ready_step.get("receipt_target_task_type") == "run_worker_runtime_qa_execution"
     )
-    dependency_visible = (
-        (requires_worker_task or requires_runtime_qa_task) and dependency_map.get("preflight_visible") is True
+    dependency_required = requires_worker_task or requires_runtime_qa_task
+    dependency_visible = dependency_required and dependency_map.get("preflight_visible") is True
+    dependency_missing_blocking_checks = ["worker_runtime_dependency_preflight_missing"] if dependency_required else []
+    dependency_blocking_checks = (
+        dependency_map.get("blocking_checks") if dependency_visible else dependency_missing_blocking_checks
     )
-    dependency_blocker_count = int(dependency_map.get("blocker_count") or 0) if dependency_visible else 0
+    dependency_local_non_redis_blocking_checks = (
+        dependency_map.get("local_non_redis_runtime_blocking_checks")
+        if dependency_visible
+        else dependency_missing_blocking_checks
+    )
+    dependency_blocker_count = (
+        int(dependency_map.get("blocker_count") or 0) if dependency_visible else len(dependency_missing_blocking_checks)
+    )
     return [
         {
             "status": status,
@@ -4499,7 +4509,7 @@ def _build_ltg_future_handoff_preview_rows(
             ),
             "supporting_worker_runtime_dependency_preflight_blocker_count": dependency_blocker_count,
             "supporting_worker_runtime_dependency_preflight_blocking_checks": (
-                dependency_map.get("blocking_checks") if dependency_visible else []
+                dependency_blocking_checks
             ),
             "supporting_worker_runtime_dependency_redis_server_resolution": (
                 dependency_map.get("redis_server_resolution") if dependency_visible else ""
@@ -4519,7 +4529,7 @@ def _build_ltg_future_handoff_preview_rows(
                 else False
             ),
             "supporting_worker_runtime_dependency_local_non_redis_runtime_blocking_checks": (
-                dependency_map.get("local_non_redis_runtime_blocking_checks") if dependency_visible else []
+                dependency_local_non_redis_blocking_checks
             ),
             "supporting_worker_runtime_dependency_production_redis_evidence_blocked": (
                 dependency_map.get("production_redis_evidence_blocked") is True if dependency_visible else False
