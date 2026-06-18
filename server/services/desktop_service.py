@@ -116,7 +116,11 @@ def _tauri_build_artifact_summary() -> dict[str, Any]:
     bundle_app_root = bundle_root / "macos"
     bundle_dmg_root = bundle_root / "dmg"
     bundle_app_paths = sorted(path for path in bundle_app_root.glob("*.app") if path.is_dir()) if bundle_app_root.exists() else []
-    bundle_dmg_paths = sorted(path for path in bundle_dmg_root.glob("*.dmg") if path.is_file()) if bundle_dmg_root.exists() else []
+    bundle_dmg_candidates = []
+    for root in (bundle_dmg_root, bundle_app_root):
+        if root.exists():
+            bundle_dmg_candidates.extend(path for path in root.glob("*.dmg") if path.is_file())
+    bundle_dmg_paths = sorted(path for path in bundle_dmg_candidates if not path.name.startswith("rw."))
     temp_dmg_paths = sorted(path for path in bundle_root.glob("**/rw.*.dmg") if path.is_file()) if bundle_root.exists() else []
     bundle_app_count = len(bundle_app_paths)
     bundle_dmg_count = len(bundle_dmg_paths)

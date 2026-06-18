@@ -23176,6 +23176,49 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg09["contains_secret"])
         self.assertFalse(ltg09["can_close_from_observed_row"])
 
+    def test_tauri_build_artifact_detects_macos_dmg_and_ignores_temporary_dmg(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        root = Path(temp_dir.name)
+        release_binary = root / "stock_ming_command_center"
+        release_binary.write_bytes(b"\xcf\xfa\xed\xfe tauri release binary fixture")
+        release_binary.chmod(0o755)
+        bundle_root = root / "bundle"
+        macos_root = bundle_root / "macos"
+        dmg_root = bundle_root / "dmg"
+        app_bundle = macos_root / "stock-MING Command Center.app"
+        app_bundle.mkdir(parents=True)
+        dmg_root.mkdir(parents=True)
+        final_dmg = macos_root / "stock-MING Command Center_3.0.0_aarch64.dmg"
+        final_dmg.write_bytes(b"compressed dmg fixture")
+        temporary_dmg = macos_root / "rw.123.stock-MING Command Center_3.0.0_aarch64.dmg"
+        temporary_dmg.write_bytes(b"temporary dmg fixture")
+        original_release_binary = desktop_service.TAURI_RELEASE_BINARY
+        original_bundle_root = desktop_service.TAURI_BUNDLE_ROOT
+        desktop_service.TAURI_RELEASE_BINARY = release_binary
+        desktop_service.TAURI_BUNDLE_ROOT = bundle_root
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, desktop_service, "TAURI_RELEASE_BINARY", original_release_binary)
+        self.addCleanup(setattr, desktop_service, "TAURI_BUNDLE_ROOT", original_bundle_root)
+
+        artifact = desktop_service._tauri_build_artifact_summary()
+
+        self.assertTrue(artifact["binary_exists"])
+        self.assertTrue(artifact["binary_executable"])
+        self.assertTrue(artifact["packaged_app_bundle_detected"])
+        self.assertEqual(artifact["bundle_app_count"], 1)
+        self.assertTrue(artifact["distribution_dmg_detected"])
+        self.assertEqual(artifact["bundle_dmg_count"], 1)
+        self.assertTrue(artifact["bundle_dmg_path"].endswith("bundle/macos/stock-MING Command Center_3.0.0_aarch64.dmg"))
+        self.assertEqual(artifact["temporary_dmg_count"], 1)
+        self.assertTrue(artifact["temporary_dmg_ignored_for_distribution"])
+        self.assertNotIn("rw.123", artifact["bundle_dmg_path"])
+        self.assertFalse(artifact["build_command_executed_by_get_cache"])
+        self.assertFalse(artifact["external_calls_triggered"])
+        self.assertFalse(artifact["tushare_called"])
+        self.assertFalse(artifact["deepseek_called"])
+        self.assertFalse(artifact["github_called"])
+        self.assertTrue(artifact["does_not_execute_trades"])
+
     def test_tauri_packaged_runtime_launch_review_records_launch_smoke_without_production_completion(self):
         from storage.sqlite_meta import SQLiteMetaStore
 
