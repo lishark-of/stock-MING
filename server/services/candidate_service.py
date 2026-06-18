@@ -161,6 +161,7 @@ CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS = (
     "search_quant_provider_model_acceptance",
     "browser_visual_performance_promotion",
     "legacy_retirement_review",
+    "production_promotion_review",
 )
 CANDIDATE_RADAR_PRODUCTION_STAGE_LABELS = {
     "cache_render_boundary": "cache render stays read-only and scan-silent",
@@ -176,6 +177,7 @@ CANDIDATE_RADAR_PRODUCTION_STAGE_LABELS = {
     "search_quant_provider_model_acceptance": "searched-symbol provider/model projection evidence is required",
     "browser_visual_performance_promotion": "browser visual and performance promotion is required",
     "legacy_retirement_review": "legacy radar retirement review is required",
+    "production_promotion_review": "production promotion review is required",
 }
 LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS = {
     "cache_render_boundary",
@@ -8624,6 +8626,7 @@ def _candidate_radar_production_stage_scope_manifest(
         )
     )
     legacy_review_ready = legacy_review.get("local_review_ready") is True
+    production_promotion_review_ready = production_promotion.get("local_review_ready") is True
     stage_state = {
         "cache_render_boundary": {
             "direct": cache_render_ready,
@@ -8758,6 +8761,19 @@ def _candidate_radar_production_stage_scope_manifest(
             ),
             "evidence": f"legacy_retirement_review_visible={legacy_review_ready}; legacy_retirement_ready=false",
             "missing": [] if legacy_review_ready else ["legacy retirement review"],
+        },
+        "production_promotion_review": {
+            "direct": production_promotion_review_ready,
+            "status": (
+                "direct_evidence_ready_production_promotion_review_blocked"
+                if production_promotion_review_ready
+                else "direct_evidence_pending"
+            ),
+            "evidence": (
+                f"production_promotion_review_visible={production_promotion_review_ready}; "
+                "production_radar_replacement_complete=false"
+            ),
+            "missing": [] if production_promotion_review_ready else ["production promotion review"],
         },
     }
     rows = []

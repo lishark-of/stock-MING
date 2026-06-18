@@ -100,6 +100,7 @@ REQUIRED_CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS = {
     "search_quant_provider_model_acceptance",
     "browser_visual_performance_promotion",
     "legacy_retirement_review",
+    "production_promotion_review",
 }
 CANDIDATE_RADAR_PRODUCTION_STAGE_LABELS = {
     "cache_render_boundary": "cache render stays read-only and scan-silent",
@@ -115,6 +116,7 @@ CANDIDATE_RADAR_PRODUCTION_STAGE_LABELS = {
     "search_quant_provider_model_acceptance": "searched-symbol provider/model projection evidence is required",
     "browser_visual_performance_promotion": "browser visual and performance promotion is required",
     "legacy_retirement_review": "legacy radar retirement review is required",
+    "production_promotion_review": "production promotion review is required",
 }
 LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS = {
     "cache_render_boundary",
@@ -760,6 +762,7 @@ def build_contract() -> dict[str, Any]:
         "local_worker_deep_scan_fallback_receipt",
         "browser_visual_performance_promotion",
         "legacy_retirement_review",
+        "production_promotion_review",
     }
     base_pending_stage_keys = {
         "worker_full_pool_execution",
