@@ -36118,6 +36118,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(handoff["requires_separate_user_approved_provider_task"])
         self.assertFalse(handoff["worker_task_created_by_preview"])
         self.assertFalse(handoff["worker_execution_implemented_by_preview"])
+        self.assertTrue(handoff["supporting_worker_runtime_dependency_preflight_visible"])
+        self.assertEqual(
+            handoff["supporting_worker_runtime_dependency_preflight_status"],
+            "manual_runtime_dependency_ready",
+        )
+        self.assertEqual(handoff["supporting_worker_runtime_dependency_preflight_blocker_count"], 0)
+        self.assertEqual(handoff["supporting_worker_runtime_dependency_preflight_blocking_checks"], [])
+        self.assertTrue(handoff["supporting_worker_runtime_dependency_local_non_redis_runtime_ready"])
+        self.assertEqual(handoff["supporting_worker_runtime_dependency_local_non_redis_runtime_blocking_checks"], [])
+        self.assertTrue(handoff["supporting_worker_runtime_dependency_preflight_is_read_only"])
+        self.assertFalse(handoff["supporting_worker_runtime_dependency_preflight_starts_process"])
+        self.assertFalse(handoff["supporting_worker_runtime_dependency_preflight_pings_redis"])
         self.assertFalse(handoff["external_calls_triggered"])
 
     def test_factor_universe_worker_batch_research_receipt_is_local_task_record_only(self):
@@ -36273,6 +36285,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(handoff["future_task_type"], "run_factor_universe_worker_batch_research")
         self.assertFalse(handoff["worker_task_created_by_preview"])
         self.assertFalse(handoff["worker_execution_implemented_by_preview"])
+        self.assertTrue(handoff["supporting_worker_runtime_dependency_preflight_visible"])
+        self.assertEqual(
+            handoff["supporting_worker_runtime_dependency_preflight_status"],
+            "manual_runtime_dependency_ready",
+        )
+        self.assertEqual(handoff["supporting_worker_runtime_dependency_preflight_blocker_count"], 0)
+        self.assertEqual(handoff["supporting_worker_runtime_dependency_preflight_blocking_checks"], [])
+        self.assertTrue(handoff["supporting_worker_runtime_dependency_local_non_redis_runtime_ready"])
+        self.assertEqual(handoff["supporting_worker_runtime_dependency_local_non_redis_runtime_blocking_checks"], [])
+        self.assertTrue(handoff["supporting_worker_runtime_dependency_preflight_is_read_only"])
+        self.assertFalse(handoff["supporting_worker_runtime_dependency_preflight_starts_process"])
+        self.assertFalse(handoff["supporting_worker_runtime_dependency_preflight_pings_redis"])
         self.assertFalse(handoff["external_calls_triggered"])
 
     def test_ltg_stage_scope_observes_factor_universe_rank_zscore_direct_evidence_without_completion(self):

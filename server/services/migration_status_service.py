@@ -4619,6 +4619,10 @@ def _build_ltg_next_acceptance_action_rows(rows: list[dict[str, Any]]) -> list[d
             safe_context["worker_runtime_dependency_preflight_preview"] = (
                 _latest_worker_runtime_dependency_preflight_preview()
             )
+        if action["queue_id"] == "p3_factor_universe_worker_batch_research":
+            safe_context["worker_runtime_dependency_preflight_preview"] = (
+                _latest_worker_runtime_dependency_preflight_preview()
+            )
         if action["queue_id"] == "p4_storage_physical_execution":
             safe_context["storage_physical_execution_recipe_preview"] = (
                 _latest_storage_physical_execution_recipe_preview()
