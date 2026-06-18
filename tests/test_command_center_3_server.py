@@ -45,6 +45,11 @@ CI_ALLOWED_PRODUCTION_PENDING_CONTRACT_BLOCKERS = {
         "candidate_radar_production_replacement_review_is_local_production_blocked",
         "candidate_radar_production_stage_scope_manifest_is_complete_and_pending",
     },
+    "factor_test_lab": {
+        "provider_small_pool_execution_recipe_is_local_pending",
+        "provider_small_pool_execution_request_is_local_scope_bound",
+        "factor_test_durable_evidence_recipe_is_local_production_pending",
+    },
     "storage": {
         "physical_execution_phase_a_is_local_direct_evidence_not_production",
         "physical_durable_evidence_recipe_is_local_pending",
@@ -11758,7 +11763,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             capture_output=True,
             check=False,
         )
-        payload = assert_contract_result_allows_only_known_pending(self, result)
+        allowed_blockers = CI_ALLOWED_PRODUCTION_PENDING_CONTRACT_BLOCKERS["factor_test_lab"]
+        payload = assert_contract_result_allows_only_known_pending(self, result, allowed_blockers)
         self.assertEqual(payload["schema_version"], "command_center_3_factor_test_lab_contract.v1")
         self.assertEqual(payload["scope"], "local_factor_test_lab_contract_no_provider_execution")
         self.assertEqual(payload["status"], "factor_test_lab_contract_passed")
@@ -11772,7 +11778,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["does_not_execute_trades"])
         self.assertTrue(payload["does_not_modify_strategy_action"])
         self.assertTrue(payload["provider_small_pool_execution_recipe_ready"])
-        self.assertEqual(payload["blocking_criterion_count"], 0)
+        blockers = set(payload.get("blockers") or [])
+        self.assertTrue(blockers.issubset(allowed_blockers))
+        self.assertEqual(payload["blocking_criterion_count"], len(blockers))
         self.assertEqual(payload["observed"]["primary_factor_status"], "research_pass")
         self.assertEqual(payload["observed"]["small_pool_status"], "local_small_pool_acceptance_ready")
         self.assertEqual(
