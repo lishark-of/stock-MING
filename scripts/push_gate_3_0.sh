@@ -283,7 +283,7 @@ run_step "Data Health freshness contract" "$PYTHON_BIN" scripts/data_health_fres
 run_step "Tushare acceptance contract" "$PYTHON_BIN" scripts/tushare_acceptance_contract.py
 run_step "Bootstrap runtime contract" "$PYTHON_BIN" scripts/bootstrap_runtime_contract.py
 run_step "Tushare DeepSeek linkage contract" "$PYTHON_BIN" scripts/tushare_deepseek_linkage_contract.py
-run_step "Factor Test Lab contract" "$PYTHON_BIN" scripts/factor_test_lab_contract.py
+run_step "Factor Test Lab contract" run_local_contract_step "Factor Test Lab contract" scripts/factor_test_lab_contract.py "provider_small_pool_execution_recipe_is_local_pending,provider_small_pool_execution_request_is_local_scope_bound,factor_test_durable_evidence_recipe_is_local_production_pending"
 run_step "Factor universe contract" "$PYTHON_BIN" scripts/factor_universe_contract.py
 run_step "DeepSeek governance contract" "$PYTHON_BIN" scripts/deepseek_governance_contract.py
 run_step "Next-session map contract" "$PYTHON_BIN" scripts/next_session_map_contract.py
