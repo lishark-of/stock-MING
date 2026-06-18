@@ -31,6 +31,7 @@ export default function NextSessionMap() {
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [browserQaReceipt, setBrowserQaReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [streamlitParityReceipt, setStreamlitParityReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [productionPromotionReceipt, setProductionPromotionReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -65,6 +66,11 @@ export default function NextSessionMap() {
       setBrowserQaReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
     });
+  const reviewStreamlitParity = () =>
+    void postTask("/api/next-session/streamlit-parity-review", { review_scope: "next_session_same_packet_no_loss" }).then((res) => {
+      setStreamlitParityReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
   const reviewProductionPromotion = () =>
     void postTask("/api/next-session/production-promotion-review", { review_scope: "next_session_local_promotion_blocker_review" }).then((res) => {
       setProductionPromotionReceipt(res);
@@ -91,6 +97,8 @@ export default function NextSessionMap() {
   const browserQaEvidenceRows = rowsFromArray(packet.next_session_browser_qa_evidence_rows);
   const browserQaReview = (packet.next_session_browser_qa_review_contract as Record<string, unknown> | undefined) ?? {};
   const browserQaReviewRows = rowsFromArray(packet.next_session_browser_qa_review_rows);
+  const streamlitParityReview = (packet.next_session_streamlit_parity_review_contract as Record<string, unknown> | undefined) ?? {};
+  const streamlitParityReviewRows = rowsFromArray(packet.next_session_streamlit_parity_review_rows);
   const productionPromotionReview = (packet.next_session_production_promotion_review_contract as Record<string, unknown> | undefined) ?? {};
   const productionPromotionReviewRows = rowsFromArray(packet.next_session_production_promotion_review_rows);
   const durableEvidenceRecipe = (packet.next_session_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
@@ -164,10 +172,12 @@ export default function NextSessionMap() {
         <button onClick={refreshCache}>查看缓存</button>
         <button onClick={launchTask}>生成任务</button>
         <button onClick={reviewBrowserQa}>审查本地 QA</button>
+        <button onClick={reviewStreamlitParity}>审查 Streamlit parity</button>
         <button onClick={reviewProductionPromotion}>审查 promotion</button>
       </div>
       <TaskLaunchReceipt receipt={taskReceipt} />
       <TaskLaunchReceipt receipt={browserQaReceipt} />
+      <TaskLaunchReceipt receipt={streamlitParityReceipt} />
       <TaskLaunchReceipt receipt={productionPromotionReceipt} />
       <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
       <MetricGrid
@@ -195,6 +205,8 @@ export default function NextSessionMap() {
           { label: "QA evidence", value: String(browserQaEvidence.status ?? "missing"), tone: browserQaEvidence.next_browser_qa_evidence_ready === true ? "good" : "warn" },
           { label: "QA review", value: String(browserQaReview.status ?? "missing"), tone: browserQaReview.local_browser_qa_review_ready === true ? "good" : "warn" },
           { label: "QA 阻断", value: Number(browserQaReview.blocking_review_count ?? 0), tone: Number(browserQaReview.blocking_review_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "parity review", value: String(streamlitParityReview.status ?? "missing"), tone: streamlitParityReview.local_streamlit_parity_review_ready === true ? "good" : "warn" },
+          { label: "parity 阻断", value: Number(streamlitParityReview.blocking_review_count ?? 0), tone: Number(streamlitParityReview.blocking_review_count ?? 0) > 0 ? "warn" : "good" },
           { label: "durable evidence", value: String(durableEvidenceRecipe.status ?? "missing"), tone: durableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
           { label: "durable 阻断", value: Number(durableEvidenceRecipe.durable_evidence_blocker_count ?? 0), tone: Number(durableEvidenceRecipe.durable_evidence_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "promotion review", value: String(productionPromotionReview.status ?? "missing"), tone: productionPromotionReview.local_production_promotion_review_ready === true ? "good" : "warn" },
@@ -238,6 +250,11 @@ export default function NextSessionMap() {
       <h3>ECharts 本地 QA 审查</h3>
       <DataLineageTable rows={[browserQaReview]} />
       <DataLineageTable rows={browserQaReviewRows} />
+      <h3>ECharts same-packet Streamlit parity 审查</h3>
+      <p className="risk-note">next_session_streamlit_parity_review 只审查本地同包 no-feature-loss 合同；它不打开 Streamlit、不运行浏览器、不移除 fallback、不证明生产替代完成。</p>
+      <p>local_streamlit_parity_review_ready: {String(streamlitParityReview.local_streamlit_parity_review_ready === true)}；same_packet_no_loss_review_ready: {String(streamlitParityReview.same_packet_no_loss_review_ready === true)}；streamlit_parity_complete: {String(streamlitParityReview.streamlit_parity_complete === true)}</p>
+      <DataLineageTable rows={[streamlitParityReview]} />
+      <DataLineageTable rows={streamlitParityReviewRows} />
       <h3>ECharts durable evidence recipe</h3>
       <p className="risk-note">next_session_durable_evidence_recipe 只固定生产替代前的直接证据清单；它不打开浏览器、不启动服务、不调用 provider/model、不证明 Streamlit parity、不证明生产替代完成。</p>
       <p>scope: {String(durableEvidenceRecipe.scope ?? "local_next_session_durable_evidence_recipe_no_browser_no_provider")}</p>

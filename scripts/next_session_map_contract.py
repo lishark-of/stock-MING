@@ -952,9 +952,12 @@ def build_contract() -> dict[str, Any]:
             "getNextSessionCache" in next_page
             and 'postTask("/api/next-session/generate")' in next_page
             and 'postTask("/api/next-session/browser-qa-review"' in next_page
+            and 'postTask("/api/next-session/streamlit-parity-review"' in next_page
             and 'postTask("/api/next-session/production-promotion-review"' in next_page
             and "next_session_browser_qa_evidence_summary" in next_page
             and "next_session_browser_qa_review_contract" in next_page
+            and "next_session_streamlit_parity_review_contract" in next_page
+            and "streamlitParityReview" in next_page
             and "next_session_durable_evidence_recipe" in next_page
             and "durableEvidenceRecipe" in next_page
             and "next_session_production_promotion_review_contract" in next_page

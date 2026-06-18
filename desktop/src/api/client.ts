@@ -486,6 +486,8 @@ const LTG_NEXT_ACCEPTANCE_LOCAL_ROUTES = new Set([
   "/api/worker/runtime-qa-execution",
   "/api/factor-quant/deepseek-provider-benchmark-scope-ticket",
   "/api/next-session/browser-qa-review",
+  "/api/next-session/streamlit-parity-review",
+  "/api/next-session/production-promotion-review",
   "/api/audit/motion-browser-qa-review",
   "/api/audit/motion-production-promotion-dry-run",
 ]);
