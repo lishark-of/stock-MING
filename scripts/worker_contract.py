@@ -298,6 +298,7 @@ def _worker_runtime_evidence_stage_scope_rows(
             "activation_ready": False,
             "production_worker_complete": False,
             "external_calls_triggered": False,
+            "tushare_called": False,
             "tushare_called_by_contract": False,
             "deepseek_called": False,
             "github_called": False,
@@ -385,6 +386,14 @@ def build_contract() -> dict[str, Any]:
         row for row in _list(packet.get("worker_runtime_durable_evidence_rows")) if isinstance(row, dict)
     ]
     runtime_durable_keys = {str(row.get("evidence_key") or "") for row in runtime_durable_rows}
+    worker_runtime_evidence_stage_scope_manifest = _dict(
+        packet.get("worker_runtime_evidence_stage_scope_manifest")
+    )
+    worker_runtime_evidence_stage_scope_cache_rows = [
+        row
+        for row in _list(packet.get("worker_runtime_evidence_stage_scope_rows"))
+        if isinstance(row, dict)
+    ]
     task_persistence = _dict(packet.get("task_persistence"))
     push_gate_script = _read_script("scripts/push_gate_3_0.sh")
     this_script = _read_script("scripts/worker_contract.py")
@@ -392,7 +401,6 @@ def build_contract() -> dict[str, Any]:
         str(item)
         for item in _list(_dict(production_evidence_plan.get("scope_ticket_payload")).get("evidence_scope"))
     ]
-    worker_runtime_evidence_stage_scope_rows = _worker_runtime_evidence_stage_scope_rows(production_evidence_scope)
     expected_runtime_durable_missing = set(REQUIRED_RUNTIME_DURABLE_EVIDENCE_MISSING_KEYS)
     if runtime_qa_request.get("local_execution_request_ready") is True:
         expected_runtime_durable_missing.discard("runtime_qa_execution_request_visible")
@@ -520,7 +528,7 @@ def build_contract() -> dict[str, Any]:
         and runtime_qa_execution.get("does_not_modify_strategy_action") is True
     ):
         direct_runtime_stage_keys.append("no_trade_no_action_boundary")
-    worker_runtime_evidence_stage_scope_rows = _worker_runtime_evidence_stage_scope_rows(
+    expected_worker_runtime_evidence_stage_scope_rows = _worker_runtime_evidence_stage_scope_rows(
         production_evidence_scope,
         direct_stage_keys=direct_runtime_stage_keys,
         stage_evidence={
@@ -532,6 +540,7 @@ def build_contract() -> dict[str, Any]:
             "no_trade_no_action_boundary": "local runtime QA verified no trade execution and no strategy action mutation",
         },
     )
+    worker_runtime_evidence_stage_scope_rows = worker_runtime_evidence_stage_scope_cache_rows
     worker_runtime_stage_pending_count = sum(
         1 for row in worker_runtime_evidence_stage_scope_rows if row.get("production_blocker") is True
     )
@@ -1237,7 +1246,52 @@ def build_contract() -> dict[str, Any]:
         ),
         _row(
             "worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending",
-            [row.get("stage_key") for row in worker_runtime_evidence_stage_scope_rows]
+            worker_runtime_evidence_stage_scope_manifest.get("schema_version")
+            == worker_service.WORKER_RUNTIME_STAGE_SCOPE_SCHEMA_VERSION
+            and worker_runtime_evidence_stage_scope_manifest.get("scope")
+            == "worker_runtime_evidence_stage_scope_manifest"
+            and worker_runtime_evidence_stage_scope_manifest.get("source_packet_key") == worker_service.PACKET_KEY
+            and worker_runtime_evidence_stage_scope_manifest.get("source_receipt_key")
+            == "worker_runtime_durable_evidence_recipe"
+            and worker_runtime_evidence_stage_scope_manifest.get("status")
+            == "worker_runtime_evidence_stage_scope_visible_production_pending"
+            and tuple(worker_runtime_evidence_stage_scope_manifest.get("stage_keys") or ())
+            == REQUIRED_RUNTIME_EVIDENCE_STAGES
+            and worker_runtime_evidence_stage_scope_manifest.get("stage_key_count")
+            == len(REQUIRED_RUNTIME_EVIDENCE_STAGES)
+            and worker_runtime_evidence_stage_scope_manifest.get("row_count")
+            == len(REQUIRED_RUNTIME_EVIDENCE_STAGES)
+            and worker_runtime_evidence_stage_scope_manifest.get("direct_evidence_stage_count")
+            == len(direct_runtime_stage_keys)
+            and worker_runtime_evidence_stage_scope_manifest.get("pending_stage_count")
+            == worker_runtime_stage_pending_count
+            and worker_runtime_evidence_stage_scope_manifest.get("production_blocker_count")
+            == worker_runtime_stage_pending_count
+            and set(worker_runtime_evidence_stage_scope_manifest.get("direct_evidence_stage_keys") or [])
+            == set(direct_runtime_stage_keys)
+            and set(worker_runtime_evidence_stage_scope_manifest.get("pending_stage_keys") or [])
+            == {
+                row.get("stage_key")
+                for row in worker_runtime_evidence_stage_scope_rows
+                if row.get("production_blocker") is True
+            }
+            and worker_runtime_evidence_stage_scope_rows == expected_worker_runtime_evidence_stage_scope_rows
+            and worker_runtime_evidence_stage_scope_manifest.get("rows")
+            == expected_worker_runtime_evidence_stage_scope_rows
+            and worker_runtime_evidence_stage_scope_manifest.get("production_worker_complete") is False
+            and worker_runtime_evidence_stage_scope_manifest.get("worker_started") is False
+            and worker_runtime_evidence_stage_scope_manifest.get("redis_pinged") is False
+            and worker_runtime_evidence_stage_scope_manifest.get("scheduler_started") is False
+            and worker_runtime_evidence_stage_scope_manifest.get("task_dispatched") is False
+            and worker_runtime_evidence_stage_scope_manifest.get("provider_model_task_dispatched") is False
+            and worker_runtime_evidence_stage_scope_manifest.get("external_calls_triggered") is False
+            and worker_runtime_evidence_stage_scope_manifest.get("tushare_called") is False
+            and worker_runtime_evidence_stage_scope_manifest.get("deepseek_called") is False
+            and worker_runtime_evidence_stage_scope_manifest.get("github_called") is False
+            and worker_runtime_evidence_stage_scope_manifest.get("does_not_execute_trades") is True
+            and worker_runtime_evidence_stage_scope_manifest.get("does_not_modify_strategy_action") is True
+            and worker_runtime_evidence_stage_scope_manifest.get("contains_secret") is False
+            and [row.get("stage_key") for row in worker_runtime_evidence_stage_scope_rows]
             == list(REQUIRED_RUNTIME_EVIDENCE_STAGES)
             and production_evidence_scope == list(REQUIRED_RUNTIME_EVIDENCE_STAGES)
             and set(direct_runtime_stage_keys).issubset(set(REQUIRED_RUNTIME_EVIDENCE_STAGES))

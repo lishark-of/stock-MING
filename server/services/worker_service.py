@@ -33,6 +33,27 @@ RUNTIME_QA_EXECUTION_SCHEMA_VERSION = "worker_runtime_qa_execution_receipt.v1"
 PRODUCTION_PROMOTION_REVIEW_PACKET_KEY = "command_center_3_worker_production_promotion_review_packet"
 PRODUCTION_PROMOTION_REVIEW_SCHEMA_VERSION = "worker_production_promotion_review_receipt.v1"
 WORKER_RUNTIME_DURABLE_EVIDENCE_SCHEMA_VERSION = "worker_runtime_durable_evidence_recipe.v1"
+WORKER_RUNTIME_STAGE_SCOPE_SCHEMA_VERSION = "worker_runtime_evidence_stage_scope_manifest.v1"
+WORKER_RUNTIME_EVIDENCE_STAGE_KEYS = [
+    "celery_process",
+    "redis_broker",
+    "local_fallback_round_trip",
+    "cross_process_retry_cancel_lock_dedupe",
+    "append_only_worker_logs",
+    "scheduler_default_off_runtime",
+    "provider_model_no_autoschedule_boundary",
+    "no_trade_no_action_boundary",
+]
+WORKER_RUNTIME_EVIDENCE_STAGE_LABELS = {
+    "celery_process": "Celery process evidence",
+    "redis_broker": "Redis broker evidence",
+    "local_fallback_round_trip": "Local fallback round-trip evidence",
+    "cross_process_retry_cancel_lock_dedupe": "Cross-process controls evidence",
+    "append_only_worker_logs": "Append-only worker log evidence",
+    "scheduler_default_off_runtime": "Scheduler default-off runtime evidence",
+    "provider_model_no_autoschedule_boundary": "Provider/model no-autoschedule boundary",
+    "no_trade_no_action_boundary": "No-trade/no-action boundary",
+}
 WORKER_RUNTIME_QA_EXECUTION_PHASES = [
     "evidence_plan_scope_ticket",
     "celery_process_manual_start",
@@ -4244,6 +4265,141 @@ def _worker_runtime_durable_evidence_recipe(
     }
 
 
+def _worker_runtime_evidence_stage_scope_rows(
+    evidence_scope: list[str],
+    *,
+    direct_stage_keys: list[str] | tuple[str, ...] | set[str] | None = None,
+    stage_evidence: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    selected = set(evidence_scope)
+    direct = set(direct_stage_keys or [])
+    evidence_by_stage = dict(stage_evidence or {})
+    return [
+        {
+            "stage_key": stage_key,
+            "stage_label": WORKER_RUNTIME_EVIDENCE_STAGE_LABELS.get(stage_key, stage_key),
+            "scope": "worker_runtime_evidence_stage_scope_manifest",
+            "current_status": (
+                "direct_evidence_ready_local_runtime_qa_production_pending"
+                if stage_key in direct
+                else "local_evidence_plan_scope_ticket_only"
+            ),
+            "target_status": "manual_runtime_qa_evidence_required",
+            "selected_by_evidence_plan_scope": stage_key in selected,
+            "direct_evidence_complete": stage_key in direct,
+            "direct_evidence_layer": "L3_local_worker_runtime_execution_evidence" if stage_key in direct else "",
+            "required_before_production": True,
+            "production_blocker": stage_key not in direct,
+            "worker_started": False,
+            "redis_pinged": False,
+            "scheduler_started": False,
+            "task_dispatched": False,
+            "provider_model_task_dispatched": False,
+            "healthcheck_executed": False,
+            "task_log_persistence_verified": stage_key == "append_only_worker_logs" and stage_key in direct,
+            "append_only_worker_log_verified": stage_key == "append_only_worker_logs" and stage_key in direct,
+            "cross_process_task_control_verified": (
+                stage_key == "cross_process_retry_cancel_lock_dedupe" and stage_key in direct
+            ),
+            "activation_ready": False,
+            "production_worker_complete": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "tushare_called_by_contract": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "evidence": evidence_by_stage.get(stage_key, "manual runtime QA direct evidence pending"),
+            "missing_evidence": []
+            if stage_key in direct
+            else [f"{WORKER_RUNTIME_EVIDENCE_STAGE_LABELS.get(stage_key, stage_key)} direct runtime evidence"],
+            "required_real_evidence": [
+                "explicit manual runtime QA evidence",
+                "safe runtime task log rows",
+                "redacted worker/broker evidence",
+                "production promotion review",
+            ],
+        }
+        for stage_key in WORKER_RUNTIME_EVIDENCE_STAGE_KEYS
+    ]
+
+
+def _worker_runtime_evidence_stage_scope_manifest(
+    *,
+    production_evidence_plan: dict[str, Any],
+    runtime_qa_execution: dict[str, Any],
+    runtime_durable_evidence_recipe: dict[str, Any],
+) -> dict[str, Any]:
+    evidence_scope = [
+        str(item)
+        for item in (production_evidence_plan.get("scope_ticket_payload") or {}).get("evidence_scope", [])
+    ]
+    direct_stage_keys: list[str] = []
+    if runtime_durable_evidence_recipe.get("local_fallback_rollback_evidence_ready") is True:
+        direct_stage_keys.append("local_fallback_round_trip")
+    if runtime_durable_evidence_recipe.get("cross_process_controls_evidence_ready") is True:
+        direct_stage_keys.append("cross_process_retry_cancel_lock_dedupe")
+    if runtime_durable_evidence_recipe.get("append_only_worker_log_evidence_ready") is True:
+        direct_stage_keys.append("append_only_worker_logs")
+    if runtime_durable_evidence_recipe.get("scheduler_default_off_runtime_evidence_ready") is True:
+        direct_stage_keys.append("scheduler_default_off_runtime")
+    if runtime_durable_evidence_recipe.get("provider_model_no_autoschedule_runtime_evidence_ready") is True:
+        direct_stage_keys.append("provider_model_no_autoschedule_boundary")
+    if (
+        runtime_qa_execution.get("no_trade_no_action_boundary_verified") is True
+        and runtime_qa_execution.get("does_not_execute_trades") is True
+        and runtime_qa_execution.get("does_not_modify_strategy_action") is True
+    ):
+        direct_stage_keys.append("no_trade_no_action_boundary")
+    rows = _worker_runtime_evidence_stage_scope_rows(
+        evidence_scope,
+        direct_stage_keys=direct_stage_keys,
+        stage_evidence={
+            "local_fallback_round_trip": "local runtime QA fallback task/status/log round trip verified without Celery or Redis",
+            "cross_process_retry_cancel_lock_dedupe": "local runtime QA cross-process control probe verified without worker start",
+            "append_only_worker_logs": "local runtime QA task log persistence and append-only worker log evidence verified",
+            "scheduler_default_off_runtime": "local runtime QA verified scheduler remains off during runtime path",
+            "provider_model_no_autoschedule_boundary": "local runtime QA verified provider/model autoscheduling remains disabled",
+            "no_trade_no_action_boundary": "local runtime QA verified no trade execution and no strategy action mutation",
+        },
+    )
+    pending_stage_keys = [row["stage_key"] for row in rows if row.get("production_blocker") is True]
+    return {
+        "schema_version": WORKER_RUNTIME_STAGE_SCOPE_SCHEMA_VERSION,
+        "status": "worker_runtime_evidence_stage_scope_visible_production_pending",
+        "scope": "worker_runtime_evidence_stage_scope_manifest",
+        "source_packet_key": PACKET_KEY,
+        "source_receipt_key": "worker_runtime_durable_evidence_recipe",
+        "stage_keys": list(WORKER_RUNTIME_EVIDENCE_STAGE_KEYS),
+        "stage_key_count": len(WORKER_RUNTIME_EVIDENCE_STAGE_KEYS),
+        "row_count": len(rows),
+        "selected_stage_count": sum(1 for row in rows if row.get("selected_by_evidence_plan_scope") is True),
+        "direct_evidence_stage_keys": direct_stage_keys,
+        "direct_evidence_stage_count": len(direct_stage_keys),
+        "pending_stage_keys": pending_stage_keys,
+        "pending_stage_count": len(pending_stage_keys),
+        "production_blocker_count": len(pending_stage_keys),
+        "production_worker_complete": False,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_pinged": False,
+        "scheduler_started": False,
+        "task_dispatched": False,
+        "provider_model_task_dispatched": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": rows,
+        "evidence_boundary": "worker_runtime_stage_scope_is_cache_visible_local_evidence_not_celery_redis_production_completion",
+    }
+
+
 def _synthetic_healthcheck_rows(task: dict[str, Any], readback: dict[str, Any] | None) -> list[dict[str, Any]]:
     task_log = task.get("task_log") if isinstance(task.get("task_log"), list) else []
     readback_log = readback.get("task_log") if isinstance(readback, dict) and isinstance(readback.get("task_log"), list) else []
@@ -6340,6 +6496,13 @@ def read_worker_runtime_cache() -> dict[str, Any]:
     )
     production_readiness["worker_runtime_durable_evidence_recipe"] = runtime_durable_evidence_recipe
     production_readiness["worker_runtime_durable_evidence_rows"] = runtime_durable_evidence_recipe["rows"]
+    worker_runtime_stage_scope_manifest = _worker_runtime_evidence_stage_scope_manifest(
+        production_evidence_plan=production_evidence_plan_receipt,
+        runtime_qa_execution=runtime_qa_execution,
+        runtime_durable_evidence_recipe=runtime_durable_evidence_recipe,
+    )
+    production_readiness["worker_runtime_evidence_stage_scope_manifest"] = worker_runtime_stage_scope_manifest
+    production_readiness["worker_runtime_evidence_stage_scope_rows"] = worker_runtime_stage_scope_manifest["rows"]
     module_ready_count = sum(1 for row in worker_module_rows if row["module_available"] and row["file_exists"])
     manual_preflight_steps = production_readiness.get("manual_preflight_steps") or []
     status = "ready" if module_ready_count == len(worker_module_rows) else "partial"
@@ -6478,6 +6641,8 @@ def read_worker_runtime_cache() -> dict[str, Any]:
         ),
         "worker_runtime_durable_evidence_recipe": runtime_durable_evidence_recipe,
         "worker_runtime_durable_evidence_rows": runtime_durable_evidence_recipe["rows"],
+        "worker_runtime_evidence_stage_scope_manifest": worker_runtime_stage_scope_manifest,
+        "worker_runtime_evidence_stage_scope_rows": worker_runtime_stage_scope_manifest["rows"],
         "worker_runtime_dependency_preflight": dependency_preflight,
         "worker_runtime_dependency_preflight_rows": dependency_preflight["rows"],
         "dispatch_plan_status": "contract_ready_local_fallback",
@@ -6573,6 +6738,15 @@ def read_worker_runtime_cache() -> dict[str, Any]:
                 "production_blocker_count",
                 0,
             ),
+            "worker_runtime_evidence_stage_scope_count": worker_runtime_stage_scope_manifest.get("row_count", 0),
+            "worker_runtime_evidence_stage_scope_direct_evidence_count": worker_runtime_stage_scope_manifest.get(
+                "direct_evidence_stage_count",
+                0,
+            ),
+            "worker_runtime_evidence_stage_scope_pending_count": worker_runtime_stage_scope_manifest.get(
+                "pending_stage_count",
+                0,
+            ),
             "worker_runtime_dependency_preflight_blocker_count": dependency_preflight["blocker_count"],
             "worker_runtime_dependency_preflight_row_count": dependency_preflight["row_count"],
             "worker_runtime_dependency_preflight_ready": 1 if dependency_preflight["local_preflight_ready"] else 0,
@@ -6635,6 +6809,9 @@ def read_worker_runtime_cache() -> dict[str, Any]:
             "worker_runtime_durable_evidence_recipe_is_local": True,
             "worker_runtime_durable_evidence_recipe_is_not_process_start": True,
             "worker_runtime_durable_evidence_recipe_is_not_production_completion": True,
+            "worker_runtime_evidence_stage_scope_manifest_is_local": True,
+            "worker_runtime_evidence_stage_scope_manifest_is_not_process_start": True,
+            "worker_runtime_evidence_stage_scope_manifest_is_not_production_completion": True,
             "worker_runtime_dependency_preflight_is_local": True,
             "worker_runtime_dependency_preflight_does_not_start_process": True,
             "worker_runtime_dependency_preflight_does_not_ping_redis": True,

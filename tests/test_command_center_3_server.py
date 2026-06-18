@@ -31460,6 +31460,39 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["worker_runtime_dependency_preflight_does_not_start_process"])
         self.assertTrue(packet["policy"]["worker_runtime_dependency_preflight_does_not_ping_redis"])
         self.assertTrue(packet["policy"]["worker_runtime_dependency_preflight_is_not_production_completion"])
+        stage_scope = packet["worker_runtime_evidence_stage_scope_manifest"]
+        stage_rows = packet["worker_runtime_evidence_stage_scope_rows"]
+        self.assertEqual(stage_scope["schema_version"], worker_service.WORKER_RUNTIME_STAGE_SCOPE_SCHEMA_VERSION)
+        self.assertEqual(stage_scope["source_packet_key"], worker_service.PACKET_KEY)
+        self.assertEqual(stage_scope["source_receipt_key"], "worker_runtime_durable_evidence_recipe")
+        self.assertEqual(stage_scope["stage_keys"], worker_service.WORKER_RUNTIME_EVIDENCE_STAGE_KEYS)
+        self.assertEqual(stage_scope["row_count"], len(worker_service.WORKER_RUNTIME_EVIDENCE_STAGE_KEYS))
+        self.assertEqual(stage_scope["row_count"], len(stage_rows))
+        self.assertEqual(
+            packet["counts"]["worker_runtime_evidence_stage_scope_count"],
+            stage_scope["row_count"],
+        )
+        self.assertEqual(
+            packet["counts"]["worker_runtime_evidence_stage_scope_direct_evidence_count"],
+            stage_scope["direct_evidence_stage_count"],
+        )
+        self.assertEqual(
+            packet["counts"]["worker_runtime_evidence_stage_scope_pending_count"],
+            stage_scope["pending_stage_count"],
+        )
+        self.assertEqual(
+            set(stage_scope["pending_stage_keys"]),
+            {"celery_process", "redis_broker"},
+        )
+        self.assertFalse(stage_scope["production_worker_complete"])
+        self.assertFalse(stage_scope["worker_started"])
+        self.assertFalse(stage_scope["redis_pinged"])
+        self.assertFalse(stage_scope["external_calls_triggered"])
+        self.assertTrue(stage_scope["does_not_execute_trades"])
+        self.assertTrue(stage_scope["does_not_modify_strategy_action"])
+        self.assertTrue(packet["policy"]["worker_runtime_evidence_stage_scope_manifest_is_local"])
+        self.assertTrue(packet["policy"]["worker_runtime_evidence_stage_scope_manifest_is_not_process_start"])
+        self.assertTrue(packet["policy"]["worker_runtime_evidence_stage_scope_manifest_is_not_production_completion"])
         self.assertEqual(packet["worker_production_blocker_audit"]["status"], "production_worker_blocked")
         self.assertFalse(packet["worker_production_blocker_audit"]["production_worker_complete"])
         self.assertGreater(packet["worker_production_blocker_audit"]["blocking_criterion_count"], 0)
