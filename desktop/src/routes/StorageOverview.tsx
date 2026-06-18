@@ -14,6 +14,7 @@ import {
   postStorageDatasetVersionManifestValidate,
   postStorageDatasetVersionManifestWrite,
   postStoragePartitionMigrationDryRun,
+  postStoragePhysicalExecutionPhaseA,
   postStoragePhysicalExecutionRequest,
   postStorageSchemaValidationAcceptance,
   postStorageSchemaValidationDryRun,
@@ -106,6 +107,8 @@ export default function StorageOverview() {
   const [cacheTtlDryRunReceipt, setCacheTtlDryRunReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [physicalExecutionRequestTaskId, setPhysicalExecutionRequestTaskId] = useState("");
   const [physicalExecutionRequestReceipt, setPhysicalExecutionRequestReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [physicalExecutionPhaseATaskId, setPhysicalExecutionPhaseATaskId] = useState("");
+  const [physicalExecutionPhaseAReceipt, setPhysicalExecutionPhaseAReceipt] = useState<TaskCreationEnvelope | null>(null);
 
   const refreshStorage = () => {
     void getStorageOverview().then((res) => {
@@ -218,6 +221,18 @@ export default function StorageOverview() {
     }).then((res) => {
       setPhysicalExecutionRequestReceipt(res);
       if (res.ok) setPhysicalExecutionRequestTaskId(res.data.task_id);
+    });
+  const launchPhysicalExecutionPhaseA = () =>
+    void postStoragePhysicalExecutionPhaseA({
+      source: "storage_overview_button",
+      approved_by_user: true,
+      physical_execution_scope_hash: String(storagePhysicalExecutionRequest.physical_execution_scope_hash ?? storagePhysicalExecutionRecipe.physical_execution_scope_hash ?? ""),
+      write_parquet_allowed: false,
+      write_manifest_allowed: false,
+      delete_allowed: false
+    }).then((res) => {
+      setPhysicalExecutionPhaseAReceipt(res);
+      if (res.ok) setPhysicalExecutionPhaseATaskId(res.data.task_id);
     });
 
   useEffect(() => {
@@ -405,6 +420,12 @@ export default function StorageOverview() {
   const storagePhysicalExecutionRequestRows =
     (overview.storage_physical_execution_request_rows as Array<Record<string, unknown>> | undefined) ??
     ((storageCatalog.storage_physical_execution_request_rows as Array<Record<string, unknown>> | undefined) ?? []);
+  const storagePhysicalExecutionPhaseA =
+    (overview.storage_physical_execution_phase_a as Record<string, unknown> | undefined) ??
+    ((storageCatalog.storage_physical_execution_phase_a as Record<string, unknown> | undefined) ?? {});
+  const storagePhysicalExecutionPhaseARows =
+    (overview.storage_physical_execution_phase_a_rows as Array<Record<string, unknown>> | undefined) ??
+    ((storageCatalog.storage_physical_execution_phase_a_rows as Array<Record<string, unknown>> | undefined) ?? []);
   const storagePhysicalDurableEvidenceRecipe =
     (overview.storage_physical_durable_evidence_recipe as Record<string, unknown> | undefined) ??
     ((storageCatalog.storage_physical_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {});
@@ -477,6 +498,7 @@ export default function StorageOverview() {
           { label: "storage execution", value: String(storagePhysicalExecutionRecipe.status ?? overview.storage_physical_execution_recipe_status ?? "missing"), tone: storagePhysicalExecutionRecipe.local_recipe_ready === true ? "good" : "warn" },
           { label: "execution phases", value: overview.storage_physical_execution_pending_phase_count ?? storagePhysicalExecutionRecipe.pending_phase_count ?? storagePhysicalExecutionRows.length, tone: Number(overview.storage_physical_execution_pending_phase_count ?? storagePhysicalExecutionRecipe.pending_phase_count ?? storagePhysicalExecutionRows.length) > 0 ? "warn" : "good" },
           { label: "execution request", value: String(storagePhysicalExecutionRequest.status ?? overview.storage_physical_execution_request_status ?? "missing"), tone: storagePhysicalExecutionRequest.local_execution_request_ready === true ? "good" : "warn" },
+          { label: "phase A evidence", value: String(storagePhysicalExecutionPhaseA.status ?? overview.storage_physical_execution_phase_a_status ?? "missing"), tone: storagePhysicalExecutionPhaseA.local_phase_a_execution_ready === true ? "good" : "warn" },
           { label: "storage durable", value: String(storagePhysicalDurableEvidenceRecipe.status ?? overview.storage_physical_durable_evidence_recipe_status ?? "missing"), tone: storagePhysicalDurableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
           { label: "durable blockers", value: overview.storage_physical_durable_evidence_production_blocker_count ?? storagePhysicalDurableEvidenceRecipe.production_blocker_count ?? storagePhysicalDurableEvidenceRows.length, tone: Number(overview.storage_physical_durable_evidence_production_blocker_count ?? storagePhysicalDurableEvidenceRecipe.production_blocker_count ?? storagePhysicalDurableEvidenceRows.length) > 0 ? "warn" : "good" },
           { label: "physical schema done", value: String(storagePhysicalMigrationActivationReceipt.physical_schema_validation_done ?? false), tone: storagePhysicalMigrationActivationReceipt.physical_schema_validation_done === true ? "good" : "warn" },
@@ -637,6 +659,24 @@ export default function StorageOverview() {
         <TaskLaunchReceipt receipt={physicalExecutionRequestReceipt} />
         <TaskStatusPanel taskId={physicalExecutionRequestTaskId} onSuccess={refreshStorage} />
         <DataLineageTable rows={storagePhysicalExecutionRequestRows} />
+      </PacketCard>
+
+      <PacketCard title="Storage physical execution Phase A" subtitle="按钮门控整合本地 durable evidence；不写 Parquet、不写 manifest、不删除文件、不刷新 provider" status={String(storagePhysicalExecutionPhaseA.status ?? "missing")}>
+        <p>schema_version: {String(storagePhysicalExecutionPhaseA.schema_version ?? "command_center_3_storage_physical_execution_phase_a.v1")}</p>
+        <p>scope: {String(storagePhysicalExecutionPhaseA.scope ?? "local_storage_physical_execution_phase_a_no_write_no_delete_no_provider")}</p>
+        <p>local_phase_a_execution_ready / production_storage_complete: {String(storagePhysicalExecutionPhaseA.local_phase_a_execution_ready ?? false)} / {String(storagePhysicalExecutionPhaseA.production_storage_complete ?? false)}</p>
+        <p>phase_a_local_evidence_done / blocker_count: {String(storagePhysicalExecutionPhaseA.phase_a_local_evidence_done ?? false)} / {String(storagePhysicalExecutionPhaseA.phase_a_blocker_count ?? 0)}</p>
+        <p>direct_evidence_layer: {String(storagePhysicalExecutionPhaseA.direct_evidence_layer ?? "L3_local_storage_physical_execution_phase_a")}</p>
+        <p>scope_hash_bound: {String(storagePhysicalExecutionPhaseA.requested_scope_hash_matches_latest ?? false)} / {String(storagePhysicalExecutionPhaseA.physical_execution_scope_hash_short ?? "")}</p>
+        <p>writes_parquet / writes_manifest / deletes_artifacts: {String(storagePhysicalExecutionPhaseA.writes_parquet ?? false)} / {String(storagePhysicalExecutionPhaseA.writes_manifest ?? false)} / {String(storagePhysicalExecutionPhaseA.deletes_artifacts ?? false)}</p>
+        <p>tushare / deepseek / github: {String(storagePhysicalExecutionPhaseA.tushare_called ?? false)} / {String(storagePhysicalExecutionPhaseA.deepseek_called ?? false)} / {String(storagePhysicalExecutionPhaseA.github_called ?? false)}</p>
+        <p>not_allowed_next_steps: {JSON.stringify(storagePhysicalExecutionPhaseA.not_allowed_next_steps ?? ["treat_phase_a_as_production_storage_complete", "write_parquet_from_phase_a", "delete_artifacts_from_phase_a"])}</p>
+        <div className="actions">
+          <button disabled={storagePhysicalExecutionRequest.local_execution_request_ready !== true} onClick={launchPhysicalExecutionPhaseA}>生成 physical execution Phase A evidence</button>
+        </div>
+        <TaskLaunchReceipt receipt={physicalExecutionPhaseAReceipt} />
+        <TaskStatusPanel taskId={physicalExecutionPhaseATaskId} onSuccess={refreshStorage} />
+        <DataLineageTable rows={storagePhysicalExecutionPhaseARows} />
       </PacketCard>
 
       <PacketCard title="Storage physical durable evidence recipe" subtitle="LTG-05 durable evidence 缺口清单；本地只读，不写 Parquet、不删文件、不调用 provider" status={String(storagePhysicalDurableEvidenceRecipe.status ?? "missing")}>

@@ -478,6 +478,7 @@ const LTG_NEXT_ACCEPTANCE_LOCAL_ROUTES = new Set([
   "/api/candidate-radar/production-promotion-review",
   "/api/storage/backtest-results/schema-seed",
   "/api/storage/physical-execution-request",
+  "/api/storage/physical-execution/phase-a",
   "/api/worker/synthetic-healthcheck",
   "/api/worker/activation-review",
   "/api/worker/production-evidence-plan",
@@ -640,6 +641,13 @@ export function postStorageCacheTtlDryRun(payload: Record<string, unknown> = {})
 
 export function postStoragePhysicalExecutionRequest(payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>("/api/storage/physical-execution-request", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function postStoragePhysicalExecutionPhaseA(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/storage/physical-execution/phase-a", {
     method: "POST",
     body: JSON.stringify(payload)
   });
