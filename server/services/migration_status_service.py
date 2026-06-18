@@ -956,6 +956,12 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "route": "POST /api/audit/motion-production-promotion-dry-run",
         },
         {
+            "phase_key": "motion_visual_performance_promotion_review_receipt",
+            "task_type": "run_motion_visual_performance_promotion_review",
+            "receipt_key": "motion_visual_performance_promotion_review_receipt",
+            "route": "POST /api/audit/motion-visual-performance-promotion-review",
+        },
+        {
             "phase_key": "motion_durable_evidence_recipe",
             "task_type": "",
             "receipt_key": "motion_durable_evidence_recipe",
@@ -1770,6 +1776,7 @@ def _receipt_local_ready(receipt: dict[str, Any]) -> bool:
         "local_activation_receipt_ready",
         "local_scope_ticket_ready",
         "local_browser_qa_review_ready",
+        "local_visual_performance_promotion_review_ready",
         "local_streamlit_parity_review_ready",
         "local_production_promotion_review_ready",
         "local_promotion_review_ready",
@@ -4090,6 +4097,13 @@ def _build_ltg_next_action_submission_preview_rows(
             "safe_payload_summary": "user_approved, promote_visual=true, promote_performance=true; no browser/GitHub execution",
             "expected_local_receipt": "motion_promotion_dry_run_receipt",
             "required_prior_phase_key": "motion_browser_qa_review_receipt",
+            "required_prior_material": "receipt_local_ready",
+        },
+        "POST /api/audit/motion-visual-performance-promotion-review": {
+            "step_kind": "local_motion_visual_performance_promotion_review",
+            "safe_payload_summary": "user_approved=true; promotes reviewed local visual/performance/reduced-motion evidence only",
+            "expected_local_receipt": "motion_visual_performance_promotion_review_receipt",
+            "required_prior_phase_key": "motion_production_promotion_dry_run_ticket",
             "required_prior_material": "receipt_local_ready",
         },
     }
@@ -6585,6 +6599,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         )
         motion_evidence: dict[str, Any] = {}
         motion_review: dict[str, Any] = {}
+        motion_visual_performance_promotion: dict[str, Any] = {}
         try:
             from server.services import audit_service
             from storage.sqlite_meta import SQLiteMetaStore
@@ -6595,15 +6610,27 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             if isinstance(audit_packet, dict):
                 evidence_packet = audit_packet.get("motion_browser_qa_evidence_contract")
                 review_packet = audit_packet.get("motion_browser_qa_review_contract")
+                promotion_packet = audit_packet.get("motion_visual_performance_promotion_review_receipt")
                 motion_evidence = evidence_packet if isinstance(evidence_packet, dict) else {}
                 motion_review = review_packet if isinstance(review_packet, dict) else {}
+                motion_visual_performance_promotion = (
+                    promotion_packet if isinstance(promotion_packet, dict) else {}
+                )
         except Exception:
             motion_evidence = {}
             motion_review = {}
+            motion_visual_performance_promotion = {}
         browser_visual_ready = motion_evidence.get("visual_qa_complete") is True
         browser_performance_ready = motion_evidence.get("browser_performance_verified") is True
         reduced_motion_ready = motion_evidence.get("reduced_motion_passed") is True
         local_review_ready = motion_review.get("local_browser_qa_review_ready") is True
+        browser_visual_promoted = motion_visual_performance_promotion.get("browser_visual_qa_promoted") is True
+        browser_performance_promoted = (
+            motion_visual_performance_promotion.get("browser_performance_promoted") is True
+        )
+        reduced_motion_promoted = (
+            motion_visual_performance_promotion.get("reduced_motion_durable_evidence_promoted") is True
+        )
         direct_stage_keys = []
         if browser_visual_ready:
             direct_stage_keys.append("viewport_visual_qa_execution")
@@ -6613,6 +6640,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             direct_stage_keys.append("reduced_motion_accessibility_review")
         if local_review_ready:
             direct_stage_keys.append("local_artifact_review")
+        if browser_visual_promoted:
+            direct_stage_keys.append("browser_visual_promotion_evidence")
+        if browser_performance_promoted:
+            direct_stage_keys.append("browser_performance_trace_promotion")
+        if reduced_motion_promoted:
+            direct_stage_keys.append("reduced_motion_durable_promotion")
         direct_stage_key_set = set(direct_stage_keys)
         local_evidence_count = max(
             local_evidence_count,
@@ -6659,9 +6692,21 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "production_motion_complete": motion_contract.get("production_motion_complete") is True,
                 "visual_qa_complete": browser_visual_ready,
                 "browser_performance_verified": browser_performance_ready,
-                "browser_visual_qa_promoted": motion_review.get("browser_visual_qa_promoted") is True,
-                "browser_performance_promoted": motion_review.get("browser_performance_promoted") is True,
-                "durable_ci_evidence_complete": motion_review.get("ci_evidence_complete") is True,
+                "browser_visual_qa_promoted": browser_visual_promoted,
+                "browser_performance_promoted": browser_performance_promoted,
+                "reduced_motion_durable_evidence_promoted": reduced_motion_promoted,
+                "motion_visual_performance_promotion_review_ready": motion_visual_performance_promotion.get(
+                    "local_visual_performance_promotion_review_ready"
+                )
+                is True,
+                "motion_visual_performance_promotion_review_status": str(
+                    motion_visual_performance_promotion.get("status") or "missing"
+                ),
+                "motion_visual_performance_promotion_review_task_id": str(
+                    motion_visual_performance_promotion.get("promotion_review_task_id") or ""
+                ),
+                "durable_ci_evidence_complete": motion_visual_performance_promotion.get("ci_evidence_complete")
+                is True,
                 "browser_runner_executed_by_contract": int(motion_evidence.get("passing_report_count") or 0) >= 2,
                 "local_artifact_reviewed_for_production": local_review_ready,
                 "motion_browser_qa_report_count": int(motion_evidence.get("report_count") or 0),

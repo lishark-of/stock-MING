@@ -621,7 +621,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertGreater(action_rows["p6_tauri_package_readiness_review"]["local_receipt_blocker_count"], 0)
         self.assertGreater(action_rows["p7_streamlit_retirement_review"]["local_receipt_blocker_count"], 0)
         self.assertIn("LTG-14", action_rows["p8_motion_production_promotion_review"]["ltg_ids"])
-        self.assertEqual(action_rows["p8_motion_production_promotion_review"]["local_receipt_step_count"], 4)
+        self.assertEqual(action_rows["p8_motion_production_promotion_review"]["local_receipt_step_count"], 5)
         self.assertEqual(
             action_rows["p8_motion_production_promotion_review"]["first_allowed_route"],
             "POST /api/audit/motion-browser-qa-review",
@@ -21793,7 +21793,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(action_rows["p6_tauri_package_readiness_review"]["local_receipt_step_count"], 2)
         self.assertEqual(action_rows["p7_streamlit_retirement_review"]["local_receipt_step_count"], 2)
         self.assertIn("LTG-14", action_rows["p8_motion_production_promotion_review"]["ltg_ids"])
-        self.assertEqual(action_rows["p8_motion_production_promotion_review"]["local_receipt_step_count"], 4)
+        self.assertEqual(action_rows["p8_motion_production_promotion_review"]["local_receipt_step_count"], 5)
         self.assertIn("LTG-11", action_rows["p0_release_gate_push_readiness"]["ltg_ids"])
         self.assertEqual(action_rows["p0_release_gate_push_readiness"]["local_receipt_step_count"], 3)
         self.assertIn("LTG-12", action_rows["p10_trade_isolation_release_guard"]["ltg_ids"])
@@ -34131,6 +34131,118 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(
             any(row.get("api") == "local_motion_production_promotion_dry_run" for row in refreshed["task_call_ledger_rows"])
         )
+
+    def test_motion_visual_performance_promotion_review_is_local_and_keeps_ci_pending(self):
+        self._with_meta_store()
+        motion_root = self._with_motion_qa_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        for run_id, reduced in (("default-run", False), ("reduced-run", True)):
+            report_dir = motion_root / run_id
+            report_dir.mkdir(parents=True, exist_ok=True)
+            (report_dir / "motion_browser_qa_report.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "command_center_3_motion_browser_qa_result.v1",
+                        "run_id": run_id,
+                        "generated_at": "2026-06-13T21:00:00",
+                        "status": "motion_browser_qa_passed",
+                        "reduced_motion": reduced,
+                        "visual_qa_complete": True,
+                        "browser_performance_verified": True,
+                        "qa_matrix_count": 20,
+                        "passed_count": 20,
+                        "review_required_count": 0,
+                        "console_error_count": 0,
+                        "route_count": 5,
+                        "viewport_count": 4,
+                        "external_calls_triggered": False,
+                        "tushare_called": False,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+        self.client.post("/api/audit/motion-browser-qa-review", json={"reviewer": "local"})
+        self.client.post(
+            "/api/audit/motion-production-promotion-dry-run",
+            json={"user_approved": True, "promote_visual": True, "promote_performance": True},
+        )
+        response = self.client.post(
+            "/api/audit/motion-visual-performance-promotion-review",
+            json={"user_approved": True, "token": "SHOULD_DROP"},
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["task_type"], "run_motion_visual_performance_promotion_review")
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "motion_visual_performance_promotion_review_ready")
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        ledger = task["call_ledger"][0]
+        self.assertEqual(ledger["api"], "local_motion_visual_performance_promotion_review")
+        self.assertEqual(ledger["call_status"], "motion_visual_performance_promotion_review_ready_ci_release_pending")
+        self.assertFalse(ledger["external"])
+        self.assertFalse(ledger["external_calls_triggered"])
+        self.assertNotIn("token", ledger["request_params_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+        refreshed = self.client.get("/api/audit/cache").json()["data"]
+        receipt = refreshed["motion_visual_performance_promotion_review_receipt"]
+        self.assertEqual(receipt["schema_version"], "command_center_3_motion_visual_performance_promotion_review.v1")
+        self.assertEqual(receipt["status"], "motion_visual_performance_promotion_review_ready_ci_release_pending")
+        self.assertTrue(receipt["explicit_visual_performance_promotion_review_task_done"])
+        self.assertTrue(receipt["local_visual_performance_promotion_review_ready"])
+        self.assertTrue(receipt["browser_visual_qa_promoted"])
+        self.assertTrue(receipt["browser_performance_promoted"])
+        self.assertTrue(receipt["reduced_motion_durable_evidence_promoted"])
+        self.assertFalse(receipt["durable_ci_evidence_complete"])
+        self.assertFalse(receipt["ci_evidence_complete"])
+        self.assertFalse(receipt["production_motion_complete"])
+        self.assertFalse(receipt["ready_to_mark_production_motion_complete"])
+        self.assertEqual(receipt["local_blocker_count"], 0)
+        self.assertIn("durable_ci_or_release_evidence_still_required", receipt["production_blockers"])
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertFalse(receipt["tushare_called"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(receipt["does_not_modify_strategy_action"])
+        durable_rows = {row["evidence_key"]: row for row in refreshed["motion_durable_evidence_rows"]}
+        self.assertEqual(durable_rows["browser_visual_promotion_evidence_required"]["status"], "local_visual_promotion_reviewed")
+        self.assertEqual(durable_rows["browser_performance_trace_required"]["status"], "local_performance_trace_reviewed")
+        self.assertEqual(durable_rows["reduced_motion_durable_evidence_required"]["status"], "local_reduced_motion_reviewed")
+        self.assertTrue(durable_rows["durable_ci_or_release_evidence_required"]["production_blocker"])
+        self.assertTrue(refreshed["policy"]["motion_visual_performance_promotion_review_is_button_gated"])
+        self.assertTrue(refreshed["policy"]["motion_visual_performance_promotion_review_does_not_open_browser"])
+        self.assertTrue(refreshed["policy"]["motion_visual_performance_promotion_review_calls_no_github_api"])
+        self.assertTrue(refreshed["policy"]["motion_visual_performance_promotion_review_is_not_production_completion"])
+        self.assertEqual(refreshed["counts"]["motion_visual_performance_promotion_review_ready"], True)
+        self.assertTrue(
+            any(row.get("api") == "local_motion_visual_performance_promotion_review" for row in refreshed["task_call_ledger_rows"])
+        )
+
+        migration = self.client.get("/api/migration/status").json()["data"]
+        ltg14 = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}["LTG-14"]
+        self.assertEqual(ltg14["direct_evidence_stage_count"], 7)
+        self.assertEqual(ltg14["pending_stage_count"], 3)
+        self.assertIn("browser_visual_promotion_evidence", ltg14["direct_evidence_stage_keys"])
+        self.assertIn("browser_performance_trace_promotion", ltg14["direct_evidence_stage_keys"])
+        self.assertIn("reduced_motion_durable_promotion", ltg14["direct_evidence_stage_keys"])
+        self.assertTrue(ltg14["motion_visual_performance_promotion_review_ready"])
+        self.assertFalse(ltg14["durable_ci_evidence_complete"])
+        self.assertFalse(ltg14["production_motion_complete"])
+        self.assertFalse(ltg14["can_close_from_observed_row"])
 
     def test_run_light_endpoint_writes_factor_cache(self):
         self._with_meta_store()
