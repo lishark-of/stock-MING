@@ -3552,6 +3552,11 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
     legacy_retirement_review = _dict_or_empty(
         packet_map.get("candidate_radar_legacy_retirement_review_receipt")
     )
+    stage_manifest = _dict_or_empty(packet_map.get("candidate_radar_production_stage_scope_manifest"))
+    stage_direct_key_values = stage_manifest.get("direct_evidence_stage_keys")
+    stage_direct_keys = {
+        str(key) for key in stage_direct_key_values
+    } if isinstance(stage_direct_key_values, list) else set()
 
     packet_safe = bool(
         packet_map.get("external_calls_triggered") is False
@@ -3842,6 +3847,9 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         direct_stage_keys.append("local_deep_scan_review_receipt")
     if worker_runtime_round_trip_link_done:
         direct_stage_keys.append("worker_runtime_round_trip_link")
+    worker_transport_round_trip_smoke_done = "worker_transport_round_trip_smoke" in stage_direct_keys
+    if worker_transport_round_trip_smoke_done:
+        direct_stage_keys.append("worker_transport_round_trip_smoke")
     if worker_full_pool_fallback_done:
         direct_stage_keys.append("local_worker_full_pool_fallback_receipt")
     if worker_deep_scan_fallback_done:
@@ -3867,6 +3875,7 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         "local_full_pool_execution_receipt_verified": local_full_pool_done,
         "local_deep_scan_review_receipt_verified": local_deep_scan_done,
         "worker_runtime_round_trip_link_verified": worker_runtime_round_trip_link_done,
+        "worker_transport_round_trip_smoke_verified": worker_transport_round_trip_smoke_done,
         "worker_runtime_local_evidence_linked": worker_runtime_round_trip_link_done,
         "worker_runtime_source_status": str(worker_runtime_link.get("source_worker_runtime_status") or "missing"),
         "worker_runtime_execution_task_id": str(worker_runtime_link.get("worker_runtime_execution_task_id") or ""),
@@ -5695,6 +5704,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "local_evidence_stage_count": local_evidence_count,
                 "direct_evidence_stage_count": direct_evidence_count,
                 "direct_evidence_stage_keys": list(direct_evidence.get("direct_evidence_stage_keys") or []),
+                "pending_stage_keys": list(manifest.get("pending_stage_keys") or []),
                 "production_blocker_count": observed_pending_count,
                 "production_radar_replacement_complete": manifest.get("production_radar_replacement_complete") is True,
                 "legacy_retirement_ready": manifest.get("legacy_retirement_ready") is True,
@@ -5718,6 +5728,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 ),
                 "worker_runtime_round_trip_link_verified": (
                     direct_evidence.get("worker_runtime_round_trip_link_verified") is True
+                ),
+                "worker_transport_round_trip_smoke_verified": (
+                    direct_evidence.get("worker_transport_round_trip_smoke_verified") is True
                 ),
                 "worker_runtime_local_evidence_linked": (
                     direct_evidence.get("worker_runtime_local_evidence_linked") is True
@@ -6943,6 +6956,9 @@ def _merge_ltg_stage_scope_observations(
                 item["observed_candidate_direct_evidence_layer"] = observed.get("candidate_direct_evidence_layer")
                 item["observed_worker_runtime_round_trip_link_verified"] = observed.get(
                     "worker_runtime_round_trip_link_verified"
+                )
+                item["observed_worker_transport_round_trip_smoke_verified"] = observed.get(
+                    "worker_transport_round_trip_smoke_verified"
                 )
                 item["observed_worker_runtime_local_evidence_linked"] = observed.get(
                     "worker_runtime_local_evidence_linked"

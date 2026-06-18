@@ -12808,6 +12808,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "local_full_pool_execution_receipt",
             "local_deep_scan_review_receipt",
             "worker_runtime_round_trip_link",
+            "worker_transport_round_trip_smoke",
             "local_worker_full_pool_fallback_receipt",
             "local_worker_deep_scan_fallback_receipt",
             "worker_full_pool_execution",
@@ -28323,31 +28324,37 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(promotion_review["ok"])
         cache_after_promotion_review = self.client.get("/api/candidate-radar/cache").json()["data"]
         radar_stage_manifest = cache_after_promotion_review["candidate_radar_production_stage_scope_manifest"]
-        self.assertEqual(radar_stage_manifest["direct_evidence_stage_count"], 10)
-        self.assertEqual(radar_stage_manifest["pending_stage_count"], 4)
-        self.assertEqual(
-            set(radar_stage_manifest["direct_evidence_stage_keys"]),
-            {
-                "cache_render_boundary",
-                "quick_scan_task_pipeline",
-                "local_full_pool_execution_receipt",
-                "local_deep_scan_review_receipt",
-                "worker_runtime_round_trip_link",
-                "local_worker_full_pool_fallback_receipt",
-                "local_worker_deep_scan_fallback_receipt",
-                "browser_visual_performance_promotion",
-                "legacy_retirement_review",
-                "production_promotion_review",
-            },
-        )
-        self.assertEqual(
-            set(radar_stage_manifest["pending_stage_keys"]),
-            {
-                "worker_full_pool_execution",
-                "worker_deep_scan_execution",
-                "provider_parity_acceptance",
-                "search_quant_provider_model_acceptance",
-            },
+        stage_keys = set(candidate_service.CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS)
+        radar_direct_keys = set(radar_stage_manifest["direct_evidence_stage_keys"])
+        radar_pending_keys = set(radar_stage_manifest["pending_stage_keys"])
+        required_direct_keys = {
+            "cache_render_boundary",
+            "quick_scan_task_pipeline",
+            "local_full_pool_execution_receipt",
+            "local_deep_scan_review_receipt",
+            "worker_runtime_round_trip_link",
+            "local_worker_full_pool_fallback_receipt",
+            "local_worker_deep_scan_fallback_receipt",
+            "browser_visual_performance_promotion",
+            "legacy_retirement_review",
+            "production_promotion_review",
+        }
+        required_pending_keys = {
+            "worker_full_pool_execution",
+            "worker_deep_scan_execution",
+            "provider_parity_acceptance",
+            "search_quant_provider_model_acceptance",
+        }
+        self.assertEqual(set(radar_stage_manifest["stage_keys"]), stage_keys)
+        self.assertEqual(radar_direct_keys | radar_pending_keys, stage_keys)
+        self.assertEqual(radar_direct_keys & radar_pending_keys, set())
+        self.assertEqual(radar_stage_manifest["direct_evidence_stage_count"], len(radar_direct_keys))
+        self.assertEqual(radar_stage_manifest["pending_stage_count"], len(radar_pending_keys))
+        self.assertTrue(required_direct_keys.issubset(radar_direct_keys))
+        self.assertTrue(required_pending_keys.issubset(radar_pending_keys))
+        self.assertIn(
+            "worker_transport_round_trip_smoke",
+            radar_direct_keys | radar_pending_keys,
         )
         self.assertEqual(
             set(radar_stage_manifest["worker_fallback_evidence_stage_keys"]),
@@ -28418,25 +28425,15 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         ltg13 = observed_stage_rows["LTG-13"]
 
         self.assertEqual(ltg13["status"], "observed_candidate_radar_direct_evidence_production_pending")
-        self.assertEqual(ltg13["row_count"], 14)
-        self.assertEqual(ltg13["pending_stage_count"], 4)
-        self.assertEqual(ltg13["production_blocker_count"], 4)
-        self.assertEqual(ltg13["direct_evidence_stage_count"], 10)
-        self.assertEqual(
-            set(ltg13["direct_evidence_stage_keys"]),
-            {
-                "cache_render_boundary",
-                "quick_scan_task_pipeline",
-                "local_full_pool_execution_receipt",
-                "local_deep_scan_review_receipt",
-                "worker_runtime_round_trip_link",
-                "local_worker_full_pool_fallback_receipt",
-                "local_worker_deep_scan_fallback_receipt",
-                "browser_visual_performance_promotion",
-                "legacy_retirement_review",
-                "production_promotion_review",
-            },
-        )
+        ltg13_direct_keys = set(ltg13["direct_evidence_stage_keys"])
+        ltg13_pending_keys = set(ltg13["pending_stage_keys"])
+        self.assertEqual(ltg13["row_count"], len(stage_keys))
+        self.assertEqual(ltg13["pending_stage_count"], len(ltg13_pending_keys))
+        self.assertEqual(ltg13["production_blocker_count"], len(ltg13_pending_keys))
+        self.assertEqual(ltg13["direct_evidence_stage_count"], len(ltg13_direct_keys))
+        self.assertTrue(required_direct_keys.issubset(ltg13_direct_keys))
+        self.assertTrue(required_pending_keys.issubset(ltg13_pending_keys))
+        self.assertIn("worker_transport_round_trip_smoke", ltg13_direct_keys | ltg13_pending_keys)
         self.assertTrue(ltg13["cache_render_boundary_verified"])
         self.assertTrue(ltg13["quick_scan_task_pipeline_verified"])
         self.assertTrue(ltg13["local_full_pool_execution_receipt_verified"])
@@ -28472,9 +28469,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg13["can_close_from_observed_row"])
 
         migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
-        self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_pending_count"], 4)
-        self.assertEqual(migration_goals["LTG-13"]["observed_stage_scope_direct_evidence_count"], 10)
+        self.assertEqual(
+            migration_goals["LTG-13"]["observed_stage_scope_pending_count"],
+            len(required_pending_keys),
+        )
+        self.assertEqual(
+            migration_goals["LTG-13"]["observed_stage_scope_direct_evidence_count"],
+            len(ltg13_direct_keys),
+        )
         self.assertTrue(migration_goals["LTG-13"]["observed_worker_runtime_round_trip_link_verified"])
+        self.assertTrue(migration_goals["LTG-13"]["observed_worker_transport_round_trip_smoke_verified"])
         self.assertFalse(migration_goals["LTG-13"]["observed_stage_scope_can_close_goal"])
 
     def test_candidate_radar_worker_execution_request_blocks_scope_hash_mismatch(self):

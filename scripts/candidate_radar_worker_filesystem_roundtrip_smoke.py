@@ -22,6 +22,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+DEFAULT_EVIDENCE_PATH = (
+    PROJECT_ROOT
+    / ".stock_ming_3"
+    / "candidate_radar_worker"
+    / "candidate_radar_worker_filesystem_roundtrip_smoke.json"
+)
+
 os.environ.setdefault("COMMAND_CENTER_CELERY_BROKER_URL", "filesystem://")
 os.environ.setdefault("COMMAND_CENTER_CELERY_RESULT_BACKEND", "cache+memory://")
 
@@ -161,11 +168,35 @@ def run_smoke(timeout: float) -> dict[str, Any]:
     return payload
 
 
+def _write_evidence(payload: dict[str, Any], evidence_path: Path | None) -> None:
+    if evidence_path is None:
+        return
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Candidate Radar local worker round-trip smoke.")
     parser.add_argument("--timeout", type=float, default=10.0)
+    parser.add_argument(
+        "--evidence-path",
+        type=Path,
+        default=DEFAULT_EVIDENCE_PATH,
+        help="When --write-evidence is used, write the local runtime evidence JSON to this ignored artifact path.",
+    )
+    parser.add_argument(
+        "--write-evidence",
+        action="store_true",
+        help="Write the runtime evidence artifact after the worker round-trip succeeds.",
+    )
+    parser.add_argument(
+        "--no-write-evidence",
+        action="store_true",
+        help="Print the evidence payload only; overrides --write-evidence.",
+    )
     args = parser.parse_args()
     payload = run_smoke(timeout=args.timeout)
+    _write_evidence(payload, args.evidence_path if args.write_evidence and not args.no_write_evidence else None)
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     return 0 if payload.get("status") == "candidate_radar_worker_filesystem_roundtrip_passed" else 1
 

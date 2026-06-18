@@ -20,6 +20,12 @@ SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 CANDIDATE_BROWSER_QA_RUNBOOK_PATH = PROJECT_ROOT / "scripts" / "candidate_radar_browser_qa_runbook.py"
 MOTION_BROWSER_QA_RUNNER_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runner.mjs"
 MOTION_QA_ARTIFACT_ROOT = PROJECT_ROOT / ".stock_ming_3" / "motion_qa"
+CANDIDATE_WORKER_FILESYSTEM_ROUNDTRIP_EVIDENCE_PATH = (
+    PROJECT_ROOT
+    / ".stock_ming_3"
+    / "candidate_radar_worker"
+    / "candidate_radar_worker_filesystem_roundtrip_smoke.json"
+)
 CANDIDATE_ROUTE_SOURCE_PATH = PROJECT_ROOT / "desktop" / "src" / "routes" / "CandidateRadar.tsx"
 SUPPORTED_LOCAL_SCAN_MODES = {"quick_cache_scan", "watchlist_scan", "custom_pool_scan", "full_pool_local_scan"}
 LOCAL_POOL_SCAN_MODES = {"watchlist_scan", "custom_pool_scan", "full_pool_local_scan"}
@@ -153,6 +159,7 @@ CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS = (
     "local_full_pool_execution_receipt",
     "local_deep_scan_review_receipt",
     "worker_runtime_round_trip_link",
+    "worker_transport_round_trip_smoke",
     "local_worker_full_pool_fallback_receipt",
     "local_worker_deep_scan_fallback_receipt",
     "worker_full_pool_execution",
@@ -169,6 +176,7 @@ CANDIDATE_RADAR_PRODUCTION_STAGE_LABELS = {
     "local_full_pool_execution_receipt": "local full-pool-like receipt stays local evidence",
     "local_deep_scan_review_receipt": "local deep-scan review stays local evidence",
     "worker_runtime_round_trip_link": "local worker runtime round-trip evidence is linked",
+    "worker_transport_round_trip_smoke": "Candidate Radar task round-trips through local worker transport",
     "local_worker_full_pool_fallback_receipt": "local full-pool worker-fallback execution receipt is visible",
     "local_worker_deep_scan_fallback_receipt": "local deep-scan worker-fallback execution receipt is visible",
     "worker_full_pool_execution": "worker-backed full-pool execution evidence is required",
@@ -185,6 +193,7 @@ LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS = {
     "local_full_pool_execution_receipt",
     "local_deep_scan_review_receipt",
     "worker_runtime_round_trip_link",
+    "worker_transport_round_trip_smoke",
     "local_worker_full_pool_fallback_receipt",
     "local_worker_deep_scan_fallback_receipt",
 }
@@ -8532,6 +8541,41 @@ def _attach_candidate_radar_durable_evidence_recipe(packet: Mapping[str, Any]) -
     return view
 
 
+def _read_candidate_worker_filesystem_roundtrip_evidence() -> dict[str, Any]:
+    try:
+        payload = json.loads(CANDIDATE_WORKER_FILESYSTEM_ROUNDTRIP_EVIDENCE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _candidate_worker_filesystem_roundtrip_ready(payload: Mapping[str, Any]) -> bool:
+    return bool(
+        payload.get("schema_version") == "candidate_radar_worker_filesystem_roundtrip_smoke.v1"
+        and payload.get("status") == "candidate_radar_worker_filesystem_roundtrip_passed"
+        and payload.get("direct_evidence_layer")
+        == "L3_local_candidate_radar_worker_filesystem_roundtrip_not_redis"
+        and payload.get("candidate_task_type") == "run_candidate_radar_full_pool_local_scan"
+        and payload.get("output_packet_key") == "command_center_3_candidate_radar_cache"
+        and payload.get("task_dispatched") is True
+        and payload.get("task_result_returned") is True
+        and payload.get("filesystem_broker_used") is True
+        and payload.get("redis_broker_used") is False
+        and payload.get("redis_pinged") is False
+        and payload.get("production_worker_complete") is False
+        and payload.get("production_radar_replacement_complete") is False
+        and payload.get("provider_backed_acceptance_done") is False
+        and payload.get("external_calls_triggered") is False
+        and payload.get("tushare_called") is False
+        and payload.get("deepseek_called") is False
+        and payload.get("github_called") is False
+        and payload.get("does_not_execute_trades") is True
+        and payload.get("does_not_modify_strategy_action") is True
+        and payload.get("candidate_is_not_buy_instruction") is True
+        and payload.get("contains_secret") is False
+    )
+
+
 def _candidate_radar_production_stage_scope_manifest(
     packet: Mapping[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -8613,6 +8657,8 @@ def _candidate_radar_production_stage_scope_manifest(
         and deep_scan_worker.get("worker_execution_implemented") is True
         and deep_scan_worker.get("production_deep_scan_done") is True
     )
+    worker_transport_roundtrip = _read_candidate_worker_filesystem_roundtrip_evidence()
+    worker_transport_roundtrip_ready = _candidate_worker_filesystem_roundtrip_ready(worker_transport_roundtrip)
     provider_parity_ready = False
     search_quant_ready = False
     browser_promotion_ready = bool(
@@ -8665,6 +8711,25 @@ def _candidate_radar_production_stage_scope_manifest(
                 f"task_id={worker_runtime_link.get('worker_runtime_execution_task_id') or ''}"
             ),
             "missing": [] if worker_runtime_round_trip_ready else ["local worker runtime round-trip link"],
+        },
+        "worker_transport_round_trip_smoke": {
+            "direct": worker_transport_roundtrip_ready,
+            "status": (
+                "direct_evidence_ready_candidate_worker_filesystem_roundtrip"
+                if worker_transport_roundtrip_ready
+                else "candidate_worker_filesystem_roundtrip_evidence_missing"
+            ),
+            "evidence": (
+                f"artifact={CANDIDATE_WORKER_FILESYSTEM_ROUNDTRIP_EVIDENCE_PATH}; "
+                f"status={worker_transport_roundtrip.get('status') or 'missing'}; "
+                f"task_id={worker_transport_roundtrip.get('returned_task_id') or ''}; "
+                "redis_broker_used=false; production_worker_complete=false"
+            ),
+            "missing": (
+                []
+                if worker_transport_roundtrip_ready
+                else ["candidate radar local worker filesystem round-trip evidence artifact"]
+            ),
         },
         "local_worker_full_pool_fallback_receipt": {
             "direct": worker_full_pool_fallback_visible,

@@ -92,6 +92,7 @@ REQUIRED_CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS = {
     "local_full_pool_execution_receipt",
     "local_deep_scan_review_receipt",
     "worker_runtime_round_trip_link",
+    "worker_transport_round_trip_smoke",
     "local_worker_full_pool_fallback_receipt",
     "local_worker_deep_scan_fallback_receipt",
     "worker_full_pool_execution",
@@ -108,6 +109,7 @@ CANDIDATE_RADAR_PRODUCTION_STAGE_LABELS = {
     "local_full_pool_execution_receipt": "local full-pool-like receipt stays local evidence",
     "local_deep_scan_review_receipt": "local deep-scan review stays local evidence",
     "worker_runtime_round_trip_link": "local worker runtime round-trip evidence is linked",
+    "worker_transport_round_trip_smoke": "Candidate Radar task round-trips through local worker transport",
     "local_worker_full_pool_fallback_receipt": "local full-pool worker-fallback execution receipt is visible",
     "local_worker_deep_scan_fallback_receipt": "local deep-scan worker-fallback execution receipt is visible",
     "worker_full_pool_execution": "worker-backed full-pool execution evidence is required",
@@ -124,6 +126,7 @@ LOCAL_CANDIDATE_RADAR_STAGE_EVIDENCE_KEYS = {
     "local_full_pool_execution_receipt",
     "local_deep_scan_review_receipt",
     "worker_runtime_round_trip_link",
+    "worker_transport_round_trip_smoke",
     "local_worker_full_pool_fallback_receipt",
     "local_worker_deep_scan_fallback_receipt",
 }
@@ -776,6 +779,10 @@ def build_contract() -> dict[str, Any]:
         expected_direct_stage_keys.add("worker_runtime_round_trip_link")
     else:
         expected_pending_stage_keys.add("worker_runtime_round_trip_link")
+    if "worker_transport_round_trip_smoke" in production_stage_scope_direct_keys:
+        expected_direct_stage_keys.add("worker_transport_round_trip_smoke")
+    else:
+        expected_pending_stage_keys.add("worker_transport_round_trip_smoke")
     production_stage_scope_ready = (
         production_stage_scope_keys == REQUIRED_CANDIDATE_RADAR_PRODUCTION_STAGE_KEYS
         and production_stage_scope_direct_keys == expected_direct_stage_keys
