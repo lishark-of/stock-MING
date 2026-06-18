@@ -129,12 +129,13 @@ textarea:focus {
 .motion-surface[data-motion-purpose="visual_hierarchy_clarity"]::after {
   animation: cc-keynote-focus-sweep var(--motion-duration-hierarchy) var(--motion-ease-emphasized) both;
   background: linear-gradient(105deg, transparent 0%, rgba(255, 255, 255, 0.54) 43%, transparent 72%);
+  background-position: 120% 0;
+  background-size: 220% 100%;
   content: "";
   inset: 0;
   opacity: 0;
   pointer-events: none;
   position: absolute;
-  transform: translateX(-112%);
   z-index: 0;
 }
 
@@ -324,15 +325,15 @@ textarea:focus {
 
 @keyframes cc-keynote-focus-sweep {
   from {
+    background-position: 120% 0;
     opacity: 0;
-    transform: translateX(-112%);
   }
   34% {
     opacity: 0.56;
   }
   to {
+    background-position: -120% 0;
     opacity: 0;
-    transform: translateX(112%);
   }
 }
 
@@ -382,15 +383,15 @@ textarea:focus {
 
 @keyframes cc-context-sweep {
   from {
+    background-position: 120% 0;
     opacity: 0;
-    transform: translateX(-115%);
   }
   38% {
     opacity: 1;
   }
   to {
+    background-position: -120% 0;
     opacity: 0;
-    transform: translateX(115%);
   }
 }
 
@@ -459,10 +460,14 @@ textarea:focus {
   background: transparent;
   color: #cbd5e1;
   border-color: #334155;
+  box-sizing: border-box;
+  display: flex;
   isolation: isolate;
+  min-width: 0;
   overflow: hidden;
   position: relative;
   text-align: left;
+  width: 100%;
 }
 
 .sidebar button::before {
@@ -483,17 +488,22 @@ textarea:focus {
 
 .sidebar button::after {
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.24), transparent);
+  background-position: 120% 0;
+  background-size: 220% 100%;
   content: "";
   inset: 0;
   opacity: 0;
   pointer-events: none;
   position: absolute;
-  transform: translateX(-115%);
   z-index: 0;
 }
 
 .sidebar .nav-label {
+  min-width: 0;
+  overflow: hidden;
   position: relative;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   z-index: 1;
 }
 
@@ -699,6 +709,7 @@ textarea:focus {
   display: grid;
   gap: 6px;
   min-height: 72px;
+  min-width: 0;
   padding: 10px;
   transition:
     background var(--motion-duration-panel) var(--motion-ease-standard),
@@ -717,11 +728,22 @@ textarea:focus {
 .metric-card span {
   color: #64748b;
   font-size: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .metric-card strong {
   color: #0f172a;
   font-size: 18px;
+  line-height: 1.18;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.metric-card .status-badge {
+  justify-self: start;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .chart-panel {
