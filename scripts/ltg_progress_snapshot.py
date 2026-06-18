@@ -51,6 +51,21 @@ def _compact_handoff_rows(rows: list[Any]) -> list[dict[str, Any]]:
             continue
         target_route = row.get("target_route") or row.get("future_route") or ""
         target_task_type = row.get("target_task_type") or row.get("future_task_type") or ""
+        preflight_blocking_checks = row.get(
+            "supporting_worker_runtime_dependency_preflight_blocking_checks"
+        ) or []
+        preflight_blocker_count = int(
+            row.get("supporting_worker_runtime_dependency_preflight_blocker_count") or 0
+        )
+        redis_manual_resolution_blockers = row.get(
+            "supporting_worker_runtime_dependency_redis_manual_resolution_blockers"
+        ) or []
+        local_non_redis_runtime_blocking_checks = row.get(
+            "supporting_worker_runtime_dependency_local_non_redis_runtime_blocking_checks"
+        ) or []
+        production_redis_evidence_blockers = row.get(
+            "supporting_worker_runtime_dependency_production_redis_evidence_blockers"
+        ) or []
         compact.append(
             {
                 "target_route": target_route,
@@ -81,13 +96,8 @@ def _compact_handoff_rows(rows: list[Any]) -> list[dict[str, Any]]:
                     "supporting_worker_runtime_dependency_preflight_status"
                 )
                 or "",
-                "supporting_worker_runtime_dependency_preflight_blocker_count": int(
-                    row.get("supporting_worker_runtime_dependency_preflight_blocker_count") or 0
-                ),
-                "supporting_worker_runtime_dependency_preflight_blocking_checks": row.get(
-                    "supporting_worker_runtime_dependency_preflight_blocking_checks"
-                )
-                or [],
+                "supporting_worker_runtime_dependency_preflight_blocker_count": preflight_blocker_count,
+                "supporting_worker_runtime_dependency_preflight_blocking_checks": preflight_blocking_checks,
                 "supporting_worker_runtime_dependency_redis_server_resolution": row.get(
                     "supporting_worker_runtime_dependency_redis_server_resolution"
                 )
@@ -100,33 +110,25 @@ def _compact_handoff_rows(rows: list[Any]) -> list[dict[str, Any]]:
                     "supporting_worker_runtime_dependency_redis_manual_resolution_required"
                 )
                 is True,
-                "supporting_worker_runtime_dependency_redis_manual_resolution_blockers": row.get(
-                    "supporting_worker_runtime_dependency_redis_manual_resolution_blockers"
-                )
-                or [],
-                "supporting_worker_runtime_dependency_local_non_redis_runtime_ready": row.get(
-                    "supporting_worker_runtime_dependency_local_non_redis_runtime_ready"
-                )
-                is True,
-                "supporting_worker_runtime_dependency_local_non_redis_runtime_blocking_checks": row.get(
-                    "supporting_worker_runtime_dependency_local_non_redis_runtime_blocking_checks"
-                )
-                or [],
-                "supporting_worker_runtime_dependency_production_redis_evidence_blocked": row.get(
-                    "supporting_worker_runtime_dependency_production_redis_evidence_blocked"
-                )
-                is True,
-                "supporting_worker_runtime_dependency_production_redis_evidence_blockers": row.get(
-                    "supporting_worker_runtime_dependency_production_redis_evidence_blockers"
-                )
-                or [],
+                "supporting_worker_runtime_dependency_redis_manual_resolution_blockers": (
+                    redis_manual_resolution_blockers
+                ),
+                "supporting_worker_runtime_dependency_local_non_redis_runtime_ready": (
+                    not local_non_redis_runtime_blocking_checks
+                ),
+                "supporting_worker_runtime_dependency_local_non_redis_runtime_blocking_checks": (
+                    local_non_redis_runtime_blocking_checks
+                ),
+                "supporting_worker_runtime_dependency_production_redis_evidence_blocked": bool(
+                    production_redis_evidence_blockers
+                ),
+                "supporting_worker_runtime_dependency_production_redis_evidence_blockers": production_redis_evidence_blockers,
                 "supporting_worker_runtime_dependency_redis_checked_path_count": int(
                     row.get("supporting_worker_runtime_dependency_redis_checked_path_count") or 0
                 ),
-                "supporting_worker_runtime_dependency_preflight_blocks_manual_runtime_evidence": row.get(
-                    "supporting_worker_runtime_dependency_preflight_blocks_manual_runtime_evidence"
-                )
-                is True,
+                "supporting_worker_runtime_dependency_preflight_blocks_manual_runtime_evidence": (
+                    preflight_blocker_count > 0
+                ),
                 "disabled_reason": row.get("disabled_reason") or "",
                 "external_calls_triggered": row.get("external_calls_triggered") is True,
                 "tushare_called": row.get("tushare_called") is True,

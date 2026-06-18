@@ -11229,6 +11229,48 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(focused["safety"]["github_called"])
         self.assertTrue(focused["safety"]["does_not_execute_trades"])
 
+    def test_ltg_progress_snapshot_compacts_missing_worker_ready_flags_consistently(self):
+        path = Path("scripts/ltg_progress_snapshot.py")
+        spec = importlib.util.spec_from_file_location("ltg_progress_snapshot_for_test", path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        rows = module._compact_handoff_rows(
+            [
+                {
+                    "target_route": "POST /api/candidate-radar/full-pool-worker-scan",
+                    "target_task_type": "run_candidate_radar_full_pool_worker_fallback",
+                    "supporting_worker_runtime_dependency_preflight_blocker_count": 0,
+                    "supporting_worker_runtime_dependency_preflight_blocking_checks": [],
+                    "supporting_worker_runtime_dependency_local_non_redis_runtime_blocking_checks": [],
+                    "supporting_worker_runtime_dependency_production_redis_evidence_blockers": [
+                        "redis_server_binary"
+                    ],
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "does_not_execute_trades": True,
+                }
+            ]
+        )
+
+        self.assertEqual(len(rows), 1)
+        handoff = rows[0]
+        self.assertTrue(handoff["supporting_worker_runtime_dependency_local_non_redis_runtime_ready"])
+        self.assertFalse(
+            handoff["supporting_worker_runtime_dependency_preflight_blocks_manual_runtime_evidence"]
+        )
+        self.assertTrue(
+            handoff["supporting_worker_runtime_dependency_production_redis_evidence_blocked"]
+        )
+        self.assertFalse(handoff["external_calls_triggered"])
+        self.assertFalse(handoff["tushare_called"])
+        self.assertFalse(handoff["deepseek_called"])
+        self.assertFalse(handoff["github_called"])
+        self.assertTrue(handoff["does_not_execute_trades"])
+
     def test_data_health_freshness_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/data_health_freshness_contract.py")
         script = path.read_text(encoding="utf-8")
