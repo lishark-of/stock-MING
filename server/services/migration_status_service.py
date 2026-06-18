@@ -2789,6 +2789,35 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         and execution_map.get("does_not_modify_strategy_action") is True
         and execution_map.get("contains_secret") is False
     )
+    provider_boundary_done = bool(
+        provider_boundary_done
+        or (
+            runtime_execution_done
+            and execution_map.get("provider_model_no_autoschedule_boundary_verified") is True
+            and execution_map.get("provider_model_task_dispatched") is False
+            and execution_map.get("external_calls_triggered") is False
+            and execution_map.get("tushare_called") is False
+            and execution_map.get("deepseek_called") is False
+            and execution_map.get("github_called") is False
+        )
+    )
+    no_trade_no_action_done = bool(
+        no_trade_no_action_done
+        or (
+            runtime_execution_done
+            and execution_map.get("no_trade_no_action_boundary_verified") is True
+            and execution_map.get("does_not_execute_trades") is True
+            and execution_map.get("does_not_modify_strategy_action") is True
+        )
+    )
+    scheduler_default_off_done = bool(
+        scheduler_default_off_done
+        or (
+            runtime_execution_done
+            and execution_map.get("scheduler_default_off_runtime_verified") is True
+            and execution_map.get("scheduler_started") is False
+        )
+    )
     cross_process_task_control_done = bool(
         runtime_execution_done
         and execution_map.get("cross_process_task_control_verified") is True

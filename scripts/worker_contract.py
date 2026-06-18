@@ -146,6 +146,7 @@ REQUIRED_RUNTIME_EVIDENCE_STAGES = (
     "scheduler_default_off_runtime",
     "provider_model_no_autoschedule_boundary",
     "no_trade_no_action_boundary",
+    "production_worker_promotion_review",
 )
 REQUIRED_RUNTIME_QA_EXECUTION_PHASES = (
     "evidence_plan_scope_ticket",
@@ -208,6 +209,7 @@ RUNTIME_EVIDENCE_STAGE_LABELS = {
     "scheduler_default_off_runtime": "Scheduler default-off runtime evidence",
     "provider_model_no_autoschedule_boundary": "Provider/model no-autoschedule boundary",
     "no_trade_no_action_boundary": "No-trade/no-action boundary",
+    "production_worker_promotion_review": "Production worker promotion review evidence",
 }
 
 
@@ -528,6 +530,8 @@ def build_contract() -> dict[str, Any]:
         and runtime_qa_execution.get("does_not_modify_strategy_action") is True
     ):
         direct_runtime_stage_keys.append("no_trade_no_action_boundary")
+    if production_promotion_review_visible:
+        direct_runtime_stage_keys.append("production_worker_promotion_review")
     expected_worker_runtime_evidence_stage_scope_rows = _worker_runtime_evidence_stage_scope_rows(
         production_evidence_scope,
         direct_stage_keys=direct_runtime_stage_keys,
@@ -538,6 +542,7 @@ def build_contract() -> dict[str, Any]:
             "scheduler_default_off_runtime": "local runtime QA verified scheduler remains off during runtime path",
             "provider_model_no_autoschedule_boundary": "local runtime QA verified provider/model autoscheduling remains disabled",
             "no_trade_no_action_boundary": "local runtime QA verified no trade execution and no strategy action mutation",
+            "production_worker_promotion_review": "local production promotion review recorded while Celery/Redis production blockers remain",
         },
     )
     worker_runtime_evidence_stage_scope_rows = worker_runtime_evidence_stage_scope_cache_rows

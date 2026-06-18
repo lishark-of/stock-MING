@@ -43,6 +43,7 @@ WORKER_RUNTIME_EVIDENCE_STAGE_KEYS = [
     "scheduler_default_off_runtime",
     "provider_model_no_autoschedule_boundary",
     "no_trade_no_action_boundary",
+    "production_worker_promotion_review",
 ]
 WORKER_RUNTIME_EVIDENCE_STAGE_LABELS = {
     "celery_process": "Celery process evidence",
@@ -53,6 +54,7 @@ WORKER_RUNTIME_EVIDENCE_STAGE_LABELS = {
     "scheduler_default_off_runtime": "Scheduler default-off runtime evidence",
     "provider_model_no_autoschedule_boundary": "Provider/model no-autoschedule boundary",
     "no_trade_no_action_boundary": "No-trade/no-action boundary",
+    "production_worker_promotion_review": "Production worker promotion review evidence",
 }
 WORKER_RUNTIME_QA_EXECUTION_PHASES = [
     "evidence_plan_scope_ticket",
@@ -2029,16 +2031,7 @@ def _worker_production_evidence_plan_receipt(
         "activation_review_status": activation_review_task.get("status") or "missing",
         "activation_review_task_id": activation_review_task.get("review_task_id") or "",
         "synthetic_healthcheck_task_id": synthetic_healthcheck.get("task_id") or "",
-        "evidence_scope": [
-            "celery_process",
-            "redis_broker",
-            "local_fallback_round_trip",
-            "cross_process_retry_cancel_lock_dedupe",
-            "append_only_worker_logs",
-            "scheduler_default_off_runtime",
-            "provider_model_no_autoschedule_boundary",
-            "no_trade_no_action_boundary",
-        ],
+        "evidence_scope": list(WORKER_RUNTIME_EVIDENCE_STAGE_KEYS),
         "external_sources_allowed": False,
         "starts_celery_worker": False,
         "pings_redis": False,
@@ -4353,6 +4346,8 @@ def _worker_runtime_evidence_stage_scope_manifest(
         and runtime_qa_execution.get("does_not_modify_strategy_action") is True
     ):
         direct_stage_keys.append("no_trade_no_action_boundary")
+    if runtime_durable_evidence_recipe.get("production_worker_promotion_review_ready") is True:
+        direct_stage_keys.append("production_worker_promotion_review")
     rows = _worker_runtime_evidence_stage_scope_rows(
         evidence_scope,
         direct_stage_keys=direct_stage_keys,
@@ -4363,6 +4358,7 @@ def _worker_runtime_evidence_stage_scope_manifest(
             "scheduler_default_off_runtime": "local runtime QA verified scheduler remains off during runtime path",
             "provider_model_no_autoschedule_boundary": "local runtime QA verified provider/model autoscheduling remains disabled",
             "no_trade_no_action_boundary": "local runtime QA verified no trade execution and no strategy action mutation",
+            "production_worker_promotion_review": "local production promotion review recorded while Celery/Redis production blockers remain",
         },
     )
     pending_stage_keys = [row["stage_key"] for row in rows if row.get("production_blocker") is True]
