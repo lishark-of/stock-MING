@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 import tempfile
 from contextlib import contextmanager
@@ -30,9 +31,26 @@ from fastapi.testclient import TestClient  # noqa: E402
 from server.main import app  # noqa: E402
 from server.services import task_service, worker_service  # noqa: E402
 from server.services.task_service import clear_task_statuses_for_tests, read_task_status  # noqa: E402
+from storage.sqlite_meta import SQLiteMetaStore  # noqa: E402
 
 
 FORBIDDEN_RESPONSE_MARKERS = ("SHOULD_DROP",)
+PROJECT_META_CHAIN_PACKET_KEYS = (
+    worker_service.PACKET_KEY,
+    worker_service.SYNTHETIC_HEALTHCHECK_PACKET_KEY,
+    worker_service.ACTIVATION_REVIEW_PACKET_KEY,
+    worker_service.PRODUCTION_EVIDENCE_PLAN_PACKET_KEY,
+    worker_service.RUNTIME_QA_EXECUTION_REQUEST_PACKET_KEY,
+    worker_service.RUNTIME_QA_DRY_RUN_PACKET_KEY,
+    worker_service.RUNTIME_QA_EXECUTION_PACKET_KEY,
+)
+
+
+def _display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(path)
 
 
 @contextmanager
@@ -43,7 +61,7 @@ def _meta_store(use_project_meta: bool) -> Iterator[dict[str, Any]]:
         yield {
             "isolated_meta_store": False,
             "project_meta_touched": True,
-            "meta_path": str(worker_service.SQLITE_META_PATH.relative_to(PROJECT_ROOT)),
+            "meta_path": _display_path(worker_service.SQLITE_META_PATH),
         }
         return
     with tempfile.TemporaryDirectory(prefix="stock_ming_worker_runtime_qa_") as tmp:
@@ -79,8 +97,32 @@ def _post(client: TestClient, path: str, payload: dict[str, Any], steps: list[di
     return response
 
 
+def _reset_project_meta_chain_packets() -> dict[str, Any]:
+    db_path = worker_service.SQLITE_META_PATH
+    SQLiteMetaStore(db_path)
+    if not db_path.exists():
+        return {"project_meta_chain_packets_reset": True, "deleted_packet_count": 0}
+    placeholders = ",".join("?" for _ in PROJECT_META_CHAIN_PACKET_KEYS)
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            f"SELECT COUNT(*) FROM packets WHERE packet_key IN ({placeholders})",
+            PROJECT_META_CHAIN_PACKET_KEYS,
+        ).fetchone()
+        deleted = int(row[0] if row else 0)
+        conn.execute(
+            f"DELETE FROM packets WHERE packet_key IN ({placeholders})",
+            PROJECT_META_CHAIN_PACKET_KEYS,
+        )
+        conn.commit()
+    return {"project_meta_chain_packets_reset": True, "deleted_packet_count": deleted}
+
+
 def run_evidence(*, use_project_meta: bool = False) -> dict[str, Any]:
     with _meta_store(use_project_meta) as meta:
+        reset = _reset_project_meta_chain_packets() if use_project_meta else {
+            "project_meta_chain_packets_reset": False,
+            "deleted_packet_count": 0,
+        }
         client = TestClient(app)
         clear_task_statuses_for_tests(clear_persisted=True)
         steps: list[dict[str, Any]] = []
@@ -185,6 +227,7 @@ def run_evidence(*, use_project_meta: bool = False) -> dict[str, Any]:
             "direct_evidence_layer": "L3_local_worker_runtime_round_trip_not_celery_redis",
             "ltg_ids": ["LTG-06", "LTG-13"],
             **meta,
+            **reset,
             "execution_task_id": receipt.get("execution_task_id") or "",
             "execution_status": receipt.get("status") or "",
             "local_runtime_qa_execution_done": receipt.get("local_runtime_qa_execution_done") is True,

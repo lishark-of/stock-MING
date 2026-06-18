@@ -15,6 +15,7 @@ from pathlib import Path
 from server.services import audit_service, bootstrap_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, model_strategy_service, next_session_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, tushare_task_service, worker_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
+from storage.sqlite_meta import SQLiteMetaStore
 
 
 FACTOR_TEST_LTG03_OBSERVED_STATUSES = {
@@ -14133,6 +14134,63 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["forbidden_response_marker_found"])
         self.assertIn("celery_redis_process_evidence_still_pending", payload["production_blockers"])
         self.assertEqual(len(payload["steps"]), 6)
+
+    def test_worker_runtime_qa_roundtrip_evidence_project_meta_resets_stale_scope_packets(self):
+        path = Path("scripts/worker_runtime_qa_roundtrip_evidence.py")
+        spec = importlib.util.spec_from_file_location("worker_runtime_qa_roundtrip_evidence_test", path)
+        self.assertIsNotNone(spec)
+        module = importlib.util.module_from_spec(spec)
+        self.assertIsNotNone(spec.loader)
+        spec.loader.exec_module(module)
+
+        original_worker_meta = worker_service.SQLITE_META_PATH
+        original_task_meta = task_service.SQLITE_META_PATH
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "meta.sqlite"
+            worker_service.SQLITE_META_PATH = db_path
+            task_service.SQLITE_META_PATH = db_path
+            module.worker_service.SQLITE_META_PATH = db_path
+            module.task_service.SQLITE_META_PATH = db_path
+            try:
+                store = SQLiteMetaStore(db_path)
+                for packet_key in module.PROJECT_META_CHAIN_PACKET_KEYS:
+                    store.write_packet(
+                        packet_key,
+                        {
+                            "packet_key": packet_key,
+                            "status": "stale_blocked_scope_hash_mismatch",
+                            "runtime_qa_scope_hash": "stale",
+                        },
+                    )
+
+                payload = module.run_evidence(use_project_meta=True)
+            finally:
+                worker_service.SQLITE_META_PATH = original_worker_meta
+                task_service.SQLITE_META_PATH = original_task_meta
+                module.worker_service.SQLITE_META_PATH = original_worker_meta
+                module.task_service.SQLITE_META_PATH = original_task_meta
+
+        self.assertEqual(payload["schema_version"], "worker_runtime_qa_roundtrip_evidence.v1")
+        self.assertEqual(payload["status"], "worker_runtime_qa_roundtrip_passed")
+        self.assertFalse(payload["isolated_meta_store"])
+        self.assertTrue(payload["project_meta_touched"])
+        self.assertTrue(payload["project_meta_chain_packets_reset"])
+        self.assertEqual(payload["deleted_packet_count"], len(module.PROJECT_META_CHAIN_PACKET_KEYS))
+        self.assertTrue(payload["local_runtime_qa_execution_done"])
+        self.assertTrue(payload["local_fallback_round_trip_verified"])
+        self.assertTrue(payload["task_log_round_trip_verified"])
+        self.assertTrue(payload["append_only_worker_log_verified"])
+        self.assertTrue(payload["cross_process_task_control_verified"])
+        self.assertFalse(payload["external_calls_triggered"])
+        self.assertFalse(payload["tushare_called"])
+        self.assertFalse(payload["deepseek_called"])
+        self.assertFalse(payload["github_called"])
+        self.assertTrue(payload["does_not_execute_trades"])
+        self.assertTrue(payload["does_not_modify_strategy_action"])
+        self.assertFalse(payload["production_worker_complete"])
+        self.assertFalse(payload["worker_started"])
+        self.assertFalse(payload["celery_worker_started"])
+        self.assertFalse(payload["redis_pinged"])
 
     def test_tauri_desktop_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/tauri_desktop_contract.py")
