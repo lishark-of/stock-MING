@@ -561,6 +561,7 @@ textarea:focus {
   border-radius: 8px;
   padding: 16px;
   box-shadow: var(--motion-shadow-rest);
+  min-width: 0;
   transition:
     border-color var(--motion-duration-panel) var(--motion-ease-standard),
     box-shadow var(--motion-duration-panel) var(--motion-ease-standard),
@@ -598,6 +599,7 @@ textarea:focus {
 
 .packet-card p {
   color: #475569;
+  overflow-wrap: anywhere;
 }
 
 .status-badge {
@@ -884,14 +886,16 @@ textarea:focus {
 .chart-legend-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
   margin: 12px 0;
+  min-width: 0;
 }
 
 .chart-legend-block {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
+  min-width: 0;
   padding: 10px;
 }
 
@@ -900,6 +904,7 @@ textarea:focus {
   gap: 8px;
   list-style: none;
   margin: 10px 0 0;
+  min-width: 0;
   padding: 0;
 }
 
@@ -907,7 +912,8 @@ textarea:focus {
   align-items: center;
   display: grid;
   gap: 8px;
-  grid-template-columns: 34px minmax(90px, 1fr) auto auto;
+  grid-template-columns: 34px minmax(0, 1fr) auto auto;
+  min-width: 0;
 }
 
 .chart-legend-line {
@@ -928,10 +934,14 @@ textarea:focus {
   color: #334155;
   font-style: normal;
   font-weight: 700;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .chart-legend-list small {
   color: #64748b;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .task-panel {
