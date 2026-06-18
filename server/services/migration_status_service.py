@@ -935,6 +935,12 @@ LTG_NEXT_ACCEPTANCE_ACTION_OBSERVATION_STEPS = {
             "receipt_key": "streamlit_retirement_durable_evidence_recipe",
             "route": "GET /api/legacy/cache",
         },
+        {
+            "phase_key": "streamlit_fallback_retirement_review_receipt",
+            "task_type": "run_streamlit_fallback_retirement_review",
+            "receipt_key": "streamlit_fallback_retirement_review",
+            "route": "POST /api/legacy/fallback-retirement-review",
+        },
     ],
     "p8_motion_production_promotion_review": [
         {
@@ -6144,6 +6150,14 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         parity_review = parity_review if isinstance(parity_review, dict) else {}
         parity_review_ready = parity_review.get("local_review_ready") is True
         parity_direct_evidence_verified = parity_review.get("direct_evidence_verified") is True
+        fallback_retirement_review = legacy_packet.get("streamlit_fallback_retirement_review")
+        fallback_retirement_review = (
+            fallback_retirement_review if isinstance(fallback_retirement_review, dict) else {}
+        )
+        fallback_retirement_review_ready = fallback_retirement_review.get("local_review_ready") is True
+        fallback_retirement_direct_evidence_verified = (
+            fallback_retirement_review.get("direct_evidence_verified") is True
+        )
         observed = streamlit_contract.get("observed")
         observed = observed if isinstance(observed, dict) else {}
         stage_rows = streamlit_contract.get("streamlit_retirement_stage_scope_rows")
@@ -6162,26 +6176,34 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             for row in stage_rows
             if isinstance(row, dict) and row.get("current_status") == "local_exit_audit_or_dependency_contract_only"
         )
-        direct_evidence_count = 1 if parity_direct_evidence_verified else 0
-        direct_evidence_stage_keys = (
-            ["ordinary_workflow_replacement_parity"] if parity_direct_evidence_verified else []
-        )
+        direct_evidence_stage_keys = []
+        if parity_direct_evidence_verified:
+            direct_evidence_stage_keys.append("ordinary_workflow_replacement_parity")
+        if fallback_retirement_direct_evidence_verified:
+            direct_evidence_stage_keys.append("fallback_retirement_change_review")
+        direct_evidence_count = len(direct_evidence_stage_keys)
         observed_pending_count = max(pending_count - direct_evidence_count, 0)
         rows.append(
             {
                 "id": "LTG-10",
                 "goal": "Streamlit 完全退出普通主流程",
                 "stage_scope_manifest": "streamlit_retirement_stage_scope_manifest",
-                "status": "observed_streamlit_direct_parity_evidence_retirement_pending"
+                "status": "observed_streamlit_fallback_retirement_review_evidence_retirement_pending"
+                if fallback_retirement_direct_evidence_verified
+                else "observed_streamlit_direct_parity_evidence_retirement_pending"
                 if parity_direct_evidence_verified
                 else "observed_in_streamlit_legacy_static_contract"
                 if stage_rows
                 else "missing_from_streamlit_legacy_static_contract",
-                "observed_source": "POST /api/legacy/ordinary-workflow-parity-review local direct evidence"
+                "observed_source": "POST /api/legacy/ordinary-workflow-parity-review and POST /api/legacy/fallback-retirement-review local direct evidence"
+                if fallback_retirement_direct_evidence_verified
+                else "POST /api/legacy/ordinary-workflow-parity-review local direct evidence"
                 if parity_direct_evidence_verified
                 else "scripts/streamlit_legacy_contract.build_contract local static contract",
                 "cache_status": str(streamlit_contract.get("status") or "missing"),
-                "cache_mode": "local_static_contract_plus_streamlit_parity_direct_evidence"
+                "cache_mode": "local_static_contract_plus_streamlit_parity_and_fallback_retirement_direct_evidence"
+                if fallback_retirement_direct_evidence_verified
+                else "local_static_contract_plus_streamlit_parity_direct_evidence"
                 if parity_direct_evidence_verified
                 else "local_static_contract",
                 "row_count": row_count,
@@ -6213,6 +6235,15 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 ),
                 "streamlit_ordinary_workflow_parity_direct_evidence_verified": parity_direct_evidence_verified,
                 "streamlit_ordinary_workflow_parity_review_is_not_retirement": True,
+                "streamlit_fallback_retirement_review_ready": fallback_retirement_review_ready,
+                "streamlit_fallback_retirement_review_status": str(
+                    fallback_retirement_review.get("status") or "missing"
+                ),
+                "streamlit_fallback_retirement_direct_evidence_verified": (
+                    fallback_retirement_direct_evidence_verified
+                ),
+                "streamlit_fallback_retirement_review_is_not_retirement": True,
+                "fallback_retirement_change_review_done": fallback_retirement_direct_evidence_verified,
                 "ordinary_fallback_dependency_count": int(
                     parity_review.get("ordinary_fallback_dependency_count") or 0
                 ),
@@ -6247,7 +6278,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "does_not_modify_holdings": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
-                "evidence_boundary": "observed_l3_streamlit_parity_review_not_retirement_completion"
+                "evidence_boundary": "observed_l3_streamlit_parity_and_fallback_retirement_reviews_not_retirement_completion"
+                if fallback_retirement_direct_evidence_verified
+                else "observed_l3_streamlit_parity_review_not_retirement_completion"
                 if parity_direct_evidence_verified
                 else "observed_local_static_streamlit_stage_scope_not_retirement_completion",
             }

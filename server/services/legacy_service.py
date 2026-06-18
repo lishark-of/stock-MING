@@ -17,10 +17,15 @@ SCHEMA_VERSION = "legacy_bridge_cache.v1"
 STREAMLIT_ORDINARY_WORKFLOW_PARITY_REVIEW_PACKET_KEY = (
     "command_center_3_streamlit_ordinary_workflow_parity_review_packet"
 )
+STREAMLIT_FALLBACK_RETIREMENT_REVIEW_PACKET_KEY = (
+    "command_center_3_streamlit_fallback_retirement_review_packet"
+)
 STREAMLIT_ORDINARY_WORKFLOW_PARITY_REVIEW_TASK_TYPE = "run_streamlit_ordinary_workflow_parity_review"
+STREAMLIT_FALLBACK_RETIREMENT_REVIEW_TASK_TYPE = "run_streamlit_fallback_retirement_review"
 STREAMLIT_ORDINARY_WORKFLOW_PARITY_REVIEW_SCHEMA_VERSION = (
     "streamlit_ordinary_workflow_parity_review.v1"
 )
+STREAMLIT_FALLBACK_RETIREMENT_REVIEW_SCHEMA_VERSION = "streamlit_fallback_retirement_review.v1"
 STREAMLIT_RETIREMENT_DURABLE_EVIDENCE_SCHEMA_VERSION = "streamlit_retirement_durable_evidence_recipe.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 APP_PY_PATH = PROJECT_ROOT / "app.py"
@@ -715,6 +720,7 @@ def _streamlit_retirement_durable_evidence_recipe(
     primary_workflow_exit_audit: Mapping[str, Any],
     fallback_dependency_contract: Mapping[str, Any],
     retirement_readiness_receipt: Mapping[str, Any],
+    fallback_retirement_review: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     route_inventory_visible = bool(primary_workflow_exit_audit.get("ordinary_workflow_route_count"))
     local_receipt_ready = retirement_readiness_receipt.get("local_receipt_ready") is True
@@ -726,6 +732,15 @@ def _streamlit_retirement_durable_evidence_recipe(
     full_removal_blocking_workflows = [
         str(item) for item in _as_list(fallback_dependency_contract.get("full_removal_blocking_workflows"))
     ]
+    fallback_review_map = fallback_retirement_review if isinstance(fallback_retirement_review, Mapping) else {}
+    fallback_retirement_review_done = bool(
+        fallback_review_map.get("direct_evidence_verified") is True
+        and fallback_review_map.get("explicit_fallback_retirement_review_done") is True
+        and fallback_review_map.get("fallback_removed_by_review") is False
+        and fallback_review_map.get("streamlit_opened_by_review") is False
+        and fallback_review_map.get("legacy_tools_run_by_review") is False
+        and fallback_review_map.get("external_calls_triggered") is False
+    )
     rows = [
         _streamlit_retirement_durable_evidence_recipe_row(
             "route_inventory_primary_entry",
@@ -798,11 +813,13 @@ def _streamlit_retirement_durable_evidence_recipe(
         ),
         _streamlit_retirement_durable_evidence_recipe_row(
             "fallback_retirement_change_review",
-            current_status="pending_explicit_retirement_review",
+            current_status="local_explicit_retirement_review_done_retirement_blocked"
+            if fallback_retirement_review_done
+            else "pending_explicit_retirement_review",
             target_status="fallback removal receives explicit review after parity evidence exists",
             local_prerequisite_visible=local_receipt_ready,
-            direct_evidence_required=True,
-            missing_evidence=[
+            direct_evidence_required=not fallback_retirement_review_done,
+            missing_evidence=[] if fallback_retirement_review_done else [
                 "ordinary fallback blocker count is zero",
                 "full removal blocker count is zero or retained-by-policy",
                 "explicit fallback retirement approval",
@@ -1098,6 +1115,228 @@ def _write_streamlit_ordinary_workflow_parity_review_packet(packet: Mapping[str,
     )
 
 
+def _streamlit_fallback_retirement_review_contract(
+    *,
+    legacy_packet: Mapping[str, Any],
+    explicit_review: bool,
+    task_id: str,
+    reviewed_at: str,
+    operator_safe: str = "",
+) -> dict[str, Any]:
+    fallback_contract = _as_dict(legacy_packet.get("streamlit_fallback_dependency_contract"))
+    retirement_receipt = _as_dict(legacy_packet.get("streamlit_retirement_readiness_receipt"))
+    durable_recipe = _as_dict(legacy_packet.get("streamlit_retirement_durable_evidence_recipe"))
+    parity_review = _as_dict(legacy_packet.get("streamlit_ordinary_workflow_parity_review"))
+    parity_ready = bool(
+        parity_review.get("direct_evidence_verified") is True
+        and parity_review.get("local_review_ready") is True
+        and parity_review.get("fallback_removed_by_review") is False
+    )
+    ordinary_blocking_workflows = [
+        str(item) for item in _as_list(fallback_contract.get("ordinary_blocking_workflows"))
+    ]
+    full_removal_blocking_workflows = [
+        str(item) for item in _as_list(fallback_contract.get("full_removal_blocking_workflows"))
+    ]
+    ordinary_blocker_count = int(fallback_contract.get("ordinary_fallback_dependency_count") or 0)
+    full_blocker_count = int(fallback_contract.get("full_streamlit_removal_blocker_count") or 0)
+    local_contracts_visible = bool(
+        fallback_contract.get("schema_version") == "streamlit_fallback_dependency_contract.v1"
+        and retirement_receipt.get("schema_version") == "streamlit_retirement_readiness_receipt.v1"
+        and durable_recipe.get("schema_version") == STREAMLIT_RETIREMENT_DURABLE_EVIDENCE_SCHEMA_VERSION
+        and fallback_contract.get("does_not_open_streamlit") is True
+        and retirement_receipt.get("does_not_create_tasks") is True
+        and durable_recipe.get("local_recipe_ready") is True
+    )
+    local_review_ready = bool(explicit_review and local_contracts_visible)
+    direct_evidence_verified = bool(local_review_ready and parity_ready)
+
+    def _row(criterion: str, passed: bool, detail: str, required_evidence: str) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": "passed" if passed else "blocked",
+            "passed": bool(passed),
+            "production_blocker": not passed,
+            "detail": detail,
+            "required_evidence": required_evidence,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "streamlit_opened_by_review": False,
+            "legacy_tools_run_by_review": False,
+            "fallback_removed_by_review": False,
+            "app_py_deleted_by_review": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_modify_holdings": True,
+            "contains_secret": False,
+        }
+
+    rows = [
+        _row(
+            "explicit_fallback_retirement_review_task",
+            bool(explicit_review),
+            "The operator used an explicit POST task for fallback retirement review.",
+            "POST /api/legacy/fallback-retirement-review must be the only way to create this receipt.",
+        ),
+        _row(
+            "local_retirement_contracts_visible",
+            local_contracts_visible,
+            "Legacy cache exposes fallback dependency, retirement readiness, and durable evidence recipe contracts.",
+            "GET /api/legacy/cache contracts are visible and read-only.",
+        ),
+        _row(
+            "ordinary_workflow_parity_review_visible",
+            parity_ready,
+            f"ordinary parity review status={parity_review.get('status') or 'missing'}",
+            "Run POST /api/legacy/ordinary-workflow-parity-review before fallback retirement review.",
+        ),
+        _row(
+            "ordinary_fallback_blockers_resolved",
+            ordinary_blocker_count == 0,
+            f"ordinary_blocker_count={ordinary_blocker_count}; ordinary_blocking_workflows={ordinary_blocking_workflows}",
+            "All ordinary workflows must have Command Center 3 parity before fallback retirement.",
+        ),
+        _row(
+            "admin_debug_retention_or_replacement_decided",
+            "legacy_admin_debug_tools" not in full_removal_blocking_workflows,
+            f"full_removal_blocking_workflows={full_removal_blocking_workflows}",
+            "Admin/debug tools need replacement or an explicit retained-fallback policy.",
+        ),
+        _row(
+            "provider_browser_and_radar_evidence_complete",
+            bool(
+                parity_review.get("candidate_radar_parity_complete") is True
+                and parity_review.get("provider_backed_parity_done") is True
+                and parity_review.get("browser_performance_qa_done") is True
+            ),
+            "Candidate Radar, provider-backed parity, and browser/performance evidence are still pending.",
+            "Collect provider/worker/browser evidence before production fallback removal.",
+        ),
+        _row(
+            "fallback_retained_no_feature_cut",
+            bool(fallback_contract.get("no_feature_cut_allowed") is True),
+            "Fallback remains retained and no feature-cut boundary is visible.",
+            "No fallback may be removed by deleting or hiding old functionality.",
+        ),
+        _row(
+            "cache_render_no_side_effects",
+            True,
+            "Review writes only a local receipt and does not run Streamlit, providers, models, GitHub, or trades.",
+            "GET cache and React render remain read-only; POST review stays local.",
+        ),
+    ]
+    blocked_rows = [row for row in rows if row["status"] != "passed"]
+    status = (
+        "streamlit_fallback_retirement_review_ready_retirement_blocked"
+        if direct_evidence_verified
+        else "streamlit_fallback_retirement_review_blocked_missing_parity"
+        if local_review_ready
+        else "streamlit_fallback_retirement_review_blocked_local_contract"
+    )
+    call_ledger = [
+        {
+            "api": "local_streamlit_fallback_retirement_review",
+            "task_id": task_id,
+            "source": "GET /api/legacy/cache local parity review and retirement blockers",
+            "row_count": len(rows),
+            "production_blocker_count": len(blocked_rows),
+            "ordinary_fallback_dependency_count": ordinary_blocker_count,
+            "full_streamlit_removal_blocker_count": full_blocker_count,
+            "local_fetched_at": reviewed_at,
+            "call_status": status,
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_open_streamlit": True,
+            "does_not_run_legacy_tools": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+    return {
+        "packet_key": STREAMLIT_FALLBACK_RETIREMENT_REVIEW_PACKET_KEY,
+        "schema_version": STREAMLIT_FALLBACK_RETIREMENT_REVIEW_SCHEMA_VERSION,
+        "status": status,
+        "scope": "button_gated_local_streamlit_fallback_retirement_review_no_streamlit_execution",
+        "ltg": "LTG-10",
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "operator_safe": operator_safe,
+        "button_gated": True,
+        "explicit_post_task_review": bool(explicit_review),
+        "explicit_fallback_retirement_review_done": bool(explicit_review),
+        "direct_evidence_key": "fallback_retirement_change_review",
+        "direct_evidence_layer": "L3_local_streamlit_fallback_retirement_review",
+        "direct_evidence_verified": direct_evidence_verified,
+        "local_review_ready": local_review_ready,
+        "fallback_retirement_review_visible": True,
+        "fallback_retirement_change_review_done": direct_evidence_verified,
+        "ordinary_workflow_parity_review_ready": parity_ready,
+        "ordinary_workflow_exit_complete": False,
+        "streamlit_fallback_removal_ready": False,
+        "full_streamlit_removal_ready": False,
+        "streamlit_fallback_retained": True,
+        "legacy_fallback_required": True,
+        "feature_parity_required_before_removal": True,
+        "no_feature_cut_allowed": True,
+        "replacement_parity_complete": parity_review.get("replacement_parity_complete") is True,
+        "candidate_radar_parity_complete": False,
+        "provider_backed_parity_done": False,
+        "browser_performance_qa_done": False,
+        "admin_debug_retention_decision_done": False,
+        "ordinary_fallback_dependency_count": ordinary_blocker_count,
+        "full_streamlit_removal_blocker_count": full_blocker_count,
+        "production_blocker_count": len(blocked_rows),
+        "ordinary_blocking_workflows": ordinary_blocking_workflows,
+        "full_removal_blocking_workflows": full_removal_blocking_workflows,
+        "streamlit_opened_by_review": False,
+        "legacy_tools_run_by_review": False,
+        "tasks_created_by_review": False,
+        "fallback_removed_by_review": False,
+        "app_py_deleted_by_review": False,
+        "provider_model_task_dispatched_by_review": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "contains_secret": False,
+        "row_count": len(rows),
+        "rows": rows,
+        "call_ledger": call_ledger,
+        "warnings": [
+            "This fallback retirement review is local direct evidence, not Streamlit fallback removal.",
+            "It does not open Streamlit, run legacy tools, call Tushare/DeepSeek/GitHub, delete app.py, or execute trades.",
+            "Production retirement stays blocked until ordinary/admin-debug/provider/browser/radar blockers are cleared.",
+        ],
+    }
+
+
+def _read_streamlit_fallback_retirement_review_packet() -> dict[str, Any]:
+    if not SQLITE_META_PATH.exists():
+        return {}
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(
+            STREAMLIT_FALLBACK_RETIREMENT_REVIEW_PACKET_KEY
+        )
+    except Exception:
+        return {}
+    return packet if isinstance(packet, dict) else {}
+
+
+def _write_streamlit_fallback_retirement_review_packet(packet: Mapping[str, Any]) -> None:
+    SQLiteMetaStore(SQLITE_META_PATH).write_packet(
+        STREAMLIT_FALLBACK_RETIREMENT_REVIEW_PACKET_KEY,
+        _json_safe(packet),
+    )
+
+
 def run_streamlit_ordinary_workflow_parity_review_task(payload: Any = None) -> dict[str, Any]:
     payload_map = payload if isinstance(payload, dict) else {}
     task = create_task_record(
@@ -1138,6 +1377,47 @@ def run_streamlit_ordinary_workflow_parity_review_task(payload: Any = None) -> d
         else "streamlit_ordinary_workflow_parity_review_blocked",
         call_ledger=review_contract["call_ledger"],
         warning="streamlit_ordinary_workflow_parity_review_completed_no_streamlit_no_external_call",
+    ) or task
+
+
+def run_streamlit_fallback_retirement_review_task(payload: Any = None) -> dict[str, Any]:
+    payload_map = payload if isinstance(payload, dict) else {}
+    task = create_task_record(
+        STREAMLIT_FALLBACK_RETIREMENT_REVIEW_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="streamlit_fallback_retirement_review_queued",
+        warnings=[
+            "Streamlit fallback retirement review 只审查本地 parity/retirement blocker。",
+            "review 不打开 Streamlit，不运行旧工具，不调用 Tushare/DeepSeek/GitHub，不交易，不删除 fallback。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="reading_local_streamlit_retirement_evidence",
+    )
+    legacy_packet = read_legacy_bridge_cache()
+    reviewed_at = _now_iso()
+    review_contract = _streamlit_fallback_retirement_review_contract(
+        legacy_packet=legacy_packet,
+        explicit_review=True,
+        task_id=str(task["task_id"]),
+        reviewed_at=reviewed_at,
+        operator_safe=_safe_text(payload_map.get("operator") or "", limit=120),
+    )
+    _write_streamlit_fallback_retirement_review_packet(review_contract)
+    return update_task_status(
+        task["task_id"],
+        status="success" if review_contract["local_review_ready"] else "failed",
+        progress=1.0,
+        current_step=review_contract["status"],
+        call_ledger=review_contract["call_ledger"],
+        warning="streamlit_fallback_retirement_review_completed_no_streamlit_no_external_call",
     ) or task
 
 
@@ -1214,6 +1494,12 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         snapshot_available=bool(snapshot),
     )
     fallback_dependency_contract = _streamlit_fallback_dependency_contract(primary_workflow_exit_audit["route_rows"])
+    ordinary_parity_review = _read_streamlit_ordinary_workflow_parity_review_packet()
+    ordinary_parity_review_rows = _as_list(ordinary_parity_review.get("rows"))
+    ordinary_parity_review_call_ledger = _as_list(ordinary_parity_review.get("call_ledger"))
+    fallback_retirement_review = _read_streamlit_fallback_retirement_review_packet()
+    fallback_retirement_review_rows = _as_list(fallback_retirement_review.get("rows"))
+    fallback_retirement_review_call_ledger = _as_list(fallback_retirement_review.get("call_ledger"))
     retirement_readiness_receipt = _streamlit_retirement_readiness_receipt(
         primary_workflow_exit_audit=primary_workflow_exit_audit,
         fallback_dependency_contract=fallback_dependency_contract,
@@ -1222,10 +1508,8 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         primary_workflow_exit_audit=primary_workflow_exit_audit,
         fallback_dependency_contract=fallback_dependency_contract,
         retirement_readiness_receipt=retirement_readiness_receipt,
+        fallback_retirement_review=fallback_retirement_review,
     )
-    ordinary_parity_review = _read_streamlit_ordinary_workflow_parity_review_packet()
-    ordinary_parity_review_rows = _as_list(ordinary_parity_review.get("rows"))
-    ordinary_parity_review_call_ledger = _as_list(ordinary_parity_review.get("call_ledger"))
 
     packet = {
         "packet_key": PACKET_KEY,
@@ -1274,6 +1558,8 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         "streamlit_retirement_durable_evidence_rows": durable_evidence_recipe["rows"],
         "streamlit_ordinary_workflow_parity_review": ordinary_parity_review,
         "streamlit_ordinary_workflow_parity_review_rows": ordinary_parity_review_rows,
+        "streamlit_fallback_retirement_review": fallback_retirement_review,
+        "streamlit_fallback_retirement_review_rows": fallback_retirement_review_rows,
         "counts": {
             **checklist_counts,
             "migration_item_count": len(migration_items),
@@ -1308,6 +1594,13 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
             "streamlit_ordinary_workflow_parity_review_production_blocker_count": int(
                 ordinary_parity_review.get("production_blocker_count") or 0
             ),
+            "streamlit_fallback_retirement_review_row_count": len(fallback_retirement_review_rows),
+            "streamlit_fallback_retirement_review_direct_evidence_count": 1
+            if fallback_retirement_review.get("direct_evidence_verified") is True
+            else 0,
+            "streamlit_fallback_retirement_review_production_blocker_count": int(
+                fallback_retirement_review.get("production_blocker_count") or 0
+            ),
         },
         "policy": policy,
         "call_ledger": [
@@ -1322,7 +1615,8 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         ]
         + retirement_readiness_receipt["call_ledger"]
         + durable_evidence_recipe["call_ledger"]
-        + ordinary_parity_review_call_ledger,
+        + ordinary_parity_review_call_ledger
+        + fallback_retirement_review_call_ledger,
         "streamlit_ordinary_workflow_parity_review_ready": ordinary_parity_review.get(
             "local_review_ready"
         )
@@ -1334,6 +1628,14 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         )
         is True,
         "streamlit_ordinary_workflow_parity_review_is_not_retirement": True,
+        "streamlit_fallback_retirement_review_ready": fallback_retirement_review.get("local_review_ready")
+        is True,
+        "streamlit_fallback_retirement_review_status": fallback_retirement_review.get("status") or "missing",
+        "streamlit_fallback_retirement_review_direct_evidence_verified": fallback_retirement_review.get(
+            "direct_evidence_verified"
+        )
+        is True,
+        "streamlit_fallback_retirement_review_is_not_retirement": True,
         "streamlit_retirement_durable_evidence_recipe_ready": durable_evidence_recipe["local_recipe_ready"],
         "streamlit_retirement_durable_evidence_recipe_status": durable_evidence_recipe["status"],
         "streamlit_retirement_durable_evidence_blocker_count": durable_evidence_recipe[
@@ -1359,6 +1661,7 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
             "本页不调用 Tushare、DeepSeek 或 GitHub，不执行真实交易，不修改 strategy action。",
             "streamlit_retirement_durable_evidence_recipe 只是 LTG-10 证据配方；不是 fallback 删除、app.py 删除或普通主流程退出完成。",
             "streamlit_ordinary_workflow_parity_review 只有显式 POST task 后才会出现；它是本地 parity inventory evidence，不是生产退出完成。",
+            "streamlit_fallback_retirement_review 只有显式 POST task 后才会出现；它是本地 fallback retirement review evidence，不是 fallback 删除或 production 退场完成。",
         ],
     }
     if status == "cache_missing":

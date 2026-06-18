@@ -22,3 +22,9 @@ def get_legacy_bridge_cache() -> dict:
 def review_streamlit_ordinary_workflow_parity(payload: dict[str, Any] | None = None) -> dict:
     task = legacy_service.run_streamlit_ordinary_workflow_parity_review_task(payload)
     return task_envelope(task)
+
+
+@router.post("/fallback-retirement-review")
+def review_streamlit_fallback_retirement(payload: dict[str, Any] | None = None) -> dict:
+    task = legacy_service.run_streamlit_fallback_retirement_review_task(payload)
+    return task_envelope(task)
