@@ -3073,6 +3073,7 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
     startup_review = _dict_or_empty(packet_map.get("tauri_backend_startup_runtime_review_contract"))
     config_log_review = _dict_or_empty(packet_map.get("tauri_config_log_runtime_review_contract"))
     signing_review = _dict_or_empty(packet_map.get("tauri_signing_notarization_review_contract"))
+    promotion_review = _dict_or_empty(packet_map.get("tauri_production_package_promotion_review_contract"))
     packet_safe = bool(
         packet_map.get("external_calls_triggered") is not True
         and packet_map.get("tushare_called") is not True
@@ -3303,6 +3304,45 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         if signing_notarization_review_ready
         else []
     )
+    promotion_review_ready = bool(
+        packet_safe
+        and config_log_runtime_ready
+        and signing_notarization_review_ready
+        and promotion_review.get("schema_version") == "tauri_production_package_promotion_review.v1"
+        and promotion_review.get("status")
+        in {
+            "tauri_production_package_promotion_review_ready_blocked",
+            "tauri_production_package_promotion_review_ready_candidate",
+        }
+        and promotion_review.get("scope")
+        == "button_gated_local_tauri_production_package_promotion_review_no_build_no_runtime"
+        and promotion_review.get("explicit_review_task_done") is True
+        and promotion_review.get("local_production_package_promotion_review_ready") is True
+        and promotion_review.get("promotion_review_is_completion") is False
+        and promotion_review.get("production_package_complete") is False
+        and promotion_review.get("packaged_runtime_validated") is False
+        and promotion_review.get("tauri_build_executed_by_review") is False
+        and promotion_review.get("npm_or_cargo_executed_by_review") is False
+        and promotion_review.get("tauri_runtime_started_by_review") is False
+        and promotion_review.get("packaged_app_opened_by_review") is False
+        and promotion_review.get("fastapi_started_by_review") is False
+        and promotion_review.get("config_values_read_by_review") is False
+        and promotion_review.get("log_files_written_by_review") is False
+        and promotion_review.get("external_calls_triggered") is False
+        and promotion_review.get("tushare_called") is False
+        and promotion_review.get("deepseek_called") is False
+        and promotion_review.get("github_called") is False
+        and promotion_review.get("does_not_execute_trades") is True
+        and promotion_review.get("does_not_modify_strategy_action") is True
+        and promotion_review.get("contains_secret") is False
+    )
+    promotion_review_blocked = bool(
+        promotion_review_ready
+        and promotion_review.get("promotion_review_blocked") is True
+        and promotion_review.get("durable_promotion_ready") is not True
+    )
+    if promotion_review_blocked:
+        direct_gap_stage_keys.extend(list(promotion_review.get("direct_gap_evidence_stage_keys") or []))
     return {
         "schema_version": "migration_tauri_package_direct_evidence_summary.v1",
         "source_packet_key": "command_center_3_tauri_package_artifact_review_packet",
@@ -3371,6 +3411,20 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         "production_signing_notarization_ready": signing_review.get("production_signing_notarization_ready") is True
         if signing_notarization_review_ready
         else False,
+        "production_package_promotion_review_ready": promotion_review_ready,
+        "production_package_promotion_review_status": promotion_review.get("status")
+        if promotion_review_ready
+        else "",
+        "production_package_promotion_review_blocked": promotion_review_blocked,
+        "durable_promotion_ready": promotion_review.get("durable_promotion_ready") is True
+        if promotion_review_ready
+        else False,
+        "production_package_promotion_remaining_blockers": list(
+            promotion_review.get("remaining_blockers") or []
+        )
+        if promotion_review_ready
+        else [],
+        "promotion_review_blocker_count": 1 if promotion_review_blocked else 0,
         "build_command_reviewed_safe": review.get("build_command_reviewed_safe") if build_repeatability_ready else "",
         "launch_command_reviewed_safe": launch_review.get("launch_command_reviewed_safe")
         if packaged_app_launch_ready
@@ -5807,6 +5861,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         direct_evidence = _latest_tauri_package_direct_evidence_summary()
         direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
         observed_pending_count = max(pending_count - direct_evidence_count, 0)
+        promotion_review_blocker_count = int(direct_evidence.get("promotion_review_blocker_count") or 0)
+        effective_production_blocker_count = max(observed_pending_count, promotion_review_blocker_count)
         tauri_status = (
             "observed_tauri_release_binary_direct_evidence_production_pending"
             if direct_evidence_count
@@ -5830,7 +5886,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "local_evidence_stage_count": local_evidence_count,
                 "direct_evidence_stage_count": direct_evidence_count,
                 "direct_evidence_stage_keys": list(direct_evidence.get("direct_evidence_stage_keys") or []),
-                "production_blocker_count": observed_pending_count,
+                "production_blocker_count": effective_production_blocker_count,
                 "production_package_complete": tauri_contract.get("production_package_complete") is True,
                 "tauri_build_executed": tauri_contract.get("tauri_build_executed") is True,
                 "packaged_runtime_qa_done": tauri_contract.get("packaged_runtime_qa_done") is True,
@@ -5917,6 +5973,23 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     "production_signing_notarization_ready"
                 )
                 is True,
+                "production_package_promotion_review_ready": direct_evidence.get(
+                    "production_package_promotion_review_ready"
+                )
+                is True,
+                "production_package_promotion_review_status": direct_evidence.get(
+                    "production_package_promotion_review_status"
+                )
+                or "",
+                "production_package_promotion_review_blocked": direct_evidence.get(
+                    "production_package_promotion_review_blocked"
+                )
+                is True,
+                "durable_promotion_ready": direct_evidence.get("durable_promotion_ready") is True,
+                "production_package_promotion_remaining_blockers": list(
+                    direct_evidence.get("production_package_promotion_remaining_blockers") or []
+                ),
+                "promotion_review_blocker_count": promotion_review_blocker_count,
                 "tauri_build_command_reviewed_safe": direct_evidence.get("build_command_reviewed_safe") or "",
                 "tauri_launch_command_reviewed_safe": direct_evidence.get("launch_command_reviewed_safe") or "",
                 "tauri_launch_observed_process_name": direct_evidence.get("observed_process_name") or "",

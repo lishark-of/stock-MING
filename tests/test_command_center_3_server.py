@@ -24059,6 +24059,225 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg09["contains_secret"])
         self.assertFalse(ltg09["can_close_from_observed_row"])
 
+    def test_tauri_production_package_promotion_review_surfaces_blocker_without_completion(self):
+        from storage.sqlite_meta import SQLiteMetaStore
+
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        temp_dir = tempfile.TemporaryDirectory()
+        root = Path(temp_dir.name)
+        release_binary = root / "stock_ming_command_center"
+        release_binary.write_bytes(b"\xcf\xfa\xed\xfe packaged promotion review fixture")
+        release_binary.chmod(0o755)
+        bundle_root = root / "bundle"
+        app_bundle = bundle_root / "macos" / "stock-MING Command Center.app"
+        (app_bundle / "Contents" / "MacOS").mkdir(parents=True)
+        (app_bundle / "Contents" / "Resources").mkdir()
+        dmg_path = bundle_root / "dmg" / "stock-MING Command Center_3.0.0_aarch64.dmg"
+        dmg_path.parent.mkdir(parents=True)
+        dmg_path.write_bytes(b"distribution dmg fixture")
+        original_release_binary = desktop_service.TAURI_RELEASE_BINARY
+        original_bundle_root = desktop_service.TAURI_BUNDLE_ROOT
+        desktop_service.TAURI_RELEASE_BINARY = release_binary
+        desktop_service.TAURI_BUNDLE_ROOT = bundle_root
+        self.addCleanup(temp_dir.cleanup)
+        self.addCleanup(setattr, desktop_service, "TAURI_RELEASE_BINARY", original_release_binary)
+        self.addCleanup(setattr, desktop_service, "TAURI_BUNDLE_ROOT", original_bundle_root)
+
+        self.assertTrue(
+            self.client.post(
+                "/api/desktop/tauri-package-artifact-review",
+                json={
+                    "operator": "local-promotion-artifact",
+                    "explicit_tauri_build_completed": True,
+                    "build_command": "npm run tauri build",
+                },
+            ).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/desktop/tauri-packaged-runtime-launch-review",
+                json={
+                    "operator": "local-promotion-launch",
+                    "explicit_packaged_app_launch_completed": True,
+                    "app_process_observed_after_launch": True,
+                    "launch_command": "open -n desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app",
+                    "observed_process_name": "stock-MING Command Center",
+                },
+            ).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/desktop/tauri-backend-offline-packaged-ux-review",
+                json={
+                    "operator": "local-promotion-offline",
+                    "explicit_packaged_app_launch_completed": True,
+                    "backend_was_offline_during_review": True,
+                    "offline_notice_observed": True,
+                    "fastapi_guidance_visible": True,
+                    "local_only_boundary_visible": True,
+                    "no_provider_model_github_trade_visible": True,
+                    "screenshot_sha256": "a" * 64,
+                    "observed_route": "Command Center packaged backend offline notice",
+                },
+            ).json()["ok"]
+        )
+        self.assertTrue(
+            self.client.post(
+                "/api/desktop/tauri-backend-startup-runtime-review",
+                json={
+                    "operator": "local-promotion-startup",
+                    "explicit_packaged_app_launch_completed": True,
+                    "manual_fastapi_started_before_review": True,
+                    "fastapi_health_observed_ok": True,
+                    "packaged_app_fastapi_online_observed": True,
+                    "api_base_observed": "http://127.0.0.1:8710",
+                    "health_status_observed": "ok",
+                    "screenshot_sha256": "b" * 64,
+                },
+            ).json()["ok"]
+        )
+        preflight = desktop_service.read_desktop_shell_preflight_cache()
+        runtime_contract = preflight["production_runtime_contract"]
+        self.assertTrue(
+            self.client.post(
+                "/api/desktop/tauri-config-log-runtime-review",
+                json={
+                    "operator": "local-promotion-config-log",
+                    "explicit_packaged_app_launch_completed": True,
+                    "path_policy_panel_visible": True,
+                    "config_file_policy_visible": True,
+                    "log_file_policy_visible": True,
+                    "config_file_policy_observed": runtime_contract["config_file_policy"],
+                    "log_file_policy_observed": runtime_contract["log_file_policy"],
+                    "no_config_values_exposed": True,
+                    "no_log_file_written_by_review": True,
+                    "frontend_token_exposure_absent": True,
+                    "screenshot_sha256": "c" * 64,
+                },
+            ).json()["ok"]
+        )
+        preflight = desktop_service.read_desktop_shell_preflight_cache()
+        artifact = preflight["tauri_build_artifact"]
+        self.assertTrue(
+            self.client.post(
+                "/api/desktop/tauri-signing-notarization-review",
+                json={
+                    "operator": "local-promotion-signing-gap",
+                    "explicit_codesign_inspection_completed": True,
+                    "explicit_spctl_assessment_completed": True,
+                    "app_bundle_path_observed": artifact["bundle_app_path"],
+                    "codesign_signature_type": "adhoc",
+                    "codesign_flags_observed": "0x20002(adhoc,linker-signed)",
+                    "codesign_team_identifier_status": "not_set",
+                    "codesign_cdhash_observed": "d" * 64,
+                    "spctl_assessment_status": "internal_error",
+                    "spctl_message_safe": "internal error in Code Signing subsystem",
+                    "distribution_dmg_detected": True,
+                    "temporary_dmg_detected": False,
+                    "temporary_dmg_ignored_for_distribution": True,
+                    "apple_developer_identity_used": False,
+                    "notarization_ticket_detected": False,
+                },
+            ).json()["ok"]
+        )
+
+        response = self.client.post(
+            "/api/desktop/tauri-production-package-promotion-review",
+            json={"operator": "local-promotion-review", "authorization": "Bearer SHOULD_DROP"},
+        ).json()
+
+        self.assertTrue(response["ok"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        task = response["data"]["task"]
+        self.assertEqual(task["task_type"], desktop_service.TAURI_PRODUCTION_PACKAGE_PROMOTION_REVIEW_TASK_TYPE)
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "tauri_production_package_promotion_review_ready_blocked")
+        self.assertNotIn("authorization", task["payload_safe"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+
+        persisted = SQLiteMetaStore(desktop_service.SQLITE_META_PATH).read_packet(
+            desktop_service.TAURI_PRODUCTION_PACKAGE_PROMOTION_REVIEW_PACKET_KEY
+        )
+        self.assertEqual(
+            persisted["packet_key"],
+            desktop_service.TAURI_PRODUCTION_PACKAGE_PROMOTION_REVIEW_PACKET_KEY,
+        )
+        review = persisted["tauri_production_package_promotion_review_contract"]
+        self.assertEqual(review["schema_version"], "tauri_production_package_promotion_review.v1")
+        self.assertEqual(review["status"], "tauri_production_package_promotion_review_ready_blocked")
+        self.assertTrue(review["local_production_package_promotion_review_ready"])
+        self.assertTrue(review["durable_runtime_evidence_ready"])
+        self.assertFalse(review["durable_promotion_ready"])
+        self.assertTrue(review["promotion_review_blocked"])
+        self.assertEqual(review["direct_gap_evidence_stage_keys"], ["production_package_promotion_blocker_review"])
+        self.assertIn(
+            "macos_signing_notarization_or_explicit_distribution_waiver_required",
+            review["remaining_blockers"],
+        )
+        self.assertFalse(review["promotion_review_is_completion"])
+        self.assertFalse(review["production_package_complete"])
+        self.assertFalse(review["packaged_runtime_validated"])
+        self.assertFalse(review["external_calls_triggered"])
+        self.assertFalse(review["tushare_called"])
+        self.assertFalse(review["deepseek_called"])
+        self.assertFalse(review["github_called"])
+        self.assertTrue(review["does_not_execute_trades"])
+        self.assertFalse(review["contains_secret"])
+
+        refreshed = desktop_service.read_desktop_shell_preflight_cache()
+        self.assertTrue(refreshed["tauri_production_package_promotion_review_ready"])
+        self.assertTrue(refreshed["policy"]["tauri_production_package_promotion_review_is_local"])
+        self.assertTrue(refreshed["policy"]["tauri_production_package_promotion_review_is_not_build"])
+        self.assertTrue(refreshed["policy"]["tauri_production_package_promotion_review_is_not_runtime_execution"])
+        self.assertTrue(refreshed["policy"]["tauri_production_package_promotion_review_is_not_production_completion"])
+        self.assertIn(
+            "local_tauri_production_package_promotion_review",
+            {row.get("api") for row in refreshed["call_ledger"]},
+        )
+        durable_recipe = refreshed["tauri_package_durable_evidence_recipe"]
+        durable_rows = {row["evidence_key"]: row for row in refreshed["tauri_package_durable_evidence_rows"]}
+        self.assertTrue(durable_recipe["production_package_promotion_review_done"])
+        self.assertEqual(
+            durable_recipe["production_package_promotion_review_status"],
+            "tauri_production_package_promotion_review_ready_blocked",
+        )
+        self.assertFalse(durable_recipe["durable_promotion_ready"])
+        self.assertFalse(durable_recipe["production_package_complete"])
+        self.assertEqual(durable_recipe["missing_durable_evidence"], ["production_package_promotion_review_required"])
+        self.assertEqual(durable_recipe["durable_evidence_blocker_count"], 1)
+        self.assertEqual(durable_rows["production_package_promotion_review_required"]["status"], "reviewed_promotion_blocked")
+        self.assertFalse(durable_rows["production_package_promotion_review_required"]["passed"])
+
+        migration = migration_status_service.build_migration_status()
+        ltg09 = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}["LTG-09"]
+        self.assertEqual(ltg09["direct_evidence_stage_count"], 8)
+        self.assertEqual(ltg09["pending_stage_count"], 0)
+        self.assertEqual(ltg09["production_blocker_count"], 1)
+        self.assertEqual(
+            ltg09["direct_gap_evidence_stage_keys"],
+            ["signing_notarization_gap_review", "production_package_promotion_blocker_review"],
+        )
+        self.assertTrue(ltg09["production_package_promotion_review_ready"])
+        self.assertTrue(ltg09["production_package_promotion_review_blocked"])
+        self.assertFalse(ltg09["durable_promotion_ready"])
+        self.assertIn(
+            "macos_signing_notarization_or_explicit_distribution_waiver_required",
+            ltg09["production_package_promotion_remaining_blockers"],
+        )
+        self.assertFalse(ltg09["production_package_complete"])
+        self.assertFalse(ltg09["external_calls_triggered"])
+        self.assertFalse(ltg09["tushare_called"])
+        self.assertFalse(ltg09["deepseek_called"])
+        self.assertFalse(ltg09["github_called"])
+        self.assertTrue(ltg09["does_not_execute_trades"])
+        self.assertFalse(ltg09["contains_secret"])
+        self.assertFalse(ltg09["can_close_from_observed_row"])
+
     def test_trade_review_cache_endpoint_returns_sanitized_local_records(self):
         self._with_trade_review_log(
             [

@@ -52,3 +52,9 @@ def review_tauri_config_log_runtime(payload: dict[str, Any] | None = None) -> di
 def review_tauri_signing_notarization(payload: dict[str, Any] | None = None) -> dict:
     task = desktop_service.run_tauri_signing_notarization_review_task(payload)
     return task_envelope(task)
+
+
+@router.post("/tauri-production-package-promotion-review")
+def review_tauri_production_package_promotion(payload: dict[str, Any] | None = None) -> dict:
+    task = desktop_service.run_tauri_production_package_promotion_review_task(payload)
+    return task_envelope(task)

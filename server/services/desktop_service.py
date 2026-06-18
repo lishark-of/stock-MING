@@ -30,6 +30,10 @@ TAURI_CONFIG_LOG_RUNTIME_REVIEW_PACKET_KEY = "command_center_3_tauri_config_log_
 TAURI_CONFIG_LOG_RUNTIME_REVIEW_TASK_TYPE = "run_tauri_config_log_runtime_review"
 TAURI_SIGNING_NOTARIZATION_REVIEW_PACKET_KEY = "command_center_3_tauri_signing_notarization_review_packet"
 TAURI_SIGNING_NOTARIZATION_REVIEW_TASK_TYPE = "run_tauri_signing_notarization_review"
+TAURI_PRODUCTION_PACKAGE_PROMOTION_REVIEW_PACKET_KEY = (
+    "command_center_3_tauri_production_package_promotion_review_packet"
+)
+TAURI_PRODUCTION_PACKAGE_PROMOTION_REVIEW_TASK_TYPE = "run_tauri_production_package_promotion_review"
 FRONTEND_API_CLIENT = DESKTOP_ROOT / "src" / "api" / "client.ts"
 FRONTEND_PAGE_STATE_BANNER = DESKTOP_ROOT / "src" / "components" / "PageStateBanner.tsx"
 FRONTEND_BACKEND_OFFLINE_NOTICE = DESKTOP_ROOT / "src" / "components" / "BackendOfflineNotice.tsx"
@@ -1481,6 +1485,11 @@ def _tauri_package_durable_evidence_recipe(packet: dict[str, Any]) -> dict[str, 
         if isinstance(packet.get("tauri_signing_notarization_review_contract"), dict)
         else {}
     )
+    promotion_review = (
+        packet.get("tauri_production_package_promotion_review_contract")
+        if isinstance(packet.get("tauri_production_package_promotion_review_contract"), dict)
+        else {}
+    )
 
     preflight_boundary_visible = (
         packet.get("cache_only") is True
@@ -1544,6 +1553,8 @@ def _tauri_package_durable_evidence_recipe(packet: dict[str, Any]) -> dict[str, 
     signing_notarization_review_done = signing_review.get("local_signing_notarization_review_ready") is True
     signing_notarization_done = signing_review.get("signing_notarization_done") is True
     production_package_complete = blocker_audit.get("package_ready") is True
+    promotion_review_done = promotion_review.get("local_production_package_promotion_review_ready") is True
+    durable_promotion_ready = promotion_review.get("durable_promotion_ready") is True
 
     rows = [
         _tauri_package_durable_evidence_recipe_row(
@@ -1697,11 +1708,24 @@ def _tauri_package_durable_evidence_recipe(packet: dict[str, Any]) -> dict[str, 
         _tauri_package_durable_evidence_recipe_row(
             "production_package_promotion_review_required",
             "durable_evidence",
-            "completed" if production_package_complete else "pending_production_package_promotion_review",
-            passed=production_package_complete,
+            (
+                "completed"
+                if durable_promotion_ready
+                else (
+                    "reviewed_promotion_blocked"
+                    if promotion_review_done
+                    else "pending_production_package_promotion_review"
+                )
+            ),
+            passed=durable_promotion_ready,
             local_surface_required=False,
-            production_blocker=not production_package_complete,
-            evidence=f"production_package_complete={production_package_complete}; package_ready={blocker_audit.get('package_ready')}",
+            production_blocker=not durable_promotion_ready,
+            evidence=(
+                f"promotion_review_status={promotion_review.get('status') or 'missing'}; "
+                f"durable_promotion_ready={durable_promotion_ready}; "
+                f"remaining_blockers={promotion_review.get('remaining_blockers') or []}; "
+                f"package_ready={blocker_audit.get('package_ready')}"
+            ),
             next_action="Promote only after artifact, runtime, backend, config/log, signing, secret, provider, and trade boundaries are reviewed.",
             recommended_order=12,
         ),
@@ -1733,7 +1757,7 @@ def _tauri_package_durable_evidence_recipe(packet: dict[str, Any]) -> dict[str, 
         "ltg": "LTG-09/LTG-14",
         "local_recipe_ready": local_ready,
         "durable_evidence_complete": False,
-        "durable_promotion_ready": False,
+        "durable_promotion_ready": durable_promotion_ready,
         "production_package_complete": False,
         "tauri_build_repeatability_done": tauri_build_repeatability_done,
         "app_bundle_artifact_qa_done": app_bundle_artifact_qa_done,
@@ -1745,6 +1769,11 @@ def _tauri_package_durable_evidence_recipe(packet: dict[str, Any]) -> dict[str, 
         "config_log_runtime_paths_validated": config_log_runtime_done,
         "signing_notarization_review_done": signing_notarization_review_done,
         "signing_notarization_done": signing_notarization_done,
+        "production_package_promotion_review_done": promotion_review_done,
+        "production_package_promotion_review_status": promotion_review.get("status") or "",
+        "production_package_promotion_remaining_blockers": list(
+            promotion_review.get("remaining_blockers") or []
+        ),
         "provider_execution_implemented": False,
         "model_execution_implemented": False,
         "cache_get_external_calls": False,
@@ -3740,6 +3769,316 @@ def _write_tauri_signing_notarization_review_packet(
         SQLiteMetaStore(SQLITE_META_PATH).write_packet(TAURI_SIGNING_NOTARIZATION_REVIEW_PACKET_KEY, packet)
 
 
+def _tauri_production_package_promotion_review_call_ledger(
+    review: dict[str, Any],
+    reviewed_at: str,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "api": "local_tauri_production_package_promotion_review",
+            "request_params_safe": {
+                "review_scope": "local_tauri_production_package_promotion_gate",
+                "promotion_review_ready": review.get("local_production_package_promotion_review_ready"),
+                "durable_promotion_ready": review.get("durable_promotion_ready"),
+                "remaining_blockers": review.get("remaining_blockers", []),
+                "direct_gap_evidence_stage_keys": review.get("direct_gap_evidence_stage_keys", []),
+                "runs_build": False,
+                "opens_packaged_app": False,
+                "starts_fastapi": False,
+                "reads_config_values": False,
+                "writes_log_files": False,
+                "production_package_complete": False,
+            },
+            "row_count": review.get("row_count", 0),
+            "data_date": reviewed_at,
+            "local_fetched_at": reviewed_at,
+            "call_status": review.get("status"),
+            "error_message_safe": "",
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    ]
+
+
+def _tauri_production_package_promotion_review_contract(
+    *,
+    packet: dict[str, Any],
+    reviewed_at: str | None = None,
+    task_id: str = "",
+    explicit_review: bool = False,
+) -> dict[str, Any]:
+    reviewed_at = reviewed_at or _now_iso()
+    durable_recipe = (
+        packet.get("tauri_package_durable_evidence_recipe")
+        if isinstance(packet.get("tauri_package_durable_evidence_recipe"), dict)
+        else {}
+    )
+    durable_rows = [
+        row for row in packet.get("tauri_package_durable_evidence_rows", []) if isinstance(row, dict)
+    ]
+    durable_row_map = {str(row.get("evidence_key")): row for row in durable_rows}
+    signing_review = (
+        packet.get("tauri_signing_notarization_review_contract")
+        if isinstance(packet.get("tauri_signing_notarization_review_contract"), dict)
+        else {}
+    )
+    required_runtime_keys = [
+        "app_bundle_dmg_evidence_required",
+        "packaged_app_launch_qa_required",
+        "backend_startup_runtime_evidence_required",
+        "backend_offline_packaged_ux_required",
+        "config_log_runtime_path_evidence_required",
+        "signing_notarization_review_required",
+        "no_build_runtime_provider_trade_secret_boundary",
+    ]
+    runtime_evidence_ready = all(durable_row_map.get(key, {}).get("passed") is True for key in required_runtime_keys)
+    signing_review_ready = signing_review.get("local_signing_notarization_review_ready") is True
+    signing_notarization_done = signing_review.get("signing_notarization_done") is True
+    production_signing_ready = signing_review.get("production_signing_notarization_ready") is True
+    safety_boundary_ready = bool(
+        packet.get("external_calls_triggered") is False
+        and packet.get("tushare_called") is False
+        and packet.get("deepseek_called") is False
+        and packet.get("github_called") is False
+        and packet.get("does_not_execute_trades") is True
+        and packet.get("does_not_modify_strategy_action") is True
+        and packet.get("contains_secret") is False
+        and durable_recipe.get("cache_get_external_calls") is False
+        and durable_recipe.get("react_render_external_calls") is False
+        and durable_recipe.get("preflight_runs_build") is False
+        and durable_recipe.get("preflight_opens_packaged_app") is False
+        and durable_recipe.get("preflight_starts_fastapi") is False
+        and durable_recipe.get("preflight_reads_config_values") is False
+        and durable_recipe.get("preflight_writes_log_files") is False
+    )
+    missing_runtime_evidence = [
+        key for key in required_runtime_keys if durable_row_map.get(key, {}).get("passed") is not True
+    ]
+    remaining_blockers = list(missing_runtime_evidence)
+    if signing_review_ready and not production_signing_ready:
+        remaining_blockers.append("macos_signing_notarization_or_explicit_distribution_waiver_required")
+    elif not signing_review_ready:
+        remaining_blockers.append("signing_notarization_review_required")
+    if not safety_boundary_ready:
+        remaining_blockers.append("no_external_trade_secret_boundary")
+    durable_promotion_ready = bool(
+        explicit_review
+        and runtime_evidence_ready
+        and production_signing_ready
+        and signing_notarization_done
+        and safety_boundary_ready
+    )
+    review_ready = bool(explicit_review and runtime_evidence_ready and signing_review_ready and safety_boundary_ready)
+    blocked_after_review = bool(review_ready and not durable_promotion_ready)
+
+    def _row(criterion: str, status: str, passed: bool, evidence: str, *, blocks_review: bool = True) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": status,
+            "passed": bool(passed),
+            "evidence": evidence,
+            "blocks_review": bool(blocks_review and not passed),
+            "blocks_production": bool(not passed),
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+        }
+
+    rows = [
+        _row(
+            "explicit_post_promotion_review_task",
+            "passed" if explicit_review else "pending_explicit_post",
+            explicit_review,
+            "POST /api/desktop/tauri-production-package-promotion-review records the local promotion gate review.",
+        ),
+        _row(
+            "durable_runtime_evidence_ready",
+            "passed_durable_runtime_evidence" if runtime_evidence_ready else "blocked_missing_runtime_evidence",
+            runtime_evidence_ready,
+            f"missing_runtime_evidence={missing_runtime_evidence}",
+        ),
+        _row(
+            "signing_notarization_ready_for_distribution",
+            "passed_signing_notarization"
+            if production_signing_ready and signing_notarization_done
+            else "blocked_signing_notarization_or_distribution_waiver_required",
+            production_signing_ready and signing_notarization_done,
+            (
+                f"signing_review_ready={signing_review_ready}; "
+                f"production_signing_notarization_ready={production_signing_ready}; "
+                f"signing_notarization_done={signing_notarization_done}; "
+                f"status={signing_review.get('status') or 'missing'}"
+            ),
+        ),
+        _row(
+            "no_external_trade_secret_boundary",
+            "passed_no_external_trade_secret" if safety_boundary_ready else "blocked_safety_boundary",
+            safety_boundary_ready,
+            "Promotion review calls no providers/models/GitHub, executes no trades, mutates no action, and exposes no secret.",
+        ),
+        _row(
+            "promotion_review_is_not_package_completion",
+            "passed_not_completion",
+            True,
+            "This review is L3 promotion-gate evidence. It does not mark LTG-09 production complete.",
+            blocks_review=False,
+        ),
+    ]
+    blocking_rows = [row for row in rows if row["blocks_review"]]
+    return {
+        "schema_version": "tauri_production_package_promotion_review.v1",
+        "status": (
+            "tauri_production_package_promotion_review_ready_candidate"
+            if durable_promotion_ready
+            else (
+                "tauri_production_package_promotion_review_ready_blocked"
+                if review_ready
+                else "tauri_production_package_promotion_review_pending"
+            )
+        ),
+        "scope": "button_gated_local_tauri_production_package_promotion_review_no_build_no_runtime",
+        "ltg": "LTG-09",
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "explicit_review_task_done": explicit_review,
+        "local_production_package_promotion_review_ready": review_ready,
+        "durable_runtime_evidence_ready": runtime_evidence_ready,
+        "durable_promotion_ready": durable_promotion_ready,
+        "promotion_review_blocked": blocked_after_review,
+        "remaining_blockers": remaining_blockers,
+        "direct_evidence_stage_keys": ["production_package_promotion_review"] if durable_promotion_ready else [],
+        "direct_gap_evidence_stage_keys": ["production_package_promotion_blocker_review"]
+        if blocked_after_review
+        else [],
+        "missing_runtime_evidence": missing_runtime_evidence,
+        "signing_notarization_review_ready": signing_review_ready,
+        "production_signing_notarization_ready": production_signing_ready,
+        "signing_notarization_done": signing_notarization_done,
+        "promotion_review_is_completion": False,
+        "production_package_complete": False,
+        "packaged_runtime_validated": False,
+        "tauri_build_executed_by_review": False,
+        "npm_or_cargo_executed_by_review": False,
+        "tauri_runtime_started_by_review": False,
+        "packaged_app_opened_by_review": False,
+        "fastapi_started_by_review": False,
+        "config_values_read_by_review": False,
+        "log_files_written_by_review": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "rows": rows,
+        "row_count": len(rows),
+        "blocking_review_count": len(blocking_rows),
+        "blocking_review_criteria": [row["criterion"] for row in blocking_rows],
+        "call_ledger": [],
+        "note": "This review records the LTG-09 promotion gate result. It does not build, open a packaged app, start FastAPI, read configs, write logs, call providers/models/GitHub, trade, or complete the production desktop package.",
+    }
+
+
+def _safe_persisted_tauri_production_package_promotion_review(packet: dict[str, Any]) -> dict[str, Any]:
+    review = packet.get("tauri_production_package_promotion_review_contract")
+    if not isinstance(review, dict):
+        return {}
+    safe = (
+        review.get("schema_version") == "tauri_production_package_promotion_review.v1"
+        and review.get("status")
+        in {
+            "tauri_production_package_promotion_review_ready_blocked",
+            "tauri_production_package_promotion_review_ready_candidate",
+        }
+        and review.get("scope") == "button_gated_local_tauri_production_package_promotion_review_no_build_no_runtime"
+        and review.get("explicit_review_task_done") is True
+        and review.get("local_production_package_promotion_review_ready") is True
+        and review.get("promotion_review_is_completion") is False
+        and review.get("production_package_complete") is False
+        and review.get("packaged_runtime_validated") is False
+        and review.get("tauri_build_executed_by_review") is False
+        and review.get("npm_or_cargo_executed_by_review") is False
+        and review.get("tauri_runtime_started_by_review") is False
+        and review.get("packaged_app_opened_by_review") is False
+        and review.get("fastapi_started_by_review") is False
+        and review.get("config_values_read_by_review") is False
+        and review.get("log_files_written_by_review") is False
+        and review.get("external_calls_triggered") is False
+        and review.get("tushare_called") is False
+        and review.get("deepseek_called") is False
+        and review.get("github_called") is False
+        and review.get("does_not_execute_trades") is True
+        and review.get("does_not_modify_strategy_action") is True
+        and review.get("contains_secret") is False
+    )
+    return review if safe else {}
+
+
+def _read_tauri_production_package_promotion_review_packet() -> dict[str, Any]:
+    try:
+        packet = SQLiteMetaStore(SQLITE_META_PATH).read_packet(
+            TAURI_PRODUCTION_PACKAGE_PROMOTION_REVIEW_PACKET_KEY
+        )
+    except Exception:
+        return {}
+    if not isinstance(packet, dict):
+        return {}
+    return packet if _safe_persisted_tauri_production_package_promotion_review(packet) else {}
+
+
+def _write_tauri_production_package_promotion_review_packet(
+    *,
+    review_contract: dict[str, Any],
+    ledger: list[dict[str, Any]],
+    reviewed_at: str,
+    task_id: str,
+) -> None:
+    packet = {
+        "packet_key": TAURI_PRODUCTION_PACKAGE_PROMOTION_REVIEW_PACKET_KEY,
+        "schema_version": "tauri_production_package_promotion_review_packet.v1",
+        "status": review_contract.get("status"),
+        "ltg": "LTG-09",
+        "task_id": task_id,
+        "reviewed_at": reviewed_at,
+        "tauri_production_package_promotion_review_contract": dict(review_contract),
+        "tauri_production_package_promotion_review_rows": list(review_contract.get("rows") or []),
+        "call_ledger": list(ledger),
+        "cache_only": True,
+        "runs_no_build": True,
+        "opens_no_packaged_app": True,
+        "starts_no_fastapi": True,
+        "reads_no_config_values": True,
+        "writes_no_log_files": True,
+        "production_package_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "warnings": [
+            "This packet records the local LTG-09 production package promotion gate review.",
+            "It is not Tauri build execution, packaged runtime launch, signing/notarization, or production package completion.",
+        ],
+    }
+    if _safe_persisted_tauri_production_package_promotion_review(packet):
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(
+            TAURI_PRODUCTION_PACKAGE_PROMOTION_REVIEW_PACKET_KEY,
+            packet,
+        )
+
+
 def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     package_summary = _package_json_summary()
     tauri_config = _tauri_config_summary()
@@ -4166,6 +4505,41 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         packet["warnings"].append(
             "tauri_signing_notarization_review 只记录显式本地 codesign/spctl gap evidence；不执行签名/公证、不等于 production package 完成。"
         )
+    persisted_promotion_review_packet = _read_tauri_production_package_promotion_review_packet()
+    persisted_promotion_review = _safe_persisted_tauri_production_package_promotion_review(
+        persisted_promotion_review_packet
+    )
+    if persisted_promotion_review:
+        packet["tauri_production_package_promotion_review_contract"] = persisted_promotion_review
+        packet["tauri_production_package_promotion_review_rows"] = list(
+            persisted_promotion_review.get("rows") or []
+        )
+        packet["tauri_production_package_promotion_review_ready"] = True
+        packet["counts"]["tauri_production_package_promotion_review_row_count"] = persisted_promotion_review.get(
+            "row_count",
+            0,
+        )
+        packet["counts"]["tauri_production_package_promotion_review_blocking_count"] = persisted_promotion_review.get(
+            "blocking_review_count",
+            0,
+        )
+        packet["runtime"]["tauri_production_package_promotion_review_ready"] = True
+        packet["runtime"]["tauri_production_package_promotion_review_status"] = persisted_promotion_review.get(
+            "status"
+        )
+        packet["runtime"]["tauri_production_package_durable_promotion_ready"] = (
+            persisted_promotion_review.get("durable_promotion_ready") is True
+        )
+        packet["policy"]["tauri_production_package_promotion_review_is_local"] = True
+        packet["policy"]["tauri_production_package_promotion_review_is_not_build"] = True
+        packet["policy"]["tauri_production_package_promotion_review_is_not_runtime_execution"] = True
+        packet["policy"]["tauri_production_package_promotion_review_is_not_production_completion"] = True
+        packet["call_ledger"] = packet["call_ledger"] + [
+            row for row in persisted_promotion_review_packet.get("call_ledger", []) if isinstance(row, dict)
+        ]
+        packet["warnings"].append(
+            "tauri_production_package_promotion_review 只记录本地 production package promotion gate 结论；不运行 build/runtime、不外联、不等于 production package 完成。"
+        )
     _attach_tauri_package_durable_evidence_recipe(packet)
     return _json_safe(packet)
 
@@ -4529,4 +4903,55 @@ def run_tauri_signing_notarization_review_task(payload: Any = None) -> dict[str,
         else "tauri_signing_notarization_review_pending",
         call_ledger=ledger,
         warning="tauri_signing_notarization_review_completed_no_sign_no_notary_no_external_call",
+    ) or task
+
+
+def run_tauri_production_package_promotion_review_task(payload: Any = None) -> dict[str, Any]:
+    task = create_task_record(
+        TAURI_PRODUCTION_PACKAGE_PROMOTION_REVIEW_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="tauri_production_package_promotion_review_queued",
+        warnings=[
+            "Tauri production package promotion review 只审查已有本地 package evidence 和剩余 blocker。",
+            "review 不运行 npm/cargo/Tauri、不打开 packaged app、不启动 FastAPI、不读取配置、不写日志、不调用 provider/model/GitHub、不交易。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    update_task_status(
+        task["task_id"],
+        status="running",
+        progress=0.35,
+        current_step="reading_local_tauri_promotion_gate_evidence",
+    )
+    packet = read_desktop_shell_preflight_cache()
+    reviewed_at = _now_iso()
+    review_contract = _tauri_production_package_promotion_review_contract(
+        packet=packet,
+        explicit_review=True,
+        task_id=str(task["task_id"]),
+        reviewed_at=reviewed_at,
+    )
+    ledger = _tauri_production_package_promotion_review_call_ledger(review_contract, reviewed_at)
+    _write_tauri_production_package_promotion_review_packet(
+        review_contract=review_contract,
+        ledger=ledger,
+        reviewed_at=reviewed_at,
+        task_id=str(task["task_id"]),
+    )
+    if review_contract["durable_promotion_ready"]:
+        current_step = "tauri_production_package_promotion_review_ready_candidate"
+    elif review_contract["local_production_package_promotion_review_ready"]:
+        current_step = "tauri_production_package_promotion_review_ready_blocked"
+    else:
+        current_step = "tauri_production_package_promotion_review_pending"
+    return update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step=current_step,
+        call_ledger=ledger,
+        warning="tauri_production_package_promotion_review_completed_no_build_no_runtime_no_external_call",
     ) or task
