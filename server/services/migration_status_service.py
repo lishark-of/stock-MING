@@ -3897,6 +3897,12 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
     worker_transport_round_trip_smoke_done = "worker_transport_round_trip_smoke" in stage_direct_keys
     if worker_transport_round_trip_smoke_done:
         direct_stage_keys.append("worker_transport_round_trip_smoke")
+    worker_full_pool_execution_done = "worker_full_pool_execution" in stage_direct_keys
+    if worker_full_pool_execution_done:
+        direct_stage_keys.append("worker_full_pool_execution")
+    worker_deep_scan_execution_done = "worker_deep_scan_execution" in stage_direct_keys
+    if worker_deep_scan_execution_done:
+        direct_stage_keys.append("worker_deep_scan_execution")
     if worker_full_pool_fallback_done:
         direct_stage_keys.append("local_worker_full_pool_fallback_receipt")
     if worker_deep_scan_fallback_done:
@@ -3926,6 +3932,8 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         "worker_runtime_local_evidence_linked": worker_runtime_round_trip_link_done,
         "worker_runtime_source_status": str(worker_runtime_link.get("source_worker_runtime_status") or "missing"),
         "worker_runtime_execution_task_id": str(worker_runtime_link.get("worker_runtime_execution_task_id") or ""),
+        "worker_full_pool_execution_verified": worker_full_pool_execution_done,
+        "worker_deep_scan_execution_verified": worker_deep_scan_execution_done,
         "worker_full_pool_fallback_execution_verified": False,
         "worker_deep_scan_fallback_execution_verified": False,
         "local_worker_full_pool_fallback_evidence_visible": worker_full_pool_fallback_done,
@@ -7034,6 +7042,12 @@ def _merge_ltg_stage_scope_observations(
                 )
                 item["observed_worker_transport_round_trip_smoke_verified"] = observed.get(
                     "worker_transport_round_trip_smoke_verified"
+                )
+                item["observed_worker_full_pool_execution_verified"] = observed.get(
+                    "worker_full_pool_execution_verified"
+                )
+                item["observed_worker_deep_scan_execution_verified"] = observed.get(
+                    "worker_deep_scan_execution_verified"
                 )
                 item["observed_worker_runtime_local_evidence_linked"] = observed.get(
                     "worker_runtime_local_evidence_linked"

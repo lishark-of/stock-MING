@@ -1,11 +1,16 @@
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from server.services import candidate_service
 
 
 class CandidateRadarWorkerFilesystemRoundtripSmokeTest(unittest.TestCase):
@@ -71,3 +76,40 @@ class CandidateRadarWorkerFilesystemRoundtripSmokeTest(unittest.TestCase):
         self.assertEqual(payload["deep_scan_returned_call_api"], "local_candidate_radar_deep_scan_worker_fallback")
         self.assertGreater(payload["deep_scan_returned_call_row_count"], 0)
         self.assertTrue(payload["deep_scan_returned_task_id"])
+
+        old_evidence_path = candidate_service.CANDIDATE_WORKER_FILESYSTEM_ROUNDTRIP_EVIDENCE_PATH
+        with tempfile.TemporaryDirectory(prefix="candidate_radar_worker_evidence_test_") as tmp:
+            evidence_path = Path(tmp) / "candidate_radar_worker_filesystem_roundtrip_smoke.json"
+            evidence_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            candidate_service.CANDIDATE_WORKER_FILESYSTEM_ROUNDTRIP_EVIDENCE_PATH = evidence_path
+            try:
+                packet = candidate_service.read_candidate_radar_cache()
+            finally:
+                candidate_service.CANDIDATE_WORKER_FILESYSTEM_ROUNDTRIP_EVIDENCE_PATH = old_evidence_path
+
+        stage_manifest = packet["candidate_radar_production_stage_scope_manifest"]
+        stage_rows = {row["stage_key"]: row for row in packet["candidate_radar_production_stage_scope_rows"]}
+        direct_keys = set(stage_manifest["direct_evidence_stage_keys"])
+        pending_keys = set(stage_manifest["pending_stage_keys"])
+        self.assertIn("worker_transport_round_trip_smoke", direct_keys)
+        self.assertIn("worker_full_pool_execution", direct_keys)
+        self.assertIn("worker_deep_scan_execution", direct_keys)
+        self.assertNotIn("worker_full_pool_execution", pending_keys)
+        self.assertNotIn("worker_deep_scan_execution", pending_keys)
+        for stage_key in ("worker_full_pool_execution", "worker_deep_scan_execution"):
+            row = stage_rows[stage_key]
+            self.assertTrue(row["direct_evidence_complete"])
+            self.assertFalse(row["production_blocker"])
+            self.assertTrue(row["worker_backed_execution_done"])
+            self.assertTrue(row["worker_filesystem_roundtrip_evidence_present"])
+            self.assertFalse(row["production_radar_replacement_complete"])
+            self.assertFalse(row["provider_backed_acceptance_done"])
+            self.assertFalse(row["full_pool_scan_done"])
+            self.assertFalse(row["deep_scan_done"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["candidate_is_not_buy_instruction"])

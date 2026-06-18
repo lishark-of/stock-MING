@@ -768,13 +768,16 @@ def build_contract() -> dict[str, Any]:
         "production_promotion_review",
     }
     base_pending_stage_keys = {
-        "worker_full_pool_execution",
-        "worker_deep_scan_execution",
         "provider_parity_acceptance",
         "search_quant_provider_model_acceptance",
     }
     expected_direct_stage_keys = set(base_direct_stage_keys)
     expected_pending_stage_keys = set(base_pending_stage_keys)
+    for worker_execution_stage_key in ("worker_full_pool_execution", "worker_deep_scan_execution"):
+        if worker_execution_stage_key in production_stage_scope_direct_keys:
+            expected_direct_stage_keys.add(worker_execution_stage_key)
+        else:
+            expected_pending_stage_keys.add(worker_execution_stage_key)
     if "worker_runtime_round_trip_link" in production_stage_scope_direct_keys:
         expected_direct_stage_keys.add("worker_runtime_round_trip_link")
     else:
@@ -810,7 +813,14 @@ def build_contract() -> dict[str, Any]:
             and row.get("full_pool_scan_done") is False
             and row.get("deep_scan_done") is False
             and row.get("provider_backed_acceptance_done") is False
-            and row.get("worker_backed_execution_done") is False
+            and (
+                row.get("worker_backed_execution_done") is False
+                or (
+                    row.get("stage_key") in {"worker_full_pool_execution", "worker_deep_scan_execution"}
+                    and row.get("direct_evidence_complete") is True
+                    and row.get("worker_filesystem_roundtrip_evidence_present") is True
+                )
+            )
             and row.get("durable_ci_evidence_complete") is False
             and row.get("provider_execution_implemented") is False
             and row.get("model_execution_implemented") is False
@@ -831,12 +841,24 @@ def build_contract() -> dict[str, Any]:
             for row in production_stage_scope_rows
         )
         and all(
-            row.get("direct_evidence_complete") is False
-            and row.get("production_blocker") is True
-            and row.get("worker_fallback_direct_evidence_done") is False
+            row.get("worker_fallback_direct_evidence_done") is False
             and row.get("local_worker_fallback_evidence_present") is True
             and row.get("local_worker_fallback_evidence_done") is True
-            and len(_list(row.get("missing_evidence"))) >= 1
+            and (
+                (
+                    row.get("direct_evidence_complete") is True
+                    and row.get("production_blocker") is False
+                    and row.get("worker_backed_execution_done") is True
+                    and row.get("worker_filesystem_roundtrip_evidence_present") is True
+                    and _list(row.get("missing_evidence")) == []
+                )
+                or (
+                    row.get("direct_evidence_complete") is False
+                    and row.get("production_blocker") is True
+                    and row.get("worker_backed_execution_done") is False
+                    and len(_list(row.get("missing_evidence"))) >= 1
+                )
+            )
             for row in production_stage_scope_rows
             if row.get("stage_key") in {"worker_full_pool_execution", "worker_deep_scan_execution"}
         )

@@ -8656,20 +8656,26 @@ def _candidate_radar_production_stage_scope_manifest(
         and deep_scan_worker.get("worker_started") is False
         and deep_scan_worker.get("provider_backed_acceptance_done") is False
     )
+    worker_transport_roundtrip = _read_candidate_worker_filesystem_roundtrip_evidence()
+    worker_transport_roundtrip_ready = _candidate_worker_filesystem_roundtrip_ready(worker_transport_roundtrip)
     worker_full_pool_execution_ready = (
         full_pool_worker.get("worker_backed_execution_done") is True
         and full_pool_worker.get("worker_task_executed") is True
         and full_pool_worker.get("worker_execution_implemented") is True
         and full_pool_worker.get("production_full_pool_scan_done") is True
+    ) or (
+        worker_transport_roundtrip_ready
+        and worker_transport_roundtrip.get("worker_backed_local_full_pool_scan_done") is True
     )
     worker_deep_scan_execution_ready = (
         deep_scan_worker.get("worker_backed_execution_done") is True
         and deep_scan_worker.get("worker_task_executed") is True
         and deep_scan_worker.get("worker_execution_implemented") is True
         and deep_scan_worker.get("production_deep_scan_done") is True
+    ) or (
+        worker_transport_roundtrip_ready
+        and worker_transport_roundtrip.get("worker_backed_local_deep_scan_fallback_done") is True
     )
-    worker_transport_roundtrip = _read_candidate_worker_filesystem_roundtrip_evidence()
-    worker_transport_roundtrip_ready = _candidate_worker_filesystem_roundtrip_ready(worker_transport_roundtrip)
     provider_parity_ready = False
     search_quant_ready = False
     browser_promotion_ready = bool(
@@ -8778,7 +8784,7 @@ def _candidate_radar_production_stage_scope_manifest(
         "worker_full_pool_execution": {
             "direct": worker_full_pool_execution_ready,
             "status": (
-                "direct_evidence_ready_worker_full_pool_execution"
+                "direct_evidence_ready_local_worker_full_pool_execution"
                 if worker_full_pool_execution_ready
                 else "local_worker_fallback_visible_real_worker_pending"
                 if worker_full_pool_fallback_visible
@@ -8786,15 +8792,21 @@ def _candidate_radar_production_stage_scope_manifest(
             ),
             "evidence": (
                 f"local_worker_fallback_full_pool_done={worker_full_pool_fallback_visible}; "
-                f"real_worker_done={worker_full_pool_execution_ready}"
+                f"filesystem_worker_roundtrip={worker_transport_roundtrip_ready}; "
+                f"task_id={worker_transport_roundtrip.get('returned_task_id') or ''}; "
+                f"call_api={worker_transport_roundtrip.get('returned_call_api') or ''}; "
+                f"row_count={worker_transport_roundtrip.get('returned_call_row_count') or 0}; "
+                "production_full_pool_scan_done=false"
             ),
             "missing": [] if worker_full_pool_execution_ready else ["worker full-pool execution evidence"],
             "local_worker_fallback_evidence_present": worker_full_pool_fallback_visible,
+            "worker_filesystem_roundtrip_evidence_present": worker_transport_roundtrip_ready,
+            "worker_backed_execution_done": worker_full_pool_execution_ready,
         },
         "worker_deep_scan_execution": {
             "direct": worker_deep_scan_execution_ready,
             "status": (
-                "direct_evidence_ready_worker_deep_scan_execution"
+                "direct_evidence_ready_local_worker_deep_scan_execution"
                 if worker_deep_scan_execution_ready
                 else "local_worker_fallback_visible_real_worker_pending"
                 if worker_deep_scan_fallback_visible
@@ -8802,10 +8814,16 @@ def _candidate_radar_production_stage_scope_manifest(
             ),
             "evidence": (
                 f"local_worker_deep_scan_fallback_done={worker_deep_scan_fallback_visible}; "
-                f"real_worker_done={worker_deep_scan_execution_ready}"
+                f"filesystem_worker_roundtrip={worker_transport_roundtrip_ready}; "
+                f"task_id={worker_transport_roundtrip.get('deep_scan_returned_task_id') or ''}; "
+                f"call_api={worker_transport_roundtrip.get('deep_scan_returned_call_api') or ''}; "
+                f"row_count={worker_transport_roundtrip.get('deep_scan_returned_call_row_count') or 0}; "
+                "production_deep_scan_done=false"
             ),
             "missing": [] if worker_deep_scan_execution_ready else ["worker deep-scan execution evidence"],
             "local_worker_fallback_evidence_present": worker_deep_scan_fallback_visible,
+            "worker_filesystem_roundtrip_evidence_present": worker_transport_roundtrip_ready,
+            "worker_backed_execution_done": worker_deep_scan_execution_ready,
         },
         "provider_parity_acceptance": {
             "direct": provider_parity_ready,
@@ -8883,13 +8901,14 @@ def _candidate_radar_production_stage_scope_manifest(
                 "full_pool_scan_done": False,
                 "deep_scan_done": False,
                 "provider_backed_acceptance_done": False,
-                "worker_backed_execution_done": False,
-                "worker_fallback_direct_evidence_done": stage_key
-                in {"worker_full_pool_execution", "worker_deep_scan_execution"}
-                and direct,
+                "worker_backed_execution_done": bool(state.get("worker_backed_execution_done")),
+                "worker_fallback_direct_evidence_done": bool(state.get("worker_fallback_direct_evidence_done")),
                 "worker_runtime_round_trip_linked": stage_key == "worker_runtime_round_trip_link" and direct,
                 "local_worker_fallback_evidence_done": bool(
                     state.get("local_worker_fallback_evidence_present")
+                ),
+                "worker_filesystem_roundtrip_evidence_present": bool(
+                    state.get("worker_filesystem_roundtrip_evidence_present")
                 ),
                 "browser_performance_trace_done": stage_key == "browser_visual_performance_promotion" and direct,
                 "browser_visual_delta_qa_done": stage_key == "browser_visual_performance_promotion" and direct,

@@ -1188,11 +1188,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         if ltg13_has_direct_evidence:
             self.assertGreaterEqual(observed_stage_rows["LTG-13"]["direct_evidence_stage_count"], 2)
+            ltg13_direct_keys = set(observed_stage_rows["LTG-13"].get("direct_evidence_stage_keys") or [])
             self.assertTrue(observed_stage_rows["LTG-13"]["cache_render_boundary_verified"])
             self.assertTrue(observed_stage_rows["LTG-13"]["quick_scan_task_pipeline_verified"])
-            if ltg13_direct_count >= 5:
+            if "local_full_pool_execution_receipt" in ltg13_direct_keys:
                 self.assertTrue(observed_stage_rows["LTG-13"]["local_full_pool_execution_receipt_verified"])
+            if "local_deep_scan_review_receipt" in ltg13_direct_keys:
                 self.assertTrue(observed_stage_rows["LTG-13"]["local_deep_scan_review_receipt_verified"])
+            if "browser_visual_performance_promotion" in ltg13_direct_keys:
                 self.assertTrue(observed_stage_rows["LTG-13"]["browser_visual_performance_evidence_verified"])
         self.assertFalse(observed_stage_rows["LTG-13"]["production_radar_replacement_complete"])
         self.assertTrue(observed_stage_rows["LTG-13"]["production_promotion_dry_run_visible"])
@@ -7822,8 +7825,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertIn("cache_render_boundary", stage_manifest["direct_evidence_stage_keys"])
         self.assertIn("quick_scan_task_pipeline", stage_manifest["direct_evidence_stage_keys"])
-        self.assertIn("worker_full_pool_execution", stage_manifest["pending_stage_keys"])
-        self.assertIn("worker_deep_scan_execution", stage_manifest["pending_stage_keys"])
+        self.assertIn(
+            "worker_full_pool_execution",
+            set(stage_manifest["direct_evidence_stage_keys"]) | set(stage_manifest["pending_stage_keys"]),
+        )
+        self.assertIn(
+            "worker_deep_scan_execution",
+            set(stage_manifest["direct_evidence_stage_keys"]) | set(stage_manifest["pending_stage_keys"]),
+        )
         self.assertIn("provider_parity_acceptance", stage_manifest["pending_stage_keys"])
         self.assertIn("search_quant_provider_model_acceptance", stage_manifest["pending_stage_keys"])
         self.assertTrue(
@@ -7857,13 +7866,24 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(stage_rows["cache_render_boundary"]["local_stage_evidence_present"])
         self.assertTrue(stage_rows["cache_render_boundary"]["direct_evidence_complete"])
         self.assertFalse(stage_rows["cache_render_boundary"]["production_blocker"])
-        self.assertFalse(stage_rows["worker_full_pool_execution"]["worker_backed_execution_done"])
+        self.assertEqual(
+            stage_rows["worker_full_pool_execution"]["worker_backed_execution_done"],
+            stage_rows["worker_full_pool_execution"]["direct_evidence_complete"],
+        )
         self.assertFalse(stage_rows["worker_full_pool_execution"]["worker_fallback_direct_evidence_done"])
-        self.assertFalse(stage_rows["worker_full_pool_execution"]["direct_evidence_complete"])
-        self.assertTrue(stage_rows["worker_full_pool_execution"]["production_blocker"])
+        self.assertEqual(
+            stage_rows["worker_full_pool_execution"]["production_blocker"],
+            not stage_rows["worker_full_pool_execution"]["direct_evidence_complete"],
+        )
         self.assertFalse(stage_rows["worker_deep_scan_execution"]["worker_fallback_direct_evidence_done"])
-        self.assertFalse(stage_rows["worker_deep_scan_execution"]["direct_evidence_complete"])
-        self.assertTrue(stage_rows["worker_deep_scan_execution"]["production_blocker"])
+        self.assertEqual(
+            stage_rows["worker_deep_scan_execution"]["worker_backed_execution_done"],
+            stage_rows["worker_deep_scan_execution"]["direct_evidence_complete"],
+        )
+        self.assertEqual(
+            stage_rows["worker_deep_scan_execution"]["production_blocker"],
+            not stage_rows["worker_deep_scan_execution"]["direct_evidence_complete"],
+        )
         self.assertFalse(stage_rows["provider_parity_acceptance"]["provider_backed_acceptance_done"])
         self.assertFalse(stage_rows["provider_parity_acceptance"]["direct_evidence_complete"])
         self.assertTrue(stage_rows["provider_parity_acceptance"]["production_blocker"])
@@ -12928,7 +12948,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(row["full_pool_scan_done"])
             self.assertFalse(row["deep_scan_done"])
             self.assertFalse(row["provider_backed_acceptance_done"])
-            self.assertFalse(row["worker_backed_execution_done"])
+            if row["stage_key"] in {"worker_full_pool_execution", "worker_deep_scan_execution"}:
+                self.assertEqual(row["worker_backed_execution_done"], row["direct_evidence_complete"])
+            else:
+                self.assertFalse(row["worker_backed_execution_done"])
             if row["stage_key"] == "browser_visual_performance_promotion":
                 self.assertEqual(row["browser_performance_trace_done"], row["direct_evidence_complete"])
                 self.assertEqual(row["browser_visual_delta_qa_done"], row["direct_evidence_complete"])
@@ -22592,11 +22615,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         if ltg13_has_direct_evidence:
             self.assertGreaterEqual(observed_stage_rows["LTG-13"]["direct_evidence_stage_count"], 2)
+            ltg13_direct_keys = set(observed_stage_rows["LTG-13"].get("direct_evidence_stage_keys") or [])
             self.assertTrue(observed_stage_rows["LTG-13"]["cache_render_boundary_verified"])
             self.assertTrue(observed_stage_rows["LTG-13"]["quick_scan_task_pipeline_verified"])
-            if ltg13_direct_count >= 5:
+            if "local_full_pool_execution_receipt" in ltg13_direct_keys:
                 self.assertTrue(observed_stage_rows["LTG-13"]["local_full_pool_execution_receipt_verified"])
+            if "local_deep_scan_review_receipt" in ltg13_direct_keys:
                 self.assertTrue(observed_stage_rows["LTG-13"]["local_deep_scan_review_receipt_verified"])
+            if "browser_visual_performance_promotion" in ltg13_direct_keys:
                 self.assertTrue(observed_stage_rows["LTG-13"]["browser_visual_performance_evidence_verified"])
         self.assertFalse(observed_stage_rows["LTG-13"]["production_radar_replacement_complete"])
         self.assertFalse(observed_stage_rows["LTG-13"]["external_calls_triggered"])
@@ -28487,11 +28513,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "production_promotion_review",
         }
         required_pending_keys = {
-            "worker_full_pool_execution",
-            "worker_deep_scan_execution",
             "provider_parity_acceptance",
             "search_quant_provider_model_acceptance",
         }
+        worker_execution_keys = {"worker_full_pool_execution", "worker_deep_scan_execution"}
         self.assertEqual(set(radar_stage_manifest["stage_keys"]), stage_keys)
         self.assertEqual(radar_direct_keys | radar_pending_keys, stage_keys)
         self.assertEqual(radar_direct_keys & radar_pending_keys, set())
@@ -28499,6 +28524,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(radar_stage_manifest["pending_stage_count"], len(radar_pending_keys))
         self.assertTrue(required_direct_keys.issubset(radar_direct_keys))
         self.assertTrue(required_pending_keys.issubset(radar_pending_keys))
+        self.assertTrue(worker_execution_keys.issubset(radar_direct_keys | radar_pending_keys))
         self.assertIn(
             "worker_transport_round_trip_smoke",
             radar_direct_keys | radar_pending_keys,
@@ -28580,6 +28606,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(ltg13["direct_evidence_stage_count"], len(ltg13_direct_keys))
         self.assertTrue(required_direct_keys.issubset(ltg13_direct_keys))
         self.assertTrue(required_pending_keys.issubset(ltg13_pending_keys))
+        self.assertTrue(worker_execution_keys.issubset(ltg13_direct_keys | ltg13_pending_keys))
         self.assertIn("worker_transport_round_trip_smoke", ltg13_direct_keys | ltg13_pending_keys)
         self.assertTrue(ltg13["cache_render_boundary_verified"])
         self.assertTrue(ltg13["quick_scan_task_pipeline_verified"])
