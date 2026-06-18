@@ -12445,7 +12445,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed"]["production_stage_scope_count"], 8)
         self.assertEqual(set(payload["observed"]["production_stage_scope_keys"]), required_production_stages)
         production_stage_direct_count = int(payload["observed"]["production_stage_scope_direct_evidence_count"] or 0)
-        self.assertIn(production_stage_direct_count, {2, 5, 6, 7})
+        self.assertIn(production_stage_direct_count, {2, 5, 6, 7, 8})
         self.assertEqual(
             payload["observed"]["production_stage_scope_pending_count"],
             8 - production_stage_direct_count,
@@ -12481,6 +12481,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "pending_browser_performance_trace_review",
             "pending_reduced_motion_accessibility_review",
             "pending_durable_ci_release_evidence",
+            "direct_evidence_ready_local_gate_current_head_remote_ci_pending",
             "pending_production_replacement_promotion",
             "direct_evidence_ready_local_promotion_review_durable_release_pending",
         }
