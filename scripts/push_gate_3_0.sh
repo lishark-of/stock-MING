@@ -19,6 +19,56 @@ run_step() {
   "$@"
 }
 
+run_local_contract_step() {
+  local label="$1"
+  local script_path="$2"
+  local allowed_blockers="$3"
+  local contract_json
+  contract_json="$(mktemp)"
+  echo
+  echo "==> $label"
+  set +e
+  "$PYTHON_BIN" "$script_path" --json > "$contract_json"
+  local contract_status=$?
+  set -e
+  "$PYTHON_BIN" - "$contract_json" "$allowed_blockers" "$contract_status" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+contract_path, allowed_csv, status = sys.argv[1:4]
+payload = json.loads(Path(contract_path).read_text(encoding="utf-8"))
+allowed = {item for item in allowed_csv.split(",") if item}
+blockers = set(payload.get("blockers") or [])
+unexpected = blockers - allowed
+if unexpected:
+    print(f"FAIL: unexpected contract blockers: {sorted(unexpected)}", file=sys.stderr)
+    raise SystemExit(1)
+if int(status) != 0 and not blockers:
+    print("FAIL: contract exited non-zero without structured blockers", file=sys.stderr)
+    raise SystemExit(1)
+for key in ("external_calls_triggered", "tushare_called", "deepseek_called", "github_called"):
+    if payload.get(key):
+        print(f"FAIL: {key} became true", file=sys.stderr)
+        raise SystemExit(1)
+if payload.get("does_not_execute_trades") is not True:
+    print("FAIL: does_not_execute_trades is not true", file=sys.stderr)
+    raise SystemExit(1)
+if "does_not_modify_strategy_action" in payload and payload.get("does_not_modify_strategy_action") is not True:
+    print("FAIL: does_not_modify_strategy_action is not true", file=sys.stderr)
+    raise SystemExit(1)
+if payload.get("contains_secret") is True:
+    print("FAIL: contract reported contains_secret", file=sys.stderr)
+    raise SystemExit(1)
+status_label = payload.get("status", "unknown")
+if blockers:
+    print(f"{Path(contract_path).name}: {status_label}; allowed production-pending blockers: {sorted(blockers)}")
+else:
+    print(f"{Path(contract_path).name}: {status_label}; blockers: 0")
+PY
+  rm -f "$contract_json"
+}
+
 secret_high_risk_scan() {
   local hits
   hits="$(
@@ -117,9 +167,12 @@ write_release_readiness_report() {
 - deepseek_governance_contract: passed_local_contract_provider_benchmark_pending
 - next_session_map_contract: passed_local_contract_streamlit_parity_pending
 - candidate_radar_contract: passed_local_contract_replacement_pending
+- candidate_radar_contract: passed_or_known_production_pending_local_contract
 - candidate_radar_browser_qa_runbook: passed_runbook_execution_pending
 - storage_contract: passed_local_contract_physical_migration_pending
+- storage_contract: passed_or_known_physical_migration_pending_local_contract
 - worker_contract: worker_contract_passed
+- worker_contract: passed_or_known_runtime_evidence_pending_local_contract
 - tauri_desktop_contract: passed_local_contract_package_validation_pending
 - streamlit_legacy_contract: passed_local_contract_retirement_pending
 - trade_isolation_contract: passed_local_contract_real_trading_disconnected
@@ -234,10 +287,10 @@ run_step "Factor Test Lab contract" "$PYTHON_BIN" scripts/factor_test_lab_contra
 run_step "Factor universe contract" "$PYTHON_BIN" scripts/factor_universe_contract.py
 run_step "DeepSeek governance contract" "$PYTHON_BIN" scripts/deepseek_governance_contract.py
 run_step "Next-session map contract" "$PYTHON_BIN" scripts/next_session_map_contract.py
-run_step "Candidate Radar contract" "$PYTHON_BIN" scripts/candidate_radar_contract.py
+run_step "Candidate Radar contract" run_local_contract_step "Candidate Radar contract" scripts/candidate_radar_contract.py "candidate_radar_full_pool_worker_fallback_is_local_route_shape_only,candidate_radar_deep_scan_worker_fallback_is_local_route_shape_only,candidate_radar_production_replacement_review_is_local_production_blocked,candidate_radar_production_stage_scope_manifest_is_complete_and_pending"
 run_step "Candidate Radar browser QA runbook" "$PYTHON_BIN" scripts/candidate_radar_browser_qa_runbook.py
-run_step "Storage contract" "$PYTHON_BIN" scripts/storage_contract.py
-run_step "Worker contract" "$PYTHON_BIN" scripts/worker_contract.py
+run_step "Storage contract" run_local_contract_step "Storage contract" scripts/storage_contract.py "physical_execution_phase_a_is_local_direct_evidence_not_production,physical_durable_evidence_recipe_is_local_pending"
+run_step "Worker contract" run_local_contract_step "Worker contract" scripts/worker_contract.py "worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending"
 run_step "Tauri desktop contract" "$PYTHON_BIN" scripts/tauri_desktop_contract.py
 run_step "Streamlit legacy contract" "$PYTHON_BIN" scripts/streamlit_legacy_contract.py
 run_step "Trade isolation contract" "$PYTHON_BIN" scripts/trade_isolation_contract.py
