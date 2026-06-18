@@ -29,3 +29,8 @@ def run_candidate_radar_deep_scan_local_review(payload: dict[str, Any] | None = 
         output_packet_key="command_center_3_candidate_radar_cache",
         payload=payload,
     )
+
+
+@task("run_candidate_radar_deep_scan_worker_fallback")
+def run_candidate_radar_deep_scan_worker_fallback(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    return candidate_service.run_candidate_deep_scan_worker_fallback_task(payload)

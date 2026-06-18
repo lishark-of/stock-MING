@@ -8563,12 +8563,18 @@ def _candidate_worker_filesystem_roundtrip_ready(payload: Mapping[str, Any]) -> 
         and payload.get("returned_current_step") == "candidate_radar_full_pool_local_scan_completed"
         and payload.get("returned_call_api") == "local_candidate_radar_full_pool_local_scan"
         and int(payload.get("returned_call_row_count") or 0) > 0
+        and payload.get("worker_backed_local_deep_scan_fallback_done") is True
+        and payload.get("deep_scan_returned_current_step") == "candidate_radar_deep_scan_worker_fallback_ready"
+        and payload.get("deep_scan_returned_call_api") == "local_candidate_radar_deep_scan_worker_fallback"
+        and int(payload.get("deep_scan_returned_call_row_count") or 0) > 0
         and payload.get("filesystem_broker_used") is True
         and payload.get("redis_broker_used") is False
         and payload.get("redis_pinged") is False
         and payload.get("production_worker_complete") is False
         and payload.get("production_radar_replacement_complete") is False
         and payload.get("production_full_pool_scan_done") is False
+        and payload.get("production_deep_scan_done") is False
+        and payload.get("deepseek_model_execution_done") is False
         and payload.get("provider_backed_acceptance_done") is False
         and payload.get("external_calls_triggered") is False
         and payload.get("tushare_called") is False
@@ -8730,6 +8736,9 @@ def _candidate_radar_production_stage_scope_manifest(
                 f"task_id={worker_transport_roundtrip.get('returned_task_id') or ''}; "
                 f"call_api={worker_transport_roundtrip.get('returned_call_api') or ''}; "
                 f"row_count={worker_transport_roundtrip.get('returned_call_row_count') or 0}; "
+                f"deep_scan_task_id={worker_transport_roundtrip.get('deep_scan_returned_task_id') or ''}; "
+                f"deep_scan_call_api={worker_transport_roundtrip.get('deep_scan_returned_call_api') or ''}; "
+                f"deep_scan_row_count={worker_transport_roundtrip.get('deep_scan_returned_call_row_count') or 0}; "
                 "redis_broker_used=false; production_worker_complete=false"
             ),
             "missing": (
