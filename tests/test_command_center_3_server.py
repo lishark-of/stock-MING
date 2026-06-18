@@ -33479,6 +33479,64 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             any(row.get("api") == "local_motion_browser_qa_review" for row in refreshed["task_call_ledger_rows"])
         )
 
+    def test_motion_browser_qa_evidence_uses_generated_at_for_latest_report(self):
+        self._with_meta_store()
+        motion_root = self._with_motion_qa_root()
+
+        reports = [
+            ("z-older-default", False, "2026-06-13T21:00:00", "older-default"),
+            ("2026-06-18-newer-default", False, "2026-06-18T08:40:15", "newer-default"),
+            ("2026-06-18-newer-reduced", True, "2026-06-18T08:41:36", "newer-reduced"),
+        ]
+        for directory, reduced, generated_at, run_id in reports:
+            report_dir = motion_root / directory
+            report_dir.mkdir(parents=True, exist_ok=True)
+            (report_dir / "motion_browser_qa_report.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "command_center_3_motion_browser_qa_result.v1",
+                        "run_id": run_id,
+                        "generated_at": generated_at,
+                        "status": "motion_browser_qa_passed",
+                        "reduced_motion": reduced,
+                        "visual_qa_complete": True,
+                        "browser_performance_verified": True,
+                        "qa_matrix_count": 20,
+                        "passed_count": 20,
+                        "review_required_count": 0,
+                        "console_error_count": 0,
+                        "route_count": 5,
+                        "viewport_count": 4,
+                        "external_calls_triggered": False,
+                        "tushare_called": False,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+        packet = self.client.get("/api/audit/cache").json()["data"]
+        evidence = packet["motion_browser_qa_evidence_contract"]
+        self.assertEqual(evidence["latest_default_run_id"], "newer-default")
+        self.assertEqual(evidence["latest_reduced_motion_run_id"], "newer-reduced")
+        self.assertIn("2026-06-18-newer-default", evidence["latest_default_report_path"])
+        self.assertIn("2026-06-18-newer-reduced", evidence["latest_reduced_motion_report_path"])
+        self.assertTrue(evidence["default_motion_passed"])
+        self.assertTrue(evidence["reduced_motion_passed"])
+        self.assertTrue(evidence["visual_qa_complete"])
+        self.assertTrue(evidence["browser_performance_verified"])
+        self.assertFalse(evidence["production_motion_complete"])
+        self.assertFalse(evidence["external_calls_triggered"])
+        self.assertFalse(evidence["tushare_called"])
+        self.assertFalse(evidence["deepseek_called"])
+        self.assertFalse(evidence["github_called"])
+        self.assertTrue(evidence["does_not_execute_trades"])
+        self.assertTrue(evidence["does_not_modify_strategy_action"])
+
     def test_motion_production_promotion_dry_run_is_button_gated_local_only(self):
         self._with_meta_store()
         motion_root = self._with_motion_qa_root()

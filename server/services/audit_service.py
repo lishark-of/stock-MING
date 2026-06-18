@@ -2630,7 +2630,7 @@ def _read_motion_browser_qa_report(path: Path) -> dict[str, Any]:
 def _motion_browser_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[str, Any]]]:
     report_paths = sorted(MOTION_QA_ARTIFACT_ROOT.glob("*/motion_browser_qa_report.json")) if MOTION_QA_ARTIFACT_ROOT.exists() else []
     rows: list[dict[str, Any]] = []
-    for path in report_paths[-20:]:
+    for path in report_paths:
         report = _read_motion_browser_qa_report(path)
         if not report:
             continue
@@ -2659,6 +2659,14 @@ def _motion_browser_qa_evidence_contract() -> tuple[dict[str, Any], list[dict[st
             "does_not_modify_strategy_action": True,
         }
         rows.append(row)
+    rows.sort(
+        key=lambda row: (
+            str(row.get("generated_at") or ""),
+            str(row.get("run_id") or ""),
+            str(row.get("artifact_report_path") or ""),
+        )
+    )
+    rows = rows[-20:]
     passed_rows = [
         row
         for row in rows
