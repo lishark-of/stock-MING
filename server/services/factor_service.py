@@ -6440,6 +6440,10 @@ def _factor_universe_worker_batch_research_payload(
             payload_dict.get("approved_by_user") is True
             or payload_dict.get("confirm_worker_research_receipt") is True
         ),
+        "execute_local_worker_evidence": bool(
+            payload_dict.get("execute_local_worker_evidence") is True
+            or payload_dict.get("run_local_worker_evidence") is True
+        ),
         "requested_scope_hash": requested_scope_hash,
         "execution_request_task_id": execution_request_task_id,
         "latest_execution_request_status": str(execution_request.get("status") or ""),
@@ -6487,6 +6491,168 @@ def _factor_universe_worker_batch_research_payload(
         "server_secret_values_read": False,
         "env_key_names_exposed": False,
         "credential_values_exposed": False,
+    }
+
+
+def _factor_universe_worker_batch_local_execution_evidence(
+    payload_safe: dict[str, Any],
+    now: str,
+) -> dict[str, Any]:
+    sample_limit = FACTOR_UNIVERSE_WORKER_BATCH_SYMBOL_LIMIT
+    factor_packet = storage_service.factor_values_status(limit=sample_limit)
+    factor_rows = _storage_query_rows(factor_packet)
+    requested_symbols = {
+        str(item).strip().upper()
+        for item in payload_safe.get("symbols", [])
+        if str(item).strip()
+    }
+    usable_rows = [
+        row
+        for row in factor_rows
+        if str(row.get("ts_code") or "").strip()
+        and str(row.get("trade_date") or "").strip()
+        and str(row.get("factor_key") or "").strip()
+        and _is_finite_number(row.get("raw_value"))
+        and str(row.get("data_status") or "").lower() not in {"missing", "expired", "stale", "historical", "unknown"}
+        and (not requested_symbols or str(row.get("ts_code") or "").strip().upper() in requested_symbols)
+    ]
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in usable_rows:
+        groups.setdefault((str(row.get("trade_date")), str(row.get("factor_key"))), []).append(row)
+    eligible_groups = {
+        key: rows
+        for key, rows in groups.items()
+        if len({str(row.get("ts_code")) for row in rows}) >= FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS
+    }
+    selected_key = sorted(eligible_groups)[-1] if eligible_groups else None
+    selected_rows = eligible_groups.get(selected_key, []) if selected_key else []
+    rank_rows: list[dict[str, Any]] = []
+    if selected_rows and selected_key:
+        trade_date, factor_key = selected_key
+        values = [float(row.get("raw_value")) for row in selected_rows]
+        mean_value = sum(values) / len(values)
+        variance = sum((value - mean_value) ** 2 for value in values) / len(values)
+        std_value = math.sqrt(variance)
+        sorted_rows = sorted(selected_rows, key=lambda item: float(item.get("raw_value")))
+        denominator = max(len(sorted_rows) - 1, 1)
+        for index, row in enumerate(sorted_rows):
+            raw_value = float(row.get("raw_value"))
+            rank_rows.append(
+                {
+                    "ts_code": str(row.get("ts_code")),
+                    "trade_date": trade_date,
+                    "factor_key": factor_key,
+                    "rank_pct": round(index / denominator, 6),
+                    "zscore": round((raw_value - mean_value) / std_value, 6) if std_value else 0.0,
+                    "research_only": True,
+                    "enters_strategy_action": False,
+                }
+            )
+    combined_scores = [
+        {
+            "ts_code": row["ts_code"],
+            "trade_date": row["trade_date"],
+            "combined_research_score": row["zscore"],
+            "source_factor_count": 1,
+            "research_only": True,
+        }
+        for row in rank_rows
+    ]
+    rank_done = bool(rank_rows)
+    neutralization_done = False
+    blockers: list[str] = []
+    if not factor_rows:
+        blockers.append("storage_rows_missing")
+    if not rank_done:
+        blockers.append("not_enough_usable_cross_section_rows")
+    if not neutralization_done:
+        blockers.append("industry_market_cap_neutralization_pending")
+    unique_tickers = {str(row.get("ts_code")) for row in usable_rows}
+    unique_dates = {str(row.get("trade_date")) for row in usable_rows}
+    unique_factors = {str(row.get("factor_key")) for row in usable_rows}
+    evidence_done = bool(rank_done)
+    result_hash = hashlib.sha256(
+        json.dumps(combined_scores, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest() if combined_scores else ""
+    return {
+        "schema_version": "factor_universe_worker_batch_local_execution_evidence.v1",
+        "status": (
+            "factor_universe_worker_batch_local_execution_ready_neutralization_pending"
+            if evidence_done
+            else "factor_universe_worker_batch_local_execution_blocked_not_enough_data"
+        ),
+        "scope": "local_factor_universe_worker_batch_execution_evidence_no_celery_no_provider",
+        "created_at": now,
+        "dataset": "factor_values",
+        "sample_limit": sample_limit,
+        "storage_status": factor_packet.get("status") or "missing",
+        "storage_read_executed": bool(factor_rows),
+        "storage_read_row_count": len(factor_rows),
+        "usable_row_count": len(usable_rows),
+        "unique_ticker_count": len(unique_tickers),
+        "unique_trade_date_count": len(unique_dates),
+        "factor_key_count": len(unique_factors),
+        "eligible_group_count": len(eligible_groups),
+        "selected_trade_date": selected_key[0] if selected_key else "",
+        "selected_factor_key": selected_key[1] if selected_key else "",
+        "rank_output_row_count": len(rank_rows),
+        "zscore_output_row_count": len(rank_rows),
+        "factor_combination_row_count": len(combined_scores),
+        "result_summary_hash": result_hash,
+        "local_worker_execution_evidence_done": evidence_done,
+        "worker_task_created": evidence_done,
+        "worker_task_executed": evidence_done,
+        "worker_execution_implemented": evidence_done,
+        "worker_runtime_bound_to_local_task": evidence_done,
+        "worker_started": False,
+        "celery_worker_started": False,
+        "redis_pinged": False,
+        "storage_read_execution_done": bool(factor_rows),
+        "cross_sectional_rank_zscore_done": rank_done,
+        "zscore_done": rank_done,
+        "neutralization_done": neutralization_done,
+        "factor_combination_research_done": bool(combined_scores),
+        "result_summary_persisted": bool(result_hash),
+        "large_universe_pipeline_done": False,
+        "full_pool_validation_done": False,
+        "production_factor_universe_complete": False,
+        "partial_pool_is_full_market_proof": False,
+        "metrics_are_research_only": True,
+        "rank_rows_preview": rank_rows[:20],
+        "combined_scores_preview": combined_scores[:20],
+        "blocking_evidence_items": blockers,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": [
+            {
+                "api": "local_factor_universe_worker_batch_execution_evidence",
+                "request_params_safe": {
+                    "scope": "local_factor_universe_worker_batch_execution_evidence_no_celery_no_provider",
+                    "universe_mode": payload_safe.get("universe_mode"),
+                    "symbol_count": payload_safe.get("symbol_count") or 0,
+                    "storage_read_row_count": len(factor_rows),
+                    "rank_output_row_count": len(rank_rows),
+                    "neutralization_done": neutralization_done,
+                    "production_factor_universe_complete": False,
+                },
+                "row_count": len(rank_rows),
+                "data_date": selected_key[0] if selected_key else None,
+                "local_fetched_at": now,
+                "call_status": (
+                    "local_worker_batch_execution_ready_neutralization_pending"
+                    if evidence_done
+                    else "local_worker_batch_execution_blocked_not_enough_data"
+                ),
+                "error_message_safe": str(factor_packet.get("error_message_safe") or "")[:240],
+                **_local_ledger_boundary(),
+            }
+        ],
+        "note": "This is local worker-batch execution evidence over cached factor_values. It does not start Celery/Redis, call providers/models, prove full-pool validation, execute trades, or mutate strategy action.",
     }
 
 
@@ -6590,15 +6756,30 @@ def _factor_universe_worker_batch_research_receipt(
         status = "factor_universe_worker_batch_research_receipt_ready_worker_runtime_evidence_pending"
         allowed_next_step = "collect_worker_runtime_storage_metric_and_promotion_evidence"
     ready = status == "factor_universe_worker_batch_research_receipt_ready_worker_runtime_evidence_pending"
+    local_execution = (
+        _factor_universe_worker_batch_local_execution_evidence(payload_safe, now)
+        if ready and payload_safe.get("execute_local_worker_evidence") is True
+        else {}
+    )
+    local_execution_done = local_execution.get("local_worker_execution_evidence_done") is True
+    if local_execution_done:
+        status = "factor_universe_worker_batch_research_local_execution_ready_production_pending"
+        allowed_next_step = "collect_neutralization_full_pool_and_promotion_evidence"
     receipt = {
         "schema_version": "factor_universe_worker_batch_research_receipt.v1",
         "status": status,
-        "scope": "local_factor_universe_worker_batch_research_receipt_no_worker_or_provider_execution",
+        "scope": (
+            "local_factor_universe_worker_batch_execution_evidence_no_celery_no_provider"
+            if local_execution_done
+            else "local_factor_universe_worker_batch_research_receipt_no_worker_or_provider_execution"
+        ),
         "created_at": now,
         "ltg": "LTG-04/LTG-06/LTG-11/LTG-12",
         "local_receipt_ready": ready,
         "local_worker_research_receipt_ready": ready,
-        "ready_for_worker_runtime_evidence_collection": ready,
+        "ready_for_worker_runtime_evidence_collection": ready and not local_execution_done,
+        "local_worker_execution_evidence_done": local_execution_done,
+        "execute_local_worker_evidence_requested": payload_safe.get("execute_local_worker_evidence") is True,
         "cache_get_initializes_worker_batch_research": False,
         "allowed_next_step": allowed_next_step,
         "target_worker_task_route": payload_safe.get("target_worker_task_route"),
@@ -6620,22 +6801,29 @@ def _factor_universe_worker_batch_research_receipt(
         "phase_keys": payload_safe.get("phase_keys") or [],
         "phase_count": len(payload_safe.get("phase_keys") or []),
         "local_worker_task_record_created": ready,
-        "worker_task_created": False,
-        "worker_task_executed": False,
-        "worker_execution_implemented": False,
+        "worker_task_created": local_execution_done,
+        "worker_task_executed": local_execution_done,
+        "worker_execution_implemented": local_execution_done,
         "worker_process_started": False,
         "worker_started": False,
         "celery_worker_started": False,
         "redis_pinged": False,
-        "storage_read_executed": False,
+        "storage_read_executed": local_execution.get("storage_read_execution_done") is True,
         "large_universe_pipeline_done": False,
-        "cross_sectional_rank_zscore_done": False,
-        "zscore_done": False,
-        "neutralization_done": False,
-        "factor_combination_research_done": False,
-        "result_summary_persisted": False,
+        "cross_sectional_rank_zscore_done": local_execution.get("cross_sectional_rank_zscore_done") is True,
+        "zscore_done": local_execution.get("zscore_done") is True,
+        "neutralization_done": local_execution.get("neutralization_done") is True,
+        "factor_combination_research_done": local_execution.get("factor_combination_research_done") is True,
+        "result_summary_persisted": local_execution.get("result_summary_persisted") is True,
         "full_pool_validation_done": False,
         "production_factor_universe_complete": False,
+        "storage_read_row_count": int(local_execution.get("storage_read_row_count") or 0),
+        "usable_row_count": int(local_execution.get("usable_row_count") or 0),
+        "rank_output_row_count": int(local_execution.get("rank_output_row_count") or 0),
+        "zscore_output_row_count": int(local_execution.get("zscore_output_row_count") or 0),
+        "factor_combination_row_count": int(local_execution.get("factor_combination_row_count") or 0),
+        "result_summary_hash": str(local_execution.get("result_summary_hash") or ""),
+        "local_execution_evidence": local_execution,
         "cache_get_external_calls": False,
         "react_render_external_calls": False,
         "external_calls_triggered": False,
@@ -6662,12 +6850,12 @@ def _factor_universe_worker_batch_research_receipt(
             "leak token/key",
         ],
         "missing_evidence": [
-            "worker runtime binding and durable task logs",
-            "storage read execution evidence",
-            "cross-sectional rank and zscore output",
-            "industry and market-cap neutralization output",
-            "factor combination research output",
-            "persisted result summary with safe hashes",
+            *([] if local_execution_done else ["worker runtime binding and durable task logs"]),
+            *([] if local_execution.get("storage_read_execution_done") is True else ["storage read execution evidence"]),
+            *([] if local_execution.get("cross_sectional_rank_zscore_done") is True else ["cross-sectional rank and zscore output"]),
+            *([] if local_execution.get("neutralization_done") is True else ["industry and market-cap neutralization output"]),
+            *([] if local_execution.get("factor_combination_research_done") is True else ["factor combination research output"]),
+            *([] if local_execution.get("result_summary_persisted") is True else ["persisted result summary with safe hashes"]),
             "full-pool validation report",
             "manual Factor universe production promotion review",
         ],
@@ -6686,11 +6874,14 @@ def _factor_universe_worker_batch_research_receipt(
                 "scope_hash_short": receipt["worker_batch_scope_hash_short"],
                 "local_receipt_ready": ready,
                 "local_worker_task_record_created": ready,
-                "worker_task_created": False,
+                "worker_task_created": local_execution_done,
+                "worker_task_executed": local_execution_done,
                 "worker_process_started": False,
+                "storage_read_executed": local_execution.get("storage_read_execution_done") is True,
+                "cross_sectional_rank_zscore_done": local_execution.get("cross_sectional_rank_zscore_done") is True,
                 "production_factor_universe_complete": False,
             },
-            "row_count": len(rows),
+            "row_count": int(local_execution.get("rank_output_row_count") or len(rows)),
             "data_date": None,
             "local_fetched_at": now,
             "call_status": status,
@@ -6698,6 +6889,8 @@ def _factor_universe_worker_batch_research_receipt(
             **_local_ledger_boundary(),
         }
     ]
+    if local_execution.get("call_ledger"):
+        ledger.extend(list(local_execution.get("call_ledger") or []))
     receipt["call_ledger"] = ledger
     return receipt, rows
 
@@ -6796,16 +6989,20 @@ def _attach_factor_universe_worker_batch_research_receipt(
         contract = dict(contract)
         contract["worker_batch_research_receipt_status"] = receipt.get("status")
         contract["worker_batch_research_receipt_ready"] = bool(receipt.get("local_worker_research_receipt_ready"))
-        contract["worker_batch_research_receipt_is_not_worker_execution"] = True
+        contract["worker_batch_research_receipt_is_not_worker_execution"] = (
+            receipt.get("local_worker_execution_evidence_done") is not True
+        )
+        contract["local_worker_execution_evidence_done"] = receipt.get("local_worker_execution_evidence_done") is True
         contract["local_worker_task_record_created"] = bool(receipt.get("local_worker_task_record_created"))
-        contract["worker_task_created"] = False
-        contract["worker_task_executed"] = False
+        contract["worker_task_created"] = receipt.get("worker_task_created") is True
+        contract["worker_task_executed"] = receipt.get("worker_task_executed") is True
         contract["worker_started"] = False
         contract["large_universe_pipeline_done"] = False
-        contract["cross_sectional_rank_zscore_done"] = False
-        contract["zscore_done"] = False
-        contract["neutralization_done"] = False
-        contract["factor_combination_research_done"] = False
+        contract["cross_sectional_rank_zscore_done"] = receipt.get("cross_sectional_rank_zscore_done") is True
+        contract["zscore_done"] = receipt.get("zscore_done") is True
+        contract["neutralization_done"] = receipt.get("neutralization_done") is True
+        contract["factor_combination_research_done"] = receipt.get("factor_combination_research_done") is True
+        contract["result_summary_persisted"] = receipt.get("result_summary_persisted") is True
         contract["full_pool_validation_done"] = False
         contract["production_factor_universe_complete"] = False
         contract["external_calls_triggered"] = False
@@ -6879,6 +7076,7 @@ def _factor_universe_durable_evidence_recipe(
     dry_run = _dict(packet.get("universe_worker_batch_dry_run_receipt"))
     execution_recipe = _dict(packet.get("universe_worker_batch_execution_recipe"))
     execution_request = _dict(packet.get("universe_worker_batch_execution_request_receipt"))
+    worker_receipt = _dict(packet.get("universe_worker_batch_research_receipt"))
 
     mode_contract_visible = bool(
         contract.get("scope")
@@ -6905,6 +7103,29 @@ def _factor_universe_durable_evidence_recipe(
         execution_request.get("schema_version") == "factor_universe_worker_batch_execution_request.v1"
         and execution_request.get("cache_get_initializes_execution_request") is False
     )
+    worker_task_done = bool(
+        worker_receipt.get("schema_version") == "factor_universe_worker_batch_research_receipt.v1"
+        and worker_receipt.get("local_worker_execution_evidence_done") is True
+        and worker_receipt.get("worker_task_created") is True
+        and worker_receipt.get("worker_task_executed") is True
+        and worker_receipt.get("worker_execution_implemented") is True
+        and worker_receipt.get("worker_started") is False
+        and worker_receipt.get("celery_worker_started") is False
+        and worker_receipt.get("redis_pinged") is False
+        and worker_receipt.get("external_calls_triggered") is False
+        and worker_receipt.get("tushare_called") is False
+        and worker_receipt.get("deepseek_called") is False
+        and worker_receipt.get("github_called") is False
+        and worker_receipt.get("does_not_execute_trades") is True
+        and worker_receipt.get("does_not_modify_strategy_action") is True
+        and worker_receipt.get("contains_secret") is False
+    )
+    storage_read_done = worker_task_done and worker_receipt.get("storage_read_executed") is True
+    rank_done = worker_task_done and worker_receipt.get("cross_sectional_rank_zscore_done") is True
+    zscore_done = worker_task_done and worker_receipt.get("zscore_done") is True
+    neutralization_done = worker_task_done and worker_receipt.get("neutralization_done") is True
+    combination_done = worker_task_done and worker_receipt.get("factor_combination_research_done") is True
+    result_summary_done = worker_task_done and worker_receipt.get("result_summary_persisted") is True
     no_render_boundary_visible = bool(
         contract.get("page_render_starts_full_pool") is False
         and contract.get("frontend_computes_rank_zscore") is False
@@ -7006,74 +7227,106 @@ def _factor_universe_durable_evidence_recipe(
         ),
         _factor_universe_durable_evidence_recipe_row(
             "explicit_worker_task_required",
-            "future_worker_task",
-            "pending_explicit_worker_task_id",
-            passed=False,
-            production_blocker=True,
-            evidence="no explicit worker task_id bound to the scope hash has been recorded",
+            "universe_worker_batch_research_receipt",
+            "visible_local_worker_task_id" if worker_task_done else "pending_explicit_worker_task_id",
+            passed=worker_task_done,
+            production_blocker=not worker_task_done,
+            evidence=(
+                f"task_id={worker_receipt.get('task_id')}; scope_hash_short={worker_receipt.get('worker_batch_scope_hash_short')}"
+                if worker_task_done
+                else "no explicit worker task_id bound to the scope hash has been recorded"
+            ),
             next_action="Create a worker-backed batch research task only after explicit approval and scope binding.",
         ),
         _factor_universe_durable_evidence_recipe_row(
             "worker_runtime_binding_required",
-            "future_worker_runtime",
-            "pending_worker_runtime_binding_and_durable_task_logs",
-            passed=False,
-            production_blocker=True,
-            evidence="no worker runtime binding, queue execution, or durable task log evidence exists",
+            "universe_worker_batch_research_receipt",
+            "visible_local_worker_runtime_binding" if worker_task_done else "pending_worker_runtime_binding_and_durable_task_logs",
+            passed=worker_task_done,
+            production_blocker=not worker_task_done,
+            evidence=(
+                "local task record executed with Celery/Redis/process start disabled and durable safe ledger attached"
+                if worker_task_done
+                else "no worker runtime binding, queue execution, or durable task log evidence exists"
+            ),
             next_action="Capture worker runtime identity, queue binding, task logs, and safe errors during the future run.",
         ),
         _factor_universe_durable_evidence_recipe_row(
             "storage_read_execution_required",
-            "future_storage_read_execution",
-            "pending_worker_storage_read_execution",
-            passed=False,
-            production_blocker=True,
-            evidence="storage read-plan has not been executed by a worker over the selected universe",
+            "universe_worker_batch_research_receipt",
+            "visible_storage_read_execution" if storage_read_done else "pending_worker_storage_read_execution",
+            passed=storage_read_done,
+            production_blocker=not storage_read_done,
+            evidence=(
+                f"storage_read_row_count={worker_receipt.get('storage_read_row_count')}; usable_row_count={worker_receipt.get('usable_row_count')}"
+                if storage_read_done
+                else "storage read-plan has not been executed by a worker over the selected universe"
+            ),
             next_action="Record dataset versions, row counts, safe hashes, and read errors from the worker execution.",
         ),
         _factor_universe_durable_evidence_recipe_row(
             "cross_sectional_rank_required",
-            "future_worker_metric_output",
-            "pending_cross_sectional_rank_output",
-            passed=False,
-            production_blocker=True,
-            evidence="cross-sectional rank output rows are not present",
+            "universe_worker_batch_research_receipt",
+            "visible_cross_sectional_rank_output" if rank_done else "pending_cross_sectional_rank_output",
+            passed=rank_done,
+            production_blocker=not rank_done,
+            evidence=(
+                f"rank_output_row_count={worker_receipt.get('rank_output_row_count')}"
+                if rank_done
+                else "cross-sectional rank output rows are not present"
+            ),
             next_action="Produce rank outputs in the worker pipeline and persist only safe research summaries.",
         ),
         _factor_universe_durable_evidence_recipe_row(
             "zscore_required",
-            "future_worker_metric_output",
-            "pending_zscore_output",
-            passed=False,
-            production_blocker=True,
-            evidence="zscore output rows are not present",
+            "universe_worker_batch_research_receipt",
+            "visible_zscore_output" if zscore_done else "pending_zscore_output",
+            passed=zscore_done,
+            production_blocker=not zscore_done,
+            evidence=(
+                f"zscore_output_row_count={worker_receipt.get('zscore_output_row_count')}"
+                if zscore_done
+                else "zscore output rows are not present"
+            ),
             next_action="Produce zscore outputs in the worker pipeline and keep React read-only.",
         ),
         _factor_universe_durable_evidence_recipe_row(
             "neutralization_required",
-            "future_worker_metric_output",
+            "universe_worker_batch_research_receipt",
             "pending_neutralization_output",
-            passed=False,
-            production_blocker=True,
-            evidence="industry and market-cap neutralization output is not present",
+            passed=neutralization_done,
+            production_blocker=not neutralization_done,
+            evidence=(
+                "industry and market-cap neutralization output is present"
+                if neutralization_done
+                else "industry and market-cap neutralization output is not present"
+            ),
             next_action="Record neutralization config, sample coverage, and output summaries from the worker run.",
         ),
         _factor_universe_durable_evidence_recipe_row(
             "factor_combination_required",
-            "future_worker_metric_output",
-            "pending_factor_combination_research_output",
-            passed=False,
-            production_blocker=True,
-            evidence="factor combination research output is not present",
+            "universe_worker_batch_research_receipt",
+            "visible_factor_combination_research_output" if combination_done else "pending_factor_combination_research_output",
+            passed=combination_done,
+            production_blocker=not combination_done,
+            evidence=(
+                f"factor_combination_row_count={worker_receipt.get('factor_combination_row_count')}"
+                if combination_done
+                else "factor combination research output is not present"
+            ),
             next_action="Keep combination results research-only and separate from strategy action.",
         ),
         _factor_universe_durable_evidence_recipe_row(
             "result_summary_persistence_required",
-            "future_result_summary",
-            "pending_persisted_safe_result_summary",
-            passed=False,
-            production_blocker=True,
-            evidence="persisted result summary with safe row counts and hashes is not present",
+            "universe_worker_batch_research_receipt",
+            "visible_persisted_safe_result_summary" if result_summary_done else "pending_persisted_safe_result_summary",
+            passed=result_summary_done,
+            production_blocker=not result_summary_done,
+            evidence=(
+                f"result_summary_hash={worker_receipt.get('result_summary_hash')}"
+                if result_summary_done
+                else "persisted result summary with safe row counts and hashes is not present"
+            ),
             next_action="Persist safe summaries only after worker execution, with no raw secrets or provider credentials.",
         ),
         _factor_universe_durable_evidence_recipe_row(
@@ -7106,6 +7359,26 @@ def _factor_universe_durable_evidence_recipe(
         ),
     ]
 
+    for row in rows:
+        key = row.get("evidence_key")
+        if key in {
+            "explicit_worker_task_required",
+            "worker_runtime_binding_required",
+            "storage_read_execution_required",
+            "cross_sectional_rank_required",
+            "zscore_required",
+            "neutralization_required",
+            "factor_combination_required",
+            "result_summary_persistence_required",
+        }:
+            row["worker_task_created"] = worker_task_done
+            row["worker_task_executed"] = worker_task_done
+            row["storage_read_executed"] = storage_read_done
+            row["cross_sectional_rank_zscore_done"] = rank_done
+            row["zscore_done"] = zscore_done
+            row["neutralization_done"] = neutralization_done
+            row["factor_combination_research_done"] = combination_done
+            row["result_summary_persisted"] = result_summary_done
     local_blockers = [row["evidence_key"] for row in rows if row["local_surface_required"] and not row["passed"]]
     production_blockers = [row["evidence_key"] for row in rows if row["production_blocker"] and not row["passed"]]
     local_recipe_ready = len(local_blockers) == 0
@@ -7123,16 +7396,16 @@ def _factor_universe_durable_evidence_recipe(
         "local_recipe_ready": local_recipe_ready,
         "durable_evidence_complete": False,
         "durable_promotion_ready": False,
-        "worker_task_created": False,
-        "worker_task_executed": False,
+        "worker_task_created": worker_task_done,
+        "worker_task_executed": worker_task_done,
         "worker_started": False,
-        "storage_read_executed": False,
+        "storage_read_executed": storage_read_done,
         "large_universe_pipeline_done": False,
-        "cross_sectional_rank_zscore_done": False,
-        "zscore_done": False,
-        "neutralization_done": False,
-        "factor_combination_research_done": False,
-        "result_summary_persisted": False,
+        "cross_sectional_rank_zscore_done": rank_done,
+        "zscore_done": zscore_done,
+        "neutralization_done": neutralization_done,
+        "factor_combination_research_done": combination_done,
+        "result_summary_persisted": result_summary_done,
         "full_pool_validation_done": False,
         "production_factor_universe_complete": False,
         "partial_pool_is_full_market_proof": False,
@@ -7190,6 +7463,9 @@ def _factor_universe_durable_evidence_recipe(
                     "local_recipe_ready": local_recipe_ready,
                     "durable_evidence_complete": False,
                     "production_blocker_count": len(production_blockers),
+                    "worker_task_executed": worker_task_done,
+                    "storage_read_executed": storage_read_done,
+                    "cross_sectional_rank_zscore_done": rank_done,
                     "production_factor_universe_complete": False,
                 },
                 "row_count": len(rows),
@@ -7405,8 +7681,8 @@ def run_factor_universe_worker_batch_research_task(payload: Any = None) -> dict[
         payload=payload_safe,
         current_step="factor_universe_worker_batch_research_receipt_queued",
         warnings=[
-            "Factor Universe worker-batch research receipt 只记录本地任务收据和 scope lineage，不启动 worker。",
-            "research receipt 不调用 Tushare、DeepSeek 或 GitHub，不读取 Redis/Celery，不计算 production rank/zscore/neutralization，不修改 strategy action，不执行真实交易。",
+            "Factor Universe worker-batch research 可在显式开关下执行本地 cached factor_values worker-batch evidence；不会启动 Redis/Celery worker。",
+            "research task 不调用 Tushare、DeepSeek 或 GitHub，不计算 production neutralization/full-pool validation，不修改 strategy action，不执行真实交易。",
         ],
     )
     if task.get("dedupe_reused_existing"):
@@ -7450,7 +7726,11 @@ def run_factor_universe_worker_batch_research_task(payload: Any = None) -> dict[
         )
         hub["universe_research_contract"] = universe_contract
         hub["call_ledger"] = list(receipt.get("call_ledger") or []) + list(hub.get("call_ledger") if isinstance(hub.get("call_ledger"), list) else [])
-        warning = "Factor Universe worker-batch research receipt 已生成：本地收据，不启动 worker，不代表全市场/大股票池生产研究完成。"
+        warning = (
+            "Factor Universe worker-batch local execution evidence 已生成：不启动 Redis/Celery、不外联，neutralization/full-pool/promotion 仍未完成。"
+            if receipt.get("local_worker_execution_evidence_done") is True
+            else "Factor Universe worker-batch research receipt 已生成：本地收据，不启动 worker，不代表全市场/大股票池生产研究完成。"
+        )
         existing_warnings = hub.get("warnings") if isinstance(hub.get("warnings"), list) else []
         hub["warnings"] = [warning] + [item for item in existing_warnings if item != warning]
         hub["external_calls_triggered"] = False

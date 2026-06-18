@@ -159,8 +159,17 @@ def assert_ltg04_factor_universe_stage_scope(
             row["status"],
             "observed_factor_universe_direct_research_evidence_production_pending",
         )
-        test_case.assertEqual(row["direct_evidence_stage_keys"], ["local_rank_zscore_research_preview"])
-        test_case.assertEqual(row["factor_universe_direct_evidence_layer"], "L3_local_factor_universe_research_preview")
+        expected_keys = ["local_rank_zscore_research_preview"]
+        if direct_count >= 2:
+            expected_keys.append("local_worker_batch_execution_evidence")
+        test_case.assertEqual(row["direct_evidence_stage_keys"], expected_keys)
+        test_case.assertIn(
+            row["factor_universe_direct_evidence_layer"],
+            {
+                "L3_local_factor_universe_research_preview",
+                "L3_local_factor_universe_research_execution",
+            },
+        )
         test_case.assertTrue(row["local_rank_zscore_research_preview_verified"])
         test_case.assertEqual(row["local_rank_zscore_status"], "local_rank_zscore_dry_run_ready_research_only")
         test_case.assertGreater(row["local_rank_zscore_preview_row_count"], 0)
@@ -168,12 +177,12 @@ def assert_ltg04_factor_universe_stage_scope(
         test_case.assertGreaterEqual(row["local_rank_zscore_usable_row_count"], 5)
     else:
         test_case.assertEqual(row["status"], "observed_in_factor_universe_static_contract")
-    test_case.assertFalse(row["worker_execution_implemented"])
-    test_case.assertFalse(row["worker_batch_executed"])
+    test_case.assertEqual(row["worker_execution_implemented"], direct_count >= 2)
+    test_case.assertEqual(row["worker_batch_executed"], direct_count >= 2)
     test_case.assertFalse(row["large_universe_pipeline_done"])
-    test_case.assertFalse(row["cross_sectional_rank_zscore_done"])
+    test_case.assertEqual(row["cross_sectional_rank_zscore_done"], direct_count >= 2)
     test_case.assertFalse(row["neutralization_done"])
-    test_case.assertFalse(row["factor_combination_research_done"])
+    test_case.assertEqual(row["factor_combination_research_done"], direct_count >= 2)
     test_case.assertFalse(row["full_pool_validation_done"])
     test_case.assertFalse(row["production_factor_universe_complete"])
     test_case.assertFalse(row["page_render_starts_full_pool"])
@@ -198,7 +207,10 @@ def assert_ltg04_migration_goal_stage_scope(
     test_case.assertIn(row["observed_stage_scope_manifest_status"], FACTOR_UNIVERSE_LTG04_OBSERVED_STATUSES)
     test_case.assertEqual(row["observed_stage_scope_pending_count"], max(8 - direct_count, 0))
     if direct_count:
-        test_case.assertEqual(row["observed_stage_scope_direct_evidence_keys"], ["local_rank_zscore_research_preview"])
+        expected_keys = ["local_rank_zscore_research_preview"]
+        if direct_count >= 2:
+            expected_keys.append("local_worker_batch_execution_evidence")
+        test_case.assertEqual(row["observed_stage_scope_direct_evidence_keys"], expected_keys)
     test_case.assertFalse(row["observed_stage_scope_can_close_goal"])
 
 
@@ -15899,30 +15911,33 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(
             by_type["run_factor_universe_worker_batch_research"]["current_backend"],
-            "local_factor_universe_worker_batch_research_receipt_pipeline",
+            "local_factor_universe_worker_batch_research_receipt_or_execution_evidence_pipeline",
         )
         self.assertEqual(
             by_type["run_factor_universe_worker_batch_research"]["external_call_policy"],
-            "local_worker_research_receipt_no_worker_process_provider_or_model_call",
+            "local_worker_batch_evidence_no_celery_redis_provider_or_model_call",
         )
         self.assertEqual(by_type["run_factor_universe_worker_batch_research"]["possible_external_sources"], [])
-        self.assertTrue(by_type["run_factor_universe_worker_batch_research"]["local_worker_research_receipt_only"])
+        self.assertFalse(by_type["run_factor_universe_worker_batch_research"]["local_worker_research_receipt_only"])
+        self.assertTrue(by_type["run_factor_universe_worker_batch_research"]["supports_local_worker_execution_evidence"])
         self.assertEqual(
             by_type["run_factor_universe_worker_batch_research"]["requires_prior_task_type"],
             "run_factor_universe_worker_batch_execution_request",
         )
         self.assertTrue(by_type["run_factor_universe_worker_batch_research"]["requires_bound_scope_hash"])
-        self.assertFalse(by_type["run_factor_universe_worker_batch_research"]["creates_worker_task"])
+        self.assertTrue(by_type["run_factor_universe_worker_batch_research"]["creates_worker_task"])
         self.assertFalse(by_type["run_factor_universe_worker_batch_research"]["starts_worker"])
         self.assertFalse(by_type["run_factor_universe_worker_batch_research"]["starts_celery_worker"])
         self.assertFalse(by_type["run_factor_universe_worker_batch_research"]["pings_redis"])
-        self.assertFalse(by_type["run_factor_universe_worker_batch_research"]["worker_execution_implemented"])
+        self.assertTrue(by_type["run_factor_universe_worker_batch_research"]["worker_execution_implemented"])
         self.assertFalse(by_type["run_factor_universe_worker_batch_research"]["worker_process_started"])
-        self.assertFalse(by_type["run_factor_universe_worker_batch_research"]["storage_read_executed"])
+        self.assertTrue(by_type["run_factor_universe_worker_batch_research"]["storage_read_executed"])
         self.assertFalse(by_type["run_factor_universe_worker_batch_research"]["large_universe_pipeline_done"])
-        self.assertFalse(by_type["run_factor_universe_worker_batch_research"]["cross_sectional_rank_zscore_done"])
-        self.assertFalse(by_type["run_factor_universe_worker_batch_research"]["zscore_done"])
+        self.assertTrue(by_type["run_factor_universe_worker_batch_research"]["cross_sectional_rank_zscore_done"])
+        self.assertTrue(by_type["run_factor_universe_worker_batch_research"]["zscore_done"])
         self.assertFalse(by_type["run_factor_universe_worker_batch_research"]["neutralization_done"])
+        self.assertTrue(by_type["run_factor_universe_worker_batch_research"]["factor_combination_research_done"])
+        self.assertTrue(by_type["run_factor_universe_worker_batch_research"]["result_summary_persisted"])
         self.assertFalse(by_type["run_factor_universe_worker_batch_research"]["production_factor_universe_complete"])
         self.assertFalse(by_type["run_factor_universe_worker_batch_research"]["cache_get_external_calls"])
         self.assertFalse(by_type["run_factor_universe_worker_batch_research"]["react_render_direct_worker_calls"])
@@ -36298,6 +36313,157 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(handoff["supporting_worker_runtime_dependency_preflight_starts_process"])
         self.assertFalse(handoff["supporting_worker_runtime_dependency_preflight_pings_redis"])
         self.assertFalse(handoff["external_calls_triggered"])
+
+    def test_factor_universe_worker_batch_research_can_record_local_execution_evidence(self):
+        self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        symbols = [f"000{index:03d}.SZ" for index in range(1, 25)]
+        factor_rows = [
+            {
+                "ts_code": symbol,
+                "trade_date": "20260617",
+                "factor_key": "local_universe_rank_zscore_seed",
+                "factor_name": "本地宇宙排序种子",
+                "category": "momentum",
+                "raw_value": float(index),
+                "zscore": None,
+                "rank_pct": None,
+                "direction": "support",
+                "status": "ready",
+                "data_status": "ready",
+                "status_note": None,
+                "pit_validated": True,
+                "excluded_from_score": False,
+                "calculated_at": "2026-06-17T09:30:00",
+                "packet_key": "command_center_factor_quant_hub_packet",
+                "source_packet": "test.factor_values",
+                "source": "unit_test_local_worker_batch",
+                "source_mode": "local_research_fixture",
+            }
+            for index, symbol in enumerate(symbols, start=1)
+        ]
+        write_result = storage_service.persist_factor_values_from_hub({"runtime": {"factor_values": factor_rows}})
+        self.assertEqual(write_result["status"], "written")
+        self.assertEqual(write_result["row_count"], 24)
+
+        dry_run_response = self.client.post(
+            "/api/factor-quant/universe-worker-batch-dry-run",
+            json={"approved_by_user": True, "universe_mode": "custom_pool", "symbols": symbols},
+        ).json()
+        self.assertTrue(dry_run_response["ok"])
+        dry_run_receipt = dry_run_response["data"]["task"]["payload_safe"]["universe_worker_batch_dry_run_receipt"]
+        execution_request_response = self.client.post(
+            "/api/factor-quant/universe-worker-batch-execution-request",
+            json={
+                "approved_by_user": True,
+                "worker_batch_scope_hash": dry_run_receipt["worker_batch_scope_hash"],
+            },
+        ).json()
+        self.assertTrue(execution_request_response["ok"])
+        execution_request_task = execution_request_response["data"]["task"]
+        execution_request_receipt = execution_request_task["payload_safe"][
+            "universe_worker_batch_execution_request_receipt"
+        ]
+
+        response = self.client.post(
+            "/api/factor-quant/universe-worker-batch-research",
+            json={
+                "approved_by_user": True,
+                "execute_local_worker_evidence": True,
+                "worker_batch_scope_hash": execution_request_receipt["worker_batch_scope_hash"],
+                "execution_request_task_id": execution_request_task["task_id"],
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["task_type"], "run_factor_universe_worker_batch_research")
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(
+            task["current_step"],
+            "factor_universe_worker_batch_research_local_execution_ready_production_pending",
+        )
+        self.assertNotIn("token", task["payload_safe"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+        receipt = task["payload_safe"]["universe_worker_batch_research_receipt"]
+        self.assertEqual(
+            receipt["scope"],
+            "local_factor_universe_worker_batch_execution_evidence_no_celery_no_provider",
+        )
+        self.assertTrue(receipt["local_worker_execution_evidence_done"])
+        self.assertTrue(receipt["worker_task_created"])
+        self.assertTrue(receipt["worker_task_executed"])
+        self.assertTrue(receipt["worker_execution_implemented"])
+        self.assertFalse(receipt["worker_started"])
+        self.assertFalse(receipt["celery_worker_started"])
+        self.assertFalse(receipt["redis_pinged"])
+        self.assertTrue(receipt["storage_read_executed"])
+        self.assertEqual(receipt["storage_read_row_count"], 24)
+        self.assertTrue(receipt["cross_sectional_rank_zscore_done"])
+        self.assertTrue(receipt["zscore_done"])
+        self.assertFalse(receipt["neutralization_done"])
+        self.assertTrue(receipt["factor_combination_research_done"])
+        self.assertTrue(receipt["result_summary_persisted"])
+        self.assertFalse(receipt["large_universe_pipeline_done"])
+        self.assertFalse(receipt["full_pool_validation_done"])
+        self.assertFalse(receipt["production_factor_universe_complete"])
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertFalse(receipt["tushare_called"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(receipt["does_not_modify_strategy_action"])
+        self.assertFalse(receipt["contains_secret"])
+        evidence = receipt["local_execution_evidence"]
+        self.assertEqual(evidence["schema_version"], "factor_universe_worker_batch_local_execution_evidence.v1")
+        self.assertEqual(evidence["rank_output_row_count"], 24)
+        self.assertEqual(evidence["factor_combination_row_count"], 24)
+        self.assertTrue(evidence["result_summary_hash"])
+        self.assertIn("industry_market_cap_neutralization_pending", evidence["blocking_evidence_items"])
+        self.assertEqual(task["call_ledger"][0]["api"], "local_factor_universe_worker_batch_research_receipt")
+        self.assertEqual(task["call_ledger"][1]["api"], "local_factor_universe_worker_batch_execution_evidence")
+        self.assert_local_ledger_boundary(task["call_ledger"][0])
+        self.assert_local_ledger_boundary(task["call_ledger"][1])
+
+        factor = self.client.get("/api/factor-quant/cache").json()
+        self.assertTrue(factor["ok"])
+        packet = factor["data"]
+        cached = packet["universe_worker_batch_research_receipt"]
+        self.assertTrue(cached["local_worker_execution_evidence_done"])
+        durable = packet["universe_durable_evidence_recipe"]
+        self.assertTrue(durable["worker_task_created"])
+        self.assertTrue(durable["worker_task_executed"])
+        self.assertTrue(durable["storage_read_executed"])
+        self.assertTrue(durable["cross_sectional_rank_zscore_done"])
+        self.assertTrue(durable["zscore_done"])
+        self.assertFalse(durable["neutralization_done"])
+        self.assertTrue(durable["factor_combination_research_done"])
+        self.assertTrue(durable["result_summary_persisted"])
+        self.assertFalse(durable["production_factor_universe_complete"])
+        durable_rows = {row["evidence_key"]: row for row in packet["universe_durable_evidence_rows"]}
+        self.assertTrue(durable_rows["explicit_worker_task_required"]["passed"])
+        self.assertTrue(durable_rows["worker_runtime_binding_required"]["passed"])
+        self.assertTrue(durable_rows["storage_read_execution_required"]["passed"])
+        self.assertTrue(durable_rows["cross_sectional_rank_required"]["passed"])
+        self.assertTrue(durable_rows["zscore_required"]["passed"])
+        self.assertFalse(durable_rows["neutralization_required"]["passed"])
+        self.assertTrue(durable_rows["factor_combination_required"]["passed"])
+        self.assertTrue(durable_rows["result_summary_persistence_required"]["passed"])
+
+        migration = migration_status_service.build_migration_status()
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg04 = observed_stage_rows["LTG-04"]
+        assert_ltg04_factor_universe_stage_scope(self, ltg04, expected_direct_count=2)
+        self.assertIn("local_worker_batch_execution_evidence", ltg04["direct_evidence_stage_keys"])
+        self.assertTrue(ltg04["worker_execution_implemented"])
+        self.assertTrue(ltg04["worker_batch_executed"])
+        self.assertTrue(ltg04["cross_sectional_rank_zscore_done"])
+        self.assertFalse(ltg04["neutralization_done"])
+        self.assertFalse(ltg04["full_pool_validation_done"])
+        self.assertFalse(ltg04["production_factor_universe_complete"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(migration, ensure_ascii=False))
 
     def test_ltg_stage_scope_observes_factor_universe_rank_zscore_direct_evidence_without_completion(self):
         self._with_meta_store()

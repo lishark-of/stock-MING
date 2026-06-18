@@ -1424,8 +1424,35 @@ def _latest_factor_universe_direct_research_evidence_summary() -> dict[str, Any]
     worker_research_receipt_ready = bool(
         worker_receipt.get("schema_version") == "factor_universe_worker_batch_research_receipt.v1"
         and worker_receipt.get("local_worker_research_receipt_ready") is True
-        and worker_receipt.get("ready_for_worker_runtime_evidence_collection") is True
         and worker_receipt.get("local_worker_task_record_created") is True
+    )
+    worker_batch_execution_done = bool(
+        worker_research_receipt_ready
+        and worker_receipt.get("local_worker_execution_evidence_done") is True
+        and worker_receipt.get("worker_task_created") is True
+        and worker_receipt.get("worker_task_executed") is True
+        and worker_receipt.get("worker_execution_implemented") is True
+        and worker_receipt.get("storage_read_executed") is True
+        and worker_receipt.get("cross_sectional_rank_zscore_done") is True
+        and worker_receipt.get("zscore_done") is True
+        and worker_receipt.get("factor_combination_research_done") is True
+        and worker_receipt.get("result_summary_persisted") is True
+        and worker_receipt.get("worker_started") is False
+        and worker_receipt.get("celery_worker_started") is False
+        and worker_receipt.get("redis_pinged") is False
+        and worker_receipt.get("full_pool_validation_done") is False
+        and worker_receipt.get("production_factor_universe_complete") is False
+        and worker_receipt.get("external_calls_triggered") is False
+        and worker_receipt.get("tushare_called") is False
+        and worker_receipt.get("deepseek_called") is False
+        and worker_receipt.get("github_called") is False
+        and worker_receipt.get("does_not_execute_trades") is True
+        and worker_receipt.get("does_not_modify_strategy_action") is True
+        and worker_receipt.get("contains_secret") is False
+    )
+    worker_receipt_waiting_for_runtime = bool(
+        worker_research_receipt_ready
+        and worker_receipt.get("ready_for_worker_runtime_evidence_collection") is True
         and worker_receipt.get("worker_task_created") is False
         and worker_receipt.get("worker_task_executed") is False
         and worker_receipt.get("worker_execution_implemented") is False
@@ -1433,6 +1460,8 @@ def _latest_factor_universe_direct_research_evidence_summary() -> dict[str, Any]
     direct_stage_keys = []
     if local_rank_zscore_done:
         direct_stage_keys.append("local_rank_zscore_research_preview")
+    if worker_batch_execution_done:
+        direct_stage_keys.append("local_worker_batch_execution_evidence")
     return {
         "schema_version": "migration_factor_universe_direct_research_evidence_summary.v1",
         "source_packet_key": "command_center_factor_quant_hub_packet",
@@ -1448,13 +1477,15 @@ def _latest_factor_universe_direct_research_evidence_summary() -> dict[str, Any]
         "local_rank_zscore_eligible_group_count": int(rank_zscore.get("eligible_group_count") or 0),
         "local_rank_zscore_usable_row_count": int(rank_zscore.get("usable_row_count") or 0),
         "worker_batch_research_receipt_ready": worker_research_receipt_ready,
-        "worker_batch_research_receipt_is_not_worker_execution": worker_research_receipt_ready,
-        "worker_execution_implemented": False,
-        "worker_batch_executed": False,
+        "worker_batch_research_receipt_is_not_worker_execution": worker_receipt_waiting_for_runtime,
+        "local_worker_batch_execution_evidence_verified": worker_batch_execution_done,
+        "worker_execution_implemented": worker_batch_execution_done,
+        "worker_batch_executed": worker_batch_execution_done,
         "large_universe_pipeline_done": False,
-        "cross_sectional_rank_zscore_done": False,
-        "neutralization_done": False,
-        "factor_combination_research_done": False,
+        "cross_sectional_rank_zscore_done": worker_batch_execution_done,
+        "neutralization_done": worker_receipt.get("neutralization_done") is True,
+        "factor_combination_research_done": worker_batch_execution_done,
+        "result_summary_persisted": worker_batch_execution_done,
         "full_pool_validation_done": False,
         "production_factor_universe_complete": False,
         "page_render_starts_full_pool": False,
@@ -1469,10 +1500,16 @@ def _latest_factor_universe_direct_research_evidence_summary() -> dict[str, Any]
         "does_not_modify_strategy_action": True,
         "contains_secret": False,
         "contract_worker_batch_research_receipt_ready": contract.get("worker_batch_research_receipt_ready") is True,
-        "direct_evidence_layer": "L3_local_factor_universe_research_preview"
+        "direct_evidence_layer": "L3_local_factor_universe_research_execution"
+        if worker_batch_execution_done
+        else "L3_local_factor_universe_research_preview"
         if direct_stage_keys
         else "L1_static_contract",
-        "evidence_boundary": "factor_universe_local_rank_zscore_preview_is_not_worker_backed_or_full_pool_validation",
+        "evidence_boundary": (
+            "factor_universe_local_worker_batch_execution_is_not_celery_redis_or_full_pool_validation"
+            if worker_batch_execution_done
+            else "factor_universe_local_rank_zscore_preview_is_not_worker_backed_or_full_pool_validation"
+        ),
     }
 
 
@@ -5160,12 +5197,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 )
                 is True,
                 "production_blocker_count": effective_pending_count,
-                "worker_execution_implemented": False,
-                "worker_batch_executed": False,
+                "worker_execution_implemented": direct_evidence.get("worker_execution_implemented") is True,
+                "worker_batch_executed": direct_evidence.get("worker_batch_executed") is True,
                 "large_universe_pipeline_done": False,
-                "cross_sectional_rank_zscore_done": False,
-                "neutralization_done": False,
-                "factor_combination_research_done": False,
+                "cross_sectional_rank_zscore_done": direct_evidence.get("cross_sectional_rank_zscore_done") is True,
+                "neutralization_done": direct_evidence.get("neutralization_done") is True,
+                "factor_combination_research_done": direct_evidence.get("factor_combination_research_done") is True,
                 "full_pool_validation_done": False,
                 "production_factor_universe_complete": False,
                 "page_render_starts_full_pool": False,
