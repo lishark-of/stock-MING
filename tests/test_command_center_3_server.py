@@ -35,6 +35,7 @@ TAURI_LTG09_OBSERVED_STATUSES = {
 }
 MOTION_LTG14_OBSERVED_STATUSES = {
     "observed_in_motion_viewport_static_contract",
+    "observed_motion_direct_evidence_production_pending",
     "observed_motion_browser_qa_direct_evidence_production_pending",
 }
 
@@ -34261,6 +34262,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
     def test_motion_visual_performance_promotion_review_is_local_and_keeps_ci_pending(self):
         self._with_meta_store()
+        self._with_release_gate_receipt_path()
         motion_root = self._with_motion_qa_root()
         clear_task_statuses_for_tests(clear_persisted=True)
 
@@ -34369,6 +34371,88 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ltg14["motion_visual_performance_promotion_review_ready"])
         self.assertFalse(ltg14["durable_ci_evidence_complete"])
         self.assertFalse(ltg14["production_motion_complete"])
+        self.assertFalse(ltg14["can_close_from_observed_row"])
+
+    def test_motion_durable_recipe_observes_current_head_local_release_gate_without_ci_claim(self):
+        self._with_meta_store()
+        receipt_path = self._with_release_gate_receipt_path()
+        current_head = audit_service._current_git_head_summary()
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        receipt_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "command_center_3_local_push_gate_run_receipt.v1",
+                    "status": "local_push_gate_passed_current_head",
+                    "scope": "ignored_local_push_gate_run_receipt_no_push_no_github_api",
+                    "generated_at_utc": "2026-06-18T00:00:00Z",
+                    "branch": current_head["branch"],
+                    "head": current_head["head"],
+                    "head_full": current_head["head_full"],
+                    "checks": sorted(audit_service.LOCAL_PUSH_GATE_REQUIRED_CHECKS),
+                    "did_not_push": True,
+                    "git_add_dot_used": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "github_api_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                    "contains_secret": False,
+                    "local_gate_pass_is_not_ci_status": True,
+                    "remote_actions_status_known": False,
+                    "latest_remote_run_verified_green": False,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        packet = audit_service.read_call_ledger_audit_cache()
+
+        receipt = packet["local_push_gate_run_receipt"]
+        self.assertTrue(receipt["fresh_local_gate_run_observed"])
+        self.assertTrue(receipt["head_matches_current"])
+        self.assertTrue(receipt["required_local_gate_checks_present"])
+        durable_recipe = packet["motion_durable_evidence_recipe"]
+        self.assertTrue(durable_recipe["local_release_gate_evidence_observed"])
+        self.assertTrue(durable_recipe["local_release_gate_evidence_head_matches_current"])
+        self.assertTrue(durable_recipe["local_release_gate_evidence_required_checks_present"])
+        self.assertFalse(durable_recipe["remote_actions_status_known"])
+        self.assertFalse(durable_recipe["latest_remote_run_verified_green"])
+        self.assertFalse(durable_recipe["ci_evidence_complete"])
+        self.assertFalse(durable_recipe["durable_ci_evidence_complete"])
+        self.assertFalse(durable_recipe["production_motion_complete"])
+        durable_rows = {row["evidence_key"]: row for row in packet["motion_durable_evidence_rows"]}
+        self.assertEqual(
+            durable_rows["local_release_gate_evidence_observed"]["status"],
+            "local_release_gate_observed_remote_ci_pending",
+        )
+        self.assertFalse(durable_rows["local_release_gate_evidence_observed"]["production_blocker"])
+        self.assertEqual(
+            durable_rows["durable_ci_or_release_evidence_required"]["status"],
+            "pending_durable_ci_or_release_evidence",
+        )
+        self.assertTrue(durable_rows["durable_ci_or_release_evidence_required"]["production_blocker"])
+        self.assertTrue(packet["counts"]["motion_local_release_gate_evidence_observed"])
+        self.assertTrue(packet["counts"]["motion_local_release_gate_evidence_head_matches_current"])
+        self.assertTrue(packet["counts"]["motion_local_release_gate_evidence_required_checks_present"])
+
+        migration = migration_status_service.build_migration_status()
+        ltg14 = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}["LTG-14"]
+        self.assertEqual(ltg14["status"], "observed_motion_direct_evidence_production_pending")
+        self.assertIn("local_release_gate_evidence", ltg14["direct_evidence_stage_keys"])
+        self.assertTrue(ltg14["local_release_gate_evidence_observed"])
+        self.assertTrue(ltg14["local_release_gate_evidence_head_matches_current"])
+        self.assertTrue(ltg14["local_release_gate_evidence_required_checks_present"])
+        self.assertFalse(ltg14["remote_actions_status_known"])
+        self.assertFalse(ltg14["latest_remote_run_verified_green"])
+        self.assertFalse(ltg14["durable_ci_evidence_complete"])
+        self.assertFalse(ltg14["production_motion_complete"])
+        self.assertFalse(ltg14["github_called"])
+        self.assertFalse(ltg14["tushare_called"])
+        self.assertFalse(ltg14["deepseek_called"])
+        self.assertTrue(ltg14["does_not_execute_trades"])
         self.assertFalse(ltg14["can_close_from_observed_row"])
 
     def test_run_light_endpoint_writes_factor_cache(self):

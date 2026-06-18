@@ -43,6 +43,16 @@ CI_NOTIFICATION_TRIAGE_SCHEMA_VERSION = "command_center_3_ci_notification_triage
 PUSH_READINESS_RECEIPT_SCHEMA_VERSION = "command_center_3_push_readiness_receipt.v1"
 LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION = "command_center_3_local_push_gate_run_receipt.v1"
 MOTION_CLARITY_SCHEMA_VERSION = "command_center_3_motion_clarity_audit.v1"
+LOCAL_PUSH_GATE_REQUIRED_CHECKS = {
+    "python_unittest",
+    "desktop_build",
+    "command_center_3_smoke",
+    "diff_whitespace_check",
+    "high_risk_secret_scan",
+    "secret_keyword_review_contract",
+    "generated_artifact_scan",
+    "clean_worktree_check",
+}
 RELEASE_GATE_STAGE_SCOPE = "release_gate_stage_scope_manifest"
 REQUIRED_RELEASE_GATE_STAGE_KEYS = {
     "local_push_gate_static_contract",
@@ -473,6 +483,10 @@ def _read_local_push_gate_run_receipt() -> dict[str, Any]:
             "current_branch": current_head.get("branch"),
             "head_matches_current": False,
             "fresh_local_gate_run_observed": False,
+            "required_local_gate_checks_present": False,
+            "required_check_count": len(LOCAL_PUSH_GATE_REQUIRED_CHECKS),
+            "observed_check_count": 0,
+            "missing_required_checks": sorted(LOCAL_PUSH_GATE_REQUIRED_CHECKS),
             "did_not_push": True,
             "git_add_dot_used": False,
             "external_calls_triggered": False,
@@ -498,6 +512,10 @@ def _read_local_push_gate_run_receipt() -> dict[str, Any]:
             "current_branch": current_head.get("branch"),
             "head_matches_current": False,
             "fresh_local_gate_run_observed": False,
+            "required_local_gate_checks_present": False,
+            "required_check_count": len(LOCAL_PUSH_GATE_REQUIRED_CHECKS),
+            "observed_check_count": 0,
+            "missing_required_checks": sorted(LOCAL_PUSH_GATE_REQUIRED_CHECKS),
             "did_not_push": True,
             "git_add_dot_used": False,
             "external_calls_triggered": False,
@@ -515,6 +533,8 @@ def _read_local_push_gate_run_receipt() -> dict[str, Any]:
     receipt_head = str(raw_receipt.get("head") or "")
     current_head_full = str(current_head.get("head_full") or "")
     current_head_short = str(current_head.get("head") or "")
+    checks = {str(item) for item in _as_list(raw_receipt.get("checks"))}
+    missing_checks = sorted(LOCAL_PUSH_GATE_REQUIRED_CHECKS.difference(checks))
     head_matches_current = bool(
         current_head_full
         and (
@@ -524,6 +544,7 @@ def _read_local_push_gate_run_receipt() -> dict[str, Any]:
     )
     schema_ok = raw_receipt.get("schema_version") == LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION
     status_ok = raw_receipt.get("status") == "local_push_gate_passed_current_head"
+    checks_ok = not missing_checks
     boundary_ok = (
         raw_receipt.get("did_not_push") is True
         and raw_receipt.get("git_add_dot_used") is False
@@ -535,7 +556,7 @@ def _read_local_push_gate_run_receipt() -> dict[str, Any]:
         and raw_receipt.get("does_not_modify_strategy_action") is True
         and raw_receipt.get("contains_secret") is False
     )
-    fresh = bool(schema_ok and status_ok and head_matches_current and boundary_ok)
+    fresh = bool(schema_ok and status_ok and head_matches_current and boundary_ok and checks_ok)
     receipt.update(
         {
             "schema_version": str(receipt.get("schema_version") or LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION),
@@ -549,6 +570,10 @@ def _read_local_push_gate_run_receipt() -> dict[str, Any]:
             "head_matches_current": head_matches_current,
             "boundary_flags_valid": boundary_ok,
             "fresh_local_gate_run_observed": fresh,
+            "required_local_gate_checks_present": checks_ok,
+            "required_check_count": len(LOCAL_PUSH_GATE_REQUIRED_CHECKS),
+            "observed_check_count": len(checks),
+            "missing_required_checks": missing_checks,
             "remote_actions_status_known": False,
             "latest_remote_run_verified_green": False,
             "local_gate_pass_is_not_ci_status": True,
@@ -3343,8 +3368,10 @@ def _motion_durable_evidence_recipe(
     motion_production_activation_receipt: Mapping[str, Any],
     motion_promotion_dry_run_receipt: Mapping[str, Any],
     motion_visual_performance_promotion_review: Mapping[str, Any] | None = None,
+    local_push_gate_run_receipt: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     promotion_review = motion_visual_performance_promotion_review if isinstance(motion_visual_performance_promotion_review, Mapping) else {}
+    local_release_gate_receipt = _as_dict(local_push_gate_run_receipt)
     local_reports_ready = motion_browser_qa_evidence_contract.get("visual_qa_complete") is True and (
         motion_browser_qa_evidence_contract.get("browser_performance_verified") is True
     )
@@ -3357,6 +3384,21 @@ def _motion_durable_evidence_recipe(
     performance_promoted = promotion_review.get("browser_performance_promoted") is True
     reduced_motion_promoted = promotion_review.get("reduced_motion_durable_evidence_promoted") is True
     activation_ready = motion_production_activation_receipt.get("local_activation_receipt_ready") is True
+    local_release_gate_observed = bool(
+        local_release_gate_receipt.get("fresh_local_gate_run_observed") is True
+        and local_release_gate_receipt.get("head_matches_current") is True
+        and local_release_gate_receipt.get("required_local_gate_checks_present") is True
+        and local_release_gate_receipt.get("remote_actions_status_known") is False
+        and local_release_gate_receipt.get("latest_remote_run_verified_green") is False
+        and local_release_gate_receipt.get("github_api_called") is False
+        and local_release_gate_receipt.get("external_calls_triggered") is False
+        and local_release_gate_receipt.get("tushare_called") is False
+        and local_release_gate_receipt.get("deepseek_called") is False
+        and local_release_gate_receipt.get("github_called") is False
+        and local_release_gate_receipt.get("does_not_execute_trades") is True
+        and local_release_gate_receipt.get("does_not_modify_strategy_action") is True
+        and local_release_gate_receipt.get("contains_secret") is False
+    )
     rows = [
         _motion_durable_evidence_recipe_row(
             "local_activation_sequence_visible",
@@ -3441,10 +3483,28 @@ def _motion_durable_evidence_recipe(
             next_action="Promote reduced-motion route/viewport evidence alongside default-motion visual evidence.",
         ),
         _motion_durable_evidence_recipe_row(
+            "local_release_gate_evidence_observed",
+            local_release_gate_observed,
+            status=(
+                "local_release_gate_observed_remote_ci_pending"
+                if local_release_gate_observed
+                else "pending_current_head_local_release_gate"
+            ),
+            evidence=(
+                f"fresh_local_gate_run_observed={local_release_gate_receipt.get('fresh_local_gate_run_observed') is True}; "
+                f"head_matches_current={local_release_gate_receipt.get('head_matches_current') is True}; "
+                f"required_checks_present={local_release_gate_receipt.get('required_local_gate_checks_present') is True}; "
+                f"remote_actions_status_known={local_release_gate_receipt.get('remote_actions_status_known') is True}; "
+                f"latest_remote_run_verified_green={local_release_gate_receipt.get('latest_remote_run_verified_green') is True}"
+            ),
+            next_action="Use this only as local release-gate evidence; matching remote CI or release evidence remains separate.",
+            production_required=False,
+        ),
+        _motion_durable_evidence_recipe_row(
             "durable_ci_or_release_evidence_required",
             False,
             status="pending_durable_ci_or_release_evidence",
-            evidence="This recipe does not inspect GitHub Actions or release artifacts.",
+            evidence="This recipe does not inspect GitHub Actions or release artifacts; local gate evidence is reported separately.",
             next_action="Attach durable CI/release evidence in a separate explicit promotion step.",
         ),
         _motion_durable_evidence_recipe_row(
@@ -3483,6 +3543,16 @@ def _motion_durable_evidence_recipe(
         "reduced_motion_durable_evidence_promoted": reduced_motion_promoted,
         "ci_evidence_complete": False,
         "durable_ci_evidence_complete": False,
+        "local_release_gate_receipt": local_release_gate_receipt,
+        "local_release_gate_evidence_observed": local_release_gate_observed,
+        "local_release_gate_evidence_head_matches_current": local_release_gate_receipt.get("head_matches_current")
+        is True,
+        "local_release_gate_evidence_required_checks_present": local_release_gate_receipt.get(
+            "required_local_gate_checks_present"
+        )
+        is True,
+        "remote_actions_status_known": False,
+        "latest_remote_run_verified_green": False,
         "local_browser_reports_available": local_reports_ready,
         "default_and_reduced_motion_covered": default_and_reduced_ready,
         "local_browser_qa_review_ready": review_ready,
@@ -3822,6 +3892,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         motion_production_activation_receipt,
         motion_promotion_dry_run_receipt,
         motion_visual_performance_promotion_review_receipt,
+        local_push_gate_run_receipt,
     )
     all_ledger_rows = (endpoint_ledger_rows + task_ledger_rows)[:240]
     external_rows = [row for row in endpoint_rows + task_rows if row.get("external_calls_triggered")]
@@ -3988,6 +4059,18 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "motion_durable_evidence_recipe_ready": motion_durable_evidence_recipe.get("local_recipe_ready") is True,
             "motion_durable_evidence_production_blocker_count": motion_durable_evidence_recipe.get("production_blocker_count", 0),
             "motion_durable_evidence_row_count": motion_durable_evidence_recipe.get("row_count", 0),
+            "motion_local_release_gate_evidence_observed": motion_durable_evidence_recipe.get(
+                "local_release_gate_evidence_observed"
+            )
+            is True,
+            "motion_local_release_gate_evidence_head_matches_current": motion_durable_evidence_recipe.get(
+                "local_release_gate_evidence_head_matches_current"
+            )
+            is True,
+            "motion_local_release_gate_evidence_required_checks_present": motion_durable_evidence_recipe.get(
+                "local_release_gate_evidence_required_checks_present"
+            )
+            is True,
             "external_call_count": len(external_rows),
             "action_risk_count": len(action_risk_rows),
             "missing_call_ledger_count": len(missing_ledger_rows),
@@ -4407,6 +4490,7 @@ def run_motion_visual_performance_promotion_review_task(payload: Any = None) -> 
         _as_dict(packet.get("motion_production_activation_receipt")),
         _as_dict(packet.get("motion_promotion_dry_run_receipt")),
         promotion_review_receipt,
+        _as_dict(packet.get("local_push_gate_run_receipt")),
     )
     packet["motion_durable_evidence_recipe"] = motion_durable_evidence_recipe
     packet["motion_durable_evidence_rows"] = motion_durable_evidence_rows
@@ -4426,6 +4510,15 @@ def run_motion_visual_performance_promotion_review_task(payload: Any = None) -> 
         "production_blocker_count", 0
     )
     counts["motion_durable_evidence_row_count"] = motion_durable_evidence_recipe.get("row_count", 0)
+    counts["motion_local_release_gate_evidence_observed"] = (
+        motion_durable_evidence_recipe.get("local_release_gate_evidence_observed") is True
+    )
+    counts["motion_local_release_gate_evidence_head_matches_current"] = (
+        motion_durable_evidence_recipe.get("local_release_gate_evidence_head_matches_current") is True
+    )
+    counts["motion_local_release_gate_evidence_required_checks_present"] = (
+        motion_durable_evidence_recipe.get("local_release_gate_evidence_required_checks_present") is True
+    )
     packet["counts"] = counts
     policy = _as_dict(packet.get("policy"))
     policy["motion_visual_performance_promotion_review_is_button_gated"] = True

@@ -6633,6 +6633,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         motion_evidence: dict[str, Any] = {}
         motion_review: dict[str, Any] = {}
         motion_visual_performance_promotion: dict[str, Any] = {}
+        motion_durable_evidence_recipe: dict[str, Any] = {}
+        local_push_gate_receipt: dict[str, Any] = {}
         try:
             from server.services import audit_service
             from storage.sqlite_meta import SQLiteMetaStore
@@ -6644,15 +6646,28 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 evidence_packet = audit_packet.get("motion_browser_qa_evidence_contract")
                 review_packet = audit_packet.get("motion_browser_qa_review_contract")
                 promotion_packet = audit_packet.get("motion_visual_performance_promotion_review_receipt")
+                durable_recipe_packet = audit_packet.get("motion_durable_evidence_recipe")
+                local_push_gate_packet = audit_packet.get("local_push_gate_run_receipt")
                 motion_evidence = evidence_packet if isinstance(evidence_packet, dict) else {}
                 motion_review = review_packet if isinstance(review_packet, dict) else {}
                 motion_visual_performance_promotion = (
                     promotion_packet if isinstance(promotion_packet, dict) else {}
                 )
+                motion_durable_evidence_recipe = (
+                    durable_recipe_packet if isinstance(durable_recipe_packet, dict) else {}
+                )
+                local_push_gate_receipt = local_push_gate_packet if isinstance(local_push_gate_packet, dict) else {}
+            if (
+                local_push_gate_receipt.get("fresh_local_gate_run_observed") is not True
+                or local_push_gate_receipt.get("required_local_gate_checks_present") is not True
+            ):
+                local_push_gate_receipt = audit_service._read_local_push_gate_run_receipt()
         except Exception:
             motion_evidence = {}
             motion_review = {}
             motion_visual_performance_promotion = {}
+            motion_durable_evidence_recipe = {}
+            local_push_gate_receipt = {}
         browser_visual_ready = motion_evidence.get("visual_qa_complete") is True
         browser_performance_ready = motion_evidence.get("browser_performance_verified") is True
         reduced_motion_ready = motion_evidence.get("reduced_motion_passed") is True
@@ -6663,6 +6678,24 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         )
         reduced_motion_promoted = (
             motion_visual_performance_promotion.get("reduced_motion_durable_evidence_promoted") is True
+        )
+        local_release_gate_evidence_observed = bool(
+            (
+                motion_durable_evidence_recipe.get("local_release_gate_evidence_observed") is True
+                or local_push_gate_receipt.get("fresh_local_gate_run_observed") is True
+            )
+            and local_push_gate_receipt.get("head_matches_current") is True
+            and local_push_gate_receipt.get("required_local_gate_checks_present") is True
+            and local_push_gate_receipt.get("remote_actions_status_known") is False
+            and local_push_gate_receipt.get("latest_remote_run_verified_green") is False
+            and local_push_gate_receipt.get("github_api_called") is False
+            and local_push_gate_receipt.get("external_calls_triggered") is False
+            and local_push_gate_receipt.get("tushare_called") is False
+            and local_push_gate_receipt.get("deepseek_called") is False
+            and local_push_gate_receipt.get("github_called") is False
+            and local_push_gate_receipt.get("does_not_execute_trades") is True
+            and local_push_gate_receipt.get("does_not_modify_strategy_action") is True
+            and local_push_gate_receipt.get("contains_secret") is False
         )
         direct_stage_keys = []
         if browser_visual_ready:
@@ -6679,6 +6712,8 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             direct_stage_keys.append("browser_performance_trace_promotion")
         if reduced_motion_promoted:
             direct_stage_keys.append("reduced_motion_durable_promotion")
+        if local_release_gate_evidence_observed:
+            direct_stage_keys.append("local_release_gate_evidence")
         direct_stage_key_set = set(direct_stage_keys)
         local_evidence_count = max(
             local_evidence_count,
@@ -6700,7 +6735,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "goal": "App 动效与可视化清晰度生产化",
                 "stage_scope_manifest": "motion_production_stage_scope_manifest",
                 "status": (
-                    "observed_motion_browser_qa_direct_evidence_production_pending"
+                    "observed_motion_direct_evidence_production_pending"
                     if direct_evidence_count
                     else (
                         "observed_in_motion_viewport_static_contract"
@@ -6738,6 +6773,17 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "motion_visual_performance_promotion_review_task_id": str(
                     motion_visual_performance_promotion.get("promotion_review_task_id") or ""
                 ),
+                "local_release_gate_evidence_observed": local_release_gate_evidence_observed,
+                "local_release_gate_evidence_head_matches_current": local_push_gate_receipt.get(
+                    "head_matches_current"
+                )
+                is True,
+                "local_release_gate_evidence_required_checks_present": local_push_gate_receipt.get(
+                    "required_local_gate_checks_present"
+                )
+                is True,
+                "remote_actions_status_known": False,
+                "latest_remote_run_verified_green": False,
                 "durable_ci_evidence_complete": motion_visual_performance_promotion.get("ci_evidence_complete")
                 is True,
                 "browser_runner_executed_by_contract": int(motion_evidence.get("passing_report_count") or 0) >= 2,
