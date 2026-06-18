@@ -37,8 +37,10 @@ from celery.contrib.testing.worker import start_worker  # noqa: E402
 from worker.celery_app import CELERY_AVAILABLE, celery_app  # noqa: E402
 
 if celery_app is not None:
+    from server.services import candidate_service  # noqa: E402
     from worker.tasks_candidate import run_candidate_radar_full_pool_local_scan  # noqa: E402
 else:
+    candidate_service = None
     run_candidate_radar_full_pool_local_scan = None
 
 
@@ -97,10 +99,14 @@ def _returned_task_passed(returned: Any) -> bool:
         return False
     call_ledger = returned.get("call_ledger")
     call_rows = call_ledger if isinstance(call_ledger, list) else []
+    first_call = next((row for row in call_rows if isinstance(row, dict)), {})
     return (
         returned.get("task_type") == "run_candidate_radar_full_pool_local_scan"
         and returned.get("output_packet_key") == "command_center_3_candidate_radar_cache"
         and returned.get("status") == "success"
+        and returned.get("current_step") == "candidate_radar_full_pool_local_scan_completed"
+        and first_call.get("api") == "local_candidate_radar_full_pool_local_scan"
+        and int(first_call.get("row_count") or 0) > 0
         and returned.get("external_calls_triggered") is False
         and returned.get("tushare_called") is False
         and returned.get("deepseek_called") is False
@@ -121,12 +127,19 @@ def run_smoke(timeout: float) -> dict[str, Any]:
     try:
         with tempfile.TemporaryDirectory(prefix="stock_ming_candidate_worker_fs_") as tmp:
             _configure_filesystem_broker(Path(tmp))
+            if candidate_service is not None:
+                candidate_service.SQLITE_META_PATH = Path(tmp) / "candidate_radar_worker_meta.sqlite"
             with start_worker(celery_app, perform_ping_check=False, pool="solo", loglevel="WARNING"):
                 result = run_candidate_radar_full_pool_local_scan.delay(
                     {
-                        "scan_mode": "full_pool_worker_filesystem_roundtrip_smoke",
+                        "scan_mode": "full_pool_local_scan",
                         "requested_by": "candidate_radar_worker_filesystem_roundtrip_smoke",
-                        "symbol_limit": 3,
+                        "local_execution_only": True,
+                        "local_universe_candidates": [
+                            {"ticker": "002008.SZ", "name": "大族激光", "score": 61},
+                            {"ticker": "002837.SZ", "name": "英维克", "score": 47},
+                            {"ticker": "300750.SZ", "name": "宁德时代", "score": 45},
+                        ],
                         "external_calls_triggered": False,
                         "tushare_called": False,
                         "deepseek_called": False,
@@ -139,6 +152,8 @@ def run_smoke(timeout: float) -> dict[str, Any]:
         return _failure("candidate_radar_worker_filesystem_roundtrip_exception")
 
     passed = _returned_task_passed(returned)
+    call_rows = returned.get("call_ledger") if isinstance(returned, dict) else []
+    first_call = next((row for row in call_rows if isinstance(row, dict)), {})
     payload = _base_payload(
         "candidate_radar_worker_filesystem_roundtrip_passed"
         if passed
@@ -152,16 +167,21 @@ def run_smoke(timeout: float) -> dict[str, Any]:
             "task_dispatched": True,
             "task_result_returned": passed,
             "worker_backed_execution_done": passed,
+            "worker_backed_local_full_pool_scan_done": passed,
             "production_worker_complete": False,
             "production_radar_replacement_complete": False,
+            "production_full_pool_scan_done": False,
             "provider_backed_acceptance_done": False,
             "returned_task_id": returned.get("task_id") if isinstance(returned, dict) else "",
             "returned_task_status": returned.get("status") if isinstance(returned, dict) else "",
             "returned_current_step": returned.get("current_step") if isinstance(returned, dict) else "",
+            "returned_call_api": first_call.get("api") or "",
+            "returned_call_row_count": int(first_call.get("row_count") or 0),
             "note": (
                 "This smoke proves the Candidate Radar task can round-trip through a local "
-                "Celery filesystem broker. Redis broker, provider-backed parity, deep-scan "
-                "worker execution, browser promotion, and production replacement remain pending."
+                "Celery filesystem broker and execute the local full-pool scan service. Redis "
+                "broker, provider-backed parity, deep-scan worker execution, browser promotion, "
+                "and production replacement remain pending."
             ),
         }
     )

@@ -8559,11 +8559,16 @@ def _candidate_worker_filesystem_roundtrip_ready(payload: Mapping[str, Any]) -> 
         and payload.get("output_packet_key") == "command_center_3_candidate_radar_cache"
         and payload.get("task_dispatched") is True
         and payload.get("task_result_returned") is True
+        and payload.get("worker_backed_local_full_pool_scan_done") is True
+        and payload.get("returned_current_step") == "candidate_radar_full_pool_local_scan_completed"
+        and payload.get("returned_call_api") == "local_candidate_radar_full_pool_local_scan"
+        and int(payload.get("returned_call_row_count") or 0) > 0
         and payload.get("filesystem_broker_used") is True
         and payload.get("redis_broker_used") is False
         and payload.get("redis_pinged") is False
         and payload.get("production_worker_complete") is False
         and payload.get("production_radar_replacement_complete") is False
+        and payload.get("production_full_pool_scan_done") is False
         and payload.get("provider_backed_acceptance_done") is False
         and payload.get("external_calls_triggered") is False
         and payload.get("tushare_called") is False
@@ -8723,6 +8728,8 @@ def _candidate_radar_production_stage_scope_manifest(
                 f"artifact={CANDIDATE_WORKER_FILESYSTEM_ROUNDTRIP_EVIDENCE_PATH}; "
                 f"status={worker_transport_roundtrip.get('status') or 'missing'}; "
                 f"task_id={worker_transport_roundtrip.get('returned_task_id') or ''}; "
+                f"call_api={worker_transport_roundtrip.get('returned_call_api') or ''}; "
+                f"row_count={worker_transport_roundtrip.get('returned_call_row_count') or 0}; "
                 "redis_broker_used=false; production_worker_complete=false"
             ),
             "missing": (
