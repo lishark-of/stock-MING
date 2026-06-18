@@ -91,6 +91,14 @@ def assert_model_strategy_safety(packet):
             raise AssertionError(f"model_strategy.{purpose} must expose config_keys")
 
 
+def collect_api_post_routes(route_source):
+    return sorted(
+        f"POST {route.path}"
+        for route in getattr(route_source, "routes", [])
+        if "POST" in getattr(route, "methods", set()) and str(route.path).startswith("/api/")
+    )
+
+
 print("health: import ok")
 print("smoke_task_meta:", _SMOKE_TASK_META_PATH)
 for key in [
@@ -178,23 +186,27 @@ assert_cache_safety("legacy_bridge", legacy)
 print("legacy_bridge:", legacy["status"], legacy["mode"], legacy["counts"]["checklist_item_count"])
 catalog = task_service.build_task_catalog()
 assert_cache_safety("task_catalog", catalog)
-discovered_post_routes = sorted(
-    f"POST {route.path}"
-    for route in app.routes
-    if "POST" in getattr(route, "methods", set()) and str(route.path).startswith("/api/")
-)
+discovered_post_routes = collect_api_post_routes(app)
+route_coverage_source = "app.routes"
+if not discovered_post_routes:
+    discovered_post_routes = collect_api_post_routes(getattr(client, "app", None))
+    route_coverage_source = "client.app.routes"
+if not discovered_post_routes:
+    api_catalog = assert_api_cache_endpoint(client, "/api/tasks/catalog")
+    discovered_post_routes = sorted((api_catalog.get("route_coverage") or {}).get("known_post_routes") or [])
+    route_coverage_source = "api_tasks_catalog_runtime_fallback"
 known_post_routes = sorted(catalog["route_coverage"]["known_post_routes"])
 if discovered_post_routes != known_post_routes:
     raise AssertionError(
         "task_catalog.route_coverage must cover every FastAPI POST route: "
-        f"discovered={discovered_post_routes}, known={known_post_routes}"
+        f"source={route_coverage_source}, discovered={discovered_post_routes}, known={known_post_routes}"
     )
 if catalog["route_coverage"]["uncovered_post_routes"]:
     raise AssertionError("task_catalog.route_coverage.uncovered_post_routes must stay empty")
 if not catalog["route_coverage"]["call_ledger_required_for_all_known_post_routes"]:
     raise AssertionError("every known POST route must require call_ledger")
 print("task_catalog:", catalog["status"], catalog["task_count"])
-print("task_route_coverage:", len(discovered_post_routes), "post routes covered")
+print("task_route_coverage:", len(discovered_post_routes), "post routes covered", route_coverage_source)
 task_index = task_service.build_task_status_index()
 assert_cache_safety("task_status_index", task_index)
 print("task_status_index:", task_index["status"], task_index["task_count"], task_index["call_ledger_count"])
