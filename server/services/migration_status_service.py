@@ -2898,6 +2898,7 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
     browser_review = _dict_or_empty(packet_map.get("next_session_browser_qa_review_contract"))
     streamlit_review = _dict_or_empty(packet_map.get("next_session_streamlit_parity_review_contract"))
     promotion_review = _dict_or_empty(packet_map.get("next_session_production_promotion_review_contract"))
+    production_stage_scope = _dict_or_empty(packet_map.get("next_session_production_stage_scope_manifest"))
     packet_safe = bool(
         packet_map.get("external_calls_triggered") is not True
         and packet_map.get("tushare_called") is not True
@@ -3006,6 +3007,20 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
         and promotion_review.get("does_not_modify_strategy_action") is True
         and promotion_review.get("does_not_modify_operation_zones") is True
     )
+    local_release_gate_evidence_observed = bool(
+        packet_safe
+        and production_stage_scope.get("local_release_gate_evidence_observed") is True
+        and production_stage_scope.get("local_release_gate_evidence_head_matches_current") is True
+        and production_stage_scope.get("local_release_gate_evidence_required_checks_present") is True
+        and production_stage_scope.get("remote_actions_status_known") is False
+        and production_stage_scope.get("latest_remote_run_verified_green") is False
+        and production_stage_scope.get("durable_ci_evidence_complete") is False
+        and production_stage_scope.get("production_replacement_complete") is False
+        and production_stage_scope.get("external_calls_triggered") is False
+        and production_stage_scope.get("github_called") is False
+        and production_stage_scope.get("does_not_execute_trades") is True
+        and production_stage_scope.get("does_not_modify_strategy_action") is True
+    )
     direct_stage_keys = []
     if exact_payload_contract_done:
         direct_stage_keys.append("exact_cache_payload_contract")
@@ -3019,6 +3034,8 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
         direct_stage_keys.append("browser_performance_trace")
     if reduced_motion_done:
         direct_stage_keys.append("reduced_motion_accessibility_qa")
+    if local_release_gate_evidence_observed:
+        direct_stage_keys.append("durable_ci_release_evidence")
     if production_promotion_review_ready:
         direct_stage_keys.append("production_replacement_promotion")
     return {
@@ -3042,6 +3059,17 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
         "same_packet_no_loss_review_ready": streamlit_same_packet_review_ready,
         "local_browser_qa_review_ready": review_ready,
         "local_production_promotion_review_ready": production_promotion_review_ready,
+        "local_release_gate_evidence_observed": local_release_gate_evidence_observed,
+        "local_release_gate_evidence_head_matches_current": production_stage_scope.get(
+            "local_release_gate_evidence_head_matches_current"
+        )
+        is True,
+        "local_release_gate_evidence_required_checks_present": production_stage_scope.get(
+            "local_release_gate_evidence_required_checks_present"
+        )
+        is True,
+        "remote_actions_status_known": False,
+        "latest_remote_run_verified_green": False,
         "streamlit_parity_complete": False,
         "production_replacement_complete": False,
         "external_calls_triggered": False,
@@ -3052,7 +3080,7 @@ def _latest_next_session_direct_evidence_summary() -> dict[str, Any]:
         "does_not_modify_strategy_action": True,
         "does_not_modify_operation_zones": True,
         "contains_secret": False,
-        "direct_evidence_layer": "L3_local_next_session_cache_interaction_browser_evidence"
+        "direct_evidence_layer": "L3_local_next_session_cache_interaction_browser_release_gate_evidence"
         if direct_stage_keys
         else "L1_static_contract",
         "evidence_boundary": "next_session_local_cache_interaction_browser_streamlit_review_evidence_is_not_streamlit_parity_or_production_replacement",
@@ -5746,6 +5774,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 or row.get("local_contract_ready") is True
             )
         )
+        production_blocker_count = sum(
+            1 for row in stage_rows if isinstance(row, dict) and row.get("production_blocker") is True
+        )
         direct_evidence = _latest_next_session_direct_evidence_summary()
         direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
         observed_pending_count = max(0, row_count - direct_evidence_count) if row_count else pending_count
@@ -5791,6 +5822,17 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     direct_evidence.get("same_packet_no_loss_review_ready") is True
                 ),
                 "local_browser_qa_review_ready": direct_evidence.get("local_browser_qa_review_ready") is True,
+                "local_release_gate_evidence_observed": (
+                    direct_evidence.get("local_release_gate_evidence_observed") is True
+                ),
+                "local_release_gate_evidence_head_matches_current": (
+                    direct_evidence.get("local_release_gate_evidence_head_matches_current") is True
+                ),
+                "local_release_gate_evidence_required_checks_present": (
+                    direct_evidence.get("local_release_gate_evidence_required_checks_present") is True
+                ),
+                "remote_actions_status_known": False,
+                "latest_remote_run_verified_green": False,
                 "durable_ci_evidence_complete": next_session_contract.get("durable_evidence_complete") is True,
                 "frontend_computes_trade_action": next_session_contract.get("frontend_computes_trade_action") is True,
                 "does_not_modify_operation_zones": next_session_contract.get("does_not_modify_operation_zones") is True,

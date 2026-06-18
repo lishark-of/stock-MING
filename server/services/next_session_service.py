@@ -16,6 +16,8 @@ SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 MOTION_QA_ARTIFACT_ROOT = PROJECT_ROOT / ".stock_ming_3" / "motion_qa"
 MOTION_BROWSER_QA_RUNNER_PATH = PROJECT_ROOT / "scripts" / "motion_browser_qa_runner.mjs"
 NEXT_SESSION_ROUTE_SOURCE_PATH = PROJECT_ROOT / "desktop" / "src" / "routes" / "NextSessionMap.tsx"
+LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION = "command_center_3_local_push_gate_run_receipt.v1"
+LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = PROJECT_ROOT / ".stock_ming_3" / "release_gate" / "local_push_gate_run_receipt.json"
 NEXT_SESSION_BROWSER_QA_REVIEW_PACKET_KEY = "command_center_next_session_browser_qa_review_packet"
 NEXT_SESSION_STREAMLIT_PARITY_REVIEW_PACKET_KEY = "command_center_next_session_streamlit_parity_review_packet"
 NEXT_SESSION_PRODUCTION_PROMOTION_REVIEW_PACKET_KEY = (
@@ -74,6 +76,17 @@ NEXT_SESSION_PRODUCTION_STAGE_LABELS = {
     "durable_ci_release_evidence": "durable CI or release evidence",
     "production_replacement_promotion": "production replacement promotion review",
 }
+NEXT_SESSION_RELEASE_GATE_REQUIRED_CHECKS = {
+    "python_unittest",
+    "desktop_build",
+    "command_center_3_smoke",
+    "next_session_map_contract",
+    "diff_whitespace_check",
+    "high_risk_secret_scan",
+    "secret_keyword_review_contract",
+    "generated_artifact_scan",
+    "clean_worktree_check",
+}
 
 
 def _now_iso() -> str:
@@ -99,6 +112,145 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _read_local_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
+def _relative_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _git_dir_path() -> Path:
+    dot_git = PROJECT_ROOT / ".git"
+    if dot_git.is_file():
+        text = _read_local_text(dot_git).strip()
+        if text.startswith("gitdir:"):
+            raw_path = text.split(":", 1)[1].strip()
+            path = Path(raw_path)
+            return path if path.is_absolute() else (PROJECT_ROOT / path).resolve()
+    return dot_git
+
+
+def _current_git_head_summary() -> dict[str, Any]:
+    git_dir = _git_dir_path()
+    head_file = git_dir / "HEAD"
+    head_text = _read_local_text(head_file).strip()
+    if not head_text:
+        return {"read_status": "git_head_missing", "branch": "", "head_full": "", "head": ""}
+    if head_text.startswith("ref:"):
+        ref_name = head_text.split(":", 1)[1].strip()
+        ref_text = _read_local_text(git_dir / ref_name).strip()
+        head_full = ref_text if ref_text else ""
+        return {
+            "read_status": "git_head_ref_present" if head_full else "git_head_ref_missing",
+            "branch": ref_name.removeprefix("refs/heads/"),
+            "head_full": head_full,
+            "head": head_full[:7],
+            "ref": ref_name,
+        }
+    return {"read_status": "git_head_detached", "branch": "HEAD", "head_full": head_text, "head": head_text[:7], "ref": ""}
+
+
+def _read_next_session_local_release_gate_receipt() -> dict[str, Any]:
+    current_head = _current_git_head_summary()
+    base = {
+        "schema_version": LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION,
+        "scope": "ignored_local_push_gate_run_receipt_no_push_no_github_api",
+        "receipt_path": _relative_path(LOCAL_PUSH_GATE_RUN_RECEIPT_PATH),
+        "current_head": current_head.get("head") or "",
+        "current_head_full": current_head.get("head_full") or "",
+        "current_branch": current_head.get("branch") or "",
+        "head_matches_current": False,
+        "fresh_local_gate_run_observed": False,
+        "required_local_gate_checks_present": False,
+        "required_check_count": len(NEXT_SESSION_RELEASE_GATE_REQUIRED_CHECKS),
+        "observed_check_count": 0,
+        "missing_required_checks": sorted(NEXT_SESSION_RELEASE_GATE_REQUIRED_CHECKS),
+        "did_not_push": True,
+        "git_add_dot_used": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "github_api_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "local_gate_pass_is_not_ci_status": True,
+        "remote_actions_status_known": False,
+        "latest_remote_run_verified_green": False,
+    }
+    if not LOCAL_PUSH_GATE_RUN_RECEIPT_PATH.exists():
+        return {**base, "status": "local_push_gate_run_receipt_missing", "read_status": "receipt_missing"}
+    try:
+        raw = json.loads(LOCAL_PUSH_GATE_RUN_RECEIPT_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {**base, "status": "local_push_gate_run_receipt_unreadable", "read_status": "receipt_read_failed"}
+    receipt = _as_dict(raw)
+    checks = {str(item) for item in _as_list(receipt.get("checks"))}
+    missing_checks = sorted(NEXT_SESSION_RELEASE_GATE_REQUIRED_CHECKS.difference(checks))
+    receipt_head_full = str(receipt.get("head_full") or "")
+    receipt_head = str(receipt.get("head") or "")
+    current_head_full = str(current_head.get("head_full") or "")
+    current_head_short = str(current_head.get("head") or "")
+    head_matches_current = bool(
+        current_head_full
+        and (
+            receipt_head_full == current_head_full
+            or (receipt_head and current_head_short and receipt_head == current_head_short)
+        )
+    )
+    boundary_ok = (
+        receipt.get("did_not_push") is True
+        and receipt.get("git_add_dot_used") is False
+        and receipt.get("external_calls_triggered") is False
+        and receipt.get("tushare_called") is False
+        and receipt.get("deepseek_called") is False
+        and receipt.get("github_api_called") is False
+        and receipt.get("does_not_execute_trades") is True
+        and receipt.get("does_not_modify_strategy_action") is True
+        and receipt.get("contains_secret") is False
+    )
+    schema_ok = receipt.get("schema_version") == LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION
+    status_ok = receipt.get("status") == "local_push_gate_passed_current_head"
+    checks_ok = not missing_checks
+    fresh = bool(schema_ok and status_ok and head_matches_current and boundary_ok and checks_ok)
+    return {
+        **base,
+        "schema_version": str(receipt.get("schema_version") or LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION),
+        "status": receipt.get("status") if schema_ok else "local_push_gate_run_receipt_schema_mismatch",
+        "read_status": "receipt_present",
+        "generated_at_utc": str(receipt.get("generated_at_utc") or ""),
+        "branch": str(receipt.get("branch") or ""),
+        "head": receipt_head,
+        "head_full": receipt_head_full,
+        "head_matches_current": head_matches_current,
+        "boundary_flags_valid": boundary_ok,
+        "fresh_local_gate_run_observed": fresh,
+        "required_local_gate_checks_present": checks_ok,
+        "observed_check_count": len(checks),
+        "missing_required_checks": missing_checks,
+        "did_not_push": receipt.get("did_not_push") is True,
+        "git_add_dot_used": receipt.get("git_add_dot_used") is True,
+        "github_api_called": receipt.get("github_api_called") is True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "remote_actions_status_known": False,
+        "latest_remote_run_verified_green": False,
+    }
 
 
 def _activation_row(
@@ -1833,6 +1985,8 @@ def _next_session_durable_evidence_recipe(packet: Mapping[str, Any], now: str) -
     browser_runbook = _as_dict(packet.get("next_session_browser_qa_runbook_contract"))
     browser_evidence = _as_dict(packet.get("next_session_browser_qa_evidence_summary"))
     browser_review = _as_dict(packet.get("next_session_browser_qa_review_contract"))
+    local_release_gate_receipt = _read_next_session_local_release_gate_receipt()
+    local_release_gate_observed = local_release_gate_receipt.get("fresh_local_gate_run_observed") is True
 
     cache_render_safe = (
         packet.get("cache_only") is not False
@@ -2013,12 +2167,25 @@ def _next_session_durable_evidence_recipe(packet: Mapping[str, Any], now: str) -
         _next_session_durable_evidence_recipe_row(
             "durable_ci_release_evidence_required",
             "durable_evidence",
-            "completed" if durable_ci_evidence_complete else "pending_durable_ci_release_evidence",
+            (
+                "completed"
+                if durable_ci_evidence_complete
+                else (
+                    "local_release_gate_observed_remote_ci_pending"
+                    if local_release_gate_observed
+                    else "pending_durable_ci_release_evidence"
+                )
+            ),
             passed=durable_ci_evidence_complete,
             local_surface_required=False,
             production_blocker=not durable_ci_evidence_complete,
-            evidence=f"durable_ci_evidence_complete={durable_ci_evidence_complete}",
-            next_action="Keep local artifacts separate from durable CI/release evidence.",
+            evidence=(
+                f"durable_ci_evidence_complete={durable_ci_evidence_complete}; "
+                f"local_release_gate_observed={local_release_gate_observed}; "
+                f"head_matches_current={local_release_gate_receipt.get('head_matches_current') is True}; "
+                f"remote_actions_status_known={local_release_gate_receipt.get('remote_actions_status_known') is True}"
+            ),
+            next_action="Keep current-HEAD local gate evidence separate from remote CI/release evidence.",
             recommended_order=11,
         ),
         _next_session_durable_evidence_recipe_row(
@@ -2066,6 +2233,16 @@ def _next_session_durable_evidence_recipe(packet: Mapping[str, Any], now: str) -
         "hover_click_parity_complete": False,
         "browser_visual_performance_reviewed": False,
         "local_browser_visual_performance_reviewed": local_browser_visual_perf_reviewed,
+        "local_release_gate_receipt": local_release_gate_receipt,
+        "local_release_gate_evidence_observed": local_release_gate_observed,
+        "local_release_gate_evidence_head_matches_current": local_release_gate_receipt.get("head_matches_current")
+        is True,
+        "local_release_gate_evidence_required_checks_present": local_release_gate_receipt.get(
+            "required_local_gate_checks_present"
+        )
+        is True,
+        "remote_actions_status_known": False,
+        "latest_remote_run_verified_green": False,
         "durable_ci_evidence_complete": False,
         "provider_execution_implemented": False,
         "model_execution_implemented": False,
@@ -2122,6 +2299,8 @@ def _next_session_durable_evidence_recipe(packet: Mapping[str, Any], now: str) -
                 "status": contract["status"],
                 "row_count": len(rows),
                 "production_blocker_count": len(durable_blockers),
+                "local_release_gate_evidence_observed": local_release_gate_observed,
+                "remote_actions_status_known": False,
                 "production_replacement_complete": False,
             },
             "row_count": len(rows),
@@ -2195,6 +2374,8 @@ def _next_session_production_stage_scope_manifest(packet: Mapping[str, Any], now
     streamlit_review = _as_dict(packet.get("next_session_streamlit_parity_review_contract"))
     promotion_review = _as_dict(packet.get("next_session_production_promotion_review_contract"))
     activation = _as_dict(packet.get("next_session_replacement_activation_receipt"))
+    local_release_gate_receipt = _read_next_session_local_release_gate_receipt()
+    local_release_gate_observed = local_release_gate_receipt.get("fresh_local_gate_run_observed") is True
 
     exact_payload_contract_ready = (
         chart.get("status") == "ready"
@@ -2353,11 +2534,30 @@ def _next_session_production_stage_scope_manifest(packet: Mapping[str, Any], now
         ),
         _next_session_production_stage_scope_row(
             "durable_ci_release_evidence",
-            local_contract_ready=False,
-            direct_evidence_complete=False,
-            current_status="pending_durable_ci_release_evidence",
-            evidence=f"durable_ci_evidence_complete={activation.get('durable_ci_evidence_complete') is True}",
-            missing_evidence=["durable CI or release evidence for next-session ECharts route"],
+            local_contract_ready=local_release_gate_observed,
+            direct_evidence_complete=local_release_gate_observed,
+            production_blocker=True,
+            current_status=(
+                "direct_evidence_ready_local_gate_current_head_remote_ci_pending"
+                if local_release_gate_observed
+                else "pending_durable_ci_release_evidence"
+            ),
+            evidence=(
+                f"local_release_gate_observed={local_release_gate_observed}; "
+                f"head_matches_current={local_release_gate_receipt.get('head_matches_current') is True}; "
+                f"required_checks_present={local_release_gate_receipt.get('required_local_gate_checks_present') is True}; "
+                f"remote_actions_status_known={local_release_gate_receipt.get('remote_actions_status_known') is True}; "
+                f"durable_ci_evidence_complete={activation.get('durable_ci_evidence_complete') is True}"
+            ),
+            missing_evidence=(
+                ["matching remote Actions or release evidence", "production replacement gate remains blocked"]
+                if local_release_gate_observed
+                else [
+                    "current-HEAD local push gate receipt",
+                    "matching remote Actions or release evidence",
+                    "production replacement gate remains blocked",
+                ]
+            ),
             recommended_order=7,
         ),
         _next_session_production_stage_scope_row(
@@ -2411,6 +2611,16 @@ def _next_session_production_stage_scope_manifest(packet: Mapping[str, Any], now
         "local_browser_qa_review_ready": local_review_ready,
         "local_streamlit_parity_review_ready": streamlit_same_packet_review_ready,
         "local_production_promotion_review_ready": production_promotion_review_ready,
+        "local_release_gate_receipt": local_release_gate_receipt,
+        "local_release_gate_evidence_observed": local_release_gate_observed,
+        "local_release_gate_evidence_head_matches_current": local_release_gate_receipt.get("head_matches_current")
+        is True,
+        "local_release_gate_evidence_required_checks_present": local_release_gate_receipt.get(
+            "required_local_gate_checks_present"
+        )
+        is True,
+        "remote_actions_status_known": False,
+        "latest_remote_run_verified_green": False,
         "same_packet_no_loss_review_ready": streamlit_same_packet_review_ready,
         "streamlit_parity_complete": False,
         "durable_ci_evidence_complete": False,

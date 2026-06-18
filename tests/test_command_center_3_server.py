@@ -285,6 +285,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         original_worker_path = worker_service.SQLITE_META_PATH
         original_desktop_path = desktop_service.SQLITE_META_PATH
         original_legacy_path = legacy_service.SQLITE_META_PATH
+        original_next_session_release_gate_path = next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
         temp_dir = tempfile.TemporaryDirectory()
         db_path = Path(temp_dir.name) / "meta.sqlite"
         audit_service.SQLITE_META_PATH = db_path
@@ -298,6 +299,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         worker_service.SQLITE_META_PATH = db_path
         desktop_service.SQLITE_META_PATH = db_path
         legacy_service.SQLITE_META_PATH = db_path
+        next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = (
+            Path(temp_dir.name) / "release_gate" / "local_push_gate_run_receipt.json"
+        )
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, audit_service, "SQLITE_META_PATH", original_audit_path)
         self.addCleanup(setattr, packet_service, "SQLITE_META_PATH", original_packet_path)
@@ -310,6 +314,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.addCleanup(setattr, worker_service, "SQLITE_META_PATH", original_worker_path)
         self.addCleanup(setattr, desktop_service, "SQLITE_META_PATH", original_desktop_path)
         self.addCleanup(setattr, legacy_service, "SQLITE_META_PATH", original_legacy_path)
+        self.addCleanup(
+            setattr,
+            next_session_service,
+            "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH",
+            original_next_session_release_gate_path,
+        )
         return db_path
 
     def _with_motion_qa_root(self):
@@ -322,11 +332,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
     def _with_release_gate_receipt_path(self):
         original_path = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
+        original_next_session_path = next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
         temp_dir = tempfile.TemporaryDirectory()
         receipt_path = Path(temp_dir.name) / "release_gate" / "local_push_gate_run_receipt.json"
         audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = receipt_path
+        next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = receipt_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, audit_service, "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH", original_path)
+        self.addCleanup(
+            setattr,
+            next_session_service,
+            "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH",
+            original_next_session_path,
+        )
         return receipt_path
 
     def _with_parquet_root(self):
@@ -19140,6 +19158,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         original_worker_path = worker_service.SQLITE_META_PATH
         original_desktop_path = desktop_service.SQLITE_META_PATH
         original_legacy_path = legacy_service.SQLITE_META_PATH
+        original_next_session_release_gate_path = next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
         temp_dir = tempfile.TemporaryDirectory()
         db_path = Path(temp_dir.name) / "meta.sqlite"
         audit_service.SQLITE_META_PATH = db_path
@@ -19152,6 +19171,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         worker_service.SQLITE_META_PATH = db_path
         desktop_service.SQLITE_META_PATH = db_path
         legacy_service.SQLITE_META_PATH = db_path
+        next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = (
+            Path(temp_dir.name) / "release_gate" / "local_push_gate_run_receipt.json"
+        )
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, audit_service, "SQLITE_META_PATH", original_audit_path)
         self.addCleanup(setattr, packet_service, "SQLITE_META_PATH", original_packet_path)
@@ -19163,6 +19185,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.addCleanup(setattr, worker_service, "SQLITE_META_PATH", original_worker_path)
         self.addCleanup(setattr, desktop_service, "SQLITE_META_PATH", original_desktop_path)
         self.addCleanup(setattr, legacy_service, "SQLITE_META_PATH", original_legacy_path)
+        self.addCleanup(
+            setattr,
+            next_session_service,
+            "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH",
+            original_next_session_release_gate_path,
+        )
         return db_path
 
     def _with_motion_qa_root(self):
@@ -19175,11 +19203,19 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
     def _with_release_gate_receipt_path(self):
         original_path = audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
+        original_next_session_path = next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH
         temp_dir = tempfile.TemporaryDirectory()
         receipt_path = Path(temp_dir.name) / "release_gate" / "local_push_gate_run_receipt.json"
         audit_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = receipt_path
+        next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = receipt_path
         self.addCleanup(temp_dir.cleanup)
         self.addCleanup(setattr, audit_service, "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH", original_path)
+        self.addCleanup(
+            setattr,
+            next_session_service,
+            "LOCAL_PUSH_GATE_RUN_RECEIPT_PATH",
+            original_next_session_path,
+        )
         return receipt_path
 
     def _with_parquet_root(self):
@@ -31247,6 +31283,132 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg08["github_called"])
         self.assertTrue(ltg08["does_not_execute_trades"])
         self.assertTrue(ltg08["does_not_modify_strategy_action"])
+
+    def test_next_session_stage_scope_observes_current_head_local_release_gate_without_ci_claim(self):
+        self._with_meta_store()
+        receipt_path = self._with_release_gate_receipt_path()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        current_head = next_session_service._current_git_head_summary()
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        receipt_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": next_session_service.LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION,
+                    "status": "local_push_gate_passed_current_head",
+                    "scope": "ignored_local_push_gate_run_receipt_no_push_no_github_api",
+                    "generated_at_utc": "2026-06-17T02:53:49Z",
+                    "branch": current_head["branch"],
+                    "head": current_head["head"],
+                    "head_full": current_head["head_full"],
+                    "checks": sorted(next_session_service.NEXT_SESSION_RELEASE_GATE_REQUIRED_CHECKS),
+                    "did_not_push": True,
+                    "git_add_dot_used": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "github_api_called": False,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                    "contains_secret": False,
+                    "local_gate_pass_is_not_ci_status": True,
+                    "remote_actions_status_known": False,
+                    "latest_remote_run_verified_green": False,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        self._with_snapshot_cache(
+            {
+                "command_center_next_session_projection_packet": {
+                    "packet_key": "command_center_next_session_projection_packet",
+                    "status": "ready",
+                    "trade_date": "20260610",
+                    "chart_render_model": {
+                        "historical_series": [
+                            {"x": "2026-06-08", "price": 10.0, "source": "local_contract_fixture"},
+                            {"x": "2026-06-09", "close": 10.4, "source": "local_contract_fixture"},
+                        ],
+                        "scenario_series": [
+                            {
+                                "scenario_key": "neutral",
+                                "scenario_name": "中性路径",
+                                "trigger_condition": "放量但不追高",
+                                "confidence_note": "中性路径只作基准",
+                                "points": [{"x": "T0", "price": 10.4}, {"x": "T+1_close", "price": 10.8}],
+                            }
+                        ],
+                        "cost_line": 9.8,
+                        "current_price_line": 10.4,
+                        "limit_lines": [{"label": "涨停参考", "value": 11.44}, {"label": "跌停参考", "value": 9.36}],
+                        "support_lines": [9.9],
+                        "resistance_lines": [11.0],
+                        "operation_zone_overlays": [
+                            {
+                                "zone_key": "reduce_watch_zone",
+                                "zone_name": "止盈/减仓观察区",
+                                "price_range": [10.9, 11.3],
+                                "action_mode": "condition_only",
+                            }
+                        ],
+                        "y_axis_range": [9.0, 12.0],
+                    },
+                    "position_context": {"conflict_flags": ["cost_price_conflict"], "source_packet": "position_profile"},
+                    "data_trust_summary": {
+                        "facts": [{"fact_key": "moneyflow", "call_status": "verified_present"}],
+                        "human_summary": ["真实日线：已接入", "持仓：存在冲突，需先核验"],
+                        "deepseek": {"label": "DeepSeek", "status": "not_called"},
+                    },
+                    "deepseek_synthesis": {"status": "not_called"},
+                }
+            }
+        )
+
+        refreshed = self.client.get("/api/next-session/cache").json()["data"]
+
+        durable_recipe = refreshed["next_session_durable_evidence_recipe"]
+        self.assertTrue(durable_recipe["local_release_gate_evidence_observed"])
+        self.assertTrue(durable_recipe["local_release_gate_evidence_head_matches_current"])
+        self.assertFalse(durable_recipe["remote_actions_status_known"])
+        self.assertFalse(durable_recipe["latest_remote_run_verified_green"])
+        self.assertFalse(durable_recipe["durable_ci_evidence_complete"])
+        durable_rows = {row["evidence_key"]: row for row in refreshed["next_session_durable_evidence_rows"]}
+        self.assertEqual(
+            durable_rows["durable_ci_release_evidence_required"]["status"],
+            "local_release_gate_observed_remote_ci_pending",
+        )
+        self.assertFalse(durable_rows["durable_ci_release_evidence_required"]["passed"])
+        self.assertTrue(durable_rows["durable_ci_release_evidence_required"]["production_blocker"])
+
+        stage_scope = refreshed["next_session_production_stage_scope_manifest"]
+        self.assertTrue(stage_scope["local_release_gate_evidence_observed"])
+        self.assertTrue(stage_scope["local_release_gate_evidence_head_matches_current"])
+        self.assertFalse(stage_scope["remote_actions_status_known"])
+        self.assertFalse(stage_scope["latest_remote_run_verified_green"])
+        self.assertFalse(stage_scope["durable_ci_evidence_complete"])
+        self.assertFalse(stage_scope["production_replacement_complete"])
+        self.assertIn("durable_ci_release_evidence", stage_scope["direct_evidence_stage_keys"])
+        stage_rows = {row["stage_key"]: row for row in refreshed["next_session_production_stage_scope_rows"]}
+        release_row = stage_rows["durable_ci_release_evidence"]
+        self.assertTrue(release_row["direct_evidence_complete"])
+        self.assertTrue(release_row["production_blocker"])
+        self.assertIn("remote_ci_pending", release_row["current_status"])
+        self.assertIn("matching remote Actions", release_row["missing_evidence"][0])
+        self.assertFalse(release_row["durable_ci_evidence_complete"])
+        self.assertFalse(release_row["external_calls_triggered"])
+        self.assertFalse(release_row["github_called"])
+        self.assertTrue(release_row["does_not_execute_trades"])
+
+        migration = migration_status_service.build_migration_status()
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg08 = observed_stage_rows["LTG-08"]
+        self.assertIn("durable_ci_release_evidence", ltg08["direct_evidence_stage_keys"])
+        self.assertFalse(ltg08["production_replacement_complete"])
+        self.assertFalse(ltg08["external_calls_triggered"])
+        self.assertFalse(ltg08["github_called"])
+        self.assertTrue(ltg08["does_not_execute_trades"])
+        self.assertFalse(ltg08["can_close_from_observed_row"])
 
     def test_task_cancel_endpoint_marks_pending_task_without_external_work(self):
         self._with_meta_store()

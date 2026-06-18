@@ -745,6 +745,13 @@ def build_contract() -> dict[str, Any]:
             and durable_evidence_recipe.get("hover_click_parity_complete") is False
             and durable_evidence_recipe.get("browser_visual_performance_reviewed") is False
             and durable_evidence_recipe.get("durable_ci_evidence_complete") is False
+            and durable_evidence_recipe.get("remote_actions_status_known") is False
+            and durable_evidence_recipe.get("latest_remote_run_verified_green") is False
+            and isinstance(durable_evidence_recipe.get("local_release_gate_evidence_observed"), bool)
+            and (
+                durable_evidence_recipe.get("local_release_gate_evidence_observed") is False
+                or durable_evidence_recipe.get("local_release_gate_evidence_head_matches_current") is True
+            )
             and durable_evidence_recipe.get("provider_execution_implemented") is False
             and durable_evidence_recipe.get("model_execution_implemented") is False
             and durable_evidence_recipe.get("worker_execution_implemented") is False
@@ -781,6 +788,11 @@ def build_contract() -> dict[str, Any]:
             and _dict(durable_evidence_rows.get("durable_browser_visual_performance_evidence_required")).get(
                 "production_blocker"
             )
+            is True
+            and _dict(durable_evidence_rows.get("durable_ci_release_evidence_required")).get("status")
+            in {"pending_durable_ci_release_evidence", "local_release_gate_observed_remote_ci_pending"}
+            and _dict(durable_evidence_rows.get("durable_ci_release_evidence_required")).get("passed") is False
+            and _dict(durable_evidence_rows.get("durable_ci_release_evidence_required")).get("production_blocker")
             is True
             and _dict(durable_evidence_rows.get("no_provider_trade_action_secret_boundary")).get("passed") is True
             and _flag_false(
@@ -826,6 +838,7 @@ def build_contract() -> dict[str, Any]:
                     "browser_visual_qa",
                     "browser_performance_trace",
                     "reduced_motion_accessibility_qa",
+                    "durable_ci_release_evidence",
                     "production_replacement_promotion",
                 }
             )
@@ -855,6 +868,7 @@ def build_contract() -> dict[str, Any]:
                     "pending_browser_performance_trace_review",
                     "pending_reduced_motion_accessibility_review",
                     "pending_durable_ci_release_evidence",
+                    "direct_evidence_ready_local_gate_current_head_remote_ci_pending",
                     "pending_production_replacement_promotion",
                     "direct_evidence_ready_local_promotion_review_durable_release_pending",
                 }
@@ -873,6 +887,31 @@ def build_contract() -> dict[str, Any]:
             and all(row.get("streamlit_parity_complete") is False for row in production_stage_scope_rows.values())
             and all(row.get("durable_ci_evidence_complete") is False for row in production_stage_scope_rows.values())
             and all(row.get("production_replacement_complete") is False for row in production_stage_scope_rows.values())
+            and production_stage_scope.get("remote_actions_status_known") is False
+            and production_stage_scope.get("latest_remote_run_verified_green") is False
+            and isinstance(production_stage_scope.get("local_release_gate_evidence_observed"), bool)
+            and (
+                production_stage_scope.get("local_release_gate_evidence_observed") is False
+                or production_stage_scope.get("local_release_gate_evidence_head_matches_current") is True
+            )
+            and (
+                "durable_ci_release_evidence"
+                not in set(_list(production_stage_scope.get("direct_evidence_stage_keys")))
+                or (
+                    _dict(production_stage_scope_rows.get("durable_ci_release_evidence")).get(
+                        "current_status"
+                    )
+                    == "direct_evidence_ready_local_gate_current_head_remote_ci_pending"
+                    and _dict(production_stage_scope_rows.get("durable_ci_release_evidence")).get(
+                        "production_blocker"
+                    )
+                    is True
+                    and _dict(production_stage_scope_rows.get("durable_ci_release_evidence")).get(
+                        "durable_ci_evidence_complete"
+                    )
+                    is False
+                )
+            )
             and all(row.get("browser_opened_by_contract") is False for row in production_stage_scope_rows.values())
             and all(row.get("artifacts_written_by_contract") is False for row in production_stage_scope_rows.values())
             and all(row.get("external_calls_triggered") is False for row in production_stage_scope_rows.values())
