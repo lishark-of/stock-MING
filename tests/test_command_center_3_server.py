@@ -13993,6 +13993,70 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("production_activation_receipt_keeps_worker_blocked", criteria)
 
+    def test_worker_runtime_qa_roundtrip_evidence_script_runs_isolated_local_execution(self):
+        path = Path("scripts/worker_runtime_qa_roundtrip_evidence.py")
+        script = path.read_text(encoding="utf-8")
+
+        self.assertTrue(path.exists())
+        self.assertTrue(path.stat().st_mode & 0o111)
+        self.assertIn("worker_runtime_qa_roundtrip_evidence.v1", script)
+        self.assertIn("L3_local_worker_runtime_round_trip_not_celery_redis", script)
+        self.assertIn("TemporaryDirectory", script)
+        self.assertIn("/api/worker/runtime-qa-execution", script)
+        self.assertIn("production_worker_complete", script)
+        self.assertNotIn("requests", script)
+        self.assertNotIn("httpx.", script)
+        self.assertNotIn("api.github.com", script)
+        self.assertNotIn("tushare_adapter", script)
+
+        result = subprocess.run(
+            [sys.executable, str(path), "--json"],
+            cwd=Path.cwd(),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["schema_version"], "worker_runtime_qa_roundtrip_evidence.v1")
+        self.assertEqual(payload["status"], "worker_runtime_qa_roundtrip_passed")
+        self.assertEqual(payload["direct_evidence_layer"], "L3_local_worker_runtime_round_trip_not_celery_redis")
+        self.assertTrue(payload["isolated_meta_store"])
+        self.assertFalse(payload["project_meta_touched"])
+        self.assertTrue(payload["local_runtime_qa_execution_done"])
+        self.assertTrue(payload["local_fallback_round_trip_verified"])
+        self.assertTrue(payload["local_task_round_trip_verified"])
+        self.assertTrue(payload["task_log_round_trip_verified"])
+        self.assertTrue(payload["append_only_worker_log_verified"])
+        self.assertTrue(payload["cross_process_task_control_verified"])
+        self.assertTrue(payload["scheduler_default_off_runtime_verified"])
+        self.assertTrue(payload["provider_model_no_autoschedule_boundary_verified"])
+        self.assertTrue(payload["no_trade_no_action_boundary_verified"])
+        self.assertTrue(payload["queue_round_trip_evidence_ready"])
+        self.assertTrue(payload["append_only_worker_log_evidence_ready"])
+        self.assertTrue(payload["cross_process_controls_evidence_ready"])
+        self.assertEqual(payload["call_ledger_api"], "local_worker_runtime_qa_execution")
+        self.assertFalse(payload["call_ledger_external"])
+        self.assertEqual(payload["task_status"], "success")
+        self.assertEqual(payload["task_type"], "run_worker_runtime_qa_execution")
+        self.assertFalse(payload["payload_safe_has_forbidden_auth_key"])
+        self.assertFalse(payload["production_worker_complete"])
+        self.assertFalse(payload["worker_started"])
+        self.assertFalse(payload["celery_worker_started"])
+        self.assertFalse(payload["redis_pinged"])
+        self.assertFalse(payload["scheduler_started"])
+        self.assertFalse(payload["external_calls_triggered"])
+        self.assertFalse(payload["tushare_called"])
+        self.assertFalse(payload["deepseek_called"])
+        self.assertFalse(payload["github_called"])
+        self.assertTrue(payload["does_not_execute_trades"])
+        self.assertTrue(payload["does_not_modify_strategy_action"])
+        self.assertFalse(payload["contains_secret"])
+        self.assertFalse(payload["forbidden_response_marker_found"])
+        self.assertIn("celery_redis_process_evidence_still_pending", payload["production_blockers"])
+        self.assertEqual(len(payload["steps"]), 6)
+
     def test_tauri_desktop_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/tauri_desktop_contract.py")
         script = path.read_text(encoding="utf-8")
