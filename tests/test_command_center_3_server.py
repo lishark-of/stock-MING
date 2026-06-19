@@ -23719,7 +23719,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "operator": "local-launch-review",
                 "explicit_packaged_app_launch_completed": True,
                 "app_process_observed_after_launch": True,
-                "launch_command": "open -n desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app",
+                "launch_command": "desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app/Contents/MacOS/stock_ming_command_center",
                 "observed_process_name": "stock-MING Command Center",
                 "authorization": "Bearer SHOULD_DROP",
             },
@@ -23760,7 +23760,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(review["app_process_observed_after_launch"])
         self.assertEqual(
             review["launch_command_reviewed_safe"],
-            "open -n desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app",
+            "desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app/Contents/MacOS/stock_ming_command_center",
         )
         self.assertEqual(review["observed_process_name"], "stock-MING Command Center")
         self.assertTrue(review["app_bundle_detected"])
@@ -23816,7 +23816,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ltg09["packaged_app_launch_qa_done"])
         self.assertEqual(
             ltg09["tauri_launch_command_reviewed_safe"],
-            "open -n desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app",
+            "desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app/Contents/MacOS/stock_ming_command_center",
         )
         self.assertEqual(ltg09["tauri_launch_observed_process_name"], "stock-MING Command Center")
         self.assertFalse(ltg09["packaged_runtime_qa_done"])

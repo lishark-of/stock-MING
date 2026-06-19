@@ -2278,6 +2278,7 @@ def _tauri_packaged_runtime_launch_review_contract(
     accepted_launch_command = launch_command_reviewed_safe in {
         "open -n desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app",
         "open desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app",
+        "desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app/Contents/MacOS/stock_ming_command_center",
     }
     launch_smoke_ready = bool(
         explicit_review
@@ -4613,6 +4614,7 @@ def run_tauri_packaged_runtime_launch_review_task(payload: Any = None) -> dict[s
     launch_command_reviewed_safe = requested_command if requested_command in {
         "open -n desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app",
         "open desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app",
+        "desktop/src-tauri/target/release/bundle/macos/stock-MING Command Center.app/Contents/MacOS/stock_ming_command_center",
     } else ""
     observed_process_name = str(payload_map.get("observed_process_name") or "").strip()[:120]
     task = create_task_record(
