@@ -14,6 +14,8 @@
 
 LTG-13 Candidate Radar 的本地浏览器 QA 现在也按同样口径分层：`candidate_browser_qa_review_ready_local_artifact` 可以清掉本地 browser visual/performance review 缺口，并让 activation / durable-evidence receipts 停止重复要求这一步；但它仍不是 durable CI/release evidence、provider-backed parity、worker full-pool/deep-scan execution、legacy retirement 或 production replacement。
 
+运行模式迁移采用 `cache_only` 默认、`manual` 按钮门控、`live_light` 限频后台 task、`live_full` 预留的分层口径。`COMMAND_CENTER_BOOTSTRAP_MODE` 默认保持 `cache_only`，`COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN`、`COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN` 和 `COMMAND_CENTER_LIVE_ALLOW_FULL_POOL` 默认保持 `false`；只有用户本地显式改成 `live_light` 并打开来源开关后，React 才能在初始 cache render 后请求一次 `POST /api/bootstrap/live-startup`。当前映射中的 bootstrap skeleton、runbook、dry-run、model-ledger preview 仍是 L2 本地准备度，不是 L3 真实 Tushare/DeepSeek evidence 或 L4 production promotion。
+
 | Streamlit/现有模块 | 当前文件 | 3.0 API | 3.0 前端页面 | 是否重计算 | 是否任务化 |
 |---|---|---|---|---|---|
 | 调用审计 / 外部边界 | `server/services/*_service.py`, `server/services/task_service.py` | `GET /api/audit/cache` | `CallLedgerAudit.tsx` | cache GET 聚合本地 cache API 与任务 `call_ledger`；同时静态审计本地 push gate readiness、push readiness receipt 和 CI failure email triage；不刷新、不外联、不代表 CI 状态 | 否；只读审计 |
