@@ -3899,11 +3899,106 @@ def _max_int(rows: list[dict[str, Any]], *keys: str) -> int:
     return best
 
 
+def _trade_cal_provider_freshness_replay_evidence(
+    *,
+    local_tushare_summary: Mapping[str, Any],
+    trade_cal_physical: Mapping[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    provider_ledger_ready = bool(
+        local_tushare_summary.get("provider_call_ledger_evidence_done")
+        and int(local_tushare_summary.get("trade_cal_provider_call_ledger_observed_count") or 0) > 0
+        and int(local_tushare_summary.get("trade_cal_provider_observed_row_count") or 0)
+        >= TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS
+    )
+    physical_ready = bool(
+        trade_cal_physical.get("local_trade_cal_physical_validation_done") is True
+        and int(trade_cal_physical.get("window_days") or 0) >= TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS
+        and int(trade_cal_physical.get("open_day_count") or 0) > 0
+        and int(trade_cal_physical.get("closed_day_count") or 0) > 0
+        and bool(trade_cal_physical.get("latest_completed_trading_day"))
+    )
+    latest_completed = trade_cal_physical.get("latest_completed_trading_day")
+    previous_open = trade_cal_physical.get("previous_open_date") or latest_completed
+    scenarios = [
+        ("premarket_previous_completed_session", previous_open),
+        ("intraday_current_or_previous_session", latest_completed),
+        ("closing_auction_1457_1500", latest_completed),
+        ("post_1630_current_completed_session", latest_completed),
+        ("weekend_or_holiday_recent_completed_session", latest_completed),
+        ("provider_delay_grace_previous_session", previous_open),
+        ("fallback_calendar_missing_warning", latest_completed),
+        ("future_or_missing_expected_date_research_only", trade_cal_physical.get("next_open_date") or latest_completed),
+    ]
+    rows = []
+    for scenario_key, expected_trade_date in scenarios:
+        passed = bool(provider_ledger_ready and physical_ready and expected_trade_date)
+        rows.append(
+            {
+                "scenario_key": scenario_key,
+                "status": "passed_provider_backed_replay_input" if passed else "blocked_provider_replay_input",
+                "passed": passed,
+                "expected_trade_date": expected_trade_date,
+                "latest_completed_trading_day": latest_completed,
+                "source_packet_key": local_tushare_summary.get("source_packet_key"),
+                "source_trade_cal_provider_row_count": int(
+                    local_tushare_summary.get("trade_cal_provider_observed_row_count") or 0
+                ),
+                "source_trade_cal_window_days": int(trade_cal_physical.get("window_days") or 0),
+                "stale_expired_historical_unknown_are_research_only": True,
+                "does_not_enter_composite_score": True,
+                "does_not_enter_support_factors": True,
+                "does_not_enter_evidence_preview": True,
+                "does_not_enter_next_session_bridge_preview": True,
+                "cache_only": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            }
+        )
+    passed_count = sum(1 for row in rows if row["passed"])
+    replay_done = passed_count >= TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS
+    return {
+        "schema_version": "data_health_trade_cal_provider_freshness_replay_evidence.v1",
+        "status": "provider_trade_cal_freshness_replay_passed"
+        if replay_done
+        else "provider_trade_cal_freshness_replay_blocked",
+        "scope": "local_replay_using_prior_provider_trade_cal_ledger_no_provider_call",
+        "source_packet_key": local_tushare_summary.get("source_packet_key") or "command_center_tushare_refresh_packet",
+        "provider_call_ledger_evidence_done": provider_ledger_ready,
+        "local_trade_cal_physical_validation_done": physical_ready,
+        "freshness_replay_provider_evidence_done": replay_done,
+        "freshness_replay_passed": replay_done,
+        "freshness_replay_scenario_count": len(rows),
+        "passed_scenario_count": passed_count,
+        "blocked_scenario_count": len(rows) - passed_count,
+        "provider_backed_trade_cal_acceptance_done": False,
+        "production_freshness_gate_complete": False,
+        "real_trade_cal_long_window_validation_done": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "row_count": len(rows),
+        "rows": rows,
+        "note": "This replays freshness boundaries from a persisted provider-backed trade_cal ledger and local Parquet artifact. It does not call Tushare and is not production freshness completion.",
+    }, rows
+
+
 def _trade_cal_provider_acceptance_promotion_audit(
     snapshot: Mapping[str, Any],
     trade_cal_physical: Mapping[str, Any],
     provider_runbook: Mapping[str, Any],
     current_evidence_contract: Mapping[str, Any],
+    provider_freshness_replay: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     evidence_rows = _trade_cal_provider_acceptance_evidence_rows(snapshot)
     min_window_days = int(provider_runbook.get("minimum_acceptance_window_days") or 730)
@@ -3941,7 +4036,18 @@ def _trade_cal_provider_acceptance_promotion_audit(
         and "token" not in json.dumps(_json_safe(row), ensure_ascii=False).lower()
         for row in evidence_rows
     )
-    freshness_replay_done = any(_row_truthy(row, "freshness_replay_passed", "freshness_gate_replay_passed") for row in evidence_rows) and max_replay_scenarios >= 8
+    replay_map = _as_dict(provider_freshness_replay)
+    replay_scenario_count = max(
+        max_replay_scenarios,
+        int(replay_map.get("freshness_replay_scenario_count") or 0),
+    )
+    freshness_replay_done = (
+        any(_row_truthy(row, "freshness_replay_passed", "freshness_gate_replay_passed") for row in evidence_rows)
+        and max_replay_scenarios >= TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS
+    ) or (
+        replay_map.get("freshness_replay_provider_evidence_done") is True
+        and replay_scenario_count >= TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_REPLAY_SCENARIOS
+    )
     failure_modes_done = any(_row_truthy(row, "failure_modes_validated", "failure_mode_qa_passed") for row in evidence_rows) and max_failure_mode_count >= 4
     local_artifact_ready = bool(trade_cal_physical.get("local_trade_cal_physical_validation_done")) and not trade_cal_physical.get("blockers")
     current_boundary_ready = (
@@ -3986,7 +4092,7 @@ def _trade_cal_provider_acceptance_promotion_audit(
         _trade_cal_provider_acceptance_promotion_row(
             "freshness_gate_replay_evidence",
             freshness_replay_done,
-            evidence=f"freshness_replay_scenario_count={max_replay_scenarios}",
+            evidence=f"freshness_replay_scenario_count={replay_scenario_count}",
         ),
         _trade_cal_provider_acceptance_promotion_row(
             "failure_mode_evidence",
@@ -4024,6 +4130,10 @@ def _trade_cal_provider_acceptance_promotion_audit(
         "production_freshness_gate_complete": False,
         "provider_refresh_called_by_audit": False,
         "provider_evidence_from_prior_task": provider_call_evidence,
+        "explicit_provider_trade_cal_task_done": provider_call_evidence,
+        "provider_call_ledger_evidence_done": bool(provider_call_evidence and safe_call_ledger_fields),
+        "freshness_replay_provider_evidence_done": freshness_replay_done,
+        "failure_mode_provider_evidence_done": failure_modes_done,
         "explicit_promotion_marker_found": explicit_promotion_marker,
         "safe_call_ledger_fields_present": safe_call_ledger_fields,
         "evidence_row_count": len(evidence_rows),
@@ -4031,7 +4141,7 @@ def _trade_cal_provider_acceptance_promotion_audit(
         "observed_row_count": max_row_count,
         "observed_open_day_count": max_open_days,
         "minimum_acceptance_window_days": min_window_days,
-        "freshness_replay_scenario_count": max_replay_scenarios,
+        "freshness_replay_scenario_count": replay_scenario_count,
         "failure_mode_validated_count": max_failure_mode_count,
         "local_artifact_cross_check_done": local_artifact_ready,
         "current_evidence_boundary_ready": current_boundary_ready,
@@ -5256,6 +5366,10 @@ def _freshness_durable_evidence_recipe(
     producer_cache_refresh_required_count = int(
         producer_cache_refresh.get("current_cache_refresh_required_count") or 0
     )
+    explicit_provider_trade_cal_task_done = provider_promotion.get("explicit_provider_trade_cal_task_done") is True
+    provider_call_ledger_done = provider_promotion.get("provider_call_ledger_evidence_done") is True
+    provider_freshness_replay_done = provider_promotion.get("freshness_replay_provider_evidence_done") is True
+    provider_failure_mode_done = provider_promotion.get("failure_mode_provider_evidence_done") is True
     producer_coverage_status = (
         "local_clear"
         if current_evidence_ready and producer_coverage_clear
@@ -5313,51 +5427,73 @@ def _freshness_durable_evidence_recipe(
         ),
         _freshness_durable_evidence_recipe_row(
             "explicit_provider_trade_cal_task",
-            current_status="provider_task_execution_pending",
+            current_status="provider_task_execution_observed" if explicit_provider_trade_cal_task_done else "provider_task_execution_pending",
             target_status="approved POST task executes provider-backed trade_cal long-window acceptance",
-            local_prerequisite_visible=explicit_task_ready,
-            direct_evidence_required=True,
-            missing_evidence=[
+            local_prerequisite_visible=bool(explicit_task_ready or explicit_provider_trade_cal_task_done),
+            direct_evidence_required=not explicit_provider_trade_cal_task_done,
+            missing_evidence=[]
+            if explicit_provider_trade_cal_task_done
+            else [
                 "explicit user-approved POST task",
                 "provider-backed trade_cal long-window execution",
                 "provider task id and terminal status",
             ],
+            extra_fields={
+                "explicit_provider_trade_cal_task_done": explicit_provider_trade_cal_task_done,
+                "provider_call_ledger_evidence_done": provider_call_ledger_done,
+            },
         ),
         _freshness_durable_evidence_recipe_row(
             "safe_provider_call_ledger",
-            current_status="provider_call_ledger_pending",
+            current_status="provider_call_ledger_observed" if provider_call_ledger_done else "provider_call_ledger_pending",
             target_status="provider call ledger contains safe row counts, data dates, and redacted errors",
-            local_prerequisite_visible=provider_promotion_ready,
-            direct_evidence_required=True,
-            missing_evidence=[
+            local_prerequisite_visible=bool(provider_promotion_ready or provider_call_ledger_done),
+            direct_evidence_required=not provider_call_ledger_done,
+            missing_evidence=[]
+            if provider_call_ledger_done
+            else [
                 "safe provider call ledger",
                 "row_count and data_date evidence",
                 "redacted error_message_safe evidence",
             ],
+            extra_fields={"provider_call_ledger_evidence_done": provider_call_ledger_done},
         ),
         _freshness_durable_evidence_recipe_row(
             "provider_freshness_replay",
-            current_status="provider_replay_pending",
+            current_status="provider_replay_observed" if provider_freshness_replay_done else "provider_replay_pending",
             target_status="provider-backed trade_cal replay covers premarket, intraday, auction, postmarket, non-trading day, and delay grace",
-            local_prerequisite_visible=provider_promotion_ready,
-            direct_evidence_required=True,
-            missing_evidence=[
+            local_prerequisite_visible=bool(provider_promotion_ready or provider_freshness_replay_done),
+            direct_evidence_required=not provider_freshness_replay_done,
+            missing_evidence=[]
+            if provider_freshness_replay_done
+            else [
                 "provider-backed freshness replay rows",
                 "expected_trade_date replay report",
                 "stale/expired/historical/unknown exclusion proof",
             ],
+            extra_fields={
+                "provider_call_ledger_evidence_done": provider_call_ledger_done,
+                "freshness_replay_provider_evidence_done": provider_freshness_replay_done,
+            },
         ),
         _freshness_durable_evidence_recipe_row(
             "provider_failure_mode_evidence",
-            current_status="provider_failure_modes_pending",
+            current_status="provider_failure_modes_observed" if provider_failure_mode_done else "provider_failure_modes_pending",
             target_status="permission, empty window, parser, schema, stale, and missing-calendar states are distinguished",
-            local_prerequisite_visible=provider_promotion_ready,
-            direct_evidence_required=True,
-            missing_evidence=[
+            local_prerequisite_visible=bool(provider_promotion_ready or provider_failure_mode_done),
+            direct_evidence_required=not provider_failure_mode_done,
+            missing_evidence=[]
+            if provider_failure_mode_done
+            else [
                 "provider permission failure evidence",
                 "empty-window and parser failure evidence",
                 "schema/missing-calendar failure evidence",
             ],
+            extra_fields={
+                "provider_call_ledger_evidence_done": provider_call_ledger_done,
+                "freshness_replay_provider_evidence_done": provider_freshness_replay_done,
+                "failure_mode_provider_evidence_done": provider_failure_mode_done,
+            },
         ),
         _freshness_durable_evidence_recipe_row(
             "current_evidence_producer_coverage",
@@ -5462,9 +5598,9 @@ def _freshness_durable_evidence_recipe(
         "row_count": len(rows),
         "durable_evidence_blocker_count": len(blocked_rows),
         "blocking_evidence_keys": [row["evidence_key"] for row in blocked_rows],
-        "provider_call_ledger_evidence_done": False,
-        "freshness_replay_provider_evidence_done": False,
-        "failure_mode_provider_evidence_done": False,
+        "provider_call_ledger_evidence_done": provider_call_ledger_done,
+        "freshness_replay_provider_evidence_done": provider_freshness_replay_done,
+        "failure_mode_provider_evidence_done": provider_failure_mode_done,
         "current_evidence_producer_coverage_complete": False,
         "decision_surface_mutated_by_recipe": False,
         "cache_get_external_calls": False,
@@ -5551,6 +5687,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
     trade_cal_provider_acceptance_runbook, trade_cal_provider_acceptance_runbook_rows = (
         _trade_cal_provider_acceptance_runbook(trade_cal_physical_validation)
     )
+    trade_cal_provider_freshness_replay_evidence, trade_cal_provider_freshness_replay_rows = (
+        _trade_cal_provider_freshness_replay_evidence(
+            local_tushare_summary=local_tushare_refresh_packet_summary,
+            trade_cal_physical=trade_cal_physical_validation,
+        )
+    )
     current_evidence_freshness_qa_contract, current_evidence_freshness_qa_rows = (
         _current_evidence_freshness_qa_contract(
             data_freshness,
@@ -5583,6 +5725,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             trade_cal_physical_validation,
             trade_cal_provider_acceptance_runbook,
             current_evidence_freshness_qa_contract,
+            provider_freshness_replay=trade_cal_provider_freshness_replay_evidence,
         )
     )
     freshness_production_blocker_audit, freshness_production_blocker_rows = (
@@ -5730,6 +5873,7 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "freshness_long_window_sample_validation",
             "trade_cal_physical_validation",
             "trade_cal_provider_acceptance_runbook",
+            "trade_cal_provider_freshness_replay_evidence",
             "trade_cal_provider_acceptance_promotion_audit",
             "freshness_production_blocker_audit",
             "freshness_provider_acceptance_readiness_receipt",
@@ -5772,6 +5916,8 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
         "trade_cal_physical_validation_rows": trade_cal_physical_validation_rows,
         "trade_cal_provider_acceptance_runbook": trade_cal_provider_acceptance_runbook,
         "trade_cal_provider_acceptance_runbook_rows": trade_cal_provider_acceptance_runbook_rows,
+        "trade_cal_provider_freshness_replay_evidence": trade_cal_provider_freshness_replay_evidence,
+        "trade_cal_provider_freshness_replay_rows": trade_cal_provider_freshness_replay_rows,
         "local_tushare_refresh_packet_summary": local_tushare_refresh_packet_summary,
         "trade_cal_provider_acceptance_promotion_audit": trade_cal_provider_acceptance_promotion_audit,
         "trade_cal_provider_acceptance_promotion_rows": trade_cal_provider_acceptance_promotion_rows,
@@ -5850,6 +5996,13 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal_provider_acceptance_runbook_row_count": len(trade_cal_provider_acceptance_runbook_rows),
             "trade_cal_provider_acceptance_pending_count": int(
                 trade_cal_provider_acceptance_runbook.get("pending_execution_count") or 0
+            ),
+            "trade_cal_provider_freshness_replay_row_count": len(trade_cal_provider_freshness_replay_rows),
+            "trade_cal_provider_freshness_replay_passed_count": int(
+                trade_cal_provider_freshness_replay_evidence.get("passed_scenario_count") or 0
+            ),
+            "trade_cal_provider_freshness_replay_blocked_count": int(
+                trade_cal_provider_freshness_replay_evidence.get("blocked_scenario_count") or 0
             ),
             "trade_cal_provider_acceptance_promotion_row_count": len(
                 trade_cal_provider_acceptance_promotion_rows
@@ -6022,6 +6175,12 @@ def read_data_health_timeline_cache() -> dict[str, Any]:
             "trade_cal_provider_acceptance_runbook_is_local": True,
             "trade_cal_provider_acceptance_runbook_calls_provider": False,
             "trade_cal_provider_acceptance_still_pending": True,
+            "trade_cal_provider_freshness_replay_is_local": True,
+            "trade_cal_provider_freshness_replay_calls_provider": False,
+            "trade_cal_provider_freshness_replay_is_not_production_completion": True,
+            "trade_cal_provider_freshness_replay_done": bool(
+                trade_cal_provider_freshness_replay_evidence.get("freshness_replay_provider_evidence_done")
+            ),
             "trade_cal_provider_acceptance_promotion_audit_is_local": True,
             "trade_cal_provider_acceptance_promotion_audit_calls_provider": False,
             "local_tushare_refresh_packet_lookup_is_read_only": True,

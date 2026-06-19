@@ -573,6 +573,7 @@ def build_contract() -> dict[str, Any]:
     physical = _get(packet, "trade_cal_physical_validation")
     runbook = _get(packet, "trade_cal_provider_acceptance_runbook")
     local_tushare_refresh = _get(packet, "local_tushare_refresh_packet_summary")
+    replay = _get(packet, "trade_cal_provider_freshness_replay_evidence")
     promotion = _get(packet, "trade_cal_provider_acceptance_promotion_audit")
     blockers_audit = _get(packet, "freshness_production_blocker_audit")
     readiness_receipt = _get(packet, "freshness_provider_acceptance_readiness_receipt")
@@ -587,6 +588,10 @@ def build_contract() -> dict[str, Any]:
     durable_evidence_keys = {str(row.get("evidence_key") or "") for row in durable_evidence_rows}
     durable_evidence_rows_by_key = {str(row.get("evidence_key") or ""): row for row in durable_evidence_rows}
     producer_durable_row = _as_dict(durable_evidence_rows_by_key.get("current_evidence_producer_coverage"))
+    provider_call_ledger_done = durable_evidence_recipe.get("provider_call_ledger_evidence_done") is True
+    freshness_replay_done = durable_evidence_recipe.get("freshness_replay_provider_evidence_done") is True
+    failure_mode_done = durable_evidence_recipe.get("failure_mode_provider_evidence_done") is True
+    durable_blocking_keys = set(durable_evidence_recipe.get("blocking_evidence_keys") or [])
     current = _get(packet, "current_evidence_freshness_qa_contract")
     surfaces = _get(packet, "current_evidence_decision_surface_audit")
     producers = _get(packet, "current_evidence_producer_coverage_audit")
@@ -890,10 +895,22 @@ def build_contract() -> dict[str, Any]:
             and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) > 0
             and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0)
             == sum(1 for row in durable_evidence_rows if row.get("production_blocker") is True)
-            and "explicit_provider_trade_cal_task" in set(durable_evidence_recipe.get("blocking_evidence_keys") or [])
-            and "safe_provider_call_ledger" in set(durable_evidence_recipe.get("blocking_evidence_keys") or [])
-            and "provider_freshness_replay" in set(durable_evidence_recipe.get("blocking_evidence_keys") or [])
-            and "provider_failure_mode_evidence" in set(durable_evidence_recipe.get("blocking_evidence_keys") or [])
+            and (
+                provider_call_ledger_done
+                or "explicit_provider_trade_cal_task" in durable_blocking_keys
+            )
+            and (
+                provider_call_ledger_done
+                or "safe_provider_call_ledger" in durable_blocking_keys
+            )
+            and (
+                freshness_replay_done
+                or "provider_freshness_replay" in durable_blocking_keys
+            )
+            and (
+                failure_mode_done
+                or "provider_failure_mode_evidence" in durable_blocking_keys
+            )
             and "treat durable recipe as provider-backed trade_cal acceptance"
             in durable_evidence_recipe.get("not_allowed_next_steps", [])
             and "treat dry-run scope ticket as provider execution"
@@ -909,9 +926,18 @@ def build_contract() -> dict[str, Any]:
             and all(row.get("production_freshness_gate_complete") is False for row in durable_evidence_rows)
             and all(row.get("provider_refresh_called_by_recipe") is False for row in durable_evidence_rows)
             and all(row.get("provider_execution_implemented") is False for row in durable_evidence_rows)
-            and all(row.get("provider_call_ledger_evidence_done") is False for row in durable_evidence_rows)
-            and all(row.get("freshness_replay_provider_evidence_done") is False for row in durable_evidence_rows)
-            and all(row.get("failure_mode_provider_evidence_done") is False for row in durable_evidence_rows)
+            and durable_evidence_rows_by_key.get("safe_provider_call_ledger", {}).get(
+                "provider_call_ledger_evidence_done"
+            )
+            is provider_call_ledger_done
+            and durable_evidence_rows_by_key.get("provider_freshness_replay", {}).get(
+                "freshness_replay_provider_evidence_done"
+            )
+            is freshness_replay_done
+            and durable_evidence_rows_by_key.get("provider_failure_mode_evidence", {}).get(
+                "failure_mode_provider_evidence_done"
+            )
+            is failure_mode_done
             and all(row.get("cache_get_external_calls") is False for row in durable_evidence_rows)
             and all(row.get("react_render_external_calls") is False for row in durable_evidence_rows)
             and all(row.get("external_calls_triggered") is False for row in durable_evidence_rows)
@@ -961,6 +987,26 @@ def build_contract() -> dict[str, Any]:
             and policy.get("freshness_durable_evidence_recipe_is_not_production_completion") is True
             and policy.get("freshness_durable_evidence_requires_provider_call_ledger") is True,
             "Freshness durable evidence recipe must enumerate provider task, call ledger, replay, failure-mode, producer, decision-surface, and promotion evidence without calling providers or claiming production completion.",
+        ),
+        _row(
+            "trade_cal_provider_freshness_replay_is_local_prior_provider_evidence",
+            replay.get("schema_version") == "data_health_trade_cal_provider_freshness_replay_evidence.v1"
+            and replay.get("scope") == "local_replay_using_prior_provider_trade_cal_ledger_no_provider_call"
+            and replay.get("provider_backed_trade_cal_acceptance_done") is False
+            and replay.get("production_freshness_gate_complete") is False
+            and replay.get("cache_get_external_calls") is False
+            and replay.get("react_render_external_calls") is False
+            and _flag_false(replay, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
+            and replay.get("does_not_execute_trades") is True
+            and replay.get("does_not_modify_strategy_action") is True
+            and replay.get("contains_secret") is False
+            and int(replay.get("row_count") or 0) >= 8
+            and int(counts.get("trade_cal_provider_freshness_replay_row_count") or 0)
+            == int(replay.get("row_count") or 0)
+            and policy.get("trade_cal_provider_freshness_replay_is_local") is True
+            and policy.get("trade_cal_provider_freshness_replay_calls_provider") is False
+            and policy.get("trade_cal_provider_freshness_replay_is_not_production_completion") is True,
+            "Provider freshness replay may consume prior trade_cal ledger evidence locally, but it must not call providers or imply production freshness completion.",
         ),
         _row(
             "trade_cal_dry_run_scope_ticket_is_local_no_provider",

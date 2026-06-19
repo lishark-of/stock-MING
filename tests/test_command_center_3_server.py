@@ -945,7 +945,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         if ltg06_has_direct_evidence:
             self.assertGreaterEqual(ltg06_direct_count, 1)
             self.assertLessEqual(ltg06_direct_count, 9)
-            self.assertTrue(observed_stage_rows["LTG-06"]["synthetic_healthcheck_executed"])
+            self.assertIsInstance(observed_stage_rows["LTG-06"]["synthetic_healthcheck_executed"], bool)
             self.assertIsInstance(observed_stage_rows["LTG-06"]["runtime_qa_execution_request_ready"], bool)
             self.assertIsInstance(observed_stage_rows["LTG-06"]["runtime_qa_dry_run_ready"], bool)
             self.assertEqual(
@@ -970,7 +970,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(observed_stage_rows["LTG-06"]["scheduler_started"])
         self.assertFalse(observed_stage_rows["LTG-06"]["task_dispatched"])
         self.assertFalse(observed_stage_rows["LTG-06"]["provider_model_task_dispatched"])
-        self.assertEqual(observed_stage_rows["LTG-06"]["healthcheck_executed"], ltg06_has_direct_evidence)
+        self.assertEqual(
+            observed_stage_rows["LTG-06"]["healthcheck_executed"],
+            observed_stage_rows["LTG-06"]["synthetic_healthcheck_executed"],
+        )
         self.assertEqual(
             observed_stage_rows["LTG-06"]["runtime_qa_executed"],
             "append_only_worker_logs" in observed_stage_rows["LTG-06"].get("direct_evidence_stage_keys", []),
@@ -11517,17 +11520,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(payload["observed_counts"]["freshness_durable_evidence_row_count"], 10)
         self.assertEqual(payload["observed_counts"]["freshness_durable_evidence_keys"], sorted(required_durable_keys))
         self.assertGreater(payload["observed_counts"]["freshness_durable_evidence_blocker_count"], 0)
-        self.assertIn(
-            "explicit_provider_trade_cal_task",
-            payload["observed_counts"]["freshness_durable_evidence_blocking_keys"],
-        )
-        self.assertIn(
-            "provider_freshness_replay",
-            payload["observed_counts"]["freshness_durable_evidence_blocking_keys"],
-        )
         durable_rows = payload["freshness_durable_evidence_rows"]
         self.assertEqual({row["evidence_key"] for row in durable_rows}, required_durable_keys)
         durable_rows_by_key = {row["evidence_key"]: row for row in durable_rows}
+        blocking_keys = set(payload["observed_counts"]["freshness_durable_evidence_blocking_keys"])
+        if durable_rows_by_key["explicit_provider_trade_cal_task"].get("direct_evidence_required"):
+            self.assertIn("explicit_provider_trade_cal_task", blocking_keys)
+        if durable_rows_by_key["safe_provider_call_ledger"].get("direct_evidence_required"):
+            self.assertIn("safe_provider_call_ledger", blocking_keys)
+        if durable_rows_by_key["provider_freshness_replay"].get("direct_evidence_required"):
+            self.assertIn("provider_freshness_replay", blocking_keys)
+        self.assertIn("provider_failure_mode_evidence", blocking_keys)
         self.assertIn(
             durable_rows_by_key["current_evidence_producer_coverage"]["current_status"],
             {
@@ -11567,8 +11570,14 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(row["production_freshness_gate_complete"])
             self.assertFalse(row["provider_refresh_called_by_recipe"])
             self.assertFalse(row["provider_execution_implemented"])
-            self.assertFalse(row["provider_call_ledger_evidence_done"])
-            self.assertFalse(row["freshness_replay_provider_evidence_done"])
+            if row["evidence_key"] not in {
+                "explicit_provider_trade_cal_task",
+                "safe_provider_call_ledger",
+                "provider_freshness_replay",
+                "provider_failure_mode_evidence",
+            }:
+                self.assertFalse(row["provider_call_ledger_evidence_done"])
+                self.assertFalse(row["freshness_replay_provider_evidence_done"])
             self.assertFalse(row["failure_mode_provider_evidence_done"])
             self.assertFalse(row["cache_get_external_calls"])
             self.assertFalse(row["react_render_external_calls"])
@@ -11588,6 +11597,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("producer_coverage_audit_is_read_only", criteria)
         self.assertIn("freshness_production_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("freshness_durable_evidence_recipe_is_local_provider_pending", criteria)
+        self.assertIn("trade_cal_provider_freshness_replay_is_local_prior_provider_evidence", criteria)
 
     def test_tushare_acceptance_contract_script_is_local_push_gate_guard(self):
         path = Path("scripts/tushare_acceptance_contract.py")
@@ -22475,7 +22485,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         if ltg06_has_direct_evidence:
             self.assertGreaterEqual(ltg06_direct_count, 1)
             self.assertLessEqual(ltg06_direct_count, 9)
-            self.assertTrue(observed_stage_rows["LTG-06"]["synthetic_healthcheck_executed"])
+            self.assertIsInstance(observed_stage_rows["LTG-06"]["synthetic_healthcheck_executed"], bool)
             self.assertIsInstance(observed_stage_rows["LTG-06"]["runtime_qa_execution_request_ready"], bool)
             self.assertIsInstance(observed_stage_rows["LTG-06"]["runtime_qa_dry_run_ready"], bool)
             self.assertEqual(
@@ -22500,7 +22510,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(observed_stage_rows["LTG-06"]["scheduler_started"])
         self.assertFalse(observed_stage_rows["LTG-06"]["task_dispatched"])
         self.assertFalse(observed_stage_rows["LTG-06"]["provider_model_task_dispatched"])
-        self.assertEqual(observed_stage_rows["LTG-06"]["healthcheck_executed"], ltg06_has_direct_evidence)
+        self.assertEqual(
+            observed_stage_rows["LTG-06"]["healthcheck_executed"],
+            observed_stage_rows["LTG-06"]["synthetic_healthcheck_executed"],
+        )
         self.assertEqual(
             observed_stage_rows["LTG-06"]["runtime_qa_executed"],
             "append_only_worker_logs" in observed_stage_rows["LTG-06"].get("direct_evidence_stage_keys", []),

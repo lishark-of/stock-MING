@@ -1126,10 +1126,15 @@ def _latest_tushare_direct_provider_evidence_summary() -> dict[str, Any]:
         packet = {}
     summary = _dict_or_empty(packet.get("local_tushare_refresh_packet_summary"))
     promotion = _dict_or_empty(packet.get("trade_cal_provider_acceptance_promotion_audit"))
+    replay = _dict_or_empty(packet.get("trade_cal_provider_freshness_replay_evidence"))
     selected_apis = [str(item) for item in summary.get("selected_apis") or []]
     trade_cal_provider_call_count = int(summary.get("trade_cal_provider_call_ledger_observed_count") or 0)
     call_ledger_count = int(summary.get("call_ledger_count") or 0)
     trade_cal_safe_fields = promotion.get("safe_call_ledger_fields_present") is True
+    freshness_replay_done = replay.get("freshness_replay_provider_evidence_done") is True
+    direct_layer = "L3_direct_provider_call_ledger_and_freshness_replay" if freshness_replay_done else (
+        "L3_direct_provider_call_ledger" if call_ledger_count else "L1_static_contract"
+    )
     return {
         "schema_version": "migration_tushare_direct_provider_evidence_summary.v1",
         "source_packet_key": summary.get("source_packet_key") or "command_center_tushare_refresh_packet",
@@ -1145,6 +1150,10 @@ def _latest_tushare_direct_provider_evidence_summary() -> dict[str, Any]:
             str(item) for item in summary.get("trade_cal_provider_call_statuses") or []
         ],
         "trade_cal_provider_call_ledger_evidence_done": bool(trade_cal_provider_call_count and trade_cal_safe_fields),
+        "freshness_replay_provider_evidence_done": freshness_replay_done,
+        "freshness_replay_scenario_count": int(replay.get("freshness_replay_scenario_count") or 0),
+        "freshness_replay_passed_scenario_count": int(replay.get("passed_scenario_count") or 0),
+        "freshness_replay_status": replay.get("status") or "missing",
         "provider_call_ledger_evidence_done": bool(call_ledger_count),
         "full_interface_selection_done": len(selected_apis) >= 17,
         "provider_backed_long_window_acceptance_done": summary.get("provider_backed_long_window_acceptance_done")
@@ -1155,7 +1164,7 @@ def _latest_tushare_direct_provider_evidence_summary() -> dict[str, Any]:
         "trade_cal_promotion_ready": promotion.get("promotion_ready") is True,
         "safe_trade_cal_call_ledger_fields_present": trade_cal_safe_fields,
         "trade_cal_promotion_blocker_count": int(promotion.get("blocking_criterion_count") or 0),
-        "direct_evidence_layer": "L3_direct_provider_call_ledger" if call_ledger_count else "L1_static_contract",
+        "direct_evidence_layer": direct_layer,
         "cache_only": True,
         "read_only_sqlite_packet_lookup": True,
         "external_calls_triggered": False,
@@ -4825,8 +4834,13 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         provider_call_ledger_done = (
             tushare_direct_evidence.get("trade_cal_provider_call_ledger_evidence_done") is True
         )
-        direct_evidence_count = 1 if provider_call_ledger_done else 0
-        direct_evidence_stage_keys = ["trade_cal_provider_call_ledger"] if provider_call_ledger_done else []
+        freshness_replay_done = tushare_direct_evidence.get("freshness_replay_provider_evidence_done") is True
+        direct_evidence_stage_keys = []
+        if provider_call_ledger_done:
+            direct_evidence_stage_keys.append("trade_cal_provider_call_ledger")
+        if freshness_replay_done:
+            direct_evidence_stage_keys.append("provider_freshness_replay_evidence")
+        direct_evidence_count = len(direct_evidence_stage_keys)
         observed_pending_count = max(pending_count - direct_evidence_count, 0)
         local_evidence_count = sum(
             1 for row in stage_rows if isinstance(row, dict) and row.get("local_stage_evidence_present") is True
@@ -4836,7 +4850,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "id": "LTG-01",
                 "goal": "A 股交易日历级 freshness 生产化",
                 "stage_scope_manifest": "freshness_production_stage_scope_manifest",
-                "status": "observed_prior_trade_cal_provider_call_ledger_long_window_pending"
+                "status": "observed_prior_trade_cal_provider_call_ledger_and_replay_failure_modes_pending"
+                if freshness_replay_done
+                else "observed_prior_trade_cal_provider_call_ledger_long_window_pending"
                 if provider_call_ledger_done
                 else "observed_in_data_health_freshness_static_contract"
                 if stage_rows
@@ -4870,10 +4886,17 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "trade_cal_provider_call_statuses": list(
                     tushare_direct_evidence.get("trade_cal_provider_call_statuses") or []
                 ),
+                "freshness_replay_scenario_count": int(
+                    tushare_direct_evidence.get("freshness_replay_scenario_count") or 0
+                ),
+                "freshness_replay_passed_scenario_count": int(
+                    tushare_direct_evidence.get("freshness_replay_passed_scenario_count") or 0
+                ),
+                "freshness_replay_status": tushare_direct_evidence.get("freshness_replay_status"),
                 "safe_trade_cal_call_ledger_fields_present": (
                     tushare_direct_evidence.get("safe_trade_cal_call_ledger_fields_present") is True
                 ),
-                "freshness_replay_provider_evidence_done": False,
+                "freshness_replay_provider_evidence_done": freshness_replay_done,
                 "failure_mode_provider_evidence_done": False,
                 "current_evidence_producer_coverage_complete": False,
                 "decision_surface_mutated_by_contract": False,
@@ -4888,7 +4911,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "candidate_is_not_buy_instruction": True,
                 "contains_secret": False,
                 "can_close_from_observed_row": False,
-                "evidence_boundary": "observed_l3_trade_cal_provider_call_ledger_not_production_completion"
+                "evidence_boundary": "observed_l3_trade_cal_provider_call_ledger_and_replay_not_production_completion"
+                if freshness_replay_done
+                else "observed_l3_trade_cal_provider_call_ledger_not_production_completion"
                 if provider_call_ledger_done
                 else "observed_local_static_freshness_stage_scope_not_production_completion",
             }
