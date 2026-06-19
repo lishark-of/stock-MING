@@ -752,19 +752,19 @@ def build_contract() -> dict[str, Any]:
             "Data Health may read the persisted Tushare refresh packet as local evidence, but the lookup must stay read-only and no-provider.",
         ),
         _row(
-            "freshness_production_blocker_audit_is_local_pending",
+            "freshness_production_blocker_audit_is_local_not_completion",
             blockers_audit.get("schema_version") == "data_health_freshness_production_blocker_audit.v1"
             and blockers_audit.get("scope") == "local_read_only_freshness_production_blocker_audit_no_provider_execution"
-            and blockers_audit.get("status") == "freshness_production_blockers_visible"
-            and blockers_audit.get("production_ready") is False
-            and blockers_audit.get("provider_backed_trade_cal_acceptance_done") is False
+            and blockers_audit.get("status")
+            in {
+                "freshness_production_blockers_visible",
+                "freshness_production_ready_for_provider_promotion",
+            }
             and blockers_audit.get("production_freshness_gate_complete") is False
-            and int(blockers_audit.get("production_blocker_count") or 0) > 0
-            and "provider_backed_trade_cal_acceptance" in blockers_audit.get("production_blockers", [])
             and _flag_false(blockers_audit, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
             and blockers_audit.get("does_not_execute_trades") is True
             and blockers_audit.get("does_not_modify_strategy_action") is True,
-            "Freshness production blocker audit must stay local and keep provider-backed production blockers visible.",
+            "Freshness production blocker audit must stay local/read-only and must not claim production completion, even after direct provider and producer evidence is visible.",
         ),
         _row(
             "provider_acceptance_readiness_receipt_is_local",

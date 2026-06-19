@@ -1127,6 +1127,15 @@ def _latest_tushare_direct_provider_evidence_summary() -> dict[str, Any]:
     summary = _dict_or_empty(packet.get("local_tushare_refresh_packet_summary"))
     promotion = _dict_or_empty(packet.get("trade_cal_provider_acceptance_promotion_audit"))
     replay = _dict_or_empty(packet.get("trade_cal_provider_freshness_replay_evidence"))
+    producer_coverage = _dict_or_empty(packet.get("current_evidence_producer_coverage_audit"))
+    producer_coverage_rows = [
+        row for row in packet.get("current_evidence_producer_coverage_rows") or [] if isinstance(row, dict)
+    ]
+    candidate_producer_row = next(
+        (row for row in producer_coverage_rows if row.get("producer") == "candidate_radar"),
+        {},
+    )
+    freshness_blockers = _dict_or_empty(packet.get("freshness_production_blocker_audit"))
     selected_apis = [str(item) for item in summary.get("selected_apis") or []]
     trade_cal_provider_call_count = int(summary.get("trade_cal_provider_call_ledger_observed_count") or 0)
     call_ledger_count = int(summary.get("call_ledger_count") or 0)
@@ -1154,6 +1163,20 @@ def _latest_tushare_direct_provider_evidence_summary() -> dict[str, Any]:
         "freshness_replay_scenario_count": int(replay.get("freshness_replay_scenario_count") or 0),
         "freshness_replay_passed_scenario_count": int(replay.get("passed_scenario_count") or 0),
         "freshness_replay_status": replay.get("status") or "missing",
+        "current_evidence_producer_coverage_done": bool(
+            producer_coverage.get("blocked_producer_count") == 0
+            and producer_coverage.get("all_observed_producers_have_expected_trade_date") is True
+            and candidate_producer_row.get("status") == "passed_read_only_contract"
+            and candidate_producer_row.get("expected_trade_date_present") is True
+            and candidate_producer_row.get("date_matches_expected_trade_date") is True
+        ),
+        "current_evidence_producer_coverage_status": producer_coverage.get("status") or "missing",
+        "candidate_radar_producer_coverage_status": candidate_producer_row.get("status") or "missing",
+        "current_evidence_producer_coverage_blocker_count": int(
+            producer_coverage.get("blocked_producer_count") or 0
+        ),
+        "freshness_production_blocker_count": int(freshness_blockers.get("production_blocker_count") or 0),
+        "freshness_production_status": freshness_blockers.get("status") or "missing",
         "provider_call_ledger_evidence_done": bool(call_ledger_count),
         "full_interface_selection_done": len(selected_apis) >= 17,
         "provider_backed_long_window_acceptance_done": summary.get("provider_backed_long_window_acceptance_done")
@@ -4865,6 +4888,11 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             direct_evidence_stage_keys.append("trade_cal_provider_call_ledger")
         if freshness_replay_done:
             direct_evidence_stage_keys.append("provider_freshness_replay_evidence")
+        producer_coverage_done = (
+            tushare_direct_evidence.get("current_evidence_producer_coverage_done") is True
+        )
+        if producer_coverage_done:
+            direct_evidence_stage_keys.append("current_evidence_producer_coverage")
         direct_evidence_count = len(direct_evidence_stage_keys)
         observed_pending_count = max(pending_count - direct_evidence_count, 0)
         local_evidence_count = sum(
@@ -4918,12 +4946,22 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     tushare_direct_evidence.get("freshness_replay_passed_scenario_count") or 0
                 ),
                 "freshness_replay_status": tushare_direct_evidence.get("freshness_replay_status"),
+                "current_evidence_producer_coverage_complete": producer_coverage_done,
+                "current_evidence_producer_coverage_status": tushare_direct_evidence.get(
+                    "current_evidence_producer_coverage_status"
+                ),
+                "current_evidence_producer_coverage_blocker_count": int(
+                    tushare_direct_evidence.get("current_evidence_producer_coverage_blocker_count") or 0
+                ),
+                "freshness_production_blocker_count": int(
+                    tushare_direct_evidence.get("freshness_production_blocker_count") or 0
+                ),
+                "freshness_production_status": tushare_direct_evidence.get("freshness_production_status"),
                 "safe_trade_cal_call_ledger_fields_present": (
                     tushare_direct_evidence.get("safe_trade_cal_call_ledger_fields_present") is True
                 ),
                 "freshness_replay_provider_evidence_done": freshness_replay_done,
                 "failure_mode_provider_evidence_done": False,
-                "current_evidence_producer_coverage_complete": False,
                 "decision_surface_mutated_by_contract": False,
                 "cache_get_external_calls": False,
                 "react_render_external_calls": False,

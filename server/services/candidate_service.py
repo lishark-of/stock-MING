@@ -3214,6 +3214,38 @@ def _candidate_freshness_state(snapshot_map: Mapping[str, Any]) -> dict[str, Any
     }
 
 
+def _candidate_data_freshness_contract(freshness_state: Mapping[str, Any]) -> dict[str, Any]:
+    state = str(freshness_state.get("state") or "unknown")
+    expected_trade_date = freshness_state.get("expected_trade_date")
+    data_date = freshness_state.get("data_date")
+    if not data_date and expected_trade_date and state.lower() in {"fresh", "today"}:
+        data_date = expected_trade_date
+    if state.lower() == "today":
+        state = "fresh"
+    return {
+        "schema_version": "candidate_radar_data_freshness.v1",
+        "state": state,
+        "freshness_state": state,
+        "source": freshness_state.get("source") or "missing",
+        "expected_trade_date": expected_trade_date,
+        "expected_data_date": expected_trade_date,
+        "data_date": data_date,
+        "latest_data_date": data_date,
+        "last_updated": freshness_state.get("last_updated"),
+        "current_evidence_requires_expected_trade_date": True,
+        "stale_inputs_are_research_only": True,
+        "enters_current_evidence": False,
+        "context_source": "candidate_radar_snapshot_freshness_state",
+        "is_provider_acceptance": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
 def _rows_from_any(value: Any) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if isinstance(value, Mapping):
@@ -12302,6 +12334,7 @@ def _build_candidate_radar_packet(
         candidate_input_count=candidate_input_count,
         candidate_display_truncated_count=candidate_display_truncated_count,
     )
+    data_freshness_contract = _candidate_data_freshness_contract(_as_dict(coverage.get("freshness_state")))
     counts["legacy_parity_gap_count"] = parity_inventory["gap_or_future_count"]
     counts["legacy_parity_mapped_count"] = parity_inventory["mapped_or_partial_count"]
     counts["legacy_output_mapped_count"] = parity_inventory["output_contract_mapped_count"]
@@ -12694,6 +12727,11 @@ def _build_candidate_radar_packet(
         "source_snapshot_hash": _snapshot_fingerprint(snapshot_map),
         "cache_source": cache_source,
         "scan_mode": scan_mode,
+        "data_freshness": data_freshness_contract,
+        "expected_trade_date": data_freshness_contract.get("expected_trade_date"),
+        "expected_data_date": data_freshness_contract.get("expected_data_date"),
+        "data_date": data_freshness_contract.get("data_date"),
+        "latest_data_date": data_freshness_contract.get("latest_data_date"),
         "quick_scan_supported": True,
         "local_pool_scan_supported": True,
         "supported_local_scan_modes": sorted(SUPPORTED_LOCAL_SCAN_MODES),

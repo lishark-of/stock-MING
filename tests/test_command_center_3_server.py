@@ -11380,7 +11380,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["does_not_execute_trades"])
         self.assertTrue(payload["does_not_modify_strategy_action"])
         self.assertEqual(payload["blocking_criterion_count"], 0)
-        self.assertGreater(payload["observed_counts"]["freshness_production_blocker_count"], 0)
+        self.assertGreaterEqual(payload["observed_counts"]["freshness_production_blocker_count"], 0)
         self.assertGreater(
             payload["observed_counts"]["trade_cal_provider_acceptance_next_execution_blocker_count"],
             -1,
@@ -11405,6 +11405,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["freshness_durable_evidence_complete"])
         self.assertGreater(payload["freshness_durable_evidence_blocker_count"], 0)
         row_map = {row["criterion"]: row for row in payload["rows"]}
+        self.assertTrue(row_map["freshness_production_blocker_audit_is_local_not_completion"]["passed"])
         self.assertTrue(row_map["trade_cal_next_execution_recipe_is_local_and_not_execution"]["passed"])
         self.assertTrue(row_map["freshness_durable_evidence_recipe_is_local_provider_pending"]["passed"])
         self.assertTrue(row_map["trade_cal_next_execution_recipe_binds_dry_run_scope_without_execution"]["passed"])
@@ -11595,7 +11596,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_runbook_execution_pending", criteria)
         self.assertIn("provider_promotion_audit_is_read_only_pending", criteria)
         self.assertIn("latest_trade_cal_dry_run_cache_lookup_is_local_read_only", criteria)
-        self.assertIn("freshness_production_blocker_audit_is_local_pending", criteria)
+        self.assertIn("freshness_production_blocker_audit_is_local_not_completion", criteria)
         self.assertIn("producer_coverage_audit_is_read_only", criteria)
         self.assertIn("freshness_production_stage_scope_manifest_is_complete_and_pending", criteria)
         self.assertIn("freshness_durable_evidence_recipe_is_local_provider_pending", criteria)
@@ -28981,6 +28982,65 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "worker_transport_round_trip_smoke" in ltg13_direct_keys,
         )
         self.assertFalse(migration_goals["LTG-13"]["observed_stage_scope_can_close_goal"])
+
+    def test_candidate_radar_persisted_packet_exposes_expected_trade_date_for_data_health(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "data_freshness": {
+                    "state": "fresh",
+                    "expected_trade_date": "2026-06-12",
+                    "data_date": "2026-06-12",
+                    "last_updated": "2026-06-12T16:45:00",
+                },
+                "next_ticket_candidates": [
+                    {"rank": 1, "ticker": "002008.SZ", "name": "大族激光", "score": 61},
+                ],
+            }
+        )
+
+        created = self.client.post(
+            "/api/candidate-radar/full-pool-local-scan",
+            json={
+                "scan_mode": "full_pool_local_scan",
+                "local_execution_only": True,
+                "local_universe_candidates": [
+                    {"ticker": "002008.SZ", "name": "大族激光", "score": 61},
+                ],
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(created["ok"])
+        packet = self.client.get("/api/candidate-radar/cache").json()["data"]
+        self.assertEqual(packet["data_freshness"]["schema_version"], "candidate_radar_data_freshness.v1")
+        self.assertEqual(packet["data_freshness"]["expected_trade_date"], "2026-06-12")
+        self.assertEqual(packet["data_freshness"]["data_date"], "2026-06-12")
+        self.assertEqual(packet["expected_trade_date"], "2026-06-12")
+        self.assertEqual(packet["data_date"], "2026-06-12")
+        self.assertFalse(packet["data_freshness"]["external_calls_triggered"])
+        self.assertFalse(packet["data_freshness"]["tushare_called"])
+        self.assertFalse(packet["data_freshness"]["deepseek_called"])
+        self.assertFalse(packet["data_freshness"]["github_called"])
+
+        data_health = self.client.get("/api/data-health/cache").json()
+        self.assertTrue(data_health["ok"])
+        data_health_packet = data_health["data"]
+        producer_rows = {
+            row["producer"]: row for row in data_health_packet["current_evidence_producer_coverage_rows"]
+        }
+        candidate_row = producer_rows["candidate_radar"]
+        self.assertEqual(candidate_row["status"], "passed_read_only_contract")
+        self.assertEqual(candidate_row["expected_trade_date"], "2026-06-12")
+        self.assertEqual(candidate_row["data_date"], "2026-06-12")
+        self.assertTrue(candidate_row["date_matches_expected_trade_date"])
+        self.assertNotIn("expected_trade_date", candidate_row["missing_fields"])
+        self.assertFalse(data_health_packet["external_calls_triggered"])
+        self.assertFalse(data_health_packet["tushare_called"])
+        self.assertFalse(data_health_packet["deepseek_called"])
+        self.assertFalse(data_health_packet["github_called"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(data_health, ensure_ascii=False))
 
     def test_candidate_radar_worker_execution_request_blocks_scope_hash_mismatch(self):
         self._with_meta_store()
