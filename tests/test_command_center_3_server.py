@@ -146,6 +146,7 @@ def assert_ltg04_factor_universe_stage_scope(
     test_case: unittest.TestCase,
     row: dict,
     expected_direct_count: int | None = None,
+    expected_neutralization_done: bool = False,
 ):
     direct_count = int(row.get("direct_evidence_stage_count") or 0)
     if expected_direct_count is not None:
@@ -182,7 +183,7 @@ def assert_ltg04_factor_universe_stage_scope(
     test_case.assertEqual(row["worker_batch_executed"], direct_count >= 2)
     test_case.assertFalse(row["large_universe_pipeline_done"])
     test_case.assertEqual(row["cross_sectional_rank_zscore_done"], direct_count >= 2)
-    test_case.assertFalse(row["neutralization_done"])
+    test_case.assertEqual(row["neutralization_done"], expected_neutralization_done)
     test_case.assertEqual(row["factor_combination_research_done"], direct_count >= 2)
     test_case.assertFalse(row["full_pool_validation_done"])
     test_case.assertFalse(row["production_factor_universe_complete"])
@@ -36428,7 +36429,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 "trade_date": "20260617",
                 "factor_key": "local_universe_rank_zscore_seed",
                 "factor_name": "本地宇宙排序种子",
-                "category": "momentum",
+                "category": "hardware" if index <= 12 else "energy",
                 "raw_value": float(index),
                 "zscore": None,
                 "rank_pct": None,
@@ -36506,7 +36507,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(receipt["storage_read_row_count"], 24)
         self.assertTrue(receipt["cross_sectional_rank_zscore_done"])
         self.assertTrue(receipt["zscore_done"])
-        self.assertFalse(receipt["neutralization_done"])
+        self.assertTrue(receipt["neutralization_done"])
+        self.assertEqual(receipt["local_execution_evidence"]["neutralization_method"], "local_category_mean_residual_research_only")
+        self.assertEqual(receipt["local_execution_evidence"]["neutralization_group_count"], 2)
+        self.assertEqual(receipt["local_execution_evidence"]["neutralized_output_row_count"], 24)
         self.assertTrue(receipt["factor_combination_research_done"])
         self.assertTrue(receipt["result_summary_persisted"])
         self.assertFalse(receipt["large_universe_pipeline_done"])
@@ -36524,7 +36528,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(evidence["rank_output_row_count"], 24)
         self.assertEqual(evidence["factor_combination_row_count"], 24)
         self.assertTrue(evidence["result_summary_hash"])
-        self.assertIn("industry_market_cap_neutralization_pending", evidence["blocking_evidence_items"])
+        self.assertNotIn("industry_market_cap_neutralization_pending", evidence["blocking_evidence_items"])
         self.assertEqual(task["call_ledger"][0]["api"], "local_factor_universe_worker_batch_research_receipt")
         self.assertEqual(task["call_ledger"][1]["api"], "local_factor_universe_worker_batch_execution_evidence")
         self.assert_local_ledger_boundary(task["call_ledger"][0])
@@ -36541,7 +36545,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(durable["storage_read_executed"])
         self.assertTrue(durable["cross_sectional_rank_zscore_done"])
         self.assertTrue(durable["zscore_done"])
-        self.assertFalse(durable["neutralization_done"])
+        self.assertTrue(durable["neutralization_done"])
         self.assertTrue(durable["factor_combination_research_done"])
         self.assertTrue(durable["result_summary_persisted"])
         self.assertFalse(durable["production_factor_universe_complete"])
@@ -36551,19 +36555,24 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(durable_rows["storage_read_execution_required"]["passed"])
         self.assertTrue(durable_rows["cross_sectional_rank_required"]["passed"])
         self.assertTrue(durable_rows["zscore_required"]["passed"])
-        self.assertFalse(durable_rows["neutralization_required"]["passed"])
+        self.assertTrue(durable_rows["neutralization_required"]["passed"])
         self.assertTrue(durable_rows["factor_combination_required"]["passed"])
         self.assertTrue(durable_rows["result_summary_persistence_required"]["passed"])
 
         migration = migration_status_service.build_migration_status()
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
         ltg04 = observed_stage_rows["LTG-04"]
-        assert_ltg04_factor_universe_stage_scope(self, ltg04, expected_direct_count=2)
+        assert_ltg04_factor_universe_stage_scope(
+            self,
+            ltg04,
+            expected_direct_count=2,
+            expected_neutralization_done=True,
+        )
         self.assertIn("local_worker_batch_execution_evidence", ltg04["direct_evidence_stage_keys"])
         self.assertTrue(ltg04["worker_execution_implemented"])
         self.assertTrue(ltg04["worker_batch_executed"])
         self.assertTrue(ltg04["cross_sectional_rank_zscore_done"])
-        self.assertFalse(ltg04["neutralization_done"])
+        self.assertTrue(ltg04["neutralization_done"])
         self.assertFalse(ltg04["full_pool_validation_done"])
         self.assertFalse(ltg04["production_factor_universe_complete"])
         self.assertNotIn("SHOULD_DROP", json.dumps(migration, ensure_ascii=False))

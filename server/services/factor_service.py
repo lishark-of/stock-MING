@@ -6558,8 +6558,38 @@ def _factor_universe_worker_batch_local_execution_evidence(
         }
         for row in rank_rows
     ]
+    neutralized_rows: list[dict[str, Any]] = []
+    if rank_rows and selected_rows:
+        category_by_symbol = {
+            str(row.get("ts_code")): str(row.get("category") or "uncategorized")
+            for row in selected_rows
+        }
+        zscores_by_category: dict[str, list[float]] = {}
+        for row in rank_rows:
+            category = category_by_symbol.get(str(row.get("ts_code")), "uncategorized")
+            zscores_by_category.setdefault(category, []).append(float(row.get("zscore") or 0.0))
+        category_means = {
+            category: sum(values) / len(values)
+            for category, values in zscores_by_category.items()
+            if values
+        }
+        if len(category_means) >= 2 and sum(len(values) for values in zscores_by_category.values()) == len(rank_rows):
+            for row in rank_rows:
+                category = category_by_symbol.get(str(row.get("ts_code")), "uncategorized")
+                zscore = float(row.get("zscore") or 0.0)
+                neutralized_rows.append(
+                    {
+                        "ts_code": row["ts_code"],
+                        "trade_date": row["trade_date"],
+                        "factor_key": row["factor_key"],
+                        "neutralization_group": category,
+                        "neutralized_zscore": round(zscore - category_means.get(category, 0.0), 6),
+                        "research_only": True,
+                        "enters_strategy_action": False,
+                    }
+                )
     rank_done = bool(rank_rows)
-    neutralization_done = False
+    neutralization_done = bool(neutralized_rows)
     blockers: list[str] = []
     if not factor_rows:
         blockers.append("storage_rows_missing")
@@ -6597,6 +6627,9 @@ def _factor_universe_worker_batch_local_execution_evidence(
         "selected_factor_key": selected_key[1] if selected_key else "",
         "rank_output_row_count": len(rank_rows),
         "zscore_output_row_count": len(rank_rows),
+        "neutralization_method": "local_category_mean_residual_research_only" if neutralization_done else "",
+        "neutralization_group_count": len({row["neutralization_group"] for row in neutralized_rows}),
+        "neutralized_output_row_count": len(neutralized_rows),
         "factor_combination_row_count": len(combined_scores),
         "result_summary_hash": result_hash,
         "local_worker_execution_evidence_done": evidence_done,
@@ -6619,6 +6652,7 @@ def _factor_universe_worker_batch_local_execution_evidence(
         "partial_pool_is_full_market_proof": False,
         "metrics_are_research_only": True,
         "rank_rows_preview": rank_rows[:20],
+        "neutralized_rows_preview": neutralized_rows[:20],
         "combined_scores_preview": combined_scores[:20],
         "blocking_evidence_items": blockers,
         "external_calls_triggered": False,
@@ -6638,13 +6672,16 @@ def _factor_universe_worker_batch_local_execution_evidence(
                     "storage_read_row_count": len(factor_rows),
                     "rank_output_row_count": len(rank_rows),
                     "neutralization_done": neutralization_done,
+                    "neutralized_output_row_count": len(neutralized_rows),
                     "production_factor_universe_complete": False,
                 },
                 "row_count": len(rank_rows),
                 "data_date": selected_key[0] if selected_key else None,
                 "local_fetched_at": now,
                 "call_status": (
-                    "local_worker_batch_execution_ready_neutralization_pending"
+                    "local_worker_batch_execution_ready_local_neutralization"
+                    if neutralization_done
+                    else "local_worker_batch_execution_ready_neutralization_pending"
                     if evidence_done
                     else "local_worker_batch_execution_blocked_not_enough_data"
                 ),
@@ -6764,7 +6801,11 @@ def _factor_universe_worker_batch_research_receipt(
     local_execution_done = local_execution.get("local_worker_execution_evidence_done") is True
     if local_execution_done:
         status = "factor_universe_worker_batch_research_local_execution_ready_production_pending"
-        allowed_next_step = "collect_neutralization_full_pool_and_promotion_evidence"
+        allowed_next_step = (
+            "collect_full_pool_validation_and_promotion_evidence"
+            if local_execution.get("neutralization_done") is True
+            else "collect_neutralization_full_pool_and_promotion_evidence"
+        )
     receipt = {
         "schema_version": "factor_universe_worker_batch_research_receipt.v1",
         "status": status,
@@ -7682,7 +7723,7 @@ def run_factor_universe_worker_batch_research_task(payload: Any = None) -> dict[
         current_step="factor_universe_worker_batch_research_receipt_queued",
         warnings=[
             "Factor Universe worker-batch research 可在显式开关下执行本地 cached factor_values worker-batch evidence；不会启动 Redis/Celery worker。",
-            "research task 不调用 Tushare、DeepSeek 或 GitHub，不计算 production neutralization/full-pool validation，不修改 strategy action，不执行真实交易。",
+            "research task 不调用 Tushare、DeepSeek 或 GitHub；本地中性化仅为 research-only category residual，不代表 production neutralization/full-pool validation，不修改 strategy action，不执行真实交易。",
         ],
     )
     if task.get("dedupe_reused_existing"):
