@@ -1141,9 +1141,20 @@ def _latest_tushare_direct_provider_evidence_summary() -> dict[str, Any]:
     call_ledger_count = int(summary.get("call_ledger_count") or 0)
     trade_cal_safe_fields = promotion.get("safe_call_ledger_fields_present") is True
     freshness_replay_done = replay.get("freshness_replay_provider_evidence_done") is True
-    direct_layer = "L3_direct_provider_call_ledger_and_freshness_replay" if freshness_replay_done else (
-        "L3_direct_provider_call_ledger" if call_ledger_count else "L1_static_contract"
+    failure_mode_done = promotion.get("failure_mode_provider_evidence_done") is True
+    provider_acceptance_done = bool(
+        summary.get("provider_backed_long_window_acceptance_done") is True
+        and promotion.get("promotion_ready") is True
+        and int(promotion.get("blocking_criterion_count") or 0) == 0
     )
+    if failure_mode_done and freshness_replay_done:
+        direct_layer = "L3_direct_provider_call_ledger_freshness_replay_and_failure_mode_evidence"
+    elif freshness_replay_done:
+        direct_layer = "L3_direct_provider_call_ledger_and_freshness_replay"
+    elif call_ledger_count:
+        direct_layer = "L3_direct_provider_call_ledger"
+    else:
+        direct_layer = "L1_static_contract"
     return {
         "schema_version": "migration_tushare_direct_provider_evidence_summary.v1",
         "source_packet_key": summary.get("source_packet_key") or "command_center_tushare_refresh_packet",
@@ -1181,10 +1192,12 @@ def _latest_tushare_direct_provider_evidence_summary() -> dict[str, Any]:
         "full_interface_selection_done": len(selected_apis) >= 17,
         "provider_backed_long_window_acceptance_done": summary.get("provider_backed_long_window_acceptance_done")
         is True,
-        "provider_backed_acceptance_done": False,
+        "provider_backed_acceptance_done": provider_acceptance_done,
         "production_tushare_pipeline_complete": False,
         "trade_cal_promotion_status": promotion.get("status") or "missing",
         "trade_cal_promotion_ready": promotion.get("promotion_ready") is True,
+        "failure_mode_provider_evidence_done": failure_mode_done,
+        "provider_acceptance_promotion_ready": provider_acceptance_done,
         "safe_trade_cal_call_ledger_fields_present": trade_cal_safe_fields,
         "trade_cal_promotion_blocker_count": int(promotion.get("blocking_criterion_count") or 0),
         "direct_evidence_layer": direct_layer,
@@ -4904,6 +4917,11 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             direct_evidence_stage_keys.append("trade_cal_provider_call_ledger")
         if freshness_replay_done:
             direct_evidence_stage_keys.append("provider_freshness_replay_evidence")
+        failure_mode_done = (
+            tushare_direct_evidence.get("failure_mode_provider_evidence_done") is True
+        )
+        if failure_mode_done:
+            direct_evidence_stage_keys.append("provider_failure_mode_evidence")
         producer_coverage_done = (
             tushare_direct_evidence.get("current_evidence_producer_coverage_done") is True
         )
@@ -4919,7 +4937,9 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "id": "LTG-01",
                 "goal": "A 股交易日历级 freshness 生产化",
                 "stage_scope_manifest": "freshness_production_stage_scope_manifest",
-                "status": "observed_prior_trade_cal_provider_call_ledger_and_replay_failure_modes_pending"
+                "status": "observed_prior_trade_cal_provider_acceptance_promotion_ready"
+                if failure_mode_done and freshness_replay_done
+                else "observed_prior_trade_cal_provider_call_ledger_and_replay_failure_modes_pending"
                 if freshness_replay_done
                 else "observed_prior_trade_cal_provider_call_ledger_long_window_pending"
                 if provider_call_ledger_done
@@ -4937,11 +4957,17 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "direct_evidence_stage_count": direct_evidence_count,
                 "direct_evidence_stage_keys": direct_evidence_stage_keys,
                 "production_blocker_count": observed_pending_count,
-                "provider_backed_trade_cal_acceptance_done": False,
+                "provider_backed_trade_cal_acceptance_done": (
+                    tushare_direct_evidence.get("provider_backed_acceptance_done") is True
+                ),
                 "production_freshness_gate_complete": False,
-                "real_trade_cal_long_window_validation_done": False,
+                "real_trade_cal_long_window_validation_done": (
+                    tushare_direct_evidence.get("provider_backed_long_window_acceptance_done") is True
+                ),
                 "provider_refresh_called_by_contract": False,
-                "provider_execution_implemented": False,
+                "provider_execution_implemented": (
+                    tushare_direct_evidence.get("provider_call_ledger_evidence_done") is True
+                ),
                 "provider_call_ledger_evidence_done": provider_call_ledger_done,
                 "provider_direct_evidence_layer": tushare_direct_evidence.get("direct_evidence_layer"),
                 "provider_direct_evidence_source": tushare_direct_evidence.get("source_packet_key"),
@@ -4977,7 +5003,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     tushare_direct_evidence.get("safe_trade_cal_call_ledger_fields_present") is True
                 ),
                 "freshness_replay_provider_evidence_done": freshness_replay_done,
-                "failure_mode_provider_evidence_done": False,
+                "failure_mode_provider_evidence_done": failure_mode_done,
                 "decision_surface_mutated_by_contract": False,
                 "cache_get_external_calls": False,
                 "react_render_external_calls": False,

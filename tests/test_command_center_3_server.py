@@ -2204,6 +2204,99 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(migration_goals["LTG-01"]["observed_stage_scope_can_close_goal"])
         self.assertFalse(migration_goals["LTG-02"]["observed_stage_scope_can_close_goal"])
 
+    def test_ltg_stage_scope_maps_trade_cal_provider_promotion_without_completion(self):
+        original_summary = migration_status_service._latest_tushare_direct_provider_evidence_summary
+
+        def fake_provider_summary():
+            return {
+                "schema_version": "migration_tushare_direct_provider_evidence_summary.v1",
+                "source_packet_key": "command_center_tushare_refresh_packet",
+                "source_status": "success",
+                "available": True,
+                "selected_apis": ["trade_cal"],
+                "selected_api_count": 1,
+                "call_ledger_count": 1,
+                "trade_cal_call_ledger_count": 1,
+                "trade_cal_provider_call_ledger_observed_count": 1,
+                "trade_cal_provider_observed_row_count": 841,
+                "trade_cal_provider_call_statuses": ["success"],
+                "trade_cal_provider_call_ledger_evidence_done": True,
+                "freshness_replay_provider_evidence_done": True,
+                "freshness_replay_scenario_count": 8,
+                "freshness_replay_passed_scenario_count": 8,
+                "freshness_replay_status": "provider_trade_cal_freshness_replay_passed",
+                "current_evidence_producer_coverage_done": True,
+                "current_evidence_producer_coverage_status": "producer_freshness_coverage_ready",
+                "current_evidence_producer_coverage_blocker_count": 0,
+                "freshness_production_blocker_count": 0,
+                "freshness_production_status": "freshness_production_ready_for_provider_promotion",
+                "provider_call_ledger_evidence_done": True,
+                "full_interface_selection_done": False,
+                "provider_backed_long_window_acceptance_done": True,
+                "provider_backed_acceptance_done": True,
+                "production_tushare_pipeline_complete": False,
+                "trade_cal_promotion_status": "trade_cal_provider_acceptance_promotion_ready",
+                "trade_cal_promotion_ready": True,
+                "failure_mode_provider_evidence_done": True,
+                "provider_acceptance_promotion_ready": True,
+                "safe_trade_cal_call_ledger_fields_present": True,
+                "trade_cal_promotion_blocker_count": 0,
+                "direct_evidence_layer": (
+                    "L3_direct_provider_call_ledger_freshness_replay_and_failure_mode_evidence"
+                ),
+                "cache_only": True,
+                "read_only_sqlite_packet_lookup": True,
+                "external_calls_triggered": False,
+                "tushare_called_by_lookup": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+            }
+
+        migration_status_service._latest_tushare_direct_provider_evidence_summary = fake_provider_summary
+        self.addCleanup(
+            setattr,
+            migration_status_service,
+            "_latest_tushare_direct_provider_evidence_summary",
+            original_summary,
+        )
+
+        migration = migration_status_service.build_migration_status()
+        observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg01 = observed_stage_rows["LTG-01"]
+
+        self.assertEqual(ltg01["status"], "observed_prior_trade_cal_provider_acceptance_promotion_ready")
+        self.assertEqual(ltg01["pending_stage_count"], 6)
+        self.assertEqual(ltg01["direct_evidence_stage_count"], 4)
+        self.assertEqual(
+            ltg01["direct_evidence_stage_keys"],
+            [
+                "trade_cal_provider_call_ledger",
+                "provider_freshness_replay_evidence",
+                "provider_failure_mode_evidence",
+                "current_evidence_producer_coverage",
+            ],
+        )
+        self.assertTrue(ltg01["provider_backed_trade_cal_acceptance_done"])
+        self.assertTrue(ltg01["real_trade_cal_long_window_validation_done"])
+        self.assertTrue(ltg01["provider_execution_implemented"])
+        self.assertTrue(ltg01["provider_call_ledger_evidence_done"])
+        self.assertTrue(ltg01["freshness_replay_provider_evidence_done"])
+        self.assertTrue(ltg01["failure_mode_provider_evidence_done"])
+        self.assertFalse(ltg01["production_freshness_gate_complete"])
+        self.assertFalse(ltg01["external_calls_triggered"])
+        self.assertFalse(ltg01["tushare_called"])
+        self.assertFalse(ltg01["deepseek_called"])
+        self.assertFalse(ltg01["github_called"])
+        self.assertTrue(ltg01["does_not_execute_trades"])
+        self.assertFalse(ltg01["can_close_from_observed_row"])
+
+        migration_goals = {row["id"]: row for row in migration["long_term_goal_rows"]}
+        self.assertEqual(migration_goals["LTG-01"]["observed_stage_scope_direct_evidence_count"], 4)
+        self.assertFalse(migration_goals["LTG-01"]["production_complete"])
+
     def test_ltg_next_action_queue_prebinds_tushare_target_sample_recipe(self):
         db_path = self._with_meta_store()
 
