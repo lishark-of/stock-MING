@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from storage.sqlite_meta import SQLiteMetaStore
-from server.services import packet_service, task_service
+from server.services import packet_service, task_service, tushare_task_service
 
 
 PACKET_KEY = "command_center_3_candidate_radar_cache"
@@ -44,6 +44,15 @@ QUANT_PROJECTION_ACCEPTANCE_DRY_RUN_ROUTE = "POST /api/candidate-radar/quant-pro
 QUANT_PROJECTION_EXECUTION_REQUEST_SCHEMA_VERSION = "candidate_radar_search_quant_projection_execution_request.v1"
 QUANT_PROJECTION_EXECUTION_REQUEST_TASK_TYPE = "run_candidate_radar_quant_projection_execution_request"
 QUANT_PROJECTION_EXECUTION_REQUEST_ROUTE = "POST /api/candidate-radar/quant-projection-execution-request"
+QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION = (
+    "candidate_radar_search_quant_provider_model_acceptance.v1"
+)
+QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_TASK_TYPE = (
+    "run_candidate_radar_quant_projection_provider_model_acceptance"
+)
+QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_ROUTE = (
+    "POST /api/candidate-radar/quant-projection-provider-model-acceptance"
+)
 QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS = ("trade_cal", "daily", "daily_basic", "moneyflow")
 CANDIDATE_PROVIDER_PARITY_DRY_RUN_SCHEMA_VERSION = "candidate_radar_provider_parity_dry_run.v1"
 CANDIDATE_PROVIDER_PARITY_DRY_RUN_TASK_TYPE = "run_candidate_radar_provider_parity_dry_run"
@@ -111,6 +120,11 @@ CANDIDATE_RADAR_PERSISTED_RECEIPT_SPECS = (
         "candidate_radar_legacy_retirement_review_receipt",
         "candidate_radar_legacy_retirement_review_rows",
         CANDIDATE_LEGACY_RETIREMENT_REVIEW_SCHEMA_VERSION,
+    ),
+    (
+        "search_quant_provider_model_acceptance_receipt",
+        "search_quant_provider_model_acceptance_rows",
+        QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION,
     ),
 )
 CANDIDATE_RADAR_DURABLE_EVIDENCE_SCHEMA_VERSION = "candidate_radar_durable_evidence_recipe.v1"
@@ -214,6 +228,7 @@ PERSISTED_TASK_SCAN_MODES = LOCAL_POOL_SCAN_MODES | {
     "full_pool_worker_fallback",
     "deep_scan_worker_fallback",
     "quant_projection_execution_request",
+    "quant_projection_provider_model_acceptance",
     "production_replacement_review",
     "production_promotion_dry_run",
 }
@@ -8653,6 +8668,7 @@ def _candidate_radar_production_stage_scope_manifest(
     deep_scan_worker = _as_dict(packet.get("candidate_radar_deep_scan_worker_fallback_receipt"))
     provider_dry_run = _as_dict(packet.get("provider_parity_dry_run_receipt"))
     quant_request = _as_dict(packet.get("search_quant_projection_execution_request_receipt"))
+    quant_provider_acceptance = _as_dict(packet.get("search_quant_provider_model_acceptance_receipt"))
     browser_evidence = _as_dict(packet.get("candidate_browser_qa_evidence_summary"))
     browser_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
     promotion = _as_dict(packet.get("candidate_radar_promotion_blocker_audit"))
@@ -8735,7 +8751,14 @@ def _candidate_radar_production_stage_scope_manifest(
         and worker_transport_roundtrip.get("worker_backed_local_deep_scan_fallback_done") is True
     )
     provider_parity_ready = provider_parity_tushare_light_ready
-    search_quant_ready = False
+    search_quant_ready = bool(
+        quant_provider_acceptance.get("schema_version") == QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION
+        and quant_provider_acceptance.get("direct_evidence_verified") is True
+        and quant_provider_acceptance.get("tushare_call_ledger_evidence_done") is True
+        and quant_provider_acceptance.get("deepseek_skipped_by_request") is True
+        and quant_provider_acceptance.get("production_quant_projection_complete") is False
+        and quant_provider_acceptance.get("production_radar_replacement_complete") is False
+    )
     browser_promotion_ready = bool(
         production_review.get("browser_visual_performance_promoted") is True
         or production_promotion.get("browser_visual_performance_promoted") is True
@@ -8904,9 +8927,20 @@ def _candidate_radar_production_stage_scope_manifest(
         },
         "search_quant_provider_model_acceptance": {
             "direct": search_quant_ready,
-            "status": "provider_model_execution_pending",
-            "evidence": f"quant_request={quant_request.get('status') or 'missing'}; provider_model_execution_done=false",
-            "missing": ["searched-symbol provider/model execution ledger"],
+            "status": (
+                "direct_evidence_ready_tushare_light_deepseek_skipped"
+                if search_quant_ready
+                else "provider_model_execution_pending"
+            ),
+            "evidence": (
+                f"quant_request={quant_request.get('status') or 'missing'}; "
+                f"provider_acceptance={quant_provider_acceptance.get('status') or 'missing'}; "
+                f"api_success={quant_provider_acceptance.get('provider_api_success_count') or 0}/"
+                f"{quant_provider_acceptance.get('provider_api_call_count') or 0}; "
+                "production_quant_projection_complete=false"
+            ),
+            "missing": [] if search_quant_ready else ["searched-symbol provider/model execution ledger"],
+            "tushare_light_provider_evidence_done": search_quant_ready,
         },
         "browser_visual_performance_promotion": {
             "direct": browser_promotion_ready,
@@ -12293,6 +12327,28 @@ def _build_candidate_radar_packet(
                 for row in _as_list(previous_map.get("search_quant_projection_execution_request_rows"))
                 if isinstance(row, dict)
             ] or [row for row in _as_list(previous_quant_request_receipt.get("rows")) if isinstance(row, dict)]
+    search_quant_provider_model_acceptance_receipt = _as_dict(
+        snapshot_map.get("search_quant_provider_model_acceptance_receipt")
+    )
+    search_quant_provider_model_acceptance_rows = [
+        row
+        for row in _as_list(snapshot_map.get("search_quant_provider_model_acceptance_rows"))
+        if isinstance(row, dict)
+    ]
+    if not search_quant_provider_model_acceptance_receipt:
+        previous_provider_model_receipt = _as_dict(
+            previous_map.get("search_quant_provider_model_acceptance_receipt")
+        )
+        if (
+            previous_provider_model_receipt.get("schema_version")
+            == QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION
+        ):
+            search_quant_provider_model_acceptance_receipt = previous_provider_model_receipt
+            search_quant_provider_model_acceptance_rows = [
+                row
+                for row in _as_list(previous_map.get("search_quant_provider_model_acceptance_rows"))
+                if isinstance(row, dict)
+            ] or [row for row in _as_list(previous_provider_model_receipt.get("rows")) if isinstance(row, dict)]
     provider_parity_dry_run_receipt = _as_dict(snapshot_map.get("provider_parity_dry_run_receipt"))
     provider_parity_dry_run_rows = [
         row for row in _as_list(snapshot_map.get("provider_parity_dry_run_rows")) if isinstance(row, dict)
@@ -12356,6 +12412,18 @@ def _build_candidate_radar_packet(
     )
     counts["search_quant_projection_acceptance_credential_missing_count"] = (
         search_quant_projection_acceptance_dry_run_receipt.get("credential_missing_provider_count", 0)
+    )
+    counts["search_quant_provider_model_acceptance_row_count"] = (
+        search_quant_provider_model_acceptance_receipt.get("row_count", 0)
+    )
+    counts["search_quant_provider_model_acceptance_direct_evidence_verified"] = (
+        search_quant_provider_model_acceptance_receipt.get("direct_evidence_verified") is True
+    )
+    counts["search_quant_provider_model_acceptance_provider_api_success_count"] = (
+        search_quant_provider_model_acceptance_receipt.get("provider_api_success_count", 0)
+    )
+    counts["search_quant_provider_model_acceptance_production_blocker_count"] = (
+        search_quant_provider_model_acceptance_receipt.get("production_blocker_count", 0)
     )
     counts["search_quant_projection_execution_request_row_count"] = (
         search_quant_projection_execution_request_receipt.get("row_count", 0)
@@ -12598,6 +12666,8 @@ def _build_candidate_radar_packet(
         "search_quant_projection_credential_presence_rows": search_quant_projection_credential_presence_rows,
         "search_quant_projection_execution_request_receipt": search_quant_projection_execution_request_receipt,
         "search_quant_projection_execution_request_rows": search_quant_projection_execution_request_rows,
+        "search_quant_provider_model_acceptance_receipt": search_quant_provider_model_acceptance_receipt,
+        "search_quant_provider_model_acceptance_rows": search_quant_provider_model_acceptance_rows,
         "provider_parity_dry_run_receipt": provider_parity_dry_run_receipt,
         "provider_parity_dry_run_rows": provider_parity_dry_run_rows,
         "provider_parity_credential_presence_rows": provider_parity_credential_presence_rows,
@@ -12899,6 +12969,21 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     counts["search_quant_projection_acceptance_credential_missing_count"] = (
         search_quant_projection_acceptance_dry_run_receipt.get("credential_missing_provider_count", 0)
     )
+    search_quant_provider_model_acceptance_receipt = _as_dict(
+        view.get("search_quant_provider_model_acceptance_receipt")
+    )
+    counts["search_quant_provider_model_acceptance_row_count"] = (
+        search_quant_provider_model_acceptance_receipt.get("row_count", 0)
+    )
+    counts["search_quant_provider_model_acceptance_direct_evidence_verified"] = (
+        search_quant_provider_model_acceptance_receipt.get("direct_evidence_verified") is True
+    )
+    counts["search_quant_provider_model_acceptance_provider_api_success_count"] = (
+        search_quant_provider_model_acceptance_receipt.get("provider_api_success_count", 0)
+    )
+    counts["search_quant_provider_model_acceptance_production_blocker_count"] = (
+        search_quant_provider_model_acceptance_receipt.get("production_blocker_count", 0)
+    )
     provider_parity_dry_run_receipt = _as_dict(view.get("provider_parity_dry_run_receipt"))
     counts["provider_parity_dry_run_row_count"] = provider_parity_dry_run_receipt.get("row_count", 0)
     counts["provider_parity_dry_run_blocking_count"] = provider_parity_dry_run_receipt.get("blocking_phase_count", 0)
@@ -12941,6 +13026,17 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     )
     policy["search_quant_projection_acceptance_dry_run_does_not_call_provider_or_model"] = True
     policy["search_quant_projection_acceptance_dry_run_is_not_production_completion"] = True
+    policy["search_quant_provider_model_acceptance_is_button_gated"] = bool(
+        search_quant_provider_model_acceptance_receipt
+    )
+    policy["search_quant_provider_model_acceptance_calls_provider_only_from_post_task"] = bool(
+        search_quant_provider_model_acceptance_receipt
+    )
+    policy["search_quant_provider_model_acceptance_get_cache_calls_provider"] = False
+    policy["search_quant_provider_model_acceptance_deepseek_skipped"] = (
+        search_quant_provider_model_acceptance_receipt.get("deepseek_skipped_by_request") is True
+    )
+    policy["search_quant_provider_model_acceptance_is_not_production_completion"] = True
     policy["provider_parity_dry_run_is_button_gated"] = bool(provider_parity_dry_run_receipt)
     policy["provider_parity_dry_run_is_local"] = bool(provider_parity_dry_run_receipt)
     policy["provider_parity_dry_run_does_not_call_provider_or_model"] = True
@@ -13421,6 +13517,361 @@ def run_candidate_quant_projection_execution_request_task(payload: Any = None) -
         current_step="candidate_radar_quant_projection_execution_request_ready",
         call_ledger=[ledger],
         warning="candidate_radar_quant_projection_execution_request_ready_no_external_call",
+    ) or task
+
+
+def _quant_projection_provider_model_acceptance_row(
+    criterion: str,
+    status: str,
+    *,
+    passed: bool,
+    production_blocker: bool,
+    evidence: str,
+    next_action: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION,
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "production_blocker": bool(production_blocker),
+        "evidence": evidence,
+        "next_action": next_action,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+    }
+
+
+def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
+    packet: Mapping[str, Any],
+    *,
+    payload_safe: Mapping[str, Any],
+    provider_task: Mapping[str, Any] | None,
+    explicit_request: bool,
+    task_id: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    quant_request = _as_dict(packet.get("search_quant_projection_execution_request_receipt"))
+    operator_approved = _coerce_bool(
+        payload_safe.get("operator_approved") or payload_safe.get("user_approved") or payload_safe.get("approved"),
+        False,
+    )
+    requested_scope_hash = _safe_text(
+        payload_safe.get("acceptance_scope_hash") or payload_safe.get("scope_hash") or "",
+        limit=128,
+    )
+    expected_scope_hash = _safe_text(quant_request.get("acceptance_scope_hash") or "", limit=128)
+    scope_hash_matches = bool(requested_scope_hash and expected_scope_hash and requested_scope_hash == expected_scope_hash)
+    execution_request_ready = quant_request.get("local_execution_request_ready") is True
+    include_deepseek = _coerce_bool(payload_safe.get("include_deepseek"), False)
+    selected_apis = [
+        str(api)
+        for api in _as_list(quant_request.get("selected_apis"))
+        if str(api) in QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS
+    ] or list(QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS)
+    provider_ledger = [
+        row for row in _as_list((provider_task or {}).get("call_ledger")) if isinstance(row, dict)
+    ]
+    success_rows = [row for row in provider_ledger if row.get("call_status") == "success"]
+    failed_rows = [
+        row
+        for row in provider_ledger
+        if row.get("call_status") == "failed" or str(row.get("call_status") or "").startswith("blocked_")
+    ]
+    provider_executed = bool(provider_task)
+    provider_evidence_done = bool(
+        provider_executed
+        and provider_ledger
+        and len(success_rows) == len(selected_apis)
+        and not failed_rows
+        and all(row.get("tushare_called") is True for row in provider_ledger)
+    )
+    rows = [
+        _quant_projection_provider_model_acceptance_row(
+            "explicit_post_provider_model_acceptance_done",
+            "passed_explicit_post" if explicit_request else "blocked_missing_explicit_post",
+            passed=explicit_request,
+            production_blocker=not explicit_request,
+            evidence=f"task_id={task_id}",
+            next_action="Use only POST /api/candidate-radar/quant-projection-provider-model-acceptance.",
+        ),
+        _quant_projection_provider_model_acceptance_row(
+            "operator_approval_recorded",
+            "passed_operator_approved" if operator_approved else "blocked_operator_approval_required",
+            passed=operator_approved,
+            production_blocker=not operator_approved,
+            evidence=f"operator_approved={operator_approved}",
+            next_action="Require explicit operator approval before provider execution.",
+        ),
+        _quant_projection_provider_model_acceptance_row(
+            "execution_request_ready",
+            "passed_execution_request_ready" if execution_request_ready else "blocked_execution_request_missing",
+            passed=execution_request_ready,
+            production_blocker=not execution_request_ready,
+            evidence=f"quant_request={quant_request.get('status') or 'missing'}",
+            next_action="Create a scope-bound execution request before provider acceptance.",
+        ),
+        _quant_projection_provider_model_acceptance_row(
+            "acceptance_scope_hash_bound",
+            "passed_scope_hash_bound" if scope_hash_matches else "blocked_scope_hash_mismatch_or_missing",
+            passed=scope_hash_matches,
+            production_blocker=not scope_hash_matches,
+            evidence=(
+                f"requested={requested_scope_hash[:16] if requested_scope_hash else 'missing'}; "
+                f"expected={expected_scope_hash[:16] if expected_scope_hash else 'missing'}"
+            ),
+            next_action="Bind provider execution to the latest quant projection execution-request scope hash.",
+        ),
+        _quant_projection_provider_model_acceptance_row(
+            "deepseek_model_ledger_policy",
+            "passed_deepseek_skipped_by_request" if not include_deepseek else "blocked_deepseek_not_enabled_this_cycle",
+            passed=not include_deepseek,
+            production_blocker=include_deepseek,
+            evidence=f"include_deepseek={include_deepseek}; model_execution_implemented=false",
+            next_action="Run DeepSeek benchmark/model ledger in a separate explicitly approved cycle.",
+        ),
+        _quant_projection_provider_model_acceptance_row(
+            "tushare_light_provider_call_ledger",
+            "passed_tushare_light_provider_ledger" if provider_evidence_done else "blocked_tushare_provider_ledger_missing_or_failed",
+            passed=provider_evidence_done,
+            production_blocker=not provider_evidence_done,
+            evidence=f"api_success={len(success_rows)}/{len(selected_apis)}; selected_apis={selected_apis}",
+            next_action="Collect safe Tushare call ledger for trade_cal/daily/daily_basic/moneyflow.",
+        ),
+        _quant_projection_provider_model_acceptance_row(
+            "factor_next_echarts_refresh_still_pending",
+            "passed_refresh_pending_research_only",
+            passed=True,
+            production_blocker=True,
+            evidence="Provider evidence is captured, but Factor Quant Hub, Next Session, and ECharts refresh are separate evidence.",
+            next_action="Refresh local research caches only after provider evidence review.",
+        ),
+        _quant_projection_provider_model_acceptance_row(
+            "no_trade_action_secret_boundary",
+            "passed_no_trade_action_secret_boundary",
+            passed=True,
+            production_blocker=False,
+            evidence="No trade execution, no strategy action mutation, no credential value exposure.",
+            next_action="Keep Candidate Radar output research-only.",
+        ),
+    ]
+    blocking_rows = [row for row in rows if row.get("production_blocker")]
+    if include_deepseek:
+        status = "search_quant_provider_model_acceptance_blocked_deepseek_not_enabled_this_cycle"
+    elif not execution_request_ready:
+        status = "search_quant_provider_model_acceptance_blocked_execution_request_required"
+    elif not scope_hash_matches:
+        status = "search_quant_provider_model_acceptance_blocked_scope_hash_mismatch"
+    elif not provider_evidence_done:
+        status = "search_quant_provider_model_acceptance_blocked_provider_ledger_missing_or_failed"
+    else:
+        status = "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped"
+    receipt = {
+        "schema_version": QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION,
+        "status": status,
+        "scope": "button_gated_search_quant_provider_model_acceptance_tushare_light_deepseek_skipped",
+        "mode": "button_gated_provider_model_acceptance",
+        "ltg": "LTG-13/LTG-02/LTG-07",
+        "route": QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_ROUTE,
+        "task_type": QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_TASK_TYPE,
+        "task_id": task_id,
+        "symbol": quant_request.get("symbol") or "",
+        "selected_apis": selected_apis,
+        "acceptance_scope_hash": expected_scope_hash,
+        "acceptance_scope_hash_short": expected_scope_hash[:16] if expected_scope_hash else "",
+        "requested_acceptance_scope_hash_matches_latest": scope_hash_matches,
+        "operator_approved": operator_approved,
+        "execution_request_ready": execution_request_ready,
+        "provider_execution_implemented": provider_executed,
+        "model_execution_implemented": False,
+        "tushare_call_ledger_evidence_done": provider_evidence_done,
+        "deepseek_model_ledger_evidence_done": False,
+        "deepseek_skipped_by_request": not include_deepseek,
+        "direct_evidence_verified": provider_evidence_done and not include_deepseek,
+        "provider_call_ledger": provider_ledger,
+        "provider_api_call_count": len(provider_ledger),
+        "provider_api_success_count": len(success_rows),
+        "provider_api_failed_count": len(failed_rows),
+        "factor_refresh_executed": False,
+        "next_session_refresh_executed": False,
+        "echarts_payload_refreshed": False,
+        "browser_nonblocking_evidence_complete": False,
+        "production_quant_projection_complete": False,
+        "production_radar_replacement_complete": False,
+        "production_blocker_count": len(blocking_rows),
+        "production_blockers": [row["criterion"] for row in blocking_rows],
+        "external_calls_triggered_by_task": provider_executed,
+        "tushare_called_by_task": provider_executed,
+        "deepseek_called": False,
+        "github_called": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "contains_secret": False,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "candidate_is_not_buy_instruction": True,
+        "row_count": len(rows),
+        "rows": rows,
+    }
+    return receipt, rows
+
+
+def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="candidate_radar_quant_projection_provider_model_acceptance_queued",
+        warnings=[
+            "搜票量化推演 provider/model acceptance 是显式 POST 任务；本轮只允许 Tushare light provider ledger。",
+            "DeepSeek 默认跳过；该任务不刷新 Factor/Next/ECharts，不执行真实交易，不修改 strategy action。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = read_candidate_radar_cache()
+    quant_request = _as_dict(packet.get("search_quant_projection_execution_request_receipt"))
+    include_deepseek = _coerce_bool(payload_safe.get("include_deepseek"), False)
+    selected_apis = [
+        str(api)
+        for api in _as_list(quant_request.get("selected_apis"))
+        if str(api) in QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS
+    ] or list(QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS)
+    today = _dt.date.today()
+    start_date = _safe_text(payload_safe.get("start_date") or (today - _dt.timedelta(days=14)).strftime("%Y%m%d"))
+    end_date = _safe_text(payload_safe.get("end_date") or today.strftime("%Y%m%d"))
+    provider_task: Mapping[str, Any] | None = None
+    requested_scope_hash = _safe_text(
+        payload_safe.get("acceptance_scope_hash") or payload_safe.get("scope_hash") or "",
+        limit=128,
+    )
+    can_call_provider = bool(
+        not include_deepseek
+        and quant_request.get("local_execution_request_ready") is True
+        and requested_scope_hash
+        and requested_scope_hash == _safe_text(quant_request.get("acceptance_scope_hash") or "", limit=128)
+    )
+    if can_call_provider:
+        task_service.update_task_status(
+            task["task_id"],
+            status="running",
+            progress=0.45,
+            current_step="calling_tushare_light_provider_for_quant_projection",
+        )
+        provider_task = tushare_task_service.run_tushare_refresh_task(
+            {
+                "apis": selected_apis,
+                "symbol": quant_request.get("symbol") or "",
+                "ts_code": quant_request.get("symbol") or "",
+                "start_date": start_date,
+                "end_date": end_date,
+                "operator": "candidate_radar_quant_projection_provider_model_acceptance",
+            },
+            task_type="candidate_radar_quant_projection_tushare_light_provider",
+            output_packet_key="command_center_candidate_radar_quant_projection_tushare_light_packet",
+        )
+    receipt, receipt_rows = _candidate_radar_quant_projection_provider_model_acceptance_receipt(
+        packet,
+        payload_safe=payload_safe,
+        provider_task=provider_task,
+        explicit_request=True,
+        task_id=str(task["task_id"]),
+    )
+    request_params_safe = {
+        "symbol": receipt.get("symbol"),
+        "selected_apis": selected_apis,
+        "acceptance_scope_hash_short": receipt.get("acceptance_scope_hash_short"),
+        "requested_acceptance_scope_hash_matches_latest": receipt.get(
+            "requested_acceptance_scope_hash_matches_latest"
+        ),
+        "operator_approved": receipt.get("operator_approved"),
+        "include_deepseek": include_deepseek,
+        "provider_execution_implemented": receipt.get("provider_execution_implemented"),
+        "model_execution_implemented": False,
+        "tushare_call_ledger_evidence_done": receipt.get("tushare_call_ledger_evidence_done"),
+        "deepseek_model_ledger_evidence_done": False,
+        "production_quant_projection_complete": False,
+    }
+    local_ledger = _candidate_call_ledger_row(
+        api="local_candidate_radar_quant_projection_provider_model_acceptance",
+        source_snapshot="candidate_radar_cache",
+        row_count=len(receipt_rows),
+        call_status=str(receipt.get("status")),
+        request_params_safe=request_params_safe,
+    )
+    packet["task_id"] = task["task_id"]
+    packet["scan_mode"] = "quant_projection_provider_model_acceptance"
+    packet["search_quant_provider_model_acceptance_completed_at"] = _now_iso()
+    packet["search_quant_provider_model_acceptance_receipt"] = receipt
+    packet["search_quant_provider_model_acceptance_rows"] = receipt_rows
+    packet_counts = _as_dict(packet.get("counts"))
+    packet_counts["search_quant_provider_model_acceptance_row_count"] = len(receipt_rows)
+    packet_counts["search_quant_provider_model_acceptance_direct_evidence_verified"] = (
+        receipt.get("direct_evidence_verified") is True
+    )
+    packet_counts["search_quant_provider_model_acceptance_provider_api_success_count"] = receipt.get(
+        "provider_api_success_count", 0
+    )
+    packet_counts["search_quant_provider_model_acceptance_production_blocker_count"] = receipt.get(
+        "production_blocker_count", 0
+    )
+    packet["counts"] = packet_counts
+    packet_policy = _as_dict(packet.get("policy"))
+    packet_policy["search_quant_provider_model_acceptance_is_button_gated"] = True
+    packet_policy["search_quant_provider_model_acceptance_calls_provider_only_from_post_task"] = True
+    packet_policy["search_quant_provider_model_acceptance_get_cache_calls_provider"] = False
+    packet_policy["search_quant_provider_model_acceptance_deepseek_skipped"] = receipt.get(
+        "deepseek_skipped_by_request"
+    )
+    packet_policy["search_quant_provider_model_acceptance_is_not_production_completion"] = True
+    packet["policy"] = packet_policy
+    packet["call_ledger"] = [local_ledger]
+    packet["warnings"] = [
+        "搜票量化推演 provider/model acceptance 已记录 Tushare light provider ledger；DeepSeek/Factor/Next/ECharts/production promotion 仍是后续证据。"
+    ] + [
+        warning
+        for warning in _as_list(packet.get("warnings"))
+        if "provider/model acceptance" not in str(warning)
+    ]
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
+    except Exception:
+        local_ledger["call_status"] = "quant_projection_provider_model_acceptance_storage_write_failed"
+        local_ledger["error_message_safe"] = "candidate_radar_quant_projection_provider_model_acceptance_sqlite_write_failed"
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="candidate_radar_quant_projection_provider_model_acceptance_storage_write_failed",
+            error_message_safe="candidate_radar_quant_projection_provider_model_acceptance_sqlite_write_failed",
+            call_ledger=[local_ledger],
+            warning="candidate_radar_quant_projection_provider_model_acceptance_storage_failed",
+        ) or task
+
+    provider_ledger = [
+        row for row in _as_list(receipt.get("provider_call_ledger")) if isinstance(row, dict)
+    ]
+    task_ledger = [local_ledger] + provider_ledger
+    final_status = "success" if receipt.get("direct_evidence_verified") is True else "failed"
+    return task_service.update_task_status(
+        task["task_id"],
+        status=final_status,
+        progress=1.0,
+        current_step=str(receipt.get("status")),
+        call_ledger=task_ledger,
+        warning="candidate_radar_quant_projection_provider_model_acceptance_recorded",
+        error_message_safe="" if final_status == "success" else str(receipt.get("status")),
     ) or task
 
 
