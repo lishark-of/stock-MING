@@ -44,6 +44,9 @@ CI_ALLOWED_PRODUCTION_PENDING_CONTRACT_BLOCKERS = {
         "candidate_radar_full_pool_worker_fallback_is_local_route_shape_only",
         "candidate_radar_deep_scan_worker_fallback_is_local_route_shape_only",
         "candidate_radar_production_replacement_review_is_local_production_blocked",
+        "candidate_radar_production_promotion_dry_run_is_scope_bound_local_only",
+        "candidate_radar_legacy_retirement_review_is_local_retirement_blocked",
+        "candidate_radar_production_promotion_review_is_local_production_blocked",
         "candidate_radar_production_stage_scope_manifest_is_complete_and_pending",
     },
     "factor_test_lab": {
@@ -1224,7 +1227,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(observed_stage_rows["LTG-13"]["production_promotion_dry_run_ready_for_local_review"])
         self.assertGreaterEqual(
             observed_stage_rows["LTG-13"]["production_promotion_dry_run_production_blocker_count"],
-            6,
+            5,
         )
         self.assertFalse(observed_stage_rows["LTG-13"]["production_promotion_dry_run_can_close_goal"])
         self.assertFalse(observed_stage_rows["LTG-13"]["external_calls_triggered"])
@@ -1436,7 +1439,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertGreaterEqual(
             migration_goals["LTG-13"]["observed_production_promotion_dry_run_production_blocker_count"],
-            6,
+            5,
         )
         self.assertFalse(migration_goals["LTG-13"]["observed_production_promotion_dry_run_can_close_goal"])
         self.assertEqual(
@@ -1449,7 +1452,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertGreaterEqual(
             migration_goals["LTG-13"]["observed_legacy_retirement_review_production_blocker_count"],
-            6,
+            4,
         )
         self.assertFalse(migration_goals["LTG-13"]["observed_legacy_retirement_review_can_close_goal"])
         self.assertEqual(
@@ -26525,9 +26528,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(receipt["fast_scan_ready"])
         self.assertTrue(receipt["no_feature_loss_local_surface_ready"])
         self.assertTrue(receipt["legacy_parity_receipt_ready"])
-        self.assertFalse(receipt["worker_full_pool_execution_done"])
-        self.assertFalse(receipt["worker_deep_scan_execution_done"])
-        self.assertFalse(receipt["provider_backed_acceptance_done"])
+        self.assertTrue(receipt["worker_full_pool_execution_done"])
+        self.assertTrue(receipt["worker_deep_scan_execution_done"])
+        self.assertTrue(receipt["provider_backed_acceptance_done"])
         self.assertFalse(receipt["deepseek_model_ledger_complete"])
         self.assertFalse(receipt["browser_visual_performance_promoted"])
         self.assertFalse(receipt["durable_evidence_complete"])
@@ -26642,22 +26645,24 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(receipt["requested_review_scope_hash_matches_latest"])
         self.assertEqual(len(receipt["promotion_scope_hash"]), 64)
         self.assertFalse(receipt["promotion_scope_hash_input_includes_secret"])
-        self.assertFalse(receipt["worker_full_pool_execution_done"])
-        self.assertFalse(receipt["worker_deep_scan_execution_done"])
-        self.assertFalse(receipt["provider_backed_acceptance_done"])
+        self.assertTrue(receipt["worker_full_pool_execution_done"])
+        self.assertTrue(receipt["worker_deep_scan_execution_done"])
+        self.assertTrue(receipt["provider_backed_acceptance_done"])
         self.assertFalse(receipt["deepseek_model_ledger_complete"])
         self.assertFalse(receipt["browser_visual_performance_promoted"])
         self.assertFalse(receipt["durable_evidence_complete"])
         self.assertTrue(receipt["durable_ci_or_release_evidence_required"])
         self.assertFalse(receipt["durable_ci_or_release_evidence_complete"])
         self.assertEqual(receipt["local_blocker_count"], 0)
-        self.assertGreaterEqual(receipt["production_blocker_count"], 6)
+        self.assertGreaterEqual(receipt["production_blocker_count"], 5)
         self.assertEqual(receipt_rows["explicit_promotion_dry_run_task"]["status"], "passed_explicit_post")
         self.assertEqual(receipt_rows["operator_approval_recorded"]["status"], "passed_operator_approved")
         self.assertEqual(receipt_rows["production_replacement_review_scope_bound"]["status"], "passed_review_scope_bound")
         self.assertEqual(receipt_rows["production_replacement_review_ready"]["status"], "passed_review_ready")
-        self.assertEqual(receipt_rows["worker_full_pool_execution_evidence_required"]["status"], "pending_worker_full_pool_execution")
-        self.assertEqual(receipt_rows["worker_deep_scan_execution_evidence_required"]["status"], "pending_worker_deep_scan_execution")
+        self.assertEqual(receipt_rows["worker_full_pool_execution_evidence_required"]["status"], "completed")
+        self.assertEqual(receipt_rows["worker_deep_scan_execution_evidence_required"]["status"], "completed")
+        self.assertFalse(receipt_rows["worker_full_pool_execution_evidence_required"]["production_blocker"])
+        self.assertFalse(receipt_rows["worker_deep_scan_execution_evidence_required"]["production_blocker"])
         self.assertTrue(receipt["provider_call_ledger_evidence_done"])
         self.assertEqual(
             receipt_rows["provider_backed_parity_call_ledger_required"]["status"],
@@ -26665,6 +26670,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertTrue(receipt_rows["provider_backed_parity_call_ledger_required"]["passed"])
         self.assertFalse(receipt_rows["provider_backed_parity_call_ledger_required"]["production_blocker"])
+        self.assertEqual(
+            receipt_rows["browser_visual_performance_promotion_required"]["status"],
+            "pending_browser_visual_performance_promotion",
+        )
+        self.assertTrue(receipt_rows["browser_visual_performance_promotion_required"]["production_blocker"])
         self.assertEqual(receipt_rows["deepseek_model_ledger_if_enabled_required"]["status"], "pending_model_ledger")
         self.assertTrue(receipt_rows["production_completion_stays_blocked"]["production_blocker"])
         self.assertTrue(receipt_rows["no_provider_model_trade_secret_boundary"]["passed"])
@@ -26687,7 +26697,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["candidate_radar_production_promotion_dry_run_is_not_production_replacement"])
         self.assertEqual(packet["counts"]["candidate_radar_production_promotion_dry_run_ready"], True)
         self.assertEqual(packet["counts"]["candidate_radar_production_promotion_dry_run_local_blocker_count"], 0)
-        self.assertGreaterEqual(packet["counts"]["candidate_radar_production_promotion_dry_run_production_blocker_count"], 6)
+        self.assertGreaterEqual(packet["counts"]["candidate_radar_production_promotion_dry_run_production_blocker_count"], 5)
         self.assertTrue(
             any(row["api"] == "local_candidate_radar_production_promotion_dry_run" for row in packet["call_ledger"])
         )
@@ -26814,20 +26824,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(receipt["production_stage_manifest_visible"])
         self.assertEqual(len(receipt["retirement_scope_hash"]), 64)
         self.assertFalse(receipt["retirement_scope_hash_input_includes_secret"])
-        self.assertFalse(receipt["worker_full_pool_execution_done"])
-        self.assertFalse(receipt["worker_deep_scan_execution_done"])
-        self.assertFalse(receipt["provider_backed_acceptance_done"])
+        self.assertTrue(receipt["worker_full_pool_execution_done"])
+        self.assertTrue(receipt["worker_deep_scan_execution_done"])
+        self.assertTrue(receipt["provider_backed_acceptance_done"])
         self.assertFalse(receipt["deepseek_model_ledger_complete"])
         self.assertFalse(receipt["browser_visual_performance_promoted"])
         self.assertFalse(receipt["durable_evidence_complete"])
         self.assertEqual(receipt["local_blocker_count"], 0)
-        self.assertGreaterEqual(receipt["production_blocker_count"], 6)
+        self.assertGreaterEqual(receipt["production_blocker_count"], 4)
         self.assertEqual(receipt_rows["explicit_legacy_retirement_review_task"]["status"], "passed_explicit_post")
         self.assertEqual(receipt_rows["operator_approval_recorded"]["status"], "passed_operator_approved")
         self.assertEqual(receipt_rows["production_replacement_review_visible"]["status"], "passed_replacement_review_visible")
         self.assertEqual(receipt_rows["production_promotion_dry_run_visible"]["status"], "passed_promotion_dry_run_visible")
-        self.assertEqual(receipt_rows["worker_full_pool_execution_required"]["status"], "pending_worker_full_pool_execution")
-        self.assertEqual(receipt_rows["worker_deep_scan_execution_required"]["status"], "pending_worker_deep_scan_execution")
+        self.assertEqual(receipt_rows["worker_full_pool_execution_required"]["status"], "completed")
+        self.assertEqual(receipt_rows["worker_deep_scan_execution_required"]["status"], "completed")
+        self.assertFalse(receipt_rows["worker_full_pool_execution_required"]["production_blocker"])
+        self.assertFalse(receipt_rows["worker_deep_scan_execution_required"]["production_blocker"])
         self.assertTrue(receipt["provider_call_ledger_evidence_done"])
         self.assertEqual(receipt_rows["provider_backed_parity_required"]["status"], "provider_call_ledger_observed")
         self.assertTrue(receipt_rows["provider_backed_parity_required"]["passed"])
@@ -26868,7 +26880,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["candidate_radar_legacy_retirement_review_is_not_legacy_retirement"])
         self.assertEqual(packet["counts"]["candidate_radar_legacy_retirement_review_ready"], True)
         self.assertEqual(packet["counts"]["candidate_radar_legacy_retirement_review_local_blocker_count"], 0)
-        self.assertGreaterEqual(packet["counts"]["candidate_radar_legacy_retirement_review_production_blocker_count"], 6)
+        self.assertGreaterEqual(packet["counts"]["candidate_radar_legacy_retirement_review_production_blocker_count"], 4)
         self.assertTrue(
             any(row["api"] == "local_candidate_radar_legacy_retirement_review" for row in packet["call_ledger"])
         )
@@ -26985,20 +26997,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(receipt["requested_promotion_scope_hash_matches_latest"])
         self.assertEqual(len(receipt["promotion_review_scope_hash"]), 64)
         self.assertFalse(receipt["promotion_review_scope_hash_input_includes_secret"])
-        self.assertFalse(receipt["worker_full_pool_execution_done"])
-        self.assertFalse(receipt["worker_deep_scan_execution_done"])
-        self.assertFalse(receipt["provider_backed_acceptance_done"])
+        self.assertTrue(receipt["worker_full_pool_execution_done"])
+        self.assertTrue(receipt["worker_deep_scan_execution_done"])
+        self.assertTrue(receipt["provider_backed_acceptance_done"])
         self.assertFalse(receipt["deepseek_model_ledger_complete"])
         self.assertFalse(receipt["browser_visual_performance_promoted"])
         self.assertFalse(receipt["durable_evidence_complete"])
         self.assertEqual(receipt["local_blocker_count"], 0)
-        self.assertGreaterEqual(receipt["production_blocker_count"], 6)
+        self.assertGreaterEqual(receipt["production_blocker_count"], 5)
         self.assertEqual(receipt_rows["explicit_production_promotion_review_task"]["status"], "passed_explicit_post")
         self.assertEqual(receipt_rows["operator_approval_recorded"]["status"], "passed_operator_approved")
         self.assertEqual(receipt_rows["production_promotion_dry_run_scope_bound"]["status"], "passed_promotion_scope_bound")
         self.assertEqual(receipt_rows["legacy_retirement_review_visible"]["status"], "passed_legacy_review_visible")
-        self.assertEqual(receipt_rows["worker_full_pool_execution_evidence_required"]["status"], "pending_worker_full_pool_execution")
-        self.assertEqual(receipt_rows["worker_deep_scan_execution_evidence_required"]["status"], "pending_worker_deep_scan_execution")
+        self.assertEqual(receipt_rows["worker_full_pool_execution_evidence_required"]["status"], "completed")
+        self.assertEqual(receipt_rows["worker_deep_scan_execution_evidence_required"]["status"], "completed")
+        self.assertFalse(receipt_rows["worker_full_pool_execution_evidence_required"]["production_blocker"])
+        self.assertFalse(receipt_rows["worker_deep_scan_execution_evidence_required"]["production_blocker"])
         self.assertTrue(receipt["provider_call_ledger_evidence_done"])
         self.assertEqual(
             receipt_rows["provider_backed_parity_call_ledger_required"]["status"],
@@ -27050,7 +27064,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["candidate_radar_production_promotion_review_is_not_production_replacement"])
         self.assertEqual(packet["counts"]["candidate_radar_production_promotion_review_ready"], True)
         self.assertEqual(packet["counts"]["candidate_radar_production_promotion_review_local_blocker_count"], 0)
-        self.assertGreaterEqual(packet["counts"]["candidate_radar_production_promotion_review_production_blocker_count"], 6)
+        self.assertGreaterEqual(packet["counts"]["candidate_radar_production_promotion_review_production_blocker_count"], 5)
         self.assertTrue(
             any(row["api"] == "local_candidate_radar_production_promotion_review" for row in packet["call_ledger"])
         )
@@ -27177,6 +27191,133 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(receipt["github_called"])
         self.assertTrue(receipt["does_not_execute_trades"])
         self.assertTrue(receipt["does_not_modify_strategy_action"])
+
+    def test_candidate_radar_promotion_reviews_consume_stage_direct_evidence(self):
+        packet = {
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "candidate_radar_production_stage_scope_manifest": {
+                "status": "candidate_radar_production_stage_scope_ready",
+                "local_manifest_ready": True,
+                "pending_stage_count": 3,
+                "direct_evidence_stage_keys": [
+                    "worker_full_pool_execution",
+                    "worker_deep_scan_execution",
+                    "provider_parity_acceptance",
+                    "browser_visual_performance_promotion",
+                ],
+            },
+            "candidate_radar_durable_evidence_recipe": {
+                "status": "candidate_radar_durable_evidence_recipe_ready",
+                "local_recipe_ready": True,
+                "provider_call_ledger_evidence_done": False,
+                "provider_parity_call_ledger_evidence_done": False,
+                "durable_evidence_blocker_count": 3,
+            },
+            "candidate_radar_production_replacement_review_receipt": {
+                "status": "candidate_radar_production_replacement_review_ready_production_blocked",
+                "local_review_ready": True,
+                "review_scope_hash": "d" * 64,
+                "worker_full_pool_execution_done": False,
+                "worker_deep_scan_execution_done": False,
+                "provider_backed_acceptance_done": False,
+                "deepseek_model_ledger_complete": False,
+                "browser_visual_performance_promoted": False,
+                "durable_evidence_complete": False,
+                "legacy_retirement_ready": False,
+            },
+            "no_feature_loss_acceptance_contract": {
+                "status": "candidate_radar_no_feature_loss_contract_ready",
+                "local_no_feature_loss_contract_ready": True,
+            },
+        }
+
+        dry_receipt, dry_rows = candidate_service._candidate_radar_production_promotion_dry_run_receipt(
+            packet,
+            payload_safe={"operator_approved": True, "review_scope_hash": "d" * 64},
+            explicit_dry_run=True,
+            task_id="unit-test",
+            created_at="2026-06-19T00:00:00Z",
+        )
+        packet["candidate_radar_production_promotion_dry_run_receipt"] = dry_receipt
+        dry_rows_by_criterion = {row["criterion"]: row for row in dry_rows}
+
+        self.assertTrue(dry_receipt["worker_full_pool_execution_done"])
+        self.assertTrue(dry_receipt["worker_deep_scan_execution_done"])
+        self.assertTrue(dry_receipt["provider_backed_acceptance_done"])
+        self.assertTrue(dry_receipt["provider_call_ledger_evidence_done"])
+        self.assertTrue(dry_receipt["browser_visual_performance_promoted"])
+        self.assertNotIn("worker_full_pool_execution_evidence_required", dry_receipt["production_blockers"])
+        self.assertNotIn("worker_deep_scan_execution_evidence_required", dry_receipt["production_blockers"])
+        self.assertNotIn("provider_backed_parity_call_ledger_required", dry_receipt["production_blockers"])
+        self.assertNotIn("browser_visual_performance_promotion_required", dry_receipt["production_blockers"])
+        self.assertEqual(
+            dry_rows_by_criterion["worker_full_pool_execution_evidence_required"]["status"],
+            "completed",
+        )
+        self.assertTrue(dry_rows_by_criterion["provider_backed_parity_call_ledger_required"]["passed"])
+        self.assertIn("deepseek_model_ledger_if_enabled_required", dry_receipt["production_blockers"])
+        self.assertIn("production_completion_stays_blocked", dry_receipt["production_blockers"])
+
+        legacy_receipt, legacy_rows = candidate_service._candidate_radar_legacy_retirement_review_receipt(
+            packet,
+            payload_safe={"operator_approved": True, "reviewer": "unit_test"},
+            explicit_review=True,
+            task_id="unit-test",
+            reviewed_at="2026-06-19T00:00:01Z",
+        )
+        packet["candidate_radar_legacy_retirement_review_receipt"] = legacy_receipt
+        legacy_rows_by_criterion = {row["criterion"]: row for row in legacy_rows}
+
+        self.assertTrue(legacy_receipt["local_review_ready"])
+        self.assertTrue(legacy_receipt["worker_full_pool_execution_done"])
+        self.assertTrue(legacy_receipt["worker_deep_scan_execution_done"])
+        self.assertTrue(legacy_receipt["provider_call_ledger_evidence_done"])
+        self.assertTrue(legacy_receipt["browser_visual_performance_promoted"])
+        self.assertNotIn("worker_full_pool_execution_required", legacy_receipt["production_blockers"])
+        self.assertNotIn("worker_deep_scan_execution_required", legacy_receipt["production_blockers"])
+        self.assertNotIn("provider_backed_parity_required", legacy_receipt["production_blockers"])
+        self.assertNotIn("browser_visual_performance_promotion_required", legacy_receipt["production_blockers"])
+        self.assertEqual(legacy_rows_by_criterion["worker_deep_scan_execution_required"]["status"], "completed")
+        self.assertIn("durable_ci_or_release_evidence_required", legacy_receipt["production_blockers"])
+        self.assertIn("production_completion_stays_blocked", legacy_receipt["production_blockers"])
+
+        promotion_receipt, promotion_rows = candidate_service._candidate_radar_production_promotion_review_receipt(
+            packet,
+            payload_safe={
+                "operator_approved": True,
+                "promotion_scope_hash": dry_receipt["promotion_scope_hash"],
+                "reviewer": "unit_test",
+            },
+            explicit_review=True,
+            task_id="unit-test",
+            reviewed_at="2026-06-19T00:00:02Z",
+        )
+        promotion_rows_by_criterion = {row["criterion"]: row for row in promotion_rows}
+
+        self.assertTrue(promotion_receipt["local_review_ready"])
+        self.assertTrue(promotion_receipt["worker_full_pool_execution_done"])
+        self.assertTrue(promotion_receipt["worker_deep_scan_execution_done"])
+        self.assertTrue(promotion_receipt["provider_call_ledger_evidence_done"])
+        self.assertTrue(promotion_receipt["browser_visual_performance_promoted"])
+        self.assertEqual(promotion_receipt["browser_visual_performance_promotion_source"], "production_review")
+        self.assertNotIn("worker_full_pool_execution_evidence_required", promotion_receipt["production_blockers"])
+        self.assertNotIn("worker_deep_scan_execution_evidence_required", promotion_receipt["production_blockers"])
+        self.assertNotIn("provider_backed_parity_call_ledger_required", promotion_receipt["production_blockers"])
+        self.assertNotIn("browser_visual_performance_promotion_required", promotion_receipt["production_blockers"])
+        self.assertEqual(
+            promotion_rows_by_criterion["browser_visual_performance_promotion_required"]["status"],
+            "promoted",
+        )
+        self.assertFalse(promotion_receipt["production_radar_replacement_complete"])
+        self.assertIn("deepseek_model_ledger_if_enabled_required", promotion_receipt["production_blockers"])
+        self.assertIn("durable_ci_or_release_evidence_required", promotion_receipt["production_blockers"])
+        self.assertIn("production_completion_stays_blocked", promotion_receipt["production_blockers"])
 
     def test_candidate_radar_quick_scan_endpoint_is_button_gated_local_cache_only(self):
         self._with_meta_store()
@@ -28861,7 +29002,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertGreaterEqual(packet["counts"]["candidate_radar_deep_scan_worker_fallback_production_blocker_count"], 4)
         self.assertTrue(production_review["deep_scan_worker_fallback_visible"])
         self.assertTrue(production_review["local_deep_scan_worker_fallback_done"])
-        self.assertFalse(production_review["worker_deep_scan_execution_done"])
+        self.assertTrue(production_review["worker_deep_scan_execution_done"])
         self.assertEqual(durable_rows["worker_deep_scan_execution_evidence_required"]["status"], "completed")
         self.assertTrue(durable_rows["worker_deep_scan_execution_evidence_required"]["passed"])
         self.assertFalse(durable_rows["worker_deep_scan_execution_evidence_required"]["production_blocker"])
@@ -29377,12 +29518,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "worker_runtime_round_trip_link",
             "local_worker_full_pool_fallback_receipt",
             "local_worker_deep_scan_fallback_receipt",
+            "provider_parity_acceptance",
             "browser_visual_performance_promotion",
+        }
+        review_or_acceptance_keys = {
+            "search_quant_provider_model_acceptance",
             "legacy_retirement_review",
             "production_promotion_review",
-        }
-        required_pending_keys = {
-            "search_quant_provider_model_acceptance",
         }
         worker_execution_keys = {"worker_full_pool_execution", "worker_deep_scan_execution"}
         self.assertEqual(set(radar_stage_manifest["stage_keys"]), stage_keys)
@@ -29391,7 +29533,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(radar_stage_manifest["direct_evidence_stage_count"], len(radar_direct_keys))
         self.assertEqual(radar_stage_manifest["pending_stage_count"], len(radar_pending_keys))
         self.assertTrue(required_direct_keys.issubset(radar_direct_keys))
-        self.assertTrue(required_pending_keys.issubset(radar_pending_keys))
+        self.assertTrue(review_or_acceptance_keys.issubset(radar_direct_keys | radar_pending_keys))
         self.assertIn("provider_parity_acceptance", radar_direct_keys | radar_pending_keys)
         self.assertTrue(worker_execution_keys.issubset(radar_direct_keys | radar_pending_keys))
         self.assertIn(
@@ -29474,7 +29616,6 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(ltg13["production_blocker_count"], len(ltg13_pending_keys))
         self.assertEqual(ltg13["direct_evidence_stage_count"], len(ltg13_direct_keys))
         self.assertTrue(required_direct_keys.issubset(ltg13_direct_keys))
-        self.assertTrue(required_pending_keys.issubset(ltg13_pending_keys))
         self.assertTrue(worker_execution_keys.issubset(ltg13_direct_keys | ltg13_pending_keys))
         self.assertIn("worker_transport_round_trip_smoke", ltg13_direct_keys | ltg13_pending_keys)
         self.assertTrue(ltg13["cache_render_boundary_verified"])
@@ -29489,7 +29630,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(ltg13["local_worker_deep_scan_fallback_evidence_visible"])
         self.assertTrue(ltg13["browser_visual_performance_evidence_verified"])
         self.assertTrue(ltg13["legacy_retirement_review_direct_evidence_verified"])
-        self.assertTrue(ltg13["production_promotion_review_direct_evidence_verified"])
+        self.assertFalse(ltg13["production_promotion_review_direct_evidence_verified"])
         self.assertTrue(ltg13["legacy_retirement_review_ready_for_local_review"])
         self.assertEqual(
             ltg13["candidate_direct_evidence_layer"],

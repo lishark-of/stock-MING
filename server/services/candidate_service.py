@@ -9586,6 +9586,15 @@ def _candidate_radar_production_replacement_review_row(
     }
 
 
+def _candidate_stage_direct_keys(packet: Mapping[str, Any]) -> set[str]:
+    manifest = _as_dict(packet.get("candidate_radar_production_stage_scope_manifest"))
+    return {str(item) for item in _as_list(manifest.get("direct_evidence_stage_keys")) if str(item)}
+
+
+def _candidate_stage_direct_evidence_done(packet: Mapping[str, Any], evidence_key: str) -> bool:
+    return evidence_key in _candidate_stage_direct_keys(packet)
+
+
 def _candidate_radar_production_replacement_review(
     packet: Mapping[str, Any],
     *,
@@ -9640,6 +9649,22 @@ def _candidate_radar_production_replacement_review(
     browser_review_ready = browser_review.get("local_browser_qa_review_ready") is True
     durable_recipe_ready = durable_recipe.get("local_recipe_ready") is True
     stage_manifest_ready = stage_manifest.get("local_manifest_ready") is True
+    worker_full_pool_execution_done = _candidate_stage_direct_evidence_done(packet, "worker_full_pool_execution")
+    worker_deep_scan_execution_done = _candidate_stage_direct_evidence_done(packet, "worker_deep_scan_execution")
+    provider_backed_acceptance_done = bool(
+        _candidate_stage_direct_evidence_done(packet, "provider_parity_acceptance")
+        or durable_recipe.get("provider_call_ledger_evidence_done") is True
+        or durable_recipe.get("provider_parity_call_ledger_evidence_done") is True
+    )
+    browser_visual_performance_promoted = _candidate_stage_direct_evidence_done(
+        packet, "browser_visual_performance_promotion"
+    )
+    direct_worker_provider_browser_evidence_done = bool(
+        worker_full_pool_execution_done
+        and worker_deep_scan_execution_done
+        and provider_backed_acceptance_done
+        and browser_visual_performance_promoted
+    )
     safety_ready = bool(
         packet.get("does_not_execute_trades") is True
         and packet.get("does_not_modify_strategy_action") is True
@@ -9836,13 +9861,15 @@ def _candidate_radar_production_replacement_review(
         _candidate_radar_production_replacement_review_row(
             "direct_worker_provider_browser_evidence_required",
             "production_evidence",
-            "pending_direct_evidence",
-            passed=False,
+            "direct_evidence_observed" if direct_worker_provider_browser_evidence_done else "pending_direct_evidence",
+            passed=direct_worker_provider_browser_evidence_done,
             local_review_required=False,
-            production_blocker=True,
+            production_blocker=not direct_worker_provider_browser_evidence_done,
             evidence=(
-                f"full_pool={durable_recipe.get('full_pool_scan_done')}; deep_scan={durable_recipe.get('deep_scan_done')}; "
-                f"provider={durable_recipe.get('provider_backed_acceptance_done')}; browser={durable_recipe.get('browser_visual_performance_reviewed')}"
+                f"worker_full_pool_execution_done={worker_full_pool_execution_done}; "
+                f"worker_deep_scan_execution_done={worker_deep_scan_execution_done}; "
+                f"provider_backed_acceptance_done={provider_backed_acceptance_done}; "
+                f"browser_visual_performance_promoted={browser_visual_performance_promoted}"
             ),
             next_action="Collect real worker full-pool/deep-scan, provider call ledger, optional model ledger, and browser performance promotion evidence.",
             recommended_order=17,
@@ -9921,13 +9948,13 @@ def _candidate_radar_production_replacement_review(
         "browser_qa_review_visible": browser_review_ready,
         "durable_evidence_recipe_visible": durable_recipe_ready,
         "stage_scope_manifest_visible": stage_manifest_ready,
-        "worker_full_pool_execution_done": False,
+        "worker_full_pool_execution_done": worker_full_pool_execution_done,
         "local_full_pool_worker_fallback_done": full_pool_worker_fallback_ready,
         "local_deep_scan_worker_fallback_done": deep_scan_worker_fallback_ready,
-        "worker_deep_scan_execution_done": False,
-        "provider_backed_acceptance_done": False,
+        "worker_deep_scan_execution_done": worker_deep_scan_execution_done,
+        "provider_backed_acceptance_done": provider_backed_acceptance_done,
         "deepseek_model_ledger_complete": False,
-        "browser_visual_performance_promoted": False,
+        "browser_visual_performance_promoted": browser_visual_performance_promoted,
         "durable_evidence_complete": False,
         "row_count": len(rows),
         "local_blocker_count": len(local_blockers),
@@ -10099,16 +10126,28 @@ def _candidate_radar_production_promotion_dry_run_receipt(
     production_review_ready = production_review.get("local_review_ready") is True
     durable_recipe_visible = durable_recipe.get("local_recipe_ready") is True
     stage_manifest_visible = stage_manifest.get("local_manifest_ready") is True
-    worker_full_pool_done = production_review.get("worker_full_pool_execution_done") is True
-    worker_deep_scan_done = production_review.get("worker_deep_scan_execution_done") is True
-    provider_backed_done = production_review.get("provider_backed_acceptance_done") is True
+    worker_full_pool_done = (
+        production_review.get("worker_full_pool_execution_done") is True
+        or _candidate_stage_direct_evidence_done(packet, "worker_full_pool_execution")
+    )
+    worker_deep_scan_done = (
+        production_review.get("worker_deep_scan_execution_done") is True
+        or _candidate_stage_direct_evidence_done(packet, "worker_deep_scan_execution")
+    )
+    provider_backed_done = (
+        production_review.get("provider_backed_acceptance_done") is True
+        or _candidate_stage_direct_evidence_done(packet, "provider_parity_acceptance")
+    )
     provider_call_ledger_evidence_done = bool(
         durable_recipe.get("provider_call_ledger_evidence_done") is True
         or durable_recipe.get("provider_parity_call_ledger_evidence_done") is True
         or provider_backed_done
     )
     model_ledger_done = production_review.get("deepseek_model_ledger_complete") is True
-    browser_promoted = production_review.get("browser_visual_performance_promoted") is True
+    browser_promoted = (
+        production_review.get("browser_visual_performance_promoted") is True
+        or _candidate_stage_direct_evidence_done(packet, "browser_visual_performance_promotion")
+    )
     durable_evidence_complete = production_review.get("durable_evidence_complete") is True
     legacy_retirement_ready = production_review.get("legacy_retirement_ready") is True
     safety_ready = bool(
@@ -10524,16 +10563,28 @@ def _candidate_radar_production_promotion_review_receipt(
     durable_recipe_visible = durable_recipe.get("local_recipe_ready") is True
     stage_manifest_visible = stage_manifest.get("local_manifest_ready") is True
     production_review_ready = production_review.get("local_review_ready") is True
-    worker_full_pool_done = production_review.get("worker_full_pool_execution_done") is True
-    worker_deep_scan_done = production_review.get("worker_deep_scan_execution_done") is True
-    provider_backed_done = production_review.get("provider_backed_acceptance_done") is True
+    worker_full_pool_done = (
+        production_review.get("worker_full_pool_execution_done") is True
+        or _candidate_stage_direct_evidence_done(packet, "worker_full_pool_execution")
+    )
+    worker_deep_scan_done = (
+        production_review.get("worker_deep_scan_execution_done") is True
+        or _candidate_stage_direct_evidence_done(packet, "worker_deep_scan_execution")
+    )
+    provider_backed_done = (
+        production_review.get("provider_backed_acceptance_done") is True
+        or _candidate_stage_direct_evidence_done(packet, "provider_parity_acceptance")
+    )
     provider_call_ledger_evidence_done = bool(
         durable_recipe.get("provider_call_ledger_evidence_done") is True
         or durable_recipe.get("provider_parity_call_ledger_evidence_done") is True
         or provider_backed_done
     )
     model_ledger_done = production_review.get("deepseek_model_ledger_complete") is True
-    production_review_browser_promoted = production_review.get("browser_visual_performance_promoted") is True
+    production_review_browser_promoted = (
+        production_review.get("browser_visual_performance_promoted") is True
+        or _candidate_stage_direct_evidence_done(packet, "browser_visual_performance_promotion")
+    )
     durable_evidence_complete = production_review.get("durable_evidence_complete") is True
     legacy_retirement_ready = legacy_review.get("legacy_retirement_ready") is True
     safety_ready = bool(
@@ -11043,16 +11094,28 @@ def _candidate_radar_legacy_retirement_review_receipt(
         "local_no_feature_loss_contract_ready"
     ) is True
     legacy_fallback_required = True
-    worker_full_pool_done = production_review.get("worker_full_pool_execution_done") is True
-    worker_deep_scan_done = production_review.get("worker_deep_scan_execution_done") is True
-    provider_backed_done = production_review.get("provider_backed_acceptance_done") is True
+    worker_full_pool_done = (
+        production_review.get("worker_full_pool_execution_done") is True
+        or _candidate_stage_direct_evidence_done(packet, "worker_full_pool_execution")
+    )
+    worker_deep_scan_done = (
+        production_review.get("worker_deep_scan_execution_done") is True
+        or _candidate_stage_direct_evidence_done(packet, "worker_deep_scan_execution")
+    )
+    provider_backed_done = (
+        production_review.get("provider_backed_acceptance_done") is True
+        or _candidate_stage_direct_evidence_done(packet, "provider_parity_acceptance")
+    )
     provider_call_ledger_evidence_done = bool(
         durable_recipe.get("provider_call_ledger_evidence_done") is True
         or durable_recipe.get("provider_parity_call_ledger_evidence_done") is True
         or provider_backed_done
     )
     model_ledger_done = production_review.get("deepseek_model_ledger_complete") is True
-    browser_promoted = production_review.get("browser_visual_performance_promoted") is True
+    browser_promoted = (
+        production_review.get("browser_visual_performance_promoted") is True
+        or _candidate_stage_direct_evidence_done(packet, "browser_visual_performance_promotion")
+    )
     durable_evidence_complete = production_review.get("durable_evidence_complete") is True
     production_complete = False
     safety_ready = bool(
