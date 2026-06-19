@@ -47,6 +47,7 @@ CI_ALLOWED_PRODUCTION_PENDING_CONTRACT_BLOCKERS = {
         "candidate_radar_production_promotion_dry_run_is_scope_bound_local_only",
         "candidate_radar_legacy_retirement_review_is_local_retirement_blocked",
         "candidate_radar_production_promotion_review_is_local_production_blocked",
+        "candidate_radar_durable_evidence_recipe_is_local_production_pending",
         "candidate_radar_production_stage_scope_manifest_is_complete_and_pending",
     },
     "factor_test_lab": {
@@ -1227,7 +1228,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(observed_stage_rows["LTG-13"]["production_promotion_dry_run_ready_for_local_review"])
         self.assertGreaterEqual(
             observed_stage_rows["LTG-13"]["production_promotion_dry_run_production_blocker_count"],
-            5,
+            4,
         )
         self.assertFalse(observed_stage_rows["LTG-13"]["production_promotion_dry_run_can_close_goal"])
         self.assertFalse(observed_stage_rows["LTG-13"]["external_calls_triggered"])
@@ -1439,7 +1440,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertGreaterEqual(
             migration_goals["LTG-13"]["observed_production_promotion_dry_run_production_blocker_count"],
-            5,
+            4,
         )
         self.assertFalse(migration_goals["LTG-13"]["observed_production_promotion_dry_run_can_close_goal"])
         self.assertEqual(
@@ -1452,7 +1453,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertGreaterEqual(
             migration_goals["LTG-13"]["observed_legacy_retirement_review_production_blocker_count"],
-            4,
+            3,
         )
         self.assertFalse(migration_goals["LTG-13"]["observed_legacy_retirement_review_can_close_goal"])
         self.assertEqual(
@@ -7958,7 +7959,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("provider_parity_scope_ticket_required", durable_recipe["missing_durable_evidence"])
         self.assertNotIn("worker_full_pool_execution_evidence_required", durable_recipe["missing_durable_evidence"])
         self.assertNotIn("worker_deep_scan_execution_evidence_required", durable_recipe["missing_durable_evidence"])
-        self.assertIn("deepseek_model_ledger_if_enabled_required", durable_recipe["missing_durable_evidence"])
+        self.assertNotIn("deepseek_model_ledger_if_enabled_required", durable_recipe["missing_durable_evidence"])
+        self.assertFalse(durable_recipe["deepseek_model_ledger_required"])
+        self.assertEqual(durable_recipe["deepseek_factor_explain_mode"], "manual_only")
+        self.assertFalse(durable_recipe["deepseek_auto_after_task_enabled"])
         self.assertIn("worker-backed full-pool execution task evidence", durable_recipe["required_evidence"])
         self.assertIn("DeepSeek model ledger and sanitizer evidence when enabled", durable_recipe["required_evidence"])
         self.assertIn("treat durable recipe as production radar replacement", durable_recipe["not_allowed_next_steps"])
@@ -7974,7 +7978,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(durable_rows["worker_deep_scan_execution_evidence_required"]["production_blocker"])
         self.assertTrue(durable_rows["worker_deep_scan_execution_evidence_required"]["passed"])
         self.assertTrue(durable_rows["browser_visual_performance_evidence_required"]["production_blocker"])
-        self.assertTrue(durable_rows["deepseek_model_ledger_if_enabled_required"]["production_blocker"])
+        self.assertEqual(
+            durable_rows["deepseek_model_ledger_if_enabled_required"]["status"],
+            "not_required_manual_or_disabled",
+        )
+        self.assertFalse(durable_rows["deepseek_model_ledger_if_enabled_required"]["production_blocker"])
         self.assertTrue(durable_rows["no_trade_action_secret_boundary"]["passed"])
         self.assertTrue(packet["policy"]["candidate_radar_durable_evidence_recipe_is_local"])
         self.assertFalse(packet["policy"]["candidate_radar_durable_evidence_recipe_calls_provider_or_model"])
@@ -13226,7 +13234,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["candidate_radar_next_execution_recipe_ready"])
         self.assertTrue(payload["candidate_radar_worker_execution_recipe_ready"])
         self.assertTrue(payload["candidate_radar_durable_evidence_recipe_ready"])
-        self.assertGreaterEqual(payload["candidate_radar_durable_evidence_blocker_count"], 1)
+        self.assertEqual(payload["candidate_radar_durable_evidence_blocker_count"], 0)
         self.assertFalse(payload["external_calls_triggered"])
         self.assertFalse(payload["tushare_called"])
         self.assertFalse(payload["deepseek_called"])
@@ -13353,7 +13361,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "candidate_radar_durable_evidence_recipe_ready_production_pending",
         )
         self.assertTrue(payload["observed"]["candidate_radar_durable_evidence_ready"])
-        self.assertGreaterEqual(payload["observed"]["candidate_radar_durable_evidence_blocker_count"], 1)
+        self.assertEqual(payload["observed"]["candidate_radar_durable_evidence_blocker_count"], 0)
         self.assertNotIn(
             "worker_full_pool_execution_evidence_required",
             payload["observed"]["candidate_radar_durable_evidence_missing"],
@@ -26657,7 +26665,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(receipt["durable_ci_or_release_evidence_required"])
         self.assertFalse(receipt["durable_ci_or_release_evidence_complete"])
         self.assertEqual(receipt["local_blocker_count"], 0)
-        self.assertGreaterEqual(receipt["production_blocker_count"], 5)
+        self.assertGreaterEqual(receipt["production_blocker_count"], 4)
         self.assertEqual(receipt_rows["explicit_promotion_dry_run_task"]["status"], "passed_explicit_post")
         self.assertEqual(receipt_rows["operator_approval_recorded"]["status"], "passed_operator_approved")
         self.assertEqual(receipt_rows["production_replacement_review_scope_bound"]["status"], "passed_review_scope_bound")
@@ -26667,6 +26675,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(receipt_rows["worker_full_pool_execution_evidence_required"]["production_blocker"])
         self.assertFalse(receipt_rows["worker_deep_scan_execution_evidence_required"]["production_blocker"])
         self.assertTrue(receipt["provider_call_ledger_evidence_done"])
+        self.assertFalse(receipt["deepseek_model_ledger_required"])
+        self.assertEqual(receipt["deepseek_factor_explain_mode"], "manual_only")
         self.assertEqual(
             receipt_rows["provider_backed_parity_call_ledger_required"]["status"],
             "provider_call_ledger_observed",
@@ -26678,7 +26688,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "pending_browser_visual_performance_promotion",
         )
         self.assertTrue(receipt_rows["browser_visual_performance_promotion_required"]["production_blocker"])
-        self.assertEqual(receipt_rows["deepseek_model_ledger_if_enabled_required"]["status"], "pending_model_ledger")
+        self.assertEqual(
+            receipt_rows["deepseek_model_ledger_if_enabled_required"]["status"],
+            "not_required_manual_or_disabled",
+        )
+        self.assertFalse(receipt_rows["deepseek_model_ledger_if_enabled_required"]["production_blocker"])
         self.assertTrue(receipt_rows["production_completion_stays_blocked"]["production_blocker"])
         self.assertTrue(receipt_rows["no_provider_model_trade_secret_boundary"]["passed"])
         self.assertFalse(receipt["cache_get_external_calls"])
@@ -26700,7 +26714,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["candidate_radar_production_promotion_dry_run_is_not_production_replacement"])
         self.assertEqual(packet["counts"]["candidate_radar_production_promotion_dry_run_ready"], True)
         self.assertEqual(packet["counts"]["candidate_radar_production_promotion_dry_run_local_blocker_count"], 0)
-        self.assertGreaterEqual(packet["counts"]["candidate_radar_production_promotion_dry_run_production_blocker_count"], 5)
+        self.assertGreaterEqual(packet["counts"]["candidate_radar_production_promotion_dry_run_production_blocker_count"], 4)
         self.assertTrue(
             any(row["api"] == "local_candidate_radar_production_promotion_dry_run" for row in packet["call_ledger"])
         )
@@ -26834,7 +26848,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(receipt["browser_visual_performance_promoted"])
         self.assertFalse(receipt["durable_evidence_complete"])
         self.assertEqual(receipt["local_blocker_count"], 0)
-        self.assertGreaterEqual(receipt["production_blocker_count"], 4)
+        self.assertGreaterEqual(receipt["production_blocker_count"], 3)
         self.assertEqual(receipt_rows["explicit_legacy_retirement_review_task"]["status"], "passed_explicit_post")
         self.assertEqual(receipt_rows["operator_approval_recorded"]["status"], "passed_operator_approved")
         self.assertEqual(receipt_rows["production_replacement_review_visible"]["status"], "passed_replacement_review_visible")
@@ -26844,10 +26858,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(receipt_rows["worker_full_pool_execution_required"]["production_blocker"])
         self.assertFalse(receipt_rows["worker_deep_scan_execution_required"]["production_blocker"])
         self.assertTrue(receipt["provider_call_ledger_evidence_done"])
+        self.assertFalse(receipt["deepseek_model_ledger_required"])
+        self.assertEqual(receipt["deepseek_factor_explain_mode"], "manual_only")
         self.assertEqual(receipt_rows["provider_backed_parity_required"]["status"], "provider_call_ledger_observed")
         self.assertTrue(receipt_rows["provider_backed_parity_required"]["passed"])
         self.assertFalse(receipt_rows["provider_backed_parity_required"]["production_blocker"])
-        self.assertEqual(receipt_rows["deepseek_model_ledger_if_enabled_required"]["status"], "pending_model_ledger")
+        self.assertEqual(
+            receipt_rows["deepseek_model_ledger_if_enabled_required"]["status"],
+            "not_required_manual_or_disabled",
+        )
+        self.assertFalse(receipt_rows["deepseek_model_ledger_if_enabled_required"]["production_blocker"])
         self.assertTrue(receipt_rows["production_completion_stays_blocked"]["production_blocker"])
         self.assertTrue(receipt_rows["no_provider_model_trade_secret_boundary"]["passed"])
         durable = packet["candidate_radar_durable_evidence_recipe"]
@@ -26883,7 +26903,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["candidate_radar_legacy_retirement_review_is_not_legacy_retirement"])
         self.assertEqual(packet["counts"]["candidate_radar_legacy_retirement_review_ready"], True)
         self.assertEqual(packet["counts"]["candidate_radar_legacy_retirement_review_local_blocker_count"], 0)
-        self.assertGreaterEqual(packet["counts"]["candidate_radar_legacy_retirement_review_production_blocker_count"], 4)
+        self.assertGreaterEqual(packet["counts"]["candidate_radar_legacy_retirement_review_production_blocker_count"], 3)
         self.assertTrue(
             any(row["api"] == "local_candidate_radar_legacy_retirement_review" for row in packet["call_ledger"])
         )
@@ -27007,7 +27027,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(receipt["browser_visual_performance_promoted"])
         self.assertFalse(receipt["durable_evidence_complete"])
         self.assertEqual(receipt["local_blocker_count"], 0)
-        self.assertGreaterEqual(receipt["production_blocker_count"], 5)
+        self.assertGreaterEqual(receipt["production_blocker_count"], 4)
         self.assertEqual(receipt_rows["explicit_production_promotion_review_task"]["status"], "passed_explicit_post")
         self.assertEqual(receipt_rows["operator_approval_recorded"]["status"], "passed_operator_approved")
         self.assertEqual(receipt_rows["production_promotion_dry_run_scope_bound"]["status"], "passed_promotion_scope_bound")
@@ -27017,13 +27037,19 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(receipt_rows["worker_full_pool_execution_evidence_required"]["production_blocker"])
         self.assertFalse(receipt_rows["worker_deep_scan_execution_evidence_required"]["production_blocker"])
         self.assertTrue(receipt["provider_call_ledger_evidence_done"])
+        self.assertFalse(receipt["deepseek_model_ledger_required"])
+        self.assertEqual(receipt["deepseek_factor_explain_mode"], "manual_only")
         self.assertEqual(
             receipt_rows["provider_backed_parity_call_ledger_required"]["status"],
             "provider_call_ledger_observed",
         )
         self.assertTrue(receipt_rows["provider_backed_parity_call_ledger_required"]["passed"])
         self.assertFalse(receipt_rows["provider_backed_parity_call_ledger_required"]["production_blocker"])
-        self.assertEqual(receipt_rows["deepseek_model_ledger_if_enabled_required"]["status"], "pending_model_ledger")
+        self.assertEqual(
+            receipt_rows["deepseek_model_ledger_if_enabled_required"]["status"],
+            "not_required_manual_or_disabled",
+        )
+        self.assertFalse(receipt_rows["deepseek_model_ledger_if_enabled_required"]["production_blocker"])
         self.assertEqual(
             receipt_rows["browser_visual_performance_promotion_required"]["status"],
             "pending_browser_visual_performance_promotion",
@@ -27078,7 +27104,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["policy"]["candidate_radar_production_promotion_review_is_not_production_replacement"])
         self.assertEqual(packet["counts"]["candidate_radar_production_promotion_review_ready"], True)
         self.assertEqual(packet["counts"]["candidate_radar_production_promotion_review_local_blocker_count"], 0)
-        self.assertGreaterEqual(packet["counts"]["candidate_radar_production_promotion_review_production_blocker_count"], 5)
+        self.assertGreaterEqual(packet["counts"]["candidate_radar_production_promotion_review_production_blocker_count"], 4)
         self.assertTrue(
             any(row["api"] == "local_candidate_radar_production_promotion_review" for row in packet["call_ledger"])
         )
@@ -27189,7 +27215,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(receipt["legacy_retirement_ready"])
         self.assertIn("worker_full_pool_execution_evidence_required", receipt["production_blockers"])
         self.assertIn("provider_backed_parity_call_ledger_required", receipt["production_blockers"])
-        self.assertIn("deepseek_model_ledger_if_enabled_required", receipt["production_blockers"])
+        self.assertNotIn("deepseek_model_ledger_if_enabled_required", receipt["production_blockers"])
+        self.assertFalse(receipt["deepseek_model_ledger_required"])
         self.assertIn("production_completion_stays_blocked", receipt["production_blockers"])
         self.assertNotIn("browser_visual_performance_promotion_required", receipt["production_blockers"])
         self.assertEqual(
@@ -27275,7 +27302,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "completed",
         )
         self.assertTrue(dry_rows_by_criterion["provider_backed_parity_call_ledger_required"]["passed"])
-        self.assertIn("deepseek_model_ledger_if_enabled_required", dry_receipt["production_blockers"])
+        self.assertNotIn("deepseek_model_ledger_if_enabled_required", dry_receipt["production_blockers"])
+        self.assertFalse(dry_receipt["deepseek_model_ledger_required"])
+        self.assertEqual(
+            dry_rows_by_criterion["deepseek_model_ledger_if_enabled_required"]["status"],
+            "not_required_manual_or_disabled",
+        )
         self.assertIn("production_completion_stays_blocked", dry_receipt["production_blockers"])
 
         legacy_receipt, legacy_rows = candidate_service._candidate_radar_legacy_retirement_review_receipt(
@@ -27329,9 +27361,74 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "promoted",
         )
         self.assertFalse(promotion_receipt["production_radar_replacement_complete"])
-        self.assertIn("deepseek_model_ledger_if_enabled_required", promotion_receipt["production_blockers"])
+        self.assertNotIn("deepseek_model_ledger_if_enabled_required", promotion_receipt["production_blockers"])
+        self.assertFalse(promotion_receipt["deepseek_model_ledger_required"])
+        self.assertEqual(
+            promotion_rows_by_criterion["deepseek_model_ledger_if_enabled_required"]["status"],
+            "not_required_manual_or_disabled",
+        )
         self.assertIn("durable_ci_or_release_evidence_required", promotion_receipt["production_blockers"])
         self.assertIn("production_completion_stays_blocked", promotion_receipt["production_blockers"])
+
+    def test_candidate_radar_deepseek_model_ledger_blocks_when_auto_enabled(self):
+        packet = {
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "candidate_radar_durable_evidence_recipe": {
+                "status": "candidate_radar_durable_evidence_recipe_ready",
+                "local_recipe_ready": True,
+                "provider_call_ledger_evidence_done": True,
+            },
+            "candidate_radar_production_stage_scope_manifest": {
+                "status": "candidate_radar_production_stage_scope_ready",
+                "local_manifest_ready": True,
+            },
+            "candidate_radar_production_replacement_review_receipt": {
+                "status": "candidate_radar_production_replacement_review_ready_production_blocked",
+                "local_review_ready": True,
+                "review_scope_hash": "e" * 64,
+                "deepseek_model_ledger_complete": False,
+            },
+        }
+        old_mode = os.environ.get("DEEPSEEK_FACTOR_EXPLAIN_MODE")
+        old_auto = os.environ.get("DEEPSEEK_AUTO_EXPLAIN_ENABLED")
+        try:
+            os.environ["DEEPSEEK_FACTOR_EXPLAIN_MODE"] = "auto_after_task"
+            os.environ["DEEPSEEK_AUTO_EXPLAIN_ENABLED"] = "true"
+            receipt, rows = candidate_service._candidate_radar_production_promotion_dry_run_receipt(
+                packet,
+                payload_safe={"operator_approved": True, "review_scope_hash": "e" * 64},
+                explicit_dry_run=True,
+                task_id="unit-test",
+                created_at="2026-06-19T00:00:00Z",
+            )
+        finally:
+            if old_mode is None:
+                os.environ.pop("DEEPSEEK_FACTOR_EXPLAIN_MODE", None)
+            else:
+                os.environ["DEEPSEEK_FACTOR_EXPLAIN_MODE"] = old_mode
+            if old_auto is None:
+                os.environ.pop("DEEPSEEK_AUTO_EXPLAIN_ENABLED", None)
+            else:
+                os.environ["DEEPSEEK_AUTO_EXPLAIN_ENABLED"] = old_auto
+
+        rows_by_criterion = {row["criterion"]: row for row in rows}
+        self.assertTrue(receipt["deepseek_model_ledger_required"])
+        self.assertEqual(receipt["deepseek_factor_explain_mode"], "auto_after_task")
+        self.assertTrue(receipt["deepseek_auto_after_task_enabled"])
+        self.assertIn("deepseek_model_ledger_if_enabled_required", receipt["production_blockers"])
+        self.assertEqual(
+            rows_by_criterion["deepseek_model_ledger_if_enabled_required"]["status"],
+            "pending_model_ledger",
+        )
+        self.assertTrue(rows_by_criterion["deepseek_model_ledger_if_enabled_required"]["production_blocker"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["external_calls_triggered"])
 
     def test_candidate_radar_quick_scan_endpoint_is_button_gated_local_cache_only(self):
         self._with_meta_store()

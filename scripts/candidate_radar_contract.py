@@ -1762,7 +1762,9 @@ def build_contract() -> dict[str, Any]:
             and production_promotion_dry_run.get("durable_evidence_complete") is False
             and int(production_promotion_dry_run.get("local_blocker_count") or 0) == 0
             and production_promotion_dry_run.get("provider_call_ledger_evidence_done") is True
-            and int(production_promotion_dry_run.get("production_blocker_count") or 0) >= 6
+            and production_promotion_dry_run.get("deepseek_model_ledger_required") is False
+            and production_promotion_dry_run.get("deepseek_factor_explain_mode") == "manual_only"
+            and int(production_promotion_dry_run.get("production_blocker_count") or 0) >= 5
             and int(production_promotion_dry_run.get("row_count") or 0) == len(production_promotion_dry_run_rows)
             and _dict(production_promotion_dry_run_rows.get("worker_full_pool_execution_evidence_required")).get(
                 "production_blocker"
@@ -1783,7 +1785,11 @@ def build_contract() -> dict[str, Any]:
             and _dict(production_promotion_dry_run_rows.get("deepseek_model_ledger_if_enabled_required")).get(
                 "production_blocker"
             )
-            is True
+            is False
+            and _dict(production_promotion_dry_run_rows.get("deepseek_model_ledger_if_enabled_required")).get(
+                "status"
+            )
+            == "not_required_manual_or_disabled"
             and _dict(production_promotion_dry_run_rows.get("production_completion_stays_blocked")).get(
                 "production_blocker"
             )
@@ -1843,6 +1849,8 @@ def build_contract() -> dict[str, Any]:
             and legacy_retirement_review.get("durable_evidence_complete") is False
             and int(legacy_retirement_review.get("local_blocker_count") or 0) == 0
             and legacy_retirement_review.get("provider_call_ledger_evidence_done") is True
+            and legacy_retirement_review.get("deepseek_model_ledger_required") is False
+            and legacy_retirement_review.get("deepseek_factor_explain_mode") == "manual_only"
             and int(legacy_retirement_review.get("production_blocker_count") or 0) >= 5
             and int(legacy_retirement_review.get("row_count") or 0) == len(legacy_retirement_review_rows)
             and _dict(legacy_retirement_review_rows.get("worker_full_pool_execution_required")).get(
@@ -1861,7 +1869,9 @@ def build_contract() -> dict[str, Any]:
             and _dict(legacy_retirement_review_rows.get("deepseek_model_ledger_if_enabled_required")).get(
                 "production_blocker"
             )
-            is True
+            is False
+            and _dict(legacy_retirement_review_rows.get("deepseek_model_ledger_if_enabled_required")).get("status")
+            == "not_required_manual_or_disabled"
             and _dict(legacy_retirement_review_rows.get("production_completion_stays_blocked")).get(
                 "production_blocker"
             )
@@ -1932,6 +1942,8 @@ def build_contract() -> dict[str, Any]:
             and production_promotion_review.get("durable_evidence_complete") is False
             and int(production_promotion_review.get("local_blocker_count") or 0) == 0
             and production_promotion_review.get("provider_call_ledger_evidence_done") is True
+            and production_promotion_review.get("deepseek_model_ledger_required") is False
+            and production_promotion_review.get("deepseek_factor_explain_mode") == "manual_only"
             and int(production_promotion_review.get("production_blocker_count") or 0) >= 5
             and int(production_promotion_review.get("row_count") or 0) == len(production_promotion_review_rows)
             and _dict(production_promotion_review_rows.get("worker_full_pool_execution_evidence_required")).get(
@@ -1953,7 +1965,9 @@ def build_contract() -> dict[str, Any]:
             and _dict(production_promotion_review_rows.get("deepseek_model_ledger_if_enabled_required")).get(
                 "production_blocker"
             )
-            is True
+            is False
+            and _dict(production_promotion_review_rows.get("deepseek_model_ledger_if_enabled_required")).get("status")
+            == "not_required_manual_or_disabled"
             and _dict(production_promotion_review_rows.get("browser_visual_performance_promotion_required")).get(
                 "passed"
             )
@@ -2074,7 +2088,9 @@ def build_contract() -> dict[str, Any]:
             and _dict(durable_evidence_rows.get("deepseek_model_ledger_if_enabled_required")).get(
                 "production_blocker"
             )
-            is True
+            is False
+            and _dict(durable_evidence_rows.get("deepseek_model_ledger_if_enabled_required")).get("status")
+            == "not_required_manual_or_disabled"
             and _durable_row_blocked_or_local_visible(
                 durable_evidence_rows.get("legacy_retirement_review_required")
             )

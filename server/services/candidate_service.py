@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from config import get_deepseek_auto_explain_enabled, get_deepseek_factor_explain_mode
 from storage.sqlite_meta import SQLiteMetaStore
 from server.services import packet_service, task_service, tushare_task_service
 
@@ -8501,6 +8502,34 @@ def _candidate_radar_durable_evidence_recipe_row(
     }
 
 
+def _candidate_radar_deepseek_model_ledger_requirement(packet: Mapping[str, Any]) -> dict[str, Any]:
+    mode = get_deepseek_factor_explain_mode()
+    auto_enabled = get_deepseek_auto_explain_enabled(default=False)
+    quant_acceptance = _as_dict(packet.get("search_quant_provider_model_acceptance_receipt"))
+    production_review = _as_dict(packet.get("candidate_radar_production_replacement_review_receipt"))
+    explicit_model_execution = bool(
+        packet.get("deepseek_called") is True
+        or packet.get("model_execution_implemented") is True
+        or quant_acceptance.get("deepseek_model_execution_done") is True
+        or quant_acceptance.get("deepseek_called") is True
+        or production_review.get("deepseek_called") is True
+    )
+    required = bool((mode == "auto_after_task" and auto_enabled) or explicit_model_execution)
+    if explicit_model_execution:
+        reason = "explicit_model_execution_observed"
+    elif mode == "auto_after_task" and auto_enabled:
+        reason = "auto_after_task_enabled"
+    else:
+        reason = "manual_or_disabled_mode_no_model_execution"
+    return {
+        "required": required,
+        "mode": mode,
+        "auto_after_task_enabled": auto_enabled,
+        "explicit_model_execution_observed": explicit_model_execution,
+        "reason": reason,
+    }
+
+
 def _candidate_radar_durable_evidence_recipe(
     packet: Mapping[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -8588,6 +8617,8 @@ def _candidate_radar_durable_evidence_recipe(
     )
     browser_visual_perf_done = local_browser_visual_perf_reviewed
     deepseek_model_ledger_done = False
+    deepseek_ledger_requirement = _candidate_radar_deepseek_model_ledger_requirement(packet)
+    deepseek_model_ledger_required = deepseek_ledger_requirement["required"]
     legacy_retirement_ready = promotion.get("legacy_retirement_ready") is True
     legacy_retirement_review_done = legacy_retirement_review.get("local_review_ready") is True
     promotion_ready = promotion.get("promotion_ready") is True
@@ -8802,11 +8833,21 @@ def _candidate_radar_durable_evidence_recipe(
         _candidate_radar_durable_evidence_recipe_row(
             "deepseek_model_ledger_if_enabled_required",
             "durable_evidence",
-            "pending_optional_model_ledger",
+            "completed"
+            if deepseek_model_ledger_done
+            else "pending_model_ledger"
+            if deepseek_model_ledger_required
+            else "not_required_manual_or_disabled",
             passed=deepseek_model_ledger_done,
             local_surface_required=False,
-            production_blocker=True,
-            evidence="DeepSeek is not called by the recipe; future deep research must include model ledger, sanitizer, hashes, token usage, and parse_failed discard.",
+            production_blocker=deepseek_model_ledger_required and not deepseek_model_ledger_done,
+            evidence=(
+                f"required={deepseek_model_ledger_required}; "
+                f"mode={deepseek_ledger_requirement['mode']}; "
+                f"auto_after_task_enabled={deepseek_ledger_requirement['auto_after_task_enabled']}; "
+                f"explicit_model_execution_observed={deepseek_ledger_requirement['explicit_model_execution_observed']}; "
+                f"deepseek_model_ledger_complete={deepseek_model_ledger_done}"
+            ),
             next_action="Only attach DeepSeek evidence from explicit button/task execution, never from render.",
             recommended_order=17,
         ),
@@ -8884,6 +8925,11 @@ def _candidate_radar_durable_evidence_recipe(
         "search_quant_provider_model_evidence_done": search_quant_provider_model_evidence_done,
         "provider_call_ledger_evidence_done": provider_call_ledger_evidence_done,
         "browser_visual_performance_reviewed": browser_visual_perf_done,
+        "deepseek_model_ledger_required": deepseek_model_ledger_required,
+        "deepseek_factor_explain_mode": deepseek_ledger_requirement["mode"],
+        "deepseek_auto_after_task_enabled": deepseek_ledger_requirement["auto_after_task_enabled"],
+        "deepseek_model_execution_observed": deepseek_ledger_requirement["explicit_model_execution_observed"],
+        "deepseek_model_ledger_requirement_reason": deepseek_ledger_requirement["reason"],
         "deepseek_model_ledger_complete": deepseek_model_ledger_done,
         "legacy_retirement_review_done": legacy_retirement_review_done,
         "production_promotion_review_done": production_promotion_review_done,
@@ -10154,6 +10200,8 @@ def _candidate_radar_production_promotion_dry_run_receipt(
         or provider_backed_done
     )
     model_ledger_done = production_review.get("deepseek_model_ledger_complete") is True
+    deepseek_ledger_requirement = _candidate_radar_deepseek_model_ledger_requirement(packet)
+    deepseek_model_ledger_required = deepseek_ledger_requirement["required"]
     browser_promoted = (
         production_review.get("browser_visual_performance_promoted") is True
         or _candidate_stage_direct_evidence_done(packet, "browser_visual_performance_promotion")
@@ -10270,11 +10318,21 @@ def _candidate_radar_production_promotion_dry_run_receipt(
         ),
         _candidate_radar_production_promotion_dry_run_row(
             "deepseek_model_ledger_if_enabled_required",
-            "completed" if model_ledger_done else "pending_model_ledger",
+            "completed"
+            if model_ledger_done
+            else "pending_model_ledger"
+            if deepseek_model_ledger_required
+            else "not_required_manual_or_disabled",
             passed=model_ledger_done,
             local_blocker=False,
-            production_blocker=True,
-            evidence=f"deepseek_model_ledger_complete={model_ledger_done}",
+            production_blocker=deepseek_model_ledger_required and not model_ledger_done,
+            evidence=(
+                f"required={deepseek_model_ledger_required}; "
+                f"mode={deepseek_ledger_requirement['mode']}; "
+                f"auto_after_task_enabled={deepseek_ledger_requirement['auto_after_task_enabled']}; "
+                f"explicit_model_execution_observed={deepseek_ledger_requirement['explicit_model_execution_observed']}; "
+                f"deepseek_model_ledger_complete={model_ledger_done}"
+            ),
             next_action="If DeepSeek is enabled for radar deep research, attach model ledger, sanitizer, cost, hash, and parse-failed evidence.",
             recommended_order=10,
         ),
@@ -10357,6 +10415,8 @@ def _candidate_radar_production_promotion_dry_run_receipt(
         "worker_full_pool_done": worker_full_pool_done,
         "worker_deep_scan_done": worker_deep_scan_done,
         "provider_backed_done": provider_backed_done,
+        "deepseek_model_ledger_required": deepseek_model_ledger_required,
+        "deepseek_model_ledger_requirement_reason": deepseek_ledger_requirement["reason"],
         "model_ledger_done": model_ledger_done,
         "browser_promoted": browser_promoted,
         "legacy_retirement_ready": legacy_retirement_ready,
@@ -10396,6 +10456,11 @@ def _candidate_radar_production_promotion_dry_run_receipt(
         "worker_deep_scan_execution_done": worker_deep_scan_done,
         "provider_backed_acceptance_done": provider_backed_done,
         "provider_call_ledger_evidence_done": provider_call_ledger_evidence_done,
+        "deepseek_model_ledger_required": deepseek_model_ledger_required,
+        "deepseek_factor_explain_mode": deepseek_ledger_requirement["mode"],
+        "deepseek_auto_after_task_enabled": deepseek_ledger_requirement["auto_after_task_enabled"],
+        "deepseek_model_execution_observed": deepseek_ledger_requirement["explicit_model_execution_observed"],
+        "deepseek_model_ledger_requirement_reason": deepseek_ledger_requirement["reason"],
         "deepseek_model_ledger_complete": model_ledger_done,
         "browser_visual_performance_promoted": browser_promoted,
         "durable_evidence_complete": durable_evidence_complete,
@@ -10450,6 +10515,24 @@ def _attach_candidate_radar_production_promotion_dry_run(packet: Mapping[str, An
         ]
         if not rows:
             rows = [row for row in _as_list(receipt.get("rows")) if isinstance(row, dict)]
+        if (
+            receipt.get("explicit_promotion_dry_run_task_done") is True
+            and "deepseek_model_ledger_required" not in receipt
+        ):
+            refreshed_receipt, refreshed_rows = _candidate_radar_production_promotion_dry_run_receipt(
+                view,
+                payload_safe={
+                    "operator_approved": receipt.get("operator_approved") is True,
+                    "review_scope_hash": receipt.get("requested_review_scope_hash")
+                    or receipt.get("production_replacement_review_scope_hash")
+                    or "",
+                },
+                explicit_dry_run=True,
+                task_id=str(receipt.get("task_id") or ""),
+                created_at=str(receipt.get("created_at") or ""),
+            )
+            receipt = refreshed_receipt
+            rows = refreshed_rows
     else:
         receipt, rows = _candidate_radar_production_promotion_dry_run_receipt(view)
     counts = dict(_as_dict(view.get("counts")))
@@ -10591,6 +10674,8 @@ def _candidate_radar_production_promotion_review_receipt(
         or provider_backed_done
     )
     model_ledger_done = production_review.get("deepseek_model_ledger_complete") is True
+    deepseek_ledger_requirement = _candidate_radar_deepseek_model_ledger_requirement(packet)
+    deepseek_model_ledger_required = deepseek_ledger_requirement["required"]
     production_review_browser_promoted = (
         production_review.get("browser_visual_performance_promoted") is True
         or _candidate_stage_direct_evidence_done(packet, "browser_visual_performance_promotion")
@@ -10766,11 +10851,21 @@ def _candidate_radar_production_promotion_review_receipt(
         ),
         _candidate_radar_production_promotion_review_row(
             "deepseek_model_ledger_if_enabled_required",
-            "completed" if model_ledger_done else "pending_model_ledger",
+            "completed"
+            if model_ledger_done
+            else "pending_model_ledger"
+            if deepseek_model_ledger_required
+            else "not_required_manual_or_disabled",
             passed=model_ledger_done,
             local_blocker=False,
-            production_blocker=True,
-            evidence=f"deepseek_model_ledger_complete={model_ledger_done}",
+            production_blocker=deepseek_model_ledger_required and not model_ledger_done,
+            evidence=(
+                f"required={deepseek_model_ledger_required}; "
+                f"mode={deepseek_ledger_requirement['mode']}; "
+                f"auto_after_task_enabled={deepseek_ledger_requirement['auto_after_task_enabled']}; "
+                f"explicit_model_execution_observed={deepseek_ledger_requirement['explicit_model_execution_observed']}; "
+                f"deepseek_model_ledger_complete={model_ledger_done}"
+            ),
             next_action="If DeepSeek is enabled for radar, attach model ledger, sanitizer, parse-failed, and cost evidence.",
             recommended_order=12,
         ),
@@ -10906,6 +11001,11 @@ def _candidate_radar_production_promotion_review_receipt(
         "worker_deep_scan_execution_done": worker_deep_scan_done,
         "provider_backed_acceptance_done": provider_backed_done,
         "provider_call_ledger_evidence_done": provider_call_ledger_evidence_done,
+        "deepseek_model_ledger_required": deepseek_model_ledger_required,
+        "deepseek_factor_explain_mode": deepseek_ledger_requirement["mode"],
+        "deepseek_auto_after_task_enabled": deepseek_ledger_requirement["auto_after_task_enabled"],
+        "deepseek_model_execution_observed": deepseek_ledger_requirement["explicit_model_execution_observed"],
+        "deepseek_model_ledger_requirement_reason": deepseek_ledger_requirement["reason"],
         "deepseek_model_ledger_complete": model_ledger_done,
         "browser_visual_performance_promoted": browser_promoted,
         "browser_visual_performance_promotion_source": (
@@ -10973,6 +11073,7 @@ def _attach_candidate_radar_production_promotion_review(packet: Mapping[str, Any
         if receipt.get("explicit_production_promotion_review_done") is True and (
             receipt.get("browser_visual_performance_promoted") is not True
             or (provider_ledger_ready and receipt.get("provider_call_ledger_evidence_done") is not True)
+            or "deepseek_model_ledger_required" not in receipt
         ):
             refreshed_receipt, refreshed_rows = _candidate_radar_production_promotion_review_receipt(
                 view,
@@ -11122,6 +11223,8 @@ def _candidate_radar_legacy_retirement_review_receipt(
         or provider_backed_done
     )
     model_ledger_done = production_review.get("deepseek_model_ledger_complete") is True
+    deepseek_ledger_requirement = _candidate_radar_deepseek_model_ledger_requirement(packet)
+    deepseek_model_ledger_required = deepseek_ledger_requirement["required"]
     browser_promoted = (
         production_review.get("browser_visual_performance_promoted") is True
         or _candidate_stage_direct_evidence_done(packet, "browser_visual_performance_promotion")
@@ -11245,11 +11348,21 @@ def _candidate_radar_legacy_retirement_review_receipt(
         ),
         _candidate_radar_legacy_retirement_review_row(
             "deepseek_model_ledger_if_enabled_required",
-            "completed" if model_ledger_done else "pending_model_ledger",
+            "completed"
+            if model_ledger_done
+            else "pending_model_ledger"
+            if deepseek_model_ledger_required
+            else "not_required_manual_or_disabled",
             passed=model_ledger_done,
             local_blocker=False,
-            production_blocker=True,
-            evidence=f"deepseek_model_ledger_complete={model_ledger_done}",
+            production_blocker=deepseek_model_ledger_required and not model_ledger_done,
+            evidence=(
+                f"required={deepseek_model_ledger_required}; "
+                f"mode={deepseek_ledger_requirement['mode']}; "
+                f"auto_after_task_enabled={deepseek_ledger_requirement['auto_after_task_enabled']}; "
+                f"explicit_model_execution_observed={deepseek_ledger_requirement['explicit_model_execution_observed']}; "
+                f"deepseek_model_ledger_complete={model_ledger_done}"
+            ),
             next_action="If DeepSeek is enabled for radar, attach model ledger, sanitizer, parse-failed, and cost evidence.",
             recommended_order=11,
         ),
@@ -11369,6 +11482,11 @@ def _candidate_radar_legacy_retirement_review_receipt(
         "worker_deep_scan_execution_done": worker_deep_scan_done,
         "provider_backed_acceptance_done": provider_backed_done,
         "provider_call_ledger_evidence_done": provider_call_ledger_evidence_done,
+        "deepseek_model_ledger_required": deepseek_model_ledger_required,
+        "deepseek_factor_explain_mode": deepseek_ledger_requirement["mode"],
+        "deepseek_auto_after_task_enabled": deepseek_ledger_requirement["auto_after_task_enabled"],
+        "deepseek_model_execution_observed": deepseek_ledger_requirement["explicit_model_execution_observed"],
+        "deepseek_model_ledger_requirement_reason": deepseek_ledger_requirement["reason"],
         "deepseek_model_ledger_complete": model_ledger_done,
         "browser_visual_performance_promoted": browser_promoted,
         "durable_evidence_complete": durable_evidence_complete,
@@ -11428,8 +11546,10 @@ def _attach_candidate_radar_legacy_retirement_review(packet: Mapping[str, Any]) 
         )
         if (
             receipt.get("explicit_legacy_retirement_review_done") is True
-            and provider_ledger_ready
-            and receipt.get("provider_call_ledger_evidence_done") is not True
+            and (
+                (provider_ledger_ready and receipt.get("provider_call_ledger_evidence_done") is not True)
+                or "deepseek_model_ledger_required" not in receipt
+            )
         ):
             refreshed_receipt, refreshed_rows = _candidate_radar_legacy_retirement_review_receipt(
                 view,
