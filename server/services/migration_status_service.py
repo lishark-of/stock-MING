@@ -1440,7 +1440,6 @@ def _latest_factor_universe_direct_research_evidence_summary() -> dict[str, Any]
         and worker_receipt.get("worker_started") is False
         and worker_receipt.get("celery_worker_started") is False
         and worker_receipt.get("redis_pinged") is False
-        and worker_receipt.get("full_pool_validation_done") is False
         and worker_receipt.get("production_factor_universe_complete") is False
         and worker_receipt.get("external_calls_triggered") is False
         and worker_receipt.get("tushare_called") is False
@@ -1486,7 +1485,7 @@ def _latest_factor_universe_direct_research_evidence_summary() -> dict[str, Any]
         "neutralization_done": worker_receipt.get("neutralization_done") is True,
         "factor_combination_research_done": worker_batch_execution_done,
         "result_summary_persisted": worker_batch_execution_done,
-        "full_pool_validation_done": False,
+        "full_pool_validation_done": worker_receipt.get("full_pool_validation_done") is True,
         "production_factor_universe_complete": False,
         "page_render_starts_full_pool": False,
         "frontend_computes_rank_zscore": False,
@@ -5220,7 +5219,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "cross_sectional_rank_zscore_done": direct_evidence.get("cross_sectional_rank_zscore_done") is True,
                 "neutralization_done": direct_evidence.get("neutralization_done") is True,
                 "factor_combination_research_done": direct_evidence.get("factor_combination_research_done") is True,
-                "full_pool_validation_done": False,
+                "full_pool_validation_done": direct_evidence.get("full_pool_validation_done") is True,
                 "production_factor_universe_complete": False,
                 "page_render_starts_full_pool": False,
                 "frontend_computes_rank_zscore": False,

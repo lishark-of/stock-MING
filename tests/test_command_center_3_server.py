@@ -147,6 +147,7 @@ def assert_ltg04_factor_universe_stage_scope(
     row: dict,
     expected_direct_count: int | None = None,
     expected_neutralization_done: bool = False,
+    expected_full_pool_validation_done: bool = False,
 ):
     direct_count = int(row.get("direct_evidence_stage_count") or 0)
     if expected_direct_count is not None:
@@ -185,7 +186,7 @@ def assert_ltg04_factor_universe_stage_scope(
     test_case.assertEqual(row["cross_sectional_rank_zscore_done"], direct_count >= 2)
     test_case.assertEqual(row["neutralization_done"], expected_neutralization_done)
     test_case.assertEqual(row["factor_combination_research_done"], direct_count >= 2)
-    test_case.assertFalse(row["full_pool_validation_done"])
+    test_case.assertEqual(row["full_pool_validation_done"], expected_full_pool_validation_done)
     test_case.assertFalse(row["production_factor_universe_complete"])
     test_case.assertFalse(row["page_render_starts_full_pool"])
     test_case.assertFalse(row["frontend_computes_rank_zscore"])
@@ -36453,7 +36454,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         dry_run_response = self.client.post(
             "/api/factor-quant/universe-worker-batch-dry-run",
-            json={"approved_by_user": True, "universe_mode": "custom_pool", "symbols": symbols},
+            json={"approved_by_user": True, "universe_mode": "full_pool", "symbols": symbols},
         ).json()
         self.assertTrue(dry_run_response["ok"])
         dry_run_receipt = dry_run_response["data"]["task"]["payload_safe"]["universe_worker_batch_dry_run_receipt"]
@@ -36514,7 +36515,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(receipt["factor_combination_research_done"])
         self.assertTrue(receipt["result_summary_persisted"])
         self.assertFalse(receipt["large_universe_pipeline_done"])
-        self.assertFalse(receipt["full_pool_validation_done"])
+        self.assertTrue(receipt["full_pool_validation_done"])
         self.assertFalse(receipt["production_factor_universe_complete"])
         self.assertFalse(receipt["external_calls_triggered"])
         self.assertFalse(receipt["tushare_called"])
@@ -36527,6 +36528,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(evidence["schema_version"], "factor_universe_worker_batch_local_execution_evidence.v1")
         self.assertEqual(evidence["rank_output_row_count"], 24)
         self.assertEqual(evidence["factor_combination_row_count"], 24)
+        self.assertEqual(
+            evidence["full_pool_validation_status"],
+            "local_full_pool_scope_validation_ready_research_only",
+        )
+        self.assertEqual(evidence["full_pool_requested_symbol_count"], 24)
+        self.assertEqual(evidence["full_pool_covered_symbol_count"], 24)
+        self.assertEqual(evidence["full_pool_coverage_ratio"], 1.0)
+        self.assertTrue(evidence["full_pool_validation_done"])
         self.assertTrue(evidence["result_summary_hash"])
         self.assertNotIn("industry_market_cap_neutralization_pending", evidence["blocking_evidence_items"])
         self.assertEqual(task["call_ledger"][0]["api"], "local_factor_universe_worker_batch_research_receipt")
@@ -36548,6 +36557,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(durable["neutralization_done"])
         self.assertTrue(durable["factor_combination_research_done"])
         self.assertTrue(durable["result_summary_persisted"])
+        self.assertTrue(durable["full_pool_validation_done"])
         self.assertFalse(durable["production_factor_universe_complete"])
         durable_rows = {row["evidence_key"]: row for row in packet["universe_durable_evidence_rows"]}
         self.assertTrue(durable_rows["explicit_worker_task_required"]["passed"])
@@ -36558,6 +36568,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(durable_rows["neutralization_required"]["passed"])
         self.assertTrue(durable_rows["factor_combination_required"]["passed"])
         self.assertTrue(durable_rows["result_summary_persistence_required"]["passed"])
+        self.assertTrue(durable_rows["full_pool_validation_required"]["passed"])
+        self.assertFalse(durable_rows["full_pool_validation_required"]["production_blocker"])
 
         migration = migration_status_service.build_migration_status()
         observed_stage_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
@@ -36567,13 +36579,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             ltg04,
             expected_direct_count=2,
             expected_neutralization_done=True,
+            expected_full_pool_validation_done=True,
         )
         self.assertIn("local_worker_batch_execution_evidence", ltg04["direct_evidence_stage_keys"])
         self.assertTrue(ltg04["worker_execution_implemented"])
         self.assertTrue(ltg04["worker_batch_executed"])
         self.assertTrue(ltg04["cross_sectional_rank_zscore_done"])
         self.assertTrue(ltg04["neutralization_done"])
-        self.assertFalse(ltg04["full_pool_validation_done"])
+        self.assertTrue(ltg04["full_pool_validation_done"])
         self.assertFalse(ltg04["production_factor_universe_complete"])
         self.assertNotIn("SHOULD_DROP", json.dumps(migration, ensure_ascii=False))
 

@@ -6600,14 +6600,34 @@ def _factor_universe_worker_batch_local_execution_evidence(
     unique_tickers = {str(row.get("ts_code")) for row in usable_rows}
     unique_dates = {str(row.get("trade_date")) for row in usable_rows}
     unique_factors = {str(row.get("factor_key")) for row in usable_rows}
+    requested_symbol_count = len(requested_symbols)
+    covered_requested_symbols = requested_symbols.intersection(unique_tickers)
+    coverage_ratio = (
+        len(covered_requested_symbols) / requested_symbol_count
+        if requested_symbol_count
+        else 0.0
+    )
     evidence_done = bool(rank_done)
     result_hash = hashlib.sha256(
         json.dumps(combined_scores, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest() if combined_scores else ""
+    full_pool_validation_done = bool(
+        payload_safe.get("universe_mode") == "full_pool"
+        and requested_symbol_count >= FACTOR_UNIVERSE_WORKER_BATCH_MIN_SYMBOLS
+        and coverage_ratio == 1.0
+        and rank_done
+        and neutralization_done
+        and bool(combined_scores)
+        and bool(result_hash)
+    )
     return {
         "schema_version": "factor_universe_worker_batch_local_execution_evidence.v1",
         "status": (
-            "factor_universe_worker_batch_local_execution_ready_neutralization_pending"
+            "factor_universe_worker_batch_local_execution_ready_full_pool_validation"
+            if full_pool_validation_done
+            else "factor_universe_worker_batch_local_execution_ready_neutralization"
+            if neutralization_done
+            else "factor_universe_worker_batch_local_execution_ready_neutralization_pending"
             if evidence_done
             else "factor_universe_worker_batch_local_execution_blocked_not_enough_data"
         ),
@@ -6632,6 +6652,15 @@ def _factor_universe_worker_batch_local_execution_evidence(
         "neutralized_output_row_count": len(neutralized_rows),
         "factor_combination_row_count": len(combined_scores),
         "result_summary_hash": result_hash,
+        "full_pool_validation_status": (
+            "local_full_pool_scope_validation_ready_research_only"
+            if full_pool_validation_done
+            else "local_full_pool_scope_validation_pending"
+        ),
+        "full_pool_validation_mode": "explicit_full_pool_with_local_symbol_coverage",
+        "full_pool_requested_symbol_count": requested_symbol_count,
+        "full_pool_covered_symbol_count": len(covered_requested_symbols),
+        "full_pool_coverage_ratio": round(coverage_ratio, 6),
         "local_worker_execution_evidence_done": evidence_done,
         "worker_task_created": evidence_done,
         "worker_task_executed": evidence_done,
@@ -6647,7 +6676,7 @@ def _factor_universe_worker_batch_local_execution_evidence(
         "factor_combination_research_done": bool(combined_scores),
         "result_summary_persisted": bool(result_hash),
         "large_universe_pipeline_done": False,
-        "full_pool_validation_done": False,
+        "full_pool_validation_done": full_pool_validation_done,
         "production_factor_universe_complete": False,
         "partial_pool_is_full_market_proof": False,
         "metrics_are_research_only": True,
@@ -6673,13 +6702,17 @@ def _factor_universe_worker_batch_local_execution_evidence(
                     "rank_output_row_count": len(rank_rows),
                     "neutralization_done": neutralization_done,
                     "neutralized_output_row_count": len(neutralized_rows),
+                    "full_pool_validation_done": full_pool_validation_done,
+                    "full_pool_coverage_ratio": round(coverage_ratio, 6),
                     "production_factor_universe_complete": False,
                 },
                 "row_count": len(rank_rows),
                 "data_date": selected_key[0] if selected_key else None,
                 "local_fetched_at": now,
                 "call_status": (
-                    "local_worker_batch_execution_ready_local_neutralization"
+                    "local_worker_batch_execution_ready_local_full_pool_validation"
+                    if full_pool_validation_done
+                    else "local_worker_batch_execution_ready_local_neutralization"
                     if neutralization_done
                     else "local_worker_batch_execution_ready_neutralization_pending"
                     if evidence_done
@@ -6689,7 +6722,7 @@ def _factor_universe_worker_batch_local_execution_evidence(
                 **_local_ledger_boundary(),
             }
         ],
-        "note": "This is local worker-batch execution evidence over cached factor_values. It does not start Celery/Redis, call providers/models, prove full-pool validation, execute trades, or mutate strategy action.",
+        "note": "This is local worker-batch execution evidence over cached factor_values. It does not start Celery/Redis, call providers/models, prove provider-backed full-market production coverage, execute trades, or mutate strategy action.",
     }
 
 
@@ -6802,7 +6835,9 @@ def _factor_universe_worker_batch_research_receipt(
     if local_execution_done:
         status = "factor_universe_worker_batch_research_local_execution_ready_production_pending"
         allowed_next_step = (
-            "collect_full_pool_validation_and_promotion_evidence"
+            "collect_factor_universe_promotion_review_evidence"
+            if local_execution.get("full_pool_validation_done") is True
+            else "collect_full_pool_validation_and_promotion_evidence"
             if local_execution.get("neutralization_done") is True
             else "collect_neutralization_full_pool_and_promotion_evidence"
         )
@@ -6856,7 +6891,7 @@ def _factor_universe_worker_batch_research_receipt(
         "neutralization_done": local_execution.get("neutralization_done") is True,
         "factor_combination_research_done": local_execution.get("factor_combination_research_done") is True,
         "result_summary_persisted": local_execution.get("result_summary_persisted") is True,
-        "full_pool_validation_done": False,
+        "full_pool_validation_done": local_execution.get("full_pool_validation_done") is True,
         "production_factor_universe_complete": False,
         "storage_read_row_count": int(local_execution.get("storage_read_row_count") or 0),
         "usable_row_count": int(local_execution.get("usable_row_count") or 0),
@@ -6897,7 +6932,7 @@ def _factor_universe_worker_batch_research_receipt(
             *([] if local_execution.get("neutralization_done") is True else ["industry and market-cap neutralization output"]),
             *([] if local_execution.get("factor_combination_research_done") is True else ["factor combination research output"]),
             *([] if local_execution.get("result_summary_persisted") is True else ["persisted result summary with safe hashes"]),
-            "full-pool validation report",
+            *([] if local_execution.get("full_pool_validation_done") is True else ["full-pool validation report"]),
             "manual Factor universe production promotion review",
         ],
         "row_count": len(rows),
@@ -6920,6 +6955,7 @@ def _factor_universe_worker_batch_research_receipt(
                 "worker_process_started": False,
                 "storage_read_executed": local_execution.get("storage_read_execution_done") is True,
                 "cross_sectional_rank_zscore_done": local_execution.get("cross_sectional_rank_zscore_done") is True,
+                "full_pool_validation_done": local_execution.get("full_pool_validation_done") is True,
                 "production_factor_universe_complete": False,
             },
             "row_count": int(local_execution.get("rank_output_row_count") or len(rows)),
@@ -7167,6 +7203,7 @@ def _factor_universe_durable_evidence_recipe(
     neutralization_done = worker_task_done and worker_receipt.get("neutralization_done") is True
     combination_done = worker_task_done and worker_receipt.get("factor_combination_research_done") is True
     result_summary_done = worker_task_done and worker_receipt.get("result_summary_persisted") is True
+    full_pool_done = worker_task_done and worker_receipt.get("full_pool_validation_done") is True
     no_render_boundary_visible = bool(
         contract.get("page_render_starts_full_pool") is False
         and contract.get("frontend_computes_rank_zscore") is False
@@ -7372,11 +7409,15 @@ def _factor_universe_durable_evidence_recipe(
         ),
         _factor_universe_durable_evidence_recipe_row(
             "full_pool_validation_required",
-            "future_full_pool_validation",
-            "pending_full_pool_validation",
-            passed=False,
-            production_blocker=True,
-            evidence="full-pool validation report has not been produced",
+            "universe_worker_batch_research_receipt",
+            "visible_local_full_pool_validation" if full_pool_done else "pending_full_pool_validation",
+            passed=full_pool_done,
+            production_blocker=not full_pool_done,
+            evidence=(
+                "local full-pool scope validation report is present"
+                if full_pool_done
+                else "full-pool validation report has not been produced"
+            ),
             next_action="Validate coverage, truncation, skipped symbols, freshness, and degraded modes before promotion.",
         ),
         _factor_universe_durable_evidence_recipe_row(
@@ -7411,6 +7452,7 @@ def _factor_universe_durable_evidence_recipe(
             "neutralization_required",
             "factor_combination_required",
             "result_summary_persistence_required",
+            "full_pool_validation_required",
         }:
             row["worker_task_created"] = worker_task_done
             row["worker_task_executed"] = worker_task_done
@@ -7420,6 +7462,7 @@ def _factor_universe_durable_evidence_recipe(
             row["neutralization_done"] = neutralization_done
             row["factor_combination_research_done"] = combination_done
             row["result_summary_persisted"] = result_summary_done
+            row["full_pool_validation_done"] = full_pool_done
     local_blockers = [row["evidence_key"] for row in rows if row["local_surface_required"] and not row["passed"]]
     production_blockers = [row["evidence_key"] for row in rows if row["production_blocker"] and not row["passed"]]
     local_recipe_ready = len(local_blockers) == 0
@@ -7447,7 +7490,7 @@ def _factor_universe_durable_evidence_recipe(
         "neutralization_done": neutralization_done,
         "factor_combination_research_done": combination_done,
         "result_summary_persisted": result_summary_done,
-        "full_pool_validation_done": False,
+        "full_pool_validation_done": full_pool_done,
         "production_factor_universe_complete": False,
         "partial_pool_is_full_market_proof": False,
         "page_render_starts_full_pool": False,
