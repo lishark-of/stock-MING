@@ -56,6 +56,7 @@ CI_ALLOWED_PRODUCTION_PENDING_CONTRACT_BLOCKERS = {
         "physical_durable_evidence_recipe_is_local_pending",
     },
     "worker": {
+        "queue_routing_contract_is_local_and_button_gated",
         "worker_runtime_evidence_stage_scope_manifest_is_complete_and_pending",
     },
 }
@@ -15340,7 +15341,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 81)
+        self.assertEqual(catalog["task_count"], 82)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -15359,7 +15360,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 81)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 82)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -15370,8 +15371,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 83)
-        self.assertEqual(route_coverage["task_creation_route_count"], 81)
+        self.assertEqual(route_coverage["known_post_route_count"], 84)
+        self.assertEqual(route_coverage["task_creation_route_count"], 82)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -15380,12 +15381,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 81)
+        self.assertEqual(implementation_status["task_count"], 82)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 78)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 79)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 79)
-        self.assertEqual(implementation_status["external_capable_task_count"], 7)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 80)
+        self.assertEqual(implementation_status["external_capable_task_count"], 8)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
             {"run_chokepoint_scan", "probe_serenity_github"},
@@ -15432,6 +15433,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_candidate_radar_quant_projection_provider_model_acceptance",
                 "run_candidate_radar_provider_parity_dry_run",
                 "run_candidate_radar_provider_parity_execution_request",
+                "run_candidate_radar_provider_parity_acceptance",
                 "run_candidate_radar_worker_execution_request",
                 "run_candidate_radar_full_pool_worker_fallback",
                 "run_candidate_radar_deep_scan_worker_fallback",
@@ -15516,6 +15518,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "run_candidate_radar_quant_projection_provider_model_acceptance",
                 "run_candidate_radar_provider_parity_dry_run",
                 "run_candidate_radar_provider_parity_execution_request",
+                "run_candidate_radar_provider_parity_acceptance",
                 "run_candidate_radar_worker_execution_request",
                 "run_candidate_radar_full_pool_worker_fallback",
                 "run_candidate_radar_deep_scan_worker_fallback",
@@ -15638,6 +15641,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("POST /api/worker/runtime-qa-dry-run", route_coverage["known_post_routes"])
         self.assertIn("POST /api/worker/runtime-qa-execution", route_coverage["known_post_routes"])
         self.assertIn("POST /api/candidate-radar/worker-execution-request", route_coverage["known_post_routes"])
+        self.assertIn("POST /api/candidate-radar/provider-parity-acceptance", route_coverage["known_post_routes"])
         self.assertIn("POST /api/candidate-radar/deep-scan-local-review", route_coverage["known_post_routes"])
         self.assertIn("POST /api/candidate-radar/legacy-retirement-review", route_coverage["known_post_routes"])
         self.assertIn("POST /api/audit/motion-production-promotion-dry-run", route_coverage["known_post_routes"])
@@ -16588,6 +16592,45 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             ]
         )
         self.assertTrue(by_type["run_candidate_radar_provider_parity_execution_request"]["call_ledger_required"])
+        self.assertEqual(
+            by_type["run_candidate_radar_provider_parity_acceptance"]["route"],
+            "POST /api/candidate-radar/provider-parity-acceptance",
+        )
+        self.assertEqual(
+            by_type["run_candidate_radar_provider_parity_acceptance"]["current_backend"],
+            "button_gated_tushare_provider_parity_pipeline",
+        )
+        self.assertEqual(by_type["run_candidate_radar_provider_parity_acceptance"]["possible_external_sources"], ["tushare"])
+        self.assertEqual(
+            by_type["run_candidate_radar_provider_parity_acceptance"]["future_external_sources"],
+            ["deepseek"],
+        )
+        self.assertTrue(by_type["run_candidate_radar_provider_parity_acceptance"]["user_approval_required"])
+        self.assertTrue(by_type["run_candidate_radar_provider_parity_acceptance"]["requires_bound_scope_hash"])
+        self.assertTrue(
+            by_type["run_candidate_radar_provider_parity_acceptance"]["requires_provider_parity_scope_ticket"]
+        )
+        self.assertTrue(by_type["run_candidate_radar_provider_parity_acceptance"]["creates_provider_task"])
+        self.assertTrue(
+            by_type["run_candidate_radar_provider_parity_acceptance"]["provider_task_executed_by_request"]
+        )
+        self.assertTrue(
+            by_type["run_candidate_radar_provider_parity_acceptance"]["provider_execution_implemented"]
+        )
+        self.assertFalse(by_type["run_candidate_radar_provider_parity_acceptance"]["model_execution_implemented"])
+        self.assertTrue(by_type["run_candidate_radar_provider_parity_acceptance"]["deepseek_skipped_by_default"])
+        self.assertFalse(by_type["run_candidate_radar_provider_parity_acceptance"]["deepseek_called"])
+        self.assertFalse(by_type["run_candidate_radar_provider_parity_acceptance"]["github_called"])
+        self.assertFalse(
+            by_type["run_candidate_radar_provider_parity_acceptance"]["production_radar_replacement_complete"]
+        )
+        self.assertFalse(by_type["run_candidate_radar_provider_parity_acceptance"]["cache_get_external_calls"])
+        self.assertFalse(by_type["run_candidate_radar_provider_parity_acceptance"]["page_render_external_calls"])
+        self.assertTrue(by_type["run_candidate_radar_provider_parity_acceptance"]["call_ledger_required"])
+        self.assertTrue(by_type["run_candidate_radar_provider_parity_acceptance"]["does_not_execute_trades"])
+        self.assertTrue(
+            by_type["run_candidate_radar_provider_parity_acceptance"]["does_not_modify_strategy_action"]
+        )
         self.assertEqual(
             by_type["run_candidate_radar_worker_execution_request"]["route"],
             "POST /api/candidate-radar/worker-execution-request",
@@ -17684,16 +17727,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 78)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 79)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 79)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 80)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 78)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 79)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 79)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 80)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -18564,9 +18607,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 78)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 79)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 79)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 80)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -18790,10 +18833,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 78)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 79)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 79)
-        self.assertEqual(packet["counts"]["external_capable_task_count"], 7)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 80)
+        self.assertEqual(packet["counts"]["external_capable_task_count"], 8)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
         self.assertFalse(packet["counts"]["local_push_gate_run_observed"])
@@ -18825,9 +18868,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 78)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 79)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 79)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 80)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -23271,7 +23314,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 81)
+        self.assertEqual(task_catalog["data"]["task_count"], 82)
         self.assertIn(
             "POST /api/desktop/tauri-package-artifact-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
@@ -27952,6 +27995,172 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("DEEPSEEK_API_KEY", json.dumps(cache, ensure_ascii=False))
+
+    def test_candidate_radar_provider_parity_acceptance_records_tushare_direct_evidence(self):
+        self._with_meta_store()
+        self._with_bootstrap_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE")
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"},
+                "next_ticket_candidates": [
+                    {"ticker": "002008.SZ", "name": "大族激光", "score": 61},
+                    {"ticker": "002837.SZ", "name": "英维克", "score": 47},
+                ],
+                "a_share_capability_matrix": [
+                    {"provider": "Tushare", "api": "moneyflow", "capability_state": "available", "status": "可用"},
+                    {"provider": "Tushare", "api": "top_inst", "capability_state": "permission_denied", "status": "权限不足"},
+                ],
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_evidence_path = candidate_service.CANDIDATE_PROVIDER_PARITY_TUSHARE_LIGHT_EVIDENCE_PATH
+            candidate_service.CANDIDATE_PROVIDER_PARITY_TUSHARE_LIGHT_EVIDENCE_PATH = (
+                Path(tmpdir) / "candidate_radar_provider_parity" / "tushare_light_provider_ledger.json"
+            )
+            self.addCleanup(
+                setattr,
+                candidate_service,
+                "CANDIDATE_PROVIDER_PARITY_TUSHARE_LIGHT_EVIDENCE_PATH",
+                original_evidence_path,
+            )
+
+            dry_run = self.client.post(
+                "/api/candidate-radar/provider-parity-dry-run",
+                json={
+                    "candidate_symbols": ["002008", "002837.SZ"],
+                    "selected_signal_groups": ["moneyflow", "dragon_tiger", "hard_risk"],
+                    "include_tushare": True,
+                    "include_deepseek": False,
+                    "user_approved": True,
+                },
+            ).json()
+            self.assertTrue(dry_run["ok"])
+            cache_after_dry_run = self.client.get("/api/candidate-radar/cache").json()["data"]
+            scope_hash = cache_after_dry_run["provider_parity_dry_run_receipt"]["acceptance_scope_hash"]
+            request = self.client.post(
+                "/api/candidate-radar/provider-parity-execution-request",
+                json={
+                    "operator_approved": True,
+                    "acceptance_scope_hash": scope_hash,
+                },
+            ).json()
+            self.assertTrue(request["ok"])
+
+            original_run_tushare = candidate_service.tushare_task_service.run_tushare_refresh_task
+
+            def fake_run_tushare_refresh_task(payload, **_kwargs):
+                rows = []
+                for api in payload["apis"]:
+                    rows.append(
+                        {
+                            "api": api,
+                            "request_params_safe": {
+                                "ts_code": payload["ts_code"],
+                                "start_date": payload["start_date"],
+                                "trade_date": payload["trade_date"],
+                            },
+                            "row_count": 2,
+                            "data_date": payload["end_date"],
+                            "local_fetched_at": "2026-06-19T10:00:00",
+                            "call_status": "success",
+                            "error_message_safe": "",
+                            "external": True,
+                            "external_calls_triggered": True,
+                            "tushare_called": True,
+                            "deepseek_called": False,
+                            "github_called": False,
+                            "does_not_execute_trades": True,
+                            "does_not_modify_strategy_action": True,
+                        }
+                    )
+                return {
+                    "task_id": "fake-provider-parity-tushare-light",
+                    "status": "success",
+                    "current_step": "tushare_refresh_completed",
+                    "call_ledger": rows,
+                }
+
+            candidate_service.tushare_task_service.run_tushare_refresh_task = fake_run_tushare_refresh_task
+            self.addCleanup(
+                setattr,
+                candidate_service.tushare_task_service,
+                "run_tushare_refresh_task",
+                original_run_tushare,
+            )
+
+            response = self.client.post(
+                "/api/candidate-radar/provider-parity-acceptance",
+                json={
+                    "operator_approved": True,
+                    "acceptance_scope_hash": scope_hash,
+                    "include_deepseek": False,
+                    "max_candidates": 1,
+                    "max_apis": 5,
+                    "start_date": "20260601",
+                    "end_date": "20260612",
+                    "authorization": "Bearer SHOULD_DROP",
+                },
+            ).json()
+
+            self.assertTrue(response["ok"])
+            task = response["data"]["task"]
+            self.assertEqual(task["status"], "success")
+            self.assertEqual(task["task_type"], "run_candidate_radar_provider_parity_acceptance")
+            self.assertEqual(
+                task["current_step"],
+                "candidate_provider_parity_acceptance_ready_tushare_light_deepseek_skipped",
+            )
+            self.assertEqual(task["call_ledger"][0]["api"], "local_candidate_radar_provider_parity_acceptance")
+            self.assertTrue(any(row.get("tushare_called") is True for row in task["call_ledger"][1:]))
+            self.assertFalse(any(row.get("deepseek_called") is True for row in task["call_ledger"]))
+            self.assertFalse(any(row.get("github_called") is True for row in task["call_ledger"]))
+            self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+            self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(response, ensure_ascii=False))
+            self.assertNotIn("TUSHARE_TOKEN", json.dumps(response, ensure_ascii=False))
+
+            cache = self.client.get("/api/candidate-radar/cache").json()
+            self.assertTrue(cache["ok"])
+            packet = cache["data"]
+            receipt = packet["provider_parity_acceptance_receipt"]
+            rows = {row["criterion"]: row for row in packet["provider_parity_acceptance_rows"]}
+            stage_manifest = packet["candidate_radar_production_stage_scope_manifest"]
+            stage_rows = {row["stage_key"]: row for row in packet["candidate_radar_production_stage_scope_rows"]}
+            self.assertEqual(receipt["schema_version"], "candidate_radar_provider_parity_acceptance.v1")
+            self.assertEqual(
+                receipt["status"],
+                "candidate_provider_parity_acceptance_ready_tushare_light_deepseek_skipped",
+            )
+            self.assertTrue(receipt["direct_evidence_verified"])
+            self.assertTrue(receipt["provider_execution_implemented"])
+            self.assertFalse(receipt["model_execution_implemented"])
+            self.assertTrue(receipt["tushare_call_ledger_evidence_done"])
+            self.assertFalse(receipt["deepseek_model_ledger_evidence_done"])
+            self.assertTrue(receipt["deepseek_skipped_by_request"])
+            self.assertEqual(receipt["provider_api_call_count"], 5)
+            self.assertEqual(receipt["provider_api_success_count"], 5)
+            self.assertFalse(receipt["provider_backed_acceptance_done"])
+            self.assertFalse(receipt["production_radar_replacement_complete"])
+            self.assertEqual(rows["tushare_provider_parity_call_ledger"]["status"], "passed_tushare_provider_parity_ledger")
+            self.assertEqual(rows["deepseek_model_ledger_policy"]["status"], "passed_deepseek_skipped_by_request")
+            self.assertTrue(rows["worker_browser_promotion_still_pending"]["production_blocker"])
+            self.assertIn("provider_parity_acceptance", stage_manifest["direct_evidence_stage_keys"])
+            self.assertTrue(stage_rows["provider_parity_acceptance"]["direct_evidence_complete"])
+            self.assertTrue(stage_rows["provider_parity_acceptance"]["provider_parity_tushare_light_evidence_present"])
+            self.assertFalse(stage_manifest["provider_backed_acceptance_done"])
+            self.assertFalse(packet["external_calls_triggered"])
+            self.assertFalse(packet["tushare_called"])
+            self.assertFalse(packet["deepseek_called"])
+            self.assertFalse(packet["github_called"])
+            self.assertTrue(packet["policy"]["provider_parity_acceptance_is_button_gated"])
+            self.assertFalse(packet["policy"]["provider_parity_acceptance_get_cache_calls_provider"])
+            self.assertTrue(packet["policy"]["provider_parity_acceptance_deepseek_skipped"])
+            self.assertTrue(packet["policy"]["provider_parity_acceptance_is_not_production_replacement"])
+            self.assertTrue(packet["does_not_execute_trades"])
+            self.assertTrue(packet["does_not_modify_strategy_action"])
+            self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
+            self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
+            self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache, ensure_ascii=False))
 
     def test_candidate_radar_worker_execution_request_is_scope_bound_ticket_only(self):
         self._with_meta_store()

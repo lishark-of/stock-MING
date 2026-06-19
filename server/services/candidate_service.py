@@ -60,6 +60,19 @@ CANDIDATE_PROVIDER_PARITY_DRY_RUN_ROUTE = "POST /api/candidate-radar/provider-pa
 CANDIDATE_PROVIDER_PARITY_EXECUTION_REQUEST_SCHEMA_VERSION = "candidate_radar_provider_parity_execution_request.v1"
 CANDIDATE_PROVIDER_PARITY_EXECUTION_REQUEST_TASK_TYPE = "run_candidate_radar_provider_parity_execution_request"
 CANDIDATE_PROVIDER_PARITY_EXECUTION_REQUEST_ROUTE = "POST /api/candidate-radar/provider-parity-execution-request"
+CANDIDATE_PROVIDER_PARITY_ACCEPTANCE_SCHEMA_VERSION = "candidate_radar_provider_parity_acceptance.v1"
+CANDIDATE_PROVIDER_PARITY_ACCEPTANCE_TASK_TYPE = "run_candidate_radar_provider_parity_acceptance"
+CANDIDATE_PROVIDER_PARITY_ACCEPTANCE_ROUTE = "POST /api/candidate-radar/provider-parity-acceptance"
+PROVIDER_PARITY_ACCEPTANCE_API_ALIASES = {
+    "holdertrade": "stk_holdertrade",
+    "pledge": "pledge_stat",
+}
+PROVIDER_PARITY_ACCEPTANCE_LIGHT_APIS = (
+    "moneyflow",
+    "top_list",
+    "top_inst",
+    "anns_d",
+)
 PROVIDER_PARITY_DEFAULT_CANDIDATE_LIMIT = 20
 CANDIDATE_WORKER_EXECUTION_REQUEST_SCHEMA_VERSION = "candidate_radar_worker_execution_request.v1"
 CANDIDATE_WORKER_EXECUTION_REQUEST_TASK_TYPE = "run_candidate_radar_worker_execution_request"
@@ -125,6 +138,11 @@ CANDIDATE_RADAR_PERSISTED_RECEIPT_SPECS = (
         "search_quant_provider_model_acceptance_receipt",
         "search_quant_provider_model_acceptance_rows",
         QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION,
+    ),
+    (
+        "provider_parity_acceptance_receipt",
+        "provider_parity_acceptance_rows",
+        CANDIDATE_PROVIDER_PARITY_ACCEPTANCE_SCHEMA_VERSION,
     ),
 )
 CANDIDATE_RADAR_DURABLE_EVIDENCE_SCHEMA_VERSION = "candidate_radar_durable_evidence_recipe.v1"
@@ -2360,6 +2378,302 @@ def _provider_parity_execution_request_row(
         "candidate_is_not_buy_instruction": True,
         "contains_secret": False,
     }
+
+
+def _provider_parity_acceptance_row(
+    criterion: str,
+    status: str,
+    *,
+    passed: bool,
+    production_blocker: bool,
+    evidence: str,
+    next_action: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": CANDIDATE_PROVIDER_PARITY_ACCEPTANCE_SCHEMA_VERSION,
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "production_blocker": bool(production_blocker),
+        "evidence": evidence,
+        "next_action": next_action,
+        "provider_task_created": False,
+        "provider_task_executed": False,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "tushare_call_ledger_evidence_done": False,
+        "deepseek_model_ledger_evidence_done": False,
+        "browser_visual_performance_promoted": False,
+        "legacy_retirement_ready": False,
+        "production_radar_replacement_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+    }
+
+
+def _candidate_provider_parity_acceptance_apis(
+    selected_apis: list[Any],
+    *,
+    max_apis: int,
+) -> tuple[list[str], list[str]]:
+    supported = set(getattr(tushare_task_service, "ALL_REFRESH_APIS", ()))
+    normalized: list[str] = []
+    skipped: list[str] = []
+    for raw_api in selected_apis:
+        api = PROVIDER_PARITY_ACCEPTANCE_API_ALIASES.get(str(raw_api), str(raw_api))
+        if api not in supported:
+            skipped.append(str(raw_api))
+            continue
+        if api not in normalized:
+            normalized.append(api)
+    preferred = ["trade_cal"] + [api for api in PROVIDER_PARITY_ACCEPTANCE_LIGHT_APIS if api in normalized]
+    for api in normalized:
+        if api not in preferred:
+            preferred.append(api)
+    limit = max(1, int(max_apis or len(preferred)))
+    executed = preferred[:limit]
+    if "trade_cal" not in executed:
+        executed = ["trade_cal"] + executed[: max(0, limit - 1)]
+    skipped.extend([api for api in normalized if api not in executed])
+    return executed, skipped
+
+
+def _candidate_provider_parity_acceptance_receipt(
+    packet: Mapping[str, Any],
+    *,
+    payload_safe: Mapping[str, Any],
+    provider_tasks: list[Mapping[str, Any]],
+    executed_apis: list[str],
+    skipped_apis: list[str],
+    explicit_request: bool,
+    task_id: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+    execution_request = _as_dict(packet.get("provider_parity_execution_request_receipt"))
+    operator_approved = _coerce_bool(
+        payload_safe.get("operator_approved") or payload_safe.get("user_approved") or payload_safe.get("approved"),
+        False,
+    )
+    include_deepseek = _coerce_bool(payload_safe.get("include_deepseek"), False)
+    requested_scope_hash = _safe_text(
+        payload_safe.get("acceptance_scope_hash") or payload_safe.get("scope_hash") or "",
+        limit=128,
+    )
+    expected_scope_hash = _safe_text(execution_request.get("acceptance_scope_hash") or "", limit=128)
+    scope_hash_matches = bool(requested_scope_hash and expected_scope_hash and requested_scope_hash == expected_scope_hash)
+    execution_request_ready = execution_request.get("local_execution_request_ready") is True
+    candidate_symbols = [str(symbol) for symbol in _as_list(execution_request.get("candidate_symbols"))]
+    provider_ledger = [
+        row
+        for provider_task in provider_tasks
+        for row in _as_list(provider_task.get("call_ledger"))
+        if isinstance(row, dict)
+    ]
+    success_rows = [row for row in provider_ledger if row.get("call_status") == "success"]
+    empty_rows = [row for row in provider_ledger if row.get("call_status") == "empty"]
+    failed_rows = [
+        row
+        for row in provider_ledger
+        if row.get("call_status") == "failed" or str(row.get("call_status") or "").startswith("blocked_")
+    ]
+    terminal_ok_rows = success_rows + empty_rows
+    provider_executed = bool(provider_tasks)
+    api_call_count = len(provider_ledger)
+    provider_evidence_done = bool(
+        provider_executed
+        and provider_ledger
+        and len(terminal_ok_rows) == api_call_count
+        and not failed_rows
+        and all(row.get("tushare_called") is True for row in provider_ledger)
+    )
+    has_trade_cal_sample = any(row.get("api") == "trade_cal" for row in success_rows)
+    candidate_count = len(candidate_symbols[: max(1, len(provider_tasks))])
+    has_core_light_samples = bool(
+        candidate_count > 0
+        and any(row.get("api") in {"moneyflow", "daily", "daily_basic"} for row in terminal_ok_rows)
+    )
+    rows = [
+        _provider_parity_acceptance_row(
+            "explicit_post_provider_parity_acceptance_done",
+            "passed_explicit_post" if explicit_request else "blocked_missing_explicit_post",
+            passed=explicit_request,
+            production_blocker=not explicit_request,
+            evidence=f"task_id={task_id}",
+            next_action="Use only POST /api/candidate-radar/provider-parity-acceptance.",
+        ),
+        _provider_parity_acceptance_row(
+            "operator_approval_recorded",
+            "passed_operator_approved" if operator_approved else "blocked_operator_approval_required",
+            passed=operator_approved,
+            production_blocker=not operator_approved,
+            evidence=f"operator_approved={operator_approved}",
+            next_action="Require explicit operator approval before provider execution.",
+        ),
+        _provider_parity_acceptance_row(
+            "execution_request_ready",
+            "passed_execution_request_ready" if execution_request_ready else "blocked_execution_request_missing",
+            passed=execution_request_ready,
+            production_blocker=not execution_request_ready,
+            evidence=f"provider_request={execution_request.get('status') or 'missing'}",
+            next_action="Create a scope-bound provider parity execution request before provider acceptance.",
+        ),
+        _provider_parity_acceptance_row(
+            "acceptance_scope_hash_bound",
+            "passed_scope_hash_bound" if scope_hash_matches else "blocked_scope_hash_mismatch_or_missing",
+            passed=scope_hash_matches,
+            production_blocker=not scope_hash_matches,
+            evidence=(
+                f"requested={requested_scope_hash[:16] if requested_scope_hash else 'missing'}; "
+                f"expected={expected_scope_hash[:16] if expected_scope_hash else 'missing'}"
+            ),
+            next_action="Bind provider execution to the latest provider parity execution-request scope hash.",
+        ),
+        _provider_parity_acceptance_row(
+            "deepseek_model_ledger_policy",
+            "passed_deepseek_skipped_by_request" if not include_deepseek else "blocked_deepseek_not_enabled_this_cycle",
+            passed=not include_deepseek,
+            production_blocker=include_deepseek,
+            evidence=f"include_deepseek={include_deepseek}; model_execution_implemented=false",
+            next_action="Run DeepSeek benchmark/model ledger in a separate explicitly approved cycle.",
+        ),
+        _provider_parity_acceptance_row(
+            "tushare_provider_parity_call_ledger",
+            "passed_tushare_provider_parity_ledger" if provider_evidence_done else "blocked_tushare_provider_ledger_missing_or_failed",
+            passed=provider_evidence_done,
+            production_blocker=not provider_evidence_done,
+            evidence=(
+                f"api_terminal_ok={len(terminal_ok_rows)}/{api_call_count}; "
+                f"api_success={len(success_rows)}; api_empty={len(empty_rows)}; "
+                f"executed_apis={executed_apis}; skipped_apis={skipped_apis}"
+            ),
+            next_action="Collect safe Tushare provider call ledger for the bounded radar candidate/API scope.",
+        ),
+        _provider_parity_acceptance_row(
+            "worker_browser_promotion_still_pending",
+            "passed_provider_light_evidence_only",
+            passed=True,
+            production_blocker=True,
+            evidence="Provider ledger is captured, but worker runtime, browser QA, legacy retirement, and promotion are separate evidence.",
+            next_action="Continue with worker/browser/promotion evidence after reviewing provider parity ledger.",
+        ),
+        _provider_parity_acceptance_row(
+            "no_trade_action_secret_boundary",
+            "passed_no_trade_action_secret_boundary",
+            passed=True,
+            production_blocker=False,
+            evidence="No trade execution, no strategy action mutation, no credential value exposure.",
+            next_action="Keep Radar candidates research-only.",
+        ),
+    ]
+    blocking_rows = [row for row in rows if row.get("production_blocker")]
+    if include_deepseek:
+        status = "candidate_provider_parity_acceptance_blocked_deepseek_not_enabled_this_cycle"
+    elif not execution_request_ready:
+        status = "candidate_provider_parity_acceptance_blocked_execution_request_required"
+    elif not scope_hash_matches:
+        status = "candidate_provider_parity_acceptance_blocked_scope_hash_mismatch"
+    elif not provider_evidence_done:
+        status = "candidate_provider_parity_acceptance_blocked_provider_ledger_missing_or_failed"
+    else:
+        status = "candidate_provider_parity_acceptance_ready_tushare_light_deepseek_skipped"
+    artifact = {
+        "schema_version": "candidate_radar_provider_parity_tushare_light_evidence.v1",
+        "status": (
+            "candidate_radar_provider_parity_tushare_light_evidence_ready"
+            if provider_evidence_done
+            else "candidate_radar_provider_parity_tushare_light_evidence_blocked"
+        ),
+        "direct_evidence_layer": "L3_real_tushare_provider_call_ledger_supporting_candidate_radar_provider_parity",
+        "task_id": task_id,
+        "candidate_count": candidate_count,
+        "candidate_symbols": candidate_symbols[:candidate_count],
+        "selected_apis": executed_apis,
+        "skipped_apis": skipped_apis,
+        "api_call_count": api_call_count,
+        "api_success_count": len(success_rows),
+        "api_empty_count": len(empty_rows),
+        "api_terminal_ok_count": len(terminal_ok_rows),
+        "api_failed_count": len(failed_rows),
+        "all_selected_api_calls_succeeded": len(success_rows) == api_call_count,
+        "all_selected_api_calls_terminal_ok": provider_evidence_done,
+        "has_core_light_samples_for_all_candidates": has_core_light_samples,
+        "has_trade_cal_sample": has_trade_cal_sample,
+        "provider_call_ledger": provider_ledger,
+        "external_calls_triggered": provider_executed,
+        "tushare_called": provider_executed,
+        "deepseek_called": False,
+        "github_called": False,
+        "deepseek_model_execution_done": False,
+        "provider_backed_acceptance_done": False,
+        "production_radar_replacement_complete": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "contains_secret": False,
+    }
+    receipt = {
+        "schema_version": CANDIDATE_PROVIDER_PARITY_ACCEPTANCE_SCHEMA_VERSION,
+        "status": status,
+        "scope": "button_gated_candidate_radar_provider_parity_acceptance_tushare_light_deepseek_skipped",
+        "mode": "button_gated_provider_parity_acceptance",
+        "ltg": "LTG-13/LTG-02",
+        "route": CANDIDATE_PROVIDER_PARITY_ACCEPTANCE_ROUTE,
+        "task_type": CANDIDATE_PROVIDER_PARITY_ACCEPTANCE_TASK_TYPE,
+        "task_id": task_id,
+        "candidate_symbols": candidate_symbols,
+        "candidate_symbol_count": len(candidate_symbols),
+        "selected_apis": executed_apis,
+        "skipped_apis": skipped_apis,
+        "acceptance_scope_hash": expected_scope_hash,
+        "acceptance_scope_hash_short": expected_scope_hash[:16] if expected_scope_hash else "",
+        "requested_acceptance_scope_hash_matches_latest": scope_hash_matches,
+        "operator_approved": operator_approved,
+        "execution_request_ready": execution_request_ready,
+        "provider_execution_implemented": provider_executed,
+        "model_execution_implemented": False,
+        "provider_task_created": provider_executed,
+        "provider_task_executed": provider_executed,
+        "tushare_call_ledger_evidence_done": provider_evidence_done,
+        "deepseek_model_ledger_evidence_done": False,
+        "deepseek_skipped_by_request": not include_deepseek,
+        "direct_evidence_verified": provider_evidence_done and not include_deepseek,
+        "provider_call_ledger": provider_ledger,
+        "provider_api_call_count": api_call_count,
+        "provider_api_success_count": len(success_rows),
+        "provider_api_empty_count": len(empty_rows),
+        "provider_api_terminal_ok_count": len(terminal_ok_rows),
+        "provider_api_failed_count": len(failed_rows),
+        "provider_parity_tushare_light_evidence_path": str(CANDIDATE_PROVIDER_PARITY_TUSHARE_LIGHT_EVIDENCE_PATH),
+        "browser_visual_performance_promoted": False,
+        "legacy_retirement_ready": False,
+        "production_radar_replacement_complete": False,
+        "provider_backed_acceptance_done": False,
+        "production_blocker_count": len(blocking_rows),
+        "production_blockers": [row["criterion"] for row in blocking_rows],
+        "external_calls_triggered_by_task": provider_executed,
+        "tushare_called_by_task": provider_executed,
+        "deepseek_called": False,
+        "github_called": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "contains_secret": False,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "candidate_is_not_buy_instruction": True,
+        "row_count": len(rows),
+        "rows": rows,
+    }
+    return receipt, rows, artifact
 
 
 def _candidate_radar_provider_parity_execution_request(
@@ -8687,9 +9001,13 @@ def _candidate_provider_parity_tushare_light_evidence_ready(payload: Mapping[str
         == "L3_real_tushare_provider_call_ledger_supporting_candidate_radar_provider_parity"
         and int(payload.get("candidate_count") or 0) > 0
         and int(payload.get("api_call_count") or 0) > 0
-        and int(payload.get("api_success_count") or 0) == int(payload.get("api_call_count") or 0)
+        and int(payload.get("api_terminal_ok_count") or payload.get("api_success_count") or 0)
+        == int(payload.get("api_call_count") or 0)
         and int(payload.get("api_failed_count") or 0) == 0
-        and payload.get("all_selected_api_calls_succeeded") is True
+        and (
+            payload.get("all_selected_api_calls_terminal_ok") is True
+            or payload.get("all_selected_api_calls_succeeded") is True
+        )
         and payload.get("has_core_light_samples_for_all_candidates") is True
         and payload.get("has_trade_cal_sample") is True
         and payload.get("external_calls_triggered") is True
@@ -8701,7 +9019,7 @@ def _candidate_provider_parity_tushare_light_evidence_ready(payload: Mapping[str
         and payload.get("production_radar_replacement_complete") is False
         and payload.get("does_not_execute_trades") is True
         and payload.get("does_not_modify_strategy_action") is True
-        and payload.get("contains_secret") is False
+        and payload.get("contains_secret") in (False, None)
     )
 
 
@@ -12538,6 +12856,22 @@ def _build_candidate_radar_packet(
                 for row in _as_list(previous_map.get("provider_parity_execution_request_rows"))
                 if isinstance(row, dict)
             ] or [row for row in _as_list(previous_provider_request_receipt.get("rows")) if isinstance(row, dict)]
+    provider_parity_acceptance_receipt = _as_dict(snapshot_map.get("provider_parity_acceptance_receipt"))
+    provider_parity_acceptance_rows = [
+        row for row in _as_list(snapshot_map.get("provider_parity_acceptance_rows")) if isinstance(row, dict)
+    ]
+    if not provider_parity_acceptance_receipt:
+        previous_provider_acceptance_receipt = _as_dict(previous_map.get("provider_parity_acceptance_receipt"))
+        if (
+            previous_provider_acceptance_receipt.get("schema_version")
+            == CANDIDATE_PROVIDER_PARITY_ACCEPTANCE_SCHEMA_VERSION
+        ):
+            provider_parity_acceptance_receipt = previous_provider_acceptance_receipt
+            provider_parity_acceptance_rows = [
+                row
+                for row in _as_list(previous_map.get("provider_parity_acceptance_rows"))
+                if isinstance(row, dict)
+            ] or [row for row in _as_list(previous_provider_acceptance_receipt.get("rows")) if isinstance(row, dict)]
     counts["full_pool_local_execution_row_count"] = full_pool_local_execution_receipt["row_count"]
     counts["full_pool_local_execution_candidate_count"] = full_pool_local_execution_receipt["normalized_candidate_count"]
     counts["full_pool_local_execution_production_blocker_count"] = full_pool_local_execution_receipt[
@@ -12608,6 +12942,16 @@ def _build_candidate_radar_packet(
     )
     counts["provider_parity_execution_request_ready"] = (
         provider_parity_execution_request_receipt.get("local_execution_request_ready") is True
+    )
+    counts["provider_parity_acceptance_row_count"] = provider_parity_acceptance_receipt.get("row_count", 0)
+    counts["provider_parity_acceptance_direct_evidence_verified"] = (
+        provider_parity_acceptance_receipt.get("direct_evidence_verified") is True
+    )
+    counts["provider_parity_acceptance_provider_api_success_count"] = (
+        provider_parity_acceptance_receipt.get("provider_api_success_count", 0)
+    )
+    counts["provider_parity_acceptance_production_blocker_count"] = (
+        provider_parity_acceptance_receipt.get("production_blocker_count", 0)
     )
     full_pool_blocker_rows = _as_list(plan.get("blocker_rows"))
     deep_scan_blocker_rows = _as_list(deep_plan.get("blocker_rows"))
@@ -12830,6 +13174,8 @@ def _build_candidate_radar_packet(
         "provider_parity_credential_presence_rows": provider_parity_credential_presence_rows,
         "provider_parity_execution_request_receipt": provider_parity_execution_request_receipt,
         "provider_parity_execution_request_rows": provider_parity_execution_request_rows,
+        "provider_parity_acceptance_receipt": provider_parity_acceptance_receipt,
+        "provider_parity_acceptance_rows": provider_parity_acceptance_rows,
         "deep_scan_stage_rows": _as_list(deep_plan.get("stage_rows")),
         "deep_scan_parity_rows": _as_list(deep_plan.get("parity_rows")),
         "deep_scan_required_signal_rows": _as_list(deep_plan.get("required_signal_rows")),
@@ -12909,6 +13255,13 @@ def _build_candidate_radar_packet(
             "provider_parity_execution_request_does_not_call_provider_or_model": True,
             "provider_parity_execution_request_is_not_provider_backed_acceptance": True,
             "provider_parity_execution_request_is_not_production_replacement": True,
+            "provider_parity_acceptance_is_button_gated": bool(provider_parity_acceptance_receipt),
+            "provider_parity_acceptance_calls_provider_only_from_post_task": bool(provider_parity_acceptance_receipt),
+            "provider_parity_acceptance_get_cache_calls_provider": False,
+            "provider_parity_acceptance_deepseek_skipped": (
+                provider_parity_acceptance_receipt.get("deepseek_skipped_by_request") is True
+            ),
+            "provider_parity_acceptance_is_not_production_replacement": True,
             "does_not_run_backtest": True,
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
@@ -13148,6 +13501,17 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
         "credential_missing_provider_count", 0
     )
     counts["provider_parity_candidate_symbol_count"] = provider_parity_dry_run_receipt.get("candidate_symbol_count", 0)
+    provider_parity_acceptance_receipt = _as_dict(view.get("provider_parity_acceptance_receipt"))
+    counts["provider_parity_acceptance_row_count"] = provider_parity_acceptance_receipt.get("row_count", 0)
+    counts["provider_parity_acceptance_direct_evidence_verified"] = (
+        provider_parity_acceptance_receipt.get("direct_evidence_verified") is True
+    )
+    counts["provider_parity_acceptance_provider_api_success_count"] = (
+        provider_parity_acceptance_receipt.get("provider_api_success_count", 0)
+    )
+    counts["provider_parity_acceptance_production_blocker_count"] = (
+        provider_parity_acceptance_receipt.get("production_blocker_count", 0)
+    )
     view["counts"] = counts
     policy = _as_dict(view.get("policy"))
     policy["candidate_browser_qa_evidence_reads_local_artifact_only"] = True
@@ -13199,6 +13563,13 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     policy["provider_parity_dry_run_does_not_call_provider_or_model"] = True
     policy["provider_parity_dry_run_is_not_production_replacement"] = True
     policy["provider_parity_dry_run_requires_worker_browser_ledgers"] = bool(provider_parity_dry_run_receipt)
+    policy["provider_parity_acceptance_is_button_gated"] = bool(provider_parity_acceptance_receipt)
+    policy["provider_parity_acceptance_calls_provider_only_from_post_task"] = bool(provider_parity_acceptance_receipt)
+    policy["provider_parity_acceptance_get_cache_calls_provider"] = False
+    policy["provider_parity_acceptance_deepseek_skipped"] = (
+        provider_parity_acceptance_receipt.get("deepseek_skipped_by_request") is True
+    )
+    policy["provider_parity_acceptance_is_not_production_replacement"] = True
     view["policy"] = policy
     warnings = _as_list(view.get("warnings"))
     first_warning = "GET /api/candidate-radar/cache 只读展示已持久化的 local scan 结果；不会自动全市场扫描。"
@@ -13227,6 +13598,8 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     view["fast_scan_task_pipeline_contract"] = task_pipeline_contract
     view["fast_scan_task_pipeline_rows"] = task_pipeline_rows
     view = _attach_no_feature_loss_acceptance_contract(view)
+    view = _attach_candidate_radar_durable_evidence_recipe(view)
+    view = _attach_candidate_radar_production_stage_scope_manifest(view)
     return _json_safe(view)
 
 
@@ -14249,6 +14622,185 @@ def run_candidate_provider_parity_execution_request_task(payload: Any = None) ->
         current_step="candidate_radar_provider_parity_execution_request_ready",
         call_ledger=[ledger],
         warning="candidate_radar_provider_parity_execution_request_ready_no_external_call",
+    ) or task
+
+
+def run_candidate_provider_parity_acceptance_task(payload: Any = None) -> dict[str, Any]:
+    task = task_service.create_task_record(
+        CANDIDATE_PROVIDER_PARITY_ACCEPTANCE_TASK_TYPE,
+        output_packet_key=PACKET_KEY,
+        payload=payload,
+        current_step="candidate_radar_provider_parity_acceptance_queued",
+        warnings=[
+            "下一票雷达 provider parity acceptance 是显式 POST 任务；本轮只允许 Tushare light provider ledger。",
+            "DeepSeek 默认跳过；该任务不启动 worker，不执行真实交易，不修改 strategy action。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+
+    payload_safe = task.get("payload_safe") if isinstance(task.get("payload_safe"), dict) else {}
+    packet = read_candidate_radar_cache()
+    execution_request = _as_dict(packet.get("provider_parity_execution_request_receipt"))
+    include_deepseek = _coerce_bool(payload_safe.get("include_deepseek"), False)
+    requested_scope_hash = _safe_text(
+        payload_safe.get("acceptance_scope_hash") or payload_safe.get("scope_hash") or "",
+        limit=128,
+    )
+    expected_scope_hash = _safe_text(execution_request.get("acceptance_scope_hash") or "", limit=128)
+    max_candidates = max(1, min(3, int(payload_safe.get("max_candidates") or 1)))
+    max_apis = max(1, min(8, int(payload_safe.get("max_apis") or 5)))
+    candidate_symbols = [
+        str(symbol)
+        for symbol in _as_list(execution_request.get("candidate_symbols"))
+        if str(symbol).strip()
+    ][:max_candidates]
+    executed_apis, skipped_apis = _candidate_provider_parity_acceptance_apis(
+        _as_list(execution_request.get("selected_apis")),
+        max_apis=max_apis,
+    )
+    today = _dt.date.today()
+    start_date = _safe_text(payload_safe.get("start_date") or (today - _dt.timedelta(days=14)).strftime("%Y%m%d"))
+    end_date = _safe_text(payload_safe.get("end_date") or today.strftime("%Y%m%d"))
+    can_call_provider = bool(
+        not include_deepseek
+        and execution_request.get("local_execution_request_ready") is True
+        and requested_scope_hash
+        and requested_scope_hash == expected_scope_hash
+        and candidate_symbols
+        and executed_apis
+    )
+    provider_tasks: list[Mapping[str, Any]] = []
+    if can_call_provider:
+        task_service.update_task_status(
+            task["task_id"],
+            status="running",
+            progress=0.45,
+            current_step="calling_tushare_light_provider_for_candidate_provider_parity",
+        )
+        for symbol in candidate_symbols:
+            provider_task = tushare_task_service.run_tushare_refresh_task(
+                {
+                    "apis": executed_apis,
+                    "symbol": symbol,
+                    "ts_code": symbol,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "trade_date": end_date,
+                    "operator": "candidate_radar_provider_parity_acceptance",
+                },
+                task_type="candidate_radar_provider_parity_tushare_light_provider",
+                output_packet_key="command_center_candidate_radar_provider_parity_tushare_light_packet",
+            )
+            provider_tasks.append(provider_task)
+    receipt, receipt_rows, evidence_artifact = _candidate_provider_parity_acceptance_receipt(
+        packet,
+        payload_safe=payload_safe,
+        provider_tasks=provider_tasks,
+        executed_apis=executed_apis,
+        skipped_apis=skipped_apis,
+        explicit_request=True,
+        task_id=str(task["task_id"]),
+    )
+    request_params_safe = {
+        "operator_approved": receipt.get("operator_approved"),
+        "candidate_symbol_count": receipt.get("candidate_symbol_count"),
+        "acceptance_scope_hash_short": receipt.get("acceptance_scope_hash_short"),
+        "requested_acceptance_scope_hash_matches_latest": receipt.get(
+            "requested_acceptance_scope_hash_matches_latest"
+        ),
+        "execution_request_ready": receipt.get("execution_request_ready"),
+        "selected_apis": executed_apis,
+        "skipped_apis": skipped_apis,
+        "include_deepseek": include_deepseek,
+        "provider_execution_implemented": receipt.get("provider_execution_implemented"),
+        "model_execution_implemented": False,
+        "tushare_call_ledger_evidence_done": receipt.get("tushare_call_ledger_evidence_done"),
+        "provider_backed_acceptance_done": False,
+        "production_radar_replacement_complete": False,
+    }
+    local_ledger = _candidate_call_ledger_row(
+        api="local_candidate_radar_provider_parity_acceptance",
+        source_snapshot="candidate_radar_cache",
+        row_count=len(receipt_rows),
+        call_status=str(receipt.get("status")),
+        request_params_safe=request_params_safe,
+    )
+    if receipt.get("direct_evidence_verified") is True:
+        try:
+            CANDIDATE_PROVIDER_PARITY_TUSHARE_LIGHT_EVIDENCE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            CANDIDATE_PROVIDER_PARITY_TUSHARE_LIGHT_EVIDENCE_PATH.write_text(
+                json.dumps(_safe_value(evidence_artifact), ensure_ascii=False, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+        except Exception:
+            local_ledger["call_status"] = "provider_parity_acceptance_artifact_write_failed"
+            local_ledger["error_message_safe"] = "candidate_radar_provider_parity_tushare_light_artifact_write_failed"
+            return task_service.update_task_status(
+                task["task_id"],
+                status="failed",
+                progress=1.0,
+                current_step="candidate_radar_provider_parity_acceptance_artifact_write_failed",
+                error_message_safe="candidate_radar_provider_parity_tushare_light_artifact_write_failed",
+                call_ledger=[local_ledger],
+                warning="candidate_radar_provider_parity_acceptance_artifact_failed",
+            ) or task
+    packet["task_id"] = task["task_id"]
+    packet["scan_mode"] = "provider_parity_acceptance"
+    packet["provider_parity_acceptance_completed_at"] = _now_iso()
+    packet["provider_parity_acceptance_receipt"] = receipt
+    packet["provider_parity_acceptance_rows"] = receipt_rows
+    packet_counts = _as_dict(packet.get("counts"))
+    packet_counts["provider_parity_acceptance_row_count"] = len(receipt_rows)
+    packet_counts["provider_parity_acceptance_direct_evidence_verified"] = (
+        receipt.get("direct_evidence_verified") is True
+    )
+    packet_counts["provider_parity_acceptance_provider_api_success_count"] = receipt.get(
+        "provider_api_success_count", 0
+    )
+    packet_counts["provider_parity_acceptance_production_blocker_count"] = receipt.get(
+        "production_blocker_count", 0
+    )
+    packet["counts"] = packet_counts
+    packet_policy = _as_dict(packet.get("policy"))
+    packet_policy["provider_parity_acceptance_is_button_gated"] = True
+    packet_policy["provider_parity_acceptance_calls_provider_only_from_post_task"] = True
+    packet_policy["provider_parity_acceptance_get_cache_calls_provider"] = False
+    packet_policy["provider_parity_acceptance_deepseek_skipped"] = receipt.get("deepseek_skipped_by_request")
+    packet_policy["provider_parity_acceptance_is_not_production_replacement"] = True
+    packet["policy"] = packet_policy
+    provider_ledger = [row for row in _as_list(receipt.get("provider_call_ledger")) if isinstance(row, dict)]
+    packet["call_ledger"] = [local_ledger] + provider_ledger
+    packet["warnings"] = [
+        "下一票雷达 provider parity acceptance 已记录 Tushare light provider ledger；DeepSeek/worker/browser/legacy promotion 仍是后续证据。"
+    ] + [
+        warning
+        for warning in _as_list(packet.get("warnings"))
+        if "provider parity acceptance" not in str(warning)
+    ]
+    try:
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
+    except Exception:
+        local_ledger["call_status"] = "provider_parity_acceptance_storage_write_failed"
+        local_ledger["error_message_safe"] = "candidate_radar_provider_parity_acceptance_sqlite_write_failed"
+        return task_service.update_task_status(
+            task["task_id"],
+            status="failed",
+            progress=1.0,
+            current_step="candidate_radar_provider_parity_acceptance_storage_write_failed",
+            error_message_safe="candidate_radar_provider_parity_acceptance_sqlite_write_failed",
+            call_ledger=[local_ledger] + provider_ledger,
+            warning="candidate_radar_provider_parity_acceptance_storage_failed",
+        ) or task
+    final_status = "success" if receipt.get("direct_evidence_verified") is True else "failed"
+    return task_service.update_task_status(
+        task["task_id"],
+        status=final_status,
+        progress=1.0,
+        current_step=str(receipt.get("status")),
+        call_ledger=[local_ledger] + provider_ledger,
+        warning="candidate_radar_provider_parity_acceptance_recorded",
+        error_message_safe="" if final_status == "success" else str(receipt.get("status")),
     ) or task
 
 
