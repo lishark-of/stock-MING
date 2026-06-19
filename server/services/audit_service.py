@@ -2479,6 +2479,7 @@ def _motion_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[dict[str
         ("#home", "Command Center", "page staging and status summary clarity"),
         ("#next", "Next Session Map", "chart update clarity and reduced-motion chart updates"),
         ("#candidates", "Candidate Radar", "radar result cluster and runtime-budget visibility"),
+        ("#worker", "Worker Runtime", "runtime evidence visibility and production-blocker readability"),
         ("#tasks", "Task Monitor", "task phase confirmation and progress readability"),
         ("#audit", "Call Ledger Audit", "motion audit rows and warning density"),
     ]

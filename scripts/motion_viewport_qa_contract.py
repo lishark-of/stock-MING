@@ -21,6 +21,7 @@ QA_ROUTES = [
     {"route": "#home", "label": "Command Center", "risk_focus": "page staging and status summary clarity"},
     {"route": "#next", "label": "Next Session Map", "risk_focus": "chart update clarity and reduced-motion chart updates"},
     {"route": "#candidates", "label": "Candidate Radar", "risk_focus": "radar result cluster and runtime-budget visibility"},
+    {"route": "#worker", "label": "Worker Runtime", "risk_focus": "runtime evidence visibility and production-blocker readability"},
     {"route": "#tasks", "label": "Task Monitor", "risk_focus": "task phase confirmation and progress readability"},
     {"route": "#audit", "label": "Call Ledger Audit", "risk_focus": "motion audit rows and warning density"},
 ]

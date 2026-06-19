@@ -14959,9 +14959,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(payload["github_called"])
         self.assertTrue(payload["does_not_execute_trades"])
         self.assertTrue(payload["does_not_modify_strategy_action"])
-        self.assertEqual(payload["route_count"], 5)
+        self.assertEqual(payload["route_count"], 6)
         self.assertEqual(payload["viewport_count"], 4)
-        self.assertEqual(payload["qa_matrix_count"], 20)
+        self.assertEqual(payload["qa_matrix_count"], 24)
         self.assertGreaterEqual(len(payload["performance_budgets"]), 4)
 
     def test_dev_server_script_prefers_project_python(self):
@@ -34183,9 +34183,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(runbook["github_called"])
         self.assertTrue(runbook["does_not_execute_trades"])
         self.assertTrue(runbook["does_not_modify_strategy_action"])
-        self.assertEqual(runbook["route_count"], 5)
+        self.assertEqual(runbook["route_count"], 6)
         self.assertEqual(runbook["viewport_count"], 4)
-        self.assertEqual(runbook["qa_matrix_count"], 20)
+        self.assertEqual(runbook["qa_matrix_count"], 24)
         self.assertGreaterEqual(runbook["performance_budget_count"], 4)
         runbook_phases = {row["phase"] for row in packet["motion_browser_qa_runbook_rows"]}
         self.assertIn("start_fastapi_backend", runbook_phases)
@@ -34193,10 +34193,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertIn("explicit_runner_available", runbook_phases)
         matrix_routes = {row.get("route") for row in packet["motion_browser_qa_matrix_rows"] if row.get("route")}
         self.assertIn("#candidates", matrix_routes)
+        self.assertIn("#worker", matrix_routes)
         budget_metrics = {row.get("metric") for row in packet["motion_browser_qa_matrix_rows"] if row.get("metric")}
         self.assertIn("route_transition_observed_ms", budget_metrics)
         self.assertTrue(packet["counts"]["motion_browser_qa_runbook_ready"])
-        self.assertEqual(packet["counts"]["motion_browser_qa_matrix_count"], 20)
+        self.assertEqual(packet["counts"]["motion_browser_qa_matrix_count"], 24)
         self.assertGreaterEqual(packet["counts"]["motion_browser_qa_performance_budget_count"], 4)
         self.assertTrue(packet["policy"]["motion_browser_qa_runbook_is_local"])
         self.assertTrue(packet["policy"]["motion_browser_qa_runbook_is_not_browser_execution"])
