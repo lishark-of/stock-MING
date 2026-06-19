@@ -22340,6 +22340,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(observed_stage_rows["LTG-05"]["row_count"], 8)
         ltg05_direct_count = int(observed_stage_rows["LTG-05"].get("direct_evidence_stage_count") or 0)
         self.assertIn(ltg05_direct_count, {0, 2, 3, 4, 5, 6, 7, 8})
+        ltg05_direct_keys = list(observed_stage_rows["LTG-05"].get("direct_evidence_stage_keys") or [])
+        self.assertEqual(len(ltg05_direct_keys), ltg05_direct_count)
+        if ltg05_direct_count:
+            self.assertIn("physical_schema_validation", ltg05_direct_keys)
+            self.assertIn("dataset_version_manifest_validation", ltg05_direct_keys)
+            self.assertIn("duckdb_post_migration_validation", ltg05_direct_keys)
         self.assertEqual(observed_stage_rows["LTG-05"]["pending_stage_count"], 8 - ltg05_direct_count)
         self.assertEqual(observed_stage_rows["LTG-05"]["local_evidence_stage_count"], 8)
         self.assertEqual(
@@ -22732,6 +22738,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             },
         )
         self.assertEqual(migration_goals["LTG-05"]["observed_stage_scope_pending_count"], 8 - ltg05_direct_count)
+        self.assertEqual(
+            migration_goals["LTG-05"]["observed_stage_scope_direct_evidence_keys"],
+            ltg05_direct_keys,
+        )
         self.assertFalse(migration_goals["LTG-05"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-06"]["stage_scope_manifest"], "worker_runtime_evidence_stage_scope_manifest")
         self.assertIn("runtime evidence stage-scope manifest", migration_goals["LTG-06"]["current_state"])

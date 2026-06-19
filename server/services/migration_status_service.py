@@ -2456,16 +2456,24 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
         and cleanup_review_map.get("production_cleanup_complete") is False
         and cleanup_review_map.get("contains_secret") is False
     )
-    direct_evidence_count = (
-        int(schema_done)
-        + int(schema_migration_done)
-        + int(manifest_done)
-        + int(duckdb_read_validation_done)
-        + int(partition_metadata_validation_done)
-        + int(physical_compaction_metadata_validation_done)
-        + int(cache_ttl_refresh_metadata_validation_done)
-        + int(artifact_cleanup_review_done)
-    )
+    direct_evidence_stage_keys: list[str] = []
+    if schema_done:
+        direct_evidence_stage_keys.append("physical_schema_validation")
+    if schema_migration_done:
+        direct_evidence_stage_keys.append("schema_migration")
+    if manifest_done:
+        direct_evidence_stage_keys.append("dataset_version_manifest_validation")
+    if duckdb_read_validation_done:
+        direct_evidence_stage_keys.append("duckdb_post_migration_validation")
+    if partition_metadata_validation_done:
+        direct_evidence_stage_keys.append("partition_migration")
+    if physical_compaction_metadata_validation_done:
+        direct_evidence_stage_keys.append("physical_compaction")
+    if cache_ttl_refresh_metadata_validation_done:
+        direct_evidence_stage_keys.append("cache_ttl_refresh")
+    if artifact_cleanup_review_done:
+        direct_evidence_stage_keys.append("artifact_cleanup_review")
+    direct_evidence_count = len(direct_evidence_stage_keys)
     try:
         schema_done_count = int(schema_map.get("physical_schema_validation_done_count") or 0)
     except Exception:
@@ -2506,6 +2514,7 @@ def _latest_storage_direct_execution_evidence_summary() -> dict[str, Any]:
         if direct_evidence_count
         else "storage_direct_evidence_missing",
         "direct_evidence_stage_count": direct_evidence_count,
+        "direct_evidence_stage_keys": direct_evidence_stage_keys,
         "physical_schema_validation_done": schema_done,
         "physical_schema_validation_done_count": schema_done_count,
         "schema_validation_acceptance_evidence_status": str(schema_map.get("status") or ""),
@@ -5304,6 +5313,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "pending_stage_count": observed_pending_count,
                 "local_evidence_stage_count": local_evidence_count,
                 "direct_evidence_stage_count": direct_evidence_count,
+                "direct_evidence_stage_keys": list(direct_evidence.get("direct_evidence_stage_keys") or []),
                 "production_blocker_count": observed_pending_count,
                 "physical_schema_validation_done": direct_evidence.get("physical_schema_validation_done") is True,
                 "physical_schema_validation_done_count": int(
