@@ -3505,6 +3505,8 @@ def _latest_tauri_package_direct_evidence_summary() -> dict[str, Any]:
         and signing_review.get("production_signing_notarization_ready") is True
         and signing_review.get("signing_notarization_done") is True
     )
+    if signing_notarization_review_ready and len(direct_stage_keys) < 8:
+        direct_stage_keys.append("signing_notarization_review")
     direct_gap_stage_keys = (
         list(signing_review.get("direct_gap_evidence_stage_keys") or [])
         if signing_notarization_review_ready
@@ -6296,7 +6298,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
         observed_pending_count = max(pending_count - direct_evidence_count, 0)
         promotion_review_blocker_count = int(direct_evidence.get("promotion_review_blocker_count") or 0)
-        effective_production_blocker_count = max(observed_pending_count, promotion_review_blocker_count)
+        direct_gap_blocker_count = 1 if direct_evidence.get("direct_gap_evidence_stage_count") else 0
+        effective_production_blocker_count = max(
+            observed_pending_count,
+            direct_gap_blocker_count,
+            promotion_review_blocker_count,
+        )
         tauri_status = (
             "observed_tauri_release_binary_direct_evidence_production_pending"
             if direct_evidence_count

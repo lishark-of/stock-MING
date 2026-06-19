@@ -1071,6 +1071,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 self.assertTrue(observed_stage_rows["LTG-09"]["app_bundle_detected"])
             else:
                 self.assertFalse(observed_stage_rows["LTG-09"]["app_bundle_detected"])
+            if observed_stage_rows["LTG-09"]["signing_notarization_review_ready"]:
+                self.assertTrue(
+                    "signing_notarization_review" in ltg09_direct_keys
+                    or observed_stage_rows["LTG-09"].get("direct_gap_evidence_stage_count", 0) > 0
+                )
+                self.assertFalse(observed_stage_rows["LTG-09"]["signing_notarization_done"])
         self.assertFalse(observed_stage_rows["LTG-09"]["production_package_complete"])
         self.assertFalse(observed_stage_rows["LTG-09"]["tauri_build_executed"])
         self.assertFalse(observed_stage_rows["LTG-09"]["packaged_runtime_qa_done"])
@@ -1362,6 +1368,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 )
             if "app_bundle_artifact_qa" in ltg09_goal_direct_keys:
                 self.assertIn("app_bundle_artifact_qa", ltg09_goal_direct_keys)
+            if migration_goals["LTG-09"].get("signing_notarization_review_ready"):
+                self.assertTrue(
+                    "signing_notarization_review" in ltg09_goal_direct_keys
+                    or migration_goals["LTG-09"].get("direct_gap_evidence_stage_count", 0) > 0
+                )
         self.assertFalse(migration_goals["LTG-09"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-10"]["stage_scope_manifest"], "streamlit_retirement_stage_scope_manifest")
         self.assertIn("retirement stage-scope manifest", migration_goals["LTG-10"]["current_state"])
@@ -22827,6 +22838,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
                 self.assertTrue(observed_stage_rows["LTG-09"]["app_bundle_detected"])
             else:
                 self.assertFalse(observed_stage_rows["LTG-09"]["app_bundle_detected"])
+            if observed_stage_rows["LTG-09"]["signing_notarization_review_ready"]:
+                self.assertTrue(
+                    "signing_notarization_review" in ltg09_direct_keys
+                    or observed_stage_rows["LTG-09"].get("direct_gap_evidence_stage_count", 0) > 0
+                )
+                self.assertFalse(observed_stage_rows["LTG-09"]["signing_notarization_done"])
         self.assertFalse(observed_stage_rows["LTG-09"]["production_package_complete"])
         self.assertFalse(observed_stage_rows["LTG-09"]["tauri_build_executed"])
         self.assertFalse(observed_stage_rows["LTG-09"]["packaged_runtime_qa_done"])
@@ -24875,10 +24892,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         migration = migration_status_service.build_migration_status()
         ltg09 = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}["LTG-09"]
-        self.assertEqual(ltg09["direct_evidence_stage_count"], 7)
+        self.assertEqual(ltg09["direct_evidence_stage_count"], 8)
         self.assertEqual(ltg09["direct_gap_evidence_stage_count"], 1)
         self.assertEqual(ltg09["direct_gap_evidence_stage_keys"], ["signing_notarization_gap_review"])
-        self.assertEqual(ltg09["pending_stage_count"], 1)
+        self.assertEqual(ltg09["pending_stage_count"], 0)
         self.assertEqual(ltg09["production_blocker_count"], 1)
         self.assertTrue(ltg09["signing_notarization_review_ready"])
         self.assertEqual(ltg09["signing_notarization_review_status"], "tauri_signing_notarization_review_ready_blocked")
