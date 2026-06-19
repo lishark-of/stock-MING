@@ -10026,6 +10026,92 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(persisted["github_called"])
         self.assertTrue(persisted["does_not_modify_strategy_action"])
 
+    def test_tushare_target_sample_run_preserves_prior_trade_cal_direct_evidence(self):
+        db_path = self._with_meta_store()
+        self._with_parquet_root()
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        start = _dt.date(2024, 1, 1)
+        end = start + _dt.timedelta(days=820)
+        trade_cal_rows = []
+        cursor = start
+        previous_open = ""
+        while cursor <= end:
+            is_open = cursor.weekday() < 5
+            trade_cal_rows.append(
+                {
+                    "exchange": "SSE",
+                    "cal_date": cursor.strftime("%Y%m%d"),
+                    "is_open": 1 if is_open else 0,
+                    "pretrade_date": previous_open,
+                }
+            )
+            if is_open:
+                previous_open = cursor.strftime("%Y%m%d")
+            cursor += _dt.timedelta(days=1)
+
+        class TradeCalAdapter:
+            def get_trade_cal(self, **params):
+                return {"ok": True, "data": trade_cal_rows, "error": ""}
+
+        class EmptyMarginAdapter:
+            def get_margin_detail(self, **params):
+                return {"ok": True, "data": [], "error": ""}
+
+        trade_cal_task = tushare_task_service.run_tushare_refresh_task(
+            {
+                "apis": ["trade_cal"],
+                "start_date": start.strftime("%Y%m%d"),
+                "end_date": end.strftime("%Y%m%d"),
+                "acceptance_mode": "provider_backed_trade_cal_long_window",
+                "freshness_replay_passed": True,
+                "freshness_replay_scenario_count": 8,
+                "failure_modes_validated": True,
+                "failure_mode_validated_count": 6,
+            },
+            adapter=TradeCalAdapter(),
+        )
+        self.assertEqual(trade_cal_task["status"], "success")
+
+        margin_task = tushare_task_service.run_tushare_refresh_task(
+            {
+                "apis": ["margin_detail"],
+                "ts_code": "002008.SZ",
+                "trade_date": "20260610",
+                "start_date": "20260601",
+                "end_date": "20260610",
+                "acceptance_mode": "provider_target_sample_acceptance",
+                "target_sample_acceptance_groups": ["margin_financing"],
+                "failure_modes_validated": True,
+                "failure_mode_validated_count": 6,
+            },
+            adapter=EmptyMarginAdapter(),
+        )
+        self.assertEqual(margin_task["status"], "success")
+
+        persisted = SQLiteMetaStore(db_path).read_packet("command_center_tushare_refresh_packet")
+        self.assertIsNotNone(persisted)
+        summary = data_health_service._local_tushare_refresh_packet_summary(persisted)
+        self.assertEqual(persisted["selected_apis"], ["margin_detail"])
+        self.assertGreaterEqual(persisted["prior_direct_evidence_row_count"], 2)
+        self.assertEqual(summary["trade_cal_provider_call_ledger_observed_count"], 1)
+        self.assertTrue(summary["provider_backed_long_window_acceptance_done"])
+        self.assertFalse(summary["production_tushare_pipeline_complete"])
+        data_health = data_health_service.read_data_health_timeline_cache()
+        promotion = data_health["trade_cal_provider_acceptance_promotion_audit"]
+        promotion_rows = {row["criterion"]: row for row in data_health["trade_cal_provider_acceptance_promotion_rows"]}
+        self.assertTrue(promotion_rows["explicit_provider_call_ledger"]["passed"])
+        self.assertTrue(promotion_rows["freshness_gate_replay_evidence"]["passed"])
+        self.assertTrue(promotion_rows["failure_mode_evidence"]["passed"])
+        self.assertFalse(promotion["production_freshness_gate_complete"])
+
+        target_contract = persisted["provider_target_sample_acceptance_contract"]
+        self.assertEqual(target_contract["status"], "target_sample_acceptance_ready_for_review")
+        self.assertTrue(target_contract["target_sample_acceptance_ready_for_review"])
+        self.assertFalse(target_contract["provider_backed_acceptance_done"])
+        self.assertFalse(target_contract["full_interface_acceptance_done"])
+        self.assertFalse(target_contract["production_tushare_pipeline_complete"])
+
     def test_tushare_target_sample_acceptance_records_reviewable_target_without_full_promotion(self):
         db_path = self._with_meta_store()
         self._with_parquet_root()

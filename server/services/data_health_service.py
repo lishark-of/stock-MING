@@ -3796,7 +3796,7 @@ def _trade_cal_provider_acceptance_evidence_rows(snapshot: Mapping[str, Any]) ->
         if isinstance(value, Mapping):
             if str(value.get("api") or value.get("required_api") or "").strip().lower() == "trade_cal":
                 candidate_rows.append(dict(value))
-            for key in ("call_ledger", "rows"):
+            for key in ("prior_direct_evidence_rows", "call_ledger", "rows"):
                 for raw in _as_list(value.get(key)):
                     if isinstance(raw, Mapping):
                         candidate_rows.append(dict(raw))
@@ -3838,7 +3838,8 @@ def _local_tushare_refresh_packet_for_data_health() -> dict[str, Any]:
 
 
 def _local_tushare_refresh_packet_summary(packet: Mapping[str, Any]) -> dict[str, Any]:
-    call_ledger = _as_list(packet.get("call_ledger"))
+    historical_rows = _as_list(packet.get("prior_direct_evidence_rows"))
+    call_ledger = historical_rows if historical_rows else _as_list(packet.get("call_ledger"))
     trade_cal_rows = [
         row
         for row in call_ledger

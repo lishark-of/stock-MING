@@ -2200,6 +2200,34 @@ def _latest_tushare_refresh_packet() -> dict[str, Any]:
     return dict(packet) if isinstance(packet, Mapping) else {}
 
 
+def _direct_evidence_rows_from_packet(packet: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(packet, Mapping):
+        return []
+    candidates = list(packet.get("prior_direct_evidence_rows") or []) + list(packet.get("call_ledger") or [])
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in candidates:
+        if not isinstance(raw, Mapping):
+            continue
+        row = dict(raw)
+        call_status = str(row.get("call_status") or "").lower()
+        is_direct = (
+            row.get("external_calls_triggered") is True
+            or row.get("tushare_called") is True
+            or row.get("provider_backed_long_window_acceptance_done") is True
+            or row.get("provider_backed_trade_cal_acceptance_done") is True
+            or call_status in ACCEPTANCE_SAFE_TERMINAL_STATUSES
+        )
+        if not is_direct:
+            continue
+        signature = json.dumps(row, ensure_ascii=False, sort_keys=True, default=str)
+        if signature in seen:
+            continue
+        seen.add(signature)
+        rows.append(row)
+    return rows[:80]
+
+
 def _latest_tushare_target_sample_execution_recipe_packet() -> dict[str, Any]:
     refresh_packet = _latest_tushare_refresh_packet()
     recipe = refresh_packet.get("provider_target_sample_execution_recipe") if isinstance(refresh_packet, Mapping) else {}
@@ -3947,6 +3975,11 @@ def run_tushare_refresh_task(
     adapter: Any = None,
 ) -> dict[str, Any]:
     selected_apis = _selected_apis(payload, default_apis)
+    try:
+        previous_packet_raw = SQLiteMetaStore(SQLITE_META_PATH).read_packet(output_packet_key)
+    except Exception:
+        previous_packet_raw = {}
+    previous_packet = dict(previous_packet_raw) if isinstance(previous_packet_raw, Mapping) else {}
     task = create_task_record(
         task_type,
         output_packet_key=output_packet_key,
@@ -4105,6 +4138,10 @@ def run_tushare_refresh_task(
         provider_target_sample_runbook_contract=provider_target_sample_runbook_contract,
         provider_target_sample_execution_recipe=provider_target_sample_execution_recipe,
     )
+    prior_direct_evidence_rows = _direct_evidence_rows_from_packet(previous_packet)
+    direct_evidence_rows = _direct_evidence_rows_from_packet(
+        {"prior_direct_evidence_rows": prior_direct_evidence_rows, "call_ledger": call_ledger}
+    )
     refresh_packet = {
         "packet_key": output_packet_key,
         "schema_version": "command_center_tushare_refresh_task.v1",
@@ -4221,6 +4258,8 @@ def run_tushare_refresh_task(
             "does_not_modify_strategy_action": True,
         },
         "call_ledger": call_ledger,
+        "prior_direct_evidence_rows": direct_evidence_rows,
+        "prior_direct_evidence_row_count": len(direct_evidence_rows),
         "call_count": len(call_ledger),
         "success_count": len(success_or_empty),
         "failed_count": len(failed),
