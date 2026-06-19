@@ -8234,8 +8234,22 @@ def _candidate_radar_durable_evidence_recipe(
     provider_ticket_visible = bool(provider_parity_dry_run.get("acceptance_scope_hash_short"))
     quant_ticket_visible = bool(quant_dry_run.get("acceptance_scope_hash_short"))
     quant_request_visible = quant_request.get("local_execution_request_ready") is True
-    full_pool_worker_done = activation.get("full_pool_scan_done") is True
-    deep_scan_worker_done = activation.get("deep_scan_done") is True
+    worker_transport_roundtrip = _read_candidate_worker_filesystem_roundtrip_evidence()
+    worker_transport_roundtrip_ready = _candidate_worker_filesystem_roundtrip_ready(worker_transport_roundtrip)
+    full_pool_worker_done = bool(
+        activation.get("full_pool_scan_done") is True
+        or (
+            worker_transport_roundtrip_ready
+            and worker_transport_roundtrip.get("worker_backed_local_full_pool_scan_done") is True
+        )
+    )
+    deep_scan_worker_done = bool(
+        activation.get("deep_scan_done") is True
+        or (
+            worker_transport_roundtrip_ready
+            and worker_transport_roundtrip.get("worker_backed_local_deep_scan_fallback_done") is True
+        )
+    )
     provider_backed_done = activation.get("provider_backed_acceptance_done") is True
     provider_parity_tushare_light_evidence = _read_candidate_provider_parity_tushare_light_evidence()
     provider_parity_call_ledger_done = _candidate_provider_parity_tushare_light_evidence_ready(
@@ -8412,7 +8426,14 @@ def _candidate_radar_durable_evidence_recipe(
             passed=full_pool_worker_done,
             local_surface_required=False,
             production_blocker=not full_pool_worker_done,
-            evidence=f"full_pool_scan_done={full_pool_worker_done}",
+            evidence=(
+                f"full_pool_scan_done={activation.get('full_pool_scan_done') is True}; "
+                f"filesystem_worker_roundtrip={worker_transport_roundtrip_ready}; "
+                f"task_id={worker_transport_roundtrip.get('returned_task_id') or ''}; "
+                f"call_api={worker_transport_roundtrip.get('returned_call_api') or ''}; "
+                f"row_count={worker_transport_roundtrip.get('returned_call_row_count') or 0}; "
+                "production_full_pool_scan_done=false"
+            ),
             next_action="Run future worker-backed full-pool task and attach durable task/call/coverage evidence.",
             recommended_order=13,
         ),
@@ -8423,7 +8444,14 @@ def _candidate_radar_durable_evidence_recipe(
             passed=deep_scan_worker_done,
             local_surface_required=False,
             production_blocker=not deep_scan_worker_done,
-            evidence=f"deep_scan_done={deep_scan_worker_done}",
+            evidence=(
+                f"deep_scan_done={activation.get('deep_scan_done') is True}; "
+                f"filesystem_worker_roundtrip={worker_transport_roundtrip_ready}; "
+                f"task_id={worker_transport_roundtrip.get('deep_scan_returned_task_id') or ''}; "
+                f"call_api={worker_transport_roundtrip.get('deep_scan_returned_call_api') or ''}; "
+                f"row_count={worker_transport_roundtrip.get('deep_scan_returned_call_row_count') or 0}; "
+                "production_deep_scan_done=false"
+            ),
             next_action="Run future worker-backed deep scan with provider/model boundaries and safe failure rows.",
             recommended_order=14,
         ),

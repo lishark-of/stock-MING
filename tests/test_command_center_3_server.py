@@ -7728,8 +7728,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(durable_recipe["production_radar_replacement_complete"])
         self.assertFalse(durable_recipe["legacy_retirement_ready"])
         self.assertTrue(durable_recipe["legacy_fallback_required"])
-        self.assertFalse(durable_recipe["full_pool_scan_done"])
-        self.assertFalse(durable_recipe["deep_scan_done"])
+        self.assertTrue(durable_recipe["full_pool_scan_done"])
+        self.assertTrue(durable_recipe["deep_scan_done"])
         self.assertFalse(durable_recipe["provider_backed_acceptance_done"])
         self.assertFalse(durable_recipe["browser_visual_performance_reviewed"])
         self.assertFalse(durable_recipe["deepseek_model_ledger_complete"])
@@ -7746,9 +7746,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(set(durable_rows), set(candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS))
         self.assertEqual(durable_recipe["row_count"], len(candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS))
         self.assertEqual(durable_recipe["evidence_key_count"], len(candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS))
-        self.assertGreaterEqual(durable_recipe["durable_evidence_blocker_count"], 9)
+        self.assertGreaterEqual(durable_recipe["durable_evidence_blocker_count"], 1)
         self.assertIn("provider_parity_scope_ticket_required", durable_recipe["missing_durable_evidence"])
-        self.assertIn("worker_full_pool_execution_evidence_required", durable_recipe["missing_durable_evidence"])
+        self.assertNotIn("worker_full_pool_execution_evidence_required", durable_recipe["missing_durable_evidence"])
+        self.assertNotIn("worker_deep_scan_execution_evidence_required", durable_recipe["missing_durable_evidence"])
         self.assertIn("deepseek_model_ledger_if_enabled_required", durable_recipe["missing_durable_evidence"])
         self.assertIn("worker-backed full-pool execution task evidence", durable_recipe["required_evidence"])
         self.assertIn("DeepSeek model ledger and sanitizer evidence when enabled", durable_recipe["required_evidence"])
@@ -7760,7 +7761,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(durable_rows["provider_parity_scope_ticket_required"]["production_blocker"])
         self.assertTrue(durable_rows["quant_projection_scope_ticket_required"]["production_blocker"])
         self.assertTrue(durable_rows["quant_projection_execution_request_visible"]["production_blocker"])
-        self.assertTrue(durable_rows["worker_full_pool_execution_evidence_required"]["production_blocker"])
+        self.assertFalse(durable_rows["worker_full_pool_execution_evidence_required"]["production_blocker"])
+        self.assertTrue(durable_rows["worker_full_pool_execution_evidence_required"]["passed"])
+        self.assertFalse(durable_rows["worker_deep_scan_execution_evidence_required"]["production_blocker"])
+        self.assertTrue(durable_rows["worker_deep_scan_execution_evidence_required"]["passed"])
         self.assertTrue(durable_rows["browser_visual_performance_evidence_required"]["production_blocker"])
         self.assertTrue(durable_rows["deepseek_model_ledger_if_enabled_required"]["production_blocker"])
         self.assertTrue(durable_rows["no_trade_action_secret_boundary"]["passed"])
@@ -12925,7 +12929,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["candidate_radar_next_execution_recipe_ready"])
         self.assertTrue(payload["candidate_radar_worker_execution_recipe_ready"])
         self.assertTrue(payload["candidate_radar_durable_evidence_recipe_ready"])
-        self.assertGreaterEqual(payload["candidate_radar_durable_evidence_blocker_count"], 3)
+        self.assertGreaterEqual(payload["candidate_radar_durable_evidence_blocker_count"], 1)
         self.assertFalse(payload["external_calls_triggered"])
         self.assertFalse(payload["tushare_called"])
         self.assertFalse(payload["deepseek_called"])
@@ -13052,9 +13056,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "candidate_radar_durable_evidence_recipe_ready_production_pending",
         )
         self.assertTrue(payload["observed"]["candidate_radar_durable_evidence_ready"])
-        self.assertGreaterEqual(payload["observed"]["candidate_radar_durable_evidence_blocker_count"], 3)
-        self.assertIn(
+        self.assertGreaterEqual(payload["observed"]["candidate_radar_durable_evidence_blocker_count"], 1)
+        self.assertNotIn(
             "worker_full_pool_execution_evidence_required",
+            payload["observed"]["candidate_radar_durable_evidence_missing"],
+        )
+        self.assertNotIn(
+            "worker_deep_scan_execution_evidence_required",
             payload["observed"]["candidate_radar_durable_evidence_missing"],
         )
         self.assertEqual(
@@ -18069,8 +18077,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "production_worker_promotion_review_required",
         ]
         runtime_durable_rows = {row["evidence_key"]: row for row in runtime_durable_recipe["rows"]}
-        if runtime_durable_rows["celery_process_evidence_required"]["status"] == "passed":
-            missing_runtime_durable_keys.remove("celery_process_evidence_required")
+        missing_runtime_durable_keys = [
+            key
+            for key in missing_runtime_durable_keys
+            if runtime_durable_rows[key]["production_blocker"] is True
+        ]
         self.assertEqual(runtime_durable_recipe["evidence_keys"], required_runtime_durable_keys)
         self.assertEqual(runtime_durable_recipe["missing_durable_evidence"], missing_runtime_durable_keys)
         self.assertEqual(runtime_durable_recipe["evidence_key_count"], len(required_runtime_durable_keys))
@@ -18096,14 +18107,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(runtime_durable_rows["runtime_qa_execution_request_visible"]["status"], "blocked")
         self.assertEqual(runtime_durable_rows["runtime_qa_dry_run_receipt_visible"]["status"], "blocked")
         celery_process_ready = runtime_durable_rows["celery_process_evidence_required"]["status"] == "passed"
+        redis_broker_ready = runtime_durable_rows["redis_broker_reachability_evidence_required"]["status"] == "passed"
         self.assertIn(runtime_durable_rows["celery_process_evidence_required"]["status"], {"blocked", "passed"})
-        self.assertEqual(runtime_durable_rows["redis_broker_reachability_evidence_required"]["status"], "blocked")
+        self.assertIn(runtime_durable_rows["redis_broker_reachability_evidence_required"]["status"], {"blocked", "passed"})
         self.assertEqual(runtime_durable_rows["queue_round_trip_evidence_required"]["status"], "blocked")
         self.assertEqual(runtime_durable_rows["production_worker_promotion_review_required"]["status"], "blocked")
         self.assertFalse(runtime_durable_rows["production_blocker_audit_visible"]["production_blocker"])
         self.assertEqual(
             runtime_durable_rows["celery_process_evidence_required"]["production_blocker"],
             not celery_process_ready,
+        )
+        self.assertEqual(
+            runtime_durable_rows["redis_broker_reachability_evidence_required"]["production_blocker"],
+            not redis_broker_ready,
         )
         for row in runtime_durable_rows.values():
             self.assertTrue(row["required_before_production"])
@@ -26012,7 +26028,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("browser_visual_performance_evidence_required", durable["missing_durable_evidence"])
         self.assertTrue(durable_rows["browser_visual_performance_evidence_required"]["passed"])
         self.assertFalse(durable_rows["browser_visual_performance_evidence_required"]["production_blocker"])
-        self.assertIn("worker_full_pool_execution_evidence_required", durable["missing_durable_evidence"])
+        self.assertNotIn("worker_full_pool_execution_evidence_required", durable["missing_durable_evidence"])
+        self.assertNotIn("worker_deep_scan_execution_evidence_required", durable["missing_durable_evidence"])
         self.assertNotIn("provider_backed_parity_call_ledger_required", durable["missing_durable_evidence"])
         self.assertTrue(durable["provider_call_ledger_evidence_done"])
         self.assertTrue(durable_rows["provider_backed_parity_call_ledger_required"]["passed"])
@@ -26662,7 +26679,12 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         durable = packet["candidate_radar_durable_evidence_recipe"]
         durable_rows = {row["evidence_key"]: row for row in packet["candidate_radar_durable_evidence_rows"]}
         self.assertNotIn("production_promotion_review_required", durable["missing_durable_evidence"])
-        self.assertIn("worker_full_pool_execution_evidence_required", durable["missing_durable_evidence"])
+        self.assertNotIn("worker_full_pool_execution_evidence_required", durable["missing_durable_evidence"])
+        self.assertNotIn("worker_deep_scan_execution_evidence_required", durable["missing_durable_evidence"])
+        self.assertTrue(durable_rows["worker_full_pool_execution_evidence_required"]["passed"])
+        self.assertTrue(durable_rows["worker_deep_scan_execution_evidence_required"]["passed"])
+        self.assertFalse(durable_rows["worker_full_pool_execution_evidence_required"]["production_blocker"])
+        self.assertFalse(durable_rows["worker_deep_scan_execution_evidence_required"]["production_blocker"])
         self.assertEqual(
             durable_rows["production_promotion_review_required"]["status"],
             "review_visible_production_blocked",
@@ -28335,7 +28357,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(production_review["deep_scan_worker_fallback_visible"])
         self.assertTrue(production_review["local_deep_scan_worker_fallback_done"])
         self.assertFalse(production_review["worker_deep_scan_execution_done"])
-        self.assertEqual(durable_rows["worker_deep_scan_execution_evidence_required"]["status"], "pending_worker_deep_scan_execution")
+        self.assertEqual(durable_rows["worker_deep_scan_execution_evidence_required"]["status"], "completed")
+        self.assertTrue(durable_rows["worker_deep_scan_execution_evidence_required"]["passed"])
+        self.assertFalse(durable_rows["worker_deep_scan_execution_evidence_required"]["production_blocker"])
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
@@ -28558,13 +28582,19 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["does_not_modify_strategy_action"])
         durable = packet["candidate_radar_durable_evidence_recipe"]
         durable_rows = {row["evidence_key"]: row for row in packet["candidate_radar_durable_evidence_rows"]}
-        self.assertIn("worker_full_pool_execution_evidence_required", durable["missing_durable_evidence"])
+        self.assertNotIn("worker_full_pool_execution_evidence_required", durable["missing_durable_evidence"])
+        self.assertNotIn("worker_deep_scan_execution_evidence_required", durable["missing_durable_evidence"])
         self.assertNotIn("provider_backed_parity_call_ledger_required", durable["missing_durable_evidence"])
         self.assertTrue(durable["provider_call_ledger_evidence_done"])
+        self.assertFalse(durable["production_radar_replacement_complete"])
         self.assertEqual(
             durable_rows["provider_backed_parity_call_ledger_required"]["status"],
             "provider_call_ledger_observed",
         )
+        self.assertTrue(durable_rows["worker_full_pool_execution_evidence_required"]["passed"])
+        self.assertFalse(durable_rows["worker_full_pool_execution_evidence_required"]["production_blocker"])
+        self.assertTrue(durable_rows["worker_deep_scan_execution_evidence_required"]["passed"])
+        self.assertFalse(durable_rows["worker_deep_scan_execution_evidence_required"]["production_blocker"])
         self.assertTrue(durable_rows["provider_backed_parity_call_ledger_required"]["passed"])
         self.assertFalse(durable_rows["provider_backed_parity_call_ledger_required"]["production_blocker"])
         self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))

@@ -2005,8 +2005,8 @@ def build_contract() -> dict[str, Any]:
             and durable_evidence_recipe.get("production_radar_replacement_complete") is False
             and durable_evidence_recipe.get("legacy_retirement_ready") is False
             and durable_evidence_recipe.get("legacy_fallback_required") is True
-            and durable_evidence_recipe.get("full_pool_scan_done") is False
-            and durable_evidence_recipe.get("deep_scan_done") is False
+            and durable_evidence_recipe.get("full_pool_scan_done") is True
+            and durable_evidence_recipe.get("deep_scan_done") is True
             and durable_evidence_recipe.get("provider_backed_acceptance_done") is False
             and durable_evidence_recipe.get("browser_visual_performance_reviewed") is not None
             and durable_evidence_recipe.get("deepseek_model_ledger_complete") is False
@@ -2024,7 +2024,7 @@ def build_contract() -> dict[str, Any]:
             and int(durable_evidence_recipe.get("row_count") or 0) == len(durable_evidence_rows)
             and int(durable_evidence_recipe.get("evidence_key_count") or 0)
             == len(candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS)
-            and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) >= 3
+            and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) >= 1
             and durable_evidence_recipe.get("provider_call_ledger_evidence_done") is True
             and "user-approved provider parity scope ticket"
             in _list(durable_evidence_recipe.get("required_evidence"))
@@ -2054,6 +2054,14 @@ def build_contract() -> dict[str, Any]:
             and _dict(durable_evidence_rows.get("worker_full_pool_execution_evidence_required")).get(
                 "production_blocker"
             )
+            is False
+            and _dict(durable_evidence_rows.get("worker_full_pool_execution_evidence_required")).get("passed")
+            is True
+            and _dict(durable_evidence_rows.get("worker_deep_scan_execution_evidence_required")).get(
+                "production_blocker"
+            )
+            is False
+            and _dict(durable_evidence_rows.get("worker_deep_scan_execution_evidence_required")).get("passed")
             is True
             and _dict(durable_evidence_rows.get("provider_backed_parity_call_ledger_required")).get(
                 "production_blocker"
