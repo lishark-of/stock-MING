@@ -27394,6 +27394,21 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache, ensure_ascii=False))
 
+        migration = migration_status_service.build_migration_status()
+        ltg13 = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}["LTG-13"]
+        self.assertIn("search_quant_provider_model_acceptance", ltg13["direct_evidence_stage_keys"])
+        self.assertTrue(ltg13["search_quant_provider_model_acceptance_verified"])
+        self.assertEqual(
+            ltg13["search_quant_provider_model_acceptance_status"],
+            "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped",
+        )
+        self.assertEqual(ltg13["search_quant_provider_model_acceptance_api_success_count"], 4)
+        self.assertEqual(ltg13["search_quant_provider_model_acceptance_api_call_count"], 4)
+        self.assertFalse(ltg13["production_radar_replacement_complete"])
+        self.assertFalse(ltg13["external_calls_triggered"])
+        self.assertFalse(ltg13["tushare_called"])
+        self.assertFalse(ltg13["deepseek_called"])
+
     def test_candidate_radar_quant_projection_execution_request_blocks_scope_hash_mismatch(self):
         self._with_meta_store()
         self._with_bootstrap_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE", DEEPSEEK_API_KEY="REAL_DEEPSEEK_SECRET_VALUE")

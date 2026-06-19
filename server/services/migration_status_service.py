@@ -3636,6 +3636,9 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
     legacy_retirement_review = _dict_or_empty(
         packet_map.get("candidate_radar_legacy_retirement_review_receipt")
     )
+    search_quant_provider_model_acceptance = _dict_or_empty(
+        packet_map.get("search_quant_provider_model_acceptance_receipt")
+    )
     stage_manifest = _dict_or_empty(packet_map.get("candidate_radar_production_stage_scope_manifest"))
     stage_direct_key_values = stage_manifest.get("direct_evidence_stage_keys")
     stage_direct_keys = {
@@ -3953,6 +3956,18 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
     provider_parity_tushare_light_done = "provider_parity_acceptance" in stage_direct_keys
     if provider_parity_tushare_light_done:
         direct_stage_keys.append("provider_parity_acceptance")
+    search_quant_provider_model_acceptance_done = bool(
+        "search_quant_provider_model_acceptance" in stage_direct_keys
+        and search_quant_provider_model_acceptance.get("schema_version")
+        == "candidate_radar_search_quant_provider_model_acceptance.v1"
+        and search_quant_provider_model_acceptance.get("direct_evidence_verified") is True
+        and search_quant_provider_model_acceptance.get("tushare_call_ledger_evidence_done") is True
+        and search_quant_provider_model_acceptance.get("deepseek_skipped_by_request") is True
+        and search_quant_provider_model_acceptance.get("production_quant_projection_complete") is False
+        and search_quant_provider_model_acceptance.get("production_radar_replacement_complete") is False
+    )
+    if search_quant_provider_model_acceptance_done:
+        direct_stage_keys.append("search_quant_provider_model_acceptance")
 
     return {
         "schema_version": "migration_candidate_radar_direct_evidence_summary.v1",
@@ -3987,6 +4002,16 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
             production_promotion_review.get("production_blocker_count") or 0
         ),
         "provider_parity_tushare_light_evidence_verified": provider_parity_tushare_light_done,
+        "search_quant_provider_model_acceptance_verified": search_quant_provider_model_acceptance_done,
+        "search_quant_provider_model_acceptance_status": str(
+            search_quant_provider_model_acceptance.get("status") or "missing"
+        ),
+        "search_quant_provider_model_acceptance_api_success_count": int(
+            search_quant_provider_model_acceptance.get("provider_api_success_count") or 0
+        ),
+        "search_quant_provider_model_acceptance_api_call_count": int(
+            search_quant_provider_model_acceptance.get("provider_api_call_count") or 0
+        ),
         "production_radar_replacement_complete": False,
         "legacy_retirement_ready": False,
         "provider_backed_acceptance_done": False,
@@ -5951,6 +5976,18 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "legacy_retirement_review_can_close_goal": False,
                 "production_promotion_review_direct_evidence_verified": (
                     direct_evidence.get("production_promotion_review_direct_evidence_verified") is True
+                ),
+                "search_quant_provider_model_acceptance_verified": (
+                    direct_evidence.get("search_quant_provider_model_acceptance_verified") is True
+                ),
+                "search_quant_provider_model_acceptance_status": str(
+                    direct_evidence.get("search_quant_provider_model_acceptance_status") or "missing"
+                ),
+                "search_quant_provider_model_acceptance_api_success_count": int(
+                    direct_evidence.get("search_quant_provider_model_acceptance_api_success_count") or 0
+                ),
+                "search_quant_provider_model_acceptance_api_call_count": int(
+                    direct_evidence.get("search_quant_provider_model_acceptance_api_call_count") or 0
                 ),
                 "production_promotion_review_status": str(
                     direct_evidence.get("production_promotion_review_status") or "missing"
