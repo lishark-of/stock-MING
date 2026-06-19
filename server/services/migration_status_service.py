@@ -2734,11 +2734,13 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
     runtime_request = packet_map.get("worker_runtime_qa_execution_request_receipt")
     runtime_dry_run = packet_map.get("worker_runtime_qa_dry_run_receipt")
     runtime_execution = packet_map.get("worker_runtime_qa_execution_receipt")
+    runtime_durable = packet_map.get("worker_runtime_durable_evidence_recipe")
     production_promotion_review = packet_map.get("worker_production_promotion_review_receipt")
     synthetic_map = synthetic if isinstance(synthetic, dict) else {}
     request_map = runtime_request if isinstance(runtime_request, dict) else {}
     dry_run_map = runtime_dry_run if isinstance(runtime_dry_run, dict) else {}
     execution_map = runtime_execution if isinstance(runtime_execution, dict) else {}
+    durable_map = runtime_durable if isinstance(runtime_durable, dict) else {}
     promotion_map = production_promotion_review if isinstance(production_promotion_review, dict) else {}
     synthetic_done = bool(
         synthetic_map.get("schema_version") == "worker_synthetic_healthcheck.v1"
@@ -2907,7 +2909,21 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         and promotion_map.get("does_not_modify_strategy_action") is True
         and promotion_map.get("contains_secret") is False
     )
+    celery_process_done = bool(
+        durable_map.get("celery_process_evidence_ready") is True
+        and durable_map.get("local_celery_filesystem_roundtrip_evidence_ready") is True
+        and durable_map.get("production_worker_complete") is False
+        and durable_map.get("external_calls_triggered") is False
+        and durable_map.get("tushare_called") is False
+        and durable_map.get("deepseek_called") is False
+        and durable_map.get("github_called") is False
+        and durable_map.get("does_not_execute_trades") is True
+        and durable_map.get("does_not_modify_strategy_action") is True
+        and durable_map.get("contains_secret") is False
+    )
     direct_stage_keys = []
+    if celery_process_done:
+        direct_stage_keys.append("celery_process")
     if runtime_execution_done:
         direct_stage_keys.append("local_fallback_round_trip")
     if cross_process_task_control_done:
@@ -2950,6 +2966,10 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         "runtime_qa_execution_request_status": str(request_map.get("status") or "packet_missing"),
         "runtime_qa_dry_run_status": str(dry_run_map.get("status") or "packet_missing"),
         "runtime_qa_execution_status": str(execution_map.get("status") or "packet_missing"),
+        "celery_process_evidence_verified": celery_process_done,
+        "local_celery_filesystem_roundtrip_artifact": str(
+            durable_map.get("local_celery_filesystem_roundtrip_artifact") or ""
+        ),
         "production_promotion_review_ready": production_promotion_review_done,
         "production_promotion_review_status": str(promotion_map.get("status") or "packet_missing"),
         "production_promotion_review_blocker_count": int(promotion_map.get("production_blocker_count") or 0),
@@ -5512,6 +5532,11 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
             if isinstance(row, dict) and row.get("selected_by_evidence_plan_scope") is True
         )
         direct_evidence_count = int(direct_evidence.get("direct_evidence_stage_count") or 0)
+        pending_stage_keys = [
+            str(row.get("stage_key"))
+            for row in stage_rows
+            if isinstance(row, dict) and row.get("production_blocker") is True
+        ]
         stage_rows_are_direct_aware = any(
             isinstance(row, dict) and "direct_evidence_complete" in row for row in stage_rows
         )
@@ -5541,6 +5566,7 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "local_evidence_stage_count": local_evidence_count,
                 "direct_evidence_stage_count": direct_evidence_count,
                 "direct_evidence_stage_keys": list(direct_evidence.get("direct_evidence_stage_keys") or []),
+                "pending_stage_keys": pending_stage_keys,
                 "production_blocker_count": observed_pending_count,
                 "worker_started": False,
                 "celery_worker_started": False,
@@ -5597,6 +5623,11 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                     "cross_process_task_control_verified"
                 )
                 is True,
+                "celery_process_evidence_verified": direct_evidence.get("celery_process_evidence_verified")
+                is True,
+                "local_celery_filesystem_roundtrip_artifact": str(
+                    direct_evidence.get("local_celery_filesystem_roundtrip_artifact") or ""
+                ),
                 "activation_ready": False,
                 "production_worker_complete": False,
                 "cache_get_external_calls": False,

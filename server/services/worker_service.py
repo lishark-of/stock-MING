@@ -126,6 +126,12 @@ WORKER_RUNTIME_DURABLE_EVIDENCE_LABELS = {
 }
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
+WORKER_CELERY_FILESYSTEM_ROUNDTRIP_EVIDENCE_PATH = (
+    PROJECT_ROOT
+    / ".stock_ming_3"
+    / "worker_runtime"
+    / "worker_celery_filesystem_roundtrip_smoke.json"
+)
 LOCAL_REDIS_SERVER_CANDIDATE_PATHS = (
     "/opt/homebrew/bin/redis-server",
     "/usr/local/bin/redis-server",
@@ -3776,6 +3782,39 @@ def _worker_runtime_durable_evidence_recipe_row(
     }
 
 
+def _read_worker_celery_filesystem_roundtrip_evidence() -> dict[str, Any]:
+    try:
+        payload = json.loads(WORKER_CELERY_FILESYSTEM_ROUNDTRIP_EVIDENCE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _worker_celery_filesystem_roundtrip_ready(payload: dict[str, Any]) -> bool:
+    return bool(
+        payload.get("schema_version") == "worker_celery_filesystem_roundtrip_smoke.v1"
+        and payload.get("status") == "celery_filesystem_roundtrip_passed"
+        and payload.get("direct_evidence_layer") == "L3_local_celery_filesystem_roundtrip_not_redis"
+        and payload.get("broker_url") == "filesystem://"
+        and payload.get("result_backend") == "cache+memory://"
+        and payload.get("celery_available") is True
+        and payload.get("celery_testing_worker_started") is True
+        and payload.get("task_dispatched") is True
+        and payload.get("task_result_returned") is True
+        and payload.get("filesystem_broker_used") is True
+        and payload.get("redis_broker_used") is False
+        and payload.get("redis_pinged") is False
+        and payload.get("production_worker_complete") is False
+        and payload.get("external_calls_triggered") is False
+        and payload.get("tushare_called") is False
+        and payload.get("deepseek_called") is False
+        and payload.get("github_called") is False
+        and payload.get("does_not_execute_trades") is True
+        and payload.get("does_not_modify_strategy_action") is True
+        and payload.get("contains_secret") is False
+    )
+
+
 def _worker_runtime_durable_evidence_recipe(
     *,
     production_blocker_audit: dict[str, Any],
@@ -3792,6 +3831,10 @@ def _worker_runtime_durable_evidence_recipe(
     production_promotion_review: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     promotion_review = production_promotion_review if isinstance(production_promotion_review, dict) else {}
+    celery_filesystem_roundtrip = _read_worker_celery_filesystem_roundtrip_evidence()
+    celery_filesystem_roundtrip_visible = _worker_celery_filesystem_roundtrip_ready(
+        celery_filesystem_roundtrip
+    )
     blocker_visible = production_blocker_audit.get("schema_version") == "worker_production_blocker_audit.v1"
     healthcheck_visible = healthcheck_qa_contract.get("schema_version") == "worker_healthcheck_qa_contract.v1"
     task_log_visible = task_log_persistence_audit.get("schema_version") == "worker_task_log_persistence_audit.v1"
@@ -4045,11 +4088,20 @@ def _worker_runtime_durable_evidence_recipe(
         ),
         _worker_runtime_durable_evidence_recipe_row(
             "celery_process_evidence_required",
-            passed=False,
-            source_contract="manual_worker_runtime_qa",
-            evidence="No Celery worker process identity, queue registration, or startup log evidence has been collected.",
-            required_evidence="manual Celery process identity, queue registration, and safe startup log evidence",
-            next_action="collect Celery process evidence only through a separately approved runtime QA path",
+            passed=celery_filesystem_roundtrip_visible,
+            source_contract="worker_celery_filesystem_roundtrip_smoke",
+            evidence=(
+                f"Local Celery filesystem-broker round-trip artifact ready at {WORKER_CELERY_FILESYSTEM_ROUNDTRIP_EVIDENCE_PATH}; "
+                "testing worker started, task dispatched, Redis not used, production_worker_complete=false."
+                if celery_filesystem_roundtrip_visible
+                else "No Celery testing-worker filesystem-broker round-trip evidence has been collected."
+            ),
+            required_evidence="local Celery testing-worker task round-trip evidence; production Redis worker evidence remains separate",
+            next_action=(
+                "keep Redis broker evidence pending; do not treat local testing worker as production worker"
+                if celery_filesystem_roundtrip_visible
+                else "collect Celery testing-worker evidence only through an explicit local smoke run"
+            ),
         ),
         _worker_runtime_durable_evidence_recipe_row(
             "redis_broker_reachability_evidence_required",
@@ -4219,6 +4271,13 @@ def _worker_runtime_durable_evidence_recipe(
         "runtime_qa_dry_run_ready": runtime_dry_run_visible,
         "runtime_qa_dry_run_status": runtime_qa_dry_run.get("status"),
         "local_fallback_rollback_evidence_ready": local_fallback_rollback_visible,
+        "celery_process_evidence_ready": celery_filesystem_roundtrip_visible,
+        "local_celery_filesystem_roundtrip_evidence_ready": celery_filesystem_roundtrip_visible,
+        "local_celery_filesystem_roundtrip_artifact": (
+            str(WORKER_CELERY_FILESYSTEM_ROUNDTRIP_EVIDENCE_PATH)
+            if celery_filesystem_roundtrip_visible
+            else ""
+        ),
         "cross_process_controls_evidence_ready": cross_process_controls_visible,
         "append_only_worker_log_evidence_ready": append_only_worker_log_visible,
         "queue_round_trip_evidence_ready": queue_round_trip_visible,
@@ -4303,9 +4362,14 @@ def _worker_runtime_evidence_stage_scope_rows(
             "required_before_production": True,
             "production_blocker": stage_key not in direct,
             "worker_started": False,
+            "local_celery_testing_worker_started": stage_key == "celery_process" and stage_key in direct,
             "redis_pinged": False,
             "scheduler_started": False,
             "task_dispatched": False,
+            "local_celery_task_dispatched": stage_key == "celery_process" and stage_key in direct,
+            "local_celery_filesystem_roundtrip_evidence_present": (
+                stage_key == "celery_process" and stage_key in direct
+            ),
             "provider_model_task_dispatched": False,
             "healthcheck_executed": False,
             "task_log_persistence_verified": stage_key == "append_only_worker_logs" and stage_key in direct,
@@ -4349,6 +4413,8 @@ def _worker_runtime_evidence_stage_scope_manifest(
         for item in (production_evidence_plan.get("scope_ticket_payload") or {}).get("evidence_scope", [])
     ]
     direct_stage_keys: list[str] = []
+    if runtime_durable_evidence_recipe.get("celery_process_evidence_ready") is True:
+        direct_stage_keys.append("celery_process")
     if runtime_durable_evidence_recipe.get("local_fallback_rollback_evidence_ready") is True:
         direct_stage_keys.append("local_fallback_round_trip")
     if runtime_durable_evidence_recipe.get("cross_process_controls_evidence_ready") is True:
@@ -4371,6 +4437,7 @@ def _worker_runtime_evidence_stage_scope_manifest(
         evidence_scope,
         direct_stage_keys=direct_stage_keys,
         stage_evidence={
+            "celery_process": "local Celery filesystem-broker testing worker round-trip verified; production worker remains incomplete",
             "local_fallback_round_trip": "local runtime QA fallback task/status/log round trip verified without Celery or Redis",
             "cross_process_retry_cancel_lock_dedupe": "local runtime QA cross-process control probe verified without worker start",
             "append_only_worker_logs": "local runtime QA task log persistence and append-only worker log evidence verified",

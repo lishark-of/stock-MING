@@ -20,6 +20,12 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+EVIDENCE_PATH = (
+    PROJECT_ROOT
+    / ".stock_ming_3"
+    / "worker_runtime"
+    / "worker_celery_filesystem_roundtrip_smoke.json"
+)
 
 os.environ.setdefault("COMMAND_CENTER_CELERY_BROKER_URL", "filesystem://")
 os.environ.setdefault("COMMAND_CENTER_CELERY_RESULT_BACKEND", "cache+memory://")
@@ -148,8 +154,16 @@ def run_smoke(timeout: float) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run local Celery filesystem round-trip smoke.")
     parser.add_argument("--timeout", type=float, default=10.0)
+    parser.add_argument(
+        "--write-evidence",
+        action="store_true",
+        help="Write the ignored local evidence artifact after the smoke completes.",
+    )
     args = parser.parse_args()
     payload = run_smoke(timeout=args.timeout)
+    if args.write_evidence:
+        EVIDENCE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        EVIDENCE_PATH.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2), encoding="utf-8")
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     return 0 if payload.get("status") == "celery_filesystem_roundtrip_passed" else 1
 

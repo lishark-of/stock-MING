@@ -288,9 +288,14 @@ def _worker_runtime_evidence_stage_scope_rows(
             "required_before_production": True,
             "production_blocker": stage_key not in direct,
             "worker_started": False,
+            "local_celery_testing_worker_started": stage_key == "celery_process" and stage_key in direct,
             "redis_pinged": False,
             "scheduler_started": False,
             "task_dispatched": False,
+            "local_celery_task_dispatched": stage_key == "celery_process" and stage_key in direct,
+            "local_celery_filesystem_roundtrip_evidence_present": (
+                stage_key == "celery_process" and stage_key in direct
+            ),
             "provider_model_task_dispatched": False,
             "healthcheck_executed": False,
             "task_log_persistence_verified": stage_key == "append_only_worker_logs" and stage_key in direct,
@@ -488,6 +493,13 @@ def build_contract() -> dict[str, Any]:
         expected_runtime_durable_missing.discard("provider_model_no_autoschedule_runtime_evidence_required")
     if queue_round_trip_visible:
         expected_runtime_durable_missing.discard("queue_round_trip_evidence_required")
+    celery_process_visible = bool(
+        runtime_durable_recipe.get("celery_process_evidence_ready") is True
+        and runtime_durable_recipe.get("local_celery_filesystem_roundtrip_evidence_ready") is True
+        and runtime_durable_recipe.get("production_worker_complete") is False
+    )
+    if celery_process_visible:
+        expected_runtime_durable_missing.discard("celery_process_evidence_required")
     production_promotion_review_visible = bool(
         production_promotion_review.get("schema_version") == "worker_production_promotion_review_receipt.v1"
         and production_promotion_review.get("status") == "worker_production_promotion_review_ready_production_blocked"
@@ -513,6 +525,8 @@ def build_contract() -> dict[str, Any]:
     if production_promotion_review_visible:
         expected_runtime_durable_missing.discard("production_worker_promotion_review_required")
     direct_runtime_stage_keys: list[str] = []
+    if celery_process_visible:
+        direct_runtime_stage_keys.append("celery_process")
     if local_fallback_rollback_visible:
         direct_runtime_stage_keys.append("local_fallback_round_trip")
     if cross_process_controls_visible:
@@ -536,6 +550,7 @@ def build_contract() -> dict[str, Any]:
         production_evidence_scope,
         direct_stage_keys=direct_runtime_stage_keys,
         stage_evidence={
+            "celery_process": "local Celery filesystem-broker testing worker round-trip verified; production worker remains incomplete",
             "local_fallback_round_trip": "local runtime QA fallback task/status/log round trip verified without Celery or Redis",
             "cross_process_retry_cancel_lock_dedupe": "local runtime QA cross-process control probe verified without worker start",
             "append_only_worker_logs": "local runtime QA task log persistence and append-only worker log evidence verified",
