@@ -2953,9 +2953,23 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         and durable_map.get("does_not_modify_strategy_action") is True
         and durable_map.get("contains_secret") is False
     )
+    redis_broker_done = bool(
+        durable_map.get("redis_broker_reachability_evidence_ready") is True
+        and durable_map.get("local_redis_roundtrip_evidence_ready") is True
+        and durable_map.get("production_worker_complete") is False
+        and durable_map.get("external_calls_triggered") is False
+        and durable_map.get("tushare_called") is False
+        and durable_map.get("deepseek_called") is False
+        and durable_map.get("github_called") is False
+        and durable_map.get("does_not_execute_trades") is True
+        and durable_map.get("does_not_modify_strategy_action") is True
+        and durable_map.get("contains_secret") is False
+    )
     direct_stage_keys = []
     if celery_process_done:
         direct_stage_keys.append("celery_process")
+    if redis_broker_done:
+        direct_stage_keys.append("redis_broker")
     if runtime_execution_done:
         direct_stage_keys.append("local_fallback_round_trip")
     if cross_process_task_control_done:
@@ -3002,6 +3016,8 @@ def _latest_worker_direct_runtime_evidence_summary() -> dict[str, Any]:
         "local_celery_filesystem_roundtrip_artifact": str(
             durable_map.get("local_celery_filesystem_roundtrip_artifact") or ""
         ),
+        "redis_broker_evidence_verified": redis_broker_done,
+        "local_redis_roundtrip_artifact": str(durable_map.get("local_redis_roundtrip_artifact") or ""),
         "production_promotion_review_ready": production_promotion_review_done,
         "production_promotion_review_status": str(promotion_map.get("status") or "packet_missing"),
         "production_promotion_review_blocker_count": int(promotion_map.get("production_blocker_count") or 0),

@@ -132,6 +132,12 @@ WORKER_CELERY_FILESYSTEM_ROUNDTRIP_EVIDENCE_PATH = (
     / "worker_runtime"
     / "worker_celery_filesystem_roundtrip_smoke.json"
 )
+WORKER_REDIS_ROUNDTRIP_EVIDENCE_PATH = (
+    PROJECT_ROOT
+    / ".stock_ming_3"
+    / "worker_runtime"
+    / "worker_redis_roundtrip_smoke.json"
+)
 LOCAL_REDIS_SERVER_CANDIDATE_PATHS = (
     "/opt/homebrew/bin/redis-server",
     "/usr/local/bin/redis-server",
@@ -3820,6 +3826,40 @@ def _worker_celery_filesystem_roundtrip_ready(payload: dict[str, Any]) -> bool:
     )
 
 
+def _read_worker_redis_roundtrip_evidence() -> dict[str, Any]:
+    try:
+        payload = json.loads(WORKER_REDIS_ROUNDTRIP_EVIDENCE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _worker_redis_roundtrip_ready(payload: dict[str, Any]) -> bool:
+    return bool(
+        payload.get("schema_version") == "worker_redis_roundtrip_smoke.v1"
+        and payload.get("status") == "redis_roundtrip_passed"
+        and payload.get("direct_evidence_layer") == "L3_local_redis_celery_roundtrip_not_production_worker"
+        and payload.get("redis_server_binary_available") is True
+        and payload.get("redis_server_started") is True
+        and payload.get("redis_pinged") is True
+        and payload.get("redis_broker_used") is True
+        and payload.get("redis_url_configured") is True
+        and payload.get("redis_url_exposed") is False
+        and payload.get("redis_url_contains_credentials") is False
+        and payload.get("celery_testing_worker_started") is True
+        and payload.get("task_dispatched") is True
+        and payload.get("task_result_returned") is True
+        and payload.get("production_worker_complete") is False
+        and payload.get("external_calls_triggered") is False
+        and payload.get("tushare_called") is False
+        and payload.get("deepseek_called") is False
+        and payload.get("github_called") is False
+        and payload.get("does_not_execute_trades") is True
+        and payload.get("does_not_modify_strategy_action") is True
+        and payload.get("contains_secret") is False
+    )
+
+
 def _worker_runtime_durable_evidence_recipe(
     *,
     production_blocker_audit: dict[str, Any],
@@ -3840,6 +3880,8 @@ def _worker_runtime_durable_evidence_recipe(
     celery_filesystem_roundtrip_visible = _worker_celery_filesystem_roundtrip_ready(
         celery_filesystem_roundtrip
     )
+    redis_roundtrip = _read_worker_redis_roundtrip_evidence()
+    redis_roundtrip_visible = _worker_redis_roundtrip_ready(redis_roundtrip)
     blocker_visible = production_blocker_audit.get("schema_version") == "worker_production_blocker_audit.v1"
     healthcheck_visible = healthcheck_qa_contract.get("schema_version") == "worker_healthcheck_qa_contract.v1"
     task_log_visible = task_log_persistence_audit.get("schema_version") == "worker_task_log_persistence_audit.v1"
@@ -4110,11 +4152,20 @@ def _worker_runtime_durable_evidence_recipe(
         ),
         _worker_runtime_durable_evidence_recipe_row(
             "redis_broker_reachability_evidence_required",
-            passed=False,
-            source_contract="manual_worker_runtime_qa",
-            evidence="Redis is not pinged and Redis URL/credentials are not exposed by worker cache or this recipe.",
+            passed=redis_roundtrip_visible,
+            source_contract="worker_redis_roundtrip_smoke",
+            evidence=(
+                f"Local Redis-backed Celery round-trip artifact ready at {WORKER_REDIS_ROUNDTRIP_EVIDENCE_PATH}; "
+                "redis-server started on loopback, redacted Redis URL configured, ping succeeded, task returned, production_worker_complete=false."
+                if redis_roundtrip_visible
+                else "Redis is not pinged and Redis URL/credentials are not exposed by worker cache or this recipe."
+            ),
             required_evidence="redacted Redis broker reachability evidence without URL/token/key/password values",
-            next_action="verify Redis only through explicit runtime QA with redacted output",
+            next_action=(
+                "Keep this as local Redis runtime evidence; production worker promotion remains separate."
+                if redis_roundtrip_visible
+                else "verify Redis only through explicit runtime QA with redacted output"
+            ),
         ),
         _worker_runtime_durable_evidence_recipe_row(
             "queue_round_trip_evidence_required",
@@ -4283,6 +4334,11 @@ def _worker_runtime_durable_evidence_recipe(
             if celery_filesystem_roundtrip_visible
             else ""
         ),
+        "redis_broker_reachability_evidence_ready": redis_roundtrip_visible,
+        "local_redis_roundtrip_evidence_ready": redis_roundtrip_visible,
+        "local_redis_roundtrip_artifact": (
+            str(WORKER_REDIS_ROUNDTRIP_EVIDENCE_PATH) if redis_roundtrip_visible else ""
+        ),
         "cross_process_controls_evidence_ready": cross_process_controls_visible,
         "append_only_worker_log_evidence_ready": append_only_worker_log_visible,
         "queue_round_trip_evidence_ready": queue_round_trip_visible,
@@ -4420,6 +4476,8 @@ def _worker_runtime_evidence_stage_scope_manifest(
     direct_stage_keys: list[str] = []
     if runtime_durable_evidence_recipe.get("celery_process_evidence_ready") is True:
         direct_stage_keys.append("celery_process")
+    if runtime_durable_evidence_recipe.get("redis_broker_reachability_evidence_ready") is True:
+        direct_stage_keys.append("redis_broker")
     if runtime_durable_evidence_recipe.get("local_fallback_rollback_evidence_ready") is True:
         direct_stage_keys.append("local_fallback_round_trip")
     if runtime_durable_evidence_recipe.get("cross_process_controls_evidence_ready") is True:
@@ -4443,6 +4501,7 @@ def _worker_runtime_evidence_stage_scope_manifest(
         direct_stage_keys=direct_stage_keys,
         stage_evidence={
             "celery_process": "local Celery filesystem-broker testing worker round-trip verified; production worker remains incomplete",
+            "redis_broker": "local Redis-backed Celery testing worker round-trip verified with redacted broker evidence; production worker remains incomplete",
             "local_fallback_round_trip": "local runtime QA fallback task/status/log round trip verified without Celery or Redis",
             "cross_process_retry_cancel_lock_dedupe": "local runtime QA cross-process control probe verified without worker start",
             "append_only_worker_logs": "local runtime QA task log persistence and append-only worker log evidence verified",
