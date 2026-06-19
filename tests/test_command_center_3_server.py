@@ -31085,6 +31085,49 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["github_called"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
 
+    def test_data_health_trade_cal_replay_accepts_provider_long_window_with_current_local_calendar(self):
+        local_tushare_summary = {
+            "source_packet_key": "command_center_tushare_refresh_packet",
+            "provider_call_ledger_evidence_done": True,
+            "trade_cal_provider_call_ledger_observed_count": 1,
+            "trade_cal_provider_observed_row_count": 901,
+        }
+        trade_cal_physical = {
+            "schema_metadata_status": "ready",
+            "local_trade_cal_physical_validation_done": False,
+            "today_row_found": True,
+            "open_day_count": 14,
+            "closed_day_count": 5,
+            "latest_completed_trading_day": "2026-06-18",
+            "previous_open_date": "2026-06-18",
+            "next_open_date": None,
+            "window_days": 19,
+            "freshness_gate_context": {"calendar_coverage_status": "validated_no_next_open"},
+        }
+
+        replay, rows = data_health_service._trade_cal_provider_freshness_replay_evidence(
+            local_tushare_summary=local_tushare_summary,
+            trade_cal_physical=trade_cal_physical,
+        )
+
+        self.assertEqual(replay["schema_version"], "data_health_trade_cal_provider_freshness_replay_evidence.v1")
+        self.assertEqual(replay["status"], "provider_trade_cal_freshness_replay_passed")
+        self.assertTrue(replay["provider_call_ledger_evidence_done"])
+        self.assertFalse(replay["local_trade_cal_physical_validation_done"])
+        self.assertTrue(replay["local_trade_cal_current_calendar_ready"])
+        self.assertTrue(replay["freshness_replay_provider_evidence_done"])
+        self.assertEqual(replay["passed_scenario_count"], 8)
+        self.assertEqual(replay["blocked_scenario_count"], 0)
+        self.assertFalse(replay["provider_backed_trade_cal_acceptance_done"])
+        self.assertFalse(replay["production_freshness_gate_complete"])
+        self.assertFalse(replay["external_calls_triggered"])
+        self.assertFalse(replay["tushare_called"])
+        self.assertFalse(replay["deepseek_called"])
+        self.assertTrue(replay["does_not_modify_strategy_action"])
+        self.assertTrue(all(row["passed"] for row in rows))
+        self.assertTrue(all(row["source_trade_cal_provider_window_days"] == 901 for row in rows))
+        self.assertTrue(all(row["local_current_trade_cal_window_days"] == 19 for row in rows))
+
     def test_recovery_center_cache_endpoint_returns_manual_recovery_plan(self):
         self._with_snapshot_cache(
             {

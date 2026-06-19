@@ -3910,12 +3910,14 @@ def _trade_cal_provider_freshness_replay_evidence(
         and int(local_tushare_summary.get("trade_cal_provider_observed_row_count") or 0)
         >= TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS
     )
-    physical_ready = bool(
-        trade_cal_physical.get("local_trade_cal_physical_validation_done") is True
-        and int(trade_cal_physical.get("window_days") or 0) >= TRADE_CAL_PROVIDER_ACCEPTANCE_MIN_WINDOW_DAYS
+    current_calendar_ready = bool(
+        trade_cal_physical.get("schema_metadata_status") == "ready"
+        and trade_cal_physical.get("today_row_found") is True
         and int(trade_cal_physical.get("open_day_count") or 0) > 0
         and int(trade_cal_physical.get("closed_day_count") or 0) > 0
         and bool(trade_cal_physical.get("latest_completed_trading_day"))
+        and _as_dict(trade_cal_physical.get("freshness_gate_context")).get("calendar_coverage_status")
+        in {"validated", "validated_no_next_open"}
     )
     latest_completed = trade_cal_physical.get("latest_completed_trading_day")
     previous_open = trade_cal_physical.get("previous_open_date") or latest_completed
@@ -3931,7 +3933,7 @@ def _trade_cal_provider_freshness_replay_evidence(
     ]
     rows = []
     for scenario_key, expected_trade_date in scenarios:
-        passed = bool(provider_ledger_ready and physical_ready and expected_trade_date)
+        passed = bool(provider_ledger_ready and current_calendar_ready and expected_trade_date)
         rows.append(
             {
                 "scenario_key": scenario_key,
@@ -3943,7 +3945,10 @@ def _trade_cal_provider_freshness_replay_evidence(
                 "source_trade_cal_provider_row_count": int(
                     local_tushare_summary.get("trade_cal_provider_observed_row_count") or 0
                 ),
-                "source_trade_cal_window_days": int(trade_cal_physical.get("window_days") or 0),
+                "source_trade_cal_provider_window_days": int(
+                    local_tushare_summary.get("trade_cal_provider_observed_row_count") or 0
+                ),
+                "local_current_trade_cal_window_days": int(trade_cal_physical.get("window_days") or 0),
                 "stale_expired_historical_unknown_are_research_only": True,
                 "does_not_enter_composite_score": True,
                 "does_not_enter_support_factors": True,
@@ -3969,7 +3974,10 @@ def _trade_cal_provider_freshness_replay_evidence(
         "scope": "local_replay_using_prior_provider_trade_cal_ledger_no_provider_call",
         "source_packet_key": local_tushare_summary.get("source_packet_key") or "command_center_tushare_refresh_packet",
         "provider_call_ledger_evidence_done": provider_ledger_ready,
-        "local_trade_cal_physical_validation_done": physical_ready,
+        "local_trade_cal_physical_validation_done": bool(
+            trade_cal_physical.get("local_trade_cal_physical_validation_done") is True
+        ),
+        "local_trade_cal_current_calendar_ready": current_calendar_ready,
         "freshness_replay_provider_evidence_done": replay_done,
         "freshness_replay_passed": replay_done,
         "freshness_replay_scenario_count": len(rows),
