@@ -6526,6 +6526,28 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         fallback_retirement_direct_evidence_verified = (
             fallback_retirement_review.get("direct_evidence_verified") is True
         )
+        candidate_radar_direct_evidence = _latest_candidate_radar_direct_evidence_summary()
+        candidate_radar_direct_keys = {
+            str(item) for item in candidate_radar_direct_evidence.get("direct_evidence_stage_keys") or []
+        }
+        next_session_direct_evidence = _latest_next_session_direct_evidence_summary()
+        next_session_direct_keys = {
+            str(item) for item in next_session_direct_evidence.get("direct_evidence_stage_keys") or []
+        }
+        candidate_radar_parity_done = bool(
+            {"worker_full_pool_execution", "worker_deep_scan_execution", "legacy_retirement_review"}.issubset(
+                candidate_radar_direct_keys
+            )
+        )
+        provider_backed_parity_done = bool(
+            {"provider_parity_acceptance", "search_quant_provider_model_acceptance"}.issubset(
+                candidate_radar_direct_keys
+            )
+        )
+        browser_performance_qa_done = bool(
+            "browser_visual_performance_promotion" in candidate_radar_direct_keys
+            and "browser_performance_trace" in next_session_direct_keys
+        )
         observed = streamlit_contract.get("observed")
         observed = observed if isinstance(observed, dict) else {}
         stage_rows = streamlit_contract.get("streamlit_retirement_stage_scope_rows")
@@ -6547,6 +6569,12 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
         direct_evidence_stage_keys = []
         if parity_direct_evidence_verified:
             direct_evidence_stage_keys.append("ordinary_workflow_replacement_parity")
+        if candidate_radar_parity_done:
+            direct_evidence_stage_keys.append("candidate_radar_replacement_parity")
+        if provider_backed_parity_done:
+            direct_evidence_stage_keys.append("provider_backed_parity_acceptance")
+        if browser_performance_qa_done:
+            direct_evidence_stage_keys.append("browser_performance_qa")
         if fallback_retirement_direct_evidence_verified:
             direct_evidence_stage_keys.append("fallback_retirement_change_review")
         direct_evidence_count = len(direct_evidence_stage_keys)
@@ -6622,10 +6650,11 @@ def _build_ltg_stage_scope_observed_rows() -> list[dict[str, Any]]:
                 "full_removal_blocking_workflows": parity_review.get("full_removal_blocking_workflows")
                 or [],
                 "replacement_parity_complete": parity_review.get("replacement_parity_complete") is True,
-                "candidate_radar_parity_complete": parity_review.get("candidate_radar_parity_complete")
-                is True,
-                "provider_backed_parity_done": parity_review.get("provider_backed_parity_done") is True,
-                "browser_performance_qa_done": parity_review.get("browser_performance_qa_done") is True,
+                "candidate_radar_parity_complete": candidate_radar_parity_done,
+                "candidate_radar_dependency_direct_evidence_keys": sorted(candidate_radar_direct_keys),
+                "provider_backed_parity_done": provider_backed_parity_done,
+                "browser_performance_qa_done": browser_performance_qa_done,
+                "next_session_dependency_direct_evidence_keys": sorted(next_session_direct_keys),
                 "admin_debug_retention_decision_done": parity_review.get("admin_debug_retention_decision_done")
                 is True,
                 "fallback_removed_by_contract": False,

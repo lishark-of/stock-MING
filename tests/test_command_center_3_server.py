@@ -4158,6 +4158,106 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(observed_rows["LTG-10"]["full_streamlit_removal_ready"])
         self.assertFalse(observed_rows["LTG-10"]["can_close_from_observed_row"])
 
+    def test_streamlit_retirement_observes_candidate_and_browser_dependency_evidence_without_removal(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "legacy_migration_map": {"items": [{"label": "legacy route inventory"}]},
+                "legacy_packet_migration_checklist": {
+                    "items": [{"label": "candidate radar parity", "status": "pending"}]
+                },
+                "old_workspace_packet_bridge": {"items": [{"label": "legacy packet bridge"}]},
+                "old_workspace_capability_overview": {"checklist_done_count": 0, "checklist_pending_count": 1},
+            }
+        )
+        legacy_service.run_streamlit_ordinary_workflow_parity_review_task(
+            {"operator": "local-ltg10-parity-review"}
+        )
+        legacy_service.run_streamlit_fallback_retirement_review_task(
+            {"operator": "local-ltg10-fallback-review"}
+        )
+
+        original_candidate = migration_status_service._latest_candidate_radar_direct_evidence_summary
+        original_next = migration_status_service._latest_next_session_direct_evidence_summary
+
+        def fake_candidate_summary():
+            return {
+                "direct_evidence_stage_count": 5,
+                "direct_evidence_stage_keys": [
+                    "worker_full_pool_execution",
+                    "worker_deep_scan_execution",
+                    "legacy_retirement_review",
+                    "provider_parity_acceptance",
+                    "search_quant_provider_model_acceptance",
+                    "browser_visual_performance_promotion",
+                ],
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "contains_secret": False,
+            }
+
+        def fake_next_summary():
+            return {
+                "direct_evidence_stage_count": 1,
+                "direct_evidence_stage_keys": ["browser_performance_trace"],
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "contains_secret": False,
+            }
+
+        migration_status_service._latest_candidate_radar_direct_evidence_summary = fake_candidate_summary
+        migration_status_service._latest_next_session_direct_evidence_summary = fake_next_summary
+        self.addCleanup(
+            setattr,
+            migration_status_service,
+            "_latest_candidate_radar_direct_evidence_summary",
+            original_candidate,
+        )
+        self.addCleanup(
+            setattr,
+            migration_status_service,
+            "_latest_next_session_direct_evidence_summary",
+            original_next,
+        )
+
+        migration = migration_status_service.build_migration_status()
+        observed_rows = {row["id"]: row for row in migration["ltg_stage_scope_observed_rows"]}
+        ltg10 = observed_rows["LTG-10"]
+        self.assertEqual(ltg10["direct_evidence_stage_count"], 5)
+        self.assertEqual(
+            ltg10["direct_evidence_stage_keys"],
+            [
+                "ordinary_workflow_replacement_parity",
+                "candidate_radar_replacement_parity",
+                "provider_backed_parity_acceptance",
+                "browser_performance_qa",
+                "fallback_retirement_change_review",
+            ],
+        )
+        self.assertEqual(ltg10["pending_stage_count"], 3)
+        self.assertTrue(ltg10["candidate_radar_parity_complete"])
+        self.assertTrue(ltg10["provider_backed_parity_done"])
+        self.assertTrue(ltg10["browser_performance_qa_done"])
+        self.assertFalse(ltg10["ordinary_workflow_exit_complete"])
+        self.assertFalse(ltg10["streamlit_fallback_removal_ready"])
+        self.assertFalse(ltg10["full_streamlit_removal_ready"])
+        self.assertTrue(ltg10["streamlit_fallback_retained"])
+        self.assertFalse(ltg10["streamlit_opened_by_contract"])
+        self.assertFalse(ltg10["legacy_tools_run_by_contract"])
+        self.assertFalse(ltg10["external_calls_triggered"])
+        self.assertFalse(ltg10["tushare_called"])
+        self.assertFalse(ltg10["deepseek_called"])
+        self.assertFalse(ltg10["github_called"])
+        self.assertTrue(ltg10["does_not_execute_trades"])
+        self.assertFalse(ltg10["can_close_from_observed_row"])
+
     def test_storage_factor_values_status_is_cache_only(self):
         self._with_parquet_root()
 
