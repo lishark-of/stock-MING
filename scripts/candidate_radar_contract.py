@@ -768,11 +768,14 @@ def build_contract() -> dict[str, Any]:
         "production_promotion_review",
     }
     base_pending_stage_keys = {
-        "provider_parity_acceptance",
         "search_quant_provider_model_acceptance",
     }
     expected_direct_stage_keys = set(base_direct_stage_keys)
     expected_pending_stage_keys = set(base_pending_stage_keys)
+    if "provider_parity_acceptance" in production_stage_scope_direct_keys:
+        expected_direct_stage_keys.add("provider_parity_acceptance")
+    else:
+        expected_pending_stage_keys.add("provider_parity_acceptance")
     for worker_execution_stage_key in ("worker_full_pool_execution", "worker_deep_scan_execution"):
         if worker_execution_stage_key in production_stage_scope_direct_keys:
             expected_direct_stage_keys.add(worker_execution_stage_key)

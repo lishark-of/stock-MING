@@ -26,6 +26,12 @@ CANDIDATE_WORKER_FILESYSTEM_ROUNDTRIP_EVIDENCE_PATH = (
     / "candidate_radar_worker"
     / "candidate_radar_worker_filesystem_roundtrip_smoke.json"
 )
+CANDIDATE_PROVIDER_PARITY_TUSHARE_LIGHT_EVIDENCE_PATH = (
+    PROJECT_ROOT
+    / ".stock_ming_3"
+    / "candidate_radar_provider_parity"
+    / "tushare_light_provider_ledger.json"
+)
 CANDIDATE_ROUTE_SOURCE_PATH = PROJECT_ROOT / "desktop" / "src" / "routes" / "CandidateRadar.tsx"
 SUPPORTED_LOCAL_SCAN_MODES = {"quick_cache_scan", "watchlist_scan", "custom_pool_scan", "full_pool_local_scan"}
 LOCAL_POOL_SCAN_MODES = {"watchlist_scan", "custom_pool_scan", "full_pool_local_scan"}
@@ -8563,6 +8569,40 @@ def _read_candidate_worker_filesystem_roundtrip_evidence() -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _read_candidate_provider_parity_tushare_light_evidence() -> dict[str, Any]:
+    try:
+        payload = json.loads(CANDIDATE_PROVIDER_PARITY_TUSHARE_LIGHT_EVIDENCE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _candidate_provider_parity_tushare_light_evidence_ready(payload: Mapping[str, Any]) -> bool:
+    return bool(
+        payload.get("schema_version") == "candidate_radar_provider_parity_tushare_light_evidence.v1"
+        and payload.get("status") == "candidate_radar_provider_parity_tushare_light_evidence_ready"
+        and payload.get("direct_evidence_layer")
+        == "L3_real_tushare_provider_call_ledger_supporting_candidate_radar_provider_parity"
+        and int(payload.get("candidate_count") or 0) > 0
+        and int(payload.get("api_call_count") or 0) > 0
+        and int(payload.get("api_success_count") or 0) == int(payload.get("api_call_count") or 0)
+        and int(payload.get("api_failed_count") or 0) == 0
+        and payload.get("all_selected_api_calls_succeeded") is True
+        and payload.get("has_core_light_samples_for_all_candidates") is True
+        and payload.get("has_trade_cal_sample") is True
+        and payload.get("external_calls_triggered") is True
+        and payload.get("tushare_called") is True
+        and payload.get("deepseek_called") is False
+        and payload.get("github_called") is False
+        and payload.get("deepseek_model_execution_done") is False
+        and payload.get("provider_backed_acceptance_done") is False
+        and payload.get("production_radar_replacement_complete") is False
+        and payload.get("does_not_execute_trades") is True
+        and payload.get("does_not_modify_strategy_action") is True
+        and payload.get("contains_secret") is False
+    )
+
+
 def _candidate_worker_filesystem_roundtrip_ready(payload: Mapping[str, Any]) -> bool:
     return bool(
         payload.get("schema_version") == "candidate_radar_worker_filesystem_roundtrip_smoke.v1"
@@ -8672,6 +8712,10 @@ def _candidate_radar_production_stage_scope_manifest(
     )
     worker_transport_roundtrip = _read_candidate_worker_filesystem_roundtrip_evidence()
     worker_transport_roundtrip_ready = _candidate_worker_filesystem_roundtrip_ready(worker_transport_roundtrip)
+    provider_parity_tushare_light_evidence = _read_candidate_provider_parity_tushare_light_evidence()
+    provider_parity_tushare_light_ready = _candidate_provider_parity_tushare_light_evidence_ready(
+        provider_parity_tushare_light_evidence
+    )
     worker_full_pool_execution_ready = (
         full_pool_worker.get("worker_backed_execution_done") is True
         and full_pool_worker.get("worker_task_executed") is True
@@ -8690,7 +8734,7 @@ def _candidate_radar_production_stage_scope_manifest(
         worker_transport_roundtrip_ready
         and worker_transport_roundtrip.get("worker_backed_local_deep_scan_fallback_done") is True
     )
-    provider_parity_ready = False
+    provider_parity_ready = provider_parity_tushare_light_ready
     search_quant_ready = False
     browser_promotion_ready = bool(
         production_review.get("browser_visual_performance_promoted") is True
@@ -8841,9 +8885,22 @@ def _candidate_radar_production_stage_scope_manifest(
         },
         "provider_parity_acceptance": {
             "direct": provider_parity_ready,
-            "status": "provider_parity_call_ledger_pending",
-            "evidence": f"provider_scope_ticket={provider_dry_run.get('acceptance_scope_hash_short') or 'missing'}; provider_backed_acceptance_done=false",
-            "missing": ["provider-backed parity call ledger"],
+            "status": (
+                "direct_evidence_ready_tushare_light_provider_parity_ledger"
+                if provider_parity_ready
+                else "provider_parity_call_ledger_pending"
+            ),
+            "evidence": (
+                f"provider_scope_ticket={provider_dry_run.get('acceptance_scope_hash_short') or 'missing'}; "
+                f"artifact={CANDIDATE_PROVIDER_PARITY_TUSHARE_LIGHT_EVIDENCE_PATH}; "
+                f"status={provider_parity_tushare_light_evidence.get('status') or 'missing'}; "
+                f"candidate_count={provider_parity_tushare_light_evidence.get('candidate_count') or 0}; "
+                f"api_success={provider_parity_tushare_light_evidence.get('api_success_count') or 0}/"
+                f"{provider_parity_tushare_light_evidence.get('api_call_count') or 0}; "
+                "provider_backed_acceptance_done=false; production_radar_replacement_complete=false"
+            ),
+            "missing": [] if provider_parity_ready else ["provider-backed parity call ledger"],
+            "provider_parity_tushare_light_evidence_present": provider_parity_ready,
         },
         "search_quant_provider_model_acceptance": {
             "direct": search_quant_ready,
@@ -8906,7 +8963,13 @@ def _candidate_radar_production_stage_scope_manifest(
                     state.get("local_worker_fallback_evidence_present")
                 ),
                 "direct_evidence_complete": direct,
-                "direct_evidence_layer": "L3_local_candidate_radar_direct_evidence" if direct else "",
+                "direct_evidence_layer": (
+                    "L3_real_tushare_provider_call_ledger_supporting_candidate_radar_provider_parity"
+                    if stage_key == "provider_parity_acceptance" and direct
+                    else "L3_local_candidate_radar_direct_evidence"
+                    if direct
+                    else ""
+                ),
                 "required_before_production_replacement": True,
                 "production_blocker": not direct,
                 "production_radar_replacement_complete": False,
@@ -8915,6 +8978,9 @@ def _candidate_radar_production_stage_scope_manifest(
                 "full_pool_scan_done": False,
                 "deep_scan_done": False,
                 "provider_backed_acceptance_done": False,
+                "provider_parity_tushare_light_evidence_present": bool(
+                    state.get("provider_parity_tushare_light_evidence_present")
+                ),
                 "worker_backed_execution_done": bool(state.get("worker_backed_execution_done")),
                 "worker_fallback_direct_evidence_done": bool(state.get("worker_fallback_direct_evidence_done")),
                 "worker_runtime_round_trip_linked": stage_key == "worker_runtime_round_trip_link" and direct,

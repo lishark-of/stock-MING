@@ -7836,7 +7836,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "worker_deep_scan_execution",
             set(stage_manifest["direct_evidence_stage_keys"]) | set(stage_manifest["pending_stage_keys"]),
         )
-        self.assertIn("provider_parity_acceptance", stage_manifest["pending_stage_keys"])
+        provider_parity_direct = (
+            stage_rows["provider_parity_acceptance"].get("direct_evidence_complete") is True
+        )
+        if provider_parity_direct:
+            self.assertIn("provider_parity_acceptance", stage_manifest["direct_evidence_stage_keys"])
+        else:
+            self.assertIn("provider_parity_acceptance", stage_manifest["pending_stage_keys"])
         self.assertIn("search_quant_provider_model_acceptance", stage_manifest["pending_stage_keys"])
         self.assertTrue(
             set(stage_manifest["worker_fallback_evidence_stage_keys"]).issubset(
@@ -7888,8 +7894,18 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             not stage_rows["worker_deep_scan_execution"]["direct_evidence_complete"],
         )
         self.assertFalse(stage_rows["provider_parity_acceptance"]["provider_backed_acceptance_done"])
-        self.assertFalse(stage_rows["provider_parity_acceptance"]["direct_evidence_complete"])
-        self.assertTrue(stage_rows["provider_parity_acceptance"]["production_blocker"])
+        self.assertEqual(
+            stage_rows["provider_parity_acceptance"]["production_blocker"],
+            not provider_parity_direct,
+        )
+        if provider_parity_direct:
+            self.assertTrue(
+                stage_rows["provider_parity_acceptance"]["provider_parity_tushare_light_evidence_present"]
+            )
+            self.assertEqual(
+                stage_rows["provider_parity_acceptance"]["direct_evidence_layer"],
+                "L3_real_tushare_provider_call_ledger_supporting_candidate_radar_provider_parity",
+            )
         self.assertTrue(
             any(row["api"] == "local_candidate_radar_production_stage_scope_manifest" for row in packet["call_ledger"])
         )
@@ -12977,7 +12993,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             if row["stage_key"] in expected_direct_stage_keys:
                 self.assertTrue(row["direct_evidence_complete"])
                 self.assertFalse(row["production_blocker"])
-                self.assertEqual(row["direct_evidence_layer"], "L3_local_candidate_radar_direct_evidence")
+                expected_layer = (
+                    "L3_real_tushare_provider_call_ledger_supporting_candidate_radar_provider_parity"
+                    if row["stage_key"] == "provider_parity_acceptance"
+                    else "L3_local_candidate_radar_direct_evidence"
+                )
+                self.assertEqual(row["direct_evidence_layer"], expected_layer)
                 self.assertEqual(row["missing_evidence"], [])
             else:
                 self.assertFalse(row["direct_evidence_complete"])
@@ -28590,7 +28611,6 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             "production_promotion_review",
         }
         required_pending_keys = {
-            "provider_parity_acceptance",
             "search_quant_provider_model_acceptance",
         }
         worker_execution_keys = {"worker_full_pool_execution", "worker_deep_scan_execution"}
@@ -28601,6 +28621,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(radar_stage_manifest["pending_stage_count"], len(radar_pending_keys))
         self.assertTrue(required_direct_keys.issubset(radar_direct_keys))
         self.assertTrue(required_pending_keys.issubset(radar_pending_keys))
+        self.assertIn("provider_parity_acceptance", radar_direct_keys | radar_pending_keys)
         self.assertTrue(worker_execution_keys.issubset(radar_direct_keys | radar_pending_keys))
         self.assertIn(
             "worker_transport_round_trip_smoke",

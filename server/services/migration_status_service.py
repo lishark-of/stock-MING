@@ -3921,6 +3921,9 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         direct_stage_keys.append("legacy_retirement_review")
     if production_promotion_review_done:
         direct_stage_keys.append("production_promotion_review")
+    provider_parity_tushare_light_done = "provider_parity_acceptance" in stage_direct_keys
+    if provider_parity_tushare_light_done:
+        direct_stage_keys.append("provider_parity_acceptance")
 
     return {
         "schema_version": "migration_candidate_radar_direct_evidence_summary.v1",
@@ -3954,6 +3957,7 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         "production_promotion_review_blocker_count": int(
             production_promotion_review.get("production_blocker_count") or 0
         ),
+        "provider_parity_tushare_light_evidence_verified": provider_parity_tushare_light_done,
         "production_radar_replacement_complete": False,
         "legacy_retirement_ready": False,
         "provider_backed_acceptance_done": False,
