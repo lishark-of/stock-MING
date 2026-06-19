@@ -27045,6 +27045,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(durable_rows["production_promotion_review_required"]["passed"])
         self.assertFalse(durable_rows["production_promotion_review_required"]["production_blocker"])
         self.assertFalse(durable["production_radar_replacement_complete"])
+        stage_manifest = packet["candidate_radar_production_stage_scope_manifest"]
+        self.assertNotIn("production_promotion_review", stage_manifest["direct_evidence_stage_keys"])
+        self.assertIn("production_promotion_review", stage_manifest["pending_stage_keys"])
+        self.assertEqual(
+            stage_manifest["production_blocker_count"],
+            len(stage_manifest["pending_stage_keys"]),
+        )
+        self.assertIn(
+            "production_completion_stays_blocked",
+            stage_manifest["missing_evidence"],
+        )
         self.assertFalse(receipt["cache_get_external_calls"])
         self.assertFalse(receipt["react_render_external_calls"])
         self.assertFalse(receipt["external_calls_triggered"])

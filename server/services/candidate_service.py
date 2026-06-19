@@ -9175,7 +9175,11 @@ def _candidate_radar_production_stage_scope_manifest(
         )
     )
     legacy_review_ready = legacy_review.get("local_review_ready") is True
-    production_promotion_review_ready = production_promotion.get("local_review_ready") is True
+    production_promotion_review_local_ready = production_promotion.get("local_review_ready") is True
+    production_promotion_review_ready = (
+        production_promotion.get("ready_to_mark_production_radar_replacement_complete") is True
+        and production_promotion.get("production_radar_replacement_complete") is True
+    )
     stage_state = {
         "cache_render_boundary": {
             "direct": cache_render_ready,
@@ -9374,15 +9378,21 @@ def _candidate_radar_production_stage_scope_manifest(
         "production_promotion_review": {
             "direct": production_promotion_review_ready,
             "status": (
-                "direct_evidence_ready_production_promotion_review_blocked"
+                "direct_evidence_ready_production_promotion_review"
                 if production_promotion_review_ready
+                else "local_promotion_review_visible_production_blocked"
+                if production_promotion_review_local_ready
                 else "direct_evidence_pending"
             ),
             "evidence": (
-                f"production_promotion_review_visible={production_promotion_review_ready}; "
+                f"production_promotion_review_visible={production_promotion_review_local_ready}; "
+                f"ready_to_mark_production={production_promotion_review_ready}; "
                 "production_radar_replacement_complete=false"
             ),
-            "missing": [] if production_promotion_review_ready else ["production promotion review"],
+            "missing": []
+            if production_promotion_review_ready
+            else _as_list(production_promotion.get("production_blockers"))
+            or ["production promotion review strict closeout"],
         },
     }
     rows = []
