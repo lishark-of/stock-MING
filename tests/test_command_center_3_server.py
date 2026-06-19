@@ -12924,7 +12924,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(payload["candidate_radar_next_execution_recipe_ready"])
         self.assertTrue(payload["candidate_radar_worker_execution_recipe_ready"])
         self.assertTrue(payload["candidate_radar_durable_evidence_recipe_ready"])
-        self.assertGreaterEqual(payload["candidate_radar_durable_evidence_blocker_count"], 4)
+        self.assertGreaterEqual(payload["candidate_radar_durable_evidence_blocker_count"], 3)
         self.assertFalse(payload["external_calls_triggered"])
         self.assertFalse(payload["tushare_called"])
         self.assertFalse(payload["deepseek_called"])
@@ -13051,7 +13051,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "candidate_radar_durable_evidence_recipe_ready_production_pending",
         )
         self.assertTrue(payload["observed"]["candidate_radar_durable_evidence_ready"])
-        self.assertGreaterEqual(payload["observed"]["candidate_radar_durable_evidence_blocker_count"], 4)
+        self.assertGreaterEqual(payload["observed"]["candidate_radar_durable_evidence_blocker_count"], 3)
         self.assertIn(
             "worker_full_pool_execution_evidence_required",
             payload["observed"]["candidate_radar_durable_evidence_missing"],
@@ -26003,7 +26003,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(durable_rows["browser_visual_performance_evidence_required"]["passed"])
         self.assertFalse(durable_rows["browser_visual_performance_evidence_required"]["production_blocker"])
         self.assertIn("worker_full_pool_execution_evidence_required", durable["missing_durable_evidence"])
-        self.assertIn("provider_backed_parity_call_ledger_required", durable["missing_durable_evidence"])
+        self.assertNotIn("provider_backed_parity_call_ledger_required", durable["missing_durable_evidence"])
+        self.assertTrue(durable["provider_call_ledger_evidence_done"])
+        self.assertTrue(durable_rows["provider_backed_parity_call_ledger_required"]["passed"])
+        self.assertFalse(durable_rows["provider_backed_parity_call_ledger_required"]["production_blocker"])
         self.assertFalse(durable["production_radar_replacement_complete"])
 
     def test_candidate_radar_browser_qa_evidence_uses_generated_at_for_latest_report(self):
@@ -26289,7 +26292,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(receipt_rows["production_replacement_review_ready"]["status"], "passed_review_ready")
         self.assertEqual(receipt_rows["worker_full_pool_execution_evidence_required"]["status"], "pending_worker_full_pool_execution")
         self.assertEqual(receipt_rows["worker_deep_scan_execution_evidence_required"]["status"], "pending_worker_deep_scan_execution")
-        self.assertEqual(receipt_rows["provider_backed_parity_call_ledger_required"]["status"], "pending_provider_backed_parity")
+        self.assertTrue(receipt["provider_call_ledger_evidence_done"])
+        self.assertEqual(
+            receipt_rows["provider_backed_parity_call_ledger_required"]["status"],
+            "provider_call_ledger_observed",
+        )
+        self.assertTrue(receipt_rows["provider_backed_parity_call_ledger_required"]["passed"])
+        self.assertFalse(receipt_rows["provider_backed_parity_call_ledger_required"]["production_blocker"])
         self.assertEqual(receipt_rows["deepseek_model_ledger_if_enabled_required"]["status"], "pending_model_ledger")
         self.assertTrue(receipt_rows["production_completion_stays_blocked"]["production_blocker"])
         self.assertTrue(receipt_rows["no_provider_model_trade_secret_boundary"]["passed"])
@@ -26453,7 +26462,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(receipt_rows["production_promotion_dry_run_visible"]["status"], "passed_promotion_dry_run_visible")
         self.assertEqual(receipt_rows["worker_full_pool_execution_required"]["status"], "pending_worker_full_pool_execution")
         self.assertEqual(receipt_rows["worker_deep_scan_execution_required"]["status"], "pending_worker_deep_scan_execution")
-        self.assertEqual(receipt_rows["provider_backed_parity_required"]["status"], "pending_provider_backed_parity")
+        self.assertTrue(receipt["provider_call_ledger_evidence_done"])
+        self.assertEqual(receipt_rows["provider_backed_parity_required"]["status"], "provider_call_ledger_observed")
+        self.assertTrue(receipt_rows["provider_backed_parity_required"]["passed"])
+        self.assertFalse(receipt_rows["provider_backed_parity_required"]["production_blocker"])
         self.assertEqual(receipt_rows["deepseek_model_ledger_if_enabled_required"]["status"], "pending_model_ledger")
         self.assertTrue(receipt_rows["production_completion_stays_blocked"]["production_blocker"])
         self.assertTrue(receipt_rows["no_provider_model_trade_secret_boundary"]["passed"])
@@ -26621,7 +26633,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(receipt_rows["legacy_retirement_review_visible"]["status"], "passed_legacy_review_visible")
         self.assertEqual(receipt_rows["worker_full_pool_execution_evidence_required"]["status"], "pending_worker_full_pool_execution")
         self.assertEqual(receipt_rows["worker_deep_scan_execution_evidence_required"]["status"], "pending_worker_deep_scan_execution")
-        self.assertEqual(receipt_rows["provider_backed_parity_call_ledger_required"]["status"], "pending_provider_call_ledger")
+        self.assertTrue(receipt["provider_call_ledger_evidence_done"])
+        self.assertEqual(
+            receipt_rows["provider_backed_parity_call_ledger_required"]["status"],
+            "provider_call_ledger_observed",
+        )
+        self.assertTrue(receipt_rows["provider_backed_parity_call_ledger_required"]["passed"])
+        self.assertFalse(receipt_rows["provider_backed_parity_call_ledger_required"]["production_blocker"])
         self.assertEqual(receipt_rows["deepseek_model_ledger_if_enabled_required"]["status"], "pending_model_ledger")
         self.assertEqual(
             receipt_rows["browser_visual_performance_promotion_required"]["status"],
@@ -28513,8 +28531,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["github_called"])
         self.assertTrue(packet["does_not_execute_trades"])
         self.assertTrue(packet["does_not_modify_strategy_action"])
-        self.assertIn("worker_full_pool_execution_evidence_required", packet["candidate_radar_durable_evidence_recipe"]["missing_durable_evidence"])
-        self.assertIn("provider_backed_parity_call_ledger_required", packet["candidate_radar_durable_evidence_recipe"]["missing_durable_evidence"])
+        durable = packet["candidate_radar_durable_evidence_recipe"]
+        durable_rows = {row["evidence_key"]: row for row in packet["candidate_radar_durable_evidence_rows"]}
+        self.assertIn("worker_full_pool_execution_evidence_required", durable["missing_durable_evidence"])
+        self.assertNotIn("provider_backed_parity_call_ledger_required", durable["missing_durable_evidence"])
+        self.assertTrue(durable["provider_call_ledger_evidence_done"])
+        self.assertEqual(
+            durable_rows["provider_backed_parity_call_ledger_required"]["status"],
+            "provider_call_ledger_observed",
+        )
+        self.assertTrue(durable_rows["provider_backed_parity_call_ledger_required"]["passed"])
+        self.assertFalse(durable_rows["provider_backed_parity_call_ledger_required"]["production_blocker"])
         self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))

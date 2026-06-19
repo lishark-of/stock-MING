@@ -8170,6 +8170,7 @@ def _candidate_radar_durable_evidence_recipe(
     provider_parity_dry_run = _as_dict(packet.get("provider_parity_dry_run_receipt"))
     quant_dry_run = _as_dict(packet.get("search_quant_projection_acceptance_dry_run_receipt"))
     quant_request = _as_dict(packet.get("search_quant_projection_execution_request_receipt"))
+    quant_provider_acceptance = _as_dict(packet.get("search_quant_provider_model_acceptance_receipt"))
     promotion = _as_dict(packet.get("candidate_radar_promotion_blocker_audit"))
     activation = _as_dict(packet.get("candidate_radar_production_activation_receipt"))
     browser_evidence = _as_dict(packet.get("candidate_browser_qa_evidence_summary"))
@@ -8204,6 +8205,21 @@ def _candidate_radar_durable_evidence_recipe(
     full_pool_worker_done = activation.get("full_pool_scan_done") is True
     deep_scan_worker_done = activation.get("deep_scan_done") is True
     provider_backed_done = activation.get("provider_backed_acceptance_done") is True
+    provider_parity_tushare_light_evidence = _read_candidate_provider_parity_tushare_light_evidence()
+    provider_parity_call_ledger_done = _candidate_provider_parity_tushare_light_evidence_ready(
+        provider_parity_tushare_light_evidence
+    )
+    search_quant_provider_model_evidence_done = bool(
+        quant_provider_acceptance.get("schema_version") == QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION
+        and quant_provider_acceptance.get("direct_evidence_verified") is True
+        and quant_provider_acceptance.get("tushare_call_ledger_evidence_done") is True
+        and quant_provider_acceptance.get("deepseek_skipped_by_request") is True
+        and quant_provider_acceptance.get("production_quant_projection_complete") is False
+        and quant_provider_acceptance.get("production_radar_replacement_complete") is False
+    )
+    provider_call_ledger_evidence_done = bool(
+        provider_parity_call_ledger_done or search_quant_provider_model_evidence_done
+    )
     local_browser_visual_perf_reviewed = bool(
         browser_evidence.get("candidate_visual_qa_evidence_passed") is True
         and browser_evidence.get("candidate_browser_performance_evidence_passed") is True
@@ -8382,11 +8398,19 @@ def _candidate_radar_durable_evidence_recipe(
         _candidate_radar_durable_evidence_recipe_row(
             "provider_backed_parity_call_ledger_required",
             "durable_evidence",
-            "completed" if provider_backed_done else "pending_provider_call_ledger",
-            passed=provider_backed_done,
+            "provider_call_ledger_observed"
+            if provider_call_ledger_evidence_done
+            else "pending_provider_call_ledger",
+            passed=provider_call_ledger_evidence_done,
             local_surface_required=False,
-            production_blocker=not provider_backed_done,
-            evidence=f"provider_backed_acceptance_done={provider_backed_done}",
+            production_blocker=not provider_call_ledger_evidence_done,
+            evidence=(
+                f"provider_backed_acceptance_done={provider_backed_done}; "
+                f"provider_parity_call_ledger_evidence_done={provider_parity_call_ledger_done}; "
+                f"search_quant_provider_model_evidence_done={search_quant_provider_model_evidence_done}; "
+                f"api_success={provider_parity_tushare_light_evidence.get('api_success_count') or 0}/"
+                f"{provider_parity_tushare_light_evidence.get('api_call_count') or 0}"
+            ),
             next_action="Record real provider call ledger rows for selected radar signal groups before promotion.",
             recommended_order=15,
         ),
@@ -8482,6 +8506,9 @@ def _candidate_radar_durable_evidence_recipe(
         "full_pool_scan_done": full_pool_worker_done,
         "deep_scan_done": deep_scan_worker_done,
         "provider_backed_acceptance_done": provider_backed_done,
+        "provider_parity_call_ledger_evidence_done": provider_parity_call_ledger_done,
+        "search_quant_provider_model_evidence_done": search_quant_provider_model_evidence_done,
+        "provider_call_ledger_evidence_done": provider_call_ledger_evidence_done,
         "browser_visual_performance_reviewed": browser_visual_perf_done,
         "deepseek_model_ledger_complete": deepseek_model_ledger_done,
         "legacy_retirement_review_done": legacy_retirement_review_done,
@@ -9697,6 +9724,11 @@ def _candidate_radar_production_promotion_dry_run_receipt(
     worker_full_pool_done = production_review.get("worker_full_pool_execution_done") is True
     worker_deep_scan_done = production_review.get("worker_deep_scan_execution_done") is True
     provider_backed_done = production_review.get("provider_backed_acceptance_done") is True
+    provider_call_ledger_evidence_done = bool(
+        durable_recipe.get("provider_call_ledger_evidence_done") is True
+        or durable_recipe.get("provider_parity_call_ledger_evidence_done") is True
+        or provider_backed_done
+    )
     model_ledger_done = production_review.get("deepseek_model_ledger_complete") is True
     browser_promoted = production_review.get("browser_visual_performance_promoted") is True
     durable_evidence_complete = production_review.get("durable_evidence_complete") is True
@@ -9796,11 +9828,16 @@ def _candidate_radar_production_promotion_dry_run_receipt(
         ),
         _candidate_radar_production_promotion_dry_run_row(
             "provider_backed_parity_call_ledger_required",
-            "completed" if provider_backed_done else "pending_provider_backed_parity",
-            passed=provider_backed_done,
+            "provider_call_ledger_observed"
+            if provider_call_ledger_evidence_done
+            else "pending_provider_backed_parity",
+            passed=provider_call_ledger_evidence_done,
             local_blocker=False,
-            production_blocker=not provider_backed_done,
-            evidence=f"provider_backed_acceptance_done={provider_backed_done}",
+            production_blocker=not provider_call_ledger_evidence_done,
+            evidence=(
+                f"provider_backed_acceptance_done={provider_backed_done}; "
+                f"provider_call_ledger_evidence_done={provider_call_ledger_evidence_done}"
+            ),
             next_action="Attach real provider call ledger and parity evidence before promotion.",
             recommended_order=9,
         ),
@@ -9931,6 +9968,7 @@ def _candidate_radar_production_promotion_dry_run_receipt(
         "worker_full_pool_execution_done": worker_full_pool_done,
         "worker_deep_scan_execution_done": worker_deep_scan_done,
         "provider_backed_acceptance_done": provider_backed_done,
+        "provider_call_ledger_evidence_done": provider_call_ledger_evidence_done,
         "deepseek_model_ledger_complete": model_ledger_done,
         "browser_visual_performance_promoted": browser_promoted,
         "durable_evidence_complete": durable_evidence_complete,
@@ -10111,6 +10149,11 @@ def _candidate_radar_production_promotion_review_receipt(
     worker_full_pool_done = production_review.get("worker_full_pool_execution_done") is True
     worker_deep_scan_done = production_review.get("worker_deep_scan_execution_done") is True
     provider_backed_done = production_review.get("provider_backed_acceptance_done") is True
+    provider_call_ledger_evidence_done = bool(
+        durable_recipe.get("provider_call_ledger_evidence_done") is True
+        or durable_recipe.get("provider_parity_call_ledger_evidence_done") is True
+        or provider_backed_done
+    )
     model_ledger_done = production_review.get("deepseek_model_ledger_complete") is True
     production_review_browser_promoted = production_review.get("browser_visual_performance_promoted") is True
     durable_evidence_complete = production_review.get("durable_evidence_complete") is True
@@ -10269,11 +10312,16 @@ def _candidate_radar_production_promotion_review_receipt(
         ),
         _candidate_radar_production_promotion_review_row(
             "provider_backed_parity_call_ledger_required",
-            "completed" if provider_backed_done else "pending_provider_call_ledger",
-            passed=provider_backed_done,
+            "provider_call_ledger_observed"
+            if provider_call_ledger_evidence_done
+            else "pending_provider_call_ledger",
+            passed=provider_call_ledger_evidence_done,
             local_blocker=False,
-            production_blocker=not provider_backed_done,
-            evidence=f"provider_backed_acceptance_done={provider_backed_done}",
+            production_blocker=not provider_call_ledger_evidence_done,
+            evidence=(
+                f"provider_backed_acceptance_done={provider_backed_done}; "
+                f"provider_call_ledger_evidence_done={provider_call_ledger_evidence_done}"
+            ),
             next_action="Attach provider-backed parity call ledger before promotion.",
             recommended_order=11,
         ),
@@ -10418,6 +10466,7 @@ def _candidate_radar_production_promotion_review_receipt(
         "worker_full_pool_execution_done": worker_full_pool_done,
         "worker_deep_scan_execution_done": worker_deep_scan_done,
         "provider_backed_acceptance_done": provider_backed_done,
+        "provider_call_ledger_evidence_done": provider_call_ledger_evidence_done,
         "deepseek_model_ledger_complete": model_ledger_done,
         "browser_visual_performance_promoted": browser_promoted,
         "browser_visual_performance_promotion_source": (
@@ -10477,9 +10526,14 @@ def _attach_candidate_radar_production_promotion_review(packet: Mapping[str, Any
         ]
         if not rows:
             rows = [row for row in _as_list(receipt.get("rows")) if isinstance(row, dict)]
-        if (
-            receipt.get("explicit_production_promotion_review_done") is True
-            and receipt.get("browser_visual_performance_promoted") is not True
+        durable_recipe = _as_dict(view.get("candidate_radar_durable_evidence_recipe"))
+        provider_ledger_ready = bool(
+            durable_recipe.get("provider_call_ledger_evidence_done") is True
+            or durable_recipe.get("provider_parity_call_ledger_evidence_done") is True
+        )
+        if receipt.get("explicit_production_promotion_review_done") is True and (
+            receipt.get("browser_visual_performance_promoted") is not True
+            or (provider_ledger_ready and receipt.get("provider_call_ledger_evidence_done") is not True)
         ):
             refreshed_receipt, refreshed_rows = _candidate_radar_production_promotion_review_receipt(
                 view,
@@ -10494,7 +10548,10 @@ def _attach_candidate_radar_production_promotion_review(packet: Mapping[str, Any
                 task_id=str(receipt.get("task_id") or ""),
                 reviewed_at=str(receipt.get("reviewed_at") or ""),
             )
-            if refreshed_receipt.get("browser_visual_performance_promoted") is True:
+            if (
+                refreshed_receipt.get("browser_visual_performance_promoted") is True
+                or refreshed_receipt.get("provider_call_ledger_evidence_done") is True
+            ):
                 receipt = refreshed_receipt
                 rows = refreshed_rows
     else:
@@ -10611,6 +10668,11 @@ def _candidate_radar_legacy_retirement_review_receipt(
     worker_full_pool_done = production_review.get("worker_full_pool_execution_done") is True
     worker_deep_scan_done = production_review.get("worker_deep_scan_execution_done") is True
     provider_backed_done = production_review.get("provider_backed_acceptance_done") is True
+    provider_call_ledger_evidence_done = bool(
+        durable_recipe.get("provider_call_ledger_evidence_done") is True
+        or durable_recipe.get("provider_parity_call_ledger_evidence_done") is True
+        or provider_backed_done
+    )
     model_ledger_done = production_review.get("deepseek_model_ledger_complete") is True
     browser_promoted = production_review.get("browser_visual_performance_promoted") is True
     durable_evidence_complete = production_review.get("durable_evidence_complete") is True
@@ -10717,11 +10779,16 @@ def _candidate_radar_legacy_retirement_review_receipt(
         ),
         _candidate_radar_legacy_retirement_review_row(
             "provider_backed_parity_required",
-            "completed" if provider_backed_done else "pending_provider_backed_parity",
-            passed=provider_backed_done,
+            "provider_call_ledger_observed"
+            if provider_call_ledger_evidence_done
+            else "pending_provider_backed_parity",
+            passed=provider_call_ledger_evidence_done,
             local_blocker=False,
-            production_blocker=not provider_backed_done,
-            evidence=f"provider_backed_acceptance_done={provider_backed_done}",
+            production_blocker=not provider_call_ledger_evidence_done,
+            evidence=(
+                f"provider_backed_acceptance_done={provider_backed_done}; "
+                f"provider_call_ledger_evidence_done={provider_call_ledger_evidence_done}"
+            ),
             next_action="Attach provider-backed parity call ledger before retiring legacy radar.",
             recommended_order=10,
         ),
@@ -10850,6 +10917,7 @@ def _candidate_radar_legacy_retirement_review_receipt(
         "worker_full_pool_execution_done": worker_full_pool_done,
         "worker_deep_scan_execution_done": worker_deep_scan_done,
         "provider_backed_acceptance_done": provider_backed_done,
+        "provider_call_ledger_evidence_done": provider_call_ledger_evidence_done,
         "deepseek_model_ledger_complete": model_ledger_done,
         "browser_visual_performance_promoted": browser_promoted,
         "durable_evidence_complete": durable_evidence_complete,
@@ -10902,6 +10970,29 @@ def _attach_candidate_radar_legacy_retirement_review(packet: Mapping[str, Any]) 
         ]
         if not rows:
             rows = [row for row in _as_list(receipt.get("rows")) if isinstance(row, dict)]
+        durable_recipe = _as_dict(view.get("candidate_radar_durable_evidence_recipe"))
+        provider_ledger_ready = bool(
+            durable_recipe.get("provider_call_ledger_evidence_done") is True
+            or durable_recipe.get("provider_parity_call_ledger_evidence_done") is True
+        )
+        if (
+            receipt.get("explicit_legacy_retirement_review_done") is True
+            and provider_ledger_ready
+            and receipt.get("provider_call_ledger_evidence_done") is not True
+        ):
+            refreshed_receipt, refreshed_rows = _candidate_radar_legacy_retirement_review_receipt(
+                view,
+                payload_safe={
+                    "operator_approved": receipt.get("operator_approved") is True,
+                    "reviewer": receipt.get("reviewer") or "local_operator",
+                },
+                explicit_review=True,
+                task_id=str(receipt.get("task_id") or ""),
+                reviewed_at=str(receipt.get("reviewed_at") or ""),
+            )
+            if refreshed_receipt.get("provider_call_ledger_evidence_done") is True:
+                receipt = refreshed_receipt
+                rows = refreshed_rows
     else:
         receipt, rows = _candidate_radar_legacy_retirement_review_receipt(view)
     counts = dict(_as_dict(view.get("counts")))
