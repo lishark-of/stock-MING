@@ -1891,6 +1891,16 @@ def _attach_provider_parity_execution_request(packet: Mapping[str, Any]) -> dict
     existing = _as_dict(view.get("provider_parity_execution_request_receipt"))
     if existing.get("schema_version") == CANDIDATE_PROVIDER_PARITY_EXECUTION_REQUEST_SCHEMA_VERSION:
         receipt = dict(existing)
+        acceptance_scope_hash = _safe_text(receipt.get("acceptance_scope_hash") or "", limit=128)
+        requested_scope_hash = _safe_text(receipt.get("requested_acceptance_scope_hash") or "", limit=128)
+        scope_matches = receipt.get("requested_acceptance_scope_hash_matches_latest") is True
+        receipt.setdefault("provider_parity_scope_hash", acceptance_scope_hash)
+        receipt.setdefault(
+            "provider_parity_scope_hash_short",
+            str(receipt.get("acceptance_scope_hash_short") or acceptance_scope_hash[:16]),
+        )
+        receipt.setdefault("requested_provider_parity_scope_hash", requested_scope_hash)
+        receipt.setdefault("requested_provider_parity_scope_hash_matches_latest", scope_matches)
         rows = [
             row
             for row in _as_list(view.get("provider_parity_execution_request_rows"))
@@ -2505,6 +2515,10 @@ def _candidate_radar_provider_parity_execution_request(
         "acceptance_scope_hash_short": expected_scope_hash[:16] if expected_scope_hash else "",
         "requested_acceptance_scope_hash": requested_scope_hash,
         "requested_acceptance_scope_hash_matches_latest": scope_hash_matches,
+        "provider_parity_scope_hash": expected_scope_hash,
+        "provider_parity_scope_hash_short": expected_scope_hash[:16] if expected_scope_hash else "",
+        "requested_provider_parity_scope_hash": requested_scope_hash,
+        "requested_provider_parity_scope_hash_matches_latest": scope_hash_matches,
         "candidate_symbols": candidate_symbols,
         "candidate_symbol_count": len(candidate_symbols),
         "selected_signal_groups": selected_signal_groups,

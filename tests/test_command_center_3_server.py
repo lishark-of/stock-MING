@@ -27425,6 +27425,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(receipt["provider_parity_dry_run_ready"])
         self.assertTrue(receipt["requested_acceptance_scope_hash_matches_latest"])
         self.assertEqual(receipt["acceptance_scope_hash_short"], dry_run_receipt["acceptance_scope_hash_short"])
+        self.assertEqual(receipt["provider_parity_scope_hash"], dry_run_receipt["acceptance_scope_hash"])
+        self.assertEqual(
+            receipt["provider_parity_scope_hash_short"],
+            dry_run_receipt["acceptance_scope_hash_short"],
+        )
+        self.assertEqual(receipt["requested_provider_parity_scope_hash"], dry_run_receipt["acceptance_scope_hash"])
+        self.assertTrue(receipt["requested_provider_parity_scope_hash_matches_latest"])
         self.assertEqual(receipt["candidate_symbols"], ["002008.SZ", "002837.SZ"])
         self.assertFalse(receipt["provider_task_created"])
         self.assertFalse(receipt["provider_task_executed"])
