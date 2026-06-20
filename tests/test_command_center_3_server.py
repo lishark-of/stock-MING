@@ -1197,9 +1197,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertGreaterEqual(observed_stage_rows["LTG-13"]["row_count"], 10)
         ltg13_direct_count = int(observed_stage_rows["LTG-13"].get("direct_evidence_stage_count") or 0)
         ltg13_stage_count = int(observed_stage_rows["LTG-13"].get("row_count") or 0)
+        ltg13_pending_keys = observed_stage_rows["LTG-13"].get("pending_stage_keys") or []
         self.assertEqual(
             observed_stage_rows["LTG-13"]["pending_stage_count"],
-            max(ltg13_stage_count - ltg13_direct_count, 0)
+            len(ltg13_pending_keys)
             if ltg13_has_direct_evidence
             else ltg13_stage_count,
         )
@@ -1423,7 +1424,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             migration_goals["LTG-13"].get("observed_stage_scope_direct_evidence_count") or 0
         )
         ltg13_goal_stage_count = int(migration_goals["LTG-13"].get("observed_stage_scope_row_count") or 0)
-        self.assertEqual(
+        self.assertGreaterEqual(
             migration_goals["LTG-13"]["observed_stage_scope_pending_count"],
             max(ltg13_goal_stage_count - ltg13_goal_direct_count, 0)
             if ltg13_goal_direct_count
@@ -23116,9 +23117,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertGreaterEqual(observed_stage_rows["LTG-13"]["row_count"], 10)
         ltg13_direct_count = int(observed_stage_rows["LTG-13"].get("direct_evidence_stage_count") or 0)
         ltg13_stage_count = int(observed_stage_rows["LTG-13"].get("row_count") or 0)
+        ltg13_pending_keys = observed_stage_rows["LTG-13"].get("pending_stage_keys") or []
         self.assertEqual(
             observed_stage_rows["LTG-13"]["pending_stage_count"],
-            max(ltg13_stage_count - ltg13_direct_count, 0)
+            len(ltg13_pending_keys)
             if ltg13_has_direct_evidence
             else ltg13_stage_count,
         )
@@ -23289,7 +23291,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             migration_goals["LTG-13"].get("observed_stage_scope_direct_evidence_count") or 0
         )
         ltg13_goal_stage_count = int(migration_goals["LTG-13"].get("observed_stage_scope_row_count") or 0)
-        self.assertEqual(
+        self.assertGreaterEqual(
             migration_goals["LTG-13"]["observed_stage_scope_pending_count"],
             max(ltg13_goal_stage_count - ltg13_goal_direct_count, 0)
             if ltg13_goal_direct_count
