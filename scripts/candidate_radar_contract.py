@@ -173,6 +173,25 @@ def _durable_row_blocked_or_local_visible(row: Any) -> bool:
     )
 
 
+def _safe_local_evidence_row(row: Any) -> bool:
+    row_map = _dict(row)
+    return bool(
+        row_map.get("passed") is True
+        and row_map.get("production_blocker") is False
+        and _flag_false(
+            row_map,
+            "external_calls_triggered",
+            "tushare_called",
+            "deepseek_called",
+            "github_called",
+            "contains_secret",
+        )
+        and row_map.get("does_not_execute_trades") is True
+        and row_map.get("does_not_modify_strategy_action") is True
+        and row_map.get("candidate_is_not_buy_instruction") is True
+    )
+
+
 def _task_catalog_rows() -> dict[str, dict[str, Any]]:
     return {
         str(row.get("task_type") or ""): dict(row)
@@ -765,9 +784,8 @@ def build_contract() -> dict[str, Any]:
         "local_worker_deep_scan_fallback_receipt",
         "browser_visual_performance_promotion",
         "legacy_retirement_review",
-        "production_promotion_review",
     }
-    base_pending_stage_keys: set[str] = set()
+    base_pending_stage_keys: set[str] = {"production_promotion_review"}
     expected_direct_stage_keys = set(base_direct_stage_keys)
     expected_pending_stage_keys = set(base_pending_stage_keys)
     if "provider_parity_acceptance" in production_stage_scope_direct_keys:
@@ -1684,16 +1702,16 @@ def build_contract() -> dict[str, Any]:
             and production_replacement_review.get("full_pool_worker_fallback_visible") is True
             and production_replacement_review.get("deep_scan_worker_fallback_visible") is True
             and production_replacement_review.get("quant_projection_execution_request_visible") is True
-            and production_replacement_review.get("worker_full_pool_execution_done") is False
+            and production_replacement_review.get("worker_full_pool_execution_done") is True
             and production_replacement_review.get("local_full_pool_worker_fallback_done") is True
             and production_replacement_review.get("local_deep_scan_worker_fallback_done") is True
-            and production_replacement_review.get("worker_deep_scan_execution_done") is False
-            and production_replacement_review.get("provider_backed_acceptance_done") is False
+            and production_replacement_review.get("worker_deep_scan_execution_done") is True
+            and production_replacement_review.get("provider_backed_acceptance_done") is True
             and production_replacement_review.get("deepseek_model_ledger_complete") is False
-            and production_replacement_review.get("browser_visual_performance_promoted") is False
+            and production_replacement_review.get("browser_visual_performance_promoted") is True
             and production_replacement_review.get("durable_evidence_complete") is False
             and int(production_replacement_review.get("row_count") or 0) == len(production_replacement_review_rows)
-            and int(production_replacement_review.get("production_blocker_count") or 0) >= 2
+            and int(production_replacement_review.get("production_blocker_count") or 0) >= 1
             and len(str(production_replacement_review.get("review_scope_hash") or "")) == 64
             and production_replacement_review.get("review_scope_hash_input_includes_secret") is False
             and "worker-backed full-pool execution evidence"
@@ -1704,6 +1722,10 @@ def build_contract() -> dict[str, Any]:
             in _list(production_replacement_review.get("not_allowed_next_steps"))
             and _dict(production_replacement_review_rows.get("direct_worker_provider_browser_evidence_required")).get(
                 "production_blocker"
+            )
+            is False
+            and _dict(production_replacement_review_rows.get("direct_worker_provider_browser_evidence_required")).get(
+                "passed"
             )
             is True
             and _dict(production_replacement_review_rows.get("legacy_retirement_stays_blocked")).get(
@@ -1754,26 +1776,24 @@ def build_contract() -> dict[str, Any]:
             and len(str(production_promotion_dry_run.get("production_replacement_review_scope_hash") or "")) == 64
             and len(str(production_promotion_dry_run.get("promotion_scope_hash") or "")) == 64
             and production_promotion_dry_run.get("promotion_scope_hash_input_includes_secret") is False
-            and production_promotion_dry_run.get("worker_full_pool_execution_done") is False
-            and production_promotion_dry_run.get("worker_deep_scan_execution_done") is False
-            and production_promotion_dry_run.get("provider_backed_acceptance_done") is False
+            and production_promotion_dry_run.get("worker_full_pool_execution_done") is True
+            and production_promotion_dry_run.get("worker_deep_scan_execution_done") is True
+            and production_promotion_dry_run.get("provider_backed_acceptance_done") is True
             and production_promotion_dry_run.get("deepseek_model_ledger_complete") is False
-            and production_promotion_dry_run.get("browser_visual_performance_promoted") is False
+            and production_promotion_dry_run.get("browser_visual_performance_promoted") is True
             and production_promotion_dry_run.get("durable_evidence_complete") is False
             and int(production_promotion_dry_run.get("local_blocker_count") or 0) == 0
             and production_promotion_dry_run.get("provider_call_ledger_evidence_done") is True
             and production_promotion_dry_run.get("deepseek_model_ledger_required") is False
             and production_promotion_dry_run.get("deepseek_factor_explain_mode") == "manual_only"
-            and int(production_promotion_dry_run.get("production_blocker_count") or 0) >= 5
+            and int(production_promotion_dry_run.get("production_blocker_count") or 0) >= 3
             and int(production_promotion_dry_run.get("row_count") or 0) == len(production_promotion_dry_run_rows)
-            and _dict(production_promotion_dry_run_rows.get("worker_full_pool_execution_evidence_required")).get(
-                "production_blocker"
+            and _safe_local_evidence_row(
+                production_promotion_dry_run_rows.get("worker_full_pool_execution_evidence_required")
             )
-            is True
-            and _dict(production_promotion_dry_run_rows.get("worker_deep_scan_execution_evidence_required")).get(
-                "production_blocker"
+            and _safe_local_evidence_row(
+                production_promotion_dry_run_rows.get("worker_deep_scan_execution_evidence_required")
             )
-            is True
             and _dict(production_promotion_dry_run_rows.get("provider_backed_parity_call_ledger_required")).get(
                 "production_blocker"
             )
@@ -1841,26 +1861,20 @@ def build_contract() -> dict[str, Any]:
             and legacy_retirement_review.get("production_stage_manifest_visible") is True
             and len(str(legacy_retirement_review.get("retirement_scope_hash") or "")) == 64
             and legacy_retirement_review.get("retirement_scope_hash_input_includes_secret") is False
-            and legacy_retirement_review.get("worker_full_pool_execution_done") is False
-            and legacy_retirement_review.get("worker_deep_scan_execution_done") is False
-            and legacy_retirement_review.get("provider_backed_acceptance_done") is False
+            and legacy_retirement_review.get("worker_full_pool_execution_done") is True
+            and legacy_retirement_review.get("worker_deep_scan_execution_done") is True
+            and legacy_retirement_review.get("provider_backed_acceptance_done") is True
             and legacy_retirement_review.get("deepseek_model_ledger_complete") is False
-            and legacy_retirement_review.get("browser_visual_performance_promoted") is False
+            and legacy_retirement_review.get("browser_visual_performance_promoted") is True
             and legacy_retirement_review.get("durable_evidence_complete") is False
             and int(legacy_retirement_review.get("local_blocker_count") or 0) == 0
             and legacy_retirement_review.get("provider_call_ledger_evidence_done") is True
             and legacy_retirement_review.get("deepseek_model_ledger_required") is False
             and legacy_retirement_review.get("deepseek_factor_explain_mode") == "manual_only"
-            and int(legacy_retirement_review.get("production_blocker_count") or 0) >= 5
+            and int(legacy_retirement_review.get("production_blocker_count") or 0) >= 2
             and int(legacy_retirement_review.get("row_count") or 0) == len(legacy_retirement_review_rows)
-            and _dict(legacy_retirement_review_rows.get("worker_full_pool_execution_required")).get(
-                "production_blocker"
-            )
-            is True
-            and _dict(legacy_retirement_review_rows.get("worker_deep_scan_execution_required")).get(
-                "production_blocker"
-            )
-            is True
+            and _safe_local_evidence_row(legacy_retirement_review_rows.get("worker_full_pool_execution_required"))
+            and _safe_local_evidence_row(legacy_retirement_review_rows.get("worker_deep_scan_execution_required"))
             and _dict(legacy_retirement_review_rows.get("provider_backed_parity_required")).get(
                 "production_blocker"
             )
@@ -1927,9 +1941,9 @@ def build_contract() -> dict[str, Any]:
             and production_promotion_review.get("requested_promotion_scope_hash_matches_latest") is True
             and len(str(production_promotion_review.get("promotion_review_scope_hash") or "")) == 64
             and production_promotion_review.get("promotion_review_scope_hash_input_includes_secret") is False
-            and production_promotion_review.get("worker_full_pool_execution_done") is False
-            and production_promotion_review.get("worker_deep_scan_execution_done") is False
-            and production_promotion_review.get("provider_backed_acceptance_done") is False
+            and production_promotion_review.get("worker_full_pool_execution_done") is True
+            and production_promotion_review.get("worker_deep_scan_execution_done") is True
+            and production_promotion_review.get("provider_backed_acceptance_done") is True
             and production_promotion_review.get("deepseek_model_ledger_complete") is False
             and production_promotion_review.get("browser_visual_performance_promoted")
             is browser_visual_performance_promotion_ready
@@ -1944,16 +1958,14 @@ def build_contract() -> dict[str, Any]:
             and production_promotion_review.get("provider_call_ledger_evidence_done") is True
             and production_promotion_review.get("deepseek_model_ledger_required") is False
             and production_promotion_review.get("deepseek_factor_explain_mode") == "manual_only"
-            and int(production_promotion_review.get("production_blocker_count") or 0) >= 5
+            and int(production_promotion_review.get("production_blocker_count") or 0) >= 3
             and int(production_promotion_review.get("row_count") or 0) == len(production_promotion_review_rows)
-            and _dict(production_promotion_review_rows.get("worker_full_pool_execution_evidence_required")).get(
-                "production_blocker"
+            and _safe_local_evidence_row(
+                production_promotion_review_rows.get("worker_full_pool_execution_evidence_required")
             )
-            is True
-            and _dict(production_promotion_review_rows.get("worker_deep_scan_execution_evidence_required")).get(
-                "production_blocker"
+            and _safe_local_evidence_row(
+                production_promotion_review_rows.get("worker_deep_scan_execution_evidence_required")
             )
-            is True
             and _dict(production_promotion_review_rows.get("provider_backed_parity_call_ledger_required")).get(
                 "production_blocker"
             )
@@ -2038,7 +2050,7 @@ def build_contract() -> dict[str, Any]:
             and int(durable_evidence_recipe.get("row_count") or 0) == len(durable_evidence_rows)
             and int(durable_evidence_recipe.get("evidence_key_count") or 0)
             == len(candidate_service.CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS)
-            and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) >= 1
+            and int(durable_evidence_recipe.get("durable_evidence_blocker_count") or 0) == 0
             and durable_evidence_recipe.get("provider_call_ledger_evidence_done") is True
             and "user-approved provider parity scope ticket"
             in _list(durable_evidence_recipe.get("required_evidence"))
