@@ -33,6 +33,7 @@ CANDIDATE_PROVIDER_PARITY_TUSHARE_LIGHT_EVIDENCE_PATH = (
     / "candidate_radar_provider_parity"
     / "tushare_light_provider_ledger.json"
 )
+LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = PROJECT_ROOT / ".stock_ming_3" / "release_gate" / "local_push_gate_run_receipt.json"
 CANDIDATE_ROUTE_SOURCE_PATH = PROJECT_ROOT / "desktop" / "src" / "routes" / "CandidateRadar.tsx"
 SUPPORTED_LOCAL_SCAN_MODES = {"quick_cache_scan", "watchlist_scan", "custom_pool_scan", "full_pool_local_scan"}
 LOCAL_POOL_SCAN_MODES = {"watchlist_scan", "custom_pool_scan", "full_pool_local_scan"}
@@ -167,6 +168,7 @@ CANDIDATE_RADAR_DURABLE_EVIDENCE_KEYS = (
     "deepseek_model_ledger_if_enabled_required",
     "legacy_retirement_review_required",
     "production_promotion_review_required",
+    "local_release_gate_evidence_observed",
     "no_trade_action_secret_boundary",
 )
 CANDIDATE_RADAR_DURABLE_EVIDENCE_LABELS = {
@@ -189,6 +191,7 @@ CANDIDATE_RADAR_DURABLE_EVIDENCE_LABELS = {
     "deepseek_model_ledger_if_enabled_required": "DeepSeek model ledger is required when enabled",
     "legacy_retirement_review_required": "Legacy radar retirement review is required",
     "production_promotion_review_required": "Production promotion review is required",
+    "local_release_gate_evidence_observed": "Local release gate evidence is observed",
     "no_trade_action_secret_boundary": "No trade/action/secret boundary is preserved",
 }
 CANDIDATE_RADAR_PRODUCTION_STAGE_SCOPE_SCHEMA_VERSION = "candidate_radar_production_stage_scope_manifest.v1"
@@ -573,6 +576,97 @@ def _read_local_text(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except Exception:
         return ""
+
+
+def _current_git_head_summary() -> dict[str, str]:
+    git_dir = PROJECT_ROOT / ".git"
+    head_text = _read_local_text(git_dir / "HEAD").strip()
+    if not head_text:
+        return {"branch": "", "head_full": "", "head": ""}
+    if head_text.startswith("ref:"):
+        ref_name = head_text.split(":", 1)[1].strip()
+        head_full = _read_local_text(git_dir / ref_name).strip()
+        return {
+            "branch": ref_name.removeprefix("refs/heads/"),
+            "head_full": head_full,
+            "head": head_full[:7],
+        }
+    return {"branch": "HEAD", "head_full": head_text, "head": head_text[:7]}
+
+
+def _read_local_push_gate_run_receipt() -> dict[str, Any]:
+    current_head = _current_git_head_summary()
+    try:
+        payload = json.loads(LOCAL_PUSH_GATE_RUN_RECEIPT_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        payload = {}
+    receipt = payload if isinstance(payload, dict) else {}
+    checks = {str(item) for item in _as_list(receipt.get("checks"))}
+    required_checks = {
+        "python_unittest",
+        "desktop_build",
+        "command_center_3_smoke",
+        "diff_whitespace_check",
+        "high_risk_secret_scan",
+        "secret_keyword_review_contract",
+        "generated_artifact_scan",
+        "clean_worktree_check",
+    }
+    receipt_head_full = str(receipt.get("head_full") or "")
+    receipt_head = str(receipt.get("head") or "")
+    current_head_full = str(current_head.get("head_full") or "")
+    current_head_short = str(current_head.get("head") or "")
+    head_matches_current = bool(
+        current_head_full
+        and (
+            receipt_head_full == current_head_full
+            or (receipt_head and current_head_short and receipt_head == current_head_short)
+        )
+    )
+    required_checks_present = required_checks.issubset(checks)
+    boundary_flags_valid = bool(
+        receipt.get("did_not_push") is True
+        and receipt.get("git_add_dot_used") is False
+        and receipt.get("external_calls_triggered") is False
+        and receipt.get("tushare_called") is False
+        and receipt.get("deepseek_called") is False
+        and receipt.get("github_api_called") is False
+        and receipt.get("github_called") is False
+        and receipt.get("does_not_execute_trades") is True
+        and receipt.get("does_not_modify_strategy_action") is True
+        and receipt.get("contains_secret") is False
+    )
+    fresh_local_gate_run_observed = bool(
+        receipt.get("schema_version") == "command_center_3_local_push_gate_run_receipt.v1"
+        and receipt.get("status") == "local_push_gate_passed_current_head"
+        and head_matches_current
+        and required_checks_present
+        and boundary_flags_valid
+    )
+    return {
+        "schema_version": str(receipt.get("schema_version") or "command_center_3_local_push_gate_run_receipt.v1"),
+        "status": str(receipt.get("status") or "local_push_gate_run_receipt_missing"),
+        "receipt_path": ".stock_ming_3/release_gate/local_push_gate_run_receipt.json",
+        "head": receipt_head,
+        "current_head": current_head_short,
+        "head_matches_current": head_matches_current,
+        "fresh_local_gate_run_observed": fresh_local_gate_run_observed,
+        "required_local_gate_checks_present": required_checks_present,
+        "observed_check_count": len(checks),
+        "missing_required_checks": sorted(required_checks.difference(checks)),
+        "did_not_push": True,
+        "git_add_dot_used": False,
+        "remote_actions_status_known": False,
+        "latest_remote_run_verified_green": False,
+        "github_api_called": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -8552,6 +8646,7 @@ def _candidate_radar_durable_evidence_recipe(
     browser_review = _as_dict(packet.get("candidate_browser_qa_review_contract"))
     legacy_retirement_review = _as_dict(packet.get("candidate_radar_legacy_retirement_review_receipt"))
     production_promotion_review = _as_dict(packet.get("candidate_radar_production_promotion_review_receipt"))
+    local_release_gate_receipt = _read_local_push_gate_run_receipt()
 
     cache_render_safe = bool(
         packet.get("cache_only") is True
@@ -8623,6 +8718,21 @@ def _candidate_radar_durable_evidence_recipe(
     legacy_retirement_review_done = legacy_retirement_review.get("local_review_ready") is True
     promotion_ready = promotion.get("promotion_ready") is True
     production_promotion_review_done = production_promotion_review.get("local_review_ready") is True
+    local_release_gate_observed = bool(
+        local_release_gate_receipt.get("fresh_local_gate_run_observed") is True
+        and local_release_gate_receipt.get("head_matches_current") is True
+        and local_release_gate_receipt.get("required_local_gate_checks_present") is True
+        and local_release_gate_receipt.get("remote_actions_status_known") is False
+        and local_release_gate_receipt.get("latest_remote_run_verified_green") is False
+        and local_release_gate_receipt.get("github_api_called") is False
+        and local_release_gate_receipt.get("external_calls_triggered") is False
+        and local_release_gate_receipt.get("tushare_called") is False
+        and local_release_gate_receipt.get("deepseek_called") is False
+        and local_release_gate_receipt.get("github_called") is False
+        and local_release_gate_receipt.get("does_not_execute_trades") is True
+        and local_release_gate_receipt.get("does_not_modify_strategy_action") is True
+        and local_release_gate_receipt.get("contains_secret") is False
+    )
     no_trade_boundary = bool(
         packet.get("does_not_execute_trades") is True
         and packet.get("does_not_modify_strategy_action") is True
@@ -8889,6 +8999,25 @@ def _candidate_radar_durable_evidence_recipe(
             recommended_order=19,
         ),
         _candidate_radar_durable_evidence_recipe_row(
+            "local_release_gate_evidence_observed",
+            "durable_evidence",
+            "local_release_gate_observed_remote_ci_pending"
+            if local_release_gate_observed
+            else "pending_current_head_local_release_gate",
+            passed=local_release_gate_observed,
+            local_surface_required=False,
+            production_blocker=False,
+            evidence=(
+                f"fresh_local_gate_run_observed={local_release_gate_receipt.get('fresh_local_gate_run_observed') is True}; "
+                f"head_matches_current={local_release_gate_receipt.get('head_matches_current') is True}; "
+                f"required_checks_present={local_release_gate_receipt.get('required_local_gate_checks_present') is True}; "
+                f"remote_actions_status_known={local_release_gate_receipt.get('remote_actions_status_known') is True}; "
+                f"latest_remote_run_verified_green={local_release_gate_receipt.get('latest_remote_run_verified_green') is True}"
+            ),
+            next_action="Treat this only as current-head local release-gate evidence; remote CI/release evidence remains separate.",
+            recommended_order=20,
+        ),
+        _candidate_radar_durable_evidence_recipe_row(
             "no_trade_action_secret_boundary",
             "safety",
             "passed_research_only_secret_safe" if no_trade_boundary else "blocked_safety_boundary",
@@ -8897,7 +9026,7 @@ def _candidate_radar_durable_evidence_recipe(
             production_blocker=not no_trade_boundary,
             evidence="Candidate Radar does not execute trades, mutate action/holdings, expose secrets, or turn candidates into buy instructions.",
             next_action="Keep radar outputs research-only even after production evidence improves.",
-            recommended_order=20,
+            recommended_order=21,
         ),
     ]
     local_blockers = [row["evidence_key"] for row in rows if row["local_surface_required"] and not row["passed"]]
@@ -8933,6 +9062,16 @@ def _candidate_radar_durable_evidence_recipe(
         "deepseek_model_ledger_complete": deepseek_model_ledger_done,
         "legacy_retirement_review_done": legacy_retirement_review_done,
         "production_promotion_review_done": production_promotion_review_done,
+        "local_release_gate_receipt": local_release_gate_receipt,
+        "local_release_gate_evidence_observed": local_release_gate_observed,
+        "local_release_gate_evidence_head_matches_current": local_release_gate_receipt.get("head_matches_current")
+        is True,
+        "local_release_gate_evidence_required_checks_present": local_release_gate_receipt.get(
+            "required_local_gate_checks_present"
+        )
+        is True,
+        "remote_actions_status_known": False,
+        "latest_remote_run_verified_green": False,
         "provider_execution_implemented": False,
         "model_execution_implemented": False,
         "worker_execution_implemented": False,
@@ -8955,6 +9094,7 @@ def _candidate_radar_durable_evidence_recipe(
             "browser visual/performance evidence for #candidates",
             "legacy fallback retirement review",
             "production promotion and redaction review",
+            "current-head local release gate evidence before push",
         ],
         "not_allowed_next_steps": [
             "treat durable recipe as production radar replacement",

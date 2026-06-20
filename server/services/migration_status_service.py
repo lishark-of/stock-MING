@@ -3687,6 +3687,7 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
     production_promotion_review = _dict_or_empty(
         packet_map.get("candidate_radar_production_promotion_review_receipt")
     )
+    durable_recipe = _dict_or_empty(packet_map.get("candidate_radar_durable_evidence_recipe"))
     legacy_retirement_review = _dict_or_empty(
         packet_map.get("candidate_radar_legacy_retirement_review_receipt")
     )
@@ -4007,6 +4008,24 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         direct_stage_keys.append("legacy_retirement_review")
     if production_promotion_review_done:
         direct_stage_keys.append("production_promotion_review")
+    local_release_gate_evidence_done = bool(
+        durable_recipe.get("local_release_gate_evidence_observed") is True
+        and durable_recipe.get("local_release_gate_evidence_head_matches_current") is True
+        and durable_recipe.get("local_release_gate_evidence_required_checks_present") is True
+        and durable_recipe.get("remote_actions_status_known") is False
+        and durable_recipe.get("latest_remote_run_verified_green") is False
+        and durable_recipe.get("durable_evidence_complete") is False
+        and durable_recipe.get("production_radar_replacement_complete") is False
+        and durable_recipe.get("external_calls_triggered") is False
+        and durable_recipe.get("tushare_called") is False
+        and durable_recipe.get("deepseek_called") is False
+        and durable_recipe.get("github_called") is False
+        and durable_recipe.get("does_not_execute_trades") is True
+        and durable_recipe.get("does_not_modify_strategy_action") is True
+        and durable_recipe.get("contains_secret") is False
+    )
+    if local_release_gate_evidence_done:
+        direct_stage_keys.append("local_release_gate_evidence")
     provider_parity_tushare_light_done = "provider_parity_acceptance" in stage_direct_keys
     if provider_parity_tushare_light_done:
         direct_stage_keys.append("provider_parity_acceptance")
@@ -4055,6 +4074,17 @@ def _latest_candidate_radar_direct_evidence_summary() -> dict[str, Any]:
         "production_promotion_review_blocker_count": int(
             production_promotion_review.get("production_blocker_count") or 0
         ),
+        "local_release_gate_evidence_observed": local_release_gate_evidence_done,
+        "local_release_gate_evidence_head_matches_current": durable_recipe.get(
+            "local_release_gate_evidence_head_matches_current"
+        )
+        is True,
+        "local_release_gate_evidence_required_checks_present": durable_recipe.get(
+            "local_release_gate_evidence_required_checks_present"
+        )
+        is True,
+        "remote_actions_status_known": False,
+        "latest_remote_run_verified_green": False,
         "provider_parity_tushare_light_evidence_verified": provider_parity_tushare_light_done,
         "search_quant_provider_model_acceptance_verified": search_quant_provider_model_acceptance_done,
         "search_quant_provider_model_acceptance_status": str(

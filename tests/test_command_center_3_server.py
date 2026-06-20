@@ -7965,6 +7965,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(durable_recipe["deepseek_auto_after_task_enabled"])
         self.assertIn("worker-backed full-pool execution task evidence", durable_recipe["required_evidence"])
         self.assertIn("DeepSeek model ledger and sanitizer evidence when enabled", durable_recipe["required_evidence"])
+        self.assertIn("current-head local release gate evidence before push", durable_recipe["required_evidence"])
         self.assertIn("treat durable recipe as production radar replacement", durable_recipe["not_allowed_next_steps"])
         self.assertIn("call Tushare or DeepSeek from GET cache or React render", durable_recipe["not_allowed_next_steps"])
         self.assertTrue(durable_rows["cache_render_boundary_visible"]["passed"])
@@ -7983,6 +7984,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "not_required_manual_or_disabled",
         )
         self.assertFalse(durable_rows["deepseek_model_ledger_if_enabled_required"]["production_blocker"])
+        self.assertIn(
+            durable_rows["local_release_gate_evidence_observed"]["status"],
+            {
+                "local_release_gate_observed_remote_ci_pending",
+                "pending_current_head_local_release_gate",
+            },
+        )
+        self.assertFalse(durable_rows["local_release_gate_evidence_observed"]["production_blocker"])
+        self.assertFalse(durable_recipe["remote_actions_status_known"])
+        self.assertFalse(durable_recipe["latest_remote_run_verified_green"])
         self.assertTrue(durable_rows["no_trade_action_secret_boundary"]["passed"])
         self.assertTrue(packet["policy"]["candidate_radar_durable_evidence_recipe_is_local"])
         self.assertFalse(packet["policy"]["candidate_radar_durable_evidence_recipe_calls_provider_or_model"])

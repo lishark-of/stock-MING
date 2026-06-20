@@ -2048,6 +2048,8 @@ def build_contract() -> dict[str, Any]:
             in _list(durable_evidence_recipe.get("required_evidence"))
             and "DeepSeek model ledger and sanitizer evidence when enabled"
             in _list(durable_evidence_recipe.get("required_evidence"))
+            and "current-head local release gate evidence before push"
+            in _list(durable_evidence_recipe.get("required_evidence"))
             and "treat durable recipe as production radar replacement"
             in _list(durable_evidence_recipe.get("not_allowed_next_steps"))
             and "call Tushare or DeepSeek from GET cache or React render"
@@ -2097,6 +2099,18 @@ def build_contract() -> dict[str, Any]:
             and _durable_row_blocked_or_local_visible(
                 durable_evidence_rows.get("production_promotion_review_required")
             )
+            and _dict(durable_evidence_rows.get("local_release_gate_evidence_observed")).get(
+                "production_blocker"
+            )
+            is False
+            and durable_evidence_recipe.get("local_release_gate_evidence_observed") in {True, False}
+            and durable_evidence_recipe.get("local_release_gate_evidence_head_matches_current") in {True, False}
+            and durable_evidence_recipe.get("local_release_gate_evidence_required_checks_present") in {
+                True,
+                False,
+            }
+            and durable_evidence_recipe.get("remote_actions_status_known") is False
+            and durable_evidence_recipe.get("latest_remote_run_verified_green") is False
             and _dict(durable_evidence_rows.get("no_trade_action_secret_boundary")).get("passed") is True
             and policy.get("candidate_radar_durable_evidence_recipe_is_local") is True
             and policy.get("candidate_radar_durable_evidence_recipe_calls_provider_or_model") is False
