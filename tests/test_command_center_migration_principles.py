@@ -917,8 +917,28 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("不得暴露 raw prompts、raw model output、unredacted provider errors", architecture)
         self.assertIn("白名单字段、`model_ledger` 状态和 redaction review", architecture)
         self.assertIn("不把旧 Streamlit 图表 UI/tab 复制作为验收目标", architecture)
-        self.assertIn("不证明 legacy signal/capability parity 或生产替代完成，不代表复制旧 Streamlit 图表 UI", architecture)
-        self.assertIn("不证明 legacy signal/capability parity、durable CI evidence 或 production ECharts replacement", architecture)
+        self.assertIn("不证明 retained signal/capability coverage evidence 或生产替代完成，不代表复制旧 Streamlit 图表 UI", architecture)
+        self.assertIn("不证明 retained signal/capability coverage evidence、durable CI evidence 或 production ECharts replacement", architecture)
+        next_session_route_section = architecture.split(
+            "- `POST /api/next-session/generate` 已从纯 stub",
+            1,
+        )[1].split("- `POST /api/factor-quant/run-light`", 1)[0]
+        self.assertIn(
+            "不证明 retained signal/capability coverage evidence 或生产替代完成",
+            next_session_route_section,
+        )
+        self.assertIn(
+            "不证明 retained signal/capability coverage evidence、durable CI evidence 或 production ECharts replacement",
+            next_session_route_section,
+        )
+        self.assertNotIn(
+            "不证明 legacy signal/capability parity 或生产替代完成",
+            next_session_route_section,
+        )
+        self.assertNotIn(
+            "不证明 legacy signal/capability parity、durable CI evidence 或 production ECharts replacement",
+            next_session_route_section,
+        )
         self.assertIn("经 Legacy Bug / UX Audit 判定应保留的能力、信号组和证据链", architecture)
         self.assertIn("不复制 Streamlit 页面 UI、tab navigation、已知 bug 或历史 patchwork", architecture)
         self.assertIn(
