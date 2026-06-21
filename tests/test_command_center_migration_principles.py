@@ -108,11 +108,17 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
             text,
         )
         self.assertIn("runtime_config_does_not_prove_full_live_light_workflow", text)
-        self.assertIn("prove legacy signal/capability parity, copy old Streamlit UI", text)
-        self.assertIn("legacy signal/capability parity gaps are auditable without treating old Streamlit UI copy as a goal", text)
-        self.assertIn("Full legacy signal/capability parity for the next-session chart is incomplete; visual/UI copy is not the target", text)
+        self.assertIn(
+            "prove retained signal/capability no-feature-loss coverage, copy old Streamlit UI",
+            text,
+        )
+        self.assertIn("retained signal/capability coverage gaps are auditable without treating old Streamlit UI copy as a goal", text)
+        self.assertIn("Full retained signal/capability coverage evidence for the next-session chart is incomplete; visual/UI copy is not the target", text)
+        self.assertIn("does not prove retained signal/capability coverage evidence, browser visual QA", text)
         self.assertIn("Compare retained next-session signal groups and interaction evidence against Legacy Bug / UX Audit findings", text)
         self.assertIn("old Streamlit UI copy outside the goal", text)
+        self.assertNotIn("prove legacy signal/capability parity, copy old Streamlit UI", text)
+        self.assertNotIn("Full legacy signal/capability parity for the next-session chart is incomplete", text)
         self.assertNotIn("prove Streamlit parity", text)
         self.assertNotIn("Streamlit parity gaps", text)
         self.assertNotIn("Full parity with legacy Streamlit chart", text)
