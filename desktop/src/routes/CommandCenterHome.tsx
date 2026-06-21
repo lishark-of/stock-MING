@@ -293,6 +293,18 @@ export default function CommandCenterHome() {
     `DeepSeek 解释：${dailyCommandDeepSeekSourceLabel}`,
     `运行模式：${dailyCommandRuntimeModeLabel}`
   ].join(" / ");
+  const dailyCommandBackgroundTaskState = (() => {
+    if (liveBootstrapAutoStatus === "not_checked") return "等待确认运行模式";
+    if (liveBootstrapAutoStatus === "disabled_not_live_light") return "cache_only/manual 不创建后台任务";
+    if (liveBootstrapAutoStatus === "skipped_sources_disabled") return "来源关闭，未创建后台任务";
+    if (liveBootstrapAutoStatus === "blocked_task_not_ready") return "后台任务未接入";
+    if (liveBootstrapAutoStatus === "skipped_session_once") return "本会话已创建过，不重复";
+    if (liveBootstrapAutoStatus === "creating") return "正在创建本地后台 task";
+    if (liveBootstrapAutoStatus.includes("failed")) return "创建失败，已降级为只读";
+    return `本地后台 task 状态：${liveBootstrapAutoStatus}`;
+  })();
+  const dailyCommandBackgroundTaskTone =
+    dailyCommandBackgroundTaskState.includes("失败") || dailyCommandBackgroundTaskState.includes("未接入") ? "warn" : "good";
   const dailyCommandMissingEvidence = [
     Number(dataHealthCounts?.provider_count ?? 0) ? "" : "数据健康 provider 汇总",
     Number(candidateCounts?.candidate_count ?? 0) ? "" : "下一票雷达缓存",
@@ -378,6 +390,7 @@ export default function CommandCenterHome() {
           { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
           { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
           { label: "数据来源", value: dailyCommandSourceState },
+          { label: "后台状态", value: dailyCommandBackgroundTaskState, tone: dailyCommandBackgroundTaskTone },
           { label: "缺少证据", value: dailyCommandMissingEvidence, tone: dailyCommandMissingEvidence.includes("缓存") || dailyCommandMissingEvidence.includes("验收") || dailyCommandMissingEvidence.includes("收口") ? "warn" : "good" },
           { label: "阻断/降级", value: dailyCommandBlockedState, tone: dailyCommandBlockedState.includes("未标记") ? "good" : "warn" },
           { label: "最近可用缓存", value: dailyCommandLastCache },
@@ -390,6 +403,7 @@ export default function CommandCenterHome() {
           items={[
             { label: "下一步", value: dailyCommandNextClick },
             { label: "数据来源", value: dailyCommandSourceState },
+            { label: "后台状态", value: dailyCommandBackgroundTaskState, tone: dailyCommandBackgroundTaskTone },
             { label: "缺少证据", value: dailyCommandMissingEvidence, tone: dailyCommandMissingEvidence.includes("缓存") || dailyCommandMissingEvidence.includes("验收") || dailyCommandMissingEvidence.includes("收口") ? "warn" : "good" },
             { label: "阻断/降级", value: dailyCommandBlockedState, tone: dailyCommandBlockedState.includes("未标记") ? "good" : "warn" },
             { label: "最近可用缓存", value: dailyCommandLastCache },

@@ -48,6 +48,35 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(source.index("开发状态速览"), source.index('label: "FastAPI"'))
         self.assertLess(source.index("开发状态速览"), source.index('label: "runtime mode"'))
 
+    def test_daily_command_summary_shows_background_task_state_before_audit(self):
+        source = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("dailyCommandBackgroundTaskState", source)
+        self.assertIn('label: "后台状态"', source)
+        self.assertIn("等待确认运行模式", source)
+        self.assertIn("cache_only/manual 不创建后台任务", source)
+        self.assertIn("来源关闭，未创建后台任务", source)
+        self.assertIn("后台任务未接入", source)
+        self.assertIn("本会话已创建过，不重复", source)
+        self.assertIn("正在创建本地后台 task", source)
+        self.assertIn("创建失败，已降级为只读", source)
+        self.assertLess(source.index('label: "后台状态"'), source.index("<summary>开发 / 审计详情</summary>"))
+
+    def test_daily_command_page_does_not_embed_provider_model_or_trade_calls(self):
+        source = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        forbidden_fragments = (
+            "tushare.pro_api",
+            "ts.pro_api",
+            "deepseek.chat",
+            "api.github.com",
+            "executeTrade(",
+            "placeOrder(",
+            "broker.submit",
+            "live_order",
+        )
+        for fragment in forbidden_fragments:
+            self.assertNotIn(fragment, source)
+
 
 if __name__ == "__main__":
     unittest.main()
