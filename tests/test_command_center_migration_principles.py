@@ -695,8 +695,11 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
 
         self.assertIn("任何 `configured=true` 都只是 operator intent", section)
         self.assertIn("不是 effective external call", section)
+        self.assertIn("`fastapi_startup_rule`", section)
+        self.assertIn("`search_typing_rule`", section)
         self.assertIn("`configured_switch_rule`", section)
         self.assertIn("`effective_external_call_rule`", section)
+        self.assertIn("FastAPI startup、search typing、GET cache / React render 只读且不创建工作", section)
         self.assertIn("`configured=true` 只是 operator intent 而不是 effective external call", section)
         self.assertIn("effective external work 仍需 mode/task gate、ledger、redaction、promotion gate", section)
         self.assertIn("effective external work 仍需 mode/task gate", section)
