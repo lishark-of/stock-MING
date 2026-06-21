@@ -219,6 +219,37 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("local_signal_capability_parity_review_ready", text)
         self.assertNotIn("signal_capability_parity_complete", text)
 
+    def test_candidate_radar_route_ui_uses_coverage_labels_not_legacy_parity_copy(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "desktop" / "src" / "routes" / "CandidateRadar.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("先查看本地候选摘要", text)
+        self.assertIn("Provider coverage 验收", text)
+        self.assertIn("雷达 provider coverage dry-run", text)
+        self.assertIn("Provider、worker、receipt、browser QA、retained coverage 和 production blocker 明细默认收起", text)
+        self.assertIn('label: "provider coverage"', text)
+        self.assertIn('label: "coverage gap"', text)
+        self.assertIn("provider-backed coverage", text)
+        self.assertIn("retained coverage 缺口", text)
+        self.assertIn("本地 deep review 只审查候选证据、触发/失效、retained coverage、provider 和 freshness 缺口", text)
+        self.assertIn("旧雷达 coverage / 输出合同审计", text)
+        self.assertIn("旧雷达 coverage inventory", text)
+        self.assertIn("旧雷达 coverage 验收收据", text)
+        self.assertNotIn("先查看下一票候选池", text)
+        self.assertNotIn("Provider parity 验收", text)
+        self.assertNotIn("雷达 provider parity dry-run", text)
+        self.assertNotIn("legacy parity 和 production blocker", text)
+        self.assertNotIn('label: "provider parity"', text)
+        self.assertNotIn('label: "parity gap"', text)
+        self.assertNotIn("provider-backed parity", text)
+        self.assertNotIn("legacy parity 缺口", text)
+        self.assertNotIn("本地 deep review 只审查候选证据、触发/失效、legacy parity", text)
+        self.assertNotIn("旧雷达 parity / 输出合同审计", text)
+        self.assertNotIn("旧雷达 parity inventory", text)
+        self.assertNotIn("旧雷达 parity 验收收据", text)
+
     def test_ltg08_completion_boundary_uses_signal_capability_evidence_not_legacy_parity(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "command_center_3_long_term_goals.md").read_text(

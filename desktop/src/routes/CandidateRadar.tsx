@@ -368,7 +368,7 @@ export default function CandidateRadar() {
     Number(counts.degraded_mode_active_count ?? 0) ? "degraded" : "steady"
   ].join(" ");
   const ordinaryNextClick = Number(counts.candidate_count ?? 0)
-    ? "先查看下一票候选池"
+    ? "先查看本地候选摘要"
     : "先点击运行本地快扫";
   const ordinaryOptionalNextClick = Number(counts.candidate_count ?? 0)
     ? "需要更新时再运行本地快扫；搜单票时输入代码后点击生成 3.0 量化推演"
@@ -644,16 +644,16 @@ export default function CandidateRadar() {
         </details>
 
         <details className="developer-audit-details">
-          <summary>Provider parity 验收</summary>
-          <PacketCard title="雷达 provider parity dry-run" subtitle="POST /api/candidate-radar/provider-parity-dry-run；本地预检，不调用 Tushare/DeepSeek" status={String(providerParityDryRun.status ?? "missing")}>
+          <summary>Provider coverage 验收</summary>
+          <PacketCard title="雷达 provider coverage dry-run" subtitle="POST /api/candidate-radar/provider-parity-dry-run；本地预检，不调用 Tushare/DeepSeek" status={String(providerParityDryRun.status ?? "missing")}>
             <div className="actions">
-              <button onClick={launchProviderParityDryRun}>运行雷达 provider parity dry-run</button>
+              <button onClick={launchProviderParityDryRun}>运行雷达 provider coverage dry-run</button>
             </div>
             <p>ready_for_user_approved_provider_parity: {String(providerParityDryRun.ready_for_user_approved_provider_parity === true)}；ready_to_execute_real_provider_parity_task: {String(providerParityDryRun.ready_to_execute_real_provider_parity_task === true)}</p>
             <p>candidate_symbol_count: {String(providerParityDryRun.candidate_symbol_count ?? 0)}；provider_coverage_gap_count: {String(providerParityDryRun.provider_coverage_gap_count ?? 0)}；acceptance_scope_hash_short: {String(providerParityDryRun.acceptance_scope_hash_short ?? "--")}</p>
             <p>provider_execution_implemented: {String(providerParityDryRun.provider_execution_implemented === true)}；model_execution_implemented: {String(providerParityDryRun.model_execution_implemented === true)}；production_radar_replacement_complete: {String(providerParityDryRun.production_radar_replacement_complete === true)}</p>
             <p>credential_values_read: {String(providerParityDryRun.credential_values_read === true)}；credential_values_exposed: {String(providerParityDryRun.credential_values_exposed === true)}；env_key_names_included: {String(providerParityDryRun.env_key_names_included === true)}</p>
-            <p>这个 dry-run 只把下一票雷达的 provider-backed parity、full-pool worker、deep-scan worker、浏览器性能和 DeepSeek model ledger 验收范围固定住；它不会从 render 调 provider，也不会退掉 legacy fallback。</p>
+            <p>这个 dry-run 只把下一票雷达的 provider-backed coverage、full-pool worker、deep-scan worker、浏览器性能和 DeepSeek model ledger 验收范围固定住；它不会从 render 调 provider，也不会退掉 legacy fallback。</p>
             <DataLineageTable rows={objectRow(providerParityDryRun)} />
             <DataLineageTable rows={providerParityDryRunRows} />
             <DataLineageTable rows={providerParityCredentialRows} />
@@ -673,7 +673,7 @@ export default function CandidateRadar() {
 
       <details className="developer-audit-details">
         <summary>开发 / 审计指标</summary>
-        <p>Provider、worker、receipt、browser QA、legacy parity 和 production blocker 明细默认收起；普通用户先看上方雷达摘要、候选池和搜票量化推演。</p>
+        <p>Provider、worker、receipt、browser QA、retained coverage 和 production blocker 明细默认收起；普通用户先看上方雷达摘要、候选池和搜票量化推演。</p>
         <MetricGrid
           items={[
           { label: "mode", value: cache.mode as string | undefined },
@@ -706,10 +706,10 @@ export default function CandidateRadar() {
           { label: "quant request", value: String(searchQuantProjectionExecutionRequest.status ?? "missing"), tone: searchQuantProjectionExecutionRequest.local_execution_request_ready === true ? "good" : "warn" },
           { label: "quant request blockers", value: counts.search_quant_projection_execution_request_local_blocker_count as number | undefined, tone: Number(counts.search_quant_projection_execution_request_local_blocker_count ?? 0) ? "warn" : "good" },
           { label: "quant request prod", value: counts.search_quant_projection_execution_request_production_blocker_count as number | undefined, tone: Number(counts.search_quant_projection_execution_request_production_blocker_count ?? 0) ? "warn" : "good" },
-          { label: "provider parity", value: String(providerParityDryRun.status ?? "missing"), tone: providerParityDryRun.ready_for_user_approved_provider_parity === true ? "good" : "warn" },
-          { label: "parity blockers", value: counts.provider_parity_dry_run_blocking_count as number | undefined, tone: Number(counts.provider_parity_dry_run_blocking_count ?? 0) ? "warn" : "good" },
-          { label: "parity symbols", value: counts.provider_parity_candidate_symbol_count as number | undefined },
-          { label: "parity credential", value: counts.provider_parity_credential_missing_count as number | undefined, tone: Number(counts.provider_parity_credential_missing_count ?? 0) ? "warn" : "good" },
+          { label: "provider coverage", value: String(providerParityDryRun.status ?? "missing"), tone: providerParityDryRun.ready_for_user_approved_provider_parity === true ? "good" : "warn" },
+          { label: "coverage blockers", value: counts.provider_parity_dry_run_blocking_count as number | undefined, tone: Number(counts.provider_parity_dry_run_blocking_count ?? 0) ? "warn" : "good" },
+          { label: "coverage symbols", value: counts.provider_parity_candidate_symbol_count as number | undefined },
+          { label: "coverage credential", value: counts.provider_parity_credential_missing_count as number | undefined, tone: Number(counts.provider_parity_credential_missing_count ?? 0) ? "warn" : "good" },
           { label: "fast readiness", value: String(fastScanReadinessAudit.status ?? "missing"), tone: fastScanReadinessAudit.local_fast_scan_ready === true ? "good" : "warn" },
           { label: "fast blockers", value: counts.fast_scan_readiness_blocker_count as number | undefined, tone: Number(counts.fast_scan_readiness_blocker_count ?? 0) ? "bad" : "good" },
           { label: "no-loss QA", value: String(noFeatureLossAcceptance.status ?? "missing"), tone: noFeatureLossAcceptance.local_no_feature_loss_contract_ready === true ? "good" : "warn" },
@@ -780,11 +780,11 @@ export default function CandidateRadar() {
           { label: "stale inputs", value: counts.stale_input_group_count as number | undefined, tone: counts.stale_input_group_count ? "warn" : "good" },
           { label: "missing provider", value: counts.missing_provider_data_group_count as number | undefined, tone: counts.missing_provider_data_group_count ? "warn" : "good" },
           { label: "degraded modes", value: counts.degraded_mode_active_count as number | undefined, tone: counts.degraded_mode_active_count ? "warn" : "good" },
-          { label: "parity gap", value: counts.legacy_parity_gap_count as number | undefined, tone: counts.legacy_parity_gap_count ? "warn" : "good" },
-          { label: "parity mapped", value: counts.legacy_parity_mapped_count as number | undefined },
-          { label: "parity receipt", value: String(legacyParityAcceptanceReceipt.status ?? "missing"), tone: legacyParityAcceptanceReceipt.local_acceptance_receipt_ready === true ? "good" : "warn" },
-          { label: "parity blockers", value: counts.legacy_parity_acceptance_production_blocker_count as number | undefined, tone: Number(counts.legacy_parity_acceptance_production_blocker_count ?? 0) ? "warn" : "good" },
-          { label: "parity ready", value: counts.legacy_parity_acceptance_ready_count as number | undefined },
+          { label: "coverage gap", value: counts.legacy_parity_gap_count as number | undefined, tone: counts.legacy_parity_gap_count ? "warn" : "good" },
+          { label: "coverage mapped", value: counts.legacy_parity_mapped_count as number | undefined },
+          { label: "coverage receipt", value: String(legacyParityAcceptanceReceipt.status ?? "missing"), tone: legacyParityAcceptanceReceipt.local_acceptance_receipt_ready === true ? "good" : "warn" },
+          { label: "coverage blockers", value: counts.legacy_parity_acceptance_production_blocker_count as number | undefined, tone: Number(counts.legacy_parity_acceptance_production_blocker_count ?? 0) ? "warn" : "good" },
+          { label: "coverage ready", value: counts.legacy_parity_acceptance_ready_count as number | undefined },
           { label: "跳过原因", value: scanCoverage.skipped_reason_count as number | undefined, tone: scanCoverage.skipped_reason_count ? "warn" : "good" },
           { label: "验收行", value: scanAcceptanceRows.length },
           { label: "freshness", value: String(freshnessState.state ?? "unknown"), tone: freshnessState.source === "missing" ? "warn" : "good" },
@@ -855,7 +855,7 @@ export default function CandidateRadar() {
           <p>task_id_visible: {String(fastScanTaskPipeline.task_id_visible === true)}；task_status_panel_required: {String(fastScanTaskPipeline.task_status_panel_required === true)}</p>
           <p>last_success_cache_fallback_visible: {String(fastScanTaskPipeline.last_success_cache_fallback_visible === true)}；safe_failure_boundary_visible: {String(fastScanTaskPipeline.safe_failure_boundary_visible === true)}</p>
           <p>async_worker_execution_done: {String(fastScanTaskPipeline.async_worker_execution_done === true)}；provider_backed_acceptance_done: {String(fastScanTaskPipeline.provider_backed_acceptance_done === true)}；production_radar_replacement_complete: {String(fastScanTaskPipeline.production_radar_replacement_complete === true)}</p>
-          <p>这个合同只证明 3.0 本地快扫流水线形状：页面不等待扫描、按钮发起 POST task、TaskStatusPanel 轮询状态、上次 cache 仍可读、输入预算和 feature gap 可见；它不是 worker 全量扫描、provider-backed parity、浏览器性能或生产替代完成。</p>
+          <p>这个合同只证明 3.0 本地快扫流水线形状：页面不等待扫描、按钮发起 POST task、TaskStatusPanel 轮询状态、上次 cache 仍可读、输入预算和 feature gap 可见；它不是 worker 全量扫描、provider-backed coverage、浏览器性能或生产替代完成。</p>
           <DataLineageTable rows={objectRow(fastScanTaskPipeline)} />
           <DataLineageTable rows={fastScanTaskPipelineRows} />
         </PacketCard>
@@ -869,7 +869,7 @@ export default function CandidateRadar() {
           <p>candidate_display_truncated_count: {String(fastScanRuntimeBudget.candidate_display_truncated_count ?? 0)}</p>
           <p>large_universe_worker_required: {String(fastScanRuntimeBudget.large_universe_worker_required ?? false)}</p>
           <p>browser_performance_trace_done: {String(fastScanRuntimeBudget.browser_performance_trace_done ?? false)}</p>
-          <p>快扫预算只限制本地同步展示和输入规范化；超出时报告截断与 worker 边界，不隐藏 provider、freshness 或 legacy parity 缺口。</p>
+          <p>快扫预算只限制本地同步展示和输入规范化；超出时报告截断与 worker 边界，不隐藏 provider、freshness 或 retained coverage 缺口。</p>
           <DataLineageTable rows={objectRow(fastScanRuntimeBudget)} />
           <DataLineageTable rows={fastScanRuntimeBudgetRows} />
         </PacketCard>
@@ -921,7 +921,7 @@ export default function CandidateRadar() {
           <p>production_radar_replacement_complete: {String(activationReceipt.production_radar_replacement_complete === true)}；legacy_retirement_ready: {String(activationReceipt.legacy_retirement_ready === true)}</p>
           <p>full_pool_scan_done: {String(activationReceipt.full_pool_scan_done === true)}；deep_scan_done: {String(activationReceipt.deep_scan_done === true)}；provider_backed_acceptance_done: {String(activationReceipt.provider_backed_acceptance_done === true)}</p>
           <p>pending_evidence_count: {String(activationReceipt.pending_evidence_count ?? 0)}；production_blocker_count: {String(activationReceipt.production_blocker_count ?? 0)}</p>
-          <p>此收据只把 full-pool worker、deep-scan worker、provider-backed parity、browser visual/performance 和 legacy retirement 证据串成下一步清单；它不会运行扫描、不会调用 provider/model、不会把候选变成买入指令。</p>
+          <p>此收据只把 full-pool worker、deep-scan worker、provider-backed coverage、browser visual/performance 和 legacy retirement 证据串成下一步清单；它不会运行扫描、不会调用 provider/model、不会把候选变成买入指令。</p>
           <DataLineageTable rows={objectRow(activationReceipt)} />
           <DataLineageTable rows={activationReceiptRows} />
         </PacketCard>
@@ -966,7 +966,7 @@ export default function CandidateRadar() {
           </div>
           <p>local_execution_request_ready: {String(workerExecutionRequest.local_execution_request_ready === true)}；ready_for_manual_worker_task_submission: {String(workerExecutionRequest.ready_for_manual_worker_task_submission === true)}</p>
           <p>requested hash matches latest: {String(workerExecutionRequest.requested_worker_execution_scope_hash_matches_latest === true)}；scope: {String(workerExecutionRequest.worker_execution_scope_hash_short ?? "--")}</p>
-          <p>local full-pool / deep review / provider parity: {String(workerExecutionRequest.local_full_pool_receipt_visible === true)} / {String(workerExecutionRequest.local_deep_scan_review_visible === true)} / {String(workerExecutionRequest.provider_parity_scope_ticket_visible === true)}</p>
+          <p>local full-pool / deep review / provider coverage: {String(workerExecutionRequest.local_full_pool_receipt_visible === true)} / {String(workerExecutionRequest.local_deep_scan_review_visible === true)} / {String(workerExecutionRequest.provider_parity_scope_ticket_visible === true)}</p>
           <p>quant projection scope visible: {String(workerExecutionRequest.quant_projection_scope_ticket_visible === true)}</p>
           <p>target: {String(workerExecutionRequest.target_worker_full_pool_route ?? "POST /api/candidate-radar/full-pool-worker-scan")} / {String(workerExecutionRequest.target_worker_deep_scan_route ?? "POST /api/candidate-radar/deep-scan-worker")}</p>
           <p>worker_task_created / worker_task_executed / worker_started: {String(workerExecutionRequest.worker_task_created === true)} / {String(workerExecutionRequest.worker_task_executed === true)} / {String(workerExecutionRequest.worker_started === true)}</p>
@@ -1020,7 +1020,7 @@ export default function CandidateRadar() {
           <p>scheduler off / provider-model no autoschedule / no-trade: {String(workerRuntimeLinkedEvidence.scheduler_default_off_runtime_verified === true)} / {String(workerRuntimeLinkedEvidence.provider_model_no_autoschedule_boundary_verified === true)} / {String(workerRuntimeLinkedEvidence.no_trade_no_action_boundary_verified === true)}</p>
           <p>production worker / radar replacement / provider-backed: {String(workerRuntimeLinkedEvidence.production_worker_complete === true)} / {String(workerRuntimeLinkedEvidence.production_radar_replacement_complete === true)} / {String(workerRuntimeLinkedEvidence.provider_backed_acceptance_done === true)}</p>
           <p>tushare_called / deepseek_called / github_called: {String(workerRuntimeLinkedEvidence.tushare_called === true)} / {String(workerRuntimeLinkedEvidence.deepseek_called === true)} / {String(workerRuntimeLinkedEvidence.github_called === true)}</p>
-          <p>这个 link 只证明已有 LTG-06 本地 runtime QA 证据可被雷达迁移审查看见；真实 Redis/Celery worker、全池/深扫、provider parity、browser promotion 和 legacy retirement 仍未完成。</p>
+          <p>这个 link 只证明已有 LTG-06 本地 runtime QA 证据可被雷达迁移审查看见；真实 Redis/Celery worker、全池/深扫、provider coverage、browser promotion 和 legacy retirement 仍未完成。</p>
           <DataLineageTable rows={objectRow(workerRuntimeLinkedEvidence)} />
           <DataLineageTable rows={workerRuntimeLinkedRows} />
         </PacketCard>
@@ -1124,7 +1124,7 @@ export default function CandidateRadar() {
           <p>full_pool_scan_done / deep_scan_done / provider_backed_acceptance_done: {String(productionStageScopeManifest.full_pool_scan_done === true)} / {String(productionStageScopeManifest.deep_scan_done === true)} / {String(productionStageScopeManifest.provider_backed_acceptance_done === true)}</p>
           <p>worker_backed_execution_done / browser_visual_delta_qa_done / durable_ci_evidence_complete: {String(productionStageScopeManifest.worker_backed_execution_done === true)} / {String(productionStageScopeManifest.browser_visual_delta_qa_done === true)} / {String(productionStageScopeManifest.durable_ci_evidence_complete === true)}</p>
           <p>tushare_called / deepseek_called / github_called: {String(productionStageScopeManifest.tushare_called === true)} / {String(productionStageScopeManifest.deepseek_called === true)} / {String(productionStageScopeManifest.github_called === true)}</p>
-          <p>not_allowed_next_steps: {Array.isArray(productionStageScopeManifest.not_allowed_next_steps) ? productionStageScopeManifest.not_allowed_next_steps.join(" / ") : "treat stage manifest as execution / provider parity / browser promotion / legacy retirement / buy instruction"}</p>
+          <p>not_allowed_next_steps: {Array.isArray(productionStageScopeManifest.not_allowed_next_steps) ? productionStageScopeManifest.not_allowed_next_steps.join(" / ") : "treat stage manifest as execution / provider coverage / browser promotion / legacy retirement / buy instruction"}</p>
           <DataLineageTable rows={objectRow(productionStageScopeManifest)} />
           <DataLineageTable rows={productionStageScopeRows} />
         </PacketCard>
@@ -1214,16 +1214,16 @@ export default function CandidateRadar() {
         <PacketCard title="Deep-scan 本地审查收据" subtitle="POST /api/candidate-radar/deep-scan-local-review；只审查本地证据和缺口，不调用 DeepSeek" status={String(deepScanLocalReviewReceipt.status ?? "local_review_missing")}>
           <p>local_deep_scan_review_done: {String(deepScanLocalReviewReceipt.local_deep_scan_review_done === true)}；deep_scan_done: {String(deepScanLocalReviewReceipt.deep_scan_done === true)}</p>
           <p>deepseek_called: {String(deepScanLocalReviewReceipt.deepseek_called === true)}；provider_backed_acceptance_done: {String(deepScanLocalReviewReceipt.provider_backed_acceptance_done === true)}</p>
-          <p>本地 deep review 只审查候选证据、触发/失效、legacy parity、provider 和 freshness 缺口；不刷新 provider、不调用模型、不生成买入指令。</p>
+          <p>本地 deep review 只审查候选证据、触发/失效、retained coverage、provider 和 freshness 缺口；不刷新 provider、不调用模型、不生成买入指令。</p>
           <DataLineageTable rows={objectRow(deepScanLocalReviewReceipt)} />
           <DataLineageTable rows={deepScanLocalReviewRows} />
         </PacketCard>
       </details>
 
       <details className="developer-audit-details">
-        <summary>旧雷达 parity / 输出合同审计</summary>
+        <summary>旧雷达 coverage / 输出合同审计</summary>
         <div className="grid">
-          <PacketCard title="旧雷达 parity inventory" subtitle="legacy_parity_rows；映射、缺口、未来任务必须分清" status={String(legacyParityInventory.status ?? "partial_parity")}>
+          <PacketCard title="旧雷达 coverage inventory" subtitle="legacy_parity_rows；映射、缺口、未来任务必须分清" status={String(legacyParityInventory.status ?? "partial_parity")}>
             <p>quick_scan_is_full_replacement: {String(legacyParityInventory.quick_scan_is_full_replacement === true)}</p>
             <p>slow_paths_are_future_button_tasks: {String(legacyParityInventory.slow_paths_are_future_button_tasks !== false)}</p>
             <DataLineageTable rows={legacyParityRows} />
@@ -1233,7 +1233,7 @@ export default function CandidateRadar() {
           </PacketCard>
         </div>
 
-        <PacketCard title="旧雷达 parity 验收收据" subtitle="legacy_parity_acceptance_receipt；把旧雷达能力逐项转成 production replacement 前置条件" status={String(legacyParityAcceptanceReceipt.status ?? "missing")}>
+        <PacketCard title="旧雷达 coverage 验收收据" subtitle="legacy_parity_acceptance_receipt；把旧雷达能力逐项转成 production replacement 前置条件" status={String(legacyParityAcceptanceReceipt.status ?? "missing")}>
           <p>local_acceptance_receipt_ready: {String(legacyParityAcceptanceReceipt.local_acceptance_receipt_ready === true)}</p>
           <p>production_radar_replacement_complete: {String(legacyParityAcceptanceReceipt.production_radar_replacement_complete === true)}；legacy_retirement_ready: {String(legacyParityAcceptanceReceipt.legacy_retirement_ready === true)}；legacy_fallback_required: {String(legacyParityAcceptanceReceipt.legacy_fallback_required !== false)}</p>
           <p>parity_item_count: {String(legacyParityAcceptanceReceipt.parity_item_count ?? 0)}；output_contract_field_count: {String(legacyParityAcceptanceReceipt.output_contract_field_count ?? 0)}；production_ready_count: {String(legacyParityAcceptanceReceipt.production_ready_count ?? 0)}；production_blocker_count: {String(legacyParityAcceptanceReceipt.production_blocker_count ?? 0)}</p>
