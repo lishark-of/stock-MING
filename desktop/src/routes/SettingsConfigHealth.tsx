@@ -336,6 +336,7 @@ export default function SettingsConfigHealth() {
 
         <PacketCard title="运行模式安全口径" subtitle="runtime_mode_policy_rows 只读转发；非 production evidence" status="read_only">
           <p>这些字段来自配置层 policy row，用于解释 GET cache、React render、外联 ledger 和普通入口任务边界。</p>
+          <p>同时区分 configured_switch_rule / effective_external_call_rule：configured=true 只是 operator intent，effective external work 仍需 mode/task gate、ledger、redaction、promotion gate。</p>
           <p>本卡片不写配置、不展示 token/key、不创建 task，也不能证明完整 live_light 已实现。</p>
           <DataLineageTable rows={runtimeModeBoundaryRows} />
         </PacketCard>

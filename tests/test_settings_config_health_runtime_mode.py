@@ -20,6 +20,10 @@ class SettingsConfigHealthRuntimeModeTests(unittest.TestCase):
         self.assertIn("react_render_rule", source)
         self.assertIn("ledger_rule", source)
         self.assertIn("ordinary_entrance_visibility_rule", source)
+        self.assertIn("configured_switch_rule", source)
+        self.assertIn("effective_external_call_rule", source)
+        self.assertIn("configured=true 只是 operator intent", source)
+        self.assertIn("effective external work 仍需 mode/task gate、ledger、redaction、promotion gate", source)
         self.assertIn("production_evidence_rule", source)
         self.assertNotIn("runtimeModePolicyRows.map((row) => ({ ...row }))", source)
 
