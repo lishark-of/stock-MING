@@ -27,6 +27,7 @@ STREAMLIT_ORDINARY_WORKFLOW_PARITY_REVIEW_SCHEMA_VERSION = (
 )
 STREAMLIT_FALLBACK_RETIREMENT_REVIEW_SCHEMA_VERSION = "streamlit_fallback_retirement_review.v1"
 STREAMLIT_RETIREMENT_DURABLE_EVIDENCE_SCHEMA_VERSION = "streamlit_retirement_durable_evidence_recipe.v1"
+ORDINARY_ENTRANCE_ACCEPTANCE_SCHEMA_VERSION = "ordinary_entrance_acceptance_audit.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 APP_PY_PATH = PROJECT_ROOT / "app.py"
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
@@ -455,6 +456,255 @@ def _streamlit_fallback_dependency_contract(route_rows: list[dict[str, Any]]) ->
         "contains_secret": False,
         "rows": rows,
         "note": "This contract makes remaining Streamlit fallback dependencies explicit. It is not a fallback removal, does not open Streamlit, and does not execute legacy tools.",
+    }
+
+
+def _ordinary_entrance_acceptance_audit() -> dict[str, Any]:
+    legacy_module_rows = [
+        {
+            "legacy_module": "today_focus_home",
+            "classification": "REDESIGN",
+            "preserve_capability": "today_focus / risk_summary / cache_source / next_click",
+            "legacy_ux_or_bug_path_not_migrated": "multi_button_rerun_home / engineering_tables_before_decision",
+            "target_surface": "Daily Command Center summary",
+            "ordinary_flow_entry_allowed": True,
+        },
+        {
+            "legacy_module": "single_stock_quant_room",
+            "classification": "REDESIGN",
+            "preserve_capability": "searched_symbol_projection / factor_support_pressure / next_session_preview",
+            "legacy_ux_or_bug_path_not_migrated": "deep_tab_radio_navigation / blocking_projection / position_context_conflict",
+            "target_surface": "Stock Quant Projection",
+            "ordinary_flow_entry_allowed": True,
+        },
+        {
+            "legacy_module": "candidate_radar",
+            "classification": "REDESIGN",
+            "preserve_capability": "top_watch_excluded_candidates / score_reasoning / scan_scope",
+            "legacy_ux_or_bug_path_not_migrated": "candidate_reads_like_buy_instruction / unclear_full_pool_deep_scan_boundary",
+            "target_surface": "Candidate Radar",
+            "ordinary_flow_entry_allowed": True,
+        },
+        {
+            "legacy_module": "next_session_map",
+            "classification": "REDESIGN",
+            "preserve_capability": "operation_zones / triggers / invalidation_conditions / chart_data_trust",
+            "legacy_ux_or_bug_path_not_migrated": "streamlit_visual_clone / chart_receipt_as_production_replacement",
+            "target_surface": "Stock Quant Projection result panel",
+            "ordinary_flow_entry_allowed": True,
+        },
+        {
+            "legacy_module": "factor_quant_hub",
+            "classification": "REDESIGN",
+            "preserve_capability": "support_pressure_missing_conflict / factor_lineage / light_research_metrics",
+            "legacy_ux_or_bug_path_not_migrated": "engineering_contract_tables_as_primary_user_flow / small_sample_as_production_ic",
+            "target_surface": "Stock Quant Projection summary plus Developer/Audit detail",
+            "ordinary_flow_entry_allowed": True,
+        },
+        {
+            "legacy_module": "hard_risk_scan",
+            "classification": "REDESIGN",
+            "preserve_capability": "hard_risk / announcements / pledge_reduction_funding_gaps",
+            "legacy_ux_or_bug_path_not_migrated": "missing_data_written_as_no_risk / model_text_overwrites_fact",
+            "target_surface": "Daily Command Center and Stock Quant Projection risk block",
+            "ordinary_flow_entry_allowed": True,
+        },
+        {
+            "legacy_module": "discipline_backtest_lab",
+            "classification": "LEGACY-DEBUG",
+            "preserve_capability": "review / rule_lab / backtest_params / historical_discipline_reference",
+            "legacy_ux_or_bug_path_not_migrated": "deep_forms / synchronous_backtest / cloud_write_mixed_with_trade_advice",
+            "target_surface": "Legacy/Admin/Debug until redesigned as explicit backtest lab",
+            "ordinary_flow_entry_allowed": False,
+        },
+        {
+            "legacy_module": "provider_health_console",
+            "classification": "LEGACY-DEBUG",
+            "preserve_capability": "provider_permission / cache_health / config_status",
+            "legacy_ux_or_bug_path_not_migrated": "provider_health_table_dominates_ordinary_path / page_entry_auto_probe",
+            "target_surface": "Settings / Config Health / Audit",
+            "ordinary_flow_entry_allowed": False,
+        },
+        {
+            "legacy_module": "external_memory_and_method_labs",
+            "classification": "LEGACY-DEBUG",
+            "preserve_capability": "research_memory / method_library / special_topic_clues",
+            "legacy_ux_or_bug_path_not_migrated": "rag_document_ingestion_mixed_with_ordinary_action / unclear_data_lineage",
+            "target_surface": "Advanced research / Developer / External Brain",
+            "ordinary_flow_entry_allowed": False,
+        },
+        {
+            "legacy_module": "legacy_ai_strategy_advisor",
+            "classification": "RETIRE",
+            "preserve_capability": "research_tone_for_explaining_existing_evidence",
+            "legacy_ux_or_bug_path_not_migrated": "direct_trade_advice / cross_market_fact_source_unclear / model_text_as_action",
+            "target_surface": "Governed DeepSeek explain summary only",
+            "ordinary_flow_entry_allowed": False,
+        },
+    ]
+    classification_counts = {
+        classification: sum(1 for row in legacy_module_rows if row["classification"] == classification)
+        for classification in ("KEEP", "REDESIGN", "LEGACY-DEBUG", "RETIRE")
+    }
+    direct_evidence_pending_label = "seed_only_direct_evidence_pending_before_KEEP"
+    for row in legacy_module_rows:
+        row["direct_ux_bug_evidence_source"] = direct_evidence_pending_label
+        row["ordinary_entrance_placement"] = row["target_surface"]
+        row["frozen_legacy_path"] = row["legacy_ux_or_bug_path_not_migrated"]
+        row["keep_upgrade_blocked_without_direct_evidence"] = True
+    direct_evidence_pending_count = sum(
+        1 for row in legacy_module_rows if row["direct_ux_bug_evidence_source"] == direct_evidence_pending_label
+    )
+    keep_upgrade_blocked_count = sum(
+        1 for row in legacy_module_rows if row["keep_upgrade_blocked_without_direct_evidence"] is True
+    )
+    rows = [
+        {
+            "entrance": "daily_command_center",
+            "display_name": "今日作战台 / Daily Command Center",
+            "classification": "REDESIGN",
+            "legacy_capability_preserved": [
+                "today_focus",
+                "risk_summary",
+                "watchlist_context",
+                "data_source_health",
+                "last_good_cache",
+            ],
+            "required_visible_state": [
+                "next_click",
+                "tushare_cache_deepseek_or_pending_source",
+                "missing_evidence",
+                "blocked_or_degraded_state",
+                "last_good_cache",
+                "research_only_boundary",
+            ],
+            "legacy_ux_or_bug_path_not_migrated": [
+                "streamlit_multi_button_rerun_home",
+                "engineering_tables_dominate_decision_surface",
+                "provider_health_auto_probe_from_ordinary_page",
+                "ai_text_that_reads_like_trade_instruction",
+            ],
+            "next_safe_migration_slice": (
+                "compress ordinary home into summary plus next action; move provider/config/audit detail "
+                "to Settings or Audit"
+            ),
+            "engineering_details_destination": "Settings / Developer / Audit",
+            "ordinary_page_should_show_summary_only": True,
+        },
+        {
+            "entrance": "stock_quant_projection",
+            "display_name": "股票量化推演 / Stock Quant Projection",
+            "classification": "REDESIGN",
+            "legacy_capability_preserved": [
+                "searched_symbol_research",
+                "factor_support_pressure_neutral_missing",
+                "next_session_map",
+                "optional_deepseek_explanation",
+                "risk_budget_context",
+            ],
+            "required_visible_state": [
+                "generate_3_0_quant_projection_button",
+                "cache_provider_model_pending_layers",
+                "missing_task_or_evidence",
+                "last_successful_result",
+                "no_action_no_trade_boundary",
+            ],
+            "legacy_ux_or_bug_path_not_migrated": [
+                "deep_tab_or_radio_navigation",
+                "sync_blocking_projection",
+                "conflicting_position_context",
+                "deepseek_overwrites_numeric_price_factor_or_strategy_action",
+            ],
+            "next_safe_migration_slice": (
+                "build searched-symbol to local task/cache replay path first; real provider/model execution "
+                "requires later acceptance"
+            ),
+            "engineering_details_destination": "Settings / Developer / Audit",
+            "ordinary_page_should_show_summary_only": True,
+        },
+        {
+            "entrance": "candidate_radar",
+            "display_name": "下一票雷达 / Candidate Radar",
+            "classification": "REDESIGN",
+            "legacy_capability_preserved": [
+                "top_watch_excluded_candidates",
+                "score_reasoning",
+                "scan_scope",
+                "candidate_pool_source",
+                "no_feature_loss_comparison",
+            ],
+            "required_visible_state": [
+                "candidate_is_not_buy_instruction",
+                "scan_scope_and_source",
+                "provider_cache_pending_state",
+                "missing_full_pool_deep_scan_browser_ci_evidence",
+                "last_radar_cache",
+            ],
+            "legacy_ux_or_bug_path_not_migrated": [
+                "legacy_radar_candidate_reads_like_recommendation",
+                "unclear_full_pool_or_deep_scan_boundary",
+                "timeout_prone_sync_scan",
+                "retire_legacy_fallback_before_replacement_evidence",
+            ],
+            "next_safe_migration_slice": (
+                "restore usable quick scan and no-feature-loss surface before worker/provider/browser/"
+                "legacy-retirement evidence"
+            ),
+            "engineering_details_destination": "Settings / Developer / Audit",
+            "ordinary_page_should_show_summary_only": True,
+        },
+    ]
+    commit_questions = [
+        "what_user_capability_was_preserved",
+        "what_legacy_ux_problem_was_removed",
+        "what_legacy_bug_or_patchwork_path_was_not_migrated",
+        "what_became_simpler_for_nontechnical_user",
+        "which_real_blocker_was_reduced",
+    ]
+    return {
+        "schema_version": ORDINARY_ENTRANCE_ACCEPTANCE_SCHEMA_VERSION,
+        "status": "ordinary_entrance_acceptance_map_ready_audit_pending",
+        "scope": "local_ordinary_entrance_acceptance_audit_no_streamlit_execution",
+        "row_count": len(rows),
+        "ordinary_entrance_acceptance_complete": False,
+        "requires_legacy_bug_ux_audit_before_major_migration": True,
+        "ordinary_user_entrance_count": len(rows),
+        "legacy_bug_ux_module_row_count": len(legacy_module_rows),
+        "legacy_bug_ux_keep_count": classification_counts["KEEP"],
+        "legacy_bug_ux_redesign_count": classification_counts["REDESIGN"],
+        "legacy_bug_ux_legacy_debug_count": classification_counts["LEGACY-DEBUG"],
+        "legacy_bug_ux_retire_count": classification_counts["RETIRE"],
+        "legacy_bug_ux_direct_evidence_pending_count": direct_evidence_pending_count,
+        "legacy_bug_ux_keep_upgrade_blocked_count": keep_upgrade_blocked_count,
+        "legacy_modules_enter_ordinary_flow_without_audit": False,
+        "engineering_details_moved_to_settings_developer_audit": True,
+        "commit_questions": commit_questions,
+        "rows": rows,
+        "legacy_bug_ux_module_rows": legacy_module_rows,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_open_streamlit": True,
+        "does_not_run_legacy_tools": True,
+        "does_not_create_tasks": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": [
+            {
+                "api": "local_ordinary_entrance_acceptance_audit",
+                "source_snapshot": "static_legacy_bug_ux_audit_map",
+                "row_count": len(rows),
+                "call_status": "local_static_read",
+                "local_fetched_at": _now_iso(),
+                "external": False,
+            }
+        ],
+        "note": (
+            "This maps the three ordinary Command Center 3 entrances for Legacy Bug / UX Audit. "
+            "It is not production acceptance, does not open Streamlit, and does not create tasks."
+        ),
     }
 
 
@@ -1493,6 +1743,7 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         status=status,
         snapshot_available=bool(snapshot),
     )
+    ordinary_entrance_acceptance_audit = _ordinary_entrance_acceptance_audit()
     fallback_dependency_contract = _streamlit_fallback_dependency_contract(primary_workflow_exit_audit["route_rows"])
     ordinary_parity_review = _read_streamlit_ordinary_workflow_parity_review_packet()
     ordinary_parity_review_rows = _as_list(ordinary_parity_review.get("rows"))
@@ -1550,6 +1801,9 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         "primary_workflow_exit_audit": primary_workflow_exit_audit,
         "primary_workflow_exit_rows": primary_workflow_exit_audit["rows"],
         "primary_workflow_route_rows": primary_workflow_exit_audit["route_rows"],
+        "ordinary_entrance_acceptance_audit": ordinary_entrance_acceptance_audit,
+        "ordinary_entrance_acceptance_rows": ordinary_entrance_acceptance_audit["rows"],
+        "legacy_bug_ux_module_rows": ordinary_entrance_acceptance_audit["legacy_bug_ux_module_rows"],
         "streamlit_fallback_dependency_contract": fallback_dependency_contract,
         "streamlit_fallback_dependency_rows": fallback_dependency_contract["rows"],
         "streamlit_retirement_readiness_receipt": retirement_readiness_receipt,
@@ -1576,6 +1830,28 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
             "primary_workflow_route_count": primary_workflow_exit_audit["ordinary_workflow_route_count"],
             "primary_workflow_fallback_count": primary_workflow_exit_audit["ordinary_workflow_still_needs_fallback_count"],
             "primary_workflow_exit_blocker_count": primary_workflow_exit_audit["blocker_count"],
+            "ordinary_entrance_acceptance_row_count": ordinary_entrance_acceptance_audit["row_count"],
+            "legacy_bug_ux_module_row_count": ordinary_entrance_acceptance_audit[
+                "legacy_bug_ux_module_row_count"
+            ],
+            "legacy_bug_ux_redesign_count": ordinary_entrance_acceptance_audit[
+                "legacy_bug_ux_redesign_count"
+            ],
+            "legacy_bug_ux_legacy_debug_count": ordinary_entrance_acceptance_audit[
+                "legacy_bug_ux_legacy_debug_count"
+            ],
+            "legacy_bug_ux_retire_count": ordinary_entrance_acceptance_audit[
+                "legacy_bug_ux_retire_count"
+            ],
+            "legacy_bug_ux_direct_evidence_pending_count": ordinary_entrance_acceptance_audit[
+                "legacy_bug_ux_direct_evidence_pending_count"
+            ],
+            "legacy_bug_ux_keep_upgrade_blocked_count": ordinary_entrance_acceptance_audit[
+                "legacy_bug_ux_keep_upgrade_blocked_count"
+            ],
+            "ordinary_entrance_acceptance_complete_count": 1
+            if ordinary_entrance_acceptance_audit["ordinary_entrance_acceptance_complete"]
+            else 0,
             "streamlit_fallback_dependency_count": fallback_dependency_contract["full_streamlit_removal_blocker_count"],
             "ordinary_fallback_dependency_count": fallback_dependency_contract["ordinary_fallback_dependency_count"],
             "admin_debug_fallback_retained_count": fallback_dependency_contract["admin_debug_fallback_retained_count"],
@@ -1615,6 +1891,7 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         ]
         + retirement_readiness_receipt["call_ledger"]
         + durable_evidence_recipe["call_ledger"]
+        + ordinary_entrance_acceptance_audit["call_ledger"]
         + ordinary_parity_review_call_ledger
         + fallback_retirement_review_call_ledger,
         "streamlit_ordinary_workflow_parity_review_ready": ordinary_parity_review.get(
@@ -1646,6 +1923,11 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         "streamlit_retirement_durable_evidence_requires_replacement_parity": True,
         "streamlit_retirement_readiness_receipt_ready": retirement_readiness_receipt["local_receipt_ready"],
         "streamlit_retirement_readiness_receipt_status": retirement_readiness_receipt["status"],
+        "ordinary_entrance_acceptance_audit_ready": True,
+        "ordinary_entrance_acceptance_audit_status": ordinary_entrance_acceptance_audit["status"],
+        "ordinary_entrance_acceptance_complete": ordinary_entrance_acceptance_audit[
+            "ordinary_entrance_acceptance_complete"
+        ],
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,
@@ -1662,6 +1944,7 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
             "streamlit_retirement_durable_evidence_recipe 只是 LTG-10 证据配方；不是 fallback 删除、app.py 删除或普通主流程退出完成。",
             "streamlit_ordinary_workflow_parity_review 只有显式 POST task 后才会出现；它是本地 parity inventory evidence，不是生产退出完成。",
             "streamlit_fallback_retirement_review 只有显式 POST task 后才会出现；它是本地 fallback retirement review evidence，不是 fallback 删除或 production 退场完成。",
+            "ordinary_entrance_acceptance_audit 只是三入口 Legacy/UX 审计地图；不是生产验收，也不会创建任务。",
         ],
     }
     if status == "cache_missing":

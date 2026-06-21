@@ -6,6 +6,7 @@ cd "$(dirname "$0")/.."
 PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"
 PUSH_GATE_REPORT_PATH="${PUSH_GATE_REPORT_PATH:-}"
 LOCAL_PUSH_GATE_RECEIPT_PATH="${LOCAL_PUSH_GATE_RECEIPT_PATH:-.stock_ming_3/release_gate/local_push_gate_run_receipt.json}"
+DESKTOP_BUILD_OUT_DIR="${DESKTOP_BUILD_OUT_DIR:-${TMPDIR:-/tmp}/stock-ming-command-center-3-vite-build}"
 if [ ! -x "$PYTHON_BIN" ]; then
   echo "FAIL: expected project Python at $PYTHON_BIN. Do not use system Python for the push gate." >&2
   exit 1
@@ -156,6 +157,7 @@ write_release_readiness_report() {
 ## Passed Checks
 
 - python_unittest: passed
+- migration_principle_docs_guard: passed_no_blind_streamlit_copy_policy_and_commit_checkpoint_surfaces
 - desktop_build: passed
 - command_center_3_smoke: passed
 - data_health_freshness_contract: passed_local_contract_provider_execution_pending
@@ -190,10 +192,14 @@ write_release_readiness_report() {
 - did_not_execute_trades: true
 - did_not_use_system_python: true
 - no_git_add_dot: true
+- local_gate_pass_is_not_remote_ci: true
+- remote_actions_status_known: false
+- latest_remote_run_verified_green: false
 
 ## Scope Notes
 
 - This report is local evidence for the current push gate run.
+- Local gate pass is not remote CI evidence; release remains blocked until the matching remote Actions run is inspected green or failure logs are reviewed.
 - A report path inside the repository must be ignored or intentionally staged later; otherwise the final clean-worktree check fails.
 - Scaffold, preflight, matrix, mock, and sanitizer checks are not production completion evidence.
 REPORT
@@ -230,6 +236,7 @@ payload = {
     "report_path": report_path,
     "checks": [
         "python_unittest",
+        "migration_principle_docs_guard",
         "desktop_build",
         "command_center_3_smoke",
         "data_health_freshness_contract",
@@ -269,6 +276,7 @@ payload = {
     "local_gate_pass_is_not_ci_status": True,
     "remote_actions_status_known": False,
     "latest_remote_run_verified_green": False,
+    "remote_ci_status_note": "local push gate pass is not remote CI green; inspect matching remote Actions run before release.",
 }
 path = Path(receipt_path)
 path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -277,7 +285,8 @@ PY
 }
 
 run_step "Python unittest" "$PYTHON_BIN" -m unittest discover -s tests
-run_step "Desktop build" bash -c "cd desktop && npm run build"
+run_step "Migration principle docs guard" "$PYTHON_BIN" -m unittest tests.test_command_center_migration_principles
+run_step "Desktop build" env DESKTOP_BUILD_OUT_DIR="$DESKTOP_BUILD_OUT_DIR" bash -c 'cd desktop && npm run build -- --configLoader runner --outDir "$DESKTOP_BUILD_OUT_DIR" --emptyOutDir'
 run_step "Command Center 3 smoke" env PYTHON_BIN="$PYTHON_BIN" scripts/smoke_3_0.sh
 run_step "Data Health freshness contract" "$PYTHON_BIN" scripts/data_health_freshness_contract.py
 run_step "Tushare acceptance contract" "$PYTHON_BIN" scripts/tushare_acceptance_contract.py

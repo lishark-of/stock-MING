@@ -59,6 +59,24 @@ export default function LegacyTools() {
   const primaryExitAudit = (cache.primary_workflow_exit_audit as Record<string, unknown> | undefined) ?? {};
   const primaryExitRows = rows(cache.primary_workflow_exit_rows);
   const primaryWorkflowRouteRows = rows(cache.primary_workflow_route_rows);
+  const ordinaryEntranceAcceptanceAudit = (cache.ordinary_entrance_acceptance_audit as Record<string, unknown> | undefined) ?? {};
+  const ordinaryEntranceAcceptanceRows = rows(cache.ordinary_entrance_acceptance_rows);
+  const legacyBugUxModuleRows = rows(cache.legacy_bug_ux_module_rows);
+  const legacyBugUxEvidenceSlotRows = legacyBugUxModuleRows.map((row) => ({
+    legacy_module: row.legacy_module,
+    classification: row.classification,
+    direct_ux_bug_evidence_source: row.direct_ux_bug_evidence_source,
+    ordinary_entrance_placement: row.ordinary_entrance_placement,
+    frozen_legacy_path: row.frozen_legacy_path,
+    keep_upgrade_blocked_without_direct_evidence: row.keep_upgrade_blocked_without_direct_evidence,
+  }));
+  const migrationCommitQuestionRows = Array.isArray(ordinaryEntranceAcceptanceAudit.commit_questions)
+    ? ordinaryEntranceAcceptanceAudit.commit_questions.map((question, index) => ({
+      index: index + 1,
+      question_key: String(question),
+      required_for_future_migration_commit: true
+    }))
+    : [];
   const fallbackDependencyContract = (cache.streamlit_fallback_dependency_contract as Record<string, unknown> | undefined) ?? {};
   const fallbackDependencyRows = rows(cache.streamlit_fallback_dependency_rows);
   const streamlitRetirementReadinessReceipt = (cache.streamlit_retirement_readiness_receipt as Record<string, unknown> | undefined) ?? {};
@@ -94,6 +112,8 @@ export default function LegacyTools() {
             { label: "exit complete", value: primaryExitAudit.ordinary_workflow_exit_complete === true ? "完成" : "未完成", tone: primaryExitAudit.ordinary_workflow_exit_complete === true ? "good" : "warn" },
             { label: "fallback rows", value: primaryExitAudit.ordinary_workflow_still_needs_fallback_count as number | undefined, tone: Number(primaryExitAudit.ordinary_workflow_still_needs_fallback_count ?? 0) > 0 ? "warn" : "good" },
             { label: "exit blockers", value: primaryExitAudit.blocker_count as number | undefined, tone: Number(primaryExitAudit.blocker_count ?? 0) > 0 ? "warn" : "good" },
+            { label: "入口 UX 审计", value: ordinaryEntranceAcceptanceAudit.status as string | undefined, tone: ordinaryEntranceAcceptanceAudit.ordinary_entrance_acceptance_complete === true ? "good" : "warn" },
+            { label: "普通入口数", value: ordinaryEntranceAcceptanceAudit.ordinary_user_entrance_count as number | undefined },
             { label: "fallback deps", value: fallbackDependencyContract.full_streamlit_removal_blocker_count ?? counts.streamlit_fallback_dependency_count, tone: Number(fallbackDependencyContract.full_streamlit_removal_blocker_count ?? counts.streamlit_fallback_dependency_count ?? 0) > 0 ? "warn" : "good" },
             { label: "ordinary deps", value: fallbackDependencyContract.ordinary_fallback_dependency_count ?? counts.ordinary_fallback_dependency_count, tone: Number(fallbackDependencyContract.ordinary_fallback_dependency_count ?? counts.ordinary_fallback_dependency_count ?? 0) > 0 ? "warn" : "good" },
             { label: "retirement receipt", value: streamlitRetirementReadinessReceipt.local_receipt_ready === true ? "ready" : "review", tone: streamlitRetirementReadinessReceipt.local_receipt_ready === true ? "good" : "warn" },
@@ -143,6 +163,36 @@ export default function LegacyTools() {
 
       <PacketCard title="普通主流程迁移覆盖" subtitle="Command Center 3 route coverage；partial/fallback 必须明示" status="route_inventory">
         <DataLineageTable rows={primaryWorkflowRouteRows} />
+      </PacketCard>
+
+      <PacketCard title="普通入口 UX 审计" subtitle="三入口 acceptance map；工程细节留在 Settings / Developer / Audit" status={String(ordinaryEntranceAcceptanceAudit.status ?? "ordinary_entrance_acceptance_map_ready_audit_pending")}>
+        <p>scope: {String(ordinaryEntranceAcceptanceAudit.scope ?? "local_ordinary_entrance_acceptance_audit_no_streamlit_execution")}</p>
+        <p>ordinary_entrance_acceptance_complete: {String(ordinaryEntranceAcceptanceAudit.ordinary_entrance_acceptance_complete ?? false)}</p>
+        <p>legacy_bug_ux_module_row_count: {String(ordinaryEntranceAcceptanceAudit.legacy_bug_ux_module_row_count ?? legacyBugUxModuleRows.length)}</p>
+        <p>classification counts KEEP / REDESIGN / LEGACY-DEBUG / RETIRE: {String(ordinaryEntranceAcceptanceAudit.legacy_bug_ux_keep_count ?? 0)} / {String(ordinaryEntranceAcceptanceAudit.legacy_bug_ux_redesign_count ?? 0)} / {String(ordinaryEntranceAcceptanceAudit.legacy_bug_ux_legacy_debug_count ?? 0)} / {String(ordinaryEntranceAcceptanceAudit.legacy_bug_ux_retire_count ?? 0)}</p>
+        <p>direct_evidence_pending / keep_upgrade_blocked: {String(ordinaryEntranceAcceptanceAudit.legacy_bug_ux_direct_evidence_pending_count ?? 0)} / {String(ordinaryEntranceAcceptanceAudit.legacy_bug_ux_keep_upgrade_blocked_count ?? 0)}</p>
+        <p>requires_legacy_bug_ux_audit_before_major_migration: {String(ordinaryEntranceAcceptanceAudit.requires_legacy_bug_ux_audit_before_major_migration ?? true)}</p>
+        <p>engineering_details_moved_to_settings_developer_audit: {String(ordinaryEntranceAcceptanceAudit.engineering_details_moved_to_settings_developer_audit ?? true)}</p>
+        <p>does_not_create_tasks / external_calls_triggered / does_not_execute_trades: {String(ordinaryEntranceAcceptanceAudit.does_not_create_tasks ?? true)} / {String(ordinaryEntranceAcceptanceAudit.external_calls_triggered ?? false)} / {String(ordinaryEntranceAcceptanceAudit.does_not_execute_trades ?? true)}</p>
+        <DataLineageTable rows={ordinaryEntranceAcceptanceRows} />
+        <DataLineageTable rows={rows(ordinaryEntranceAcceptanceAudit.call_ledger)} />
+      </PacketCard>
+
+      <PacketCard title="迁移 commit checkpoint" subtitle="未来迁移提交必须回答这 5 个问题；不是 production evidence" status="commit_questions">
+        <p>每个后续迁移 slice 都要说明：保留了什么用户能力、移除了什么旧 UX 问题、哪些 bug/patchwork 没有迁入、非技术用户哪里更简单、减少了哪个真实 blocker。</p>
+        <DataLineageTable rows={migrationCommitQuestionRows} />
+      </PacketCard>
+
+      <PacketCard title="Legacy 审计证据槽" subtitle="direct evidence / ordinary placement / frozen path；只读，不升级 KEEP" status="legacy_bug_ux_audit">
+        <p>每个旧模块都要同时暴露直接 UX/bug 证据来源、普通入口落位和冻结旧路径；缺少直接证据时只能保持 REDESIGN、LEGACY-DEBUG 或 RETIRE。</p>
+        <p>本卡片不打开 Streamlit、不创建 task、不调用 provider/model，也不是 production evidence。</p>
+        <DataLineageTable rows={legacyBugUxEvidenceSlotRows} />
+      </PacketCard>
+
+      <PacketCard title="Legacy 模块 UX/bug 分类" subtitle="KEEP / REDESIGN / LEGACY-DEBUG / RETIRE；只读审计，不打开 Streamlit" status="legacy_bug_ux_audit">
+        <p>旧模块不能盲迁；普通入口只允许已 REDESIGN 且边界清楚的能力进入，LEGACY-DEBUG 和 RETIRE 不进入普通用户主流程。</p>
+        <p>seed-only direct evidence pending 的模块不能从 inventory / receipt / no-feature-loss matrix 直接升级 KEEP；frozen_legacy_path 必须保留在审计表里。</p>
+        <DataLineageTable rows={legacyBugUxModuleRows} />
       </PacketCard>
 
       <PacketCard title="Streamlit fallback 依赖契约" subtitle="逐项说明哪些普通工作流仍依赖旧入口；不打开 Streamlit、不执行旧工具" status={String(fallbackDependencyContract.status ?? "streamlit_fallback_dependencies_visible_retirement_pending")}>

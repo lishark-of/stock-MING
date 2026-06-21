@@ -57,8 +57,11 @@ jobs:
         run: |
           # scripts/push_gate_3_0.sh mirrors:
           # -m unittest discover -s tests
+          # -m unittest tests.test_command_center_migration_principles
           # npm run build
           # smoke_3_0.sh
+          # scripts/bootstrap_runtime_contract.py
+          # runtime_mode_policy_rows config boundary fields
           # git diff --check
           # secret_high_risk_scan
           # artifact_scan
