@@ -296,6 +296,18 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("Streamlit ordinary capability replacement / retirement review", section)
         self.assertNotIn("Streamlit replacement parity/retirement review", section)
 
+    def test_migration_map_runtime_config_intent_is_not_effective_external_call(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "docs" / "migration_map.md").read_text(encoding="utf-8")
+        section = text.split("运行模式迁移采用", 1)[1].split(
+            "运行配置键的漂移防线", 1
+        )[0]
+
+        self.assertIn("任何 `configured=true` 都只是 operator intent", section)
+        self.assertIn("不是 effective external call", section)
+        self.assertIn("effective external work 仍需 mode/task gate", section)
+        self.assertIn("runtime config 不能证明完整 `live_light` workflow", section)
+
     def test_app_migration_plan_records_no_blind_copy_and_audit_gate(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "app_migration_plan.md").read_text(encoding="utf-8")
