@@ -260,7 +260,7 @@ The safer path is to keep Streamlit as the reliable fallback/admin/debug surface
 - DeepSeek is an explanation model only, not a data source, and must not overwrite prices, holdings, factors, operation zones, or strategy action.
 - Backtests, full-market scans, heavy provider refreshes, and real trading remain explicit-button or separately authorized work.
 - The legacy Streamlit entry must not be broken during migration.
-- Every migration phase must preserve a fallback path.
+- Every migration phase must preserve a fallback/admin/debug or rollback path without presenting that path as an ordinary workflow, promotion shortcut, or production evidence.
 
 ## 7. Risk Register
 

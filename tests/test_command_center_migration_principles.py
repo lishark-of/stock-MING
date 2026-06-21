@@ -652,6 +652,11 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("safe params, ledgers, redaction, and no-trade/no-action boundaries", text)
         self.assertIn("Do not bypass service contracts, task governance, ledgers, redaction, or mode gates", text)
         self.assertIn("explicit POST task / worker / local fallback boundaries", text)
+        self.assertIn(
+            "Every migration phase must preserve a fallback/admin/debug or rollback path without presenting that path as an ordinary workflow, promotion shortcut, or production evidence",
+            text,
+        )
+        self.assertNotIn("Every migration phase must preserve a fallback path.", text)
         self.assertIn("Do not treat docs/config/scaffold/preflight/local receipt, matrix, mock, or sanitizer evidence as production acceptance evidence", text)
         self.assertIn("Do not add broad LTG contracts, receipts, runbooks, or stage-scope manifests unless they directly reduce a current release blocker", text)
         self.assertIn("direct acceptance, safety scans, and no-trade/no-action review", text)
