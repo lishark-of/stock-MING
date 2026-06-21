@@ -457,6 +457,24 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("旧雷达 parity inventory", text)
         self.assertNotIn("旧雷达 parity 验收收据", text)
 
+    def test_candidate_radar_demotes_engineering_audit_from_ordinary_first_view(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "desktop" / "src" / "routes" / "CandidateRadar.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("普通用户雷达摘要", text)
+        self.assertIn("工程审计明细默认收起；完整 call ledger、release gate 和配置状态", text)
+        self.assertIn('href="#audit"', text)
+        self.assertIn('href="#settings"', text)
+        self.assertIn("Provider、worker、receipt、browser QA、retained coverage 和 production blocker 明细默认收起", text)
+        self.assertLess(text.index("普通用户雷达摘要"), text.index("工程审计明细默认收起"))
+        self.assertLess(
+            text.index("工程审计明细默认收起"),
+            text.index('<details className="developer-audit-details">'),
+        )
+        self.assertLess(text.index("普通用户雷达摘要"), text.index("开发 / 审计指标"))
+
     def test_ltg08_completion_boundary_uses_signal_capability_evidence_not_legacy_parity(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "command_center_3_long_term_goals.md").read_text(

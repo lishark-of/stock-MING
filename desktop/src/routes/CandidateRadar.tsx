@@ -493,6 +493,7 @@ export default function CandidateRadar() {
             { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" }
           ]}
         />
+        <p className="risk-note">工程审计明细默认收起；完整 call ledger、release gate 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
 
       <div className="grid radar-result-cluster" data-radar-state={radarMotionState}>
