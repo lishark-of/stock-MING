@@ -86,12 +86,15 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
         for decision_row in (
             "legacy_decision_home_daily_command_replacement_ready_audit_pending",
             "legacy_decision_searched_symbol_quant_projection_replacement_ready_audit_pending",
+            "legacy_decision_next_session_map_replacement_ready_audit_pending",
             "legacy_decision_candidate_radar_replacement_ready_audit_pending",
         ):
             self.assertIn(decision_row, self.migration_map)
 
         self.assertIn("capture one safe old-home observation", self.migration_map)
         self.assertIn("confirm no AI-as-action wording", self.migration_map)
+        self.assertIn("operation_zones are conditions not orders", self.migration_map)
+        self.assertIn("local receipt is not replacement evidence", self.migration_map)
         self.assertIn("candidate is not buy instruction", self.migration_map)
 
 
