@@ -277,6 +277,7 @@ The safer path is to keep Streamlit as the reliable fallback/admin/debug surface
 
 1. Fix push gate / CI evidence before any release or production-replacement claim; local gate or checkpoint evidence is not a substitute for a current matching remote CI green result or reviewed failure logs.
 2. Keep the Legacy Bug / UX Audit current for old Streamlit ordinary workflows before moving any module into a 3.0 ordinary entrance.
+   - Before any ordinary entrance moves from audit-pending to user-usable, capture first-view evidence that next click, source state, missing evidence, research-only boundary, blocked/degraded reason, and last successful cache/result appear before any engineering audit table. Route existence, packet availability, receipt rows, Settings-only detail, or docs/config wording are not promotion evidence.
 3. Rebuild LTG-13 Candidate Radar as a user-usable workflow with source state, missing evidence, last cache/result, and research-only boundaries visible.
 4. Build the searched-symbol -> `生成 3.0 量化推演` path as a clear nonblocking workflow through task/cache/status surfaces.
 5. Show provider/model/cache/pending state clearly on the page in the three ordinary entrances.

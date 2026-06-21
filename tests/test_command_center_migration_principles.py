@@ -525,6 +525,10 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("ordinary pages should keep only user-facing summary", text)
         self.assertIn("missing-evidence, blocked/degraded, last-cache/result, and next-action rows", text)
         self.assertIn("unless an engineering detail directly explains the current decision surface", text)
+        self.assertIn("Before any ordinary entrance moves from audit-pending to user-usable", text)
+        self.assertIn("capture first-view evidence that next click, source state, missing evidence", text)
+        self.assertIn("appear before any engineering audit table", text)
+        self.assertIn("Route existence, packet availability, receipt rows, Settings-only detail, or docs/config wording are not promotion evidence", text)
         self.assertIn("Settings / Developer / Audit", text)
 
         for stale_phase_rule in (
