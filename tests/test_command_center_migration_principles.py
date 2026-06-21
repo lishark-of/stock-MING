@@ -256,6 +256,18 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("Candidate Radar replacement parity", section)
         self.assertNotIn("prove replacement parity", section)
 
+    def test_migration_map_ltg10_observed_row_uses_capability_replacement_language(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "docs" / "migration_map.md").read_text(encoding="utf-8")
+        section = text.split("Migration Status 现在还会从本地静态 Streamlit legacy contract", 1)[1].split(
+            "Migration Status 现在还会从本地 release gate 静态 helper", 1
+        )[0]
+
+        self.assertIn("ordinary capability replacement evidence", section)
+        self.assertIn("Candidate Radar signal/capability replacement evidence", section)
+        self.assertIn("provider-backed acceptance", section)
+        self.assertNotIn("ordinary workflow parity、Candidate Radar parity、provider-backed parity", section)
+
     def test_app_migration_plan_records_no_blind_copy_and_audit_gate(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "app_migration_plan.md").read_text(encoding="utf-8")
