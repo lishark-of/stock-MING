@@ -55,12 +55,32 @@ class RuntimeConfigAllowlistTests(unittest.TestCase):
                 row["ordinary_mode_banner_rule"],
                 "read_only_status_banner_not_task_launcher_or_config_writer",
             )
+            self.assertEqual(
+                row["configured_switch_rule"],
+                "configured_true_is_operator_intent_not_effective_external_call",
+            )
+            self.assertEqual(
+                row["effective_external_call_rule"],
+                "effective_external_call_requires_mode_task_gate_ledgers_redaction_and_promotion",
+            )
             self.assertEqual(row["production_evidence_rule"], "config_policy_row_is_not_production_evidence")
 
         self.assertEqual(rows["cache_only"]["external_call_rule"], "none")
         self.assertEqual(rows["manual"]["external_call_rule"], "explicit_post_task_only")
         self.assertEqual(rows["live_light"]["task_creation_rule"], "after_cache_render_rate_limited_local_task_only")
         self.assertEqual(rows["live_full"]["startup_rule"], "reserved_no_startup_task")
+
+    def test_runtime_mode_policy_row_docs_carry_configured_switch_boundary(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "docs" / "command_center_3_long_term_goals.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("`configured_switch_rule`", text)
+        self.assertIn("`effective_external_call_rule`", text)
+        self.assertIn("`configured=true` is operator intent", text)
+        self.assertIn("rather than an effective external call", text)
+        self.assertIn("mode/task gate plus ledgers/redaction/promotion", text)
 
     def test_runtime_mode_config_contract_is_not_execution_evidence(self):
         contract = config.get_command_center_runtime_mode_config_contract()
