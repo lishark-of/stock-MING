@@ -70,6 +70,18 @@ class RuntimeConfigAllowlistTests(unittest.TestCase):
         self.assertEqual(contract["allowed_modes"], ["cache_only", "manual", "live_light", "live_full"])
         self.assertEqual(contract["invalid_value_rule"], "redact_invalid_value_and_fallback_to_cache_only")
         self.assertEqual(contract["live_full_rule"], "reserved_disabled_requires_separate_authorization")
+        self.assertEqual(
+            contract["configured_switch_rule"],
+            "configured_true_is_operator_intent_not_effective_external_call",
+        )
+        self.assertEqual(
+            contract["effective_external_call_rule"],
+            "effective_external_call_requires_mode_task_gate_ledgers_redaction_and_promotion",
+        )
+        self.assertEqual(
+            contract["live_light_completion_rule"],
+            "runtime_config_does_not_prove_full_live_light_workflow",
+        )
         self.assertEqual(contract["production_evidence_rule"], "runtime_config_contract_is_not_production_evidence")
         self.assertFalse(contract["external_calls_triggered"])
         self.assertFalse(contract["contains_secret"])

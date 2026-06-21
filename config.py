@@ -106,6 +106,11 @@ COMMAND_CENTER_RUNTIME_MODE_CONFIG_CONTRACT = {
     "manual_rule": "explicit_button_or_post_task_only",
     "live_light_rule": "after_cache_render_may_create_bounded_local_post_task_only",
     "live_full_rule": "reserved_disabled_requires_separate_authorization",
+    "configured_switch_rule": "configured_true_is_operator_intent_not_effective_external_call",
+    "effective_external_call_rule": (
+        "effective_external_call_requires_mode_task_gate_ledgers_redaction_and_promotion"
+    ),
+    "live_light_completion_rule": "runtime_config_does_not_prove_full_live_light_workflow",
     "production_evidence_rule": "runtime_config_contract_is_not_production_evidence",
     "contains_secret": False,
     "external_calls_triggered": False,
