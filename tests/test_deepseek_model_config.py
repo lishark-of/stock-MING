@@ -136,8 +136,24 @@ class DeepSeekModelConfigTests(unittest.TestCase):
         )
         self.assertEqual(by_mode["cache_only"]["external_call_rule"], "none")
         self.assertEqual(by_mode["cache_only"]["startup_rule"], "read_existing_cache_only")
+        self.assertEqual(
+            by_mode["cache_only"]["page_open_rule"],
+            "no_task_creation_read_existing_cache_only",
+        )
+        self.assertEqual(
+            by_mode["cache_only"]["search_submit_rule"],
+            "no_task_creation_show_existing_cache_only",
+        )
         self.assertEqual(by_mode["manual"]["external_call_rule"], "explicit_post_task_only")
         self.assertEqual(by_mode["manual"]["startup_rule"], "page_open_and_search_do_not_autostart")
+        self.assertEqual(
+            by_mode["manual"]["page_open_rule"],
+            "no_page_open_task_explicit_button_or_post_task_only",
+        )
+        self.assertEqual(
+            by_mode["manual"]["search_submit_rule"],
+            "explicit_confirmed_symbol_button_or_post_task_only",
+        )
         self.assertEqual(
             by_mode["live_light"]["external_call_rule"],
             "auditable_background_post_task_worker_or_local_fallback",
@@ -146,8 +162,18 @@ class DeepSeekModelConfigTests(unittest.TestCase):
             by_mode["live_light"]["task_creation_rule"],
             "after_cache_render_rate_limited_local_task_only",
         )
+        self.assertEqual(
+            by_mode["live_light"]["page_open_rule"],
+            "after_cache_render_may_create_one_bounded_local_post_task_when_effective",
+        )
+        self.assertEqual(
+            by_mode["live_light"]["search_submit_rule"],
+            "confirmed_symbol_submit_may_create_or_reuse_local_quant_projection_task_when_effective",
+        )
         self.assertEqual(by_mode["live_full"]["external_call_rule"], "reserved_future_authorization")
         self.assertEqual(by_mode["live_full"]["startup_rule"], "reserved_no_startup_task")
+        self.assertEqual(by_mode["live_full"]["page_open_rule"], "reserved_no_page_open_task")
+        self.assertEqual(by_mode["live_full"]["search_submit_rule"], "reserved_no_search_submit_task")
         for row in rows:
             self.assertEqual(
                 row["cache_get_rule"],
@@ -2146,6 +2172,11 @@ class DeepSeekModelConfigTests(unittest.TestCase):
         self.assertIn("get_command_center_runtime_mode_state()", long_term_goals)
         self.assertIn("runtime_mode_policy_rows", migration_map)
         self.assertIn("runtime_mode_policy_rows", architecture)
+        self.assertIn("page_open_rule", app_plan)
+        self.assertIn("search_submit_rule", app_plan)
+        self.assertIn("config wording, not frontend wiring", app_plan)
+        self.assertIn("page open and safe searched-symbol submit are mode-specific trigger surfaces", app_plan)
+        self.assertIn("search typing, React render, FastAPI startup, GET cache", app_plan)
         for field in (
             "cache_get_rule",
             "react_render_rule",
