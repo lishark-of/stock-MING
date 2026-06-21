@@ -83,6 +83,11 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
         self.assertIn("stage-scope rows are not remote CI evidence", self.protocol)
         self.assertIn("matching head SHA/commit with current GitHub Actions green status or reviewed failure logs", self.protocol)
         self.assertIn("explicit user push confirmation before any push", self.protocol)
+        self.assertIn("Remote CI unknown rule", self.protocol)
+        self.assertIn("if the user did not explicitly request GitHub/Actions inspection", self.protocol)
+        self.assertIn("report remote CI status as unknown", self.protocol)
+        self.assertIn("do not infer green, red, or release readiness from local validation", self.protocol)
+        self.assertIn("workflow-file presence, old emails, or previous remote runs", self.protocol)
 
     def test_long_term_goal_parity_wording_means_capability_not_legacy_ui_copy(self):
         self.assertIn("chart capability parity", self.long_term_goals)
