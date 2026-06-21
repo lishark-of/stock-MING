@@ -289,6 +289,29 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("Candidate Radar replacement parity", section)
         self.assertNotIn("prove replacement parity", section)
 
+    def test_ltg13_long_term_goal_uses_signal_capability_provider_evidence_language(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "docs" / "command_center_3_long_term_goals.md").read_text(
+            encoding="utf-8"
+        )
+        section = text.split("## LTG-13: 下一票雷达快扫生产化", 1)[1].split(
+            "## LTG-14:", 1
+        )[0]
+        table_row = next(
+            line for line in text.splitlines() if line.startswith("| LTG-13 |")
+        )
+        checked_text = table_row + "\n" + section
+
+        self.assertIn("legacy signal/capability acceptance receipt", table_row)
+        self.assertIn("provider-backed radar signal/capability dry-run", table_row)
+        self.assertIn("provider-backed radar signal/capability acceptance", section)
+        self.assertIn("provider-backed radar signal/capability call ledger", section)
+        self.assertIn("compatibility ids, not old UI/navigation parity evidence", section)
+        self.assertIn("compatibility field for provider-backed radar signal/capability evidence", section)
+        self.assertNotIn("provider parity", checked_text)
+        self.assertNotIn("provider-backed parity", checked_text)
+        self.assertNotIn("legacy parity", checked_text)
+
     def test_migration_map_ltg10_observed_row_uses_capability_replacement_language(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "migration_map.md").read_text(encoding="utf-8")
