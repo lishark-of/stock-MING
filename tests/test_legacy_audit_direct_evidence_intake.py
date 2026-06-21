@@ -58,6 +58,7 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "legacy_intake_hard_risk_announcement",
             "legacy_intake_discipline_backtest",
             "legacy_intake_margin_etf_leverage",
+            "legacy_intake_external_brain_serenity_chokepoint",
         ):
             self.assertIn(intake_row, self.migration_map)
 
@@ -70,11 +71,12 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "hard risk / announcement risk",
             "discipline/backtest",
             "ETF/leverage",
+            "external brain / Serenity / Chokepoint",
         ):
             self.assertIn(workflow, self.migration_map)
 
-        self.assertIn("避免后续 ECharts/operation zones、provider-health 明细、硬风险摘要、回测复盘实验室或杠杆/ETF 风险预算迁移绕过 Legacy Bug / UX Audit", self.migration_map)
-        self.assertIn("provider-health 明细、硬风险摘要、回测复盘实验室或杠杆/ETF 风险预算迁移绕过 Legacy Bug / UX Audit", self.migration_map)
+        self.assertIn("避免后续 ECharts/operation zones、provider-health 明细、硬风险摘要、回测复盘实验室、杠杆/ETF 风险预算或外脑/RAG/probe 数据 lineage 迁移绕过 Legacy Bug / UX Audit", self.migration_map)
+        self.assertIn("外脑/RAG/probe 数据 lineage 迁移绕过 Legacy Bug / UX Audit", self.migration_map)
         self.assertIn("operation_zones 只作为条件，不改 action", self.migration_map)
         self.assertIn("receipt-as-replacement", self.migration_map)
         self.assertIn("local receipt is not replacement evidence", self.migration_map)
@@ -94,14 +96,19 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
         self.assertIn("ETF/融资数据缺口像可执行建议", self.migration_map)
         self.assertIn("未来若进入普通流必须重做为 risk-budget subflow", self.migration_map)
         self.assertIn("leverage advice, complex manual Tushare/DeepSeek refresh path and ordinary trading recommendations are not migrated", self.migration_map)
+        self.assertIn("RAG/文档投喂/外部 probe 与普通投研动作混杂", self.migration_map)
+        self.assertIn("数据 lineage 不清", self.migration_map)
+        self.assertIn("模型/外部文本像当前事实或动作建议", self.migration_map)
+        self.assertIn("进入普通流前必须单独重设数据 lineage", self.migration_map)
+        self.assertIn("RAG/document ingestion, external probe and ordinary research action mix are not migrated", self.migration_map)
         self.assertIn("pending safe screenshot or reviewer note", self.migration_map)
         self.assertGreaterEqual(
             self.migration_map.count("direct_evidence_intake_pending"),
-            8,
+            9,
         )
         self.assertGreaterEqual(
             self.migration_map.count("no_keep_promotion_this_round"),
-            8,
+            9,
         )
         self.assertNotIn("legacy_intake_home_daily_command` | home/daily command | KEEP", self.migration_map)
 
