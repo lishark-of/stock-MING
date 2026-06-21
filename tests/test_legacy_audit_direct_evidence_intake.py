@@ -123,6 +123,28 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
         self.assertIn("legacy button retired, no ordinary entry", self.migration_map)
         self.assertIn("model-generated trading advice, cross-market facts without lineage, and AI-as-action wording are not migrated", self.migration_map)
 
+    def test_seed_workflows_have_matching_audit_decision_rows_without_keep_promotion(self):
+        for seed_workflow, decision_row in (
+            ("streamlit_home_daily_summary", "legacy_decision_home_daily_command_replacement_ready_audit_pending"),
+            ("legacy_single_stock_room_quant_projection", "legacy_decision_searched_symbol_quant_projection_replacement_ready_audit_pending"),
+            ("legacy_candidate_radar", "legacy_decision_candidate_radar_replacement_ready_audit_pending"),
+            ("legacy_next_session_chart", "legacy_decision_next_session_map_replacement_ready_audit_pending"),
+            ("legacy_factor_risk_provider_health_tables", "legacy_decision_factor_risk_provider_health_split_audit_pending"),
+            ("legacy_discipline_backtest_lab", "legacy_decision_discipline_backtest_legacy_debug_retained_audit_pending"),
+            ("legacy_margin_etf_leverage_flow", "legacy_decision_margin_etf_leverage_legacy_debug_retained_audit_pending"),
+            ("legacy_external_brain_ai_advisor", "legacy_decision_external_brain_serenity_chokepoint_legacy_debug_retained_audit_pending"),
+            ("legacy_external_brain_ai_advisor", "legacy_decision_old_ai_strategy_advisor_retired_audit_pending"),
+        ):
+            self.assertIn(seed_workflow, self.migration_map)
+            self.assertIn(decision_row, self.migration_map)
+
+        self.assertGreaterEqual(
+            self.migration_map.count("| `direct_evidence_intake_pending` |"),
+            10,
+        )
+        self.assertNotIn("| `KEEP` |", self.migration_map)
+        self.assertNotIn("production evidence | `KEEP`", self.migration_map)
+
 
 if __name__ == "__main__":
     unittest.main()
