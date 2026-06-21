@@ -364,6 +364,24 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("provider-backed parity", row)
         self.assertNotIn("stage/parity/required-signal", row)
 
+    def test_migration_map_candidate_radar_route_paragraph_uses_signal_capability_language(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "docs" / "migration_map.md").read_text(encoding="utf-8")
+        section = text.split("`/api/candidate-radar/cache`", 1)[1].split(
+            "Candidate Radar 现在还输出 `candidate_radar_production_activation_receipt`",
+            1,
+        )[0]
+
+        self.assertIn("legacy signal/capability coverage 阻断项", section)
+        self.assertIn("stage rows、signal/capability rows、required signal rows", section)
+        self.assertIn("输出字段 signal/capability coverage", section)
+        self.assertIn("provider-backed radar signal/capability acceptance", section)
+        self.assertIn("旧雷达 signal/capability 不降能验收清单", section)
+        self.assertNotIn("legacy parity 阻断项", section)
+        self.assertNotIn("parity rows、required signal rows", section)
+        self.assertNotIn("输出字段 parity", section)
+        self.assertNotIn("provider-backed parity", section)
+
     def test_migration_map_streamlit_row_keeps_receipts_from_parity_claim(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "migration_map.md").read_text(encoding="utf-8")
