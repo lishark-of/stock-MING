@@ -514,10 +514,15 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         )
 
         self.assertIn("普通用户量化推演摘要", text)
+        self.assertIn("没有标的时先去", text)
+        self.assertIn('href="#candidates"', text)
+        self.assertIn("输入代码并点击生成 3.0 量化推演；这个链接只切换本地页面，不创建 task", text)
         self.assertIn("工程审计明细默认收起；完整 factor/provider/model ledger 和配置状态", text)
         self.assertIn('href="#audit"', text)
         self.assertIn('href="#settings"', text)
         self.assertIn("Provider、model、receipt、runbook、QA blocker 和 LTG 细项默认收起", text)
+        self.assertLess(text.index("普通用户量化推演摘要"), text.index("没有标的时先去"))
+        self.assertLess(text.index("没有标的时先去"), text.index("工程审计明细默认收起"))
         self.assertLess(text.index("普通用户量化推演摘要"), text.index("工程审计明细默认收起"))
         self.assertLess(
             text.index("工程审计明细默认收起"),
