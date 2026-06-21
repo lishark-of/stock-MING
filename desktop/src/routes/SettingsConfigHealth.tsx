@@ -169,6 +169,15 @@ export default function SettingsConfigHealth() {
 
   const modelRows = rows(modelStrategy.model_rows);
   const modeRows = rows(bootstrapStatus.mode_rows);
+  const runtimeModePolicyRows = rows(bootstrapStatus.runtime_mode_policy_rows);
+  const runtimeModeBoundaryRows = runtimeModePolicyRows.map((row) => ({
+    mode: row.mode,
+    cache_get_rule: row.cache_get_rule,
+    react_render_rule: row.react_render_rule,
+    ledger_rule: row.ledger_rule,
+    ordinary_entrance_visibility_rule: row.ordinary_entrance_visibility_rule,
+    production_evidence_rule: row.production_evidence_rule,
+  }));
   const configRuntimeRows = rows(bootstrapStatus.config_rows);
   const providerLinkageRows = rows(bootstrapStatus.provider_linkage_rows);
   const activationReceipt = (bootstrapStatus.live_light_activation_receipt as Record<string, unknown> | undefined) ?? {};
@@ -181,6 +190,51 @@ export default function SettingsConfigHealth() {
   const taskPolicy = (taskCatalog.policy as Record<string, unknown> | undefined) ?? {};
   const migrationPolicy = (migration.api_policy as Record<string, unknown> | undefined) ?? {};
   const liveLight = (bootstrapStatus.live_light as Record<string, unknown> | undefined) ?? {};
+  const runtimeOperatorSummary = (bootstrapStatus.runtime_operator_summary_contract as Record<string, unknown> | undefined) ?? {};
+  const policy = (bootstrapStatus.policy as Record<string, unknown> | undefined) ?? {};
+  const providerModelEnablementRows = [
+    {
+      surface: "operator_summary_contract",
+      visible: runtimeOperatorSummary.provider_model_enablement_summary_visible === true,
+      source_config: runtimeOperatorSummary.provider_model_enablement_source_config,
+      configured: runtimeOperatorSummary.provider_model_enablement_configured === true,
+      effective: runtimeOperatorSummary.provider_model_enablement_effective === true,
+      requires_live_light: runtimeOperatorSummary.provider_model_enablement_requires_live_light === true,
+      requires_execution_request: runtimeOperatorSummary.provider_model_enablement_requires_execution_request === true,
+      requires_promotion: runtimeOperatorSummary.provider_model_enablement_requires_promotion === true,
+      creates_task: runtimeOperatorSummary.provider_model_enablement_creates_task === true,
+      creates_provider_model_task: runtimeOperatorSummary.provider_model_enablement_creates_provider_model_task === true,
+      calls_provider_model_now: runtimeOperatorSummary.provider_model_enablement_calls_provider_model_now === true,
+      frontend_writeback_allowed: runtimeOperatorSummary.provider_model_enablement_frontend_writeback_allowed === true,
+      production_evidence: runtimeOperatorSummary.provider_model_enablement_summary_is_production_evidence === true,
+    },
+    {
+      surface: "live_light_flat_summary",
+      visible: liveLight.runtime_operator_provider_model_enablement_summary_visible === true,
+      source_config: liveLight.runtime_operator_provider_model_enablement_source_config,
+      configured: liveLight.runtime_operator_provider_model_enablement_configured === true,
+      effective: liveLight.runtime_operator_provider_model_enablement_effective === true,
+      requires_live_light: liveLight.runtime_operator_provider_model_enablement_requires_live_light === true,
+      requires_execution_request: liveLight.runtime_operator_provider_model_enablement_requires_execution_request === true,
+      requires_promotion: liveLight.runtime_operator_provider_model_enablement_requires_promotion === true,
+      creates_provider_model_task: liveLight.runtime_operator_provider_model_enablement_creates_provider_model_task === true,
+      calls_provider_model_now: liveLight.runtime_operator_provider_model_enablement_calls_provider_model_now === true,
+      production_evidence: liveLight.runtime_operator_provider_model_enablement_is_production_evidence === true,
+    },
+    {
+      surface: "policy_flat_summary",
+      visible: policy.runtime_operator_provider_model_enablement_summary_visible === true,
+      source_config: policy.runtime_operator_provider_model_enablement_source_config,
+      configured: policy.runtime_operator_provider_model_enablement_configured === true,
+      effective: policy.runtime_operator_provider_model_enablement_effective === true,
+      requires_live_light: policy.runtime_operator_provider_model_enablement_requires_live_light === true,
+      requires_execution_request: policy.runtime_operator_provider_model_enablement_requires_execution_request === true,
+      requires_promotion: policy.runtime_operator_provider_model_enablement_requires_promotion === true,
+      creates_provider_model_task: policy.runtime_operator_provider_model_enablement_creates_provider_model_task === true,
+      calls_provider_model_now: policy.runtime_operator_provider_model_enablement_calls_provider_model_now === true,
+      production_evidence: policy.runtime_operator_provider_model_enablement_is_production_evidence === true,
+    },
+  ];
   const bootstrapTaskPayload = (bootstrapTask.payload_safe as Record<string, unknown> | undefined) ?? {};
   const bootstrapStageRows = rows(bootstrapTaskPayload.bootstrap_stage_rows);
   const bootstrapModelLedgerRows = rows(bootstrapTaskPayload.bootstrap_model_ledger_preview_rows);
@@ -280,6 +334,12 @@ export default function SettingsConfigHealth() {
           <DataLineageTable rows={modeRows} />
         </PacketCard>
 
+        <PacketCard title="运行模式安全口径" subtitle="runtime_mode_policy_rows 只读转发；非 production evidence" status="read_only">
+          <p>这些字段来自配置层 policy row，用于解释 GET cache、React render、外联 ledger 和普通入口任务边界。</p>
+          <p>本卡片不写配置、不展示 token/key、不创建 task，也不能证明完整 live_light 已实现。</p>
+          <DataLineageTable rows={runtimeModeBoundaryRows} />
+        </PacketCard>
+
         <PacketCard title="live_light 配置合同" subtitle="显示安全配置状态；手动按钮只创建本地 task skeleton" status={String(liveLight.enabled === true ? "review_pending" : "cache_only")}>
           <p>activation receipt: {String(activationReceipt.status ?? "--")}</p>
           <p>provider/model acceptance runbook: {String(acceptanceRunbook.status ?? "--")}</p>
@@ -291,6 +351,17 @@ export default function SettingsConfigHealth() {
           <JsonDetails title="live_light activation receipt" data={activationReceipt} />
           <JsonDetails title="live_light provider/model acceptance runbook" data={acceptanceRunbook} />
           <JsonDetails title="live_light policy" data={liveLight} />
+        </PacketCard>
+
+        <PacketCard title="Provider/model release switch" subtitle="operator summary 只读投影；不创建 provider/model task" status={runtimeOperatorSummary.provider_model_enablement_effective === true ? "effective" : "default_off"}>
+          <p>source config: {String(runtimeOperatorSummary.provider_model_enablement_source_config ?? "--")}</p>
+          <p>configured / effective: {String(runtimeOperatorSummary.provider_model_enablement_configured ?? false)} / {String(runtimeOperatorSummary.provider_model_enablement_effective ?? false)}</p>
+          <p>requires live_light / execution request / promotion: {String(runtimeOperatorSummary.provider_model_enablement_requires_live_light ?? false)} / {String(runtimeOperatorSummary.provider_model_enablement_requires_execution_request ?? false)} / {String(runtimeOperatorSummary.provider_model_enablement_requires_promotion ?? false)}</p>
+          <p>creates task / provider-model task: {String(runtimeOperatorSummary.provider_model_enablement_creates_task ?? false)} / {String(runtimeOperatorSummary.provider_model_enablement_creates_provider_model_task ?? false)}</p>
+          <p>calls provider-model now / frontend writeback: {String(runtimeOperatorSummary.provider_model_enablement_calls_provider_model_now ?? false)} / {String(runtimeOperatorSummary.provider_model_enablement_frontend_writeback_allowed ?? false)}</p>
+          <p>production evidence: {String(runtimeOperatorSummary.provider_model_enablement_summary_is_production_evidence ?? false)}</p>
+          <DataLineageTable rows={providerModelEnablementRows} />
+          <JsonDetails title="runtime operator provider/model release switch" data={runtimeOperatorSummary} />
         </PacketCard>
 
         <PacketCard title="最近 bootstrap task" subtitle="按钮创建的本地任务；不外联、不交易" status={String(bootstrapTask.status ?? (hasBootstrapTask ? "created" : "idle"))}>
