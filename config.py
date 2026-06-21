@@ -848,6 +848,49 @@ COMMAND_CENTER_LEGACY_AUDIT_CLASSIFICATION_CONTRACT = {
     ),
     "seed_rows_rule": "legacy_audit_seed_rows_cover_ordinary_workflow_scope_without_keep_promotion",
     "seed_row_promotion_rule": "legacy_audit_seed_rows_are_not_direct_evidence_or_production_evidence",
+    "first_round_intake_rule": (
+        "first_round_legacy_bug_ux_audit_collects_direct_problem_statement_not_keep_promotion"
+    ),
+    "intake_required_fields": (
+        "user_observation",
+        "legacy_ux_bug_or_patchwork",
+        "data_lineage_observation",
+        "replacement_user_path",
+        "frozen_legacy_path",
+        "evidence_attachment",
+        "keep_promotion_decision",
+    ),
+    "intake_safe_attachment_sources": (
+        "safe_screenshot_reference",
+        "redacted_reviewer_note",
+        "safe_log_summary",
+    ),
+    "intake_forbidden_attachment_sources": (
+        "raw_packet_bodies",
+        "raw_logs",
+        "token_key_credential_values",
+        "unredacted_model_output",
+        "generated_artifacts",
+    ),
+    "intake_allowed_statuses": (
+        "direct_evidence_intake_pending",
+        "direct_evidence_observed_redesign_required",
+        "blocked_by_lineage",
+        "legacy_debug_retained",
+        "retire_confirmed",
+    ),
+    "first_round_focus_workflows": (
+        "home/daily command",
+        "searched-symbol quant projection",
+        "candidate radar",
+        "next-session map",
+        "factor/risk/provider health",
+        "hard risk / announcement risk",
+        "discipline/backtest",
+        "ETF/leverage",
+        "external brain / Serenity / Chokepoint",
+        "old AI strategy advisor / cross-market advice button",
+    ),
     "seed_rows": (
         {
             "workflow_group": "home/daily command",
@@ -1416,6 +1459,27 @@ def get_command_center_legacy_audit_classification_contract():
     )
     contract["forbidden_row_completion_evidence"] = list(
         COMMAND_CENTER_LEGACY_AUDIT_CLASSIFICATION_CONTRACT["forbidden_row_completion_evidence"]
+    )
+    contract["intake_required_fields"] = list(
+        COMMAND_CENTER_LEGACY_AUDIT_CLASSIFICATION_CONTRACT["intake_required_fields"]
+    )
+    contract["intake_safe_attachment_sources"] = list(
+        COMMAND_CENTER_LEGACY_AUDIT_CLASSIFICATION_CONTRACT[
+            "intake_safe_attachment_sources"
+        ]
+    )
+    contract["intake_forbidden_attachment_sources"] = list(
+        COMMAND_CENTER_LEGACY_AUDIT_CLASSIFICATION_CONTRACT[
+            "intake_forbidden_attachment_sources"
+        ]
+    )
+    contract["intake_allowed_statuses"] = list(
+        COMMAND_CENTER_LEGACY_AUDIT_CLASSIFICATION_CONTRACT["intake_allowed_statuses"]
+    )
+    contract["first_round_focus_workflows"] = list(
+        COMMAND_CENTER_LEGACY_AUDIT_CLASSIFICATION_CONTRACT[
+            "first_round_focus_workflows"
+        ]
     )
     contract["seed_rows"] = [
         dict(row) for row in COMMAND_CENTER_LEGACY_AUDIT_CLASSIFICATION_CONTRACT["seed_rows"]

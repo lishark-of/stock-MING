@@ -210,6 +210,63 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertFalse(contract["deepseek_called"])
         self.assertTrue(contract["does_not_execute_trades"])
 
+    def test_legacy_audit_first_round_intake_template_is_config_owned(self):
+        import config
+
+        contract = config.get_command_center_legacy_audit_classification_contract()
+
+        self.assertEqual(
+            contract["first_round_intake_rule"],
+            "first_round_legacy_bug_ux_audit_collects_direct_problem_statement_not_keep_promotion",
+        )
+        for required_field in (
+            "user_observation",
+            "legacy_ux_bug_or_patchwork",
+            "data_lineage_observation",
+            "replacement_user_path",
+            "frozen_legacy_path",
+            "evidence_attachment",
+            "keep_promotion_decision",
+        ):
+            self.assertIn(required_field, contract["intake_required_fields"])
+
+        for safe_source in (
+            "safe_screenshot_reference",
+            "redacted_reviewer_note",
+            "safe_log_summary",
+        ):
+            self.assertIn(safe_source, contract["intake_safe_attachment_sources"])
+
+        for forbidden_source in (
+            "raw_packet_bodies",
+            "raw_logs",
+            "token_key_credential_values",
+            "unredacted_model_output",
+            "generated_artifacts",
+        ):
+            self.assertIn(forbidden_source, contract["intake_forbidden_attachment_sources"])
+
+        self.assertEqual(
+            set(contract["intake_allowed_statuses"]),
+            {
+                "direct_evidence_intake_pending",
+                "direct_evidence_observed_redesign_required",
+                "blocked_by_lineage",
+                "legacy_debug_retained",
+                "retire_confirmed",
+            },
+        )
+        self.assertNotIn("KEEP", contract["intake_allowed_statuses"])
+        self.assertIn("hard risk / announcement risk", contract["first_round_focus_workflows"])
+        self.assertIn(
+            "old AI strategy advisor / cross-market advice button",
+            contract["first_round_focus_workflows"],
+        )
+        self.assertFalse(contract["external_calls_triggered"])
+        self.assertFalse(contract["tushare_called"])
+        self.assertFalse(contract["deepseek_called"])
+        self.assertTrue(contract["does_not_execute_trades"])
+
     def test_next_session_push_gate_contract_uses_signal_capability_parity_wording(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "scripts" / "next_session_map_contract.py").read_text(
@@ -452,6 +509,16 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("raw packet bodies、raw logs、token/key/credential values", text)
         self.assertIn("未脱敏 model output 或 generated artifacts", text)
         self.assertIn("不能单独把旧模块升级为 `KEEP`", text)
+        self.assertIn(
+            "first_round_legacy_bug_ux_audit_collects_direct_problem_statement_not_keep_promotion",
+            text,
+        )
+        self.assertIn("不是散落在文档里的临时表", text)
+        self.assertIn("`user_observation`、`legacy_ux_bug_or_patchwork`、`data_lineage_observation`", text)
+        self.assertIn("safe screenshot reference、redacted reviewer note 或 safe log summary", text)
+        self.assertIn("raw packet bodies、raw logs、token/key/credential values", text)
+        self.assertIn("`direct_evidence_observed_redesign_required`", text)
+        self.assertIn("不能直接进入 `direct_evidence_ready` 或 `KEEP`", text)
         self.assertIn("retained signal/capability coverage evidence 或生产 ECharts 替代完成", text)
         self.assertIn("retained signal/capability coverage evidence 继续标为 pending", text)
         self.assertIn("retained signal/capability coverage evidence、browser visual QA", text)
