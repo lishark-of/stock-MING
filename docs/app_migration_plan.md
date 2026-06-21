@@ -209,7 +209,7 @@ The safer path is to keep Streamlit as the reliable fallback/admin/debug surface
 - Add a Streamlit subprocess error page instead of a blank desktop window.
 - Add App icon support.
 - Make macOS menu and Dock names consistently show stock-MING.
-- Default into a clear 3.0 entry / transition screen that points ordinary users toward the three ordinary entrances or the legacy fallback, not deeper Streamlit tab navigation.
+- Default into a clear 3.0 entry / transition screen that points ordinary users toward the three ordinary entrances first; legacy fallback must be clearly labeled fallback/admin/debug or rollback, not a fourth ordinary entrance or deeper Streamlit tab navigation.
 - Preserve runtime-mode automation boundaries: startup self-checks and shell diagnostics stay cache/render safe, while any later `live_light` background work must still enter through bounded POST tasks.
 
 ### Phase 2: Command center adapter extraction

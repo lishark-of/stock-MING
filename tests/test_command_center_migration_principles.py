@@ -613,7 +613,14 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("not the target ordinary 3.0 UX", text)
         self.assertIn("recompose its useful packets into the three ordinary entrances", text)
         self.assertIn("Default into a clear 3.0 entry / transition screen", text)
-        self.assertIn("not deeper Streamlit tab navigation", text)
+        self.assertIn("three ordinary entrances first", text)
+        self.assertIn(
+            "legacy fallback must be clearly labeled fallback/admin/debug or rollback",
+            text,
+        )
+        self.assertIn("not a fourth ordinary entrance", text)
+        self.assertIn("deeper Streamlit tab navigation", text)
+        self.assertNotIn("ordinary users toward the three ordinary entrances or the legacy fallback", text)
         self.assertIn(
             "Keep the Streamlit UI reachable only as fallback/admin/debug",
             text,
