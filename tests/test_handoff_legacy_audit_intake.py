@@ -37,6 +37,30 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
             self.assertIn(forbidden_evidence, self.protocol)
         self.assertIn("must not be described as direct UX/bug evidence", self.protocol)
 
+    def test_handoff_protocol_keeps_mode_layered_runtime_boundary(self):
+        self.assertIn("Runtime automation is mode-layered, not an absolute startup ban", self.protocol)
+        self.assertIn("`cache_only` is the default", self.protocol)
+        self.assertIn("FastAPI startup, and GET cache/status routes stay read-only", self.protocol)
+        self.assertIn("`manual` allows external work only through an explicit user button or POST task", self.protocol)
+        self.assertIn("`live_light` may create or reuse one bounded local background POST task after cache render", self.protocol)
+        self.assertIn("provider/model work must still go through the task contract", self.protocol)
+        self.assertIn("Full backtests, full-market scans, heavy Tushare/AkShare/yfinance/Supabase refreshes", self.protocol)
+        self.assertIn("any real trading path remain explicit-button or separately authorized work", self.protocol)
+        self.assertIn("DeepSeek is never a data source", self.protocol)
+
+    def test_checkpoint_report_requires_cycle_scope_and_runtime_boundaries(self):
+        self.assertIn("at most one main target and one supporting target", self.protocol)
+        self.assertIn("modify no more than five files", self.protocol)
+        self.assertIn("end with a `Checkpoint` that states the evidence boundary", self.protocol)
+        self.assertIn("Cycle scope: main target, supporting target, changed file count", self.protocol)
+        self.assertIn("Runtime-mode boundary", self.protocol)
+        self.assertIn("Runtime policy row boundary", self.protocol)
+        self.assertIn("Ordinary task-boundary visibility", self.protocol)
+        self.assertIn("Ordinary source-state chips", self.protocol)
+        self.assertIn("Ordinary next-click rule", self.protocol)
+        self.assertIn("Priority alignment", self.protocol)
+        self.assertIn("One recommended next small patch", self.protocol)
+
 
 if __name__ == "__main__":
     unittest.main()
