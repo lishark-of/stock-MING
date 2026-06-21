@@ -534,6 +534,10 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("legacy signal/capability parity 未完成边界", architecture)
         self.assertIn("不复制 Streamlit 图表 UI 或旧 tab navigation", architecture)
         self.assertIn("legacy signal/capability parity、browser visual QA", architecture)
+        self.assertIn("legacy signal/capability parity 和 production replacement 继续标为 pending", architecture)
+        self.assertIn("不把旧 Streamlit 图表 UI/tab 复制作为验收目标", architecture)
+        self.assertIn("不证明 legacy signal/capability parity 或生产替代完成，不代表复制旧 Streamlit 图表 UI", architecture)
+        self.assertIn("不证明 legacy signal/capability parity、durable CI evidence 或 production ECharts replacement", architecture)
         self.assertIn("经 Legacy Bug / UX Audit 判定应保留的能力、信号组和证据链", architecture)
         self.assertIn("不复制 Streamlit 页面 UI、tab navigation、已知 bug 或历史 patchwork", architecture)
         self.assertIn(
@@ -541,6 +545,9 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
             architecture,
         )
         self.assertNotIn("把 Streamlit 页面逐块迁移到 React/ECharts", architecture)
+        self.assertNotIn("browser QA、performance trace、Streamlit parity 和 production replacement", architecture)
+        self.assertNotIn("不证明 Streamlit parity 或生产替代完成", architecture)
+        self.assertNotIn("不证明 Streamlit parity、durable CI evidence", architecture)
 
     def test_push_gate_guard_covers_commit_checkpoint_surfaces(self):
         root = Path(__file__).resolve().parents[1]
