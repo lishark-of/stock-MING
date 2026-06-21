@@ -1773,6 +1773,9 @@ class DeepSeekModelConfigTests(unittest.TestCase):
         migration_map = (root / "docs" / "migration_map.md").read_text(encoding="utf-8")
         app_plan = (root / "docs" / "app_migration_plan.md").read_text(encoding="utf-8")
         architecture = (root / "docs" / "command_center_3_architecture.md").read_text(encoding="utf-8")
+        handoff_protocol = (root / "docs" / "codex_handoff_protocol.md").read_text(
+            encoding="utf-8"
+        )
 
         for text in (long_term_goals, migration_map, architecture):
             self.assertIn("COMMAND_CENTER_RUNTIME_MODE_POLICIES", text)
@@ -2177,6 +2180,13 @@ class DeepSeekModelConfigTests(unittest.TestCase):
         self.assertIn("config wording, not frontend wiring", app_plan)
         self.assertIn("page open and safe searched-symbol submit are mode-specific trigger surfaces", app_plan)
         self.assertIn("search typing, React render, FastAPI startup, GET cache", app_plan)
+        self.assertIn("page_open_rule", handoff_protocol)
+        self.assertIn("search_submit_rule", handoff_protocol)
+        self.assertIn(
+            "page open and confirmed search submit remain mode-specific trigger surfaces",
+            handoff_protocol,
+        )
+        self.assertIn("render/search-typing side effects", handoff_protocol)
         for field in (
             "cache_get_rule",
             "react_render_rule",
