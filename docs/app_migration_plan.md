@@ -85,6 +85,8 @@ Runtime mode display also has a separate config-read contract: `COMMAND_CENTER_R
 
 The operator-facing config口径 is: server config is the source of truth; `GET /api/bootstrap/status` may show safe defaults, configured source switches, effective mode-gated switches, profile/scope labels, budget limits, and release-switch state, but it must remain read-only, non-editable, no-writeback, no-secret, and non-production evidence. A configured source switch or release switch is not the same thing as an effective external call. `cache_only` forces effective automation false even if every live switch is configured true; `manual` keeps execution behind an explicit button/POST task; `live_light` may only create bounded local POST tasks after cache render; `live_full` stays reserved and disabled until separately authorized.
 
+These runtime config rows and contracts are docs/config handoff evidence only. They do not implement provider/model execution, do not complete frontend wiring, do not collect browser nonblocking evidence, and do not promote `live_light` or any LTG to production acceptance.
+
 | config group | migration-plan interpretation |
 |---|---|
 | `COMMAND_CENTER_BOOTSTRAP_MODE` | Runtime vocabulary only; invalid values redact and fall back to `cache_only`. |
