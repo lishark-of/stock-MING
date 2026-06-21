@@ -818,7 +818,7 @@ TASK_CATALOG = [
     {
         "task_type": "run_next_session_streamlit_parity_review",
         "route": "POST /api/next-session/streamlit-parity-review",
-        "label": "审查次日图谱 Streamlit parity 同包证据",
+        "label": "审查次日图谱信号/能力 parity 同包证据",
         "output_packet_key": "command_center_next_session_projection_packet",
         "button_gated": True,
         "current_backend": "local_cache_pipeline",

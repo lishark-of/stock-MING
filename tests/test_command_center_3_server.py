@@ -15480,6 +15480,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(catalog["policy"]["does_not_modify_strategy_action"])
         self.assertEqual(set(catalog["external_sources"]), {"deepseek", "github", "tushare"})
         by_type = {item["task_type"]: item for item in catalog["tasks"]}
+        next_session_review_task = by_type["run_next_session_streamlit_parity_review"]
+        self.assertEqual(
+            next_session_review_task["label"],
+            "审查次日图谱信号/能力 parity 同包证据",
+        )
+        self.assertNotIn("Streamlit parity", next_session_review_task["label"])
+        self.assertTrue(next_session_review_task["button_gated"])
+        self.assertEqual(next_session_review_task["possible_external_sources"], [])
+        self.assertFalse(next_session_review_task["opens_streamlit"])
+        self.assertFalse(next_session_review_task["opens_browser"])
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
