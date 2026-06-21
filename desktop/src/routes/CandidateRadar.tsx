@@ -420,9 +420,12 @@ export default function CandidateRadar() {
       : quantProjectionDisplaySymbol
         ? "等待点击生成 3.0 量化推演后进行本地代码校验"
         : "等待输入股票代码";
+  const quantProjectionConfirmedSymbol = quantProjectionCanSubmit
+    ? `已确认输入：${searchSymbol.trim()}`
+    : "未确认；输入框不会创建任务";
   const quantProjectionNextClick = quantProjectionDisplaySymbol
-    ? "点击生成 3.0 量化推演；需要真实数据或模型解释时，再按人工确认流程推进"
-    : "先输入股票代码，再点击生成 3.0 量化推演";
+    ? "确认代码后点击生成 3.0 量化推演；需要真实数据或模型解释时，再按人工确认流程推进"
+    : "先输入并确认股票代码，按钮启用后再点击生成 3.0 量化推演";
   const quantProjectionCacheSourceLabel =
     searchQuantProjectionReceipt.status ? "本地推演记录可用" : cache.status === "ready" ? "候选缓存可用" : "等待本地缓存";
   const quantProjectionProviderSourceLabel =
@@ -517,6 +520,7 @@ export default function CandidateRadar() {
             items={[
               { label: "下一步", value: quantProjectionNextClick },
               { label: "输入标的", value: quantProjectionDisplaySymbol || "等待输入" },
+              { label: "确认代码", value: quantProjectionConfirmedSymbol },
               { label: "输入校验", value: quantProjectionInputValidation, tone: quantProjectionInputValidation.includes("阻断") ? "warn" : "good" },
               { label: "数据来源状态", value: quantProjectionSourceState },
               { label: "任务边界", value: quantProjectionTaskBoundary },

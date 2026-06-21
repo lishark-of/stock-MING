@@ -40,6 +40,13 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
 
     def test_search_quant_projection_keeps_task_boundary_visible(self):
         self.assertIn("searchSymbol.trim()", self.page)
+        self.assertIn("quantProjectionConfirmedSymbol", self.page)
+        self.assertIn('label: "确认代码"', self.page)
+        self.assertIn("未确认；输入框不会创建任务", self.page)
+        self.assertIn("已确认输入：${searchSymbol.trim()}", self.page)
+        self.assertIn("先输入并确认股票代码，按钮启用后再点击生成 3.0 量化推演", self.page)
+        self.assertIn("确认代码后点击生成 3.0 量化推演", self.page)
+        self.assertLess(self.page.index('label: "确认代码"'), self.page.index('label: "任务边界"'))
         self.assertIn("当前只创建本地记录", self.page)
         self.assertIn("live_light 补证也必须经 POST task / worker", self.page)
         self.assertIn("不在页面渲染中直连 Tushare 或 DeepSeek", self.page)
