@@ -515,6 +515,9 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("不创建 `POST /api/bootstrap/live-startup`", architecture)
         self.assertIn("不调用 provider/model，不写配置或 cache，不暴露 token/key", architecture)
         self.assertIn("不能当成 production evidence 或完整 `live_light` 实现", architecture)
+        self.assertIn("legacy signal/capability parity 未完成边界", architecture)
+        self.assertIn("不复制 Streamlit 图表 UI 或旧 tab navigation", architecture)
+        self.assertIn("legacy signal/capability parity、browser visual QA", architecture)
         self.assertIn("经 Legacy Bug / UX Audit 判定应保留的能力、信号组和证据链", architecture)
         self.assertIn("不复制 Streamlit 页面 UI、tab navigation、已知 bug 或历史 patchwork", architecture)
         self.assertIn(
