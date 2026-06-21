@@ -30,9 +30,10 @@ export type RouteKey =
   | "tradeReview"
   | "legacy";
 
-const ROUTE_GROUPS: Array<{ title: string; routes: Array<{ key: RouteKey; label: string }> }> = [
+const ROUTE_GROUPS: Array<{ title: string; hint: string; routes: Array<{ key: RouteKey; label: string }> }> = [
   {
     title: "普通入口",
+    hint: "先从这里开始；每页先显示下一步、来源、缺口、边界和最近缓存。",
     routes: [
       { key: "home", label: "今日作战台" },
       { key: "factor", label: "股票量化推演" },
@@ -41,6 +42,7 @@ const ROUTE_GROUPS: Array<{ title: string; routes: Array<{ key: RouteKey; label:
   },
   {
     title: "研究辅助",
+    hint: "补充上下文，只读查看研究状态，不替代三入口主流程。",
     routes: [
       { key: "market", label: "市场环境" },
       { key: "position", label: "持仓画像" },
@@ -54,6 +56,7 @@ const ROUTE_GROUPS: Array<{ title: string; routes: Array<{ key: RouteKey; label:
   },
   {
     title: "数据与治理",
+    hint: "lineage、receipt 和审计表在这里，不压过普通用户页面。",
     routes: [
       { key: "audit", label: "调用审计" },
       { key: "evidence", label: "证据雷达" },
@@ -65,6 +68,7 @@ const ROUTE_GROUPS: Array<{ title: string; routes: Array<{ key: RouteKey; label:
   },
   {
     title: "系统迁移",
+    hint: "配置、任务、迁移和 Legacy 只作 settings/developer/audit 入口。",
     routes: [
       { key: "health", label: "健康" },
       { key: "settings", label: "配置健康" },
@@ -98,6 +102,7 @@ export default function Layout({
           {ROUTE_GROUPS.map((group) => (
             <section className="nav-group" key={group.title}>
               <p className="nav-group-title">{group.title}</p>
+              <p className="nav-group-hint">{group.hint}</p>
               {group.routes.map((route) => (
                 <button
                   key={route.key}

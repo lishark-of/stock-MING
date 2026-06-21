@@ -456,6 +456,14 @@ textarea:focus {
   margin: 0 0 2px;
 }
 
+.nav-group-hint {
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 0 0 4px;
+  opacity: 0.78;
+}
+
 .sidebar button {
   background: transparent;
   color: #cbd5e1;

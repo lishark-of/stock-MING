@@ -38,6 +38,24 @@ class LayoutOrdinaryNavigationTests(unittest.TestCase):
         self.assertIn("研究-only，不下单", source)
         self.assertIn("旧 Streamlit 仅作 legacy/admin/debug fallback", source)
 
+    def test_navigation_group_hints_keep_ordinary_flow_and_audit_details_separate(self):
+        source = (ROOT / "src" / "components" / "Layout.tsx").read_text(encoding="utf-8")
+        styles = (ROOT / "src" / "styles.css").read_text(encoding="utf-8")
+        ordinary_group = source[
+            source.index('title: "普通入口"') : source.index('title: "研究辅助"')
+        ]
+        governance_group = source[
+            source.index('title: "数据与治理"') : source.index('title: "系统迁移"')
+        ]
+        system_group = source[source.index('title: "系统迁移"') :]
+
+        self.assertIn("先从这里开始；每页先显示下一步、来源、缺口、边界和最近缓存。", ordinary_group)
+        self.assertIn("补充上下文，只读查看研究状态，不替代三入口主流程。", source)
+        self.assertIn("lineage、receipt 和审计表在这里，不压过普通用户页面。", governance_group)
+        self.assertIn("配置、任务、迁移和 Legacy 只作 settings/developer/audit 入口。", system_group)
+        self.assertIn('className="nav-group-hint"', source)
+        self.assertIn(".nav-group-hint", styles)
+
 
 if __name__ == "__main__":
     unittest.main()
