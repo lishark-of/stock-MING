@@ -158,6 +158,8 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("replacement ordinary entrance", text)
         self.assertIn("frozen legacy path", text)
         self.assertIn("不能单独把旧模块升级为 `KEEP`", text)
+        self.assertIn("legacy signal/capability parity 或生产 ECharts 替代完成", text)
+        self.assertNotIn("性能 trace、Streamlit parity 或生产 ECharts 替代完成", text)
 
         for classification in ("`REDESIGN`", "`LEGACY-DEBUG`", "`RETIRE`"):
             self.assertIn(classification, text)
