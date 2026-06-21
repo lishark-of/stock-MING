@@ -29,6 +29,10 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "不创建 task",
             "不读取 token/key",
             "不能把 route inventory、本地 receipt、no-feature-loss matrix、mock、sanitizer 或 docs/config scaffold 当作直接 UX/bug evidence",
+            "必须显式分开 `inventory_or_scaffold_evidence` 和 `direct_user_evidence`",
+            "没有 safe screenshot、脱敏 reviewer note 或 safe log summary 绑定到具体 observed user action / workflow problem",
+            "行状态只能保持 `direct_evidence_intake_pending`",
+            "不能进入 `direct_evidence_ready` 或 `KEEP` 评审",
         ):
             self.assertIn(required_boundary, self.migration_map)
 
