@@ -59,6 +59,7 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "legacy_intake_discipline_backtest",
             "legacy_intake_margin_etf_leverage",
             "legacy_intake_external_brain_serenity_chokepoint",
+            "legacy_intake_old_ai_strategy_advisor",
         ):
             self.assertIn(intake_row, self.migration_map)
 
@@ -72,11 +73,13 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "discipline/backtest",
             "ETF/leverage",
             "external brain / Serenity / Chokepoint",
+            "old AI strategy advisor / cross-market advice button",
         ):
             self.assertIn(workflow, self.migration_map)
 
-        self.assertIn("避免后续 ECharts/operation zones、provider-health 明细、硬风险摘要、回测复盘实验室、杠杆/ETF 风险预算或外脑/RAG/probe 数据 lineage 迁移绕过 Legacy Bug / UX Audit", self.migration_map)
-        self.assertIn("外脑/RAG/probe 数据 lineage 迁移绕过 Legacy Bug / UX Audit", self.migration_map)
+        self.assertIn("避免后续 ECharts/operation zones、provider-health 明细、硬风险摘要、回测复盘实验室、杠杆/ETF 风险预算、外脑/RAG/probe 数据 lineage 或 AI-as-action 跨市场事实迁移绕过 Legacy Bug / UX Audit", self.migration_map)
+        self.assertIn("外脑/RAG/probe 数据 lineage 或 AI-as-action 跨市场事实迁移绕过 Legacy Bug / UX Audit", self.migration_map)
+        self.assertIn("AI-as-action 跨市场事实迁移绕过 Legacy Bug / UX Audit", self.migration_map)
         self.assertIn("operation_zones 只作为条件，不改 action", self.migration_map)
         self.assertIn("receipt-as-replacement", self.migration_map)
         self.assertIn("local receipt is not replacement evidence", self.migration_map)
@@ -101,14 +104,20 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
         self.assertIn("模型/外部文本像当前事实或动作建议", self.migration_map)
         self.assertIn("进入普通流前必须单独重设数据 lineage", self.migration_map)
         self.assertIn("RAG/document ingestion, external probe and ordinary research action mix are not migrated", self.migration_map)
+        self.assertIn("模型生成交易建议", self.migration_map)
+        self.assertIn("跨市场事实无 lineage", self.migration_map)
+        self.assertIn("AI 文案像买卖/加减仓指令", self.migration_map)
+        self.assertIn("无普通入口；未来若重建只能走 governed DeepSeek explain", self.migration_map)
+        self.assertIn("旧 AI-as-action / cross-market advice button", self.migration_map)
+        self.assertIn("model-generated trading advice, cross-market facts without lineage, and AI-as-action wording are not migrated", self.migration_map)
         self.assertIn("pending safe screenshot or reviewer note", self.migration_map)
         self.assertGreaterEqual(
             self.migration_map.count("direct_evidence_intake_pending"),
-            9,
+            10,
         )
         self.assertGreaterEqual(
             self.migration_map.count("no_keep_promotion_this_round"),
-            9,
+            10,
         )
         self.assertNotIn("legacy_intake_home_daily_command` | home/daily command | KEEP", self.migration_map)
 
