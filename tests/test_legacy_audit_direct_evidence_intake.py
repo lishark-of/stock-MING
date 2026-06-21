@@ -55,6 +55,7 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "legacy_intake_candidate_radar",
             "legacy_intake_next_session_map",
             "legacy_intake_factor_risk_provider_health",
+            "legacy_intake_hard_risk_announcement",
         ):
             self.assertIn(intake_row, self.migration_map)
 
@@ -64,25 +65,29 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "candidate radar",
             "next-session map",
             "factor/risk/provider health",
+            "hard risk / announcement risk",
         ):
             self.assertIn(workflow, self.migration_map)
 
-        self.assertIn("避免后续 ECharts/operation zones 或 provider-health 明细迁移绕过 Legacy Bug / UX Audit", self.migration_map)
-        self.assertIn("provider-health 明细迁移绕过 Legacy Bug / UX Audit", self.migration_map)
+        self.assertIn("避免后续 ECharts/operation zones、provider-health 明细或硬风险摘要迁移绕过 Legacy Bug / UX Audit", self.migration_map)
+        self.assertIn("provider-health 明细或硬风险摘要迁移绕过 Legacy Bug / UX Audit", self.migration_map)
         self.assertIn("operation_zones 只作为条件，不改 action", self.migration_map)
         self.assertIn("receipt-as-replacement", self.migration_map)
         self.assertIn("local receipt is not replacement evidence", self.migration_map)
         self.assertIn("旧 provider health 大表压过普通摘要", self.migration_map)
         self.assertIn("provider health 明细只进 Settings / Developer / Audit", self.migration_map)
         self.assertIn("missing provider data is not shown as no risk", self.migration_map)
+        self.assertIn("旧无数据即低风险", self.migration_map)
+        self.assertIn("模型文本覆盖事实", self.migration_map)
+        self.assertIn("risk scan does not become action", self.migration_map)
         self.assertIn("pending safe screenshot or reviewer note", self.migration_map)
         self.assertGreaterEqual(
             self.migration_map.count("direct_evidence_intake_pending"),
-            5,
+            6,
         )
         self.assertGreaterEqual(
             self.migration_map.count("no_keep_promotion_this_round"),
-            5,
+            6,
         )
         self.assertNotIn("legacy_intake_home_daily_command` | home/daily command | KEEP", self.migration_map)
 
