@@ -24,6 +24,7 @@ ChatGPT designs task
 - Strategy, docs, config, scaffold, preflight, local receipt, matrix, mock, or sanitizer rounds must not claim an LTG is complete; only direct acceptance evidence can support an LTG closeout claim.
 - When a round is commit-scoped, one task should usually become one coherent commit.
 - If a task spans unrelated concerns, split it into separate commits.
+- If the worktree already contains a dirty implementation bundle over the round limit, Codex must first perform a read-only split audit instead of staging the bundle. A later commit must name one slice, keep at most one main target and one supporting target, stage only the intended files or hunks, and state which dirty files were intentionally left untouched. Passing local contracts, py_compile, or smoke on the whole dirty bundle is not permission to commit it as one cycle.
 
 ## stock-MING Safety Boundary
 
