@@ -25,6 +25,10 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("frozen legacy path", text)
         self.assertIn("route inventory, legacy tab names, docs/config/scaffold", text)
         self.assertIn("cannot promote a module to `KEEP` by themselves", text)
+        self.assertIn("Direct evidence must stay separate from inventory/scaffold evidence", text)
+        self.assertIn("`inventory_or_scaffold_evidence` can orient the audit", text)
+        self.assertIn("`direct_user_evidence` tied to a safe screenshot reference", text)
+        self.assertIn("can move a row toward `direct_evidence_ready` or a later `KEEP` review", text)
 
         for entrance in (
             "今日作战台 / Daily Command Center",
