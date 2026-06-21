@@ -4,7 +4,7 @@
 This push-gate guard does not run a browser and does not refresh market data.
 It builds a local exact-cache sample and reads the current cache envelope to
 keep ECharts payloads, interaction readiness, reference/zone drilldown, and
-frontend read-only boundaries separate from Streamlit parity completion or
+frontend read-only boundaries separate from legacy signal/capability parity completion or
 production replacement.
 """
 
@@ -78,7 +78,7 @@ REQUIRED_DURABLE_EVIDENCE_KEYS = {
 NEXT_SESSION_PRODUCTION_STAGE_LABELS = {
     "exact_cache_payload_contract": "exact cache payload and chart contract",
     "interaction_hover_click_contract": "hover and click interaction contract",
-    "streamlit_parity_review": "legacy Streamlit parity review",
+    "streamlit_parity_review": "legacy signal/capability parity review",
     "browser_visual_qa": "browser visual QA across viewports",
     "browser_performance_trace": "browser performance trace",
     "reduced_motion_accessibility_qa": "reduced-motion and accessibility QA",
@@ -265,7 +265,7 @@ def _next_session_production_stage_scope_rows() -> list[dict[str, Any]]:
                 "frontend_computes_trade_action": False,
                 "contains_secret": False,
                 "missing_evidence": [
-                    "explicit Streamlit parity review",
+                    "explicit legacy signal/capability parity review",
                     "browser visual QA report",
                     "browser performance trace",
                     "reduced-motion/accessibility QA report",
@@ -432,7 +432,7 @@ def build_contract() -> dict[str, Any]:
             and interaction_audit.get("does_not_execute_trades") is True
             and interaction_audit.get("does_not_modify_action") is True
             and interaction_audit.get("does_not_modify_operation_zones") is True,
-            "Interaction readiness must expose hover/click/source/guardrail readiness while keeping Streamlit parity and production replacement pending.",
+            "Interaction readiness must expose hover/click/source/guardrail readiness while keeping legacy signal/capability parity and production replacement pending.",
         ),
         _row(
             "chart_contract_is_read_only_no_external_no_action",
@@ -518,7 +518,7 @@ def build_contract() -> dict[str, Any]:
             and activation_receipt.get("does_not_execute_trades") is True
             and activation_receipt.get("does_not_modify_strategy_action") is True
             and activation_receipt.get("does_not_modify_operation_zones") is True,
-            "Replacement activation receipt must guide Streamlit parity, browser QA, performance trace, and durable evidence without claiming production replacement.",
+            "Replacement activation receipt must guide legacy signal/capability parity, browser QA, performance trace, and durable evidence without claiming production replacement.",
         ),
         _row(
             "legacy_parity_execution_recipe_is_no_feature_loss_pending",
@@ -620,7 +620,7 @@ def build_contract() -> dict[str, Any]:
             and len(browser_qa_evidence_rows) == int(browser_qa_evidence.get("row_count") or 0)
             and _flag_false(browser_qa_runbook, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called")
             and _flag_false(browser_qa_evidence, "external_calls_triggered", "tushare_called", "deepseek_called", "github_called"),
-            "Next-session browser QA runbook/evidence must stay local-only and separate local artifact summaries from Streamlit parity or production replacement.",
+            "Next-session browser QA runbook/evidence must stay local-only and separate local artifact summaries from legacy signal/capability parity or production replacement.",
         ),
         _row(
             "next_session_browser_qa_review_is_button_gated_local_only",
@@ -679,7 +679,7 @@ def build_contract() -> dict[str, Any]:
                 "github_called",
                 "frontend_computes_trade_action",
             ),
-            "Next-session Streamlit parity review must be explicit POST/local same-packet no-feature-loss evidence only; it must not open Streamlit/browser, remove fallback, or promote production replacement.",
+            "Next-session legacy signal/capability parity review must be explicit POST/local same-packet no-feature-loss evidence only; it must not open Streamlit/browser, remove fallback, or promote production replacement.",
         ),
         _row(
             "next_session_production_promotion_review_is_button_gated_local_only",
@@ -812,7 +812,7 @@ def build_contract() -> dict[str, Any]:
                 for row in _list(durable_evidence_recipe.get("call_ledger"))
             )
             and "next_session_durable_evidence_recipe" in next_page,
-            "Next-session durable evidence recipe must pin remaining Streamlit parity, browser visual/performance, CI/release, and promotion evidence without opening a browser, calling providers/models, executing trades, or claiming ECharts production replacement.",
+            "Next-session durable evidence recipe must pin remaining legacy signal/capability parity, browser visual/performance, CI/release, and promotion evidence without opening a browser, calling providers/models, executing trades, or claiming ECharts production replacement.",
         ),
         _row(
             "production_replacement_stage_scope_manifest_is_cache_visible_and_pending",
@@ -945,7 +945,7 @@ def build_contract() -> dict[str, Any]:
             )
             and "next_session_production_stage_scope_manifest" in next_page
             and "productionStageScope" in next_page,
-            "Next-session production stage scope must be visible from cache/UI and reduce only local direct-evidence blockers while keeping Streamlit parity, durable CI/release evidence, and production replacement pending.",
+            "Next-session production stage scope must be visible from cache/UI and reduce only local direct-evidence blockers while keeping legacy signal/capability parity, durable CI/release evidence, and production replacement pending.",
         ),
         _row(
             "react_echarts_frontend_uses_api_client_and_read_only_display",
@@ -1072,7 +1072,7 @@ def build_contract() -> dict[str, Any]:
         "production_replacement_stage_scope_rows": list(production_stage_scope_rows.values()),
         "static_production_replacement_stage_scope_rows": static_production_stage_scope_rows,
         "rows": rows,
-        "note": "This is a local push-gate contract. Browser visual QA, performance trace, legacy Streamlit parity, and production ECharts replacement remain pending.",
+        "note": "This is a local push-gate contract. Browser visual QA, performance trace, legacy signal/capability parity, and production ECharts replacement remain pending.",
     }
 
 
