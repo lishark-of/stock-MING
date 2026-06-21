@@ -193,9 +193,19 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         )[0]
 
         self.assertIn("retained signal/capability coverage has direct no-feature-loss evidence", section)
+        self.assertIn("retained signal/capability no-feature-loss coverage review", section)
+        self.assertIn("compatibility-named local no-feature-loss recipe", section)
+        self.assertIn("future retained signal/capability coverage scope", section)
+        self.assertIn("retained signal/capability coverage review, browser visual QA", section)
+        self.assertIn("pending retained signal/capability coverage evidence", section)
         self.assertIn("browser visual QA, performance trace, durable CI/release evidence", section)
         self.assertIn("production promotion review", section)
         self.assertIn("old Streamlit UI copy stays outside the goal", section)
+        self.assertNotIn("frontend read-only boundaries, legacy signal/capability parity review", section)
+        self.assertNotIn("future legacy signal/capability comparison scope", section)
+        self.assertNotIn("hover/click interaction contract, legacy signal/capability parity review", section)
+        self.assertNotIn("pending legacy signal/capability parity", section)
+        self.assertNotIn("legacy signal/capability parity review remains pending", section)
         self.assertNotIn("legacy parity is actually complete", section)
 
     def test_ltg08_status_parity_wording_is_compatibility_not_ui_copy(self):
