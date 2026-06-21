@@ -240,6 +240,7 @@ export default function FactorQuantHub() {
   const ordinaryQuantDeepSeekSourceLabel = deepseek.called === true ? "DeepSeek 解释已有本地结果" : "DeepSeek 解释未生成或等待手动任务";
   const ordinaryQuantModelSourceLabel =
     deepseekValidation.model_call_status && deepseekValidation.model_call_status !== "not_called" ? "模型状态已有本地记录" : "模型未调用或等待手动任务";
+  const ordinaryQuantRuntimeMode = String(bootstrapStatus.mode ?? packet.mode ?? "cache_only");
   const ordinaryQuantHasPendingEvidence =
     empty ||
     Number(runtime.missing_count ?? 0) > 0 ||
@@ -251,6 +252,15 @@ export default function FactorQuantHub() {
     : ordinaryQuantHasPendingEvidence
       ? "存在待补证据或待确认任务"
       : "当前摘要未标记 pending 项";
+  const ordinaryQuantEvidenceTaskState = (() => {
+    if (empty) return "等待本地缓存后再确认补证方式";
+    if (!ordinaryQuantHasPendingEvidence) return "暂无待补任务，继续只读查看";
+    if (ordinaryQuantRuntimeMode === "cache_only") return "cache_only 只读查看，不创建补证任务";
+    if (ordinaryQuantRuntimeMode === "manual") return "manual 只允许用户按钮创建 POST task";
+    if (ordinaryQuantRuntimeMode === "live_light") return "live_light 可由后台 task 补证；本页仍只读轮询缓存";
+    if (ordinaryQuantRuntimeMode === "live_full") return "live_full 深度补证预留，默认关闭";
+    return "未知运行模式，按手动按钮补证口径处理";
+  })();
   const ordinaryQuantSourceState = [
     `本地缓存：${ordinaryQuantCacheSourceLabel}`,
     `Tushare 数据：${ordinaryQuantTushareSourceLabel}`,
@@ -273,7 +283,6 @@ export default function FactorQuantHub() {
   const ordinaryQuantLastCache = String(
     packet.loaded_at ?? packet.updated_at ?? packet.generated_at ?? freshnessGate.latest_data_date ?? "暂无最近可用缓存"
   );
-  const ordinaryQuantRuntimeMode = String(bootstrapStatus.mode ?? packet.mode ?? "cache_only");
   const ordinaryQuantRuntimeModeLabel = `运行模式：${runtimeModeLabel(ordinaryQuantRuntimeMode)}`;
   const ordinaryQuantTaskBoundary =
     "本页 GET cache 只读；手动刷新、轻量推演、模型整理或 live_light 补证都必须走 POST task，不在 React 渲染中直连 Tushare 或 DeepSeek";
@@ -294,6 +303,7 @@ export default function FactorQuantHub() {
             { label: "下一步", value: ordinaryQuantNextClick },
             { label: "运行模式", value: ordinaryQuantRuntimeModeLabel },
             { label: "数据来源状态", value: ordinaryQuantSourceState },
+            { label: "补证方式", value: ordinaryQuantEvidenceTaskState, tone: ordinaryQuantEvidenceTaskState.includes("等待") || ordinaryQuantEvidenceTaskState.includes("待补") || ordinaryQuantEvidenceTaskState.includes("未知") ? "warn" : "good" },
             { label: "缺少证据", value: ordinaryQuantMissingEvidence, tone: ordinaryQuantMissingEvidence.includes("待补") || ordinaryQuantMissingEvidence.includes("待确认") ? "warn" : "good" },
             { label: "阻断/降级", value: ordinaryQuantBlockedState, tone: ordinaryQuantBlockedState.includes("未标记") ? "good" : "warn" },
             { label: "最近可用缓存", value: ordinaryQuantLastCache },

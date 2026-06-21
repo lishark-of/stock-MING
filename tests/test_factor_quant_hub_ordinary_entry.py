@@ -15,6 +15,7 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "下一步"', source)
         self.assertIn('label: "运行模式"', source)
         self.assertIn('label: "数据来源状态"', source)
+        self.assertIn('label: "补证方式"', source)
         self.assertIn('label: "缺少证据"', source)
         self.assertIn('label: "阻断/降级"', source)
         self.assertIn('label: "最近可用缓存"', source)
@@ -23,6 +24,17 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(source.index("普通用户量化推演摘要"), source.index('launchTask("/api/factor-quant/run-light"'))
         self.assertLess(source.index("普通用户量化推演摘要"), source.index("高级验收任务"))
         self.assertLess(source.index("普通用户量化推演摘要"), source.index("开发 / 审计指标"))
+
+    def test_stock_quant_projection_explains_evidence_task_mode(self):
+        source = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("ordinaryQuantEvidenceTaskState", source)
+        self.assertIn("等待本地缓存后再确认补证方式", source)
+        self.assertIn("cache_only 只读查看，不创建补证任务", source)
+        self.assertIn("manual 只允许用户按钮创建 POST task", source)
+        self.assertIn("live_light 可由后台 task 补证；本页仍只读轮询缓存", source)
+        self.assertIn("live_full 深度补证预留，默认关闭", source)
+        self.assertLess(source.index('label: "补证方式"'), source.index("高级验收任务"))
 
     def test_stock_quant_projection_reads_mode_without_bootstrap_task_launcher(self):
         source = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
@@ -52,6 +64,21 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(source.index("开发 / 审计指标"), source.index('label: "provider blockers"'))
         self.assertLess(source.index("评分图表 lineage 审计"), source.index("评分图表数据合同"))
         self.assertLess(source.index("DeepSeek 解释"), source.index("DeepSeek 解释治理审计"))
+
+    def test_stock_quant_projection_page_does_not_embed_provider_model_or_trade_calls(self):
+        source = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
+        forbidden_fragments = (
+            "tushare.pro_api",
+            "ts.pro_api",
+            "deepseek.chat",
+            "api.github.com",
+            "executeTrade(",
+            "placeOrder(",
+            "broker.submit",
+            "live_order",
+        )
+        for fragment in forbidden_fragments:
+            self.assertNotIn(fragment, source)
 
 
 if __name__ == "__main__":
