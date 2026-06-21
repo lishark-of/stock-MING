@@ -2180,6 +2180,11 @@ class DeepSeekModelConfigTests(unittest.TestCase):
         self.assertIn("config wording, not frontend wiring", app_plan)
         self.assertIn("page open and safe searched-symbol submit are mode-specific trigger surfaces", app_plan)
         self.assertIn("search typing, React render, FastAPI startup, GET cache", app_plan)
+        self.assertIn("page_open_rule", architecture)
+        self.assertIn("search_submit_rule", architecture)
+        self.assertIn("page-open / search-submit", architecture)
+        self.assertIn("page open 和 confirmed search submit 是 mode-specific trigger surfaces", architecture)
+        self.assertIn("不是 render/search-typing 副作用", architecture)
         self.assertIn("page_open_rule", handoff_protocol)
         self.assertIn("search_submit_rule", handoff_protocol)
         self.assertIn(
