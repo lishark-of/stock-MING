@@ -111,6 +111,15 @@ class RuntimeConfigAllowlistTests(unittest.TestCase):
         self.assertIn("live_light must remain opt-in and task/ledger governed", text)
         self.assertIn("live_full: reserved and disabled until separate authorization", text)
         self.assertIn("config rows are operator guidance, not production evidence or frontend secrets", text)
+        self.assertIn("A configured true value is operator intent only", text)
+        self.assertIn(
+            "Effective external work still requires mode/task gates, ledgers, redaction, and promotion",
+            text,
+        )
+        self.assertIn(
+            "Runtime config does not prove the full live_light workflow has been implemented",
+            text,
+        )
 
 
 if __name__ == "__main__":
