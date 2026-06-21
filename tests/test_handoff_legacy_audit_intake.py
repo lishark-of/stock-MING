@@ -151,6 +151,31 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
         self.assertIn("not direct UX/bug evidence by themselves", self.protocol)
         self.assertIn("not `KEEP` or Streamlit-retirement promotion evidence", self.protocol)
 
+    def test_long_term_goal_priority_keeps_remote_ci_explicitly_gated(self):
+        for priority_key in (
+            "fix_push_gate_ci_evidence",
+            "legacy_bug_ux_audit_for_streamlit_ordinary_workflows",
+            "rebuild_ltg13_candidate_radar_user_usable_workflow",
+            "searched_symbol_to_generate_3_0_quant_projection",
+            "show_provider_model_cache_pending_state_on_page",
+            "move_engineering_audit_tables_out_of_ordinary_flow",
+        ):
+            self.assertIn(priority_key, self.long_term_goals)
+        self.assertIn(
+            "P0 priority does not by itself authorize GitHub/Actions inspection or push",
+            self.long_term_goals,
+        )
+        self.assertIn(
+            "if the user did not explicitly request remote CI inspection in the round",
+            self.long_term_goals,
+        )
+        self.assertIn("report remote CI status as unknown", self.long_term_goals)
+        self.assertIn("keep release readiness blocked", self.long_term_goals)
+        self.assertIn(
+            "do not inspect Actions or push unless the user explicitly requests/approves that external step",
+            self.long_term_goals,
+        )
+
     def test_long_term_goal_parity_wording_means_capability_not_legacy_ui_copy(self):
         self.assertIn("chart capability parity", self.long_term_goals)
         self.assertIn(

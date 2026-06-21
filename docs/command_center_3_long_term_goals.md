@@ -93,7 +93,7 @@ The CI evidence boundary is also explicit: release or production-replacement cla
 
 Remote CI review rows must satisfy `remote_ci_review_row_requires_head_status_log_local_gate_push_decision`: `head_sha_or_commit`, `remote_run_url_or_id`, `remote_status`, `failed_step_or_green_status`, `safe_failure_log_excerpt_or_green_run_url`, `local_gate_result_for_same_head`, `push_confirmation_state`, `release_claim_decision`, and `next_action`. `old_run_without_matching_head`, `email_subject_only`, `local_gate_pass_only`, `workflow_yaml_presence_only`, `unreviewed_failed_step`, and `unchecked_artifact_or_secret_scan` cannot complete CI evidence or permit a release claim.
 
-The current P0 CI seed row is `remote_ci_review_seed_row_keeps_p0_blocked_until_matching_remote_run_review`: `pending_current_head_sha`, `pending_remote_actions_run`, `remote_ci_unverified`, `not_reviewed`, `pending_safe_log_excerpt_or_green_run_url`, `pending_fresh_local_push_gate_for_current_head`, `not_requested_no_push`, and `blocked_remote_ci_unverified` remain until a matching remote run is reviewed. This row is not remote CI evidence and does not permit push.
+The current P0 CI seed row is `remote_ci_review_seed_row_keeps_p0_blocked_until_matching_remote_run_review`: `pending_current_head_sha`, `pending_remote_actions_run`, `remote_ci_unverified`, `not_reviewed`, `pending_safe_log_excerpt_or_green_run_url`, `pending_fresh_local_push_gate_for_current_head`, `not_requested_no_push`, and `blocked_remote_ci_unverified` remain until a matching remote run is reviewed. This row is not remote CI evidence and does not permit push. P0 priority does not by itself authorize GitHub/Actions inspection or push; if the user did not explicitly request remote CI inspection in the round, report remote CI status as unknown and keep release readiness blocked.
 
 Streamlit remains fallback / legacy / admin / debug until the React/Tauri workflow is demonstrably easier, clearer, and more reliable for normal usage. This strategy correction does not complete any LTG by itself and is not production acceptance evidence.
 
@@ -2045,7 +2045,7 @@ Add Command Center 3 motion clarity system
 
 | priority | focus | note |
 |---|---|---|
-| P0 | Current unpushed commit push gate | Use `git log origin/main..HEAD` as the authoritative unpushed list; run `scripts/push_gate_3_0.sh`, review results, wait for user confirmation, then push. |
+| P0 | Current unpushed commit push gate | Use `git log origin/main..HEAD` as the authoritative unpushed list; run `scripts/push_gate_3_0.sh` locally and review results; do not inspect Actions or push unless the user explicitly requests/approves that external step. |
 | P1 | A 股交易日历 freshness 生产验收 | This blocks trustworthy current evidence. |
 | P2 | Tushare 全接口真实流水线 | Validate provider data groups one by one through button-gated tasks. |
 | P2a | 运行模式分层与 `live_light` bootstrap | Keep `cache_only` safe while designing opt-in light startup tasks for local daily research. |
