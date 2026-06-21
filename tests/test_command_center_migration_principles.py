@@ -88,6 +88,16 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("Default-off release switches for later provider/model task creation and frontend automation", text)
         self.assertIn("They stay effective false until execution-request, real ledgers, browser evidence, redaction, rollback, and promotion gates pass", text)
         self.assertIn("This table is config wording, not a new implementation claim", text)
+        self.assertIn("prove legacy signal/capability parity, copy old Streamlit UI", text)
+        self.assertIn("legacy signal/capability parity gaps are auditable without treating old Streamlit UI copy as a goal", text)
+        self.assertIn("Full legacy signal/capability parity for the next-session chart is incomplete; visual/UI copy is not the target", text)
+        self.assertIn("Compare retained next-session signal groups and interaction evidence against Legacy Bug / UX Audit findings", text)
+        self.assertIn("old Streamlit UI copy outside the goal", text)
+        self.assertNotIn("prove Streamlit parity", text)
+        self.assertNotIn("Streamlit parity gaps", text)
+        self.assertNotIn("Full parity with legacy Streamlit chart", text)
+        self.assertNotIn("Compare against legacy Streamlit visual expectations", text)
+        self.assertNotIn("future Streamlit-to-React comparison scope", text)
 
     def test_migration_map_records_legacy_audit_and_five_commit_questions(self):
         root = Path(__file__).resolve().parents[1]
