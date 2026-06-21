@@ -20,7 +20,7 @@ Streamlit `app.py` 保留，但定位调整为 legacy/admin/debug，不再作为
 
 普通入口状态口径必须保持首屏可审计：每个入口先显示 one primary safe next click、source chip（`cache` / `Tushare` / `DeepSeek` / `pending` / `degraded`）、missing-evidence row、research-only/no-buy-sell label、blocked/degraded reason 和 last successful cache/result；如果任一状态不可用，显示 disabled/degraded reason 与 last known cache，而不是让普通用户回到工程 audit table、legacy tab 或 JSON receipt 里寻找答案。
 
-架构层的 provider/model 证据也必须先有 redacted `call_ledger` / `model_ledger` rows；缺 ledger 的结果只能显示为 local 或 pending，不能推进 `live_light`、LTG 完成、Streamlit 退场或 production acceptance。普通 UI 与 migration report 只能展示 safe summaries：不得暴露 raw prompts、raw model output、unredacted provider errors、credential-like values 或 raw packet bodies；模型内容只能以白名单字段、`model_ledger` 状态和 redaction review 呈现。
+架构层的 provider/model 证据也必须先有 redacted `call_ledger` / `model_ledger` rows；缺 ledger 的结果只能显示为 local 或 pending，不能推进 `live_light`、LTG 完成、Streamlit 退场或 production acceptance。DeepSeek 文本、model summary 或 explanation status 不能满足 missing evidence、不能成为 next-click action、不能替代 provider/cache/factor/operation-zone evidence；它们只能在 `model_ledger` 状态和 redaction review 下解释已有证据。普通 UI 与 migration report 只能展示 safe summaries：不得暴露 raw prompts、raw model output、unredacted provider errors、credential-like values 或 raw packet bodies；模型内容只能以白名单字段、`model_ledger` 状态和 redaction review 呈现。
 
 ## 迁移进度基线
 
