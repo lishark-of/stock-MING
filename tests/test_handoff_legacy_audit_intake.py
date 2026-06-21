@@ -142,6 +142,15 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
         self.assertIn("do not infer green, red, or release readiness from local validation", self.protocol)
         self.assertIn("workflow-file presence, old emails, or previous remote runs", self.protocol)
 
+    def test_checkpoint_report_defuses_legacy_parity_compatibility_ids(self):
+        self.assertIn("Legacy parity compatibility names", self.protocol)
+        for key in ("legacy_parity", "streamlit_parity", "provider_parity", "no_feature_loss"):
+            self.assertIn(key, self.protocol)
+        self.assertIn("compatibility ids for retained signal/capability/evidence-scope review", self.protocol)
+        self.assertIn("not old UI/navigation parity", self.protocol)
+        self.assertIn("not direct UX/bug evidence by themselves", self.protocol)
+        self.assertIn("not `KEEP` or Streamlit-retirement promotion evidence", self.protocol)
+
     def test_long_term_goal_parity_wording_means_capability_not_legacy_ui_copy(self):
         self.assertIn("chart capability parity", self.long_term_goals)
         self.assertIn(
