@@ -152,7 +152,7 @@ LONG_TERM_GOAL_PROGRESS = [
         "completion_bucket": "real_validation_required",
         "completion_estimate": "40%-50%",
         "current_state": "local quick-scan readiness, fast-scan task pipeline contract, no-feature-loss QA, legacy parity receipt, full/deep plan receipts, search-to-quant projection receipt, provider parity dry-run ticket, worker execution recipe, scope-bound worker execution-request ticket, scope-bound searched-symbol provider/model execution-request ticket, durable evidence recipe, production stage-scope manifest cache/React visibility, production promotion dry-run, legacy-retirement local review receipt, production-promotion local review receipt, and result-delta clarity exist.",
-        "not_complete_because": "async worker execution, real provider-backed radar parity execution, full-pool/deep-scan execution, real searched-symbol provider/model projection execution, DeepSeek model-ledger evidence when enabled, browser performance promotion, production legacy-retirement approval, and durable production replacement evidence are still pending.",
+        "not_complete_because": "async worker execution, real provider-backed radar signal/capability replacement execution, full-pool/deep-scan execution, real searched-symbol provider/model projection execution, DeepSeek model-ledger evidence when enabled, browser performance promotion, production legacy-retirement approval, and durable production replacement evidence are still pending.",
         "next_step": "Use the worker execution-request, quant projection execution-request, durable evidence recipe, promotion dry-run, legacy-retirement local review, and production-promotion local review to bind real worker full-pool/deep-scan evidence, provider parity call ledger, real Tushare light call ledger, optional DeepSeek model ledger, browser performance/visual proof, and release evidence before any production replacement or legacy retirement claim.",
         "production_complete": False,
     },
@@ -263,7 +263,12 @@ LTG_NEXT_EVIDENCE_REQUIRED = {
     ],
     "LTG-11": ["fresh local gate run", "remote CI status", "failure email triage", "allowlist review"],
     "LTG-12": ["continued no-broker proof", "continued no-order proof", "continued no-action mutation proof"],
-    "LTG-13": ["provider parity execution", "worker full-pool scan", "worker deep-scan", "browser performance proof"],
+    "LTG-13": [
+        "provider-backed radar signal/capability replacement execution",
+        "worker full-pool scan",
+        "worker deep-scan",
+        "browser performance proof",
+    ],
     "LTG-14": ["browser visual QA", "performance trace", "reduced-motion proof", "durable release evidence"],
 }
 

@@ -777,6 +777,17 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn('"LTG-10": ["React/Tauri workflow parity"', source)
         self.assertNotIn("delete app.py before replacement parity", source)
 
+    def test_ltg13_status_uses_signal_capability_replacement_not_provider_parity(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (
+            root / "server" / "services" / "migration_status_service.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("real provider-backed radar signal/capability replacement execution", source)
+        self.assertIn("provider-backed radar signal/capability replacement execution", source)
+        self.assertNotIn('"LTG-13": ["provider parity execution"', source)
+        self.assertNotIn("real provider-backed radar parity execution", source)
+
     def test_push_gate_guard_covers_commit_checkpoint_surfaces(self):
         root = Path(__file__).resolve().parents[1]
         push_gate = (root / "scripts" / "push_gate_3_0.sh").read_text(encoding="utf-8")
