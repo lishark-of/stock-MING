@@ -101,9 +101,9 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "ECharts 次日操作图谱成熟版",
         "completion_bucket": "productionization_required",
         "completion_estimate": "45%-55%",
-        "current_state": "payload contract, cache envelope, read-only React rendering, reference/zone/position/DeepSeek status, interaction readiness, browser QA runbook, and no-feature-loss legacy parity recipe exist.",
-        "not_complete_because": "legacy Streamlit reference capture, browser visual QA, performance trace, no-feature-loss parity evidence, and production replacement promotion are pending.",
-        "next_step": "Run explicit same-packet Streamlit parity and browser visual/performance QA without dropping legacy signal groups before retiring the Streamlit visual path.",
+        "current_state": "payload contract, cache envelope, read-only React rendering, reference/zone/position/DeepSeek status, interaction readiness, browser QA runbook, and no-feature-loss legacy signal/capability parity recipe exist.",
+        "not_complete_because": "legacy signal/capability reference capture, browser visual QA, performance trace, no-feature-loss capability evidence, and production replacement promotion are pending; old Streamlit UI copy is not the target.",
+        "next_step": "Run explicit same-packet legacy signal/capability parity and browser visual/performance QA without dropping legacy signal groups before retiring the Streamlit visual fallback path.",
         "production_complete": False,
     },
     {
@@ -249,8 +249,8 @@ LTG_NEXT_EVIDENCE_REQUIRED = {
         "durable evidence promotion",
     ],
     "LTG-08": [
-        "same-packet Streamlit parity",
-        "no-feature-loss matrix",
+        "same-packet legacy signal/capability parity",
+        "no-feature-loss capability matrix",
         "browser visual QA",
         "performance trace",
         "replacement promotion",
@@ -509,7 +509,7 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
         "future_provider_route": "future explicit next-session parity and production replacement tasks",
         "target_acceptance_mode": "next_session_browser_visual_performance_and_parity_promotion",
         "required_evidence": [
-            "same-packet Streamlit parity evidence",
+            "same-packet legacy signal/capability parity evidence",
             "browser visual QA report",
             "browser performance trace",
             "reduced-motion evidence",
@@ -7339,12 +7339,12 @@ def _merge_ltg_stage_scope_observations(
                 item["observed_next_session_browser_qa_is_production_replacement"] = False
                 if next_browser_evidence_done:
                     item["not_complete_because"] = (
-                        "same-packet Streamlit reference capture, feature-by-feature parity, durable CI/release "
+                        "same-packet legacy signal/capability reference capture, feature-by-feature capability parity, durable CI/release "
                         "evidence, and production replacement promotion are pending; local browser "
                         "visual/performance/reduced-motion QA is observed but not production replacement."
                     )
                     item["next_step"] = (
-                        "Run explicit same-packet Streamlit parity and feature-by-feature no-loss review, then "
+                        "Run explicit same-packet legacy signal/capability parity and feature-by-feature no-loss review, then "
                         "attach durable CI/release evidence and production replacement promotion; do not rerun "
                         "local browser QA unless the route or packet contract changes."
                     )

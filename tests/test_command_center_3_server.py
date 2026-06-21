@@ -32604,9 +32604,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         ltg08_goal = long_term_goals["LTG-08"]
         self.assertTrue(ltg08_goal["observed_next_session_browser_qa_direct_evidence_done"])
         self.assertFalse(ltg08_goal["observed_next_session_browser_qa_is_production_replacement"])
-        self.assertIn("same-packet Streamlit parity", ltg08_goal["next_step"])
+        self.assertIn("same-packet legacy signal/capability parity", ltg08_goal["next_step"])
+        self.assertNotIn("same-packet Streamlit parity", ltg08_goal["next_step"])
         self.assertIn("durable CI/release evidence", ltg08_goal["next_step"])
         self.assertIn("do not rerun local browser QA", ltg08_goal["next_step"])
+        self.assertIn("legacy signal/capability reference capture", ltg08_goal["not_complete_because"])
         self.assertIn("local browser visual/performance/reduced-motion QA is observed", ltg08_goal["not_complete_because"])
 
     def test_next_session_streamlit_parity_review_is_same_packet_local_only(self):
