@@ -194,6 +194,12 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("不能用 no-feature-loss 作为照搬理由", text)
         self.assertIn("普通页只展示摘要和缺口；详细合同留在 Settings / Developer / Audit", text)
         self.assertNotIn("详细合同留在 developer/audit", text)
+        self.assertIn("不证明 legacy signal/capability parity 或生产替代，也不代表复制旧 Streamlit 图表 UI", text)
+        self.assertIn("性能 trace durable promotion、legacy signal/capability parity 和生产替代仍待验收", text)
+        self.assertIn("旧 Streamlit 图表 UI/tab 复制不属于验收目标", text)
+        self.assertIn("不能理解成复制旧 Streamlit 图表 UI 或旧 tab navigation", text)
+        self.assertNotIn("不证明 Streamlit parity 或生产替代", text)
+        self.assertNotIn("性能 trace durable promotion、Streamlit parity 和生产替代", text)
 
     def test_app_migration_plan_records_no_blind_copy_and_audit_gate(self):
         root = Path(__file__).resolve().parents[1]
