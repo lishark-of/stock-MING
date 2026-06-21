@@ -228,7 +228,7 @@ The safer path is to keep Streamlit as the reliable fallback/admin/debug surface
 - Rebuild the three ordinary entrances in Tauri + React: `今日作战台 / Daily Command Center`, `股票量化推演 / Stock Quant Projection`, and `下一票雷达 / Candidate Radar`.
 - Consume packet/cache/task status surfaces for next click, source state, missing evidence, research-only boundary, blocked/degraded state, and last successful result.
 - Do not migrate the old workbench in this phase.
-- Keep the old Streamlit app available as an advanced legacy mode.
+- Keep the old Streamlit app reachable only as fallback/admin/debug or rollback path; do not present it as an ordinary-user advanced entrance.
 
 ### Phase 5: Audit-gated workflow migration
 

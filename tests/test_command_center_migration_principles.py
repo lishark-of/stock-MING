@@ -450,6 +450,12 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("Preserve useful research capabilities without promoting confusing legacy workflows", text)
         self.assertIn("Rebuild the three ordinary entrances in Tauri + React", text)
         self.assertIn("next click, source state, missing evidence", text)
+        self.assertIn(
+            "Keep the old Streamlit app reachable only as fallback/admin/debug or rollback path",
+            text,
+        )
+        self.assertIn("do not present it as an ordinary-user advanced entrance", text)
+        self.assertNotIn("available as an advanced legacy mode", text)
         self.assertIn("### Phase 5: Audit-gated workflow migration", text)
         self.assertIn("searched-symbol -> `生成 3.0 量化推演`", text)
         self.assertIn("Move detailed engineering contract tables", text)
