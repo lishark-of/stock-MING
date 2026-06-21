@@ -656,6 +656,31 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("不能证明普通用户入口更清晰或允许 `KEEP`/退场评审", text)
         self.assertIn("工程合同、receipt、runbook 和 LTG audit 默认进入 Settings / Developer / Audit", text)
 
+    def test_architecture_candidate_radar_uses_signal_capability_provider_language(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "docs" / "command_center_3_architecture.md").read_text(
+            encoding="utf-8"
+        )
+        section = text.split("`GET /api/candidate-radar/cache`", 1)[1].split(
+            "`POST /api/tasks/refresh-tushare-facts`",
+            1,
+        )[0]
+
+        self.assertIn("legacy signal/capability acceptance", section)
+        self.assertIn("输出字段 signal/capability coverage", section)
+        self.assertIn("stage/signal-capability/required-signal/blocker rows", section)
+        self.assertIn("compatibility route id", section)
+        self.assertIn("provider-backed radar signal/capability acceptance", section)
+        self.assertIn("provider-backed radar signal/capability scope ticket", section)
+        self.assertIn("provider-backed radar signal/capability call ledger", section)
+        self.assertIn("legacy signal/capability evidence", section)
+        self.assertNotIn("provider-backed parity", section)
+        self.assertNotIn("provider parity scope", section)
+        self.assertNotIn("provider parity call ledger", section)
+        self.assertNotIn("legacy parity", section)
+        self.assertNotIn("输出字段 parity", section)
+        self.assertNotIn("stage/parity/required-signal", section)
+
     def test_handoff_protocol_requires_migration_checkpoint_answers(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "codex_handoff_protocol.md").read_text(encoding="utf-8")
