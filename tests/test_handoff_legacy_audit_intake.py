@@ -24,6 +24,12 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
             "keep_promotion_decision",
         ):
             self.assertIn(slot, self.protocol)
+        self.assertIn("Legacy evidence attachment safety", self.protocol)
+        self.assertIn("safe screenshot reference", self.protocol)
+        self.assertIn("redacted reviewer note", self.protocol)
+        self.assertIn("safe log summary", self.protocol)
+        self.assertIn("never paste raw packet bodies, raw logs, token/key/credential values", self.protocol)
+        self.assertIn("unredacted model output, or generated artifacts", self.protocol)
 
     def test_first_pass_intake_cannot_be_reported_as_keep_promotion(self):
         self.assertIn("no_keep_promotion_this_round", self.protocol)
