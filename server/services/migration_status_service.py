@@ -412,7 +412,7 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
         "future_provider_route": "future explicit worker/provider/model radar execution tasks",
         "target_acceptance_mode": "provider_worker_backed_radar_replacement",
         "required_evidence": [
-            "legacy no-feature-loss parity",
+            "retained legacy signal/capability no-feature-loss coverage evidence",
             "real Tushare light call ledger",
             "optional DeepSeek model ledger when enabled",
             "worker full-pool/deep-scan evidence",

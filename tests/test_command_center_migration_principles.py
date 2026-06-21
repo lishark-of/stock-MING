@@ -971,11 +971,16 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
 
         self.assertIn("real provider-backed radar signal/capability replacement execution", source)
         self.assertIn("provider-backed radar signal/capability replacement execution", source)
+        self.assertIn(
+            "retained legacy signal/capability no-feature-loss coverage evidence",
+            source,
+        )
         self.assertIn("legacy signal/capability acceptance receipt", source)
         self.assertIn("provider-backed radar signal/capability dry-run ticket", source)
         self.assertIn("provider-backed radar signal/capability call ledger", source)
         self.assertNotIn('"LTG-13": ["provider parity execution"', source)
         self.assertNotIn("real provider-backed radar parity execution", source)
+        self.assertNotIn("legacy no-feature-loss parity", source)
         self.assertNotIn("legacy parity receipt", source)
         self.assertNotIn("provider parity dry-run ticket", source)
         self.assertNotIn("provider parity call ledger", source)
