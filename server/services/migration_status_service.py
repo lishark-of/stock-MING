@@ -511,7 +511,7 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
         "priority": "P5",
         "ltg_ids": ["LTG-08"],
         "action_label": "Review ECharts next-session browser QA evidence",
-        "mode_layer": "button_task_then_browser_or_parity_execution",
+        "mode_layer": "button_task_then_browser_or_coverage_evidence_review",
         "current_phase": "browser_qa_review_required",
         "first_allowed_route": "POST /api/next-session/browser-qa-review",
         "second_allowed_route": "",

@@ -172,6 +172,10 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
             source,
         )
         self.assertIn(
+            "button_task_then_browser_or_coverage_evidence_review",
+            source,
+        )
+        self.assertIn(
             "browser visual/performance QA, durable CI/release evidence, and production promotion review",
             source,
         )
@@ -187,6 +191,7 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
             "retire Streamlit visual path before retained signal/capability coverage evidence",
             source,
         )
+        self.assertNotIn("button_task_then_browser_or_parity_execution", source)
         self.assertNotIn("future explicit next-session parity and production replacement tasks", source)
         self.assertNotIn("next_session_browser_visual_performance_and_parity_promotion", source)
         self.assertNotIn("retire Streamlit visual path before parity evidence", source)
