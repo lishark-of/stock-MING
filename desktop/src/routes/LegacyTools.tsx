@@ -62,6 +62,8 @@ export default function LegacyTools() {
   const ordinaryEntranceAcceptanceAudit = (cache.ordinary_entrance_acceptance_audit as Record<string, unknown> | undefined) ?? {};
   const ordinaryEntranceAcceptanceRows = rows(cache.ordinary_entrance_acceptance_rows);
   const legacyBugUxModuleRows = rows(cache.legacy_bug_ux_module_rows);
+  const legacyAuditFirstRoundIntake = (cache.legacy_audit_first_round_intake as Record<string, unknown> | undefined) ?? {};
+  const legacyAuditFirstRoundIntakeRows = rows(cache.legacy_audit_first_round_intake_rows);
   const legacyBugUxEvidenceSlotRows = legacyBugUxModuleRows.map((row) => ({
     legacy_module: row.legacy_module,
     classification: row.classification,
@@ -181,6 +183,22 @@ export default function LegacyTools() {
       <PacketCard title="迁移 commit checkpoint" subtitle="未来迁移提交必须回答这 5 个问题；不是 production evidence" status="commit_questions">
         <p>每个后续迁移 slice 都要说明：保留了什么用户能力、移除了什么旧 UX 问题、哪些 bug/patchwork 没有迁入、非技术用户哪里更简单、减少了哪个真实 blocker。</p>
         <DataLineageTable rows={migrationCommitQuestionRows} />
+      </PacketCard>
+
+      <PacketCard title="Legacy first-round intake" subtitle="第一轮 Legacy Bug / UX Audit 取证模板；admin/debug only，不升级 KEEP" status={String(legacyAuditFirstRoundIntake.status ?? "legacy_audit_intake")}>
+        <p>这张表告诉下一次复核要收集哪些用户观察、lineage、替代入口和冻结路径；它不创建 task、不打开 Streamlit、不让旧模块进入普通入口。</p>
+        <MetricGrid
+          items={[
+            { label: "focus workflows", value: Number(legacyAuditFirstRoundIntake.focus_workflow_count ?? legacyAuditFirstRoundIntakeRows.length) },
+            { label: "intake rows", value: legacyAuditFirstRoundIntakeRows.length },
+            { label: "KEEP", value: legacyAuditFirstRoundIntake.keep_promotion_allowed_this_round === true ? "allowed" : "blocked", tone: legacyAuditFirstRoundIntake.keep_promotion_allowed_this_round === true ? "bad" : "good" },
+            { label: "ordinary entry", value: legacyAuditFirstRoundIntake.ordinary_entry_promotion_allowed_this_round === true ? "allowed" : "blocked", tone: legacyAuditFirstRoundIntake.ordinary_entry_promotion_allowed_this_round === true ? "bad" : "good" },
+            { label: "admin/debug only", value: legacyAuditFirstRoundIntake.legacy_admin_debug_surface_only === true, tone: legacyAuditFirstRoundIntake.legacy_admin_debug_surface_only === true ? "good" : "warn" },
+            { label: "production evidence", value: String(legacyAuditFirstRoundIntake.production_evidence_rule ?? "not_production_evidence") }
+          ]}
+        />
+        <DataLineageTable rows={objectRow(legacyAuditFirstRoundIntake)} />
+        <DataLineageTable rows={legacyAuditFirstRoundIntakeRows} />
       </PacketCard>
 
       <PacketCard title="Legacy 审计证据槽" subtitle="direct evidence / ordinary placement / frozen path；只读，不升级 KEEP" status="legacy_bug_ux_audit">

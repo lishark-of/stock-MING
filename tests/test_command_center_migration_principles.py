@@ -315,6 +315,36 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
             len(rows),
         )
 
+    def test_legacy_cache_exposes_first_round_intake_as_admin_debug_only(self):
+        from server.services import legacy_service
+
+        packet = legacy_service.read_legacy_bridge_cache()
+        summary = packet["legacy_audit_first_round_intake"]
+        rows = packet["legacy_audit_first_round_intake_rows"]
+
+        self.assertEqual(
+            summary["status"],
+            "legacy_audit_first_round_intake_visible_admin_debug_only",
+        )
+        self.assertTrue(summary["legacy_admin_debug_surface_only"])
+        self.assertFalse(summary["keep_promotion_allowed_this_round"])
+        self.assertFalse(summary["ordinary_entry_promotion_allowed_this_round"])
+        self.assertEqual(summary["row_count"], len(rows))
+        self.assertEqual(packet["counts"]["legacy_audit_first_round_intake_row_count"], len(rows))
+        self.assertIn("safe_screenshot_reference", summary["safe_attachment_sources"])
+        self.assertIn("raw_packet_bodies", summary["forbidden_attachment_sources"])
+        self.assertNotIn("KEEP", summary["allowed_statuses"])
+        self.assertIn(
+            "local_legacy_audit_first_round_intake",
+            {row["api"] for row in packet["call_ledger"]},
+        )
+        for row in rows:
+            self.assertEqual(row["allowed_initial_status"], "direct_evidence_intake_pending")
+            self.assertTrue(row["legacy_admin_debug_surface_only"])
+            self.assertFalse(row["keep_promotion_allowed_this_round"])
+            self.assertFalse(row["ordinary_entry_promotion_allowed_this_round"])
+            self.assertIn("user_observation", row["required_fields"])
+
     def test_next_session_push_gate_contract_uses_signal_capability_parity_wording(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "scripts" / "next_session_map_contract.py").read_text(
@@ -1430,7 +1460,14 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
             self.assertIn(question_key, legacy_service)
 
         self.assertIn("commit_questions", legacy_service)
+        self.assertIn("legacy_audit_first_round_intake", legacy_service)
+        self.assertIn("legacy_audit_first_round_intake_rows", legacy_service)
+        self.assertIn("legacy_audit_first_round_intake_visible_admin_debug_only", legacy_service)
         self.assertIn("migrationCommitQuestionRows", legacy_page)
+        self.assertIn("legacyAuditFirstRoundIntakeRows", legacy_page)
+        self.assertIn("Legacy first-round intake", legacy_page)
+        self.assertIn("admin/debug only，不升级 KEEP", legacy_page)
+        self.assertIn("不让旧模块进入普通入口", legacy_page)
         self.assertIn("迁移 commit checkpoint", legacy_page)
         self.assertIn("required_for_future_migration_commit", legacy_page)
         self.assertIn("不是 production evidence", legacy_page)
@@ -1440,6 +1477,10 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         )
         self.assertLess(
             legacy_page.index("迁移 commit checkpoint"),
+            legacy_page.index("Legacy first-round intake"),
+        )
+        self.assertLess(
+            legacy_page.index("Legacy first-round intake"),
             legacy_page.index("Legacy 模块 UX/bug 分类"),
         )
 

@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import config
 from server.services import packet_service
 from storage.sqlite_meta import SQLiteMetaStore
 
@@ -706,6 +707,66 @@ def _ordinary_entrance_acceptance_audit() -> dict[str, Any]:
             "It is not production acceptance, does not open Streamlit, and does not create tasks."
         ),
     }
+
+
+def _legacy_audit_first_round_intake_status() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    contract = config.get_command_center_legacy_audit_classification_contract()
+    required_fields = list(contract.get("intake_required_fields") or [])
+    safe_sources = list(contract.get("intake_safe_attachment_sources") or [])
+    forbidden_sources = list(contract.get("intake_forbidden_attachment_sources") or [])
+    allowed_statuses = list(contract.get("intake_allowed_statuses") or [])
+    focus_workflows = list(contract.get("first_round_focus_workflows") or [])
+    rows = [
+        {
+            "workflow_group": workflow,
+            "required_fields": list(required_fields),
+            "allowed_initial_status": "direct_evidence_intake_pending",
+            "safe_attachment_sources": list(safe_sources),
+            "forbidden_attachment_sources": list(forbidden_sources),
+            "keep_promotion_allowed_this_round": False,
+            "ordinary_entry_promotion_allowed_this_round": False,
+            "legacy_admin_debug_surface_only": True,
+            "next_action": "capture_safe_user_observation_lineage_and_freeze_decision",
+        }
+        for workflow in focus_workflows
+    ]
+    summary = {
+        "schema_version": "legacy_audit_first_round_intake_status.v1",
+        "status": "legacy_audit_first_round_intake_visible_admin_debug_only",
+        "config_source": "config.get_command_center_legacy_audit_classification_contract",
+        "first_round_intake_rule": contract.get("first_round_intake_rule"),
+        "required_fields": required_fields,
+        "safe_attachment_sources": safe_sources,
+        "forbidden_attachment_sources": forbidden_sources,
+        "allowed_statuses": allowed_statuses,
+        "row_count": len(rows),
+        "focus_workflow_count": len(focus_workflows),
+        "keep_promotion_allowed_this_round": False,
+        "ordinary_entry_promotion_allowed_this_round": False,
+        "legacy_admin_debug_surface_only": True,
+        "production_evidence_rule": contract.get("production_evidence_rule"),
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_open_streamlit": True,
+        "does_not_run_legacy_tools": True,
+        "does_not_create_tasks": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": [
+            {
+                "api": "local_legacy_audit_first_round_intake",
+                "source_snapshot": "config_legacy_audit_classification_contract",
+                "row_count": len(rows),
+                "call_status": "local_static_read",
+                "local_fetched_at": _now_iso(),
+                "external": False,
+            }
+        ],
+    }
+    return summary, rows
 
 
 def _streamlit_retirement_readiness_receipt(
@@ -1744,6 +1805,9 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         snapshot_available=bool(snapshot),
     )
     ordinary_entrance_acceptance_audit = _ordinary_entrance_acceptance_audit()
+    legacy_audit_first_round_intake, legacy_audit_first_round_intake_rows = (
+        _legacy_audit_first_round_intake_status()
+    )
     fallback_dependency_contract = _streamlit_fallback_dependency_contract(primary_workflow_exit_audit["route_rows"])
     ordinary_parity_review = _read_streamlit_ordinary_workflow_parity_review_packet()
     ordinary_parity_review_rows = _as_list(ordinary_parity_review.get("rows"))
@@ -1804,6 +1868,8 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         "ordinary_entrance_acceptance_audit": ordinary_entrance_acceptance_audit,
         "ordinary_entrance_acceptance_rows": ordinary_entrance_acceptance_audit["rows"],
         "legacy_bug_ux_module_rows": ordinary_entrance_acceptance_audit["legacy_bug_ux_module_rows"],
+        "legacy_audit_first_round_intake": legacy_audit_first_round_intake,
+        "legacy_audit_first_round_intake_rows": legacy_audit_first_round_intake_rows,
         "streamlit_fallback_dependency_contract": fallback_dependency_contract,
         "streamlit_fallback_dependency_rows": fallback_dependency_contract["rows"],
         "streamlit_retirement_readiness_receipt": retirement_readiness_receipt,
@@ -1852,6 +1918,9 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
             "ordinary_entrance_acceptance_complete_count": 1
             if ordinary_entrance_acceptance_audit["ordinary_entrance_acceptance_complete"]
             else 0,
+            "legacy_audit_first_round_intake_row_count": len(
+                legacy_audit_first_round_intake_rows
+            ),
             "streamlit_fallback_dependency_count": fallback_dependency_contract["full_streamlit_removal_blocker_count"],
             "ordinary_fallback_dependency_count": fallback_dependency_contract["ordinary_fallback_dependency_count"],
             "admin_debug_fallback_retained_count": fallback_dependency_contract["admin_debug_fallback_retained_count"],
@@ -1892,6 +1961,7 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         + retirement_readiness_receipt["call_ledger"]
         + durable_evidence_recipe["call_ledger"]
         + ordinary_entrance_acceptance_audit["call_ledger"]
+        + legacy_audit_first_round_intake["call_ledger"]
         + ordinary_parity_review_call_ledger
         + fallback_retirement_review_call_ledger,
         "streamlit_ordinary_workflow_parity_review_ready": ordinary_parity_review.get(
@@ -1928,6 +1998,11 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         "ordinary_entrance_acceptance_complete": ordinary_entrance_acceptance_audit[
             "ordinary_entrance_acceptance_complete"
         ],
+        "legacy_audit_first_round_intake_ready": True,
+        "legacy_audit_first_round_intake_status": legacy_audit_first_round_intake["status"],
+        "legacy_audit_first_round_intake_row_count": len(
+            legacy_audit_first_round_intake_rows
+        ),
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,
@@ -1945,6 +2020,7 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
             "streamlit_ordinary_workflow_parity_review 只有显式 POST task 后才会出现；它是本地 parity inventory evidence，不是生产退出完成。",
             "streamlit_fallback_retirement_review 只有显式 POST task 后才会出现；它是本地 fallback retirement review evidence，不是 fallback 删除或 production 退场完成。",
             "ordinary_entrance_acceptance_audit 只是三入口 Legacy/UX 审计地图；不是生产验收，也不会创建任务。",
+            "legacy_audit_first_round_intake 只是第一轮取证模板；不能升级 KEEP，也不能让旧模块进入普通入口。",
         ],
     }
     if status == "cache_missing":
