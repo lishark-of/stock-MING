@@ -237,6 +237,25 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("不证明 Streamlit parity 或生产替代", text)
         self.assertNotIn("性能 trace durable promotion、Streamlit parity 和生产替代", text)
 
+    def test_ltg10_long_term_goal_uses_capability_replacement_language(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "docs" / "command_center_3_long_term_goals.md").read_text(
+            encoding="utf-8"
+        )
+        section = text.split("## LTG-10: Streamlit 完全退出普通主流程", 1)[1].split(
+            "## LTG-11:", 1
+        )[0]
+
+        self.assertIn("ordinary capability replacement evidence", section)
+        self.assertIn("Candidate Radar signal/capability replacement evidence", section)
+        self.assertIn("provider-backed acceptance", section)
+        self.assertIn("explicit_replacement_parity_review_then_streamlit_fallback_retirement_review", section)
+        self.assertIn("compatibility id", section)
+        self.assertIn("not old Streamlit UI parity", section)
+        self.assertNotIn("ordinary workflow replacement parity", section)
+        self.assertNotIn("Candidate Radar replacement parity", section)
+        self.assertNotIn("prove replacement parity", section)
+
     def test_app_migration_plan_records_no_blind_copy_and_audit_gate(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "app_migration_plan.md").read_text(encoding="utf-8")
