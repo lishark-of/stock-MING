@@ -887,6 +887,11 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
             architecture,
         )
         self.assertIn(
+            "streamlit_retirement_readiness_receipt` 只选择下一步 ordinary capability replacement evidence review / fallback-retirement review",
+            architecture,
+        )
+        self.assertIn("这不是旧 UI/navigation parity review", architecture)
+        self.assertIn(
             "React/Tauri 普通入口更简单、更清晰、更可靠且 fallback-retirement evidence 通过",
             architecture,
         )
@@ -898,6 +903,7 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
             "Streamlit fallback removal、replacement parity、admin/debug retirement",
             architecture,
         )
+        self.assertNotIn("显式 parity / fallback-retirement review", architecture)
 
     def test_ltg13_streamlit_fallback_retirement_requires_signal_capability_not_ui_parity(self):
         root = Path(__file__).resolve().parents[1]

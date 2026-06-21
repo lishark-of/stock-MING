@@ -334,7 +334,7 @@ Command Center 3.0 的外联边界采用默认安全、显式升级的运行模�
 - `cache_only` 下 Tushare、DeepSeek、GitHub 不在应用启动或 cache GET 时自动调用；`live_light` 只能在 cache 初始渲染后通过 POST bootstrap task 触发轻量 Tushare 和可选 DeepSeek pro。
 - GitHub probe 不进入 `live_light` 默认启动链路，仍需独立按钮或显式 task mode。
 - 因子结果只进入 evidence_effects 预览，不修改 strategy action。
-- Streamlit 仅作为 legacy/admin/debug 入口保留，普通主路径迁往 React/Vite/Tauri + FastAPI；Legacy 启动不创建任务、不自动调用外部源、不绕过 strategy guardrails。Legacy 页面展示的 `primary_workflow_exit_audit` 只做本地退出准备度审计，不打开 Streamlit、不运行旧工具、不移除 fallback；`streamlit_retirement_readiness_receipt` 只选择下一步显式 parity / fallback-retirement review，并继续阻断页面渲染退场、删除 `app.py`、旧工具执行、任务创建、外联和交易。只有 route coverage 无 fallback blockers、迁移清单清空并且旧保护仍在时，才能进入完全退场。
+- Streamlit 仅作为 legacy/admin/debug 入口保留，普通主路径迁往 React/Vite/Tauri + FastAPI；Legacy 启动不创建任务、不自动调用外部源、不绕过 strategy guardrails。Legacy 页面展示的 `primary_workflow_exit_audit` 只做本地退出准备度审计，不打开 Streamlit、不运行旧工具、不移除 fallback；`streamlit_retirement_readiness_receipt` 只选择下一步 ordinary capability replacement evidence review / fallback-retirement review，并继续阻断页面渲染退场、删除 `app.py`、旧工具执行、任务创建、外联和交易；这不是旧 UI/navigation parity review。只有 route coverage 无 fallback blockers、迁移清单清空并且旧保护仍在时，才能进入完全退场。
 - 现有 packet key 保持不变。
 - 不使用 `git add .`；每个提交必须按文件或 hunk 精确 staging。
 - 不 push，等待用户确认。
