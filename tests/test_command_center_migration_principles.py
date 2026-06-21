@@ -199,11 +199,22 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
             text,
         )
         self.assertIn("seed-only；直接 UX/bug evidence pending before `KEEP`", text)
+        self.assertIn(
+            "seed-only；browser/performance/retained signal-capability no-feature-loss evidence pending before `KEEP`",
+            text,
+        )
+        self.assertIn(
+            "继续补 browser/performance/retained signal-capability no-feature-loss evidence",
+            text,
+        )
         self.assertIn("旧 Streamlit 首页按钮 / rerun flow 冻结，不搬 UI/state coupling", text)
         self.assertIn("旧同步单票作战室和 AI-as-action 文案冻结", text)
         self.assertIn("旧 fallback 雷达路径、推荐式文案和未证明性能路径冻结", text)
+        self.assertIn("旧 Streamlit chart UI 与 receipt-as-replacement 口径冻结", text)
         self.assertIn("旧普通页 provider health 大表和自动探测路径冻结", text)
         self.assertIn("不迁移旧跨市场建议按钮；只允许重建为解释已有证据", text)
+        self.assertNotIn("browser/performance/parity evidence pending before `KEEP`", text)
+        self.assertNotIn("继续补 browser/performance/parity evidence", text)
         self.assertIn("不能从 route inventory、legacy tab name、本地 receipt 或 no-feature-loss matrix 直接升级为 `KEEP`", text)
         self.assertIn("`KEEP` 提升门槛必须是直接审计证据", text)
         self.assertIn("observed user action / workflow problem", text)
