@@ -24,6 +24,10 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
             "keep_promotion_decision",
         ):
             self.assertIn(slot, self.protocol)
+        self.assertIn("Separate `inventory_or_scaffold_evidence` from `direct_user_evidence`", self.protocol)
+        self.assertIn("tied to an observed user action/workflow problem", self.protocol)
+        self.assertIn("the checkpoint must keep direct evidence pending", self.protocol)
+        self.assertIn("must not promote `KEEP`", self.protocol)
         self.assertIn("Legacy evidence attachment safety", self.protocol)
         self.assertIn("safe screenshot reference", self.protocol)
         self.assertIn("redacted reviewer note", self.protocol)
