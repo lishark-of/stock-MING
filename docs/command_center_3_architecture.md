@@ -18,6 +18,8 @@ Streamlit `app.py` 保留，但定位调整为 legacy/admin/debug，不再作为
 
 架构迁移不是把 Streamlit UI、旧导航、已知 bug 或历史 patchwork 一比一搬到 React/Tauri。React route 层的普通用户中心应优先围绕 `今日作战台 / Daily Command Center`、`股票量化推演 / Stock Quant Projection` 和 `下一票雷达 / Candidate Radar` 重组服务 packets、数据源、信号、证据链和研究流程；每个入口必须让 next click、Tushare/cache/DeepSeek/pending source、missing evidence、research-only not-buy/sell boundary、blocked/degraded state 和 last successful cache/result 可见。`股票量化推演 / Stock Quant Projection` 可以读取 `GET /api/bootstrap/status` 作为只读 runtime-mode banner，把 `cache_only/manual/live_light/live_full` 当前口径放在普通用户摘要里；这不是 bootstrap launcher，不创建 `POST /api/bootstrap/live-startup`，不调用 provider/model，不写配置或 cache，不暴露 token/key，也不能当成 production evidence 或完整 `live_light` 实现。任何存在 known bug、difficult-to-use UX、confusing workflow 或 unclear data lineage 的 legacy module，都必须保持 `REDESIGN`、`LEGACY-DEBUG` 或 `RETIRE`，直到有直接 UX/bug evidence 证明它可以进入普通 workflow。工程合同、receipt、runbook 和 LTG audit 默认进入 Settings / Developer / Audit，只有直接解释当前决策面时才进入普通页。
 
+普通入口状态口径必须保持首屏可审计：每个入口先显示 one primary safe next click、source chip（`cache` / `Tushare` / `DeepSeek` / `pending` / `degraded`）、missing-evidence row、research-only/no-buy-sell label、blocked/degraded reason 和 last successful cache/result；如果任一状态不可用，显示 disabled/degraded reason 与 last known cache，而不是让普通用户回到工程 audit table、legacy tab 或 JSON receipt 里寻找答案。
+
 ## 迁移进度基线
 
 后续规划以这张基线为准，不在每轮重新估算方向：
