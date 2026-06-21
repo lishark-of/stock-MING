@@ -268,6 +268,18 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("provider-backed acceptance", section)
         self.assertNotIn("ordinary workflow parity、Candidate Radar parity、provider-backed parity", section)
 
+    def test_migration_map_streamlit_row_keeps_receipts_from_parity_claim(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "docs" / "migration_map.md").read_text(encoding="utf-8")
+        section = text.split("| Streamlit 旧工作台 |", 1)[1].split(
+            "## 当前可用 API", 1
+        )[0]
+
+        self.assertIn("ordinary capability replacement evidence", section)
+        self.assertIn("receipt/合同通过不等于 Streamlit fallback removal", section)
+        self.assertIn("complete ordinary-workflow exit", section)
+        self.assertNotIn("fallback removal、replacement parity、admin/debug retirement", section)
+
     def test_app_migration_plan_records_no_blind_copy_and_audit_gate(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "app_migration_plan.md").read_text(encoding="utf-8")
