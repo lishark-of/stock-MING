@@ -89,6 +89,7 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "legacy_decision_next_session_map_replacement_ready_audit_pending",
             "legacy_decision_candidate_radar_replacement_ready_audit_pending",
             "legacy_decision_factor_risk_provider_health_split_audit_pending",
+            "legacy_decision_discipline_backtest_legacy_debug_retained_audit_pending",
         ):
             self.assertIn(decision_row, self.migration_map)
 
@@ -100,6 +101,9 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
         self.assertIn("provider health detail remains `LEGACY-DEBUG`", self.migration_map)
         self.assertIn("provider detail stays out of ordinary flow", self.migration_map)
         self.assertIn("engineering tables no longer dominate ordinary pages", self.migration_map)
+        self.assertIn("discipline/backtest` 仍固定为 `LEGACY-DEBUG`", self.migration_map)
+        self.assertIn("block ordinary entry until redesigned", self.migration_map)
+        self.assertIn("synchronous backtest, deep forms and ordinary trading advice are not migrated", self.migration_map)
 
 
 if __name__ == "__main__":
