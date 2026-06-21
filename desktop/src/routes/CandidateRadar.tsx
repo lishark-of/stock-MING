@@ -368,8 +368,11 @@ export default function CandidateRadar() {
     Number(counts.degraded_mode_active_count ?? 0) ? "degraded" : "steady"
   ].join(" ");
   const ordinaryNextClick = Number(counts.candidate_count ?? 0)
-    ? "先看候选列表；需要更新时点击运行本地快扫，搜单票时点击生成 3.0 量化推演"
-    : "先点击运行本地快扫，或输入自选股票池后扫描，再查看候选列表";
+    ? "先查看下一票候选池"
+    : "先点击运行本地快扫";
+  const ordinaryOptionalNextClick = Number(counts.candidate_count ?? 0)
+    ? "需要更新时再运行本地快扫；搜单票时输入代码后点击生成 3.0 量化推演"
+    : "也可以输入自选股票池后扫描；搜单票时走生成 3.0 量化推演";
   const candidateRadarRuntimeModeLabel = {
     cache_only: "只读缓存模式",
     manual: "手动任务模式",
@@ -473,6 +476,7 @@ export default function CandidateRadar() {
         <MetricGrid
           items={[
             { label: "下一步", value: ordinaryNextClick },
+            { label: "可选补证", value: ordinaryOptionalNextClick },
             { label: "数据来源", value: ordinarySourceState },
             { label: "缺少证据", value: ordinaryMissingEvidence, tone: ordinaryMissingEvidence.includes("待补") || ordinaryMissingEvidence.includes("阻断") || ordinaryMissingEvidence.includes("验收") ? "warn" : "good" },
             { label: "阻断/降级", value: ordinaryBlockedState, tone: ordinaryBlockedState.includes("未标记") ? "good" : "warn" },

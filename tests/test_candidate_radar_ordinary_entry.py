@@ -18,6 +18,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
 
         for required_label in (
             'label: "下一步"',
+            'label: "可选补证"',
             'label: "数据来源"',
             'label: "缺少证据"',
             'label: "阻断/降级"',
@@ -28,6 +29,12 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
 
         self.assertLess(self.page.index('title="普通用户雷达摘要"'), self.page.index("<summary>开发 / 审计指标</summary>"))
         self.assertLess(self.page.index('title="下一票候选池"'), self.page.index("<summary>扫描覆盖 / 验收审计</summary>"))
+        self.assertIn('const ordinaryNextClick = Number(counts.candidate_count ?? 0)', self.page)
+        self.assertIn('    ? "先查看下一票候选池"', self.page)
+        self.assertIn('    : "先点击运行本地快扫";', self.page)
+        self.assertIn("ordinaryOptionalNextClick", self.page)
+        self.assertIn("需要更新时再运行本地快扫", self.page)
+        self.assertIn("搜单票时输入代码后点击生成 3.0 量化推演", self.page)
         self.assertIn("候选不是买入指令；不真实交易、不下单、不改交易策略", self.page)
         self.assertIn("普通用户先看上方雷达摘要、候选池和搜票量化推演", self.page)
 
