@@ -23,6 +23,8 @@ The app still contains several large functional chains:
 
 Heavy tasks remain governed by runtime mode. `cache_only` keeps app open, render, FastAPI startup, and GET cache/status routes fully read-only. `manual` keeps external work behind explicit user buttons or POST tasks. `live_light` may create or reuse a bounded local background POST task after cache render, but provider/model execution still requires ledgers, redaction, task governance, and local fallback/worker boundaries. Full backtests, full-market scans, heavy Tushare/AkShare/yfinance/Supabase refreshes, and real trading paths remain explicit-button or separately authorized work.
 
+Provider/model evidence in this plan requires redacted `call_ledger` / `model_ledger` rows before it can be treated as real external evidence; missing ledger rows keep the result local or pending and cannot promote `live_light`, LTG completion, or production acceptance. Migration reports must use safe summaries only: no raw prompts, raw model output, unredacted provider errors, credential-like values, or raw packet bodies; model content may be reported only as whitelisted fields with `model_ledger` status and redaction review.
+
 ## Migration Principle Correction
 
 Command Center 3.0 must not copy the old Streamlit app one-to-one. Legacy parity means preserving useful user capabilities, data sources, signals, evidence chains, and research workflows; it does not mean copying legacy UI, navigation, bugs, historical patchwork, or confusing workflows just because they existed in Streamlit.
