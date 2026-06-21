@@ -348,6 +348,22 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("provider parity scope", section)
         self.assertNotIn("legacy parity", section)
 
+    def test_migration_map_candidate_radar_table_uses_signal_capability_language(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "docs" / "migration_map.md").read_text(encoding="utf-8")
+        row = text.split("| 下一票候选雷达 |", 1)[1].split(
+            "| 风险护栏 / 安全线 |",
+            1,
+        )[0]
+
+        self.assertIn("legacy signal/capability inventory", row)
+        self.assertIn("provider-backed radar signal/capability acceptance", row)
+        self.assertIn("provider-backed signal/capability 缺口", row)
+        self.assertIn("stage/signal-capability/required-signal/blocker rows", row)
+        self.assertNotIn("legacy parity inventory", row)
+        self.assertNotIn("provider-backed parity", row)
+        self.assertNotIn("stage/parity/required-signal", row)
+
     def test_migration_map_streamlit_row_keeps_receipts_from_parity_claim(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "migration_map.md").read_text(encoding="utf-8")
