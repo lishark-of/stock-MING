@@ -4,8 +4,8 @@ from pathlib import Path
 
 class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
     def setUp(self):
-        root = Path(__file__).resolve().parents[1]
-        self.page = (root / "desktop" / "src" / "routes" / "CandidateRadar.tsx").read_text(
+        self.root = Path(__file__).resolve().parents[1]
+        self.page = (self.root / "desktop" / "src" / "routes" / "CandidateRadar.tsx").read_text(
             encoding="utf-8"
         )
 
@@ -23,6 +23,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "缺少证据"',
             'label: "阻断/降级"',
             'label: "最近可用缓存"',
+            'label: "任务边界"',
             'label: "仅供研究"',
         ):
             self.assertIn(required_label, self.page)
@@ -35,8 +36,40 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("ordinaryOptionalNextClick", self.page)
         self.assertIn("需要更新时再运行本地快扫", self.page)
         self.assertIn("搜单票时输入代码后点击生成 3.0 量化推演", self.page)
+        self.assertIn("雷达摘要只读展示候选缓存", self.page)
+        self.assertIn("manual/live_light 补证必须走 POST task / worker", self.page)
         self.assertIn("候选不是买入指令；不真实交易、不下单、不改交易策略", self.page)
         self.assertIn("普通用户先看上方雷达摘要、候选池和搜票量化推演", self.page)
+
+    def test_three_ordinary_entrances_show_summaries_before_developer_audit(self):
+        pages = {
+            "daily": {
+                "path": self.root / "desktop" / "src" / "routes" / "CommandCenterHome.tsx",
+                "summary": 'title="今日作战台摘要"',
+                "audit": "<summary>开发 / 审计详情</summary>",
+                "boundary": "dailyCommandTaskBoundary",
+            },
+            "quant": {
+                "path": self.root / "desktop" / "src" / "routes" / "FactorQuantHub.tsx",
+                "summary": 'title="普通用户量化推演摘要"',
+                "audit": "<summary>开发 / 审计指标</summary>",
+                "boundary": "ordinaryQuantTaskBoundary",
+            },
+            "radar": {
+                "path": self.root / "desktop" / "src" / "routes" / "CandidateRadar.tsx",
+                "summary": 'title="普通用户雷达摘要"',
+                "audit": "<summary>开发 / 审计指标</summary>",
+                "boundary": "ordinaryTaskBoundary",
+            },
+        }
+
+        for name, config in pages.items():
+            with self.subTest(name=name):
+                text = config["path"].read_text(encoding="utf-8")
+                self.assertLess(text.index(config["summary"]), text.index(config["audit"]))
+                self.assertLess(text.index('label: "任务边界"'), text.index(config["audit"]))
+                self.assertIn(config["boundary"], text)
+                self.assertIn("不在 React 渲染中直连 Tushare 或 DeepSeek", text)
 
     def test_search_quant_projection_keeps_task_boundary_visible(self):
         self.assertIn("searchSymbol.trim()", self.page)
@@ -46,7 +79,11 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("已确认输入：${searchSymbol.trim()}", self.page)
         self.assertIn("先输入并确认股票代码，按钮启用后再点击生成 3.0 量化推演", self.page)
         self.assertIn("确认代码后点击生成 3.0 量化推演", self.page)
-        self.assertLess(self.page.index('label: "确认代码"'), self.page.index('label: "任务边界"'))
+        quant_projection_start = self.page.index('title="搜票量化推演"')
+        self.assertLess(
+            self.page.index('label: "确认代码"', quant_projection_start),
+            self.page.index('label: "任务边界"', quant_projection_start),
+        )
         self.assertIn("当前只创建本地记录", self.page)
         self.assertIn("live_light 补证也必须经 POST task / worker", self.page)
         self.assertIn("不在页面渲染中直连 Tushare 或 DeepSeek", self.page)

@@ -411,6 +411,8 @@ export default function CandidateRadar() {
   const ordinaryLastCache = String(
     cache.loaded_at ?? radarPacket.generated_at ?? radarPacket.updated_at ?? "暂无最近可用缓存"
   );
+  const ordinaryTaskBoundary =
+    "雷达摘要只读展示候选缓存；manual/live_light 补证必须走 POST task / worker，不在 React 渲染中直连 Tushare 或 DeepSeek";
   const quantProjectionCanSubmit = Boolean(searchSymbol.trim());
   const quantProjectionDisplaySymbol = searchSymbol.trim() || String(searchQuantProjectionReceipt.symbol ?? "");
   const quantProjectionInputValidation = searchQuantProjectionReceipt.symbol_valid === false
@@ -484,6 +486,7 @@ export default function CandidateRadar() {
             { label: "缺少证据", value: ordinaryMissingEvidence, tone: ordinaryMissingEvidence.includes("待补") || ordinaryMissingEvidence.includes("阻断") || ordinaryMissingEvidence.includes("验收") ? "warn" : "good" },
             { label: "阻断/降级", value: ordinaryBlockedState, tone: ordinaryBlockedState.includes("未标记") ? "good" : "warn" },
             { label: "最近可用缓存", value: ordinaryLastCache },
+            { label: "任务边界", value: ordinaryTaskBoundary },
             { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" }
           ]}
         />
