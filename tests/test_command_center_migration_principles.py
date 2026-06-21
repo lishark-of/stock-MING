@@ -305,6 +305,10 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
 
         self.assertIn("任何 `configured=true` 都只是 operator intent", section)
         self.assertIn("不是 effective external call", section)
+        self.assertIn("`configured_switch_rule`", section)
+        self.assertIn("`effective_external_call_rule`", section)
+        self.assertIn("`configured=true` 只是 operator intent 而不是 effective external call", section)
+        self.assertIn("effective external work 仍需 mode/task gate、ledger、redaction、promotion gate", section)
         self.assertIn("effective external work 仍需 mode/task gate", section)
         self.assertIn("runtime config 不能证明完整 `live_light` workflow", section)
 
