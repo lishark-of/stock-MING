@@ -703,6 +703,10 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         )
 
         self.assertIn("Migration principle docs guard", push_gate)
+        self.assertIn(
+            "Migration principle docs guard: configured_switch_rule / effective_external_call_rule",
+            push_gate,
+        )
         self.assertIn("tests.test_command_center_migration_principles", push_gate)
         self.assertIn("scripts/push_gate_3_0.sh mirrors", ci_workflow)
         self.assertIn("-m unittest tests.test_command_center_migration_principles", ci_workflow)

@@ -285,7 +285,7 @@ PY
 }
 
 run_step "Python unittest" "$PYTHON_BIN" -m unittest discover -s tests
-run_step "Migration principle docs guard" "$PYTHON_BIN" -m unittest tests.test_command_center_migration_principles
+run_step "Migration principle docs guard: configured_switch_rule / effective_external_call_rule" "$PYTHON_BIN" -m unittest tests.test_command_center_migration_principles
 run_step "Desktop build" env DESKTOP_BUILD_OUT_DIR="$DESKTOP_BUILD_OUT_DIR" bash -c 'cd desktop && npm run build -- --configLoader runner --outDir "$DESKTOP_BUILD_OUT_DIR" --emptyOutDir'
 run_step "Command Center 3 smoke" env PYTHON_BIN="$PYTHON_BIN" scripts/smoke_3_0.sh
 run_step "Data Health freshness contract" "$PYTHON_BIN" scripts/data_health_freshness_contract.py
