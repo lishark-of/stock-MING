@@ -894,10 +894,14 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("`effective_external_call_rule`", architecture)
         self.assertIn("effective external work 仍需 mode/task gate、ledger、redaction 和 promotion gate", architecture)
         self.assertIn("runtime config 不能证明完整 `live_light` workflow", architecture)
-        self.assertIn("legacy signal/capability parity 未完成边界", architecture)
+        self.assertIn("retained signal/capability coverage evidence 未完成边界", architecture)
         self.assertIn("不复制 Streamlit 图表 UI 或旧 tab navigation", architecture)
-        self.assertIn("legacy signal/capability parity、browser visual QA", architecture)
-        self.assertIn("legacy signal/capability parity 和 production replacement 继续标为 pending", architecture)
+        self.assertIn("retained signal/capability coverage evidence、browser visual QA", architecture)
+        echart_maturity_section = architecture.split(
+            "`GET /api/next-session/cache` 已输出 ECharts 成熟版只读合同",
+            1,
+        )[1].split("- React 已加入受控动效清晰度层", 1)[0]
+        self.assertNotIn("legacy signal/capability parity", echart_maturity_section)
         self.assertIn("普通入口状态口径必须保持首屏可审计", architecture)
         self.assertIn("one primary safe next click", architecture)
         self.assertIn("source chip（`cache` / `Tushare` / `DeepSeek` / `pending` / `degraded`）", architecture)
