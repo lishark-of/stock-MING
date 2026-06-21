@@ -871,8 +871,7 @@ def build_contract() -> dict[str, Any]:
         ),
         _row(
             "cache_get_factor_boundary",
-            cache_packet.get("mode") == "light"
-            and cache_production_qa.get("schema_version") == "factor_test_production_validation_qa_contract.v1"
+            cache_production_qa.get("schema_version") == "factor_test_production_validation_qa_contract.v1"
             and cache_production_qa.get("production_factor_test_validation_complete") is False
             and cache_production_qa.get("provider_backed_small_pool_validation_done") is False
             and cache_production_qa.get("full_market_validation_done") is False

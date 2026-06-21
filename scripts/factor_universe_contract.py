@@ -811,7 +811,10 @@ def build_contract() -> dict[str, Any]:
             "frontend_displays_plan_and_does_not_compute_universe",
             "export function postTask" in api_client
             and "fetch(`${API_BASE}${path}`" in api_client
-            and "import { getFactorQuantCache, postTask" in factor_page
+            and 'from "../api/client"' in factor_page
+            and "getFactorQuantCache" in factor_page
+            and "postTask" in factor_page
+            and "TaskCreationEnvelope" in factor_page
             and "launchTask(\"/api/factor-quant/universe-research-plan\"" in factor_page
             and "launchTask(\"/api/factor-quant/universe-worker-batch-dry-run\"" in factor_page
             and "launchTask(\"/api/factor-quant/universe-worker-batch-execution-request\"" in factor_page

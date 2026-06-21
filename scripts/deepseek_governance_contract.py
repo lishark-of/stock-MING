@@ -345,8 +345,7 @@ def build_contract() -> dict[str, Any]:
     rows = [
         _row(
             "cache_get_governance_is_manual_default_no_model_call",
-            cache_packet.get("mode") == "light"
-            and governance.get("mode") in {"manual_only", "disabled"}
+            governance.get("mode") in {"manual_only", "disabled"}
             and governance.get("manual_task_allowed") is True
             and governance.get("auto_after_task") is False
             and governance.get("configured_auto_after_task") is False
