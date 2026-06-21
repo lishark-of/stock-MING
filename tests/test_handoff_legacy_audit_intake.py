@@ -8,6 +8,9 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
         self.protocol = (root / "docs" / "codex_handoff_protocol.md").read_text(
             encoding="utf-8"
         )
+        self.long_term_goals = (
+            root / "docs" / "command_center_3_long_term_goals.md"
+        ).read_text(encoding="utf-8")
 
     def test_handoff_requires_legacy_direct_evidence_intake_slots(self):
         self.assertIn("Legacy direct-evidence intake", self.protocol)
@@ -68,6 +71,26 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
         self.assertIn("stage-scope rows are not remote CI evidence", self.protocol)
         self.assertIn("matching head SHA/commit with current GitHub Actions green status or reviewed failure logs", self.protocol)
         self.assertIn("explicit user push confirmation before any push", self.protocol)
+
+    def test_long_term_goal_parity_wording_means_capability_not_legacy_ui_copy(self):
+        self.assertIn("chart capability parity", self.long_term_goals)
+        self.assertIn(
+            "React/Tauri capability parity, Legacy Bug / UX Audit evidence, and fallback safety",
+            self.long_term_goals,
+        )
+        self.assertIn(
+            "no-feature-loss signal/capability parity recipe (not Streamlit UI copy)",
+            self.long_term_goals,
+        )
+        self.assertIn(
+            "React/ECharts replaces Streamlit main next-session visual after Legacy Bug / UX Audit and no signal-group loss proof",
+            self.long_term_goals,
+        )
+        self.assertIn(
+            "signal/capability no-feature-loss QA, legacy parity acceptance receipt (not old radar UI/navigation copy)",
+            self.long_term_goals,
+        )
+        self.assertIn("preserve legacy signal groups", self.long_term_goals)
 
 
 if __name__ == "__main__":
