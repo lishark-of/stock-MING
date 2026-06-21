@@ -91,6 +91,15 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
         self.assertIn("`configured_switch_rule`", self.protocol)
         self.assertIn("`effective_external_call_rule`", self.protocol)
 
+    def test_docs_config_cycles_are_not_full_live_light_or_executor_evidence(self):
+        self.assertIn("Docs/config/runtime-mode wording cycles may define", self.protocol)
+        self.assertIn("mode vocabulary, config rows, task contracts, or reporting checklist", self.protocol)
+        self.assertIn("reported as wording/config evidence only", self.protocol)
+        self.assertIn("not a full `live_light` implementation", self.protocol)
+        self.assertIn("not a provider/model executor", self.protocol)
+        self.assertIn("not frontend wiring completion", self.protocol)
+        self.assertIn("not production acceptance evidence", self.protocol)
+
     def test_checkpoint_report_requires_cycle_scope_and_runtime_boundaries(self):
         self.assertIn("at most one main target and one supporting target", self.protocol)
         self.assertIn("modify no more than five files", self.protocol)

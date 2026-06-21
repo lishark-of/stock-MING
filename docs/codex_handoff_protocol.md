@@ -17,6 +17,7 @@ ChatGPT designs task
 - Codex does not push by default.
 - Each round should be a small, reversible patch.
 - Migration-strategy, docs/config, or runtime-mode wording cycles must stay bounded to at most one main target and one supporting target, modify no more than five files, and end with a `Checkpoint` that states the evidence boundary.
+- Docs/config/runtime-mode wording cycles may define the mode vocabulary, config rows, task contracts, or reporting checklist, but they must be reported as wording/config evidence only: not a full `live_light` implementation, not a provider/model executor, not frontend wiring completion, and not production acceptance evidence.
 - Legacy parity means preserving useful user capabilities, data sources, signals, evidence chains, and research workflows; it does not mean copying legacy UI, navigation, bugs, historical patchwork, or confusing old workflows.
 - Before any legacy Streamlit workflow is promoted into an ordinary React/Tauri path, the round must name its Legacy Bug / UX Audit classification (`KEEP`, `REDESIGN`, `LEGACY-DEBUG`, or `RETIRE`) and keep known bugs, confusing UX, historical patchwork, or unclear data lineage out of ordinary workflow code.
 - Do not add broad LTG contracts, receipts, runbooks, or stage-scope manifests unless the round names the current release blocker they directly reduce.
