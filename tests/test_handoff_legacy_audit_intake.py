@@ -60,6 +60,8 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
         self.assertIn("`live_light` remains bounded local task creation after cache render", self.protocol)
         self.assertIn("`live_full` remains reserved", self.protocol)
         self.assertIn("configured source/release switches remain operator intent rather than effective external calls", self.protocol)
+        self.assertIn("`configured_switch_rule`", self.protocol)
+        self.assertIn("`effective_external_call_rule`", self.protocol)
 
     def test_checkpoint_report_requires_cycle_scope_and_runtime_boundaries(self):
         self.assertIn("at most one main target and one supporting target", self.protocol)
