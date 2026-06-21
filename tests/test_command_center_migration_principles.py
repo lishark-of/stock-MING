@@ -162,6 +162,26 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("Streamlit parity", text)
         self.assertNotIn("legacy Streamlit parity", text)
 
+    def test_next_session_packet_status_uses_coverage_evidence_not_legacy_completion(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "server" / "services" / "packet_service.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            "compatibility field: retained signal/capability coverage evidence 仍未完成",
+            text,
+        )
+        self.assertIn(
+            "complete retained signal/capability coverage review before calling the ECharts map a full replacement",
+            text,
+        )
+        self.assertNotIn(
+            "complete legacy signal/capability parity review before calling the ECharts map a full replacement",
+            text,
+        )
+        self.assertNotIn("legacy 次日图谱完整交互对齐仍未完成", text)
+
     def test_ltg08_completion_boundary_uses_signal_capability_evidence_not_legacy_parity(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "command_center_3_long_term_goals.md").read_text(

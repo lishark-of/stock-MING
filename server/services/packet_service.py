@@ -434,7 +434,7 @@ def _next_session_interaction_readiness_rows(payload: dict[str, Any]) -> list[di
             "legacy signal/capability parity",
             "pending",
             source="docs/command_center_3_long_term_goals.md#LTG-08",
-            note="legacy 次日图谱完整交互对齐仍未完成；当前审计不能称为生产替代完成。",
+            note="compatibility field: retained signal/capability coverage evidence 仍未完成；当前审计不能称为生产替代完成或旧 UI 对齐完成。",
         ),
     ]
     return rows
@@ -467,7 +467,7 @@ def _next_session_interaction_readiness_audit(payload: dict[str, Any]) -> dict[s
         "does_not_execute_trades": True,
         "does_not_modify_action": True,
         "does_not_modify_operation_zones": True,
-        "next_action": "complete legacy signal/capability parity review before calling the ECharts map a full replacement.",
+        "next_action": "complete retained signal/capability coverage review before calling the ECharts map a full replacement.",
     }
 
 
