@@ -32,24 +32,24 @@ export type RouteKey =
 
 const ROUTE_GROUPS: Array<{ title: string; routes: Array<{ key: RouteKey; label: string }> }> = [
   {
-    title: "主流程",
+    title: "普通入口",
     routes: [
-      { key: "home", label: "Command Center" },
-      { key: "next", label: "次日图谱" },
-      { key: "factor", label: "多因子图谱" },
-      { key: "strategy", label: "策略 Trace" },
-      { key: "tradeReview", label: "交易复盘" }
+      { key: "home", label: "今日作战台" },
+      { key: "factor", label: "股票量化推演" },
+      { key: "candidates", label: "下一票雷达" }
     ]
   },
   {
-    title: "研究雷达",
+    title: "研究辅助",
     routes: [
       { key: "market", label: "市场环境" },
       { key: "position", label: "持仓画像" },
-      { key: "candidates", label: "候选雷达" },
+      { key: "next", label: "次日图谱" },
       { key: "risk", label: "风险护栏" },
+      { key: "strategy", label: "策略 Trace" },
       { key: "chokepoint", label: "瓶颈扫描" },
-      { key: "serenity", label: "Serenity" }
+      { key: "serenity", label: "Serenity" },
+      { key: "tradeReview", label: "交易复盘" }
     ]
   },
   {
@@ -112,7 +112,7 @@ export default function Layout({
             </section>
           ))}
         </nav>
-        <p className="sidebar-note">React / FastAPI / Tauri skeleton. Streamlit 保留为 legacy/admin/debug。</p>
+        <p className="sidebar-note">三入口先行：今日作战台、股票量化推演、下一票雷达。研究-only，不下单；旧 Streamlit 仅作 legacy/admin/debug fallback。</p>
       </aside>
       <main className="content">{children}</main>
     </div>
