@@ -91,6 +91,7 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "legacy_decision_factor_risk_provider_health_split_audit_pending",
             "legacy_decision_discipline_backtest_legacy_debug_retained_audit_pending",
             "legacy_decision_margin_etf_leverage_legacy_debug_retained_audit_pending",
+            "legacy_decision_external_brain_serenity_chokepoint_legacy_debug_retained_audit_pending",
             "legacy_decision_old_ai_strategy_advisor_retired_audit_pending",
         ):
             self.assertIn(decision_row, self.migration_map)
@@ -103,12 +104,15 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
         self.assertIn("provider health detail remains `LEGACY-DEBUG`", self.migration_map)
         self.assertIn("provider detail stays out of ordinary flow", self.migration_map)
         self.assertIn("engineering tables no longer dominate ordinary pages", self.migration_map)
-        self.assertIn("discipline/backtest` 与 `ETF/leverage` 仍固定为 `LEGACY-DEBUG`", self.migration_map)
+        self.assertIn("discipline/backtest`、`ETF/leverage` 与 `external brain/Serenity/Chokepoint` 仍固定为 `LEGACY-DEBUG`", self.migration_map)
         self.assertIn("block ordinary entry until redesigned", self.migration_map)
         self.assertIn("synchronous backtest, deep forms and ordinary trading advice are not migrated", self.migration_map)
-        self.assertIn("ETF/leverage` 仍固定为 `LEGACY-DEBUG`", self.migration_map)
+        self.assertIn("ETF/leverage | `LEGACY-DEBUG`", self.migration_map)
         self.assertIn("block ordinary entry until redesigned as risk-budget subflow", self.migration_map)
         self.assertIn("leverage advice, complex manual Tushare/DeepSeek refresh path and ordinary trading recommendations are not migrated", self.migration_map)
+        self.assertIn("block ordinary entry until data lineage reset", self.migration_map)
+        self.assertIn("keep legacy/admin/debug/advanced fallback only", self.migration_map)
+        self.assertIn("RAG/document ingestion, external probe and ordinary research action mix are not migrated", self.migration_map)
         self.assertIn("old AI strategy advisor` 固定为 `RETIRE`", self.migration_map)
         self.assertIn("blocked from ordinary entry; rebuild only as governed research-only explain", self.migration_map)
         self.assertIn("legacy button retired, no ordinary entry", self.migration_map)
