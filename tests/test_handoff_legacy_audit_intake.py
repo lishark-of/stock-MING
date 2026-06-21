@@ -80,6 +80,10 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
         self.assertIn("`live_full` remains reserved", self.protocol)
         self.assertIn("`live_full` remains reserved with no hidden automation", self.protocol)
         self.assertIn("configured source/release switches remain operator intent rather than effective external calls", self.protocol)
+        self.assertIn("Configured/effective switch checkpoint", self.protocol)
+        self.assertIn("report the configured value separately from the effective external-call verdict", self.protocol)
+        self.assertIn("do not summarize `configured=true` as `live_light` enabled", self.protocol)
+        self.assertIn("permission for render/startup/search typing to call providers/models", self.protocol)
         self.assertIn("`configured_switch_rule`", self.protocol)
         self.assertIn("`effective_external_call_rule`", self.protocol)
 
@@ -90,6 +94,7 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
         self.assertIn("Cycle scope: main target, supporting target, changed file count", self.protocol)
         self.assertIn("Runtime-mode boundary", self.protocol)
         self.assertIn("Runtime policy row boundary", self.protocol)
+        self.assertIn("Configured/effective switch checkpoint", self.protocol)
         self.assertIn("Ordinary task-boundary visibility", self.protocol)
         self.assertIn("Ordinary source-state chips", self.protocol)
         self.assertIn("Ordinary next-click rule", self.protocol)
