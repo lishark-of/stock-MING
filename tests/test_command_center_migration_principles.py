@@ -909,7 +909,12 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
             "Need legacy signal/capability acceptance before removing any Streamlit fallback",
             text,
         )
+        self.assertIn(
+            "Preserve retained signal/capability no-feature-loss evidence before removing any legacy fallback",
+            text,
+        )
         self.assertIn("legacy UI, navigation, and tab-copy parity are not retirement evidence", text)
+        self.assertNotIn("Preserve signal parity before removing any legacy fallback", text)
         self.assertNotIn("Need parity acceptance before removing any Streamlit fallback", text)
 
     def test_ltg10_status_uses_capability_replacement_not_ui_parity_wording(self):

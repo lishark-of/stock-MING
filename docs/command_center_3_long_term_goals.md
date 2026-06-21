@@ -1829,7 +1829,7 @@ Keep real trading isolated from Command Center 3 automation
 2. Build a fast local scan task that reads existing cache/storage first and returns a task receipt immediately.
 3. Add progressive scan modes: `quick_cache_scan`, `watchlist_scan`, `custom_pool_scan`, `full_pool_plan`, `deep_scan_plan`, and later real `full_pool_scan` / `deep_scan`.
 4. Add coverage metrics so the UI shows what was scanned, skipped, stale, or blocked.
-5. Preserve signal parity before removing any legacy fallback.
+5. Preserve retained signal/capability no-feature-loss evidence before removing any legacy fallback.
 6. Move slow provider refreshes behind explicit POST tasks instead of radar page render.
 7. Add future search-driven "生成 3.0 量化推演" / "一键生成量化投研图谱" task for a single symbol or bounded watchlist subset.
 8. Allow `live_light` radar/quant bootstrap only after cache render, with symbol limit, rate limit, task dedupe, and visible skipped state.
