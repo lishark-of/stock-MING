@@ -218,7 +218,7 @@ def _candidate_radar_production_stage_scope_rows() -> list[dict[str, Any]]:
     missing_evidence = [
         "worker full-pool execution evidence",
         "worker deep-scan execution evidence",
-        "provider-backed parity call ledger",
+        "provider-backed radar signal/capability call ledger",
         "optional model ledger when enabled",
         "browser visual and performance promotion",
         "durable release evidence",
@@ -2490,8 +2490,8 @@ def build_contract() -> dict[str, Any]:
             and provider_parity_receipt.get("candidate_is_not_buy_instruction") is True
             and "postCandidateRadarProviderParityDryRun" in candidate_frontend
             and "provider_parity_dry_run_receipt" in candidate_frontend
-            and "雷达 provider parity dry-run" in candidate_frontend,
-            "Provider parity dry-run must be explicit, local, secret-safe, and blocked from being treated as provider/model/worker/browser execution or production radar replacement.",
+            and "雷达 provider coverage dry-run" in candidate_frontend,
+            "Provider coverage dry-run must be explicit, local, secret-safe, and blocked from being treated as provider/model/worker/browser execution or production radar replacement.",
         ),
         _row(
             "provider_parity_execution_request_is_scope_bound_ticket_only",
@@ -2784,8 +2784,8 @@ def build_contract() -> dict[str, Any]:
             and policy.get("legacy_parity_acceptance_requires_provider_worker_browser_evidence") is True
             and "legacy_parity_acceptance_receipt" in candidate_frontend
             and "legacy_parity_acceptance_rows" in candidate_frontend
-            and "旧雷达 parity 验收收据" in candidate_frontend,
-            "Legacy parity acceptance receipt must turn old radar features into explicit acceptance rows and keep Streamlit fallback/production replacement blocked while gaps remain.",
+            and "旧雷达 coverage 验收收据" in candidate_frontend,
+            "Legacy coverage acceptance receipt must turn old radar features into explicit acceptance rows and keep Streamlit fallback/production replacement blocked while gaps remain.",
         ),
         _row(
             "activation_receipt_guides_next_safe_step",
@@ -3215,7 +3215,7 @@ def build_contract() -> dict[str, Any]:
         },
         "rows": rows,
         "candidate_radar_production_stage_scope_rows": production_stage_scope_rows,
-        "note": "This is a local push-gate contract. Full-pool execution, deep-scan execution, provider-backed parity acceptance, browser performance/visual QA, and legacy radar retirement remain pending.",
+        "note": "This is a local push-gate contract. Full-pool execution, deep-scan execution, provider-backed radar signal/capability acceptance, browser performance/visual QA, and legacy radar retirement remain pending.",
     }
 
 

@@ -1170,6 +1170,21 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("provider parity dry-run ticket", source)
         self.assertNotIn("provider parity call ledger", source)
 
+    def test_candidate_radar_contract_uses_coverage_ui_labels_not_parity_copy(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (
+            root / "scripts" / "candidate_radar_contract.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("雷达 provider coverage dry-run", source)
+        self.assertIn("旧雷达 coverage 验收收据", source)
+        self.assertIn("provider-backed radar signal/capability call ledger", source)
+        self.assertIn("provider-backed radar signal/capability acceptance", source)
+        self.assertNotIn('"雷达 provider parity dry-run" in candidate_frontend', source)
+        self.assertNotIn('"旧雷达 parity 验收收据" in candidate_frontend', source)
+        self.assertNotIn("provider-backed parity acceptance", source)
+        self.assertNotIn("provider-backed parity call ledger", source)
+
     def test_push_gate_guard_covers_commit_checkpoint_surfaces(self):
         root = Path(__file__).resolve().parents[1]
         push_gate = (root / "scripts" / "push_gate_3_0.sh").read_text(encoding="utf-8")
