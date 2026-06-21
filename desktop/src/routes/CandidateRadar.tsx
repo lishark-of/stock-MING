@@ -414,6 +414,9 @@ export default function CandidateRadar() {
   const ordinaryTaskBoundary =
     "雷达摘要只读展示候选缓存；manual/live_light 补证必须走 POST task / worker，不在 React 渲染中直连 Tushare 或 DeepSeek";
   const quantProjectionCanSubmit = Boolean(searchSymbol.trim());
+  const quantProjectionDisabledReason = quantProjectionCanSubmit
+    ? "按钮已启用：点击后只创建本地量化推演 task"
+    : "按钮不可用原因：先输入股票代码；输入本身不会创建 task";
   const quantProjectionDisplaySymbol = searchSymbol.trim() || String(searchQuantProjectionReceipt.symbol ?? "");
   const quantProjectionInputValidation = searchQuantProjectionReceipt.symbol_valid === false
     ? `代码格式阻断：${String(searchQuantProjectionReceipt.symbol_status ?? "invalid_symbol")}`
@@ -523,6 +526,7 @@ export default function CandidateRadar() {
             />
             <button disabled={!quantProjectionCanSubmit} onClick={launchQuantProjection}>生成 3.0 量化推演</button>
           </div>
+          <p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionSubmitHint}</p>
           <MetricGrid
             items={[

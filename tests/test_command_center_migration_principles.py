@@ -493,6 +493,20 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         advanced_section = text.split("高级扫描 / 全池深研", 1)[1]
         self.assertIn(">整理深研清单</button>", advanced_section)
 
+    def test_candidate_radar_quant_projection_button_shows_disabled_reason(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "desktop" / "src" / "routes" / "CandidateRadar.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("quantProjectionDisabledReason", text)
+        self.assertIn("按钮不可用原因：先输入股票代码；输入本身不会创建 task", text)
+        self.assertIn("按钮已启用：点击后只创建本地量化推演 task", text)
+        self.assertIn("disabled={!quantProjectionCanSubmit}", text)
+        self.assertLess(text.index("quantProjectionDisabledReason"), text.index("生成 3.0 量化推演</button>"))
+        self.assertLess(text.index("生成 3.0 量化推演</button>"), text.index("{quantProjectionDisabledReason}"))
+        self.assertLess(text.index("{quantProjectionDisabledReason}"), text.index("{quantProjectionSubmitHint}"))
+
     def test_stock_quant_projection_demotes_engineering_audit_from_ordinary_first_view(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "desktop" / "src" / "routes" / "FactorQuantHub.tsx").read_text(
