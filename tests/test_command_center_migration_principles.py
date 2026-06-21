@@ -81,6 +81,8 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("页面可从 `GET /api/bootstrap/status` 展示 `cache_only/manual/live_light/live_full` 当前口径", text)
         self.assertIn("不得因此创建 `live_light` bootstrap task、调用 provider/model、写配置、写 cache、泄露 token/key 或升级为 production evidence", text)
         self.assertIn("The same `runtime_mode_policy_rows` must carry config-owned boundary fields", text)
+        self.assertIn("`fastapi_startup_rule`", text)
+        self.assertIn("`search_typing_rule`", text)
         self.assertIn("`cache_get_rule`", text)
         self.assertIn("`react_render_rule`", text)
         self.assertIn("`ledger_rule`", text)
@@ -137,6 +139,76 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("Full parity with legacy Streamlit chart", text)
         self.assertNotIn("Compare against legacy Streamlit visual expectations", text)
         self.assertNotIn("future Streamlit-to-React comparison scope", text)
+
+    def test_runtime_mode_policy_rows_expose_startup_and_search_typing_boundaries(self):
+        import config
+
+        policies = config.get_command_center_runtime_mode_policies()
+        by_mode = {row["mode"]: row for row in policies}
+        required_fields = (
+            "fastapi_startup_rule",
+            "search_typing_rule",
+            "cache_get_rule",
+            "react_render_rule",
+            "ledger_rule",
+            "ordinary_entrance_visibility_rule",
+            "ordinary_mode_banner_rule",
+            "configured_switch_rule",
+            "effective_external_call_rule",
+            "production_evidence_rule",
+        )
+
+        self.assertEqual(list(by_mode), list(config.COMMAND_CENTER_RUNTIME_MODES))
+        for mode in config.COMMAND_CENTER_RUNTIME_MODES:
+            row = by_mode[mode]
+            for field in required_fields:
+                self.assertIn(field, row)
+            self.assertEqual(
+                row["fastapi_startup_rule"],
+                "no_provider_model_worker_trade_or_task_creation",
+            )
+            self.assertEqual(
+                row["search_typing_rule"],
+                "no_task_provider_model_call_config_write_or_cache_write",
+            )
+            self.assertEqual(
+                row["cache_get_rule"],
+                "read_only_no_provider_model_worker_or_trade",
+            )
+            self.assertEqual(
+                row["react_render_rule"],
+                "read_only_no_provider_model_worker_or_trade",
+            )
+            self.assertEqual(
+                row["configured_switch_rule"],
+                "configured_true_is_operator_intent_not_effective_external_call",
+            )
+            self.assertEqual(
+                row["effective_external_call_rule"],
+                "effective_external_call_requires_mode_task_gate_ledgers_redaction_and_promotion",
+            )
+            self.assertEqual(
+                row["production_evidence_rule"],
+                "config_policy_row_is_not_production_evidence",
+            )
+
+        contract = config.get_command_center_runtime_mode_config_contract()
+        self.assertEqual(
+            contract["fastapi_startup_rule"],
+            "no_provider_model_worker_trade_or_task_creation",
+        )
+        self.assertEqual(
+            contract["search_typing_rule"],
+            "no_task_provider_model_call_config_write_or_cache_write",
+        )
+        self.assertEqual(
+            contract["live_light_completion_rule"],
+            "runtime_config_does_not_prove_full_live_light_workflow",
+        )
+        self.assertFalse(contract["external_calls_triggered"])
+        self.assertFalse(contract["tushare_called"])
+        self.assertFalse(contract["deepseek_called"])
+        self.assertTrue(contract["does_not_execute_trades"])
 
     def test_next_session_push_gate_contract_uses_signal_capability_parity_wording(self):
         root = Path(__file__).resolve().parents[1]
@@ -690,6 +762,8 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("call provider/model, write config/cache, expose token/key", text)
         self.assertIn("upgrade a local receipt into production evidence", text)
         self.assertIn("The migration plan references `runtime_mode_policy_rows`", text)
+        self.assertIn("`fastapi_startup_rule`", text)
+        self.assertIn("`search_typing_rule`", text)
         self.assertIn("`cache_get_rule`", text)
         self.assertIn("`react_render_rule`", text)
         self.assertIn("`ledger_rule`", text)
@@ -988,7 +1062,9 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("live_light", text)
         self.assertIn("GET/cache/render/startup/search typing stayed silent", text)
         self.assertIn("Runtime policy row boundary", text)
-        self.assertIn("`runtime_mode_policy_rows` still expose `cache_get_rule`", text)
+        self.assertIn("`runtime_mode_policy_rows` still expose `fastapi_startup_rule`", text)
+        self.assertIn("`search_typing_rule`", text)
+        self.assertIn("`cache_get_rule`", text)
         self.assertIn("`react_render_rule`", text)
         self.assertIn("`ledger_rule`", text)
         self.assertIn("`ordinary_entrance_visibility_rule`", text)
