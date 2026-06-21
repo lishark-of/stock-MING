@@ -209,7 +209,7 @@ The safer path is to keep Streamlit as the reliable fallback/admin/debug surface
 ### Phase 2: Command center adapter extraction
 
 - Extract command center adapter logic from `app.py`.
-- Keep the Streamlit UI for now.
+- Keep the Streamlit UI reachable only as fallback/admin/debug while adapters are extracted; it is not the ordinary 3.0 UX target.
 - Keep service modules free of UI imports.
 - Keep packets JSON-friendly.
 - Do not bypass DeepSeek, Tushare, AkShare, Supabase, or backtest governance; any provider/model evolution must be a separate audited task slice with safe params, ledgers, redaction, and no-trade/no-action boundaries.
@@ -281,8 +281,8 @@ The safer path is to keep Streamlit as the reliable fallback/admin/debug surface
 ## 9. Non-goals
 
 - Do not fully rewrite the frontend in this stage.
-- Do not remove Streamlit.
-- Do not remove the legacy workbench.
+- Do not remove Streamlit fallback/admin/debug during this stage.
+- Do not remove the legacy workbench rollback path, but do not promote it as an ordinary 3.0 entrance.
 - Do not bypass service contracts, task governance, ledgers, redaction, or mode gates.
 - Do not route DeepSeek, Tushare, AkShare, Supabase, or backtest work around explicit POST task / worker / local fallback boundaries.
 - Do not treat docs/config/scaffold/preflight/local receipt, matrix, mock, or sanitizer evidence as production acceptance evidence.

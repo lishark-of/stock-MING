@@ -318,6 +318,11 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("recompose its useful packets into the three ordinary entrances", text)
         self.assertIn("Default into a clear 3.0 entry / transition screen", text)
         self.assertIn("not deeper Streamlit tab navigation", text)
+        self.assertIn(
+            "Keep the Streamlit UI reachable only as fallback/admin/debug",
+            text,
+        )
+        self.assertIn("it is not the ordinary 3.0 UX target", text)
         self.assertIn("Redesign or freeze confusing legacy UX", text)
         self.assertIn("unclear data lineage", text)
         self.assertIn("before they enter an ordinary React/Tauri workflow", text)
@@ -328,6 +333,11 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("searched-symbol -> `生成 3.0 量化推演`", text)
         self.assertIn("Move detailed engineering contract tables", text)
         self.assertIn("Keep margin ETF, trading discipline, backtest labs", text)
+        self.assertIn("Do not remove Streamlit fallback/admin/debug during this stage", text)
+        self.assertIn(
+            "Do not remove the legacy workbench rollback path, but do not promote it as an ordinary 3.0 entrance",
+            text,
+        )
         self.assertIn("`LEGACY-DEBUG`", text)
         self.assertIn("Do not bypass DeepSeek, Tushare, AkShare, Supabase, or backtest governance", text)
         self.assertIn("safe params, ledgers, redaction, and no-trade/no-action boundaries", text)
