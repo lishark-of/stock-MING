@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { EChartsOption } from "echarts";
-import { getFactorQuantCache, postTask, type TaskCreationEnvelope } from "../api/client";
+import { getBootstrapStatus, getFactorQuantCache, postTask, type TaskCreationEnvelope } from "../api/client";
 import ChartSafetyStrip from "../components/ChartSafetyStrip";
 import DataLineageTable from "../components/DataLineageTable";
 import EChartPanel from "../components/EChartPanel";
@@ -25,10 +25,23 @@ function objectRows(record: Record<string, unknown>, labelKey = "field") {
   return Object.entries(record).map(([key, value]) => ({ [labelKey]: key, value: String(value) }));
 }
 
+const runtimeModeLabels: Record<string, string> = {
+  cache_only: "cache_only（只读缓存，不外联）",
+  manual: "manual（仅手动按钮任务）",
+  live_light: "live_light（轻量后台 task 口径，仍不在渲染中外联）",
+  live_full: "live_full（预留，默认关闭）"
+};
+
+function runtimeModeLabel(value: unknown): string {
+  const mode = typeof value === "string" && value ? value : "cache_only";
+  return runtimeModeLabels[mode] ?? `未知运行模式：${mode}`;
+}
+
 export default function FactorQuantHub() {
   const [packet, setPacket] = useState<Record<string, any>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
+  const [bootstrapStatus, setBootstrapStatus] = useState<Record<string, unknown>>({});
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [autoAfterTask, setAutoAfterTask] = useState(false);
@@ -47,6 +60,10 @@ export default function FactorQuantHub() {
       setError(err instanceof Error ? err.message : String(err));
     }).finally(() => setLoading(false));
   };
+  const refreshBootstrapStatus = () =>
+    void getBootstrapStatus().then((res) => {
+      setBootstrapStatus(res.data);
+    });
   const launchTask = (path: string, payload: Record<string, unknown> = {}) =>
     void postTask(path, payload).then((res) => {
       setTaskReceipt(res);
@@ -55,6 +72,7 @@ export default function FactorQuantHub() {
 
   useEffect(() => {
     refreshCache();
+    refreshBootstrapStatus();
   }, []);
 
   const score = packet.score ?? {};
@@ -213,42 +231,111 @@ export default function FactorQuantHub() {
     series: Array.isArray(scoreChart.series) ? scoreChart.series : [{ type: "bar", data: [] }]
   };
   const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
+  const ordinaryQuantNextClick = empty
+    ? "先从下一票雷达输入股票代码并生成 3.0 量化推演；本页查看本地缓存，不自动刷新外部数据或模型解释"
+    : "先看支持/压制与次日图谱预览；换标的从下一票雷达输入代码并点生成 3.0 量化推演；需要更新时再手动刷新数据、运行轻量推演或整理模型解释";
+  const ordinaryQuantCacheSourceLabel = empty ? "等待本地量化缓存" : "本地量化缓存可用";
+  const ordinaryQuantTushareSourceLabel =
+    Number(tushareProviderPromotionAudit.provider_evidence_row_count ?? 0) > 0 ? "Tushare 数据有本地记录" : "等待手动补充 Tushare 数据";
+  const ordinaryQuantDeepSeekSourceLabel = deepseek.called === true ? "DeepSeek 解释已有本地结果" : "DeepSeek 解释未生成或等待手动任务";
+  const ordinaryQuantModelSourceLabel =
+    deepseekValidation.model_call_status && deepseekValidation.model_call_status !== "not_called" ? "模型状态已有本地记录" : "模型未调用或等待手动任务";
+  const ordinaryQuantHasPendingEvidence =
+    empty ||
+    Number(runtime.missing_count ?? 0) > 0 ||
+    factorTestProductionValidation.provider_backed_small_pool_validation_done !== true ||
+    deepseekProductionActivationReceipt.provider_benchmark_done !== true ||
+    tushareProviderPromotionAudit.promotion_ready !== true;
+  const ordinaryQuantPendingStateLabel = empty
+    ? "等待从下一票雷达生成本地量化推演"
+    : ordinaryQuantHasPendingEvidence
+      ? "存在待补证据或待确认任务"
+      : "当前摘要未标记 pending 项";
+  const ordinaryQuantSourceState = [
+    `本地缓存：${ordinaryQuantCacheSourceLabel}`,
+    `Tushare 数据：${ordinaryQuantTushareSourceLabel}`,
+    `DeepSeek 解释：${ordinaryQuantDeepSeekSourceLabel}`,
+    `模型状态：${ordinaryQuantModelSourceLabel}`,
+    `Pending 状态：${ordinaryQuantPendingStateLabel}`
+  ].join(" / ");
+  const ordinaryQuantMissingEvidence = [
+    Number(runtime.missing_count ?? 0) ? `待补因子数量=${String(runtime.missing_count)}` : "",
+    factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "" : "真实小股票池研究证据待确认",
+    deepseekProductionActivationReceipt.provider_benchmark_done === true ? "" : "模型解释质量证据待确认",
+    tushareProviderPromotionAudit.promotion_ready === true ? "" : "Tushare 数据质量证据待确认"
+  ].filter(Boolean).join(" / ") || "本地因子缓存已有；真实数据质量证据仍待补";
+  const ordinaryQuantBlockedState = [
+    freshnessGate.usable_for_score === false ? "数据太旧，暂不适合推演" : "",
+    Number(factorTestProviderValidationBlocker.production_blocker_count ?? 0) > 0 ? "真实数据补证存在阻断" : "",
+    Number(deepseekProductionActivationReceipt.blocking_criterion_count ?? 0) > 0 ? "模型解释补证存在阻断" : "",
+    bridge.does_not_modify_action === false ? "交易动作边界异常" : ""
+  ].filter(Boolean).join(" / ") || "当前缓存未标记阻断或降级";
+  const ordinaryQuantLastCache = String(
+    packet.loaded_at ?? packet.updated_at ?? packet.generated_at ?? freshnessGate.latest_data_date ?? "暂无最近可用缓存"
+  );
+  const ordinaryQuantRuntimeMode = String(bootstrapStatus.mode ?? packet.mode ?? "cache_only");
+  const ordinaryQuantRuntimeModeLabel = `运行模式：${runtimeModeLabel(ordinaryQuantRuntimeMode)}`;
+  const ordinaryQuantTaskBoundary =
+    "本页 GET cache 只读；手动刷新、轻量推演、模型整理或 live_light 补证都必须走 POST task，不在 React 渲染中直连 Tushare 或 DeepSeek";
+  const ordinaryQuantStatusLabel = empty ? "等待量化缓存" : "量化缓存可用";
 
   return (
-    <PacketCard title="2.0 多因子量化图谱" subtitle="只进入 evidence_effects 预览，不修改 action" status={String(packet.mode ?? "cache_only")}>
+    <PacketCard title="股票量化推演" subtitle="因子、次日图谱和模型解释状态一屏看清；只做研究预览，不修改交易动作" status={ordinaryQuantStatusLabel}>
       <PageStateBanner
         loading={loading}
         error={error}
         empty={empty}
-        emptyTitle="暂无多因子图谱缓存"
-        emptyDetail="查看缓存不会刷新 Tushare；运行 light mode 必须手动点击任务按钮。"
+        emptyTitle="暂无股票量化推演本地缓存"
+        emptyDetail="本页只读取本地缓存；不会自动刷新外部数据。若需要更新，请手动点击任务按钮。"
       />
+      <PacketCard title="普通用户量化推演摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={ordinaryQuantStatusLabel}>
+        <MetricGrid
+          items={[
+            { label: "下一步", value: ordinaryQuantNextClick },
+            { label: "运行模式", value: ordinaryQuantRuntimeModeLabel },
+            { label: "数据来源状态", value: ordinaryQuantSourceState },
+            { label: "缺少证据", value: ordinaryQuantMissingEvidence, tone: ordinaryQuantMissingEvidence.includes("待补") || ordinaryQuantMissingEvidence.includes("待确认") ? "warn" : "good" },
+            { label: "阻断/降级", value: ordinaryQuantBlockedState, tone: ordinaryQuantBlockedState.includes("未标记") ? "good" : "warn" },
+            { label: "最近可用缓存", value: ordinaryQuantLastCache },
+            { label: "任务边界", value: ordinaryQuantTaskBoundary },
+            { label: "仅供研究", value: "量化推演不是买卖指令；不真实交易、不下单、不改交易策略或操作区", tone: "good" }
+          ]}
+        />
+      </PacketCard>
       <div className="actions">
-        <button onClick={refreshCache}>查看缓存</button>
-        <button onClick={() => launchTask("/api/factor-quant/refresh-data")}>刷新数据</button>
+        <button onClick={refreshCache}>查看本地缓存</button>
+        <button onClick={() => launchTask("/api/factor-quant/refresh-data")}>手动刷新数据</button>
         <label className="inline-toggle">
           <input
             type="checkbox"
             checked={autoAfterTask}
             onChange={(event) => setAutoAfterTask(event.target.checked)}
           />
-          run-light 成功后尝试自动排队解释
+          轻量推演完成后自动整理解释
         </label>
-        <button onClick={() => launchTask("/api/factor-quant/run-light", { auto_after_task: autoAfterTask })}>运行计算</button>
-        <button onClick={() => launchTask("/api/factor-quant/universe-research-plan", { universe_mode: "full_pool" })}>生成读取计划</button>
-        <button onClick={() => launchTask("/api/factor-quant/universe-worker-batch-dry-run", { approved_by_user: true, universe_mode: "full_pool" })}>批量研究预检</button>
-        <button onClick={() => launchTask("/api/factor-quant/universe-worker-batch-execution-request", { approved_by_user: true, worker_batch_scope_hash: String(universeWorkerBatchDryRun.worker_batch_scope_hash ?? "") })}>批量执行请求</button>
-        <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-dry-run", { approved_by_user: true, symbols: ["002008.SZ", "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"], forward_return_horizons: ["1d", "5d"] })}>小池验收预检</button>
-        <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-execution-request", { approved_by_user: true, acceptance_scope_hash: String(factorTestProviderSmallPoolDryRun.acceptance_scope_hash ?? "") })}>小池执行请求</button>
-        <button onClick={() => launchTask("/api/factor-quant/deepseek-explain")}>DeepSeek 整理</button>
-        <button onClick={() => launchTask("/api/factor-quant/deepseek-provider-benchmark-scope-ticket", { approved_by_user: true, sample_count: 40, response_format: "json_schema", max_retry_per_sample: 2 })}>DeepSeek benchmark 预检</button>
+        <button onClick={() => launchTask("/api/factor-quant/run-light", { auto_after_task: autoAfterTask })}>运行轻量推演</button>
+        <button onClick={() => launchTask("/api/factor-quant/deepseek-explain")}>整理模型解释</button>
       </div>
-      <p className="risk-note">DeepSeek 解释模式：{String(deepseekGovernance.mode ?? "manual_only")}；auto_after_task 默认关闭。自动解释已关闭时，可手动点击生成解释。</p>
-      <p className="risk-note">多因子量化不是交易建议；不改价格、持仓、operation_zones 或 strategy action。</p>
+      <details className="developer-audit-details">
+        <summary>高级验收任务</summary>
+        <div className="actions">
+          <button onClick={() => launchTask("/api/factor-quant/universe-research-plan", { universe_mode: "full_pool" })}>生成读取计划</button>
+          <button onClick={() => launchTask("/api/factor-quant/universe-worker-batch-dry-run", { approved_by_user: true, universe_mode: "full_pool" })}>批量研究预检</button>
+          <button onClick={() => launchTask("/api/factor-quant/universe-worker-batch-execution-request", { approved_by_user: true, worker_batch_scope_hash: String(universeWorkerBatchDryRun.worker_batch_scope_hash ?? "") })}>批量执行请求</button>
+          <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-dry-run", { approved_by_user: true, symbols: ["002008.SZ", "000001.SZ", "600000.SH", "600519.SH", "300750.SZ"], forward_return_horizons: ["1d", "5d"] })}>小池验收预检</button>
+          <button onClick={() => launchTask("/api/factor-quant/provider-small-pool-execution-request", { approved_by_user: true, acceptance_scope_hash: String(factorTestProviderSmallPoolDryRun.acceptance_scope_hash ?? "") })}>小池执行请求</button>
+          <button onClick={() => launchTask("/api/factor-quant/deepseek-provider-benchmark-scope-ticket", { approved_by_user: true, sample_count: 40, response_format: "json_schema", max_retry_per_sample: 2 })}>DeepSeek benchmark 预检</button>
+        </div>
+      </details>
+      <p className="risk-note">模型解释默认手动触发；勾选自动整理后，轻量推演完成可继续整理解释。</p>
+      <p className="risk-note">多因子量化不是交易建议；不真实交易、不下单，不改价格、持仓、操作区或交易策略。</p>
       <TaskLaunchReceipt receipt={taskReceipt} />
       <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
-      <MetricGrid
-        items={[
+      <details className="developer-audit-details">
+        <summary>开发 / 审计指标</summary>
+        <p>Provider、model、receipt、runbook、QA blocker 和 LTG 细项默认收起；普通用户先看上方量化推演摘要、评分图表和支持/压制。</p>
+        <MetricGrid
+          items={[
           { label: "mode", value: packet.mode ?? "cache_only" },
           { label: "runtime", value: runtime.status ?? "not_run" },
           { label: "freshness", value: freshnessGate.status ?? "unknown", tone: freshnessGate.usable_for_score === false ? "bad" : "good" },
@@ -374,8 +461,9 @@ export default function FactorQuantHub() {
           { label: "provider evidence rows", value: tushareProviderPromotionAudit.provider_evidence_row_count ?? 0, tone: Number(tushareProviderPromotionAudit.provider_evidence_row_count ?? 0) > 0 ? "warn" : "neutral" },
           { label: "sample receipt", value: tushareProviderSampleReadinessReceipt.status ?? "missing", tone: tushareProviderSampleReadinessReceipt.ready_for_explicit_provider_sample_task === true ? "good" : "warn" },
           { label: "sample receipt blockers", value: tushareProviderSampleReadinessReceipt.blocked_readiness_count ?? 0, tone: Number(tushareProviderSampleReadinessReceipt.blocked_readiness_count ?? 0) > 0 ? "warn" : "good" }
-        ]}
-      />
+          ]}
+        />
+      </details>
       <EChartPanel option={option} />
       <ChartSafetyStrip
         contract={scoreChartContract}
@@ -384,23 +472,36 @@ export default function FactorQuantHub() {
           { label: "改因子分数", value: scoreChartContract.does_not_modify_factor_score === false ? "可能" : "不会" }
         ]}
       />
-      <h3>评分图表数据合同</h3>
-      <DataLineageTable rows={scoreChartContractRows} />
-      <h3>评分图表 buckets</h3>
-      <DataLineageTable rows={scoreChartRows} />
+      <details className="developer-audit-details">
+        <summary>评分图表 lineage 审计</summary>
+        <h3>评分图表数据合同</h3>
+        <DataLineageTable rows={scoreChartContractRows} />
+        <h3>评分图表 buckets</h3>
+        <DataLineageTable rows={scoreChartRows} />
+      </details>
       <div className="grid compact-grid">
-        <PacketCard title="支持 / 压制" subtitle="只用于 evidence_effects 预览">
-          <p>support: {String(score.support_factors?.length ?? 0)}</p>
-          <p>suppress: {String(score.suppress_factors?.length ?? 0)}</p>
-          <p>conflict: {String(score.conflict_factors?.length ?? 0)}</p>
+        <PacketCard title="支持 / 压制" subtitle="只用于研究预览">
+          <p>支持因子：{String(score.support_factors?.length ?? 0)} 个</p>
+          <p>压制因子：{String(score.suppress_factors?.length ?? 0)} 个</p>
+          <p>冲突因子：{String(score.conflict_factors?.length ?? 0)} 个</p>
         </PacketCard>
-        <PacketCard title="现有上下文链接" subtitle="来自本地 packet/cache">
-          <p>strategy: {String(Boolean(linkedPackets.strategy_execution_packet))}</p>
-          <p>decision: {String(Boolean(linkedPackets.decision_packet))}</p>
-          <p>legacy quant: {String(Boolean(linkedPackets.legacy_quant_packet))}</p>
+        <PacketCard title="本地上下文" subtitle="只读本地缓存，不触发外联">
+          <p>策略上下文：{Boolean(linkedPackets.strategy_execution_packet) ? "已连接" : "未连接"}</p>
+          <p>决策上下文：{Boolean(linkedPackets.decision_packet) ? "已连接" : "未连接"}</p>
+          <p>旧版量化缓存：{Boolean(linkedPackets.legacy_quant_packet) ? "已连接" : "未连接"}</p>
         </PacketCard>
       </div>
-      <PacketCard title="DeepSeek 解释" subtitle="按钮门控；只整理已有结构化结果，不覆盖数值">
+      <PacketCard title="DeepSeek 解释" subtitle="按钮触发；只整理已有结构化结果，不覆盖数值">
+        <p>解释状态：{Boolean(deepseek.called) ? "已有本地解释" : "未生成或等待手动任务"}</p>
+        <p>触发方式：{String(deepseekGovernance.mode ?? "manual_only") === "disabled" ? "关闭" : String(deepseekGovernance.mode ?? "manual_only") === "manual_only" ? "手动按钮" : "按当前运行模式"}</p>
+        <p>自动整理解释：{deepseekGovernance.auto_after_task === true ? "开启" : "关闭"}</p>
+        <p>缓存读取：{deepseekGovernance.cache_reads_never_call_deepseek === false || deepseekGovernance.react_render_never_calls_deepseek === false ? "边界异常：缓存或页面渲染可能调用模型" : "只读本地缓存，不调用模型"}</p>
+        <p>输出边界：{deepseek.parse_failed === true ? "解析失败，结果只留审计" : "只整理文字说明，不改数值或交易动作"}</p>
+        <p>可整理内容：摘要、支持/压制、冲突、缺失数据、纪律提示</p>
+      </PacketCard>
+      <details className="developer-audit-details">
+        <summary>DeepSeek 解释治理审计</summary>
+      <h3>DeepSeek 原始解释审计</h3>
         <p>called: {String(Boolean(deepseek.called))}</p>
         <p>mode: {String(deepseekGovernance.mode ?? "manual_only")}</p>
         <p>auto_after_task: {String(deepseekGovernance.auto_after_task ?? false)}</p>
@@ -417,7 +518,6 @@ export default function FactorQuantHub() {
         <p>model_call_status: {String(deepseekValidation.model_call_status ?? "not_called")}</p>
         <p>invalid_output_discarded: {String(deepseekValidation.invalid_output_discarded ?? false)}</p>
         <p>allowed: summary / support_notes / suppress_notes / conflict_notes / missing_data_notes / discipline_notes</p>
-      </PacketCard>
       <h3>DeepSeek 解释校验</h3>
       <DataLineageTable rows={deepseekValidationRows} />
       <PacketCard title="DeepSeek JSON 稳定性审计" subtitle="本地 sanitizer/prompt 合同；不调用模型">
@@ -502,6 +602,7 @@ export default function FactorQuantHub() {
       </PacketCard>
       <h3>DeepSeek durable evidence rows</h3>
       <DataLineageTable rows={deepseekDurableEvidenceRows} />
+      </details>
       <h3>因子库</h3>
       <DataLineageTable rows={toRows(factorLibrary.factors)} />
       <h3>运行值</h3>
@@ -603,7 +704,7 @@ export default function FactorQuantHub() {
       <h3>Factor Test 阶段计划</h3>
       <DataLineageTable rows={factorTestModeRows} />
       <h3>Factor Test 状态验收合同</h3>
-      <p className="risk-note">research_pass / watchlist / disabled / invalid / not_enough_data 都是研究状态；research_pass 也不是买入信号，不进入 strategy action、core action、evidence_effects 或 next-session projection。</p>
+      <p className="risk-note">research_pass / watchlist / disabled / invalid / not_enough_data 都是研究状态；research_pass 也不是买入信号，不进入交易动作、交易核心动作、研究预览或次日图谱推演。</p>
       <DataLineageTable rows={factorTestAcceptanceRows} />
       <DataLineageTable rows={factorTestStateRows} />
       <h3>Factor Test 状态分布</h3>
