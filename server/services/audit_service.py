@@ -3,11 +3,12 @@ from __future__ import annotations
 import datetime as _dt
 import hashlib
 import json
+import subprocess
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from config import get_deepseek_model_strategy
+from config import get_command_center_migration_checkpoint_contract, get_deepseek_model_strategy
 from storage.sqlite_meta import SQLiteMetaStore
 from server.services import (
     bootstrap_service,
@@ -42,6 +43,8 @@ RELEASE_GATE_SCHEMA_VERSION = "command_center_3_release_gate_readiness_audit.v1"
 CI_NOTIFICATION_TRIAGE_SCHEMA_VERSION = "command_center_3_ci_notification_triage.v1"
 PUSH_READINESS_RECEIPT_SCHEMA_VERSION = "command_center_3_push_readiness_receipt.v1"
 LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION = "command_center_3_local_push_gate_run_receipt.v1"
+REMOTE_CI_REVIEW_SEED_SCHEMA_VERSION = "command_center_3_remote_ci_review_seed.v1"
+LOCAL_WORKTREE_CLEANLINESS_SCHEMA_VERSION = "command_center_3_local_worktree_cleanliness_audit.v1"
 MOTION_CLARITY_SCHEMA_VERSION = "command_center_3_motion_clarity_audit.v1"
 LOCAL_PUSH_GATE_REQUIRED_CHECKS = {
     "python_unittest",
@@ -78,6 +81,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 LOCAL_PUSH_GATE_RUN_RECEIPT_PATH = PROJECT_ROOT / ".stock_ming_3" / "release_gate" / "local_push_gate_run_receipt.json"
 PUSH_GATE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "push_gate_3_0.sh"
+MIGRATION_PRINCIPLE_TEST_PATH = PROJECT_ROOT / "tests" / "test_command_center_migration_principles.py"
 SMOKE_SCRIPT_PATH = PROJECT_ROOT / "scripts" / "smoke_3_0.sh"
 DATA_HEALTH_FRESHNESS_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "data_health_freshness_contract.py"
 TUSHARE_ACCEPTANCE_CONTRACT_PATH = PROJECT_ROOT / "scripts" / "tushare_acceptance_contract.py"
@@ -469,6 +473,99 @@ def _current_git_head_summary() -> dict[str, Any]:
     }
 
 
+def _read_git_status_short_lines() -> tuple[str, int | None, list[str]]:
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(PROJECT_ROOT), "status", "--short", "--untracked-files=normal"],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=5,
+        )
+    except Exception as exc:
+        return f"local_git_status_failed:{_safe_text(type(exc).__name__, limit=80)}", None, []
+    lines = [line for line in completed.stdout.splitlines() if line.strip()]
+    return "local_git_status_short_read", completed.returncode, lines
+
+
+def _local_worktree_cleanliness_audit(
+    status_lines: list[str] | None = None,
+    *,
+    read_status: str = "local_git_status_short_read",
+    exit_code: int | None = 0,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if status_lines is None:
+        read_status, exit_code, status_lines = _read_git_status_short_lines()
+    status_code_counts: dict[str, int] = {}
+    for line in status_lines:
+        code = (line[:2] if len(line) >= 2 else line).replace(" ", "_") or "unknown"
+        status_code_counts[code] = status_code_counts.get(code, 0) + 1
+    rows = [
+        {
+            "status_code": code,
+            "count": count,
+            "raw_paths_emitted": False,
+            "raw_status_lines_emitted": False,
+        }
+        for code, count in sorted(status_code_counts.items())
+    ]
+    status_known = exit_code == 0
+    dirty_count = len(status_lines) if status_known else 0
+    worktree_clean = status_known and dirty_count == 0
+    tracked_change_count = sum(1 for line in status_lines if not line.startswith("??")) if status_known else 0
+    untracked_file_count = sum(1 for line in status_lines if line.startswith("??")) if status_known else 0
+    modified_count = sum(1 for line in status_lines if "M" in line[:2]) if status_known else 0
+    deleted_count = sum(1 for line in status_lines if "D" in line[:2]) if status_known else 0
+    return {
+        "schema_version": LOCAL_WORKTREE_CLEANLINESS_SCHEMA_VERSION,
+        "status": "worktree_clean" if worktree_clean else "worktree_dirty_clean_gate_blocked"
+        if status_known
+        else "worktree_status_unknown",
+        "scope": "local_git_status_short_no_github_api_no_push",
+        "read_status": read_status,
+        "git_status_exit_code": exit_code,
+        "worktree_clean": worktree_clean,
+        "status_known": status_known,
+        "dirty_file_count": dirty_count,
+        "tracked_change_count": tracked_change_count,
+        "untracked_file_count": untracked_file_count,
+        "modified_file_count": modified_count,
+        "deleted_file_count": deleted_count,
+        "status_code_count": len(status_code_counts),
+        "status_code_counts": status_code_counts,
+        "raw_paths_emitted": False,
+        "raw_status_lines_emitted": False,
+        "clean_worktree_required_before_local_gate_receipt": True,
+        "blocks_local_push_gate_receipt": status_known and not worktree_clean,
+        "release_hygiene_blocker": status_known and not worktree_clean,
+        "local_git_status_command_only": True,
+        "safe_next_action": "review_intentional_changes_then_commit_or_continue_local_slice"
+        if status_known and not worktree_clean
+        else "run_scripts_push_gate_3_0_after_review"
+        if worktree_clean
+        else "inspect_local_git_status_read_error",
+        "did_not_push": True,
+        "git_add_dot_used": False,
+        "github_api_called": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "call_ledger": [
+            {
+                "api": "local_git_status_short_worktree_cleanliness",
+                "source": "local git status --short",
+                "call_status": "cache_read",
+                "external": False,
+                "raw_paths_emitted": False,
+                "local_fetched_at": _now_iso(),
+            }
+        ],
+    }, rows
+
+
 def _read_local_push_gate_run_receipt() -> dict[str, Any]:
     current_head = _current_git_head_summary()
     if not LOCAL_PUSH_GATE_RUN_RECEIPT_PATH.exists():
@@ -627,6 +724,7 @@ def _release_gate_workflow_rows() -> list[dict[str, Any]]:
                 "status": "mirrors_push_gate" if mirrors_push_gate else "unrelated_or_partial",
                 "mirrors_local_push_gate": mirrors_push_gate,
                 "contains_unittest_step": "-m unittest discover -s tests" in text,
+                "contains_migration_principle_docs_guard_step": "tests.test_command_center_migration_principles" in text,
                 "contains_desktop_build_step": "npm run build" in text,
                 "contains_smoke_step": "smoke_3_0.sh" in text,
                 "contains_diff_check_step": "git diff --check" in text,
@@ -644,6 +742,7 @@ def _release_gate_workflow_rows() -> list[dict[str, Any]]:
 
 def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     script = _read_local_text(PUSH_GATE_SCRIPT_PATH)
+    migration_principle_test = _read_local_text(MIGRATION_PRINCIPLE_TEST_PATH)
     smoke_script = _read_local_text(SMOKE_SCRIPT_PATH)
     data_health_freshness_script = _read_local_text(DATA_HEALTH_FRESHNESS_CONTRACT_PATH)
     tushare_acceptance_script = _read_local_text(TUSHARE_ACCEPTANCE_CONTRACT_PATH)
@@ -692,6 +791,14 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         "push_gate_script_exists": PUSH_GATE_SCRIPT_PATH.exists(),
         "push_gate_script_executable": PUSH_GATE_SCRIPT_PATH.exists()
         and bool(PUSH_GATE_SCRIPT_PATH.stat().st_mode & 0o111),
+        "migration_principle_docs_guard_exists": MIGRATION_PRINCIPLE_TEST_PATH.exists()
+        and bool(migration_principle_test),
+        "migration_principle_docs_guard_step": "Migration principle docs guard" in script
+        and "tests.test_command_center_migration_principles" in script
+        and "migration_principle_docs_guard" in script,
+        "migration_principle_docs_guard_order": script.find('run_step "Python unittest"') >= 0
+        and script.find('run_step "Python unittest"') < script.find('run_step "Migration principle docs guard"')
+        and script.find('run_step "Migration principle docs guard"') < script.find('run_step "Desktop build"'),
         "smoke_script_exists": SMOKE_SCRIPT_PATH.exists() and bool(smoke_script),
         "data_health_freshness_contract_exists": DATA_HEALTH_FRESHNESS_CONTRACT_PATH.exists()
         and bool(data_health_freshness_script),
@@ -768,6 +875,18 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "raw_keyword_lines_emitted" in secret_keyword_review_script
         and "outputs_source_line_text" in secret_keyword_review_script
         and "category_rows" in secret_keyword_review_script,
+        "migration_principle_docs_guard_is_local": "Command Center 3.0 must not copy the old Streamlit app one-to-one"
+        in migration_principle_test
+        and "Legacy Bug / UX Audit Seed" in migration_principle_test
+        and "This strategy correction does not complete any LTG" in migration_principle_test
+        and "not production acceptance evidence" in migration_principle_test
+        and "tushare_adapter" not in migration_principle_test
+        and "deepseek_adapter" not in migration_principle_test
+        and "api.github.com" not in migration_principle_test,
+        "migration_principle_commit_checkpoint_surfaces": "migrationCommitQuestionRows" in migration_principle_test
+        and "required_for_future_migration_commit" in migration_principle_test
+        and "what_user_capability_was_preserved" in migration_principle_test
+        and "迁移 commit checkpoint" in migration_principle_test,
         "data_health_freshness_contract_is_local": "data_health_freshness_push_gate_contract.v1" in data_health_freshness_script
         and "local_cache_contract_no_provider_execution" in data_health_freshness_script
         and "provider_backed_trade_cal_acceptance_done" in data_health_freshness_script
@@ -962,13 +1081,23 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "deepseek_adapter" not in motion_browser_qa_runner
         and "api.github.com" not in motion_browser_qa_runner,
     }
-    ci_mirror_ready = any(bool(row.get("mirrors_local_push_gate")) for row in workflow_rows)
+    ci_mirror_includes_migration_principle_docs_guard = any(
+        bool(row.get("mirrors_local_push_gate"))
+        and bool(row.get("contains_migration_principle_docs_guard_step"))
+        for row in workflow_rows
+    )
+    ci_mirror_ready = ci_mirror_includes_migration_principle_docs_guard
     false_positive_allowlist_review_ready = False
     local_gate_ready = all(
         bool(checks[key])
         for key in (
             "push_gate_script_exists",
             "push_gate_script_executable",
+            "migration_principle_docs_guard_exists",
+            "migration_principle_docs_guard_step",
+            "migration_principle_docs_guard_order",
+            "migration_principle_docs_guard_is_local",
+            "migration_principle_commit_checkpoint_surfaces",
             "smoke_script_exists",
             "data_health_freshness_contract_exists",
             "data_health_freshness_contract_step",
@@ -1055,6 +1184,31 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "push_gate_script_executable",
             checks["push_gate_script_executable"],
             evidence="script has executable bit",
+        ),
+        _release_gate_row(
+            "migration_principle_docs_guard_exists",
+            checks["migration_principle_docs_guard_exists"],
+            evidence=_relative_path(MIGRATION_PRINCIPLE_TEST_PATH),
+        ),
+        _release_gate_row(
+            "migration_principle_docs_guard_step",
+            checks["migration_principle_docs_guard_step"],
+            evidence="push gate runs tests.test_command_center_migration_principles as an explicit no-blind-Streamlit-copy guard",
+        ),
+        _release_gate_row(
+            "migration_principle_docs_guard_order",
+            checks["migration_principle_docs_guard_order"],
+            evidence="migration principle docs guard runs after full unittest discover and before desktop build",
+        ),
+        _release_gate_row(
+            "migration_principle_docs_guard_is_local",
+            checks["migration_principle_docs_guard_is_local"],
+            evidence="guard reads local docs and avoids provider/model/GitHub/trade path",
+        ),
+        _release_gate_row(
+            "migration_principle_commit_checkpoint_surfaces",
+            checks["migration_principle_commit_checkpoint_surfaces"],
+            evidence="guard verifies local service/page checkpoint surfaces for future migration commit questions",
         ),
         _release_gate_row("smoke_script_exists", checks["smoke_script_exists"], evidence=_relative_path(SMOKE_SCRIPT_PATH)),
         _release_gate_row(
@@ -1389,8 +1543,15 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         _release_gate_row(
             "ci_mirror_not_proven",
             ci_mirror_ready,
-            evidence=".github workflows do not mirror scripts/push_gate_3_0.sh" if not ci_mirror_ready else "CI mirrors local push gate",
+            evidence=".github workflows do not mirror scripts/push_gate_3_0.sh plus migration principle guard"
+            if not ci_mirror_ready
+            else "CI mirrors local push gate and migration principle docs guard",
             status_override="pending" if not ci_mirror_ready else None,
+        ),
+        _release_gate_row(
+            "ci_mirror_migration_principle_docs_guard",
+            ci_mirror_includes_migration_principle_docs_guard,
+            evidence="command-center-3-push-gate workflow declares tests.test_command_center_migration_principles",
         ),
         _release_gate_row(
             "false_positive_allowlist_review_pending",
@@ -1419,6 +1580,7 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         "release_gate_complete": release_gate_complete,
         "ci_mirror_ready": ci_mirror_ready,
         "ci_mirror_detected": ci_mirror_ready,
+        "ci_mirror_includes_migration_principle_docs_guard": ci_mirror_includes_migration_principle_docs_guard,
         "false_positive_allowlist_review_ready": false_positive_allowlist_review_ready,
         "provider_calls_triggered": False,
         "external_calls_triggered": False,
@@ -1806,6 +1968,50 @@ def _release_gate_stage_scope_rows(
     return rows
 
 
+def _remote_ci_review_seed_contract() -> dict[str, Any]:
+    checkpoint_contract = get_command_center_migration_checkpoint_contract()
+    seed_row = dict(_as_dict(checkpoint_contract.get("ci_review_seed_row")))
+    return {
+        "schema_version": REMOTE_CI_REVIEW_SEED_SCHEMA_VERSION,
+        "status": "blocked_remote_ci_unverified",
+        "scope": "local_checkpoint_seed_row_no_github_api_no_push",
+        "source_contract": checkpoint_contract.get("schema_version"),
+        "seed_row_rule": checkpoint_contract.get("ci_review_seed_row_rule"),
+        "remote_ci_review_row_rule": checkpoint_contract.get("ci_review_row_rule"),
+        "remote_status": seed_row.get("remote_status"),
+        "failed_step_or_green_status": seed_row.get("failed_step_or_green_status"),
+        "release_claim_decision": seed_row.get("release_claim_decision"),
+        "next_action": seed_row.get("next_action"),
+        "required_fields": list(checkpoint_contract.get("ci_review_required_fields") or []),
+        "seed_row": seed_row,
+        "row_count": 1 if seed_row else 0,
+        "release_claim_blocked": True,
+        "remote_actions_status_known": False,
+        "latest_remote_run_verified_green": False,
+        "safe_failure_logs_reviewed": False,
+        "fresh_local_gate_run_observed": False,
+        "local_gate_pass_is_not_ci_status": True,
+        "seed_row_is_not_remote_ci_evidence": True,
+        "did_not_push": True,
+        "github_api_called": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "call_ledger": [
+            {
+                "api": "local_remote_ci_review_seed_contract",
+                "source": "command center migration checkpoint contract",
+                "call_status": "cache_read",
+                "external": False,
+                "local_fetched_at": _now_iso(),
+            }
+        ],
+    }
+
+
 def _motion_source(path: str) -> str:
     return _read_local_text(DESKTOP_SRC_DIR / path)
 
@@ -1973,8 +2179,8 @@ def _motion_clarity_readiness_audit() -> tuple[dict[str, Any], list[dict[str, An
             audited_text,
             ("tushare_adapter", "deepseek.chat", "gh api", "api.github.com", "curl "),
         ),
-        "visual_only_boundary_visible": "candidate radar visual state" in candidate_radar
-        and "trade guard" in candidate_radar
+        "visual_only_boundary_visible": "候选池状态" in candidate_radar
+        and "交易边界" in candidate_radar
         and "图谱交互说明" in next_chart,
         "motion_viewport_qa_contract_ready": "command_center_3_motion_viewport_qa_contract.v1" in motion_viewport_qa_contract
         and "local_static_contract_not_browser_execution" in motion_viewport_qa_contract
@@ -3825,6 +4031,11 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         ci_notification_triage_contract,
         local_push_gate_run_receipt,
     )
+    remote_ci_review_seed_contract = _remote_ci_review_seed_contract()
+    remote_ci_review_seed_rows = _as_list(remote_ci_review_seed_contract.get("seed_row"))
+    if not remote_ci_review_seed_rows and remote_ci_review_seed_contract.get("seed_row"):
+        remote_ci_review_seed_rows = [_as_dict(remote_ci_review_seed_contract.get("seed_row"))]
+    local_worktree_cleanliness_audit, local_worktree_status_code_rows = _local_worktree_cleanliness_audit()
     motion_clarity_audit, motion_clarity_rows = _motion_clarity_readiness_audit()
     motion_production_qa_contract, motion_production_qa_rows = _motion_production_qa_contract(
         motion_clarity_audit,
@@ -3931,6 +4142,10 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
         "release_gate_push_readiness_receipt": release_gate_push_readiness_receipt,
         "release_gate_push_readiness_rows": release_gate_push_readiness_rows,
         "release_gate_stage_scope_rows": release_gate_stage_scope_rows,
+        "remote_ci_review_seed_contract": remote_ci_review_seed_contract,
+        "remote_ci_review_seed_rows": remote_ci_review_seed_rows,
+        "local_worktree_cleanliness_audit": local_worktree_cleanliness_audit,
+        "local_worktree_status_code_rows": local_worktree_status_code_rows,
         "ci_notification_triage_contract": ci_notification_triage_contract,
         "ci_notification_triage_rows": ci_notification_triage_rows,
         "motion_clarity_audit": motion_clarity_audit,
@@ -3989,6 +4204,23 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "release_gate_stage_scope_pending_count": sum(
                 1 for row in release_gate_stage_scope_rows if row.get("stage_complete") is False
             ),
+            "remote_ci_review_seed_row_count": len(remote_ci_review_seed_rows),
+            "remote_ci_review_seed_release_claim_blocked": remote_ci_review_seed_contract.get(
+                "release_claim_blocked"
+            )
+            is True,
+            "remote_ci_review_seed_remote_status_known": remote_ci_review_seed_contract.get(
+                "remote_actions_status_known"
+            )
+            is True,
+            "local_worktree_clean": local_worktree_cleanliness_audit.get("worktree_clean") is True,
+            "local_worktree_dirty_file_count": local_worktree_cleanliness_audit.get("dirty_file_count", 0),
+            "local_worktree_tracked_change_count": local_worktree_cleanliness_audit.get("tracked_change_count", 0),
+            "local_worktree_untracked_file_count": local_worktree_cleanliness_audit.get("untracked_file_count", 0),
+            "local_worktree_clean_gate_blocked": local_worktree_cleanliness_audit.get(
+                "blocks_local_push_gate_receipt"
+            )
+            is True,
             "local_push_gate_run_observed": local_push_gate_run_receipt.get("fresh_local_gate_run_observed") is True,
             "local_push_gate_receipt_head_matches_current": local_push_gate_run_receipt.get("head_matches_current")
             is True,
@@ -4097,6 +4329,13 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "release_gate_local_ready_is_not_ci_status": True,
             "release_gate_stage_scope_is_local": True,
             "release_gate_stage_scope_is_not_fresh_gate_or_remote_ci": True,
+            "remote_ci_review_seed_row_is_local": True,
+            "remote_ci_review_seed_row_calls_no_github_api": True,
+            "remote_ci_review_seed_row_is_not_remote_ci_evidence": True,
+            "local_worktree_cleanliness_audit_is_local": True,
+            "local_worktree_cleanliness_audit_calls_no_github_api": True,
+            "local_worktree_cleanliness_audit_emits_no_file_paths": True,
+            "local_worktree_cleanliness_audit_is_not_remote_ci_status": True,
             "push_readiness_receipt_is_local": True,
             "push_readiness_receipt_runs_no_commands": True,
             "push_readiness_receipt_calls_no_github_api": True,
@@ -4195,6 +4434,11 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
                 "motion_durable_evidence_recipe_status": motion_durable_evidence_recipe.get("status"),
                 "motion_durable_evidence_recipe_ready": motion_durable_evidence_recipe.get("local_recipe_ready"),
                 "motion_durable_evidence_production_blocker_count": motion_durable_evidence_recipe.get("production_blocker_count"),
+                "local_worktree_clean": local_worktree_cleanliness_audit.get("worktree_clean"),
+                "local_worktree_dirty_file_count": local_worktree_cleanliness_audit.get("dirty_file_count"),
+                "local_worktree_clean_gate_blocked": local_worktree_cleanliness_audit.get(
+                    "blocks_local_push_gate_receipt"
+                ),
                 "memory_task_count": task_persistence.get("memory_task_count", 0),
                 "sqlite_task_count": task_persistence.get("sqlite_task_count", 0),
                 "deduplicated_task_count": task_persistence.get("deduplicated_task_count", len(task_rows)),
@@ -4219,6 +4463,7 @@ def read_call_ledger_audit_cache() -> dict[str, Any]:
             "release_gate_readiness_audit 只读解析本地脚本和 workflow；local_gate_ready 不是 CI 状态，也不是生产完成证明。",
             "release_gate_push_readiness_receipt 只选择显式本地 gate -> push -> 远端 Actions 复核路径；不运行命令、不调用 GitHub、不证明远端已绿。",
             "local_push_gate_run_receipt 只读取 ignored 本地 receipt 并匹配当前 HEAD；它不是远端 Actions 状态，也不会触发 push。",
+            "local_worktree_cleanliness_audit 只读本地 git status --short 的计数和状态码；不输出文件路径、不 push、不调用 GitHub，也不是远端 CI 状态。",
             "ci_notification_triage_contract 只解释失败邮件需要的远端日志证据；不调用 GitHub API，也不证明远端 run 已变绿。",
             "motion_clarity_audit 只读解析本地 React/CSS 源码；static_ready 不是浏览器视觉验收或生产动效完成证明。",
             "motion_production_qa_contract 是本地生产验收清单；不运行浏览器视觉 QA 或性能 trace。",

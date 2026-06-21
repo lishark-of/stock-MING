@@ -36,8 +36,12 @@ export default function CallLedgerAudit() {
   const releaseGateRows = rows(cache.release_gate_readiness_rows);
   const releaseGateWorkflowRows = rows(cache.release_gate_workflow_rows);
   const localPushGateRunReceipt = (cache.local_push_gate_run_receipt as Record<string, unknown> | undefined) ?? {};
+  const localWorktreeCleanlinessAudit = (cache.local_worktree_cleanliness_audit as Record<string, unknown> | undefined) ?? {};
+  const localWorktreeStatusCodeRows = rows(cache.local_worktree_status_code_rows);
   const releaseGatePushReceipt = (cache.release_gate_push_readiness_receipt as Record<string, unknown> | undefined) ?? {};
   const releaseGatePushRows = rows(cache.release_gate_push_readiness_rows);
+  const remoteCiReviewSeedContract = (cache.remote_ci_review_seed_contract as Record<string, unknown> | undefined) ?? {};
+  const remoteCiReviewSeedRows = rows(cache.remote_ci_review_seed_rows);
   const ciNotificationTriage = (cache.ci_notification_triage_contract as Record<string, unknown> | undefined) ?? {};
   const ciNotificationTriageRows = rows(cache.ci_notification_triage_rows);
   const motionClarityAudit = (cache.motion_clarity_audit as Record<string, unknown> | undefined) ?? {};
@@ -129,12 +133,16 @@ export default function CallLedgerAudit() {
           { label: "release gate", value: releaseGateAudit.status as string | undefined, tone: releaseGateAudit.local_gate_ready === true ? "good" : "warn" },
           { label: "local gate ready", value: counts.release_gate_local_ready, tone: counts.release_gate_local_ready === true ? "good" : "warn" },
           { label: "CI mirror", value: counts.release_gate_ci_mirror_ready, tone: counts.release_gate_ci_mirror_ready === true ? "good" : "warn" },
+          { label: "CI原则守护", value: releaseGateAudit.ci_mirror_includes_migration_principle_docs_guard === true ? "yes" : "no", tone: releaseGateAudit.ci_mirror_includes_migration_principle_docs_guard === true ? "good" : "warn" },
           { label: "gate blockers", value: counts.release_gate_blocker_count as number | undefined, tone: Number(counts.release_gate_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "gate checks", value: counts.release_gate_check_count as number | undefined },
           { label: "workflow files", value: counts.release_gate_workflow_count as number | undefined },
+          { label: "worktree", value: localWorktreeCleanlinessAudit.status as string | undefined, tone: localWorktreeCleanlinessAudit.worktree_clean === true ? "good" : "warn" },
+          { label: "dirty files", value: counts.local_worktree_dirty_file_count as number | undefined, tone: Number(counts.local_worktree_dirty_file_count ?? 0) > 0 ? "warn" : "good" },
           { label: "local gate run", value: counts.local_push_gate_run_observed === true ? "seen" : "pending", tone: counts.local_push_gate_run_observed === true ? "good" : "warn" },
           { label: "head match", value: counts.local_push_gate_receipt_head_matches_current === true ? "yes" : "no", tone: counts.local_push_gate_receipt_head_matches_current === true ? "good" : "warn" },
           { label: "push receipt", value: releaseGatePushReceipt.status as string | undefined, tone: releaseGatePushReceipt.local_receipt_ready === true ? "good" : "warn" },
+          { label: "P0 remote CI", value: remoteCiReviewSeedContract.status as string | undefined, tone: remoteCiReviewSeedContract.release_claim_blocked === true ? "warn" : "good" },
           { label: "push pending", value: counts.push_readiness_pending_evidence_count as number | undefined, tone: Number(counts.push_readiness_pending_evidence_count ?? 0) > 0 ? "warn" : "good" },
           { label: "remote known", value: counts.push_readiness_remote_status_known === true ? "yes" : "no", tone: counts.push_readiness_remote_status_known === true ? "good" : "warn" },
           { label: "CI mail triage", value: ciNotificationTriage.status as string | undefined, tone: ciNotificationTriage.remote_actions_status_known === true ? "good" : "warn" },
@@ -235,6 +243,7 @@ export default function CallLedgerAudit() {
         <p>local_gate_ready: {String(releaseGateAudit.local_gate_ready ?? false)}</p>
         <p>release_gate_complete: {String(releaseGateAudit.release_gate_complete ?? false)}</p>
         <p>ci_mirror_ready: {String(releaseGateAudit.ci_mirror_ready ?? false)}</p>
+        <p>ci_mirror_principle_guard: {String(releaseGateAudit.ci_mirror_includes_migration_principle_docs_guard ?? false)}</p>
         <p>secret_keyword_review_contract_ready: {String(releaseGateAudit.secret_keyword_review_contract_exists === true && releaseGateAudit.secret_keyword_review_contract_step === true)}</p>
         <p>keyword_review_raw_lines_suppressed: {String(releaseGateAudit.keyword_review_raw_lines_suppressed ?? false)}</p>
         <p>ci_mirror_not_proven: {String(Array.isArray(releaseGateAudit.blockers) && (releaseGateAudit.blockers as unknown[]).includes("ci_mirror_not_proven"))}</p>
@@ -248,6 +257,18 @@ export default function CallLedgerAudit() {
 
       <PacketCard title="CI mirror static inventory" subtitle="只读列出 .github/workflows；不调用 GitHub API" status="ci_static_inventory">
         <DataLineageTable rows={releaseGateWorkflowRows} />
+      </PacketCard>
+
+      <PacketCard title="Local worktree clean gate" subtitle="local_worktree_cleanliness_audit：只读 git status --short 计数；不输出文件路径、不代表 CI 状态" status={String(localWorktreeCleanlinessAudit.status ?? "missing")}>
+        <p>scope: {String(localWorktreeCleanlinessAudit.scope ?? "local_git_status_short_no_github_api_no_push")}</p>
+        <p>worktree_clean: {String(localWorktreeCleanlinessAudit.worktree_clean === true)}；dirty_file_count: {String(localWorktreeCleanlinessAudit.dirty_file_count ?? 0)}</p>
+        <p>tracked_change_count: {String(localWorktreeCleanlinessAudit.tracked_change_count ?? 0)}；untracked_file_count: {String(localWorktreeCleanlinessAudit.untracked_file_count ?? 0)}</p>
+        <p>blocks_local_push_gate_receipt: {String(localWorktreeCleanlinessAudit.blocks_local_push_gate_receipt === true)}；release_hygiene_blocker: {String(localWorktreeCleanlinessAudit.release_hygiene_blocker === true)}</p>
+        <p>raw_paths_emitted: {String(localWorktreeCleanlinessAudit.raw_paths_emitted === true)}；raw_status_lines_emitted: {String(localWorktreeCleanlinessAudit.raw_status_lines_emitted === true)}</p>
+        <p>did_not_push: {String(localWorktreeCleanlinessAudit.did_not_push !== false)}；github_api_called: {String(localWorktreeCleanlinessAudit.github_api_called === true)}</p>
+        <p>clean worktree 是生成当前 HEAD 本地 gate receipt 的最后卫生门槛；这不是 provider/model/trading 失败，也不是远端 CI 状态。</p>
+        <DataLineageTable rows={[localWorktreeCleanlinessAudit]} />
+        <DataLineageTable rows={localWorktreeStatusCodeRows} />
       </PacketCard>
 
       <PacketCard title="Local push gate run receipt" subtitle=".stock_ming_3/release_gate/local_push_gate_run_receipt.json：本地门禁通过证据，不代表远端 CI" status={String(localPushGateRunReceipt.status ?? "local_push_gate_run_receipt_missing")}>
@@ -272,6 +293,19 @@ export default function CallLedgerAudit() {
         <p>该收据不运行 push gate、不调用 GitHub、不推送代码；它把本地 gate、push 和远端 Actions 复核保持为三个独立步骤。</p>
         <DataLineageTable rows={[releaseGatePushReceipt]} />
         <DataLineageTable rows={releaseGatePushRows} />
+      </PacketCard>
+
+      <PacketCard title="Remote CI review seed row" subtitle="remote_ci_review_seed_contract：P0 blocker 模板，不读取 GitHub、不代表 CI 证据" status={String(remoteCiReviewSeedContract.status ?? "missing")}>
+        <p>scope: {String(remoteCiReviewSeedContract.scope ?? "local_checkpoint_seed_row_no_github_api_no_push")}</p>
+        <p>seed_row_rule: {String(remoteCiReviewSeedContract.seed_row_rule ?? "remote_ci_review_seed_row_keeps_p0_blocked_until_matching_remote_run_review")}</p>
+        <p>remote_status: {String(remoteCiReviewSeedContract.remote_status ?? "remote_ci_unverified")}；failed_step_or_green_status: {String(remoteCiReviewSeedContract.failed_step_or_green_status ?? "not_reviewed")}</p>
+        <p>release_claim_decision: {String(remoteCiReviewSeedContract.release_claim_decision ?? "blocked_remote_ci_unverified")}</p>
+        <p>remote_actions_status_known: {String(remoteCiReviewSeedContract.remote_actions_status_known === true)}；latest_remote_run_verified_green: {String(remoteCiReviewSeedContract.latest_remote_run_verified_green === true)}</p>
+        <p>local_gate_pass_is_not_ci_status: {String(remoteCiReviewSeedContract.local_gate_pass_is_not_ci_status === true)}；seed_row_is_not_remote_ci_evidence: {String(remoteCiReviewSeedContract.seed_row_is_not_remote_ci_evidence === true)}</p>
+        <p>did_not_push: {String(remoteCiReviewSeedContract.did_not_push !== false)}；github_api_called: {String(remoteCiReviewSeedContract.github_api_called === true)}</p>
+        <p>这张 seed row 只说明 P0 仍需匹配 HEAD 的远端 Actions run 或安全失败日志复核；不能放行 release claim。</p>
+        <DataLineageTable rows={[remoteCiReviewSeedContract]} />
+        <DataLineageTable rows={remoteCiReviewSeedRows} />
       </PacketCard>
 
       <PacketCard title="CI failure email triage" subtitle="ci_notification_triage_contract：本地分流失败邮件，不读取 GitHub run 日志" status={String(ciNotificationTriage.status ?? "missing")}>
