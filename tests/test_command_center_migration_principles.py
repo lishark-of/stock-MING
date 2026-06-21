@@ -94,6 +94,10 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("Default-off release switches for later provider/model task creation and frontend automation", text)
         self.assertIn("They stay effective false until execution-request, real ledgers, browser evidence, redaction, rollback, and promotion gates pass", text)
         self.assertIn("This table is config wording, not a new implementation claim", text)
+        self.assertIn("Configured source or release switches remain operator intent in this roadmap", text)
+        self.assertIn("never become effective merely because configured true", text)
+        self.assertIn("`cache_only` forces effective false", text)
+        self.assertIn("provider/model execution still waits for execution-request, ledgers, redaction, and promotion", text)
         self.assertIn("configured_true_is_operator_intent_not_effective_external_call", text)
         self.assertIn(
             "effective_external_call_requires_mode_task_gate_ledgers_redaction_and_promotion",

@@ -441,6 +441,8 @@ User wording checkpoint for future reviews: the boundary is being upgraded from 
 
 Latest user wording distilled into this roadmap: the long-term goal is not to keep Command Center 3.0 permanently offline, but to make every external-capable path mode-aware and reviewable. In `cache_only`, startup and render stay fully quiet. In `manual`, a human click or explicit task payload is the trigger. In `live_light`, the local research-client path may create one bounded bootstrap task after cache render, covering current target / holdings / watchlist / searched symbol, but only with visible mode state, symbol caps, rate limits, provider/model ledgers, safe failure, no hidden full-pool scan, no trading chain, and no token/key exposure. Any future wording or implementation should preserve that distinction instead of flattening the boundary back into either "never automate" or "silently automate".
 
+Configured source or release switches remain operator intent in this roadmap. `COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN`, `COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN`, startup/search-submit/frontend/provider-model/full-pool switches, and any similar future live switch never become effective merely because configured true. `cache_only` forces effective false, `live_full` stays reserved, and provider/model execution still waits for execution-request, ledgers, redaction, and promotion.
+
 ## Remaining Goals Snapshot
 
 Current snapshot date: 2026-06-16.
