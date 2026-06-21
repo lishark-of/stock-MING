@@ -280,6 +280,16 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("complete ordinary-workflow exit", section)
         self.assertNotIn("fallback removal、replacement parity、admin/debug retirement", section)
 
+    def test_migration_map_next_action_queue_uses_ltg10_capability_replacement_label(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "docs" / "migration_map.md").read_text(encoding="utf-8")
+        section = text.split("| 迁移状态 / 14 个长期目标 |", 1)[1].split(
+            "| Command Center 3.0 本地入口 |", 1
+        )[0]
+
+        self.assertIn("Streamlit ordinary capability replacement / retirement review", section)
+        self.assertNotIn("Streamlit replacement parity/retirement review", section)
+
     def test_app_migration_plan_records_no_blind_copy_and_audit_gate(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "app_migration_plan.md").read_text(encoding="utf-8")
