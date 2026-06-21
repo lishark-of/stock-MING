@@ -159,6 +159,24 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("old Streamlit UI copy stays outside the goal", section)
         self.assertNotIn("legacy parity is actually complete", section)
 
+    def test_ltg08_status_parity_wording_is_compatibility_not_ui_copy(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (
+            root / "server" / "services" / "migration_status_service.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("retained legacy signal/capability coverage recipe", source)
+        self.assertIn("compatibility parity wording is not old UI/navigation parity", source)
+        self.assertIn(
+            "same-packet legacy signal/capability parity as retained signal/capability no-feature-loss coverage evidence",
+            source,
+        )
+        self.assertIn(
+            "browser visual/performance QA, durable CI/release evidence, and production promotion review",
+            source,
+        )
+        self.assertNotIn("before retiring the Streamlit visual fallback path", source)
+
     def test_migration_map_records_legacy_audit_and_five_commit_questions(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "migration_map.md").read_text(encoding="utf-8")
