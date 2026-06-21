@@ -53,6 +53,7 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "legacy_intake_home_daily_command",
             "legacy_intake_searched_symbol_quant_projection",
             "legacy_intake_candidate_radar",
+            "legacy_intake_next_session_map",
         ):
             self.assertIn(intake_row, self.migration_map)
 
@@ -60,9 +61,14 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "home/daily command",
             "searched-symbol quant projection",
             "candidate radar",
+            "next-session map",
         ):
             self.assertIn(workflow, self.migration_map)
 
+        self.assertIn("避免后续 ECharts/operation zones 迁移绕过 Legacy Bug / UX Audit", self.migration_map)
+        self.assertIn("operation_zones 只作为条件，不改 action", self.migration_map)
+        self.assertIn("receipt-as-replacement", self.migration_map)
+        self.assertIn("local receipt is not replacement evidence", self.migration_map)
         self.assertIn("pending safe screenshot or reviewer note", self.migration_map)
         self.assertGreaterEqual(
             self.migration_map.count("direct_evidence_intake_pending"),
