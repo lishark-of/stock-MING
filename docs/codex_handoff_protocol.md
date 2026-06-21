@@ -36,6 +36,7 @@ ChatGPT designs task
 - Configured source switches, release switches, or `configured=true` rows are operator intent, not effective external calls. They become effective only after the current runtime mode, task gate, ledgers, redaction, and promotion rules allow them; `cache_only` forces effective automation false, `manual` remains explicit-button/POST only, `live_light` remains bounded local task creation after cache render, and `live_full` remains reserved with no hidden automation.
 - Full backtests, full-market scans, heavy Tushare/AkShare/yfinance/Supabase refreshes, and any real trading path remain explicit-button or separately authorized work; they must not run from page open, render, GET cache/status, or search typing.
 - DeepSeek is never a data source and must not overwrite prices, holdings, factors, operation zones, or strategy action.
+- DeepSeek text, model summaries, or explanation status cannot satisfy missing evidence, cannot become a next-click action, and cannot replace provider/cache/factor/operation-zone evidence; they may only explain existing evidence with `model_ledger` status and redaction state.
 - The legacy workspace must remain reachable unless a task explicitly changes that.
 - Streamlit stays fallback / legacy / admin / debug until the React/Tauri ordinary entrances are demonstrably easier, clearer, and more reliable; do not describe Streamlit as the primary 3.0 runtime surface or target UX in a handoff or checkpoint.
 - Service layers should remain UI-free.

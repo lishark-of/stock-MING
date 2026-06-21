@@ -65,6 +65,10 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
         self.assertIn("Full backtests, full-market scans, heavy Tushare/AkShare/yfinance/Supabase refreshes", self.protocol)
         self.assertIn("any real trading path remain explicit-button or separately authorized work", self.protocol)
         self.assertIn("DeepSeek is never a data source", self.protocol)
+        self.assertIn("DeepSeek text, model summaries, or explanation status cannot satisfy missing evidence", self.protocol)
+        self.assertIn("cannot become a next-click action", self.protocol)
+        self.assertIn("cannot replace provider/cache/factor/operation-zone evidence", self.protocol)
+        self.assertIn("only explain existing evidence with `model_ledger` status and redaction state", self.protocol)
 
     def test_handoff_protocol_separates_configured_true_from_effective_external_call(self):
         self.assertIn("configured=true", self.protocol)
