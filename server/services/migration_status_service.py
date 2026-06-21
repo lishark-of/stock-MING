@@ -101,9 +101,9 @@ LONG_TERM_GOAL_PROGRESS = [
         "goal": "ECharts 次日操作图谱成熟版",
         "completion_bucket": "productionization_required",
         "completion_estimate": "45%-55%",
-        "current_state": "payload contract, cache envelope, read-only React rendering, reference/zone/position/DeepSeek status, interaction readiness, browser QA runbook, and no-feature-loss retained legacy signal/capability coverage recipe exist; compatibility parity wording is not old UI/navigation parity.",
-        "not_complete_because": "legacy signal/capability reference capture, browser visual QA, performance trace, no-feature-loss capability evidence, and production replacement promotion are pending; old Streamlit UI copy is not the target.",
-        "next_step": "Run explicit same-packet legacy signal/capability parity as retained signal/capability no-feature-loss coverage evidence, then browser visual/performance QA, durable CI/release evidence, and production promotion review before any fallback retirement review.",
+        "current_state": "payload contract, cache envelope, read-only React rendering, reference/zone/position/DeepSeek status, interaction readiness, browser QA runbook, and retained signal/capability no-feature-loss coverage recipe exist; compatibility field names are not old UI/navigation parity evidence.",
+        "not_complete_because": "retained signal/capability reference capture, browser visual QA, performance trace, no-feature-loss capability evidence, and production replacement promotion are pending; old Streamlit UI copy is not the target.",
+        "next_step": "Run explicit same-packet retained signal/capability no-feature-loss coverage review, then browser visual/performance QA, durable CI/release evidence, and production promotion review before any fallback retirement review.",
         "production_complete": False,
     },
     {
@@ -249,7 +249,7 @@ LTG_NEXT_EVIDENCE_REQUIRED = {
         "durable evidence promotion",
     ],
     "LTG-08": [
-        "same-packet legacy signal/capability parity compatibility field for retained coverage evidence",
+        "same-packet retained signal/capability coverage compatibility field; not old UI/navigation parity evidence",
         "no-feature-loss capability matrix",
         "browser visual QA",
         "performance trace",
@@ -518,7 +518,7 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
         "future_provider_route": "future explicit next-session retained signal/capability coverage and production replacement tasks",
         "target_acceptance_mode": "next_session_browser_visual_performance_and_coverage_evidence_promotion",
         "required_evidence": [
-            "same-packet legacy signal/capability parity evidence as retained no-feature-loss coverage, not old UI/navigation parity",
+            "same-packet retained signal/capability no-feature-loss coverage evidence; compatibility ids are not old UI/navigation parity evidence",
             "browser visual QA report",
             "browser performance trace",
             "reduced-motion evidence",
@@ -7348,12 +7348,12 @@ def _merge_ltg_stage_scope_observations(
                 item["observed_next_session_browser_qa_is_production_replacement"] = False
                 if next_browser_evidence_done:
                     item["not_complete_because"] = (
-                        "same-packet legacy signal/capability reference capture, feature-by-feature capability parity, durable CI/release "
+                        "same-packet retained signal/capability reference capture, feature-by-feature capability coverage, durable CI/release "
                         "evidence, and production replacement promotion are pending; local browser "
                         "visual/performance/reduced-motion QA is observed but not production replacement."
                     )
                     item["next_step"] = (
-                        "Run explicit same-packet legacy signal/capability parity as retained coverage evidence and feature-by-feature no-loss review, then "
+                        "Run explicit same-packet retained signal/capability coverage evidence and feature-by-feature no-loss review, then "
                         "attach durable CI/release evidence and production replacement promotion; do not rerun "
                         "local browser QA unless the route or packet contract changes."
                     )

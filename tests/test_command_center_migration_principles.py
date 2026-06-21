@@ -184,14 +184,31 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
             root / "server" / "services" / "migration_status_service.py"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("retained legacy signal/capability coverage recipe", source)
-        self.assertIn("compatibility parity wording is not old UI/navigation parity", source)
+        self.assertIn("retained signal/capability no-feature-loss coverage recipe exist", source)
+        self.assertIn("compatibility field names are not old UI/navigation parity evidence", source)
         self.assertIn(
-            "same-packet legacy signal/capability parity as retained signal/capability no-feature-loss coverage evidence",
+            "Run explicit same-packet retained signal/capability no-feature-loss coverage review",
             source,
         )
         self.assertIn(
+            "same-packet retained signal/capability coverage compatibility field; not old UI/navigation parity evidence",
+            source,
+        )
+        self.assertIn(
+            "same-packet retained signal/capability no-feature-loss coverage evidence; compatibility ids are not old UI/navigation parity evidence",
+            source,
+        )
+        self.assertIn("feature-by-feature capability coverage", source)
+        self.assertIn(
             "button_task_then_browser_or_coverage_evidence_review",
+            source,
+        )
+        self.assertNotIn(
+            "same-packet legacy signal/capability parity as retained signal/capability no-feature-loss coverage evidence",
+            source,
+        )
+        self.assertNotIn(
+            "same-packet legacy signal/capability parity compatibility field for retained coverage evidence",
             source,
         )
         self.assertIn(
