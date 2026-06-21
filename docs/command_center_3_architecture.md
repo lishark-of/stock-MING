@@ -343,5 +343,5 @@ Command Center 3.0 的外联边界采用默认安全、显式升级的运行模�
 2. 把 `refresh_factor_data` 等 local fallback task stub 迁移到 Celery worker，并保留相同任务状态合同。
 3. 继续验收 `refresh_factor_data` 扩展接口，并把 margin、limit、cyq、hard risk 等结果逐步写入 DuckDB/Parquet。
 4. 安装 Rust 后验证 Tauri dev mode；生产打包放到后续阶段。
-5. 把 Streamlit 页面逐块迁移到 React/ECharts。
-6. 最后将 Streamlit 仅保留为 legacy/admin/debug。
+5. 把经 Legacy Bug / UX Audit 判定应保留的能力、信号组和证据链逐块重建到 React/ECharts，不复制 Streamlit 页面 UI、tab navigation、已知 bug 或历史 patchwork。
+6. 最后仅在 React/Tauri 普通入口更简单、更清晰、更可靠且 fallback-retirement evidence 通过后，将 Streamlit 保留为 legacy/admin/debug。

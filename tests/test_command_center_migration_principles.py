@@ -515,6 +515,13 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("不创建 `POST /api/bootstrap/live-startup`", architecture)
         self.assertIn("不调用 provider/model，不写配置或 cache，不暴露 token/key", architecture)
         self.assertIn("不能当成 production evidence 或完整 `live_light` 实现", architecture)
+        self.assertIn("经 Legacy Bug / UX Audit 判定应保留的能力、信号组和证据链", architecture)
+        self.assertIn("不复制 Streamlit 页面 UI、tab navigation、已知 bug 或历史 patchwork", architecture)
+        self.assertIn(
+            "React/Tauri 普通入口更简单、更清晰、更可靠且 fallback-retirement evidence 通过",
+            architecture,
+        )
+        self.assertNotIn("把 Streamlit 页面逐块迁移到 React/ECharts", architecture)
 
     def test_push_gate_guard_covers_commit_checkpoint_surfaces(self):
         root = Path(__file__).resolve().parents[1]
