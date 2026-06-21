@@ -88,6 +88,7 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "legacy_decision_searched_symbol_quant_projection_replacement_ready_audit_pending",
             "legacy_decision_next_session_map_replacement_ready_audit_pending",
             "legacy_decision_candidate_radar_replacement_ready_audit_pending",
+            "legacy_decision_factor_risk_provider_health_split_audit_pending",
         ):
             self.assertIn(decision_row, self.migration_map)
 
@@ -96,6 +97,9 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
         self.assertIn("operation_zones are conditions not orders", self.migration_map)
         self.assertIn("local receipt is not replacement evidence", self.migration_map)
         self.assertIn("candidate is not buy instruction", self.migration_map)
+        self.assertIn("provider health detail remains `LEGACY-DEBUG`", self.migration_map)
+        self.assertIn("provider detail stays out of ordinary flow", self.migration_map)
+        self.assertIn("engineering tables no longer dominate ordinary pages", self.migration_map)
 
 
 if __name__ == "__main__":
