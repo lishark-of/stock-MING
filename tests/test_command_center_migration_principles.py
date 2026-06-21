@@ -493,6 +493,24 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         )
         self.assertLess(text.index("普通用户量化推演摘要"), text.index("开发 / 审计指标"))
 
+    def test_daily_command_center_demotes_engineering_audit_from_ordinary_first_view(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "desktop" / "src" / "routes" / "CommandCenterHome.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("今日作战台摘要", text)
+        self.assertIn("工程审计明细默认收起；完整 call ledger、release gate、runtime mode 和配置状态", text)
+        self.assertIn('href="#audit"', text)
+        self.assertIn('href="#settings"', text)
+        self.assertIn("详细验收记录、开发表格和排障明细默认收起", text)
+        self.assertLess(text.index("今日作战台摘要"), text.index("工程审计明细默认收起"))
+        self.assertLess(
+            text.index("工程审计明细默认收起"),
+            text.index('<details className="developer-audit-details">'),
+        )
+        self.assertLess(text.index("今日作战台摘要"), text.index("开发 / 审计详情"))
+
     def test_ltg08_completion_boundary_uses_signal_capability_evidence_not_legacy_parity(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "command_center_3_long_term_goals.md").read_text(
