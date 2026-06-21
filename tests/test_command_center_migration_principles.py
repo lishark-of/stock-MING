@@ -324,6 +324,30 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("provider-backed acceptance", section)
         self.assertNotIn("ordinary workflow parity、Candidate Radar parity、provider-backed parity", section)
 
+    def test_migration_map_ltg13_provider_evidence_uses_signal_capability_language(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "docs" / "migration_map.md").read_text(encoding="utf-8")
+        browser_review = text.split("LTG-13 Candidate Radar 的本地浏览器 QA", 1)[1].split(
+            "运行模式迁移采用", 1
+        )[0]
+        section = text.split(
+            "Candidate Radar 现在还输出 `candidate_radar_production_activation_receipt`",
+            1,
+        )[1].split(
+            "Candidate Radar 现在还提供 `POST /api/candidate-radar/full-pool-worker-scan`",
+            1,
+        )[0]
+
+        self.assertIn("provider-backed radar signal/capability acceptance", browser_review)
+        self.assertIn("provider-backed radar signal/capability acceptance", section)
+        self.assertIn("provider-backed radar signal/capability scope ticket", section)
+        self.assertIn("provider-backed radar signal/capability call ledger", section)
+        self.assertIn("legacy signal/capability", section)
+        self.assertNotIn("provider-backed parity", browser_review)
+        self.assertNotIn("provider-backed parity", section)
+        self.assertNotIn("provider parity scope", section)
+        self.assertNotIn("legacy parity", section)
+
     def test_migration_map_streamlit_row_keeps_receipts_from_parity_claim(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "migration_map.md").read_text(encoding="utf-8")
