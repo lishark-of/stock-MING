@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
+import config
 from server.services import packet_service, task_service
 
 
@@ -8035,6 +8036,53 @@ MIGRATION_PRINCIPLES = [
 ]
 
 
+def _build_legacy_audit_first_round_intake_summary() -> tuple[
+    dict[str, Any], list[dict[str, Any]]
+]:
+    contract = config.get_command_center_legacy_audit_classification_contract()
+    focus_workflows = list(contract.get("first_round_focus_workflows") or [])
+    required_fields = list(contract.get("intake_required_fields") or [])
+    safe_sources = list(contract.get("intake_safe_attachment_sources") or [])
+    forbidden_sources = list(contract.get("intake_forbidden_attachment_sources") or [])
+    allowed_statuses = list(contract.get("intake_allowed_statuses") or [])
+    rows = [
+        {
+            "workflow_group": workflow,
+            "required_fields": list(required_fields),
+            "allowed_initial_status": "direct_evidence_intake_pending",
+            "safe_attachment_sources": list(safe_sources),
+            "forbidden_attachment_sources": list(forbidden_sources),
+            "keep_promotion_allowed_this_round": False,
+            "ordinary_entry_promotion_allowed_this_round": False,
+            "next_action": "capture_safe_user_observation_lineage_and_freeze_decision",
+        }
+        for workflow in focus_workflows
+    ]
+    summary = {
+        "schema_version": "command_center_legacy_audit_first_round_intake_status.v1",
+        "status": "legacy_audit_first_round_intake_config_visible",
+        "config_source": "config.get_command_center_legacy_audit_classification_contract",
+        "first_round_intake_rule": contract.get("first_round_intake_rule"),
+        "required_fields": required_fields,
+        "safe_attachment_sources": safe_sources,
+        "forbidden_attachment_sources": forbidden_sources,
+        "allowed_statuses": allowed_statuses,
+        "focus_workflow_count": len(focus_workflows),
+        "row_count": len(rows),
+        "keep_promotion_allowed_this_round": False,
+        "ordinary_entry_promotion_allowed_this_round": False,
+        "production_evidence_rule": contract.get("production_evidence_rule"),
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+    }
+    return summary, rows
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -8058,6 +8106,9 @@ def build_migration_status() -> dict[str, Any]:
     latest_tushare_deepseek_linkage_review, latest_tushare_deepseek_linkage_review_rows = (
         _latest_tushare_deepseek_linkage_review_from_tasks()
     )
+    legacy_audit_first_round_intake, legacy_audit_first_round_intake_rows = (
+        _build_legacy_audit_first_round_intake_summary()
+    )
     return {
         "packet_key": "command_center_3_migration_status",
         "schema_version": "command_center_3_migration_status.v2",
@@ -8075,6 +8126,8 @@ def build_migration_status() -> dict[str, Any]:
         "tushare_deepseek_mode_layer_rows": tushare_deepseek_mode_layer_rows,
         "latest_tushare_deepseek_linkage_review": latest_tushare_deepseek_linkage_review,
         "latest_tushare_deepseek_linkage_review_rows": latest_tushare_deepseek_linkage_review_rows,
+        "legacy_audit_first_round_intake": legacy_audit_first_round_intake,
+        "legacy_audit_first_round_intake_rows": legacy_audit_first_round_intake_rows,
         "target_stack": list(TARGET_STACK),
         "principles": list(MIGRATION_PRINCIPLES),
         "baseline_policy": {
@@ -8104,6 +8157,9 @@ def build_migration_status() -> dict[str, Any]:
                 + len(ltg_stage_scope_observed_rows)
                 + len(tushare_deepseek_linkage_rows)
                 + len(tushare_deepseek_mode_layer_rows),
+                "legacy_audit_first_round_intake_row_count": len(
+                    legacy_audit_first_round_intake_rows
+                ),
                 "ltg_stage_scope_observed_row_count": len(ltg_stage_scope_observed_rows),
                 "tushare_deepseek_linkage_row_count": len(tushare_deepseek_linkage_rows),
                 "tushare_deepseek_mode_layer_row_count": len(tushare_deepseek_mode_layer_rows),

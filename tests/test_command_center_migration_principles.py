@@ -267,6 +267,54 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertFalse(contract["deepseek_called"])
         self.assertTrue(contract["does_not_execute_trades"])
 
+    def test_migration_status_exposes_legacy_audit_first_round_intake(self):
+        from server.services import migration_status_service
+
+        status = migration_status_service.build_migration_status()
+        summary = status["legacy_audit_first_round_intake"]
+        rows = status["legacy_audit_first_round_intake_rows"]
+
+        self.assertEqual(
+            summary["first_round_intake_rule"],
+            "first_round_legacy_bug_ux_audit_collects_direct_problem_statement_not_keep_promotion",
+        )
+        self.assertEqual(summary["focus_workflow_count"], len(rows))
+        self.assertGreaterEqual(summary["focus_workflow_count"], 10)
+        self.assertFalse(summary["keep_promotion_allowed_this_round"])
+        self.assertFalse(summary["ordinary_entry_promotion_allowed_this_round"])
+        self.assertEqual(
+            summary["production_evidence_rule"],
+            "legacy_audit_classification_contract_is_not_production_evidence",
+        )
+        self.assertFalse(summary["external_calls_triggered"])
+        self.assertFalse(summary["tushare_called"])
+        self.assertFalse(summary["deepseek_called"])
+        self.assertTrue(summary["does_not_execute_trades"])
+        self.assertIn("safe_screenshot_reference", summary["safe_attachment_sources"])
+        self.assertIn("raw_packet_bodies", summary["forbidden_attachment_sources"])
+        self.assertIn("unredacted_model_output", summary["forbidden_attachment_sources"])
+        self.assertNotIn("KEEP", summary["allowed_statuses"])
+
+        rows_by_workflow = {row["workflow_group"]: row for row in rows}
+        self.assertIn("home/daily command", rows_by_workflow)
+        self.assertIn("candidate radar", rows_by_workflow)
+        self.assertIn(
+            "old AI strategy advisor / cross-market advice button",
+            rows_by_workflow,
+        )
+        for row in rows:
+            self.assertEqual(row["allowed_initial_status"], "direct_evidence_intake_pending")
+            self.assertFalse(row["keep_promotion_allowed_this_round"])
+            self.assertFalse(row["ordinary_entry_promotion_allowed_this_round"])
+            self.assertIn("user_observation", row["required_fields"])
+            self.assertIn("safe_log_summary", row["safe_attachment_sources"])
+            self.assertIn("token_key_credential_values", row["forbidden_attachment_sources"])
+
+        self.assertEqual(
+            status["call_ledger"][0]["legacy_audit_first_round_intake_row_count"],
+            len(rows),
+        )
+
     def test_next_session_push_gate_contract_uses_signal_capability_parity_wording(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "scripts" / "next_session_map_contract.py").read_text(
