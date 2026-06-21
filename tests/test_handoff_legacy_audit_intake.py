@@ -148,7 +148,11 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
             self.long_term_goals,
         )
         self.assertIn(
-            "signal/capability no-feature-loss QA, legacy parity acceptance receipt (not old radar UI/navigation copy)",
+            "signal/capability no-feature-loss QA, legacy signal/capability acceptance receipt (not old radar UI/navigation copy)",
+            self.long_term_goals,
+        )
+        self.assertNotIn(
+            "signal/capability no-feature-loss QA, legacy parity acceptance receipt",
             self.long_term_goals,
         )
         self.assertIn("preserve legacy signal groups", self.long_term_goals)
