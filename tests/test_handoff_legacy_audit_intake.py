@@ -51,6 +51,16 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
         self.assertIn("any real trading path remain explicit-button or separately authorized work", self.protocol)
         self.assertIn("DeepSeek is never a data source", self.protocol)
 
+    def test_handoff_protocol_separates_configured_true_from_effective_external_call(self):
+        self.assertIn("configured=true", self.protocol)
+        self.assertIn("operator intent, not effective external calls", self.protocol)
+        self.assertIn("become effective only after the current runtime mode, task gate, ledgers, redaction, and promotion rules allow them", self.protocol)
+        self.assertIn("`cache_only` forces effective automation false", self.protocol)
+        self.assertIn("`manual` remains explicit-button/POST only", self.protocol)
+        self.assertIn("`live_light` remains bounded local task creation after cache render", self.protocol)
+        self.assertIn("`live_full` remains reserved", self.protocol)
+        self.assertIn("configured source/release switches remain operator intent rather than effective external calls", self.protocol)
+
     def test_checkpoint_report_requires_cycle_scope_and_runtime_boundaries(self):
         self.assertIn("at most one main target and one supporting target", self.protocol)
         self.assertIn("modify no more than five files", self.protocol)
