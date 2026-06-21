@@ -431,7 +431,7 @@ def _next_session_interaction_readiness_rows(payload: dict[str, Any]) -> list[di
         ),
         _interaction_readiness_row(
             "legacy_streamlit_parity",
-            "Streamlit parity",
+            "legacy signal/capability parity",
             "pending",
             source="docs/command_center_3_long_term_goals.md#LTG-08",
             note="legacy 次日图谱完整交互对齐仍未完成；当前审计不能称为生产替代完成。",
@@ -467,7 +467,7 @@ def _next_session_interaction_readiness_audit(payload: dict[str, Any]) -> dict[s
         "does_not_execute_trades": True,
         "does_not_modify_action": True,
         "does_not_modify_operation_zones": True,
-        "next_action": "complete legacy Streamlit parity review before calling the ECharts map a full replacement.",
+        "next_action": "complete legacy signal/capability parity review before calling the ECharts map a full replacement.",
     }
 
 

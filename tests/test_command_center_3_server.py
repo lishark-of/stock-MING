@@ -2788,6 +2788,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(chart["interaction_readiness_audit"]["streamlit_parity_complete"])
         self.assertFalse(chart["interaction_readiness_audit"]["production_replacement_complete"])
         self.assertFalse(chart["interaction_readiness_audit"]["external_calls_triggered"])
+        self.assertIn(
+            "legacy signal/capability parity",
+            chart["interaction_readiness_audit"]["next_action"],
+        )
+        self.assertNotIn(
+            "Streamlit parity",
+            chart["interaction_readiness_audit"]["next_action"],
+        )
+        interaction_row_names = {row["label"] for row in chart["interaction_readiness_rows"]}
+        self.assertIn("legacy signal/capability parity", interaction_row_names)
+        self.assertNotIn("Streamlit parity", interaction_row_names)
         self.assertIn("chart_payload_available", {row["key"] for row in chart["interaction_readiness_rows"]})
         self.assertEqual(chart["chart_summary"]["renderer"], "ECharts")
         self.assertFalse(chart["chart_summary"]["has_drawable_data"])
