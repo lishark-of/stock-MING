@@ -182,6 +182,43 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         )
         self.assertNotIn("legacy 次日图谱完整交互对齐仍未完成", text)
 
+    def test_next_session_route_ui_uses_retained_coverage_not_legacy_parity_copy(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "desktop" / "src" / "routes" / "NextSessionMap.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            "retained signal/capability no-feature-loss coverage review",
+            text,
+        )
+        self.assertIn(
+            "不替代 retained signal/capability coverage evidence",
+            text,
+        )
+        self.assertIn(
+            "ECharts same-packet retained signal/capability coverage 审查",
+            text,
+        )
+        self.assertIn("审查信号/能力覆盖", text)
+        self.assertIn("信号/能力覆盖", text)
+        self.assertIn("coverage review", text)
+        self.assertIn("coverage 阻断", text)
+        self.assertIn("local_retained_coverage_review_ready", text)
+        self.assertIn("retained_coverage_complete", text)
+        self.assertIn(
+            "不证明 retained signal/capability coverage evidence",
+            text,
+        )
+        self.assertNotIn("legacy signal/capability parity", text)
+        self.assertNotIn("审查信号/能力 parity", text)
+        self.assertNotIn("信号/能力 parity", text)
+        self.assertNotIn("parity review", text)
+        self.assertNotIn("parity 阻断", text)
+        self.assertNotIn("；streamlit_parity_complete:", text)
+        self.assertNotIn("local_signal_capability_parity_review_ready", text)
+        self.assertNotIn("signal_capability_parity_complete", text)
+
     def test_ltg08_completion_boundary_uses_signal_capability_evidence_not_legacy_parity(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "command_center_3_long_term_goals.md").read_text(
