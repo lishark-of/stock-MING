@@ -172,7 +172,7 @@ export default function NextSessionMap() {
         <button onClick={refreshCache}>查看缓存</button>
         <button onClick={launchTask}>生成任务</button>
         <button onClick={reviewBrowserQa}>审查本地 QA</button>
-        <button onClick={reviewStreamlitParity}>审查 Streamlit parity</button>
+        <button onClick={reviewStreamlitParity}>审查信号/能力 parity</button>
         <button onClick={reviewProductionPromotion}>审查 promotion</button>
       </div>
       <TaskLaunchReceipt receipt={taskReceipt} />
@@ -197,7 +197,7 @@ export default function NextSessionMap() {
           { label: "成熟度", value: String(chartMaturity.status ?? chartSummary.maturity_status ?? "partial"), tone: chartMaturity.status === "ready" ? "good" : "warn" },
           { label: "交互审计", value: String(interactionReadinessAudit.status ?? chartSummary.interaction_readiness_status ?? "missing"), tone: interactionReadinessAudit.status === "interaction_blocked" ? "bad" : "warn" },
           { label: "交互阻断", value: Number(interactionReadinessAudit.blocking_count ?? chartSummary.interaction_blocking_count ?? 0), tone: Number(interactionReadinessAudit.blocking_count ?? chartSummary.interaction_blocking_count ?? 0) ? "bad" : "good" },
-          { label: "Streamlit parity", value: interactionReadinessAudit.streamlit_parity_complete === true ? "完成" : "待验收", tone: interactionReadinessAudit.streamlit_parity_complete === true ? "good" : "warn" },
+          { label: "信号/能力 parity", value: interactionReadinessAudit.streamlit_parity_complete === true ? "完成" : "待验收", tone: interactionReadinessAudit.streamlit_parity_complete === true ? "good" : "warn" },
           { label: "替代激活收据", value: String(replacementActivation.status ?? "missing"), tone: replacementActivation.local_activation_receipt_ready === true ? "good" : "warn" },
           { label: "替代阻断", value: Number(replacementActivation.production_blocker_count ?? 0), tone: Number(replacementActivation.production_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "缺失证据", value: Number(replacementActivation.missing_evidence_count ?? 0), tone: Number(replacementActivation.missing_evidence_count ?? 0) > 0 ? "warn" : "good" },
@@ -232,13 +232,13 @@ export default function NextSessionMap() {
       <DataLineageTable rows={[interactionReadinessAudit]} />
       <DataLineageTable rows={interactionReadinessRows} />
       <h3>ECharts 生产替代激活收据</h3>
-      <p className="risk-note">next_session_replacement_activation_receipt 只把 Streamlit parity、浏览器视觉 QA、性能 trace、durable evidence 和只读边界串成下一步清单；它不运行浏览器、不调用 provider/model、不证明生产替代完成。</p>
-      <p>allowed_next_step: {String(replacementActivation.allowed_next_step ?? "explicit_streamlit_parity_browser_visual_performance_review_then_replacement_promotion")}</p>
+      <p className="risk-note">next_session_replacement_activation_receipt 只把 legacy signal/capability parity、浏览器视觉 QA、性能 trace、durable evidence 和只读边界串成下一步清单；它不运行浏览器、不调用 provider/model、不证明生产替代完成，也不代表复制旧 Streamlit 图表 UI。</p>
+      <p>allowed_next_step: {String(replacementActivation.allowed_next_step ?? "explicit_signal_capability_parity_browser_visual_performance_review_then_replacement_promotion")}</p>
       <p>production_replacement_complete: {String(replacementActivation.production_replacement_complete === true)}；browser_visual_qa_done: {String(replacementActivation.browser_visual_qa_done === true)}；browser_performance_trace_done: {String(replacementActivation.browser_performance_trace_done === true)}</p>
       <DataLineageTable rows={[replacementActivation]} />
       <DataLineageTable rows={replacementActivationRows} />
       <h3>ECharts 本地浏览器 QA</h3>
-      <p className="risk-note">next_session_browser_qa_* 只读取 ignored 本地 runner 报告并支持按钮审查；它不打开浏览器、不提交截图/报告、不替代 Streamlit parity、不证明生产替代完成。</p>
+      <p className="risk-note">next_session_browser_qa_* 只读取 ignored 本地 runner 报告并支持按钮审查；它不打开浏览器、不提交截图/报告、不替代 legacy signal/capability parity、不证明生产替代完成。</p>
       <p>route: {String(browserQaRunbook.next_route ?? "#next")}；artifact_root: {String(browserQaRunbook.artifact_root ?? ".stock_ming_3/motion_qa")}</p>
       <p>local_browser_qa_review_ready: {String(browserQaReview.local_browser_qa_review_ready === true)}；production_replacement_complete: {String(browserQaReview.production_replacement_complete === true)}；streamlit_parity_complete: {String(browserQaReview.streamlit_parity_complete === true)}</p>
       <DataLineageTable rows={[browserQaRunbook]} />
@@ -250,16 +250,16 @@ export default function NextSessionMap() {
       <h3>ECharts 本地 QA 审查</h3>
       <DataLineageTable rows={[browserQaReview]} />
       <DataLineageTable rows={browserQaReviewRows} />
-      <h3>ECharts same-packet Streamlit parity 审查</h3>
-      <p className="risk-note">next_session_streamlit_parity_review 只审查本地同包 no-feature-loss 合同；它不打开 Streamlit、不运行浏览器、不移除 fallback、不证明生产替代完成。</p>
-      <p>local_streamlit_parity_review_ready: {String(streamlitParityReview.local_streamlit_parity_review_ready === true)}；same_packet_no_loss_review_ready: {String(streamlitParityReview.same_packet_no_loss_review_ready === true)}；streamlit_parity_complete: {String(streamlitParityReview.streamlit_parity_complete === true)}</p>
+      <h3>ECharts same-packet signal/capability parity 审查</h3>
+      <p className="risk-note">next_session signal/capability parity review 只审查本地同包 no-feature-loss 合同；它不打开 Streamlit、不运行浏览器、不移除 fallback、不证明生产替代完成。</p>
+      <p>local_signal_capability_parity_review_ready: {String(streamlitParityReview.local_streamlit_parity_review_ready === true)}；same_packet_no_loss_review_ready: {String(streamlitParityReview.same_packet_no_loss_review_ready === true)}；signal_capability_parity_complete: {String(streamlitParityReview.streamlit_parity_complete === true)}</p>
       <DataLineageTable rows={[streamlitParityReview]} />
       <DataLineageTable rows={streamlitParityReviewRows} />
       <h3>ECharts durable evidence recipe</h3>
-      <p className="risk-note">next_session_durable_evidence_recipe 只固定生产替代前的直接证据清单；它不打开浏览器、不启动服务、不调用 provider/model、不证明 Streamlit parity、不证明生产替代完成。</p>
+      <p className="risk-note">next_session_durable_evidence_recipe 只固定生产替代前的直接证据清单；它不打开浏览器、不启动服务、不调用 provider/model、不证明 legacy signal/capability parity、不证明生产替代完成。</p>
       <p>scope: {String(durableEvidenceRecipe.scope ?? "local_next_session_durable_evidence_recipe_no_browser_no_provider")}</p>
       <p>local_recipe_ready: {String(durableEvidenceRecipe.local_recipe_ready === true)}；durable_evidence_complete: {String(durableEvidenceRecipe.durable_evidence_complete === true)}；durable_promotion_ready: {String(durableEvidenceRecipe.durable_promotion_ready === true)}</p>
-      <p>allowed_next_step: {String(durableEvidenceRecipe.allowed_next_step ?? "run_same_packet_streamlit_parity_then_browser_visual_performance_then_durable_promotion_review")}</p>
+      <p>allowed_next_step: {String(durableEvidenceRecipe.allowed_next_step ?? "run_same_packet_signal_capability_parity_then_browser_visual_performance_then_durable_promotion_review")}</p>
       <p>not_allowed_next_steps: {Array.isArray(durableEvidenceRecipe.not_allowed_next_steps) ? durableEvidenceRecipe.not_allowed_next_steps.join(" / ") : "local browser artifact as durable evidence / interaction readiness as parity / provider calls from render / frontend action computation"}</p>
       <DataLineageTable rows={[durableEvidenceRecipe]} />
       <DataLineageTable rows={durableEvidenceRows} />
