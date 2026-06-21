@@ -708,6 +708,7 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("-m unittest tests.test_command_center_migration_principles", ci_workflow)
         self.assertIn("scripts/bootstrap_runtime_contract.py", ci_workflow)
         self.assertIn("runtime_mode_policy_rows config boundary fields", ci_workflow)
+        self.assertIn("configured_switch_rule / effective_external_call_rule", ci_workflow)
         self.assertIn("scripts/push_gate_3_0.sh", ci_workflow)
         self.assertIn("Bootstrap runtime contract", push_gate)
         self.assertIn("scripts/bootstrap_runtime_contract.py", push_gate)
