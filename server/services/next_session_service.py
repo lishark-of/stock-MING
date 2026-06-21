@@ -69,7 +69,7 @@ NEXT_SESSION_PRODUCTION_STAGE_KEYS = (
 NEXT_SESSION_PRODUCTION_STAGE_LABELS = {
     "exact_cache_payload_contract": "exact cache payload and chart contract",
     "interaction_hover_click_contract": "hover and click interaction contract",
-    "streamlit_parity_review": "legacy Streamlit parity review",
+    "streamlit_parity_review": "legacy signal/capability parity review",
     "browser_visual_qa": "browser visual QA across viewports",
     "browser_performance_trace": "browser performance trace",
     "reduced_motion_accessibility_qa": "reduced-motion and accessibility QA",
@@ -448,7 +448,7 @@ def _next_session_browser_qa_runbook_contract() -> tuple[dict[str, Any], list[di
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "does_not_modify_operation_zones": True,
-        "note": "This runbook prepares targeted #next browser QA. It is not browser execution, Streamlit parity, performance promotion, or production replacement.",
+        "note": "This runbook prepares targeted #next browser QA. It is not browser execution, legacy signal/capability parity, performance promotion, or production replacement.",
     }
     return contract, rows, matrix_rows
 
@@ -685,7 +685,7 @@ def _next_session_browser_qa_evidence_summary() -> tuple[dict[str, Any], list[di
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "does_not_modify_operation_zones": True,
-        "note": "This reads ignored local motion browser QA reports for #next only. It does not open a browser, write artifacts, prove Streamlit parity, or mark production replacement complete.",
+        "note": "This reads ignored local motion browser QA reports for #next only. It does not open a browser, write artifacts, prove legacy signal/capability parity, or mark production replacement complete.",
     }
     return summary, next_rows
 
@@ -840,7 +840,7 @@ def _next_session_browser_qa_review_contract(
         "does_not_execute_trades": True,
         "does_not_modify_strategy_action": True,
         "does_not_modify_operation_zones": True,
-        "note": "This review promotes local #next browser QA evidence only to a button-gated local review state. It does not execute browser QA, prove Streamlit parity, or complete production replacement.",
+        "note": "This review promotes local #next browser QA evidence only to a button-gated local review state. It does not execute browser QA, prove legacy signal/capability parity, or complete production replacement.",
     }
 
 
@@ -1184,7 +1184,7 @@ def _write_next_session_streamlit_parity_review_packet(
         "does_not_modify_operation_zones": True,
         "contains_secret": False,
         "warnings": [
-            "This packet is a local same-packet Streamlit parity/no-feature-loss review receipt only.",
+            "This packet is a local same-packet legacy signal/capability parity/no-feature-loss review receipt only.",
             "It does not open Streamlit or a browser, call providers/models/GitHub, execute trades, remove fallback, mutate action or operation zones, or complete production replacement.",
         ],
     }
@@ -1326,8 +1326,8 @@ def _next_session_production_promotion_review_contract(
                 f"streamlit_reference_captured={streamlit_review.get('streamlit_reference_captured') is True}; "
                 f"streamlit_parity_complete={streamlit_review.get('streamlit_parity_complete') is True}"
             ),
-            next_action="Keep same-packet no-feature-loss review ready without claiming captured Streamlit parity.",
-            evidence_group="Streamlit parity local review",
+            next_action="Keep same-packet no-feature-loss review ready without claiming captured legacy signal/capability parity.",
+            evidence_group="legacy signal/capability parity local review",
         ),
         _next_session_production_promotion_review_row(
             "durable_evidence_recipe_visible",
@@ -1367,7 +1367,7 @@ def _next_session_production_promotion_review_contract(
             "passed" if boundary_ready else "blocked_boundary_regression",
             passed=boundary_ready,
             blocking=not boundary_ready,
-            evidence="Browser, Streamlit parity, and durable recipe inputs are local-only and read-only.",
+            evidence="Browser, legacy signal/capability parity, and durable recipe inputs are local-only and read-only.",
             next_action="Keep provider/model/GitHub/trading calls out of cache/render and this local review task.",
             evidence_group="safety boundary",
         ),
@@ -1593,7 +1593,7 @@ def _next_session_replacement_activation_receipt(packet: dict[str, Any]) -> tupl
             production_ready=streamlit_parity_complete,
             parity_required=True,
             evidence=f"streamlit_parity_complete={streamlit_parity_complete}",
-            next_action="Run explicit Streamlit parity review before claiming ECharts production replacement.",
+            next_action="Run explicit legacy signal/capability parity review before claiming ECharts production replacement.",
         ),
         _activation_row(
             "browser_visual_qa_required",
@@ -1863,7 +1863,7 @@ def _next_session_legacy_parity_execution_recipe(packet: dict[str, Any]) -> tupl
             local_ready=False,
             parity_complete=False,
             feature_group="replacement promotion",
-            evidence="Streamlit parity, browser visual QA, performance trace, reduced-motion QA, and durable evidence are pending.",
+            evidence="Legacy signal/capability parity, browser visual QA, performance trace, reduced-motion QA, and durable evidence are pending.",
             next_action="Promote ECharts replacement only after direct evidence covers every no-feature-loss phase.",
         ),
     ]
@@ -1929,7 +1929,7 @@ def _next_session_legacy_parity_execution_recipe(packet: dict[str, Any]) -> tupl
         "does_not_modify_operation_zones": True,
         "frontend_computes_trade_action": False,
         "contains_secret": False,
-        "note": "This local recipe fixes the no-feature-loss acceptance path for LTG-08. It does not execute browser QA, prove Streamlit parity, or complete production replacement.",
+        "note": "This local recipe fixes the no-feature-loss acceptance path for LTG-08. It does not execute browser QA, prove legacy signal/capability parity, or complete production replacement.",
     }
     return recipe, rows
 
@@ -2088,7 +2088,7 @@ def _next_session_durable_evidence_recipe(packet: Mapping[str, Any], now: str) -
             local_surface_required=True,
             production_blocker=False,
             evidence=f"status={parity_recipe.get('status')}; pending={parity_recipe.get('pending_phase_count')}",
-            next_action="Use the parity recipe as a no-feature-loss checklist, not as completed Streamlit parity.",
+            next_action="Use the parity recipe as a no-feature-loss checklist, not as completed legacy signal/capability parity.",
             recommended_order=4,
         ),
         _next_session_durable_evidence_recipe_row(
@@ -2265,7 +2265,7 @@ def _next_session_durable_evidence_recipe(packet: Mapping[str, Any], now: str) -
         "not_allowed_next_steps": [
             "treat durable recipe as ECharts production replacement",
             "treat local browser artifact review as durable evidence",
-            "treat interaction readiness as Streamlit parity",
+            "treat interaction readiness as legacy signal/capability parity",
             "drop legacy signal groups to reduce scope",
             "call Tushare or DeepSeek from GET cache or React render",
             "open browser or start servers from durable recipe",
@@ -2290,7 +2290,7 @@ def _next_session_durable_evidence_recipe(packet: Mapping[str, Any], now: str) -
         "does_not_modify_strategy_action": True,
         "does_not_modify_operation_zones": True,
         "frontend_computes_trade_action": False,
-        "note": "This recipe fixes the durable evidence checklist for LTG-08. It does not open a browser, start servers, call providers/models/GitHub, execute trades, mutate action or operation zones, prove Streamlit parity, or complete ECharts production replacement.",
+        "note": "This recipe fixes the durable evidence checklist for LTG-08. It does not open a browser, start servers, call providers/models/GitHub, execute trades, mutate action or operation zones, prove legacy signal/capability parity, or complete ECharts production replacement.",
     }
     contract["call_ledger"] = [
         {
@@ -2645,7 +2645,7 @@ def _next_session_production_stage_scope_manifest(packet: Mapping[str, Any], now
             "mutate price, position, strategy action, or operation zones",
         ],
         "rows": rows,
-        "note": "This manifest makes LTG-08 stage evidence visible from GET cache and React. It does not run browser QA, call providers/models/GitHub, execute trades, prove Streamlit parity, or complete production replacement.",
+        "note": "This manifest makes LTG-08 stage evidence visible from GET cache and React. It does not run browser QA, call providers/models/GitHub, execute trades, prove legacy signal/capability parity, or complete production replacement.",
     }
     manifest["call_ledger"] = [
         {
@@ -2871,7 +2871,7 @@ def run_next_session_browser_qa_review_task(payload: Any = None) -> dict[str, An
         current_step="next_session_browser_qa_review_queued",
         warnings=[
             "次日图谱 browser QA review 只读取本地 ignored runner 报告；不会打开浏览器、不会启动服务、不会调用 Tushare/DeepSeek/GitHub。",
-            "review 结果只代表本地 artifact 审查状态；不代表 Streamlit parity、durable CI evidence 或 production ECharts replacement。",
+            "review 结果只代表本地 artifact 审查状态；不代表 legacy signal/capability parity、durable CI evidence 或 production ECharts replacement。",
         ],
     )
     if task.get("dedupe_reused_existing"):
@@ -2954,7 +2954,7 @@ def run_next_session_streamlit_parity_review_task(payload: Any = None) -> dict[s
         payload=payload,
         current_step="next_session_streamlit_parity_review_queued",
         warnings=[
-            "次日图谱 Streamlit parity review 只审查当前本地同包 no-feature-loss 合同；不会打开 Streamlit、浏览器或启动服务。",
+            "次日图谱 legacy signal/capability parity review 只审查当前本地同包 no-feature-loss 合同；不会打开 Streamlit、浏览器或启动服务。",
             "review 结果不代表 Streamlit reference capture、durable CI evidence、fallback removal 或 production ECharts replacement。",
         ],
     )
@@ -3212,7 +3212,7 @@ def _local_exact_next_session_sample_packet(now: str) -> dict[str, Any]:
         "does_not_modify_operation_zones": True,
         "contains_secret": False,
         "warnings": [
-            "This is a button-gated local exact sample for same-packet Streamlit parity review only.",
+            "This is a button-gated local exact sample for same-packet legacy signal/capability parity review only.",
             "It is not provider-backed market data, Streamlit reference capture, browser QA, durable CI evidence, or production ECharts replacement.",
         ],
     }

@@ -111,6 +111,18 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("Streamlit parity", text)
         self.assertNotIn("legacy Streamlit parity", text)
 
+    def test_next_session_service_uses_signal_capability_parity_wording(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "server" / "services" / "next_session_service.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("legacy signal/capability parity review", text)
+        self.assertIn("same-packet legacy signal/capability parity", text)
+        self.assertIn("streamlit_parity_complete", text)
+        self.assertNotIn("Streamlit parity", text)
+        self.assertNotIn("legacy Streamlit parity", text)
+
     def test_migration_map_records_legacy_audit_and_five_commit_questions(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "migration_map.md").read_text(encoding="utf-8")
