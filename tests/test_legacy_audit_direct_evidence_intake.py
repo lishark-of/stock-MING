@@ -44,6 +44,36 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
         self.assertIn("`KEEP` 仍然保持禁止", self.migration_map)
         self.assertIn("不能把本轮取证当作生产验收", self.migration_map)
 
+    def test_first_intake_worklist_targets_priority_ordinary_workflows_without_keep_promotion(self):
+        self.assertIn("第一轮直接取证工作清单", self.migration_map)
+        self.assertIn("不是新合同、不是 receipt、不是 production evidence", self.migration_map)
+        self.assertIn("不会把任何 seed row 升级成 `KEEP`", self.migration_map)
+
+        for intake_row in (
+            "legacy_intake_home_daily_command",
+            "legacy_intake_searched_symbol_quant_projection",
+            "legacy_intake_candidate_radar",
+        ):
+            self.assertIn(intake_row, self.migration_map)
+
+        for workflow in (
+            "home/daily command",
+            "searched-symbol quant projection",
+            "candidate radar",
+        ):
+            self.assertIn(workflow, self.migration_map)
+
+        self.assertIn("pending safe screenshot or reviewer note", self.migration_map)
+        self.assertGreaterEqual(
+            self.migration_map.count("direct_evidence_intake_pending"),
+            4,
+        )
+        self.assertGreaterEqual(
+            self.migration_map.count("no_keep_promotion_this_round"),
+            4,
+        )
+        self.assertNotIn("legacy_intake_home_daily_command` | home/daily command | KEEP", self.migration_map)
+
 
 if __name__ == "__main__":
     unittest.main()
