@@ -88,6 +88,12 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("Default-off release switches for later provider/model task creation and frontend automation", text)
         self.assertIn("They stay effective false until execution-request, real ledgers, browser evidence, redaction, rollback, and promotion gates pass", text)
         self.assertIn("This table is config wording, not a new implementation claim", text)
+        self.assertIn("configured_true_is_operator_intent_not_effective_external_call", text)
+        self.assertIn(
+            "effective_external_call_requires_mode_task_gate_ledgers_redaction_and_promotion",
+            text,
+        )
+        self.assertIn("runtime_config_does_not_prove_full_live_light_workflow", text)
         self.assertIn("prove legacy signal/capability parity, copy old Streamlit UI", text)
         self.assertIn("legacy signal/capability parity gaps are auditable without treating old Streamlit UI copy as a goal", text)
         self.assertIn("Full legacy signal/capability parity for the next-session chart is incomplete; visual/UI copy is not the target", text)
