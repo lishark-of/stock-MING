@@ -16,26 +16,26 @@ export default function TaskLaunchReceipt({ receipt }: { receipt: TaskCreationEn
   return (
     <div className="task-panel task-panel--receipt motion-surface" data-task-state={receipt.ok ? "accepted" : "failed"} data-motion-scope="task_receipt_clarity" data-motion-purpose="state_change_confirmation">
       <div className="task-panel__head">
-        <span>任务创建回执</span>
-        <span>{receipt.ok ? "accepted" : String(receipt.error ?? "failed")}</span>
+        <span>任务创建记录</span>
+        <span>{receipt.ok ? "已创建" : String(receipt.error ?? "创建失败")}</span>
       </div>
       <StateClarityRail
-        label="task receipt state"
+        label="任务创建状态"
         state={receipt.ok ? "accepted" : "failed"}
         steps={[
-          { label: "accepted", state: receipt.ok ? "done" : "blocked", detail: receipt.ok ? "ok" : "failed" },
-          { label: "ledger", state: callLedger.length ? "done" : "waiting", detail: String(callLedger.length) },
-          { label: "boundary", state: task?.external_calls_triggered ? "blocked" : "done", detail: "safe" }
+          { label: "创建结果", state: receipt.ok ? "done" : "blocked", detail: receipt.ok ? "已接收" : "失败" },
+          { label: "审计记录", state: callLedger.length ? "done" : "waiting", detail: `${String(callLedger.length)} 条` },
+          { label: "边界检查", state: task?.external_calls_triggered ? "blocked" : "done", detail: "安全" }
         ]}
       />
-      <p>task_id: {String(receipt.data?.task_id ?? "--")}</p>
+      <p>任务编号：{String(receipt.data?.task_id ?? "--")}</p>
       <TaskBoundarySummary task={task} />
-      <p>top_level_call_ledger: {topLevelCallLedger.length}</p>
-      <p>task_call_ledger: {taskCallLedger.length}</p>
-      <p>按钮任务回执只展示 FastAPI 返回的审计血缘；不调用 Tushare、DeepSeek 或 GitHub。</p>
+      <p>页面审计记录：{topLevelCallLedger.length}</p>
+      <p>任务审计记录：{taskCallLedger.length}</p>
+      <p>按钮任务记录只展示 FastAPI 返回的审计血缘；不调用 Tushare、DeepSeek 或 GitHub。</p>
       {warnings.length ? <p className="risk-note">{String(warnings[0])}</p> : null}
       <DeepSeekModelStrategyLedger callLedger={modelStrategyCallLedger} />
-      {callLedger.length ? <DataLineageTable rows={callLedger} /> : <p className="empty-state">暂无任务创建 call_ledger。</p>}
+      {callLedger.length ? <DataLineageTable rows={callLedger} /> : <p className="empty-state">暂无任务创建审计记录。</p>}
     </div>
   );
 }

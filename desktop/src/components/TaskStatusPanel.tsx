@@ -23,6 +23,14 @@ function toneForStatus(status: TaskRecord["status"]) {
   return "warn";
 }
 
+function labelForStatus(status: TaskRecord["status"]) {
+  if (status === "success") return "已完成";
+  if (status === "failed") return "失败";
+  if (status === "cancelled") return "已取消";
+  if (status === "running") return "运行中";
+  return "等待中";
+}
+
 function mergeTaskEnvelope(res: ApiEnvelope<TaskRecord>): TaskRecord | null {
   if (!res.ok) return null;
   const dataLedger = res.data.call_ledger ?? [];
@@ -108,48 +116,49 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       return (
         <div className="task-panel task-panel--failed motion-surface" data-task-state="lookup_failed" data-motion-scope="task_phase_clarity" data-motion-purpose="state_change_confirmation">
           <div className="task-panel__head">
-            <StatusBadge label={lookupError.error} tone="bad" />
-            <span>{taskId}</span>
+            <StatusBadge label="读取失败" tone="bad" />
+            <span>任务编号：{taskId}</span>
           </div>
           <p>任务状态读取失败：{lookupError.error}</p>
-          <p>GET /api/tasks/{"{task_id}"} 只读取本地任务状态，不调用 Tushare、DeepSeek 或 GitHub。</p>
-          <p>call_ledger: {lookupError.call_ledger.length}</p>
+          <p>本地任务状态接口只读取任务记录，不调用 Tushare、DeepSeek 或 GitHub。</p>
+          <p>查询审计记录：{lookupError.call_ledger.length}</p>
           {lookupError.warnings.length ? <p className="risk-note">{String(lookupError.warnings[0])}</p> : null}
-          {lookupError.call_ledger.length ? <DataLineageTable rows={lookupError.call_ledger} /> : <p className="empty-state">暂无 task lookup call_ledger。</p>}
+          {lookupError.call_ledger.length ? <DataLineageTable rows={lookupError.call_ledger} /> : <p className="empty-state">暂无任务查询审计记录。</p>}
         </div>
       );
     }
-    return <p className="panel-loading">任务状态读取中：{taskId}</p>;
+    return <p className="panel-loading">正在读取任务状态：{taskId}</p>;
   }
   const callLedger = task.call_ledger ?? [];
   const statusHistory = task.status_history ?? [];
   const cancellable = task.status === "pending" || task.status === "running";
+  const taskStatusLabel = labelForStatus(task.status);
 
   return (
     <div className={`task-panel task-panel--${task.status} motion-surface`} data-task-state={task.status} data-motion-scope="task_phase_clarity" data-motion-purpose="state_change_confirmation">
       <div className="task-panel__head">
-        <StatusBadge label={task.status} tone={toneForStatus(task.status)} />
+        <StatusBadge label={taskStatusLabel} tone={toneForStatus(task.status)} />
         <span>{task.task_type}</span>
       </div>
       <StateClarityRail
-        label="task execution state"
+        label="任务执行状态"
         state={task.status}
         steps={[
-          { label: "queued", state: stateForTaskStep(task.status, "queued"), detail: "task" },
-          { label: "running", state: stateForTaskStep(task.status, "running"), detail: `${Math.round((task.progress ?? 0) * 100)}%` },
-          { label: "finished", state: stateForTaskStep(task.status, "finished"), detail: task.status }
+          { label: "排队", state: stateForTaskStep(task.status, "queued"), detail: "已记录" },
+          { label: "运行", state: stateForTaskStep(task.status, "running"), detail: `${Math.round((task.progress ?? 0) * 100)}%` },
+          { label: "完成", state: stateForTaskStep(task.status, "finished"), detail: taskStatusLabel }
         ]}
       />
       <progress className="task-progress" value={task.progress ?? 0} max={1} />
       <p>{task.current_step}</p>
-      <p>task_id: {task.task_id}</p>
-      <p>backend: {task.backend ?? "local_fallback"}</p>
-      <p>storage_source: {task.storage_source ?? "memory_or_sqlite_fallback"}</p>
-      <p>created_at: {task.created_at ?? "--"}</p>
-      <p>started_at: {task.started_at ?? "--"}</p>
-      <p>finished_at: {task.finished_at ?? "--"}</p>
+      <p>任务编号：{task.task_id}</p>
+      <p>运行方式：{task.backend ?? "local_fallback"}</p>
+      <p>记录来源：{task.storage_source ?? "memory_or_sqlite_fallback"}</p>
+      <p>创建时间：{task.created_at ?? "--"}</p>
+      <p>开始时间：{task.started_at ?? "--"}</p>
+      <p>结束时间：{task.finished_at ?? "--"}</p>
       <TaskBoundarySummary task={task} />
-      <p>call_ledger: {callLedger.length}</p>
+      <p>审计记录：{callLedger.length}</p>
       <button
         disabled={!cancellable}
         onClick={() =>
@@ -164,10 +173,10 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       {cancelMessage ? <p className="risk-note">{cancelMessage}</p> : null}
       {task.warnings?.length ? <p className="risk-note">{task.warnings[0]}</p> : null}
       <DeepSeekModelStrategyLedger callLedger={callLedger} />
-      {callLedger.length ? <DataLineageTable rows={callLedger} /> : <p className="empty-state">暂无 call_ledger 记录。</p>}
+      {callLedger.length ? <DataLineageTable rows={callLedger} /> : <p className="empty-state">暂无任务审计记录。</p>}
       {statusHistory.length ? (
         <>
-          <p>status_history: {statusHistory.length}</p>
+          <p>状态变化记录：{statusHistory.length}</p>
           <DataLineageTable rows={statusHistory} />
         </>
       ) : null}
