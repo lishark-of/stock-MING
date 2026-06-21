@@ -285,6 +285,10 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("receipt/合同通过不等于 Streamlit fallback removal", section)
         self.assertIn("complete ordinary-workflow exit", section)
         self.assertNotIn("fallback removal、replacement parity、admin/debug retirement", section)
+        self.assertNotIn(
+            "Streamlit fallback removal、replacement parity、admin/debug retirement",
+            text,
+        )
 
     def test_migration_map_next_action_queue_uses_ltg10_capability_replacement_label(self):
         root = Path(__file__).resolve().parents[1]
@@ -658,6 +662,10 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("经 Legacy Bug / UX Audit 判定应保留的能力、信号组和证据链", architecture)
         self.assertIn("不复制 Streamlit 页面 UI、tab navigation、已知 bug 或历史 patchwork", architecture)
         self.assertIn(
+            "Streamlit fallback removal、ordinary capability replacement evidence、admin/debug retirement",
+            architecture,
+        )
+        self.assertIn(
             "React/Tauri 普通入口更简单、更清晰、更可靠且 fallback-retirement evidence 通过",
             architecture,
         )
@@ -665,6 +673,10 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("browser QA、performance trace、Streamlit parity 和 production replacement", architecture)
         self.assertNotIn("不证明 Streamlit parity 或生产替代完成", architecture)
         self.assertNotIn("不证明 Streamlit parity、durable CI evidence", architecture)
+        self.assertNotIn(
+            "Streamlit fallback removal、replacement parity、admin/debug retirement",
+            architecture,
+        )
 
     def test_ltg13_streamlit_fallback_retirement_requires_signal_capability_not_ui_parity(self):
         root = Path(__file__).resolve().parents[1]
