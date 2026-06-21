@@ -305,6 +305,8 @@ export default function MigrationStatus() {
   const tushareDeepseekLinkageRows = (packet.tushare_deepseek_linkage_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const tushareDeepseekModeLayerRows = (packet.tushare_deepseek_mode_layer_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const latestTushareDeepseekLinkageReview = (packet.latest_tushare_deepseek_linkage_review as Record<string, unknown> | undefined) ?? {};
+  const legacyAuditFirstRoundIntake = (packet.legacy_audit_first_round_intake as Record<string, unknown> | undefined) ?? {};
+  const legacyAuditFirstRoundIntakeRows = (packet.legacy_audit_first_round_intake_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const linkageReviewPayload = (linkageReviewTask.payload_safe as Record<string, unknown> | undefined) ?? {};
   const postLinkageReviewReceipt = (linkageReviewPayload.tushare_deepseek_linkage_review_receipt as Record<string, unknown> | undefined) ?? {};
   const latestLinkageReviewRows = (packet.latest_tushare_deepseek_linkage_review_rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -556,6 +558,22 @@ export default function MigrationStatus() {
       <h3>14 LTG acceptance runway</h3>
       <p className="risk-note">这张表把每个长期目标的优先级、下一步验收动作和 observed pending 数集中到一处；它只读已有 roadmap/cache 合同，不创建任务、不调用外部服务，也不能关闭目标。</p>
       <DataLineageTable rows={ltgAcceptanceRunwayRows} />
+      <h3>Legacy Bug / UX Audit first-round intake</h3>
+      <p className="risk-note">这张审计 intake 只在迁移状态页展示：它告诉下一次复核要收集哪些用户观察、lineage、替代入口和冻结路径；第一轮不能升级 KEEP，也不能让旧模块进入普通用户入口。</p>
+      <MetricGrid
+        items={[
+          { label: "intake status", value: String(legacyAuditFirstRoundIntake.status ?? "missing") },
+          { label: "focus workflows", value: Number(legacyAuditFirstRoundIntake.focus_workflow_count ?? legacyAuditFirstRoundIntakeRows.length) },
+          { label: "row count", value: legacyAuditFirstRoundIntakeRows.length },
+          { label: "KEEP promotion", value: legacyAuditFirstRoundIntake.keep_promotion_allowed_this_round === true ? "allowed" : "blocked", tone: legacyAuditFirstRoundIntake.keep_promotion_allowed_this_round === true ? "bad" : "good" },
+          { label: "ordinary entry", value: legacyAuditFirstRoundIntake.ordinary_entry_promotion_allowed_this_round === true ? "allowed" : "blocked", tone: legacyAuditFirstRoundIntake.ordinary_entry_promotion_allowed_this_round === true ? "bad" : "good" },
+          { label: "external calls", value: legacyAuditFirstRoundIntake.external_calls_triggered === true ? "存在" : "无", tone: legacyAuditFirstRoundIntake.external_calls_triggered === true ? "bad" : "good" },
+          { label: "real trading", value: legacyAuditFirstRoundIntake.does_not_execute_trades === false ? "可能" : "禁止", tone: legacyAuditFirstRoundIntake.does_not_execute_trades === false ? "bad" : "good" },
+          { label: "production evidence", value: String(legacyAuditFirstRoundIntake.production_evidence_rule ?? "not_production_evidence") }
+        ]}
+      />
+      <DataLineageTable rows={[legacyAuditFirstRoundIntake]} />
+      <DataLineageTable rows={legacyAuditFirstRoundIntakeRows} />
       <h3>LTG next acceptance action queue</h3>
       <p className="risk-note">这里集中显示 P1-P5 的下一步显式验收路径：只读展示允许的 POST 路由、未来 provider/worker/model/browser/storage 证据和禁止事项；GET cache 和页面渲染不会创建任务或调用外部服务。</p>
       <p className="risk-note">按钮会先看 `next_local_step_preview_rows`：如果缺前置本地回执、scope hash、review hash 或执行请求 task id，就只展示缺口并禁用按钮，避免生成已知 blocked 的回执。</p>

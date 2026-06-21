@@ -1395,6 +1395,9 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         legacy_page = (root / "desktop" / "src" / "routes" / "LegacyTools.tsx").read_text(
             encoding="utf-8"
         )
+        migration_page = (root / "desktop" / "src" / "routes" / "MigrationStatus.tsx").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn("Migration principle docs guard", push_gate)
         self.assertIn(
@@ -1438,6 +1441,23 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertLess(
             legacy_page.index("迁移 commit checkpoint"),
             legacy_page.index("Legacy 模块 UX/bug 分类"),
+        )
+
+        self.assertIn("legacyAuditFirstRoundIntake", migration_page)
+        self.assertIn("legacy_audit_first_round_intake_rows", migration_page)
+        self.assertIn("Legacy Bug / UX Audit first-round intake", migration_page)
+        self.assertIn("第一轮不能升级 KEEP", migration_page)
+        self.assertIn("不能让旧模块进入普通用户入口", migration_page)
+        self.assertIn("KEEP promotion", migration_page)
+        self.assertIn("ordinary entry", migration_page)
+        self.assertIn("not_production_evidence", migration_page)
+        self.assertLess(
+            migration_page.index("14 LTG acceptance runway"),
+            migration_page.index("Legacy Bug / UX Audit first-round intake"),
+        )
+        self.assertLess(
+            migration_page.index("Legacy Bug / UX Audit first-round intake"),
+            migration_page.index("LTG next acceptance action queue"),
         )
 
 
