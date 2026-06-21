@@ -175,6 +175,21 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
             "browser visual/performance QA, durable CI/release evidence, and production promotion review",
             source,
         )
+        self.assertIn(
+            "future explicit next-session retained signal/capability coverage and production replacement tasks",
+            source,
+        )
+        self.assertIn(
+            "next_session_browser_visual_performance_and_coverage_evidence_promotion",
+            source,
+        )
+        self.assertIn(
+            "retire Streamlit visual path before retained signal/capability coverage evidence",
+            source,
+        )
+        self.assertNotIn("future explicit next-session parity and production replacement tasks", source)
+        self.assertNotIn("next_session_browser_visual_performance_and_parity_promotion", source)
+        self.assertNotIn("retire Streamlit visual path before parity evidence", source)
         self.assertNotIn("before retiring the Streamlit visual fallback path", source)
 
     def test_migration_map_records_legacy_audit_and_five_commit_questions(self):

@@ -515,8 +515,8 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
         "current_phase": "browser_qa_review_required",
         "first_allowed_route": "POST /api/next-session/browser-qa-review",
         "second_allowed_route": "",
-        "future_provider_route": "future explicit next-session parity and production replacement tasks",
-        "target_acceptance_mode": "next_session_browser_visual_performance_and_parity_promotion",
+        "future_provider_route": "future explicit next-session retained signal/capability coverage and production replacement tasks",
+        "target_acceptance_mode": "next_session_browser_visual_performance_and_coverage_evidence_promotion",
         "required_evidence": [
             "same-packet legacy signal/capability parity evidence as retained no-feature-loss coverage, not old UI/navigation parity",
             "browser visual QA report",
@@ -528,7 +528,7 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
         "not_allowed_next_steps": [
             "open browser from GET cache",
             "treat local review as browser execution",
-            "retire Streamlit visual path before parity evidence",
+            "retire Streamlit visual path before retained signal/capability coverage evidence",
             "compute action or mutate operation_zones in React",
         ],
     },
