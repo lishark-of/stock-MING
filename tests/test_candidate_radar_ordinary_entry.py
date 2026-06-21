@@ -1,0 +1,59 @@
+import unittest
+from pathlib import Path
+
+
+class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
+    def setUp(self):
+        root = Path(__file__).resolve().parents[1]
+        self.page = (root / "desktop" / "src" / "routes" / "CandidateRadar.tsx").read_text(
+            encoding="utf-8"
+        )
+
+    def test_candidate_radar_has_ordinary_user_summary_before_audit_details(self):
+        self.assertIn("<h1>下一票雷达</h1>", self.page)
+        self.assertIn('title="普通用户雷达摘要"', self.page)
+        self.assertIn('title="下一票候选池"', self.page)
+        self.assertIn('title="搜票量化推演"', self.page)
+        self.assertIn("生成 3.0 量化推演", self.page)
+
+        for required_label in (
+            'label: "下一步"',
+            'label: "数据来源"',
+            'label: "缺少证据"',
+            'label: "阻断/降级"',
+            'label: "最近可用缓存"',
+            'label: "仅供研究"',
+        ):
+            self.assertIn(required_label, self.page)
+
+        self.assertLess(self.page.index('title="普通用户雷达摘要"'), self.page.index("<summary>开发 / 审计指标</summary>"))
+        self.assertLess(self.page.index('title="下一票候选池"'), self.page.index("<summary>扫描覆盖 / 验收审计</summary>"))
+        self.assertIn("候选不是买入指令；不真实交易、不下单、不改交易策略", self.page)
+        self.assertIn("普通用户先看上方雷达摘要、候选池和搜票量化推演", self.page)
+
+    def test_search_quant_projection_keeps_task_boundary_visible(self):
+        self.assertIn("searchSymbol.trim()", self.page)
+        self.assertIn("当前只创建本地记录", self.page)
+        self.assertIn("live_light 补证也必须经 POST task / worker", self.page)
+        self.assertIn("不在页面渲染中直连 Tushare 或 DeepSeek", self.page)
+        self.assertIn("真实补证只走后台任务血缘", self.page)
+        self.assertIn("推演解释只整理已有证据；不覆盖价格、持仓、因子、操作区或交易策略", self.page)
+
+    def test_candidate_radar_page_does_not_embed_provider_or_trade_calls(self):
+        forbidden_fragments = (
+            "tushare.pro_api",
+            "ts.pro_api",
+            "deepseek.chat",
+            "api.github.com",
+            "fetch(",
+            "executeTrade(",
+            "placeOrder(",
+            "broker.submit",
+            "live_order",
+        )
+        for fragment in forbidden_fragments:
+            self.assertNotIn(fragment, self.page)
+
+
+if __name__ == "__main__":
+    unittest.main()
