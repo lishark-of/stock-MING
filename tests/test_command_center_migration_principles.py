@@ -475,6 +475,24 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         )
         self.assertLess(text.index("普通用户雷达摘要"), text.index("开发 / 审计指标"))
 
+    def test_candidate_radar_keeps_full_pool_deep_scan_buttons_behind_advanced_details(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "desktop" / "src" / "routes" / "CandidateRadar.tsx").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("快速雷达扫描", text)
+        self.assertIn("扫描输入股票池", text)
+        self.assertIn("高级扫描 / 全池深研", text)
+        self.assertIn("全池/深研按钮默认收起；普通用户先运行本地快扫或扫描自选/输入池", text)
+        self.assertIn("规划全池扫描", text)
+        self.assertIn("整理深研清单", text)
+        self.assertLess(text.index("快速雷达扫描"), text.index("扫描输入股票池"))
+        self.assertLess(text.index("扫描输入股票池"), text.index("高级扫描 / 全池深研"))
+        self.assertLess(text.index("高级扫描 / 全池深研"), text.index("规划全池扫描"))
+        advanced_section = text.split("高级扫描 / 全池深研", 1)[1]
+        self.assertIn(">整理深研清单</button>", advanced_section)
+
     def test_stock_quant_projection_demotes_engineering_audit_from_ordinary_first_view(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "desktop" / "src" / "routes" / "FactorQuantHub.tsx").read_text(

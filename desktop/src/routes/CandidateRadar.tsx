@@ -563,11 +563,17 @@ export default function CandidateRadar() {
           />
           <div className="actions">
             <button onClick={launchCustomScan}>扫描输入股票池</button>
-            <button onClick={launchFullPoolPlan}>规划全池扫描</button>
-            <button onClick={launchFullPoolLocalScan}>保存本地全池记录</button>
-            <button onClick={launchDeepScanPlan}>整理深研清单</button>
-            <button onClick={launchDeepScanLocalReview}>检查本地深研证据</button>
           </div>
+          <details className="developer-audit-details">
+            <summary>高级扫描 / 全池深研</summary>
+            <p>全池/深研按钮默认收起；普通用户先运行本地快扫或扫描自选/输入池，生产替代补证再进入这里。</p>
+            <div className="actions">
+              <button onClick={launchFullPoolPlan}>规划全池扫描</button>
+              <button onClick={launchFullPoolLocalScan}>保存本地全池记录</button>
+              <button onClick={launchDeepScanPlan}>整理深研清单</button>
+              <button onClick={launchDeepScanLocalReview}>检查本地深研证据</button>
+            </div>
+          </details>
           <p>本地快扫只重建缓存和标记覆盖缺口，不调用 Tushare、DeepSeek 或 GitHub。</p>
           <p>信号覆盖、旧雷达能力映射和跳过原因会保留在详情里，避免静默丢失能力。</p>
           <p>缺失、跳过、陈旧或未知输入会作为仅供研究的缺口展示。</p>
