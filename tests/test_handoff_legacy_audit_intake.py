@@ -61,6 +61,14 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
         self.assertIn("Priority alignment", self.protocol)
         self.assertIn("One recommended next small patch", self.protocol)
 
+    def test_checkpoint_report_separates_local_validation_from_remote_ci_evidence(self):
+        self.assertIn("CI / release evidence boundary", self.protocol)
+        self.assertIn("only local validation or a matching current remote CI review", self.protocol)
+        self.assertIn("Local tests, local push gate, static workflow files, checklist wording, receipts", self.protocol)
+        self.assertIn("stage-scope rows are not remote CI evidence", self.protocol)
+        self.assertIn("matching head SHA/commit with current GitHub Actions green status or reviewed failure logs", self.protocol)
+        self.assertIn("explicit user push confirmation before any push", self.protocol)
+
 
 if __name__ == "__main__":
     unittest.main()
