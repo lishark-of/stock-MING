@@ -89,6 +89,7 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "legacy_decision_next_session_map_replacement_ready_audit_pending",
             "legacy_decision_candidate_radar_replacement_ready_audit_pending",
             "legacy_decision_factor_risk_provider_health_split_audit_pending",
+            "legacy_decision_hard_risk_announcement_replacement_ready_audit_pending",
             "legacy_decision_discipline_backtest_legacy_debug_retained_audit_pending",
             "legacy_decision_margin_etf_leverage_legacy_debug_retained_audit_pending",
             "legacy_decision_external_brain_serenity_chokepoint_legacy_debug_retained_audit_pending",
@@ -104,6 +105,10 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
         self.assertIn("provider health detail remains `LEGACY-DEBUG`", self.migration_map)
         self.assertIn("provider detail stays out of ordinary flow", self.migration_map)
         self.assertIn("engineering tables no longer dominate ordinary pages", self.migration_map)
+        self.assertIn("allow ordinary risk-gap summary iteration only", self.migration_map)
+        self.assertIn("missing data is not shown as no risk", self.migration_map)
+        self.assertIn("model text does not override facts", self.migration_map)
+        self.assertIn("risk scan does not become action", self.migration_map)
         self.assertIn("discipline/backtest`、`ETF/leverage` 与 `external brain/Serenity/Chokepoint` 仍固定为 `LEGACY-DEBUG`", self.migration_map)
         self.assertIn("block ordinary entry until redesigned", self.migration_map)
         self.assertIn("synchronous backtest, deep forms and ordinary trading advice are not migrated", self.migration_map)
