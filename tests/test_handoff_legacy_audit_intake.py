@@ -109,6 +109,10 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
         self.assertIn("engineering contract tables, receipt rows, runbooks, and LTG audit surfaces", self.protocol)
         self.assertIn("remain behind Settings / Developer / Audit", self.protocol)
         self.assertIn("must not become the default ordinary-page body", self.protocol)
+        self.assertIn("Report the demotion verdicts separately", self.protocol)
+        self.assertIn("ordinary summary appears before engineering detail", self.protocol)
+        self.assertIn("Settings / Developer / Audit link remains visible", self.protocol)
+        self.assertIn("current-decision-surface exception reason", self.protocol)
         self.assertIn("Priority alignment", self.protocol)
         self.assertIn("One recommended next small patch", self.protocol)
 
