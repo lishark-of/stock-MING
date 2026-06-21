@@ -273,6 +273,49 @@ export default function CommandCenterHome() {
     ...(taskIndexEnvelopeLedger.length ? taskIndexEnvelopeLedger : taskIndexPayloadLedger).map((row) => ({ scope: "task_status_index", ...row }))
   ];
   const empty = !loading && !error && !Object.keys(health).length && !Object.keys(packets).length;
+  const dailyCommandNextClick = Number(candidateCounts?.candidate_count ?? 0)
+    ? "先看下一票雷达；需要单票推演时输入代码并生成 3.0 量化推演"
+    : "先确认数据健康和最近可用缓存，再运行候选雷达快扫";
+  const dailyCommandCacheSourceLabel = snapshotAvailable ? "本地缓存可用" : "等待本地缓存";
+  const dailyCommandTushareSourceLabel = liveLight.tushare_on_open === true ? "轻量实时后台任务" : "手动触发或关闭";
+  const dailyCommandDeepSeekSourceLabel = liveLight.deepseek_on_open === true ? "轻量实时后台任务" : "手动触发或关闭";
+  const dailyCommandRuntimeModeLabel = (() => {
+    const mode = String(bootstrapStatus.mode ?? "cache_only");
+    if (mode === "cache_only") return "只读缓存模式";
+    if (mode === "manual") return "手动任务模式";
+    if (mode === "live_light") return "轻量实时投研模式";
+    if (mode === "live_full") return "深度实时投研预留";
+    return "未知运行模式";
+  })();
+  const dailyCommandSourceState = [
+    `本地缓存：${dailyCommandCacheSourceLabel}`,
+    `Tushare 数据：${dailyCommandTushareSourceLabel}`,
+    `DeepSeek 解释：${dailyCommandDeepSeekSourceLabel}`,
+    `运行模式：${dailyCommandRuntimeModeLabel}`
+  ].join(" / ");
+  const dailyCommandMissingEvidence = [
+    Number(dataHealthCounts?.provider_count ?? 0) ? "" : "数据健康 provider 汇总",
+    Number(candidateCounts?.candidate_count ?? 0) ? "" : "下一票雷达缓存",
+    next.status === "ready" ? "" : "Next Session 缓存",
+    migrationLongTermSummary?.strict_closeout === "14/14" ? "" : "长期生产验收收口",
+    liveLightActivationReceipt.ready_for_provider_execution === true ? "" : "数据源/模型验收"
+  ].filter(Boolean).join(" / ") || "核心缓存已可见；生产级证据仍在长期验收中";
+  const dailyCommandBlockedState = error
+    ? `前端错误: ${error}`
+    : loading
+      ? "正在读取本地缓存"
+      : Number(riskCounts?.active_risk_count ?? riskCounts?.risk_count ?? 0)
+        ? "风险/降级状态见下方明细"
+        : Number(taskUncoveredPostRoutes?.length ?? 0)
+          ? "任务路由覆盖缺口见下方明细"
+          : "当前缓存未标记阻断或降级";
+  const dailyCommandLastCache = String(
+    packets.loaded_at ?? market.loaded_at ?? factor.loaded_at ?? next.loaded_at ?? dataHealth.loaded_at ?? "暂无最近可用缓存"
+  );
+  const dailyCommandTaskBoundary =
+    "首页 GET cache 只读；live_light 只允许创建后台 POST task，不在 React 渲染中直连 Tushare 或 DeepSeek";
+  const dailyCommandResearchOnlyLabel = "今日摘要只组织投研证据；不买卖、不下单、不改交易策略";
+  const dailyCommandStatusLabel = health.status === "ok" ? "只读入口可用" : "等待只读入口";
 
   useEffect(() => {
     if (loading) return;
@@ -316,62 +359,96 @@ export default function CommandCenterHome() {
   return (
     <>
       <div className="page-head">
-        <h1>Command Center 3.0</h1>
-        <StatusBadge label={health.status === "ok" ? "FastAPI online" : "waiting"} tone={health.status === "ok" ? "good" : "warn"} />
+        <div>
+          <h1>今日作战台</h1>
+          <p>先看下一步、数据来源、缺少证据和仅供研究边界。</p>
+        </div>
+        <StatusBadge label={dailyCommandStatusLabel} tone={health.status === "ok" ? "good" : "warn"} />
       </div>
       <PageStateBanner
         loading={loading}
         error={error}
         empty={empty}
-        emptyTitle="暂无 Command Center 3 cache"
-        emptyDetail="首页只读取 FastAPI GET cache；请确认后端服务已启动。"
+        emptyTitle="暂无今日作战台本地缓存"
+        emptyDetail="首页只读取本地只读缓存；不会自动刷新外部数据。若为空，请先确认本地服务已启动。"
       />
       <MetricGrid
         items={[
-          { label: "FastAPI", value: String(health.status ?? "unknown"), tone: health.status === "ok" ? "good" : "warn" },
-          { label: "runtime mode", value: String(bootstrapStatus.mode ?? "cache_only"), tone: bootstrapStatus.mode === "live_light" ? "warn" : "good" },
-          { label: "live bootstrap", value: liveBootstrapAutoStatus, tone: liveBootstrapAutoStatus.includes("failed") ? "bad" : liveBootstrapAutoStatus.includes("disabled") || liveBootstrapAutoStatus.includes("skipped") ? "good" : "warn" },
-          { label: "provider linkage", value: bootstrapProviderLinkageRows.length },
-          { label: "activation rows", value: liveLightActivationRows.length },
-          { label: "acceptance phases", value: liveLightAcceptanceRows.length },
-          { label: "health envelope ledger", value: healthEnvelopeLedger.length },
-          { label: "health warnings", value: healthWarnings.length },
-          { label: "本地快照", value: snapshotAvailable, tone: snapshotAvailable ? "good" : "warn" },
-          { label: "cache keys", value: packetKeys?.length ?? 0 },
-          { label: "packet envelope ledger", value: (packetEnvelopeLedger.length ? packetEnvelopeLedger : packetPayloadLedger).length },
-          { label: "market envelope ledger", value: (marketEnvelopeLedger.length ? marketEnvelopeLedger : marketPayloadLedger).length },
-          { label: "discipline envelope ledger", value: (disciplineEnvelopeLedger.length ? disciplineEnvelopeLedger : disciplinePayloadLedger).length },
-          { label: "factor envelope ledger", value: (factorEnvelopeLedger.length ? factorEnvelopeLedger : factorPayloadLedger).length },
-          { label: "next envelope ledger", value: (nextEnvelopeLedger.length ? nextEnvelopeLedger : nextPayloadLedger).length },
-          { label: "serenity envelope ledger", value: (serenityEnvelopeLedger.length ? serenityEnvelopeLedger : serenityPayloadLedger).length },
-          { label: "chokepoint envelope ledger", value: (chokepointEnvelopeLedger.length ? chokepointEnvelopeLedger : chokepointPayloadLedger).length },
-          { label: "任务记录", value: taskIndex?.task_count ?? tasks.length },
-          { label: "任务外联", value: taskIndex?.external_calls_triggered === true ? "存在" : "无", tone: taskIndex?.external_calls_triggered === true ? "bad" : "good" },
-          { label: "任务目录", value: taskCatalogItems?.length ?? 0 },
-          { label: "stub tasks", value: taskImplementationStatus?.stub_task_count as number | undefined },
-          { label: "local pipelines", value: taskImplementationStatus?.local_pipeline_task_count as number | undefined },
-          { label: "guarded local", value: taskImplementationStatus?.guarded_local_task_count as number | undefined },
-          { label: "implemented local", value: taskImplementationStatus?.implemented_local_task_count as number | undefined },
-          { label: "POST 路由", value: taskRouteCoverage?.known_post_route_count as number | undefined },
-          { label: "未覆盖 POST", value: taskUncoveredPostRoutes?.length ?? 0, tone: taskUncoveredPostRoutes?.length ? "bad" : "good" },
-          { label: "task catalog ledger", value: (taskCatalogEnvelopeLedger.length ? taskCatalogEnvelopeLedger : taskCatalogPayloadLedger).length },
-          { label: "task index ledger", value: (taskIndexEnvelopeLedger.length ? taskIndexEnvelopeLedger : taskIndexPayloadLedger).length },
-          { label: "SQLite packets", value: sqlitePackets?.length ?? 0 },
-          { label: "SQLite tasks", value: sqliteTasks?.length ?? 0 },
-          { label: "factor parquet", value: String(storageStatus?.factor_values ?? "missing") },
-          { label: "daily parquet", value: String(storageStatus?.daily ?? "missing") },
-          { label: "daily_basic parquet", value: String(storageStatus?.daily_basic ?? "missing") },
-          { label: "moneyflow parquet", value: String(storageStatus?.moneyflow ?? "missing") },
-          { label: "trade_cal parquet", value: String(storageStatus?.trade_cal ?? "missing") },
-          { label: "backtest parquet", value: String(storageStatus?.backtest_results ?? "missing") },
-          { label: "storage catalog", value: storageCatalogRows?.length ?? 0 },
-          { label: "storage catalog ledger", value: storageCatalogLedger.length },
-          { label: "迁移基线", value: String(migration.status ?? "loading") },
-          { label: "DeepSeek explain", value: String(deepseekModelByPurpose.get("explain")?.model ?? "--") },
-          { label: "DeepSeek fast", value: String(deepseekModelByPurpose.get("fast")?.model ?? "--") },
-          { label: "外部启动调用", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" }
+          { label: "今日作战台", value: dailyCommandNextClick },
+          { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
+          { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
+          { label: "数据来源", value: dailyCommandSourceState },
+          { label: "缺少证据", value: dailyCommandMissingEvidence, tone: dailyCommandMissingEvidence.includes("缓存") || dailyCommandMissingEvidence.includes("验收") || dailyCommandMissingEvidence.includes("收口") ? "warn" : "good" },
+          { label: "阻断/降级", value: dailyCommandBlockedState, tone: dailyCommandBlockedState.includes("未标记") ? "good" : "warn" },
+          { label: "最近可用缓存", value: dailyCommandLastCache },
+          { label: "任务边界", value: dailyCommandTaskBoundary },
+          { label: "仅供研究", value: dailyCommandResearchOnlyLabel, tone: "good" }
         ]}
       />
+      <PacketCard title="今日作战台摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={dailyCommandStatusLabel}>
+        <MetricGrid
+          items={[
+            { label: "下一步", value: dailyCommandNextClick },
+            { label: "数据来源", value: dailyCommandSourceState },
+            { label: "缺少证据", value: dailyCommandMissingEvidence, tone: dailyCommandMissingEvidence.includes("缓存") || dailyCommandMissingEvidence.includes("验收") || dailyCommandMissingEvidence.includes("收口") ? "warn" : "good" },
+            { label: "阻断/降级", value: dailyCommandBlockedState, tone: dailyCommandBlockedState.includes("未标记") ? "good" : "warn" },
+            { label: "最近可用缓存", value: dailyCommandLastCache },
+            { label: "任务边界", value: dailyCommandTaskBoundary },
+            { label: "仅供研究", value: dailyCommandResearchOnlyLabel, tone: "good" }
+          ]}
+        />
+      </PacketCard>
+      <details className="developer-audit-details">
+        <summary>开发 / 审计详情</summary>
+        <p>工程合同、receipt、runbook、LTG audit 和 lineage 明细默认收起；普通用户先看上方今日作战台摘要。</p>
+        <PacketCard title="开发状态速览" subtitle="工程指标默认收进开发详情，不压过三入口" status="audit">
+          <MetricGrid
+            items={[
+              { label: "FastAPI", value: String(health.status ?? "unknown"), tone: health.status === "ok" ? "good" : "warn" },
+              { label: "runtime mode", value: String(bootstrapStatus.mode ?? "cache_only"), tone: bootstrapStatus.mode === "live_light" ? "warn" : "good" },
+              { label: "外部启动调用", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" },
+              { label: "live bootstrap", value: liveBootstrapAutoStatus, tone: liveBootstrapAutoStatus.includes("failed") ? "bad" : liveBootstrapAutoStatus.includes("disabled") || liveBootstrapAutoStatus.includes("skipped") ? "good" : "warn" },
+              { label: "provider linkage", value: bootstrapProviderLinkageRows.length },
+              { label: "activation rows", value: liveLightActivationRows.length },
+              { label: "acceptance phases", value: liveLightAcceptanceRows.length },
+              { label: "health envelope ledger", value: healthEnvelopeLedger.length },
+              { label: "health warnings", value: healthWarnings.length },
+              { label: "本地快照", value: snapshotAvailable, tone: snapshotAvailable ? "good" : "warn" },
+              { label: "cache keys", value: packetKeys?.length ?? 0 },
+              { label: "packet envelope ledger", value: (packetEnvelopeLedger.length ? packetEnvelopeLedger : packetPayloadLedger).length },
+              { label: "market envelope ledger", value: (marketEnvelopeLedger.length ? marketEnvelopeLedger : marketPayloadLedger).length },
+              { label: "discipline envelope ledger", value: (disciplineEnvelopeLedger.length ? disciplineEnvelopeLedger : disciplinePayloadLedger).length },
+              { label: "factor envelope ledger", value: (factorEnvelopeLedger.length ? factorEnvelopeLedger : factorPayloadLedger).length },
+              { label: "next envelope ledger", value: (nextEnvelopeLedger.length ? nextEnvelopeLedger : nextPayloadLedger).length },
+              { label: "serenity envelope ledger", value: (serenityEnvelopeLedger.length ? serenityEnvelopeLedger : serenityPayloadLedger).length },
+              { label: "chokepoint envelope ledger", value: (chokepointEnvelopeLedger.length ? chokepointEnvelopeLedger : chokepointPayloadLedger).length },
+              { label: "任务记录", value: taskIndex?.task_count ?? tasks.length },
+              { label: "任务外联", value: taskIndex?.external_calls_triggered === true ? "存在" : "无", tone: taskIndex?.external_calls_triggered === true ? "bad" : "good" },
+              { label: "任务目录", value: taskCatalogItems?.length ?? 0 },
+              { label: "stub tasks", value: taskImplementationStatus?.stub_task_count as number | undefined },
+              { label: "local pipelines", value: taskImplementationStatus?.local_pipeline_task_count as number | undefined },
+              { label: "guarded local", value: taskImplementationStatus?.guarded_local_task_count as number | undefined },
+              { label: "implemented local", value: taskImplementationStatus?.implemented_local_task_count as number | undefined },
+              { label: "POST 路由", value: taskRouteCoverage?.known_post_route_count as number | undefined },
+              { label: "未覆盖 POST", value: taskUncoveredPostRoutes?.length ?? 0, tone: taskUncoveredPostRoutes?.length ? "bad" : "good" },
+              { label: "task catalog ledger", value: (taskCatalogEnvelopeLedger.length ? taskCatalogEnvelopeLedger : taskCatalogPayloadLedger).length },
+              { label: "task index ledger", value: (taskIndexEnvelopeLedger.length ? taskIndexEnvelopeLedger : taskIndexPayloadLedger).length },
+              { label: "SQLite packets", value: sqlitePackets?.length ?? 0 },
+              { label: "SQLite tasks", value: sqliteTasks?.length ?? 0 },
+              { label: "factor parquet", value: String(storageStatus?.factor_values ?? "missing") },
+              { label: "daily parquet", value: String(storageStatus?.daily ?? "missing") },
+              { label: "daily_basic parquet", value: String(storageStatus?.daily_basic ?? "missing") },
+              { label: "moneyflow parquet", value: String(storageStatus?.moneyflow ?? "missing") },
+              { label: "trade_cal parquet", value: String(storageStatus?.trade_cal ?? "missing") },
+              { label: "backtest parquet", value: String(storageStatus?.backtest_results ?? "missing") },
+              { label: "storage catalog", value: storageCatalogRows?.length ?? 0 },
+              { label: "storage catalog ledger", value: storageCatalogLedger.length },
+              { label: "迁移基线", value: String(migration.status ?? "loading") },
+              { label: "DeepSeek explain", value: String(deepseekModelByPurpose.get("explain")?.model ?? "--") },
+              { label: "DeepSeek fast", value: String(deepseekModelByPurpose.get("fast")?.model ?? "--") }
+            ]}
+          />
+        </PacketCard>
       <div className="grid">
         <PacketCard title="live_light bootstrap" subtitle="cache 渲染完成后才会在 live_light 模式创建一次本地 POST task" status={liveBootstrapAutoStatus}>
           <p>runtime mode: {String(bootstrapStatus.mode ?? "cache_only")}</p>
@@ -560,6 +637,7 @@ export default function CommandCenterHome() {
           <p>redis pinged: {String(workerRuntime.redis_pinged ?? false)}</p>
         </PacketCard>
       </div>
+      </details>
     </>
   );
 }
