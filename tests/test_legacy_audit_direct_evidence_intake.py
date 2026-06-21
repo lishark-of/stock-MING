@@ -54,6 +54,7 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "legacy_intake_searched_symbol_quant_projection",
             "legacy_intake_candidate_radar",
             "legacy_intake_next_session_map",
+            "legacy_intake_factor_risk_provider_health",
         ):
             self.assertIn(intake_row, self.migration_map)
 
@@ -62,21 +63,26 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "searched-symbol quant projection",
             "candidate radar",
             "next-session map",
+            "factor/risk/provider health",
         ):
             self.assertIn(workflow, self.migration_map)
 
-        self.assertIn("避免后续 ECharts/operation zones 迁移绕过 Legacy Bug / UX Audit", self.migration_map)
+        self.assertIn("避免后续 ECharts/operation zones 或 provider-health 明细迁移绕过 Legacy Bug / UX Audit", self.migration_map)
+        self.assertIn("provider-health 明细迁移绕过 Legacy Bug / UX Audit", self.migration_map)
         self.assertIn("operation_zones 只作为条件，不改 action", self.migration_map)
         self.assertIn("receipt-as-replacement", self.migration_map)
         self.assertIn("local receipt is not replacement evidence", self.migration_map)
+        self.assertIn("旧 provider health 大表压过普通摘要", self.migration_map)
+        self.assertIn("provider health 明细只进 Settings / Developer / Audit", self.migration_map)
+        self.assertIn("missing provider data is not shown as no risk", self.migration_map)
         self.assertIn("pending safe screenshot or reviewer note", self.migration_map)
         self.assertGreaterEqual(
             self.migration_map.count("direct_evidence_intake_pending"),
-            4,
+            5,
         )
         self.assertGreaterEqual(
             self.migration_map.count("no_keep_promotion_this_round"),
-            4,
+            5,
         )
         self.assertNotIn("legacy_intake_home_daily_command` | home/daily command | KEEP", self.migration_map)
 
