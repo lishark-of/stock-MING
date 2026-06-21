@@ -311,6 +311,7 @@ export default function FactorQuantHub() {
             { label: "仅供研究", value: "量化推演不是买卖指令；不真实交易、不下单、不改交易策略或操作区", tone: "good" }
           ]}
         />
+        <p className="risk-note">工程审计明细默认收起；完整 factor/provider/model ledger 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
       <div className="actions">
         <button onClick={refreshCache}>查看本地缓存</button>
