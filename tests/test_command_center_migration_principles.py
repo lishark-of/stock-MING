@@ -588,6 +588,9 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("known bug、difficult-to-use UX、confusing workflow 或 unclear data lineage", text)
         self.assertIn("必须保持 `REDESIGN`、`LEGACY-DEBUG` 或 `RETIRE`", text)
         self.assertIn("直到有直接 UX/bug evidence 证明它可以进入普通 workflow", text)
+        self.assertIn("架构层必须区分 `route_inventory_or_scaffold_evidence` 与 `direct_user_evidence`", text)
+        self.assertIn("route、packet、receipt、matrix 或 docs/config scaffold 只能说明迁移覆盖方向", text)
+        self.assertIn("不能证明普通用户入口更清晰或允许 `KEEP`/退场评审", text)
         self.assertIn("工程合同、receipt、runbook 和 LTG audit 默认进入 Settings / Developer / Audit", text)
 
     def test_handoff_protocol_requires_migration_checkpoint_answers(self):
