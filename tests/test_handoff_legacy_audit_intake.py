@@ -73,6 +73,10 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
         self.assertIn("Ordinary task-boundary visibility", self.protocol)
         self.assertIn("Ordinary source-state chips", self.protocol)
         self.assertIn("Ordinary next-click rule", self.protocol)
+        self.assertIn("Engineering-audit demotion", self.protocol)
+        self.assertIn("engineering contract tables, receipt rows, runbooks, and LTG audit surfaces", self.protocol)
+        self.assertIn("remain behind Settings / Developer / Audit", self.protocol)
+        self.assertIn("must not become the default ordinary-page body", self.protocol)
         self.assertIn("Priority alignment", self.protocol)
         self.assertIn("One recommended next small patch", self.protocol)
 
