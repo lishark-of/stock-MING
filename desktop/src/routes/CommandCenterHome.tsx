@@ -414,7 +414,7 @@ export default function CommandCenterHome() {
       </PacketCard>
       <details className="developer-audit-details">
         <summary>开发 / 审计详情</summary>
-        <p>工程合同、receipt、runbook、LTG audit 和 lineage 明细默认收起；普通用户先看上方今日作战台摘要。</p>
+        <p>详细验收记录、开发表格和排障明细默认收起；普通用户先看上方今日作战台摘要。</p>
         <PacketCard title="开发状态速览" subtitle="工程指标默认收进开发详情，不压过三入口" status="audit">
           <MetricGrid
             items={[

@@ -42,7 +42,8 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
 
         self.assertIn('className="developer-audit-details"', source)
         self.assertIn("开发 / 审计详情", source)
-        self.assertIn("工程合同、receipt、runbook、LTG audit 和 lineage 明细默认收起", source)
+        self.assertIn("详细验收记录、开发表格和排障明细默认收起", source)
+        self.assertNotIn("工程合同、receipt、runbook、LTG audit 和 lineage 明细默认收起", source)
         self.assertIn("开发状态速览", source)
         self.assertLess(source.index("开发 / 审计详情"), source.index("开发状态速览"))
         self.assertLess(source.index("开发状态速览"), source.index('label: "FastAPI"'))
