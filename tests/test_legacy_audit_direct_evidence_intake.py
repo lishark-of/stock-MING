@@ -74,6 +74,26 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
         )
         self.assertNotIn("legacy_intake_home_daily_command` | home/daily command | KEEP", self.migration_map)
 
+    def test_first_replacement_ready_decisions_stay_audit_pending_not_keep(self):
+        self.assertIn("第一轮分类小表", self.migration_map)
+        self.assertIn("REDESIGN_WITH_REPLACEMENT_READY_AUDIT_PENDING", self.migration_map)
+        self.assertIn("allow replacement iteration only", self.migration_map)
+        self.assertIn("keep legacy/admin/debug fallback", self.migration_map)
+        self.assertIn("不能升级 `KEEP`", self.migration_map)
+        self.assertIn("不能退掉 Streamlit fallback", self.migration_map)
+        self.assertIn("不能把 no-feature-loss / receipt / matrix 当成生产验收", self.migration_map)
+
+        for decision_row in (
+            "legacy_decision_home_daily_command_replacement_ready_audit_pending",
+            "legacy_decision_searched_symbol_quant_projection_replacement_ready_audit_pending",
+            "legacy_decision_candidate_radar_replacement_ready_audit_pending",
+        ):
+            self.assertIn(decision_row, self.migration_map)
+
+        self.assertIn("capture one safe old-home observation", self.migration_map)
+        self.assertIn("confirm no AI-as-action wording", self.migration_map)
+        self.assertIn("candidate is not buy instruction", self.migration_map)
+
 
 if __name__ == "__main__":
     unittest.main()
