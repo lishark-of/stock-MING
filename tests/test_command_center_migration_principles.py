@@ -575,6 +575,22 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("不证明 Streamlit parity 或生产替代完成", architecture)
         self.assertNotIn("不证明 Streamlit parity、durable CI evidence", architecture)
 
+    def test_ltg10_status_uses_capability_replacement_not_ui_parity_wording(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (
+            root / "server" / "services" / "migration_status_service.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("React/Tauri ordinary capability replacement evidence", source)
+        self.assertIn("Candidate Radar signal/capability replacement evidence", source)
+        self.assertIn("future explicit ordinary capability replacement", source)
+        self.assertIn("ordinary capability replacement evidence", source)
+        self.assertNotIn(
+            "Run explicit replacement parity and Streamlit fallback retirement reviews",
+            source,
+        )
+        self.assertNotIn("delete app.py before replacement parity", source)
+
     def test_push_gate_guard_covers_commit_checkpoint_surfaces(self):
         root = Path(__file__).resolve().parents[1]
         push_gate = (root / "scripts" / "push_gate_3_0.sh").read_text(encoding="utf-8")

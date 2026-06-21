@@ -122,8 +122,8 @@ LONG_TERM_GOAL_PROGRESS = [
         "completion_bucket": "dependent_retirement_goal",
         "completion_estimate": "40%-50%",
         "current_state": "Streamlit is marked legacy/admin/debug; primary-workflow exit audit, fallback dependency contract, retirement readiness receipt, durable evidence recipe, and retirement stage-scope manifest exist.",
-        "not_complete_because": "React/Tauri ordinary workflow parity, Candidate Radar parity, provider-backed parity, browser/performance QA, admin/debug retention decision, no-feature-cut acceptance, fallback retirement review, and app.py removal-or-retention review are not complete.",
-        "next_step": "Run explicit replacement parity and Streamlit fallback retirement reviews only after React/Tauri covers daily workflow, Candidate Radar parity is proven, and fallback blockers are clear.",
+        "not_complete_because": "React/Tauri ordinary capability replacement evidence, Candidate Radar signal/capability replacement evidence, provider-backed acceptance, browser/performance QA, admin/debug retention decision, no-feature-cut acceptance, fallback retirement review, and app.py removal-or-retention review are not complete.",
+        "next_step": "Run explicit ordinary capability replacement and Streamlit fallback retirement reviews only after React/Tauri covers daily workflow, Candidate Radar signal/capability replacement evidence is proven, and fallback blockers are clear.",
         "production_complete": False,
     },
     {
@@ -558,10 +558,10 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
         "current_phase": "fallback_blockers_and_durable_evidence_visible",
         "first_allowed_route": "GET /api/legacy/cache",
         "second_allowed_route": "",
-        "future_provider_route": "future explicit replacement parity and Streamlit fallback retirement review",
+        "future_provider_route": "future explicit ordinary capability replacement and Streamlit fallback retirement review",
         "target_acceptance_mode": "streamlit_primary_workflow_exit_and_fallback_retirement",
         "required_evidence": [
-            "ordinary workflow replacement parity",
+            "ordinary capability replacement evidence",
             "legacy fallback dependency inventory",
             "retirement readiness receipt",
             "durable retirement evidence recipe",
@@ -571,7 +571,7 @@ LTG_NEXT_ACCEPTANCE_ACTION_QUEUE = [
         "not_allowed_next_steps": [
             "open Streamlit from GET cache",
             "run legacy tools from React render",
-            "delete app.py before replacement parity",
+            "delete app.py before ordinary capability replacement evidence",
             "treat local receipt as Streamlit retirement completion",
         ],
     },
