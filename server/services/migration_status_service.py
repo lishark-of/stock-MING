@@ -256,7 +256,11 @@ LTG_NEXT_EVIDENCE_REQUIRED = {
         "replacement promotion",
     ],
     "LTG-09": ["tauri dev/build", "packaged runtime QA", "signing/notarization review", "release evidence"],
-    "LTG-10": ["React/Tauri workflow parity", "no-feature-cut acceptance", "fallback retirement review"],
+    "LTG-10": [
+        "React/Tauri ordinary capability replacement evidence",
+        "no-feature-cut acceptance",
+        "fallback retirement review",
+    ],
     "LTG-11": ["fresh local gate run", "remote CI status", "failure email triage", "allowlist review"],
     "LTG-12": ["continued no-broker proof", "continued no-order proof", "continued no-action mutation proof"],
     "LTG-13": ["provider parity execution", "worker full-pool scan", "worker deep-scan", "browser performance proof"],

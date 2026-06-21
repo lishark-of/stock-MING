@@ -766,10 +766,15 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("Candidate Radar signal/capability replacement evidence", source)
         self.assertIn("future explicit ordinary capability replacement", source)
         self.assertIn("ordinary capability replacement evidence", source)
+        self.assertIn(
+            '"LTG-10": [\n        "React/Tauri ordinary capability replacement evidence"',
+            source,
+        )
         self.assertNotIn(
             "Run explicit replacement parity and Streamlit fallback retirement reviews",
             source,
         )
+        self.assertNotIn('"LTG-10": ["React/Tauri workflow parity"', source)
         self.assertNotIn("delete app.py before replacement parity", source)
 
     def test_push_gate_guard_covers_commit_checkpoint_surfaces(self):
