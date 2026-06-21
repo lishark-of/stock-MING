@@ -57,6 +57,7 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "legacy_intake_factor_risk_provider_health",
             "legacy_intake_hard_risk_announcement",
             "legacy_intake_discipline_backtest",
+            "legacy_intake_margin_etf_leverage",
         ):
             self.assertIn(intake_row, self.migration_map)
 
@@ -68,11 +69,12 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
             "factor/risk/provider health",
             "hard risk / announcement risk",
             "discipline/backtest",
+            "ETF/leverage",
         ):
             self.assertIn(workflow, self.migration_map)
 
-        self.assertIn("避免后续 ECharts/operation zones、provider-health 明细、硬风险摘要或回测复盘实验室迁移绕过 Legacy Bug / UX Audit", self.migration_map)
-        self.assertIn("provider-health 明细、硬风险摘要或回测复盘实验室迁移绕过 Legacy Bug / UX Audit", self.migration_map)
+        self.assertIn("避免后续 ECharts/operation zones、provider-health 明细、硬风险摘要、回测复盘实验室或杠杆/ETF 风险预算迁移绕过 Legacy Bug / UX Audit", self.migration_map)
+        self.assertIn("provider-health 明细、硬风险摘要、回测复盘实验室或杠杆/ETF 风险预算迁移绕过 Legacy Bug / UX Audit", self.migration_map)
         self.assertIn("operation_zones 只作为条件，不改 action", self.migration_map)
         self.assertIn("receipt-as-replacement", self.migration_map)
         self.assertIn("local receipt is not replacement evidence", self.migration_map)
@@ -87,14 +89,19 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
         self.assertIn("回测结论混成普通交易建议", self.migration_map)
         self.assertIn("未来若进入普通流必须重设为独立 backtest lab", self.migration_map)
         self.assertIn("synchronous backtest, deep forms and ordinary trading advice are not migrated", self.migration_map)
+        self.assertIn("杠杆配置与普通作战建议混杂", self.migration_map)
+        self.assertIn("Tushare/DeepSeek 手动刷新路径复杂", self.migration_map)
+        self.assertIn("ETF/融资数据缺口像可执行建议", self.migration_map)
+        self.assertIn("未来若进入普通流必须重做为 risk-budget subflow", self.migration_map)
+        self.assertIn("leverage advice, complex manual Tushare/DeepSeek refresh path and ordinary trading recommendations are not migrated", self.migration_map)
         self.assertIn("pending safe screenshot or reviewer note", self.migration_map)
         self.assertGreaterEqual(
             self.migration_map.count("direct_evidence_intake_pending"),
-            7,
+            8,
         )
         self.assertGreaterEqual(
             self.migration_map.count("no_keep_promotion_this_round"),
-            7,
+            8,
         )
         self.assertNotIn("legacy_intake_home_daily_command` | home/daily command | KEEP", self.migration_map)
 
