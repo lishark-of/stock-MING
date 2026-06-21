@@ -1374,7 +1374,7 @@ Stabilize DeepSeek pro explanation benchmark
 - `production_replacement_stage_scope_rows` must list all eight production replacement evidence stages and keep `streamlit_parity_complete=false`, `browser_visual_qa_done=false`, `browser_performance_trace_done=false`, `reduced_motion_accessibility_qa_done=false`, `durable_ci_evidence_complete=false`, `production_replacement_complete=false`, `browser_opened_by_contract=false`, `artifacts_written_by_contract=false`, external calls false, trades false, frontend action computation false, operation-zone mutation false, and `contains_secret=false`.
 - Frontend does not compute action.
 - Frontend does not mutate price, position, or `operation_zones`.
-- `production_replacement_complete` remains false until legacy parity is actually complete.
+- `production_replacement_complete` remains false until retained legacy signal/capability coverage has direct no-feature-loss evidence, browser visual QA, performance trace, durable CI/release evidence, and production promotion review; old Streamlit UI copy stays outside the goal.
 - No legacy signal group may be dropped merely to make the React replacement easier or faster.
 
 ### Forbidden

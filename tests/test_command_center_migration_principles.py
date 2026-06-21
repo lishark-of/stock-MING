@@ -143,6 +143,22 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("Streamlit parity", text)
         self.assertNotIn("legacy Streamlit parity", text)
 
+    def test_ltg08_completion_boundary_uses_signal_capability_evidence_not_legacy_parity(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "docs" / "command_center_3_long_term_goals.md").read_text(
+            encoding="utf-8"
+        )
+        section = text.split("## LTG-08: ECharts 次日图谱成熟版", 1)[1].split(
+            "## LTG-09:",
+            1,
+        )[0]
+
+        self.assertIn("retained legacy signal/capability coverage has direct no-feature-loss evidence", section)
+        self.assertIn("browser visual QA, performance trace, durable CI/release evidence", section)
+        self.assertIn("production promotion review", section)
+        self.assertIn("old Streamlit UI copy stays outside the goal", section)
+        self.assertNotIn("legacy parity is actually complete", section)
+
     def test_migration_map_records_legacy_audit_and_five_commit_questions(self):
         root = Path(__file__).resolve().parents[1]
         text = (root / "docs" / "migration_map.md").read_text(encoding="utf-8")
