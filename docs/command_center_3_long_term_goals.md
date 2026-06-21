@@ -1804,7 +1804,7 @@ Keep real trading isolated from Command Center 3 automation
 - A single default-motion browser pass is no longer sufficient local evidence; reduced-motion and all four target viewports must also be present before the browser QA evidence/review status can become locally ready.
 - The local Candidate Radar push-gate contract is not a production radar run; it only blocks regressions where local quick scans, plan-only rows, provider parity dry-run rows, no-feature-loss QA, replacement triage, promotion-blocker audit, result-delta clarity, or candidate-priority explanation could be mistaken for full replacement.
 - `fast_scan_local_ready_full_pool_pending` is not production replacement; it only proves local readiness and visible gaps.
-- Need parity acceptance before removing any Streamlit fallback.
+- Need legacy signal/capability acceptance before removing any Streamlit fallback; legacy UI, navigation, and tab-copy parity are not retirement evidence.
 - Need provider/model-backed search-to-quant projection beyond the current local receipt: validate the symbol, refresh allowed light data, write real call ledger/model ledger, update factor and next-session cache, and render chart/provenance without reducing legacy radar signal coverage.
 - Need the activation receipt to be followed by a separate user-approved real provider/model task before claiming Tushare/DeepSeek linkage completion; the receipt itself is only a local checklist and does not prove provider/model execution.
 - Need the acceptance dry-run to be followed by a separate real provider/model implementation bound to the `acceptance_scope_ticket`; dry-run readiness, credential presence, and ignored-API reporting do not prove real Tushare rows or DeepSeek JSON stability.

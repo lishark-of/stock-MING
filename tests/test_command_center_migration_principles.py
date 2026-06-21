@@ -628,6 +628,19 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("不证明 Streamlit parity 或生产替代完成", architecture)
         self.assertNotIn("不证明 Streamlit parity、durable CI evidence", architecture)
 
+    def test_ltg13_streamlit_fallback_retirement_requires_signal_capability_not_ui_parity(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / "docs" / "command_center_3_long_term_goals.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            "Need legacy signal/capability acceptance before removing any Streamlit fallback",
+            text,
+        )
+        self.assertIn("legacy UI, navigation, and tab-copy parity are not retirement evidence", text)
+        self.assertNotIn("Need parity acceptance before removing any Streamlit fallback", text)
+
     def test_ltg10_status_uses_capability_replacement_not_ui_parity_wording(self):
         root = Path(__file__).resolve().parents[1]
         source = (
