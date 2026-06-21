@@ -79,6 +79,10 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("已确认输入：${searchSymbol.trim()}", self.page)
         self.assertIn("先输入并确认股票代码，按钮启用后再点击生成 3.0 量化推演", self.page)
         self.assertIn("确认代码后点击生成 3.0 量化推演", self.page)
+        self.assertIn("quantProjectionSubmitHint", self.page)
+        self.assertIn("仅输入不会创建 task，也不会调用 Tushare 或 DeepSeek", self.page)
+        self.assertIn("点击按钮只创建本地量化推演记录", self.page)
+        self.assertIn('aria-live="polite"', self.page)
         quant_projection_start = self.page.index('title="搜票量化推演"')
         self.assertLess(
             self.page.index('label: "确认代码"', quant_projection_start),

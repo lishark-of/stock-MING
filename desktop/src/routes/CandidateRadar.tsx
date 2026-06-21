@@ -428,6 +428,9 @@ export default function CandidateRadar() {
   const quantProjectionNextClick = quantProjectionDisplaySymbol
     ? "确认代码后点击生成 3.0 量化推演；需要真实数据或模型解释时，再按人工确认流程推进"
     : "先输入并确认股票代码，按钮启用后再点击生成 3.0 量化推演";
+  const quantProjectionSubmitHint = quantProjectionDisplaySymbol
+    ? "点击按钮只创建本地量化推演记录；真实 Tushare / DeepSeek 补证继续走人工确认和后台任务血缘。"
+    : "先输入股票代码；仅输入不会创建 task，也不会调用 Tushare 或 DeepSeek。";
   const quantProjectionCacheSourceLabel =
     searchQuantProjectionReceipt.status ? "本地推演记录可用" : cache.status === "ready" ? "候选缓存可用" : "等待本地缓存";
   const quantProjectionProviderSourceLabel =
@@ -519,6 +522,7 @@ export default function CandidateRadar() {
             />
             <button disabled={!quantProjectionCanSubmit} onClick={launchQuantProjection}>生成 3.0 量化推演</button>
           </div>
+          <p className="risk-note" aria-live="polite">{quantProjectionSubmitHint}</p>
           <MetricGrid
             items={[
               { label: "下一步", value: quantProjectionNextClick },
