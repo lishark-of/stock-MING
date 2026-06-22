@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import fnmatch
 import hashlib
 import json
 import subprocess
@@ -48,12 +49,32 @@ LOCAL_WORKTREE_CLEANLINESS_SCHEMA_VERSION = "command_center_3_local_worktree_cle
 MOTION_CLARITY_SCHEMA_VERSION = "command_center_3_motion_clarity_audit.v1"
 LOCAL_PUSH_GATE_REQUIRED_CHECKS = {
     "python_unittest",
+    "migration_principle_docs_guard",
     "desktop_build",
     "command_center_3_smoke",
+    "data_health_freshness_contract",
+    "tushare_acceptance_contract",
+    "bootstrap_runtime_contract",
+    "tushare_deepseek_linkage_contract",
+    "factor_test_lab_contract",
+    "factor_universe_contract",
+    "deepseek_governance_contract",
+    "next_session_map_contract",
+    "candidate_radar_contract",
+    "candidate_radar_browser_qa_runbook",
+    "storage_contract",
+    "worker_contract",
+    "tauri_desktop_contract",
+    "streamlit_legacy_contract",
+    "trade_isolation_contract",
+    "motion_viewport_qa_contract",
+    "motion_browser_qa_runbook",
     "diff_whitespace_check",
     "high_risk_secret_scan",
     "secret_keyword_review_contract",
     "generated_artifact_scan",
+    "release_readiness_report",
+    "local_push_gate_receipt_artifact_policy",
     "clean_worktree_check",
 }
 RELEASE_GATE_STAGE_SCOPE = "release_gate_stage_scope_manifest"
@@ -488,6 +509,41 @@ def _read_git_status_short_lines() -> tuple[str, int | None, list[str]]:
     return "local_git_status_short_read", completed.returncode, lines
 
 
+def _local_ignore_patterns() -> list[str]:
+    patterns: list[str] = []
+    for ignore_path in (PROJECT_ROOT / ".gitignore", _git_dir_path() / "info" / "exclude"):
+        for raw_line in _read_local_text(ignore_path).splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or line.startswith("!"):
+                continue
+            patterns.append(line)
+    return patterns
+
+
+def _ignore_pattern_matches(relative_path: str, pattern: str) -> bool:
+    normalized = pattern.lstrip("/").strip()
+    if not normalized:
+        return False
+    if normalized.endswith("/"):
+        directory = normalized.rstrip("/")
+        return relative_path == directory or relative_path.startswith(f"{directory}/")
+    if "/" in normalized:
+        return fnmatch.fnmatch(relative_path, normalized)
+    return fnmatch.fnmatch(Path(relative_path).name, normalized)
+
+
+def _local_artifact_path_policy_ok(path: Path) -> bool:
+    try:
+        resolved_project = PROJECT_ROOT.resolve(strict=False)
+        resolved_path = path.resolve(strict=False)
+        if not resolved_path.is_relative_to(resolved_project):
+            return True
+        relative_path = resolved_path.relative_to(resolved_project).as_posix()
+    except Exception:
+        return False
+    return any(_ignore_pattern_matches(relative_path, pattern) for pattern in _local_ignore_patterns())
+
+
 def _local_worktree_cleanliness_audit(
     status_lines: list[str] | None = None,
     *,
@@ -579,12 +635,20 @@ def _read_local_push_gate_run_receipt() -> dict[str, Any]:
             "current_head_full": current_head.get("head_full"),
             "current_branch": current_head.get("branch"),
             "head_matches_current": False,
+            "boundary_flags_valid": False,
+            "safety_boundary_flags_valid": False,
+            "push_confirmation_boundary_valid": False,
             "fresh_local_gate_run_observed": False,
+            "freshness_blockers": ["receipt_missing"],
+            "freshness_blocker_count": 1,
             "required_local_gate_checks_present": False,
             "required_check_count": len(LOCAL_PUSH_GATE_REQUIRED_CHECKS),
             "observed_check_count": 0,
             "missing_required_checks": sorted(LOCAL_PUSH_GATE_REQUIRED_CHECKS),
             "did_not_push": True,
+            "explicit_user_push_confirmation_before_push": False,
+            "push_confirmation_state": "not_requested_no_push",
+            "release_claim_decision": "blocked_remote_ci_unverified",
             "git_add_dot_used": False,
             "external_calls_triggered": False,
             "tushare_called": False,
@@ -608,12 +672,20 @@ def _read_local_push_gate_run_receipt() -> dict[str, Any]:
             "current_head_full": current_head.get("head_full"),
             "current_branch": current_head.get("branch"),
             "head_matches_current": False,
+            "boundary_flags_valid": False,
+            "safety_boundary_flags_valid": False,
+            "push_confirmation_boundary_valid": False,
             "fresh_local_gate_run_observed": False,
+            "freshness_blockers": ["receipt_read_failed"],
+            "freshness_blocker_count": 1,
             "required_local_gate_checks_present": False,
             "required_check_count": len(LOCAL_PUSH_GATE_REQUIRED_CHECKS),
             "observed_check_count": 0,
             "missing_required_checks": sorted(LOCAL_PUSH_GATE_REQUIRED_CHECKS),
             "did_not_push": True,
+            "explicit_user_push_confirmation_before_push": False,
+            "push_confirmation_state": "not_requested_no_push",
+            "release_claim_decision": "blocked_remote_ci_unverified",
             "git_add_dot_used": False,
             "external_calls_triggered": False,
             "tushare_called": False,
@@ -642,7 +714,7 @@ def _read_local_push_gate_run_receipt() -> dict[str, Any]:
     schema_ok = raw_receipt.get("schema_version") == LOCAL_PUSH_GATE_RUN_RECEIPT_SCHEMA_VERSION
     status_ok = raw_receipt.get("status") == "local_push_gate_passed_current_head"
     checks_ok = not missing_checks
-    boundary_ok = (
+    safety_boundary_ok = (
         raw_receipt.get("did_not_push") is True
         and raw_receipt.get("git_add_dot_used") is False
         and raw_receipt.get("external_calls_triggered") is False
@@ -653,6 +725,25 @@ def _read_local_push_gate_run_receipt() -> dict[str, Any]:
         and raw_receipt.get("does_not_modify_strategy_action") is True
         and raw_receipt.get("contains_secret") is False
     )
+    push_confirmation_boundary_ok = (
+        raw_receipt.get("explicit_user_push_confirmation_before_push") is False
+        and raw_receipt.get("push_confirmation_state") == "not_requested_no_push"
+        and raw_receipt.get("release_claim_decision") == "blocked_remote_ci_unverified"
+    )
+    boundary_ok = safety_boundary_ok and push_confirmation_boundary_ok
+    freshness_blockers: list[str] = []
+    if not schema_ok:
+        freshness_blockers.append("schema_mismatch")
+    if not status_ok:
+        freshness_blockers.append("status_not_local_push_gate_passed_current_head")
+    if not head_matches_current:
+        freshness_blockers.append("head_mismatch")
+    if not safety_boundary_ok:
+        freshness_blockers.append("safety_boundary_flags_invalid")
+    if not push_confirmation_boundary_ok:
+        freshness_blockers.append("push_confirmation_boundary_missing_or_invalid")
+    if not checks_ok:
+        freshness_blockers.append("required_checks_missing")
     fresh = bool(schema_ok and status_ok and head_matches_current and boundary_ok and checks_ok)
     receipt.update(
         {
@@ -666,7 +757,11 @@ def _read_local_push_gate_run_receipt() -> dict[str, Any]:
             "current_branch": current_head.get("branch"),
             "head_matches_current": head_matches_current,
             "boundary_flags_valid": boundary_ok,
+            "safety_boundary_flags_valid": safety_boundary_ok,
+            "push_confirmation_boundary_valid": push_confirmation_boundary_ok,
             "fresh_local_gate_run_observed": fresh,
+            "freshness_blockers": freshness_blockers,
+            "freshness_blocker_count": len(freshness_blockers),
             "required_local_gate_checks_present": checks_ok,
             "required_check_count": len(LOCAL_PUSH_GATE_REQUIRED_CHECKS),
             "observed_check_count": len(checks),
@@ -674,6 +769,16 @@ def _read_local_push_gate_run_receipt() -> dict[str, Any]:
             "remote_actions_status_known": False,
             "latest_remote_run_verified_green": False,
             "local_gate_pass_is_not_ci_status": True,
+            "explicit_user_push_confirmation_before_push": raw_receipt.get(
+                "explicit_user_push_confirmation_before_push"
+            )
+            is True,
+            "push_confirmation_state": str(
+                raw_receipt.get("push_confirmation_state") or "not_requested_no_push"
+            ),
+            "release_claim_decision": str(
+                raw_receipt.get("release_claim_decision") or "blocked_remote_ci_unverified"
+            ),
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -718,6 +823,14 @@ def _release_gate_workflow_rows() -> list[dict[str, Any]]:
         mirrors_push_gate = "push_gate_3_0.sh" in text or (
             "-m unittest discover -s tests" in text and "npm run build" in text and "smoke_3_0.sh" in text
         )
+        contains_evidence_artifact_upload = (
+            "actions/upload-artifact@v4" in text
+            and "if: always()" in text
+            and "command-center-3-push-gate-evidence" in text
+            and "command-center-3-push-gate.log" in text
+            and "command-center-3-push-gate-report.md" in text
+            and "command-center-3-local-push-gate-run-receipt.json" in text
+        )
         rows.append(
             {
                 "workflow": _relative_path(path),
@@ -730,6 +843,16 @@ def _release_gate_workflow_rows() -> list[dict[str, Any]]:
                 "contains_diff_check_step": "git diff --check" in text,
                 "contains_secret_scan_step": "secret_high_risk_scan" in text or "api_key|token|secret|password" in text,
                 "contains_artifact_scan_step": "artifact_scan" in text or "git ls-files" in text,
+                "contains_local_push_gate_receipt_artifact_policy_step": (
+                    "local_push_gate_receipt_artifact_policy_scan" in text
+                    and "LOCAL_PUSH_GATE_RECEIPT_PATH must be ignored" in text
+                ),
+                "contains_push_gate_evidence_artifact_upload": contains_evidence_artifact_upload,
+                "push_gate_evidence_artifact_name": (
+                    "command-center-3-push-gate-evidence-${{ github.run_id }}"
+                    if contains_evidence_artifact_upload
+                    else ""
+                ),
                 "github_api_call_detected": _script_contains_any(
                     text,
                     ("gh api", "api.github.com", "github/graphql", "curl https://api.github"),
@@ -1049,6 +1172,18 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and script.find('run_step "Release readiness report"') < script.find('run_step "Clean worktree check"'),
         "local_push_gate_run_receipt_step": "LOCAL_PUSH_GATE_RECEIPT_PATH" in script
         and "write_local_push_gate_run_receipt" in script,
+        "local_push_gate_receipt_artifact_policy_step": "local_push_gate_receipt_artifact_policy_scan" in script
+        and "git check-ignore" in script
+        and "resolve(strict=False)" in script
+        and "must point to a file path, not the repository root" in script
+        and "LOCAL_PUSH_GATE_RECEIPT_PATH inside the repository must be ignored" in script,
+        "local_push_gate_receipt_path_policy_ok": _local_artifact_path_policy_ok(LOCAL_PUSH_GATE_RUN_RECEIPT_PATH),
+        "clean_worktree_after_receipt_artifact_policy": script.find(
+            'run_step "Local push gate receipt artifact policy"'
+        )
+        >= 0
+        and script.find('run_step "Local push gate receipt artifact policy"')
+        < script.find('run_step "Clean worktree check"'),
         "local_push_gate_run_receipt_after_clean": script.find('run_step "Clean worktree check"') >= 0
         and script.find('run_step "Clean worktree check"') < script.find('run_step "Local push gate run receipt"'),
         "no_git_push": "git push" not in script,
@@ -1086,7 +1221,21 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and bool(row.get("contains_migration_principle_docs_guard_step"))
         for row in workflow_rows
     )
-    ci_mirror_ready = ci_mirror_includes_migration_principle_docs_guard
+    ci_mirror_includes_receipt_artifact_policy = any(
+        bool(row.get("mirrors_local_push_gate"))
+        and bool(row.get("contains_local_push_gate_receipt_artifact_policy_step"))
+        for row in workflow_rows
+    )
+    ci_mirror_includes_evidence_artifact_upload = any(
+        bool(row.get("mirrors_local_push_gate"))
+        and bool(row.get("contains_push_gate_evidence_artifact_upload"))
+        for row in workflow_rows
+    )
+    ci_mirror_ready = (
+        ci_mirror_includes_migration_principle_docs_guard
+        and ci_mirror_includes_receipt_artifact_policy
+        and ci_mirror_includes_evidence_artifact_upload
+    )
     false_positive_allowlist_review_ready = False
     local_gate_ready = all(
         bool(checks[key])
@@ -1168,6 +1317,9 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             "release_report_step",
             "clean_worktree_after_report",
             "local_push_gate_run_receipt_step",
+            "local_push_gate_receipt_artifact_policy_step",
+            "local_push_gate_receipt_path_policy_ok",
+            "clean_worktree_after_receipt_artifact_policy",
             "local_push_gate_run_receipt_after_clean",
             "no_git_push",
             "no_git_add_dot",
@@ -1525,6 +1677,21 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
             evidence="push gate writes ignored .stock_ming_3 release receipt only after local checks pass",
         ),
         _release_gate_row(
+            "local_push_gate_receipt_artifact_policy_step",
+            checks["local_push_gate_receipt_artifact_policy_step"],
+            evidence="LOCAL_PUSH_GATE_RECEIPT_PATH must be ignored when it points inside the repository",
+        ),
+        _release_gate_row(
+            "local_push_gate_receipt_path_policy_ok",
+            checks["local_push_gate_receipt_path_policy_ok"],
+            evidence=f"receipt path is ignored or outside repo: {_relative_path(LOCAL_PUSH_GATE_RUN_RECEIPT_PATH)}",
+        ),
+        _release_gate_row(
+            "clean_worktree_after_receipt_artifact_policy",
+            checks["clean_worktree_after_receipt_artifact_policy"],
+            evidence="receipt artifact policy runs before clean worktree check",
+        ),
+        _release_gate_row(
             "local_push_gate_run_receipt_after_clean",
             checks["local_push_gate_run_receipt_after_clean"],
             evidence="ignored local push gate receipt is written after clean worktree check and before final PASS",
@@ -1543,15 +1710,31 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         _release_gate_row(
             "ci_mirror_not_proven",
             ci_mirror_ready,
-            evidence=".github workflows do not mirror scripts/push_gate_3_0.sh plus migration principle guard"
+            evidence=".github workflows do not mirror scripts/push_gate_3_0.sh plus migration principle guard and receipt artifact policy"
             if not ci_mirror_ready
-            else "CI mirrors local push gate and migration principle docs guard",
+            else "CI mirrors local push gate, migration principle docs guard, receipt artifact policy, and evidence artifact upload",
             status_override="pending" if not ci_mirror_ready else None,
         ),
         _release_gate_row(
             "ci_mirror_migration_principle_docs_guard",
             ci_mirror_includes_migration_principle_docs_guard,
             evidence="command-center-3-push-gate workflow declares tests.test_command_center_migration_principles",
+        ),
+        _release_gate_row(
+            "ci_mirror_local_push_gate_receipt_artifact_policy",
+            ci_mirror_includes_receipt_artifact_policy,
+            evidence="command-center-3-push-gate workflow declares LOCAL_PUSH_GATE_RECEIPT_PATH ignored-path policy",
+        ),
+        _release_gate_row(
+            "ci_mirror_push_gate_evidence_artifact_upload",
+            ci_mirror_includes_evidence_artifact_upload,
+            evidence="command-center-3-push-gate workflow uploads log/report/receipt artifact on success or failure",
+        ),
+        _release_gate_row(
+            "remote_ci_review_required_for_release_gate_complete",
+            False,
+            evidence="static local audit cannot verify matching remote Actions green status or reviewed failure logs",
+            status_override="blocked_remote_ci_unverified",
         ),
         _release_gate_row(
             "false_positive_allowlist_review_pending",
@@ -1563,9 +1746,19 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
     ]
     blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
     soft_blockers = [row["criterion"] for row in rows if row.get("status") == "pending" and not row.get("production_blocker")]
-    release_gate_complete = local_gate_ready and ci_mirror_ready and false_positive_allowlist_review_ready
+    remote_ci_review_ready = False
+    release_gate_complete = (
+        local_gate_ready
+        and ci_mirror_ready
+        and false_positive_allowlist_review_ready
+        and remote_ci_review_ready
+    )
     if release_gate_complete:
         release_gate_status = "release_gate_ready"
+    elif local_gate_ready and ci_mirror_ready and not remote_ci_review_ready and not false_positive_allowlist_review_ready:
+        release_gate_status = "local_gate_ready_remote_ci_and_allowlist_pending"
+    elif local_gate_ready and ci_mirror_ready and not remote_ci_review_ready:
+        release_gate_status = "local_gate_ready_remote_ci_review_pending"
     elif local_gate_ready and ci_mirror_ready:
         release_gate_status = "local_gate_ready_allowlist_review_pending"
     elif local_gate_ready:
@@ -1581,6 +1774,13 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         "ci_mirror_ready": ci_mirror_ready,
         "ci_mirror_detected": ci_mirror_ready,
         "ci_mirror_includes_migration_principle_docs_guard": ci_mirror_includes_migration_principle_docs_guard,
+        "ci_mirror_includes_receipt_artifact_policy": ci_mirror_includes_receipt_artifact_policy,
+        "ci_mirror_includes_evidence_artifact_upload": ci_mirror_includes_evidence_artifact_upload,
+        "remote_ci_review_ready": remote_ci_review_ready,
+        "remote_actions_status_known": False,
+        "latest_remote_run_verified_green": False,
+        "static_audit_cannot_complete_release_gate": True,
+        "release_gate_complete_requires_remote_ci_review": True,
         "false_positive_allowlist_review_ready": false_positive_allowlist_review_ready,
         "provider_calls_triggered": False,
         "external_calls_triggered": False,
@@ -1620,6 +1820,7 @@ def _ci_notification_triage_contract(
     ci_mirror_ready = release_gate_readiness_audit.get("ci_mirror_ready") is True
     workflow_declared = bool(push_gate_workflow)
     workflow_mirrors_local_gate = bool(push_gate_workflow.get("mirrors_local_push_gate"))
+    workflow_uploads_evidence_artifact = bool(push_gate_workflow.get("contains_push_gate_evidence_artifact_upload"))
     workflow_calls_github_api = bool(push_gate_workflow.get("github_api_call_detected"))
     remote_logs_required = True
     remote_actions_status_known = False
@@ -1644,6 +1845,11 @@ def _ci_notification_triage_contract(
             "push_gate_workflow_mirrors_local_script",
             workflow_mirrors_local_gate,
             evidence=f"mirrors_local_push_gate={workflow_mirrors_local_gate}; contains_smoke_step={push_gate_workflow.get('contains_smoke_step')}",
+        ),
+        _release_gate_row(
+            "push_gate_evidence_artifact_expected",
+            workflow_uploads_evidence_artifact,
+            evidence="Download command-center-3-push-gate-evidence from the matching Actions run for safe log/report/receipt review.",
         ),
         _release_gate_row(
             "remote_run_logs_required_for_failure_root_cause",
@@ -1691,6 +1897,9 @@ def _ci_notification_triage_contract(
         "ci_mirror_ready": ci_mirror_ready,
         "push_gate_workflow_declared": workflow_declared,
         "push_gate_workflow": push_gate_workflow.get("workflow") or ".github/workflows/command-center-3-push-gate.yml",
+        "push_gate_evidence_artifact_expected": workflow_uploads_evidence_artifact,
+        "push_gate_evidence_artifact_name": push_gate_workflow.get("push_gate_evidence_artifact_name")
+        or "command-center-3-push-gate-evidence-${run_id}",
         "remote_actions_status_known": remote_actions_status_known,
         "remote_failure_logs_available": False,
         "remote_logs_required_for_root_cause": remote_logs_required,
@@ -1727,6 +1936,9 @@ def _release_gate_push_readiness_receipt(
     ci_mirror_ready = release_gate_readiness_audit.get("ci_mirror_ready") is True
     local_run_receipt = _as_dict(local_push_gate_run_receipt)
     fresh_local_gate_run_observed = local_run_receipt.get("fresh_local_gate_run_observed") is True
+    local_receipt_freshness_blockers = [
+        str(item) for item in _as_list(local_run_receipt.get("freshness_blockers"))
+    ]
     remote_actions_status_known = ci_notification_triage_contract.get("remote_actions_status_known") is True
     latest_remote_run_verified_green = ci_notification_triage_contract.get("latest_remote_run_verified_green") is True
     false_positive_allowlist_review_ready = (
@@ -1750,7 +1962,8 @@ def _release_gate_push_readiness_receipt(
             evidence=(
                 f"local receipt head={local_run_receipt.get('head')}; "
                 f"current head={local_run_receipt.get('current_head')}; "
-                f"head_matches_current={local_run_receipt.get('head_matches_current')}"
+                f"head_matches_current={local_run_receipt.get('head_matches_current')}; "
+                f"freshness_blockers={local_receipt_freshness_blockers}"
             ),
             production_blocker=False,
             status_override="pending_local_gate_run" if not fresh_local_gate_run_observed else None,
@@ -1841,6 +2054,7 @@ def _release_gate_push_readiness_receipt(
             "treat local gate pass as remote Actions green",
             "treat static CI mirror as latest remote run evidence",
             "dismiss failure email without matching commit/head and logs",
+            "push without explicit user confirmation after local gate review",
             "fetch GitHub logs from GET /api/audit/cache",
             "run Tushare/DeepSeek/GitHub from page render",
             "execute real trading during release gate",
@@ -1853,6 +2067,7 @@ def _release_gate_push_readiness_receipt(
                 "matching_remote_actions_run_status",
                 "latest_remote_run_green_evidence",
                 "periodic_secret_artifact_allowlist_review",
+                "explicit_user_push_confirmation_before_push",
             ]
         ),
         "local_gate_contract_ready": local_gate_ready,
@@ -1863,6 +2078,8 @@ def _release_gate_push_readiness_receipt(
         "local_push_gate_run_receipt_head": local_run_receipt.get("head"),
         "local_push_gate_run_receipt_current_head": local_run_receipt.get("current_head"),
         "local_push_gate_run_receipt_head_matches_current": local_run_receipt.get("head_matches_current") is True,
+        "local_push_gate_run_receipt_freshness_blockers": local_receipt_freshness_blockers,
+        "local_push_gate_run_receipt_freshness_blocker_count": len(local_receipt_freshness_blockers),
         "remote_actions_status_known": remote_actions_status_known,
         "latest_remote_run_verified_green": latest_remote_run_verified_green,
         "can_clear_failure_email_without_matching_head_and_logs": False,
@@ -1870,6 +2087,9 @@ def _release_gate_push_readiness_receipt(
         "local_gate_pass_is_not_ci_status": True,
         "static_ci_mirror_is_not_ci_status": True,
         "optional_report_is_not_ci_status": True,
+        "explicit_user_push_confirmation_before_push": False,
+        "push_confirmation_state": "not_requested_no_push",
+        "release_claim_decision": "blocked_remote_ci_unverified",
         "periodic_allowlist_review_ready": false_positive_allowlist_review_ready,
         "row_count": len(rows),
         "pending_evidence_count": len(pending_rows),
@@ -1942,6 +2162,8 @@ def _release_gate_stage_scope_rows(
                 "failure_email_has_matching_head_and_logs": False,
                 "can_dismiss_failure_email_without_matching_head_and_logs": False,
                 "periodic_allowlist_review_ready": False,
+                "explicit_user_push_confirmation_before_push": False,
+                "push_confirmation_state": "not_requested_no_push",
                 "release_report_written_by_cache": False,
                 "release_report_is_ci_status": False,
                 "release_gate_complete": False,

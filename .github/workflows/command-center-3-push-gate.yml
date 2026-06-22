@@ -54,6 +54,9 @@ jobs:
       - name: Run Command Center 3 push gate
         env:
           PYTHON_BIN: .venv/bin/python
+          PUSH_GATE_LOG_PATH: ${{ runner.temp }}/command-center-3-push-gate.log
+          PUSH_GATE_REPORT_PATH: ${{ runner.temp }}/command-center-3-push-gate-report.md
+          LOCAL_PUSH_GATE_RECEIPT_PATH: ${{ runner.temp }}/command-center-3-local-push-gate-run-receipt.json
         run: |
           # scripts/push_gate_3_0.sh mirrors:
           # -m unittest discover -s tests
@@ -66,4 +69,19 @@ jobs:
           # git diff --check
           # secret_high_risk_scan
           # artifact_scan
-          scripts/push_gate_3_0.sh
+          # local_push_gate_receipt_artifact_policy_scan
+          # LOCAL_PUSH_GATE_RECEIPT_PATH must be ignored when it points inside the repository
+          set -o pipefail
+          scripts/push_gate_3_0.sh 2>&1 | tee "$PUSH_GATE_LOG_PATH"
+
+      - name: Upload Command Center 3 push gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: command-center-3-push-gate-evidence-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/command-center-3-push-gate.log
+            ${{ runner.temp }}/command-center-3-push-gate-report.md
+            ${{ runner.temp }}/command-center-3-local-push-gate-run-receipt.json
+          if-no-files-found: warn
+          retention-days: 7

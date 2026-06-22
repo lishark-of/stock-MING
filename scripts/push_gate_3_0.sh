@@ -120,6 +120,48 @@ artifact_scan() {
   fi
 }
 
+local_push_gate_receipt_artifact_policy_scan() {
+  local receipt_path root absolute_path relative_path
+  receipt_path="$LOCAL_PUSH_GATE_RECEIPT_PATH"
+  root="$(git rev-parse --show-toplevel)"
+  root="$("$PYTHON_BIN" - "$root" <<'PY'
+import sys
+from pathlib import Path
+
+print(Path(sys.argv[1]).resolve(strict=False))
+PY
+)"
+  absolute_path="$("$PYTHON_BIN" - "$receipt_path" "$PWD" <<'PY'
+import sys
+from pathlib import Path
+
+receipt_path = Path(sys.argv[1])
+if not receipt_path.is_absolute():
+    receipt_path = Path(sys.argv[2]) / receipt_path
+print(receipt_path.resolve(strict=False))
+PY
+)"
+
+  if [[ "$absolute_path" == "$root" ]]; then
+    echo "FAIL: LOCAL_PUSH_GATE_RECEIPT_PATH must point to a file path, not the repository root" >&2
+    return 1
+  fi
+
+  case "$absolute_path" in
+    "$root"/*)
+      relative_path="${absolute_path#"$root"/}"
+      if ! git check-ignore -q -- "$relative_path"; then
+        echo "FAIL: LOCAL_PUSH_GATE_RECEIPT_PATH inside the repository must be ignored before the gate writes it: $relative_path" >&2
+        return 1
+      fi
+      echo "local push gate receipt artifact policy: ignored in-repo path"
+      ;;
+    *)
+      echo "local push gate receipt artifact policy: outside repository"
+      ;;
+  esac
+}
+
 worktree_clean_scan() {
   local status
   status="$(git status --short)"
@@ -169,12 +211,9 @@ write_release_readiness_report() {
 - deepseek_governance_contract: passed_local_contract_provider_benchmark_pending
 - next_session_map_contract: passed_local_contract_streamlit_parity_pending
 - candidate_radar_contract: passed_local_contract_replacement_pending
-- candidate_radar_contract: passed_or_known_production_pending_local_contract
 - candidate_radar_browser_qa_runbook: passed_runbook_execution_pending
 - storage_contract: passed_local_contract_physical_migration_pending
-- storage_contract: passed_or_known_physical_migration_pending_local_contract
 - worker_contract: worker_contract_passed
-- worker_contract: passed_or_known_runtime_evidence_pending_local_contract
 - tauri_desktop_contract: passed_local_contract_package_validation_pending
 - streamlit_legacy_contract: passed_local_contract_retirement_pending
 - trade_isolation_contract: passed_local_contract_real_trading_disconnected
@@ -184,6 +223,7 @@ write_release_readiness_report() {
 - high_risk_secret_scan: clean
 - secret_keyword_review_contract: passed_structured_no_raw_lines
 - generated_artifact_scan: clean_or_allowed_assets_only
+- local_push_gate_receipt_artifact_policy: ignored_in_repo_or_outside_repo
 
 ## Safety Boundaries
 
@@ -195,11 +235,15 @@ write_release_readiness_report() {
 - local_gate_pass_is_not_remote_ci: true
 - remote_actions_status_known: false
 - latest_remote_run_verified_green: false
+- explicit_user_push_confirmation_before_push: false
+- push_confirmation_state: not_requested_no_push
+- release_claim_decision: blocked_remote_ci_unverified
 
 ## Scope Notes
 
 - This report is local evidence for the current push gate run.
 - Local gate pass is not remote CI evidence; release remains blocked until the matching remote Actions run is inspected green or failure logs are reviewed.
+- This report does not authorize push; explicit user confirmation is still required after local gate review.
 - A report path inside the repository must be ignored or intentionally staged later; otherwise the final clean-worktree check fails.
 - Scaffold, preflight, matrix, mock, and sanitizer checks are not production completion evidence.
 REPORT
@@ -261,6 +305,7 @@ payload = {
         "secret_keyword_review_contract",
         "generated_artifact_scan",
         "release_readiness_report",
+        "local_push_gate_receipt_artifact_policy",
         "clean_worktree_check",
     ],
     "did_not_push": True,
@@ -276,6 +321,9 @@ payload = {
     "local_gate_pass_is_not_ci_status": True,
     "remote_actions_status_known": False,
     "latest_remote_run_verified_green": False,
+    "explicit_user_push_confirmation_before_push": False,
+    "push_confirmation_state": "not_requested_no_push",
+    "release_claim_decision": "blocked_remote_ci_unverified",
     "remote_ci_status_note": "local push gate pass is not remote CI green; inspect matching remote Actions run before release.",
 }
 path = Path(receipt_path)
@@ -309,6 +357,7 @@ run_step "Diff whitespace check" git diff --check
 run_step "Secret scan" secret_high_risk_scan
 run_step "Secret keyword review contract" "$PYTHON_BIN" scripts/secret_keyword_review_contract.py
 run_step "Generated artifact scan" artifact_scan
+run_step "Local push gate receipt artifact policy" local_push_gate_receipt_artifact_policy_scan
 run_step "Release readiness report" write_release_readiness_report
 run_step "Clean worktree check" worktree_clean_scan
 run_step "Local push gate run receipt" write_local_push_gate_run_receipt
