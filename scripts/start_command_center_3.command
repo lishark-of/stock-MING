@@ -108,8 +108,25 @@ else
   (cd "$DESKTOP_ROOT" && VITE_API_BASE_URL="$API_BASE" nohup npm run dev >"$VITE_LOG" 2>&1 &)
 fi
 
-wait_for_url "FastAPI" "${API_BASE%/}/health" 40 || true
-wait_for_url "React/Vite" "$VITE_URL" 40 || true
+FASTAPI_READY=0
+VITE_READY=0
+
+if wait_for_url "FastAPI" "${API_BASE%/}/health" 40; then
+  FASTAPI_READY=1
+fi
+
+if wait_for_url "React/Vite" "$VITE_URL" 40; then
+  VITE_READY=1
+fi
+
+if [ "$FASTAPI_READY" != "1" ] || [ "$VITE_READY" != "1" ]; then
+  echo "Command Center 3.0 启动未完成：FastAPI ready=${FASTAPI_READY}, React/Vite ready=${VITE_READY}"
+  echo "请查看日志："
+  echo "  FastAPI log: ${FASTAPI_LOG}"
+  echo "  React/Vite log: ${VITE_LOG}"
+  echo "本地入口不会在前后端未联通时自动打开页面。"
+  exit 1
+fi
 
 if command -v open >/dev/null 2>&1; then
   open "$VITE_URL"
