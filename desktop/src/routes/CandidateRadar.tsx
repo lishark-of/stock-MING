@@ -465,6 +465,24 @@ export default function CandidateRadar() {
   const ordinaryLastCache = String(
     cache.loaded_at ?? radarPacket.generated_at ?? radarPacket.updated_at ?? "暂无最近可用缓存"
   );
+  const ordinaryCandidateTopCount = rows(cache.candidate_rows).length || Number(counts.candidate_count ?? 0);
+  const ordinaryCandidateWatchCount = rows(radarPacket.watch_candidates).length;
+  const ordinaryCandidateExcludedCount = rows(cache.excluded_candidates).length || rows(radarPacket.excluded_candidates).length;
+  const ordinaryCandidateGroupLabel =
+    `Top ${ordinaryCandidateTopCount} / Watch ${ordinaryCandidateWatchCount} / Excluded ${ordinaryCandidateExcludedCount}`;
+  const ordinaryScanScopeLabel = [
+    `模式：${String(cache.scan_mode ?? "cache_only")}`,
+    `范围：${String(scanExecutionSummary.scan_family ?? localPoolAudit.input_source ?? "本地缓存")}`
+  ].join(" / ");
+  const ordinaryCandidateSourceLabel = [
+    String(radarPacket.source ?? localPoolAudit.input_source ?? cache.cache_source ?? "本地缓存"),
+    Number(counts.candidate_display_truncated_count ?? 0)
+      ? `截断 ${String(counts.candidate_display_truncated_count)} 个候选`
+      : "未标记截断"
+  ].join(" / ");
+  const ordinaryScoringReasonLabel = Number(candidatePriorityExplanation.explained_candidate_count ?? 0)
+    ? `按缓存顺序解释 ${String(candidatePriorityExplanation.explained_candidate_count)} 个候选；不重排、不生成交易动作`
+    : "按本地缓存顺序展示；评分理由不足会作为缺口显示";
   const ordinaryTaskBoundary =
     "雷达摘要只读展示候选缓存；manual/live_light 补证必须走 POST task / worker，不在 React 渲染中直连 Tushare 或 DeepSeek";
   const quantProjectionSymbolValidation = normalizeAshareSymbolInput(searchSymbol);
@@ -619,6 +637,10 @@ export default function CandidateRadar() {
             { label: "下一步", value: ordinaryNextClick },
             { label: "主下一步", value: ordinaryPrimaryActionLabel },
             { label: "主下一步边界", value: ordinaryPrimaryActionBoundary, tone: "good" },
+            { label: "候选分组", value: ordinaryCandidateGroupLabel },
+            { label: "扫描范围", value: ordinaryScanScopeLabel },
+            { label: "候选来源", value: ordinaryCandidateSourceLabel },
+            { label: "评分说明", value: ordinaryScoringReasonLabel },
             { label: "可选补证", value: ordinaryOptionalNextClick },
             { label: "cache", value: ordinaryCacheSourceLabel },
             { label: "Tushare", value: ordinaryTushareSourceLabel },
@@ -663,6 +685,7 @@ export default function CandidateRadar() {
           <PacketCard title="下一票候选池" subtitle="只读展示本地候选缓存；页面打开不会自动全市场扫描" status={candidateRadarStatusLabel}>
             <p>{String(cache.summary ?? "候选雷达本地缓存只读展示。")}</p>
             <p>{String(cache.manual_required_text ?? "页面打开不会自动全市场扫描。")}</p>
+            <p>候选分组：{ordinaryCandidateGroupLabel}；{ordinaryScanScopeLabel}；{ordinaryCandidateSourceLabel}。</p>
             <p>候选不是买入指令；必须经过证据链、触发条件、纪律和仓位预算复核。</p>
             <StateClarityRail
               label="候选池状态"

@@ -23,6 +23,10 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "下一步"',
             'label: "主下一步"',
             'label: "主下一步边界"',
+            'label: "候选分组"',
+            'label: "扫描范围"',
+            'label: "候选来源"',
+            'label: "评分说明"',
             'label: "可选补证"',
             'label: "cache"',
             'label: "Tushare"',
@@ -48,6 +52,16 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("查看本地候选池", self.page)
         self.assertIn("主下一步只跳转本地候选池，不创建 task、不刷新外部数据或模型", self.page)
         self.assertIn("主下一步只创建按钮门控本地快扫 POST task，不直连 Tushare/DeepSeek", self.page)
+        self.assertIn("ordinaryCandidateGroupLabel", self.page)
+        self.assertIn("ordinaryScanScopeLabel", self.page)
+        self.assertIn("ordinaryCandidateSourceLabel", self.page)
+        self.assertIn("ordinaryScoringReasonLabel", self.page)
+        self.assertIn("Top ${ordinaryCandidateTopCount} / Watch ${ordinaryCandidateWatchCount} / Excluded ${ordinaryCandidateExcludedCount}", self.page)
+        self.assertIn("模式：${String(cache.scan_mode ?? \"cache_only\")}", self.page)
+        self.assertIn("范围：${String(scanExecutionSummary.scan_family ?? localPoolAudit.input_source ?? \"本地缓存\")}", self.page)
+        self.assertIn("按本地缓存顺序展示；评分理由不足会作为缺口显示", self.page)
+        self.assertIn("不重排、不生成交易动作", self.page)
+        self.assertIn("候选分组：{ordinaryCandidateGroupLabel}", self.page)
         self.assertIn("ordinaryOptionalNextClick", self.page)
         self.assertIn("需要更新时再运行本地快扫", self.page)
         self.assertIn("搜单票时输入代码后点击生成 3.0 量化推演", self.page)
