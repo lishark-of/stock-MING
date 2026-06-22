@@ -463,7 +463,7 @@ export default function NextSessionChart({ payload }: { payload: ChartPayload | 
       <div className="chart-interaction-notes">
         <strong>图谱交互说明</strong>
         <ul>
-          <li>hover 显示价位来源、触发条件和纪律说明。</li>
+          <li>先按图表路径、参考线、操作区、缺少证据复核；hover 显示价位来源、触发条件和纪律说明。</li>
           <li>点击情景路径只展开触发条件，不生成交易建议。</li>
           <li>操作区为后端 cache 投影，前端只读渲染，不改 operation_zones。</li>
         </ul>

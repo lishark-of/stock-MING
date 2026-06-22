@@ -164,6 +164,9 @@ export default function NextSessionMap() {
   const nextSessionChartReviewOrder = chartSummary.has_drawable_data === true
     ? "先看图表路径、参考线和操作区，再看缺少证据；工程审计在开发详情"
     : "先点击生成任务或查看缓存状态；有图表后再按路径、参考线、操作区复核";
+  const nextSessionCacheButtonLabel = "查看缓存只读取本地 GET cache；复核顺序是图表路径、参考线、操作区、缺少证据";
+  const nextSessionGenerateButtonLabel = "生成任务只创建按钮门控 POST task；完成后按图表路径、参考线、操作区、缺少证据复核";
+  const nextSessionChartReviewRegionLabel = "次日图谱复核区域：先看图表路径，再看参考线、操作区和缺少证据";
   const nextSessionReplayOrigin = chartSummary.is_exact_next_session_packet === true
     ? "来自精确 next-session cache；可从下一票雷达/量化推演回放到本页"
     : "来自 legacy/cache 投影或暂无精确 packet；只作降级预览";
@@ -214,8 +217,8 @@ export default function NextSessionMap() {
         ]}
       />
       <div className="actions">
-        <button onClick={refreshCache}>查看缓存</button>
-        <button onClick={launchTask}>生成任务</button>
+        <button onClick={refreshCache} title={nextSessionCacheButtonLabel} aria-label={nextSessionCacheButtonLabel}>查看缓存</button>
+        <button onClick={launchTask} title={nextSessionGenerateButtonLabel} aria-label={nextSessionGenerateButtonLabel}>生成任务</button>
       </div>
       <p className="risk-note">摘要里的查看缓存只读取本地 GET cache；生成任务只创建按钮门控 POST task，不调用 Tushare 或 DeepSeek，不写交易动作。</p>
       <p className="risk-note">普通用户先按“图表路径 -&gt; 参考线 -&gt; 操作区 -&gt; 缺少证据”复核；operation_zones 只是条件区间，不是买卖或下单指令。</p>
@@ -272,7 +275,9 @@ export default function NextSessionMap() {
         ]}
       />
       <p className="risk-note">{String(packet.summary ?? "当前只读取 cache；无缓存时不会触发 Tushare。")}</p>
-      <NextSessionChart payload={chartPayload} />
+      <div className="next-session-chart-review" role="region" aria-label={nextSessionChartReviewRegionLabel} title={nextSessionChartReviewRegionLabel}>
+        <NextSessionChart payload={chartPayload} />
+      </div>
       <details className="developer-audit-details">
         <summary>开发 / 审计指标</summary>
         <p className="risk-note">普通用户先看上方次日图谱摘要和图表；QA、coverage、promotion、cache ledger 和原始 packet 默认收起。</p>
