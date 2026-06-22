@@ -196,6 +196,58 @@ class LegacyAuditDirectEvidenceIntakeTests(unittest.TestCase):
         self.assertNotIn("| `KEEP` |", self.migration_map)
         self.assertNotIn("production evidence | `KEEP`", self.migration_map)
 
+    def test_handoff_observation_records_real_ux_problems_without_keep_promotion(self):
+        self.assertIn("第一轮用户 handoff 观察记录（2026-06-22）", self.migration_map)
+        self.assertIn(
+            "redacted_reviewer_note: user-handoff-2026-06-22-migration-strategy-update",
+            self.migration_map,
+        )
+        self.assertIn("不直观、难用、疑似 bug、历史 patchwork 和数据 lineage 不清", self.migration_map)
+        self.assertIn("不打开 Streamlit、不调用 Tushare/DeepSeek/GitHub、不创建 task、不读取 token/key", self.migration_map)
+        self.assertIn("不生成 production evidence、不升级 `KEEP`", self.migration_map)
+
+        for observation_row in (
+            "handoff_observation_home_daily_command_2026_06_22",
+            "handoff_observation_searched_symbol_quant_projection_2026_06_22",
+            "handoff_observation_candidate_radar_2026_06_22",
+            "handoff_observation_next_session_map_2026_06_22",
+            "handoff_observation_factor_risk_provider_health_2026_06_22",
+            "handoff_observation_hard_risk_announcement_2026_06_22",
+            "handoff_observation_discipline_backtest_2026_06_22",
+            "handoff_observation_margin_etf_leverage_2026_06_22",
+            "handoff_observation_external_brain_serenity_chokepoint_2026_06_22",
+            "handoff_observation_old_ai_strategy_advisor_2026_06_22",
+        ):
+            self.assertIn(observation_row, self.migration_map)
+
+        for preserved_path in (
+            "`今日作战台 / Daily Command Center`",
+            "`股票量化推演 / Stock Quant Projection` -> `生成 3.0 量化推演`",
+            "`下一票雷达 / Candidate Radar`",
+            "Stock Quant Projection / Next Session map",
+            "ordinary factor/risk summary plus Settings / Developer / Audit detail",
+        ):
+            self.assertIn(preserved_path, self.migration_map)
+
+        for removed_patchwork in (
+            "Streamlit rerun/button coupling",
+            "deep Streamlit tab/radio path",
+            "recommendation-like candidate copy",
+            "copied Streamlit chart UI",
+            "provider health table as ordinary page body",
+            "no-data-as-low-risk",
+            "synchronous backtest",
+            "leverage advice mixed with ordinary action",
+            "RAG/document ingestion",
+            "model-generated trading advice",
+        ):
+            self.assertIn(removed_patchwork, self.migration_map)
+
+        self.assertIn("direct_evidence_observed_redesign_required_not_keep", self.migration_map)
+        self.assertIn("legacy_debug_retained_from_handoff_not_keep", self.migration_map)
+        self.assertIn("retire_confirmed_from_handoff_not_keep", self.migration_map)
+        self.assertNotIn("handoff_observation_candidate_radar_2026_06_22` | candidate radar | KEEP", self.migration_map)
+
 
 if __name__ == "__main__":
     unittest.main()
