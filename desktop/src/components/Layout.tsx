@@ -30,6 +30,9 @@ export type RouteKey =
   | "tradeReview"
   | "legacy";
 
+const ORDINARY_NAVIGATION_BOUNDARY =
+  "普通用户先用三入口；研究辅助、数据治理、系统迁移默认收起，只作补充上下文、审计、设置或回退。";
+
 const ROUTE_GROUPS: Array<{ title: string; hint: string; primary?: boolean; routes: Array<{ key: RouteKey; label: string }> }> = [
   {
     title: "普通入口",
@@ -122,6 +125,7 @@ export default function Layout({
                 <p className="nav-group-title">{group.title}</p>
                 <p className="nav-group-hint">{group.hint}</p>
                 {routeButtons(group.routes)}
+                <p className="nav-group-hint nav-ordinary-boundary">{ORDINARY_NAVIGATION_BOUNDARY}</p>
               </section>
             ) : (
               <details className="nav-group nav-group-details" data-nav-priority="developer" open={group.routes.some((route) => route.key === active) || undefined} key={group.title}>
