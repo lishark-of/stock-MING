@@ -1580,7 +1580,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("scripts/start_command_center_3.command", one_click["what_user_should_click_next"])
         self.assertEqual(
             one_click["success_condition"],
-            "FastAPI /health、/api/bootstrap/status 与 React/Vite 都 ready 后才打开 3.0 页面。",
+            "FastAPI /health、/api/bootstrap/status bootstrap JSON 与 React/Vite 都 ready 后才打开 3.0 页面。",
         )
         self.assertIn(".stock_ming_3/logs/command_center_3_fastapi.log", one_click["blocked_next_action"])
         self.assertIn("页面已打开但仍离线", one_click["blocked_next_action"])
@@ -1593,6 +1593,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(one_click["frontend_dependencies_present"])
         self.assertTrue(one_click["fastapi_health_wait_before_open"])
         self.assertTrue(one_click["fastapi_status_api_wait_before_open"])
+        self.assertTrue(one_click["fastapi_bootstrap_status_json_validated_before_open"])
         self.assertTrue(one_click["vite_wait_before_open"])
         self.assertTrue(one_click["browser_opens_only_after_frontend_backend_ready"])
         self.assertTrue(one_click["frontend_api_client_uses_local_fastapi"])
@@ -1626,6 +1627,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(desktop["policy"]["one_click_startup_summary_is_not_production_package"])
         self.assertTrue(desktop["policy"]["one_click_startup_summary_does_not_enable_provider_model"])
         self.assertTrue(all(row["passed"] for row in one_click_rows.values()))
+        self.assertIn("command_center_3_bootstrap_runtime_mode_packet", one_click_rows["fastapi_status_api_wait_before_open"]["evidence"])
         self.assertFalse(one_click_rows["get_preflight_cache_does_not_start_services"]["external_calls_triggered"])
         self.assertTrue(one_click_rows["provider_model_trading_boundary_preserved"]["does_not_execute_trades"])
         self.assertIn("local_one_click_startup_summary", {row["api"] for row in desktop["call_ledger"]})

@@ -41,6 +41,33 @@ except Exception:
 PY
 }
 
+bootstrap_status_ready() {
+  local url="$1"
+  "$PYTHON_BIN" - "$url" <<'PY' >/dev/null 2>&1
+import json
+import sys
+import urllib.request
+
+url = sys.argv[1]
+try:
+    with urllib.request.urlopen(url, timeout=1.5) as response:
+        if response.status < 200 or response.status >= 300:
+            sys.exit(1)
+        payload = json.loads(response.read().decode("utf-8"))
+except Exception:
+    sys.exit(1)
+
+data = payload.get("data") if isinstance(payload, dict) else {}
+if not isinstance(data, dict):
+    sys.exit(1)
+if data.get("packet_key") != "command_center_3_bootstrap_runtime_mode_packet":
+    sys.exit(1)
+if data.get("schema_version") != "command_center_bootstrap_runtime_mode.v1":
+    sys.exit(1)
+sys.exit(0)
+PY
+}
+
 wait_for_url() {
   local name="$1"
   local url="$2"
@@ -55,6 +82,22 @@ wait_for_url() {
     index=$((index + 1))
   done
   echo "${name} still warming up: ${url}"
+  return 1
+}
+
+wait_for_bootstrap_status() {
+  local url="$1"
+  local attempts="${2:-30}"
+  local index=1
+  while [ "$index" -le "$attempts" ]; do
+    if bootstrap_status_ready "$url"; then
+      echo "FastAPI bootstrap status JSON ready: ${url}"
+      return 0
+    fi
+    sleep 1
+    index=$((index + 1))
+  done
+  echo "FastAPI bootstrap status JSON still warming up: ${url}"
   return 1
 }
 
@@ -93,6 +136,7 @@ echo "Logs: ${LOG_DIR}"
 echo "P0: local one-click launcher starts/checks FastAPI and React/Vite before opening the page."
 echo "Mode: server config controls runtime mode; cache_only remains the safe default unless explicitly configured."
 echo "Link check: launcher verifies ${API_BASE%/}/health and ${API_BASE%/}/api/bootstrap/status before opening the page."
+echo "Bootstrap check: /api/bootstrap/status must return command_center_3_bootstrap_runtime_mode_packet JSON before the page opens."
 echo "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution."
 echo "Safety: this launcher does not set live_light defaults and makes no Tushare, DeepSeek, GitHub, or trading call."
 echo "Acceptance: runtime_mode_config_current_acceptance_* markers are status/checkpoint drift guards, not launcher config or live_light enablement."
@@ -119,7 +163,7 @@ if wait_for_url "FastAPI" "${API_BASE%/}/health" 40; then
   FASTAPI_READY=1
 fi
 
-if wait_for_url "FastAPI status API" "${API_BASE%/}/api/bootstrap/status" 40; then
+if wait_for_bootstrap_status "${API_BASE%/}/api/bootstrap/status" 40; then
   API_STATUS_READY=1
 fi
 

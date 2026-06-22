@@ -515,6 +515,10 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "P0: local one-click launcher starts/checks FastAPI and React/Vite before opening the page.",
         "Link check: launcher verifies",
         "/api/bootstrap/status before opening the page.",
+        "Bootstrap check: /api/bootstrap/status must return command_center_3_bootstrap_runtime_mode_packet JSON before the page opens.",
+        "bootstrap_status_ready",
+        "wait_for_bootstrap_status",
+        "command_center_3_bootstrap_runtime_mode_packet",
         "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution.",
         "scripts/dev_server.sh",
         "npm run dev",
@@ -664,8 +668,10 @@ def _one_click_startup_summary(
 
     fastapi_wait_ready = 'if wait_for_url "FastAPI" "${API_BASE%/}/health" 40; then' in launcher_source
     api_status_wait_ready = (
-        'if wait_for_url "FastAPI status API" "${API_BASE%/}/api/bootstrap/status" 40; then'
+        'if wait_for_bootstrap_status "${API_BASE%/}/api/bootstrap/status" 40; then'
         in launcher_source
+        and "command_center_3_bootstrap_runtime_mode_packet" in launcher_source
+        and "command_center_bootstrap_runtime_mode.v1" in launcher_source
     )
     vite_wait_ready = 'if wait_for_url "React/Vite" "$VITE_URL" 40; then' in launcher_source
     open_is_gated = (
@@ -699,7 +705,7 @@ def _one_click_startup_summary(
         row(
             "fastapi_status_api_wait_before_open",
             api_status_wait_ready,
-            f"{_path_label(COMMAND_CENTER_3_LAUNCHER)} waits for {api_base_info.get('api_base')}/api/bootstrap/status",
+            f"{_path_label(COMMAND_CENTER_3_LAUNCHER)} validates {api_base_info.get('api_base')}/api/bootstrap/status as command_center_3_bootstrap_runtime_mode_packet JSON",
         ),
         row(
             "vite_wait_before_open",
@@ -742,7 +748,7 @@ def _one_click_startup_summary(
         "scope": "ordinary_user_local_startup_and_frontend_backend_connection",
         "headline": "一键启动会启动或复用本地 FastAPI 与 React/Vite，并在后端状态 API 与页面都联通后打开页面。",
         "what_user_should_click_next": "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。",
-        "success_condition": "FastAPI /health、/api/bootstrap/status 与 React/Vite 都 ready 后才打开 3.0 页面。",
+        "success_condition": "FastAPI /health、/api/bootstrap/status bootstrap JSON 与 React/Vite 都 ready 后才打开 3.0 页面。",
         "blocked_next_action": "若未打开页面，查看 .stock_ming_3/logs/command_center_3_fastapi.log 与 command_center_3_vite.log；若页面已打开但仍离线，关闭旧 React/Vite dev server 后重新运行启动器。",
         "safe_fallback_path": "后端离线时页面显示本地离线提示；GET preflight 只读展示状态。",
         "launcher_path": desktop_launcher_contract.get("launcher_path"),
@@ -755,6 +761,7 @@ def _one_click_startup_summary(
         "frontend_dependencies_present": node_modules_present,
         "fastapi_health_wait_before_open": fastapi_wait_ready,
         "fastapi_status_api_wait_before_open": api_status_wait_ready,
+        "fastapi_bootstrap_status_json_validated_before_open": api_status_wait_ready,
         "vite_wait_before_open": vite_wait_ready,
         "browser_opens_only_after_frontend_backend_ready": open_is_gated,
         "frontend_api_client_uses_local_fastapi": frontend_api_client_local,
