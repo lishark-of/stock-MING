@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getMigrationStatus, postLtgNextAcceptanceLocalStep, postTushareDeepseekLinkageReview, type TaskCreationEnvelope } from "../api/client";
+import { getMigrationStatus, postLegacyAuditObservationDryRun, postLtgNextAcceptanceLocalStep, postTushareDeepseekLinkageReview, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -281,6 +281,9 @@ export default function MigrationStatus() {
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
   const [linkageReviewTask, setLinkageReviewTask] = useState<Record<string, unknown>>({});
   const [linkageReviewError, setLinkageReviewError] = useState<string>("");
+  const [legacyAuditObservationReceipt, setLegacyAuditObservationReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [legacyAuditObservationTaskId, setLegacyAuditObservationTaskId] = useState("");
+  const [legacyAuditObservationError, setLegacyAuditObservationError] = useState("");
   const [ltgNextActionReceipt, setLtgNextActionReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [ltgNextActionTaskId, setLtgNextActionTaskId] = useState("");
   const [ltgNextActionError, setLtgNextActionError] = useState("");
@@ -307,6 +310,35 @@ export default function MigrationStatus() {
   const latestTushareDeepseekLinkageReview = (packet.latest_tushare_deepseek_linkage_review as Record<string, unknown> | undefined) ?? {};
   const legacyAuditFirstRoundIntake = (packet.legacy_audit_first_round_intake as Record<string, unknown> | undefined) ?? {};
   const legacyAuditFirstRoundIntakeRows = (packet.legacy_audit_first_round_intake_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const legacyAuditLatestObservation = (packet.legacy_audit_latest_observation as Record<string, unknown> | undefined) ?? {};
+  const legacyAuditLatestObservationRows = (packet.legacy_audit_latest_observation_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const legacyAuditFirstRoundRequiredFields = stringArray(legacyAuditFirstRoundIntake.required_fields, []);
+  const legacyAuditSafeAttachmentSources = stringArray(legacyAuditFirstRoundIntake.safe_attachment_sources, []);
+  const legacyAuditForbiddenAttachmentSources = stringArray(legacyAuditFirstRoundIntake.forbidden_attachment_sources, []);
+  const legacyAuditFirstRoundFocusRows = legacyAuditFirstRoundIntakeRows.map((row) => ({
+    workflow_group: row.workflow_group,
+    allowed_initial_status: row.allowed_initial_status,
+    next_action: row.next_action,
+    keep_promotion_allowed_this_round: row.keep_promotion_allowed_this_round,
+    ordinary_entry_promotion_allowed_this_round: row.ordinary_entry_promotion_allowed_this_round
+  }));
+  const legacyAuditRequiredFieldRows = legacyAuditFirstRoundRequiredFields.map((field, index) => ({
+    field_order: index + 1,
+    required_field: field,
+    status: "must_collect_before_keep_or_ordinary_entry_review"
+  }));
+  const legacyAuditAttachmentSourceRows = [
+    ...legacyAuditSafeAttachmentSources.map((source) => ({
+      source,
+      source_type: "safe_reference_allowed",
+      raw_content_allowed: false
+    })),
+    ...legacyAuditForbiddenAttachmentSources.map((source) => ({
+      source,
+      source_type: "forbidden_raw_or_generated_source",
+      raw_content_allowed: false
+    }))
+  ];
   const linkageReviewPayload = (linkageReviewTask.payload_safe as Record<string, unknown> | undefined) ?? {};
   const postLinkageReviewReceipt = (linkageReviewPayload.tushare_deepseek_linkage_review_receipt as Record<string, unknown> | undefined) ?? {};
   const latestLinkageReviewRows = (packet.latest_tushare_deepseek_linkage_review_rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -473,6 +505,11 @@ export default function MigrationStatus() {
     };
   });
   const ltgAcceptanceRunwayRows = packetAcceptanceRunwayRows.length ? packetAcceptanceRunwayRows : localAcceptanceRunwayRows;
+  const legacyAuditObservationFocusWorkflow = "searched-symbol quant projection";
+  const legacyAuditObservationNextClick = "记录搜票量化观察 dry-run";
+  const legacyAuditObservationEvidenceRule = "只允许 redacted reviewer note；不贴 raw packet/raw log/token/key/未脱敏模型输出";
+  const legacyAuditObservationBoundary =
+    "只生成本地 observation dry-run；不打开 Streamlit、不调用 provider/model、不升级 KEEP 或 ordinary entry";
   const refreshMigrationStatus = () => void getMigrationStatus().then((res) => {
     setPacket(res.data);
     setCacheEnvelopeLedger(res.call_ledger ?? []);
@@ -491,6 +528,31 @@ export default function MigrationStatus() {
       }
       setLinkageReviewTask(res.data.task as unknown as Record<string, unknown>);
       refreshMigrationStatus();
+    });
+  };
+  const launchLegacyAuditObservationDryRun = () => {
+    setLegacyAuditObservationError("");
+    void postLegacyAuditObservationDryRun({
+      workflow_group: legacyAuditObservationFocusWorkflow,
+      user_observation: "Reviewer observed that searched-symbol projection needs one clear next click instead of hunting through legacy tabs.",
+      legacy_ux_bug_or_patchwork: "Legacy tab/radio flow makes the next projection action hard to find; synchronous old path can feel blocking.",
+      data_lineage_observation: "Provider/cache/model/pending states need to be separated before the workflow enters an ordinary user path.",
+      replacement_user_path: "股票量化推演 / Stock Quant Projection -> 生成 3.0 量化推演",
+      frozen_legacy_path: "legacy searched-symbol synchronous projection path stays admin/debug fallback until redesigned",
+      evidence_attachment: "redacted_reviewer_note: migration-status-observation-dry-run",
+      evidence_attachment_type: "redacted_reviewer_note",
+      requested_status: "direct_evidence_observed_redesign_required",
+      keep_promotion_decision: "no_keep_promotion_this_round",
+      requested_by: "migration_status_legacy_audit_workbench",
+      source: "migration_status_legacy_audit_workbench"
+    }).then((res) => {
+      setLegacyAuditObservationReceipt(res);
+      if (res.ok) {
+        setLegacyAuditObservationTaskId(res.data.task_id);
+        refreshMigrationStatus();
+      } else {
+        setLegacyAuditObservationError(String(res.error ?? "legacy_audit_observation_dry_run_failed"));
+      }
     });
   };
   const launchLtgNextAction = (row: Record<string, unknown>) => {
@@ -564,6 +626,9 @@ export default function MigrationStatus() {
         items={[
           { label: "intake status", value: String(legacyAuditFirstRoundIntake.status ?? "missing") },
           { label: "focus workflows", value: Number(legacyAuditFirstRoundIntake.focus_workflow_count ?? legacyAuditFirstRoundIntakeRows.length) },
+          { label: "required fields", value: legacyAuditFirstRoundRequiredFields.length },
+          { label: "safe refs", value: legacyAuditSafeAttachmentSources.length },
+          { label: "forbidden refs", value: legacyAuditForbiddenAttachmentSources.length, tone: legacyAuditForbiddenAttachmentSources.length ? "warn" : "good" },
           { label: "row count", value: legacyAuditFirstRoundIntakeRows.length },
           { label: "KEEP promotion", value: legacyAuditFirstRoundIntake.keep_promotion_allowed_this_round === true ? "allowed" : "blocked", tone: legacyAuditFirstRoundIntake.keep_promotion_allowed_this_round === true ? "bad" : "good" },
           { label: "ordinary entry", value: legacyAuditFirstRoundIntake.ordinary_entry_promotion_allowed_this_round === true ? "allowed" : "blocked", tone: legacyAuditFirstRoundIntake.ordinary_entry_promotion_allowed_this_round === true ? "bad" : "good" },
@@ -572,6 +637,44 @@ export default function MigrationStatus() {
           { label: "production evidence", value: String(legacyAuditFirstRoundIntake.production_evidence_rule ?? "not_production_evidence") }
         ]}
       />
+      <PacketCard title="Legacy audit first-round workbench" subtitle="focus workflow / required fields / safe attachment sources；只读，不升级 KEEP" status="legacy_audit_first_round_workbench">
+        <p className="risk-note">首轮只收集用户观察、legacy UX/bug or patchwork、data lineage、替代入口、冻结旧路径和安全附件引用；不能贴 raw packet、raw log、token/key、未脱敏模型输出或 generated artifact。</p>
+        <p className="risk-note">这些表是 reviewer checklist，不是 direct UX/bug evidence；没有 safe screenshot reference、redacted reviewer note 或 safe log summary 前，KEEP 和 ordinary entry 仍然 blocked。</p>
+        <MetricGrid
+          items={[
+            { label: "本轮审计对象", value: legacyAuditObservationFocusWorkflow },
+            { label: "下一步", value: legacyAuditObservationNextClick },
+            { label: "附件规则", value: legacyAuditObservationEvidenceRule, tone: "warn" },
+            { label: "任务边界", value: legacyAuditObservationBoundary, tone: "good" }
+          ]}
+        />
+        <div className="actions">
+          <button onClick={launchLegacyAuditObservationDryRun}>{legacyAuditObservationNextClick}</button>
+        </div>
+        {legacyAuditObservationError && <p className="risk-note">{legacyAuditObservationError}</p>}
+        <MetricGrid
+          items={[
+            { label: "latest observation", value: String(legacyAuditLatestObservation.status ?? "not_run") },
+            { label: "observation task", value: String(legacyAuditLatestObservation.task_status ?? "missing") },
+            { label: "direct evidence", value: legacyAuditLatestObservation.direct_user_evidence_recorded === true, tone: legacyAuditLatestObservation.direct_user_evidence_recorded === true ? "good" : "warn" },
+            { label: "KEEP review", value: legacyAuditLatestObservation.direct_evidence_ready_for_keep_review === true ? "ready" : "blocked", tone: legacyAuditLatestObservation.direct_evidence_ready_for_keep_review === true ? "bad" : "good" },
+            { label: "KEEP promotion", value: legacyAuditLatestObservation.keep_promotion_allowed_this_round === true ? "allowed" : "blocked", tone: legacyAuditLatestObservation.keep_promotion_allowed_this_round === true ? "bad" : "good" },
+            { label: "ordinary entry", value: legacyAuditLatestObservation.ordinary_entry_promotion_allowed_this_round === true ? "allowed" : "blocked", tone: legacyAuditLatestObservation.ordinary_entry_promotion_allowed_this_round === true ? "bad" : "good" },
+            { label: "Streamlit fallback", value: legacyAuditLatestObservation.streamlit_fallback_retirement_allowed === true ? "retirement allowed" : "retained", tone: legacyAuditLatestObservation.streamlit_fallback_retirement_allowed === true ? "bad" : "good" },
+            { label: "production evidence", value: legacyAuditLatestObservation.production_evidence === true, tone: legacyAuditLatestObservation.production_evidence === true ? "bad" : "good" },
+            { label: "external calls", value: legacyAuditLatestObservation.external_calls_triggered === true ? "存在" : "无", tone: legacyAuditLatestObservation.external_calls_triggered === true ? "bad" : "good" },
+            { label: "row count", value: Number(legacyAuditLatestObservation.row_count ?? legacyAuditLatestObservationRows.length) }
+          ]}
+        />
+        <p className="risk-note">Latest observation 只是 direct-evidence intake 回放；KEEP review、ordinary entry 和 Streamlit fallback retirement 都保持 blocked，直到单独补齐完整 Legacy Bug / UX Audit 直接证据。</p>
+        <TaskLaunchReceipt receipt={legacyAuditObservationReceipt} />
+        <TaskStatusPanel taskId={legacyAuditObservationTaskId} onSuccess={refreshMigrationStatus} />
+        <DataLineageTable rows={[legacyAuditLatestObservation]} />
+        <DataLineageTable rows={legacyAuditLatestObservationRows} />
+        <DataLineageTable rows={legacyAuditFirstRoundFocusRows} />
+        <DataLineageTable rows={legacyAuditRequiredFieldRows} />
+        <DataLineageTable rows={legacyAuditAttachmentSourceRows} />
+      </PacketCard>
       <DataLineageTable rows={[legacyAuditFirstRoundIntake]} />
       <DataLineageTable rows={legacyAuditFirstRoundIntakeRows} />
       <h3>LTG next acceptance action queue</h3>

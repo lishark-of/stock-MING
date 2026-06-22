@@ -101,6 +101,56 @@ class MigrationStatusLegacyAuditObservationTests(unittest.TestCase):
         self.assertNotIn("SHOULD_DROP", rendered)
         self.assertNotIn("api_key", rendered)
 
+    def test_migration_status_page_exposes_button_gated_first_round_workbench(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        client_source = (root / "desktop" / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+        migration_source = (
+            root / "desktop" / "src" / "routes" / "MigrationStatus.tsx"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("postLegacyAuditObservationDryRun", client_source)
+        self.assertIn("/api/legacy/audit-observation-dry-run", client_source)
+        self.assertIn("Legacy audit first-round workbench", migration_source)
+        self.assertIn("focus workflow / required fields / safe attachment sources", migration_source)
+        self.assertIn("legacyAuditFirstRoundFocusRows", migration_source)
+        self.assertIn("legacyAuditRequiredFieldRows", migration_source)
+        self.assertIn("legacyAuditAttachmentSourceRows", migration_source)
+        self.assertIn("legacyAuditLatestObservation", migration_source)
+        self.assertIn("legacyAuditLatestObservationRows", migration_source)
+        self.assertIn("launchLegacyAuditObservationDryRun", migration_source)
+        self.assertIn("postLegacyAuditObservationDryRun", migration_source)
+        self.assertIn(
+            'legacyAuditObservationFocusWorkflow = "searched-symbol quant projection"',
+            migration_source,
+        )
+        self.assertIn(
+            'legacyAuditObservationNextClick = "记录搜票量化观察 dry-run"',
+            migration_source,
+        )
+        self.assertIn("只允许 redacted reviewer note；不贴 raw packet/raw log/token/key/未脱敏模型输出", migration_source)
+        self.assertIn("只生成本地 observation dry-run；不打开 Streamlit、不调用 provider/model、不升级 KEEP 或 ordinary entry", migration_source)
+        self.assertIn(
+            "<button onClick={launchLegacyAuditObservationDryRun}>{legacyAuditObservationNextClick}</button>",
+            migration_source,
+        )
+        self.assertIn("redacted_reviewer_note: migration-status-observation-dry-run", migration_source)
+        self.assertIn("direct_evidence_observed_redesign_required", migration_source)
+        self.assertIn("no_keep_promotion_this_round", migration_source)
+        self.assertIn("TaskLaunchReceipt receipt={legacyAuditObservationReceipt}", migration_source)
+        self.assertIn("TaskStatusPanel taskId={legacyAuditObservationTaskId}", migration_source)
+        self.assertIn('label: "KEEP review"', migration_source)
+        self.assertIn('label: "Streamlit fallback"', migration_source)
+        self.assertIn("Latest observation 只是 direct-evidence intake 回放", migration_source)
+        self.assertIn("KEEP review、ordinary entry 和 Streamlit fallback retirement 都保持 blocked", migration_source)
+        self.assertIn("直到单独补齐完整 Legacy Bug / UX Audit 直接证据", migration_source)
+        self.assertIn("must_collect_before_keep_or_ordinary_entry_review", migration_source)
+        self.assertIn("safe_reference_allowed", migration_source)
+        self.assertIn("forbidden_raw_or_generated_source", migration_source)
+        self.assertIn("raw_content_allowed", migration_source)
+        self.assertNotIn("postLegacyAuditObservationDryRun()", migration_source)
+        self.assertNotIn("keep_promotion_allowed_this_round: true", migration_source)
+        self.assertNotIn("streamlit_fallback_retirement_allowed: true", migration_source)
+
 
 if __name__ == "__main__":
     unittest.main()
