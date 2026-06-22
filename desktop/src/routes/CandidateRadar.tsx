@@ -571,9 +571,11 @@ export default function CandidateRadar() {
     : searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true
       ? "可创建按钮门控补证请求；render 仍不自动外联"
       : "等待确认按钮创建 Tushare-first task；DeepSeek governed executor 未完成前保持 skipped";
-  const quantProjectionTushareFirstState = searchQuantProjectionExecutionRequest.acceptance_scope_hash
-    ? "可点击确认 Tushare-first 补证；只走 POST task，DeepSeek 保持 skipped"
-    : "先完成本地推演、联动 dry-run 和 execution request 后启用";
+  const quantProjectionTushareFirstState = quantProjectionProviderLedgerReady
+    ? "Tushare-first 数据已回放；下一步看量化推演和次日图谱预览"
+    : searchQuantProjectionReceipt.status
+      ? "等待 Tushare-first 回放；普通页无需处理 scope/hash"
+      : "输入代码并确认后创建 Tushare-first 任务";
   const quantProjectionLastResult = [
     `当前标的：${quantProjectionDisplaySymbol || "--"}`,
     `本地记录：${String(searchQuantProjectionReceipt.status ?? "暂无")}`,
@@ -583,7 +585,7 @@ export default function CandidateRadar() {
     ? `最近任务：${String(taskReceipt.data?.task_id ?? taskReceipt.data?.task?.task_id ?? "--")} / ${taskReceipt.ok ? "已接收" : "创建失败"} / ${String(taskReceipt.data?.task?.current_step ?? taskReceipt.error ?? "等待状态轮询")}`
     : "最近任务：暂无；点击确认按钮后显示本地任务编号";
   const quantProjectionResultReplayState =
-    "成功后回放：search_quant_provider_model_acceptance_receipt / call_ledger / packet；GET cache 只读展示";
+    "成功后回放本地结果、ledger 和 packet；GET cache 只读展示";
   const candidateRadarStatusLabel = cache.status === "ready" ? "候选缓存可用" : "等待候选缓存";
   const candidatePoolCacheDetail = cache.status === "ready" ? "本地缓存可用" : "等待本地缓存";
   const candidatePoolSignalDetail = Number(scanCoverage.missing_signal_group_count ?? 0)
@@ -684,7 +686,6 @@ export default function CandidateRadar() {
               aria-label="search quant projection symbol"
             />
             <button disabled={!quantProjectionCanSubmit} onClick={launchQuantProjection}>确认并生成 3.0 量化推演</button>
-            <button onClick={launchQuantProjectionProviderModelAcceptance} disabled={!searchQuantProjectionExecutionRequest.acceptance_scope_hash}>确认 Tushare-first 补证</button>
             <a href="#factor" aria-label="open generated quant projection result">查看量化推演结果</a>
           </div>
           <p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>
@@ -711,7 +712,7 @@ export default function CandidateRadar() {
               { label: "仅供研究", value: "推演解释只整理已有证据；不覆盖价格、持仓、因子、操作区或交易策略", tone: "good" }
             ]}
           />
-          <p>普通入口的 Tushare-first 按钮只在 execution request 有 scope hash 后启用；点击后只创建受控 POST task，DeepSeek 保持 skipped，不交易、不改 strategy action。</p>
+          <p>普通入口只保留一个确认按钮；工程补证入口已下沉到调用审计，DeepSeek 保持 skipped，不交易、不改 strategy action。</p>
           <p>最近任务只显示本地 FastAPI 返回的 task id 和安全步骤；结果成功后通过 GET cache 回放 packet / ledger，不在普通页面展开审计表。</p>
           <p className="risk-note">Tushare ledger 来自 cache / call_ledger 回放；DeepSeek 仍需 governed executor，普通页不展示 prompt/output。</p>
           <p>确认后创建 Tushare-first 按钮门控 POST task / worker；Tushare 小全量数据写入 call_ledger；DeepSeek 保持 skipped，待 governed executor / model_ledger 后再展示缓存，React render 不直接外联。</p>
