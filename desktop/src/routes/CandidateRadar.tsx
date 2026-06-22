@@ -17,6 +17,33 @@ function objectRow(value: unknown): Array<Record<string, unknown>> {
   return value && typeof value === "object" && !Array.isArray(value) ? [value as Record<string, unknown>] : [];
 }
 
+function normalizeAshareSymbolInput(raw: string) {
+  const input = raw.trim().toUpperCase().replace(/\s+/g, "");
+  if (!input) {
+    return { input, normalized: "", valid: false, reason: "empty_symbol" };
+  }
+  const explicit = input.match(/^(\d{6})\.(SH|SZ|BJ)$/);
+  if (explicit) {
+    return { input, normalized: `${explicit[1]}.${explicit[2]}`, valid: true, reason: "explicit_market_suffix" };
+  }
+  const digits = input.match(/^(\d{6})$/);
+  if (!digits) {
+    return { input, normalized: "", valid: false, reason: "require_6_digits_or_suffix" };
+  }
+  const symbol = digits[1];
+  const inferredMarket = /^(60|68|90)/.test(symbol)
+    ? "SH"
+    : /^(00|30|20)/.test(symbol)
+      ? "SZ"
+      : /^(43|83|87|88|92)/.test(symbol)
+        ? "BJ"
+        : "";
+  if (!inferredMarket) {
+    return { input, normalized: "", valid: false, reason: "unsupported_a_share_prefix" };
+  }
+  return { input, normalized: `${symbol}.${inferredMarket}`, valid: true, reason: "inferred_market_suffix" };
+}
+
 export default function CandidateRadar() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
@@ -51,7 +78,7 @@ export default function CandidateRadar() {
   const launchQuantProjection = () =>
     void postCandidateRadarQuantProjection({
       scan_mode: "search_quant_projection",
-      symbol: searchSymbol.trim(),
+      symbol: normalizeAshareSymbolInput(searchSymbol).normalized,
       include_tushare: true,
       include_deepseek: true,
       requested_by: "candidate_radar_page"
@@ -62,7 +89,7 @@ export default function CandidateRadar() {
   const launchQuantProjectionAcceptanceDryRun = () =>
     void postCandidateRadarQuantProjectionAcceptanceDryRun({
       scan_mode: "search_quant_projection",
-      symbol: searchSymbol || String(searchQuantProjectionReceipt.symbol ?? ""),
+      symbol: normalizeAshareSymbolInput(searchSymbol).normalized || String(searchQuantProjectionReceipt.symbol ?? ""),
       include_tushare: true,
       include_deepseek: true,
       user_approved: true,
@@ -412,20 +439,25 @@ export default function CandidateRadar() {
   );
   const ordinaryTaskBoundary =
     "雷达摘要只读展示候选缓存；manual/live_light 补证必须走 POST task / worker，不在 React 渲染中直连 Tushare 或 DeepSeek";
-  const quantProjectionCanSubmit = Boolean(searchSymbol.trim());
+  const quantProjectionSymbolValidation = normalizeAshareSymbolInput(searchSymbol);
+  const quantProjectionCanSubmit = quantProjectionSymbolValidation.valid;
   const quantProjectionDisabledReason = quantProjectionCanSubmit
-    ? "按钮已启用：点击后只创建本地量化推演 task"
-    : "按钮不可用原因：先输入股票代码；输入本身不会创建 task";
-  const quantProjectionDisplaySymbol = searchSymbol.trim() || String(searchQuantProjectionReceipt.symbol ?? "");
+    ? `按钮已启用：将创建 ${quantProjectionSymbolValidation.normalized} 的本地量化推演 task`
+    : searchSymbol.trim()
+      ? `按钮不可用原因：${quantProjectionSymbolValidation.reason}；请输入 6 位 A 股代码或 002008.SZ 这类后缀`
+      : "按钮不可用原因：先输入股票代码；输入本身不会创建 task";
+  const quantProjectionDisplaySymbol = quantProjectionSymbolValidation.normalized || String(searchQuantProjectionReceipt.symbol ?? "");
   const quantProjectionInputValidation = searchQuantProjectionReceipt.symbol_valid === false
     ? `代码格式阻断：${String(searchQuantProjectionReceipt.symbol_status ?? "invalid_symbol")}`
     : searchQuantProjectionReceipt.symbol_valid === true
       ? `代码格式已通过：${String(searchQuantProjectionReceipt.symbol ?? quantProjectionDisplaySymbol)}`
-      : quantProjectionDisplaySymbol
-        ? "等待点击生成 3.0 量化推演后进行本地代码校验"
+      : searchSymbol.trim()
+        ? quantProjectionSymbolValidation.valid
+          ? `本地确认代码：${quantProjectionSymbolValidation.normalized}`
+          : `本地格式阻断：${quantProjectionSymbolValidation.reason}`
         : "等待输入股票代码";
   const quantProjectionConfirmedSymbol = quantProjectionCanSubmit
-    ? `已确认输入：${searchSymbol.trim()}`
+    ? `已确认输入：${quantProjectionSymbolValidation.normalized}`
     : "未确认；输入框不会创建任务";
   const quantProjectionNextClick = quantProjectionDisplaySymbol
     ? "确认代码后点击生成 3.0 量化推演；需要真实数据或模型解释时，再按人工确认流程推进"
