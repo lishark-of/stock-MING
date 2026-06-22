@@ -364,6 +364,17 @@ export default function CommandCenterHome() {
       : "去桌面壳预检查看启动器缺口";
   const dailyCommandStartupBoundary =
     "首页不启动服务；一键启动只由本机快捷入口执行，状态来自 health/preflight cache";
+  const dailyCommandReviewOrder = error
+    ? "先看一键启动预检恢复本地联通，再回今日作战台"
+    : "先确认最近缓存和数据健康，再看下一票雷达，最后看股票量化推演结果";
+  const dailyCommandResultComposition = [
+    `候选：${Number(candidateCounts?.candidate_count ?? 0) ? String(candidateCounts?.candidate_count) : "等待缓存"}`,
+    `量化：${String(factor.status ?? factor.mode ?? "等待缓存")}`,
+    `次日图谱：${String(next.status ?? "等待缓存")}`,
+    `风险：${String(riskCounts?.active_risk_count ?? riskCounts?.risk_count ?? 0)} 项`
+  ].join(" / ");
+  const dailyCommandMissingDataBoundary =
+    "缺数据先看 pending / 缺少证据；不能把空缓存当成无风险，也不能当成生产验收完成";
 
   const launchLiveBootstrap = () => {
     const mode = String(bootstrapStatus.mode ?? "cache_only");
@@ -430,6 +441,8 @@ export default function CommandCenterHome() {
             { label: "启动边界", value: dailyCommandStartupBoundary, tone: "good" },
             { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
             { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
+            { label: "今日查看顺序", value: dailyCommandReviewOrder, tone: error ? "warn" : "good" },
+            { label: "今日结果组成", value: dailyCommandResultComposition },
             { label: "cache", value: dailyCommandCacheSourceLabel },
             { label: "Tushare", value: dailyCommandTushareSourceLabel },
             { label: "DeepSeek", value: dailyCommandDeepSeekSourceLabel },
@@ -442,6 +455,7 @@ export default function CommandCenterHome() {
             { label: "阻断/降级", value: dailyCommandBlockedState, tone: dailyCommandBlockedState.includes("未标记") ? "good" : "warn" },
             { label: "最近可用缓存", value: dailyCommandLastCache },
             { label: "任务边界", value: dailyCommandTaskBoundary },
+            { label: "缺数据口径", value: dailyCommandMissingDataBoundary, tone: "good" },
             { label: "仅供研究", value: dailyCommandResearchOnlyLabel, tone: "good" }
           ]}
         />
@@ -455,6 +469,7 @@ export default function CommandCenterHome() {
           <a href="#dataHealth" aria-label="open data health from daily command">查看数据健康</a>
           <a href="#desktop" aria-label="open one click startup preflight from daily command">查看一键启动预检</a>
         </div>
+        <p className="risk-note">今日先按“最近缓存/数据健康 → 下一票雷达 → 股票量化推演”复核；缺数据就看 pending 和缺少证据，不把空结果当成无风险。</p>
         <p className="risk-note">如果本地联通异常，先去 <a href="#desktop">桌面壳预检</a> 查看本地快捷入口；这个跳转只切换页面，不启动 FastAPI/Vite/浏览器。</p>
         <p className="risk-note">这些入口链接只切换本地页面；不会创建 task、调用 Tushare/DeepSeek/GitHub、写 cache/config 或改变交易策略。</p>
         <p className="risk-note">工程审计明细默认收起；完整 call ledger、release gate、runtime mode 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
