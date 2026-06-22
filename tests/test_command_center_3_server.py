@@ -1583,6 +1583,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "FastAPI /health、/api/bootstrap/status 与 React/Vite 都 ready 后才打开 3.0 页面。",
         )
         self.assertIn(".stock_ming_3/logs/command_center_3_fastapi.log", one_click["blocked_next_action"])
+        self.assertIn("页面已打开但仍离线", one_click["blocked_next_action"])
+        self.assertIn("关闭旧 React/Vite dev server 后重新运行启动器", one_click["blocked_next_action"])
         self.assertEqual(one_click["api_health_endpoint"], "http://127.0.0.1:8710/health")
         self.assertEqual(one_click["vite_url"], "http://127.0.0.1:5173")
         self.assertTrue(one_click["frontend_backend_connection_ready"])

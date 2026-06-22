@@ -743,7 +743,7 @@ def _one_click_startup_summary(
         "headline": "一键启动会启动或复用本地 FastAPI 与 React/Vite，并在后端状态 API 与页面都联通后打开页面。",
         "what_user_should_click_next": "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。",
         "success_condition": "FastAPI /health、/api/bootstrap/status 与 React/Vite 都 ready 后才打开 3.0 页面。",
-        "blocked_next_action": "若未打开页面，查看 .stock_ming_3/logs/command_center_3_fastapi.log 与 command_center_3_vite.log。",
+        "blocked_next_action": "若未打开页面，查看 .stock_ming_3/logs/command_center_3_fastapi.log 与 command_center_3_vite.log；若页面已打开但仍离线，关闭旧 React/Vite dev server 后重新运行启动器。",
         "safe_fallback_path": "后端离线时页面显示本地离线提示；GET preflight 只读展示状态。",
         "launcher_path": desktop_launcher_contract.get("launcher_path"),
         "desktop_shortcut_target_name": desktop_launcher_contract.get("desktop_shortcut_target_name"),
