@@ -71,6 +71,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("degraded：", self.page)
         self.assertIn("本地候选缓存可用", self.page)
         self.assertIn("手动触发或关闭", self.page)
+        self.assertIn("待 governed executor；不作为数据源或动作", self.page)
         self.assertIn("雷达摘要只读展示候选缓存", self.page)
         self.assertIn("manual/live_light 补证必须走 POST task / worker", self.page)
         self.assertIn('aria-label="candidate radar primary next action"', self.page)
@@ -78,6 +79,16 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('id="candidate-pool"', self.page)
         self.assertIn("候选不是买入指令；不真实交易、不下单、不改交易策略", self.page)
         self.assertIn("普通用户先看上方雷达摘要、候选池和搜票量化推演", self.page)
+        deepseek_label_start = self.page.index("const ordinaryDeepSeekSourceLabel")
+        deepseek_label_end = self.page.index("const ordinaryProviderGapLabel", deepseek_label_start)
+        deepseek_label_slice = self.page[deepseek_label_start:deepseek_label_end]
+        summary_start = self.page.index('title="普通用户雷达摘要"')
+        summary_end = self.page.index('title="下一票候选池"', summary_start)
+        summary_slice = self.page[summary_start:summary_end]
+        self.assertIn("待 governed executor；不作为数据源或动作", deepseek_label_slice)
+        self.assertNotIn("轻量实时后台任务", deepseek_label_slice)
+        self.assertIn('{ label: "DeepSeek", value: ordinaryDeepSeekSourceLabel }', summary_slice)
+        self.assertNotIn('DeepSeek", value: bootstrapLiveLight.deepseek_on_open === true ? "轻量实时后台任务"', summary_slice)
 
     def test_three_ordinary_entrances_show_summaries_before_developer_audit(self):
         pages = {

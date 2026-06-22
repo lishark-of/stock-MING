@@ -438,7 +438,8 @@ export default function CandidateRadar() {
   }[String(bootstrapStatus.mode ?? "cache_only")] ?? "未知运行模式";
   const ordinaryCacheSourceLabel = cache.status === "ready" ? "本地候选缓存可用" : "等待本地候选缓存";
   const ordinaryTushareSourceLabel = bootstrapLiveLight.tushare_on_open === true ? "轻量实时后台任务" : "手动触发或关闭";
-  const ordinaryDeepSeekSourceLabel = bootstrapLiveLight.deepseek_on_open === true ? "轻量实时后台任务" : "手动触发或关闭";
+  const ordinaryDeepSeekSourceLabel =
+    bootstrapLiveLight.deepseek_on_open === true ? "待 governed executor；不作为数据源或动作" : "手动触发或关闭";
   const ordinaryProviderGapLabel =
     Number(counts.provider_blocked_group_count ?? 0) > 0 ? "真实数据补证存在缺口" : "未标记真实数据补证缺口";
   const ordinaryPendingSourceLabel = Number(counts.candidate_radar_production_stage_scope_pending_count ?? 0)
