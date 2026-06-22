@@ -239,6 +239,8 @@ export default function FactorQuantHub() {
   const ordinaryQuantPrimaryActionBoundary = empty
     ? "主下一步只切换到下一票雷达；输入代码和生成推演仍需按钮确认"
     : "主下一步只跳转本地支持/压制摘要；不刷新 provider/model、不写 cache";
+  const ordinaryQuantSymbolEntryBoundary =
+    "本页不提供股票代码输入；换标的必须回下一票雷达输入代码并点击确认生成，输入本身不创建 task";
   const ordinaryQuantCacheSourceLabel = empty ? "等待本地量化缓存" : "本地量化缓存可用";
   const ordinaryQuantTushareSourceLabel =
     Number(tushareProviderPromotionAudit.provider_evidence_row_count ?? 0) > 0 ? "Tushare 数据有本地记录" : "等待手动补充 Tushare 数据";
@@ -327,6 +329,7 @@ export default function FactorQuantHub() {
             { label: "下一步", value: ordinaryQuantNextClick },
             { label: "主下一步", value: ordinaryQuantPrimaryActionLabel },
             { label: "主下一步边界", value: ordinaryQuantPrimaryActionBoundary, tone: "good" },
+            { label: "换标的入口", value: ordinaryQuantSymbolEntryBoundary, tone: "good" },
             { label: "运行模式", value: ordinaryQuantRuntimeModeLabel },
             { label: "cache", value: ordinaryQuantCacheSourceLabel },
             { label: "Tushare", value: ordinaryQuantTushareSourceLabel },
@@ -358,6 +361,7 @@ export default function FactorQuantHub() {
           <a href="#candidates">去下一票雷达生成推演</a>
         </div>
         <p className="risk-note">没有标的时先去 <a href="#candidates">下一票雷达</a> 输入代码并点击生成 3.0 量化推演；这个链接只切换本地页面，不创建 task。</p>
+        <p className="risk-note">本页不接收股票代码输入；换标的必须回下一票雷达确认按钮，避免把查看缓存误当成重新推演。</p>
         <p className="risk-note">来自下一票雷达的搜票结果在本页只回放 Factor cache、次日图谱预览和模型解释状态；本页链接不重新触发 Tushare-first 或 DeepSeek。</p>
         <p className="risk-note">生成后先按“支持/压制 → 次日图谱预览 → 模型解释状态”复核；缺数据就看 pending/缺少证据，不把空结果当成无风险。</p>
         <p className="risk-note">摘要里的查看链接只是本地锚点跳转，不创建 task、不调用 Tushare 或 DeepSeek、不写 cache，也不改变交易策略。</p>
