@@ -30,10 +30,11 @@ export type RouteKey =
   | "tradeReview"
   | "legacy";
 
-const ROUTE_GROUPS: Array<{ title: string; hint: string; routes: Array<{ key: RouteKey; label: string }> }> = [
+const ROUTE_GROUPS: Array<{ title: string; hint: string; primary?: boolean; routes: Array<{ key: RouteKey; label: string }> }> = [
   {
     title: "普通入口",
     hint: "先从这里开始；每页先显示下一步、来源、缺口、边界和最近缓存。",
+    primary: true,
     routes: [
       { key: "home", label: "今日作战台" },
       { key: "factor", label: "股票量化推演" },
@@ -94,27 +95,43 @@ export default function Layout({
   onNavigate: (route: RouteKey) => void;
   children: ReactNode;
 }) {
+  const routeButtons = (routes: Array<{ key: RouteKey; label: string }>) => (
+    <>
+      {routes.map((route) => (
+        <button
+          key={route.key}
+          aria-current={active === route.key ? "page" : undefined}
+          className={active === route.key ? "nav-active" : ""}
+          data-route-active={active === route.key ? "true" : "false"}
+          onClick={() => onNavigate(route.key)}
+        >
+          <span className="nav-label">{route.label}</span>
+        </button>
+      ))}
+    </>
+  );
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">stock-MING 3.0</div>
         <nav>
           {ROUTE_GROUPS.map((group) => (
-            <section className="nav-group" key={group.title}>
-              <p className="nav-group-title">{group.title}</p>
-              <p className="nav-group-hint">{group.hint}</p>
-              {group.routes.map((route) => (
-                <button
-                  key={route.key}
-                  aria-current={active === route.key ? "page" : undefined}
-                  className={active === route.key ? "nav-active" : ""}
-                  data-route-active={active === route.key ? "true" : "false"}
-                  onClick={() => onNavigate(route.key)}
-                >
-                  <span className="nav-label">{route.label}</span>
-                </button>
-              ))}
-            </section>
+            group.primary ? (
+              <section className="nav-group" data-nav-priority="ordinary" aria-label="ordinary user entrances" key={group.title}>
+                <p className="nav-group-title">{group.title}</p>
+                <p className="nav-group-hint">{group.hint}</p>
+                {routeButtons(group.routes)}
+              </section>
+            ) : (
+              <details className="nav-group nav-group-details" data-nav-priority="developer" open={group.routes.some((route) => route.key === active) || undefined} key={group.title}>
+                <summary className="nav-group-summary">
+                  <span className="nav-group-title">{group.title}</span>
+                  <span className="nav-group-hint">{group.hint}</span>
+                </summary>
+                {routeButtons(group.routes)}
+              </details>
+            )
           ))}
         </nav>
         <p className="sidebar-note">三入口先行：今日作战台、股票量化推演、下一票雷达。研究-only，不下单；旧 Streamlit 仅作 legacy/admin/debug fallback。</p>

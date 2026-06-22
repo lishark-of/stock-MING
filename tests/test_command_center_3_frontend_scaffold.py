@@ -1144,6 +1144,8 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
 
     def test_app_persists_desktop_route_without_streamlit_rerun(self):
         source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+        layout = (ROOT / "src" / "components" / "Layout.tsx").read_text(encoding="utf-8")
+        styles = (ROOT / "src" / "styles.css").read_text(encoding="utf-8")
 
         self.assertIn("stock_ming_command_center_3_route", source)
         self.assertIn("lazy(() => import(\"./routes/CommandCenterHome\"))", source)
@@ -1171,6 +1173,21 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertNotIn('import CommandCenterHome from "./routes/CommandCenterHome"', source)
         self.assertNotIn('import NextSessionMap from "./routes/NextSessionMap"', source)
         self.assertNotIn("streamlit", source.lower())
+        self.assertIn('title: "普通入口"', layout)
+        self.assertIn("primary: true", layout)
+        self.assertIn('data-nav-priority="ordinary"', layout)
+        self.assertIn('aria-label="ordinary user entrances"', layout)
+        self.assertIn('<details className="nav-group nav-group-details"', layout)
+        self.assertIn('data-nav-priority="developer"', layout)
+        self.assertIn("open={group.routes.some((route) => route.key === active) || undefined}", layout)
+        self.assertLess(layout.index('title: "普通入口"'), layout.index('title: "研究辅助"'))
+        self.assertLess(layout.index('title: "普通入口"'), layout.index('title: "数据与治理"'))
+        self.assertLess(layout.index('title: "普通入口"'), layout.index('title: "系统迁移"'))
+        self.assertIn('.nav-group[data-nav-priority="ordinary"]', styles)
+        self.assertIn(".nav-group-details", styles)
+        self.assertIn(".nav-group-summary", styles)
+        self.assertIn("content: \"展开\"", styles)
+        self.assertIn("content: \"收起\"", styles)
 
     def test_ordinary_entry_task_boundaries_are_visible_before_developer_audit(self):
         route_dir = ROOT / "src" / "routes"

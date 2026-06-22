@@ -448,6 +448,41 @@ textarea:focus {
   gap: 6px;
 }
 
+.nav-group[data-nav-priority="ordinary"] {
+  background: rgba(37, 99, 235, 0.12);
+  border: 1px solid rgba(147, 197, 253, 0.24);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.nav-group-details {
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  padding-top: 10px;
+}
+
+.nav-group-summary {
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  list-style: none;
+  min-width: 0;
+}
+
+.nav-group-summary::-webkit-details-marker {
+  display: none;
+}
+
+.nav-group-summary::after {
+  color: #94a3b8;
+  content: "展开";
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.nav-group-details[open] .nav-group-summary::after {
+  content: "收起";
+}
+
 .nav-group-title {
   color: #94a3b8;
   font-size: 12px;
