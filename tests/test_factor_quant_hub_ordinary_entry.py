@@ -72,6 +72,15 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("manual 只允许用户按钮创建 POST task", source)
         self.assertIn("live_light 可由后台 task 补证；本页仍只读轮询缓存", source)
         self.assertIn("live_full 深度补证预留，默认关闭", source)
+        self.assertIn("ordinaryQuantCacheButtonLabel", source)
+        self.assertIn("ordinaryQuantRefreshButtonLabel", source)
+        self.assertIn("ordinaryQuantRunLightButtonLabel", source)
+        self.assertIn("查看本地缓存只读取 GET cache；不会创建 task、不会调用 Tushare 或 DeepSeek", source)
+        self.assertIn("手动刷新数据会创建按钮门控 POST task；不从 React render 直连 provider/model", source)
+        self.assertIn("运行轻量推演会创建按钮门控 POST task；DeepSeek 整理仍在高级开关", source)
+        self.assertIn("title={ordinaryQuantCacheButtonLabel}", source)
+        self.assertIn("title={ordinaryQuantRefreshButtonLabel}", source)
+        self.assertIn("title={ordinaryQuantRunLightButtonLabel}", source)
         self.assertLess(source.index('label: "补证方式"'), source.index("高级验收任务"))
 
     def test_stock_quant_projection_reads_mode_without_bootstrap_task_launcher(self):
@@ -109,7 +118,7 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         ordinary_actions_start = source.rindex(
             '<div className="actions">',
             0,
-            source.index('<button onClick={refreshCache}>查看本地缓存</button>'),
+            source.index("title={ordinaryQuantCacheButtonLabel}"),
         )
         ordinary_actions_end = source.index("</div>", ordinary_actions_start)
         ordinary_actions_slice = source[ordinary_actions_start:ordinary_actions_end]

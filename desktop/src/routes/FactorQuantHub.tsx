@@ -312,6 +312,9 @@ export default function FactorQuantHub() {
   const ordinaryQuantRuntimeModeLabel = `运行模式：${runtimeModeLabel(ordinaryQuantRuntimeMode)}`;
   const ordinaryQuantTaskBoundary =
     "本页 GET cache 只读；手动刷新、轻量推演、模型整理或 live_light 补证都必须走 POST task，不在 React 渲染中直连 Tushare 或 DeepSeek";
+  const ordinaryQuantCacheButtonLabel = "查看本地缓存只读取 GET cache；不会创建 task、不会调用 Tushare 或 DeepSeek";
+  const ordinaryQuantRefreshButtonLabel = "手动刷新数据会创建按钮门控 POST task；不从 React render 直连 provider/model";
+  const ordinaryQuantRunLightButtonLabel = "运行轻量推演会创建按钮门控 POST task；DeepSeek 整理仍在高级开关";
   const ordinaryQuantStatusLabel = empty ? "等待量化缓存" : "量化缓存可用";
 
   return (
@@ -368,9 +371,9 @@ export default function FactorQuantHub() {
         <p className="risk-note">工程审计明细默认收起；完整 factor/provider/model ledger 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
       <div className="actions">
-        <button onClick={refreshCache}>查看本地缓存</button>
-        <button onClick={() => launchTask("/api/factor-quant/refresh-data")}>手动刷新数据</button>
-        <button onClick={() => launchTask("/api/factor-quant/run-light", { auto_after_task: autoAfterTask })}>运行轻量推演</button>
+        <button onClick={refreshCache} title={ordinaryQuantCacheButtonLabel} aria-label={ordinaryQuantCacheButtonLabel}>查看本地缓存</button>
+        <button onClick={() => launchTask("/api/factor-quant/refresh-data")} title={ordinaryQuantRefreshButtonLabel} aria-label={ordinaryQuantRefreshButtonLabel}>手动刷新数据</button>
+        <button onClick={() => launchTask("/api/factor-quant/run-light", { auto_after_task: autoAfterTask })} title={ordinaryQuantRunLightButtonLabel} aria-label={ordinaryQuantRunLightButtonLabel}>运行轻量推演</button>
       </div>
       <p className="risk-note">普通路径只保留查看缓存、手动刷新和轻量推演；DeepSeek 解释入口下沉为高级开关，不阻塞 Tushare-first 和基础图谱。</p>
       <details className="developer-audit-details">
