@@ -519,6 +519,11 @@ export default function CandidateRadar() {
     `本地记录：${String(searchQuantProjectionReceipt.status ?? "暂无")}`,
     `后台状态：${String((searchQuantProjectionReceipt.task_id ?? taskId) || "未创建任务")}`
   ].join(" / ");
+  const quantProjectionLatestTaskState = taskReceipt
+    ? `最近任务：${String(taskReceipt.data?.task_id ?? taskReceipt.data?.task?.task_id ?? "--")} / ${taskReceipt.ok ? "已接收" : "创建失败"} / ${String(taskReceipt.data?.task?.current_step ?? taskReceipt.error ?? "等待状态轮询")}`
+    : "最近任务：暂无；点击确认按钮后显示本地任务编号";
+  const quantProjectionResultReplayState =
+    "成功后回放：search_quant_provider_model_acceptance_receipt / call_ledger / packet；GET cache 只读展示";
   const candidateRadarStatusLabel = cache.status === "ready" ? "候选缓存可用" : "等待候选缓存";
   const candidatePoolCacheDetail = cache.status === "ready" ? "本地缓存可用" : "等待本地缓存";
   const candidatePoolSignalDetail = Number(scanCoverage.missing_signal_group_count ?? 0)
@@ -610,10 +615,13 @@ export default function CandidateRadar() {
               { label: "缺少证据", value: quantProjectionMissingEvidence, tone: quantProjectionMissingEvidence.includes("证据") || quantProjectionMissingEvidence.includes("验收") || quantProjectionMissingEvidence.includes("申请") ? "warn" : "good" },
               { label: "阻断/降级", value: quantProjectionBlockedState, tone: quantProjectionBlockedState.includes("阻断") || quantProjectionBlockedState.includes("未通过") ? "warn" : "good" },
               { label: "最近可用结果", value: quantProjectionLastResult },
+              { label: "最近任务", value: quantProjectionLatestTaskState, tone: taskReceipt?.ok === false ? "warn" : "good" },
+              { label: "结果回放", value: quantProjectionResultReplayState, tone: "good" },
               { label: "仅供研究", value: "推演解释只整理已有证据；不覆盖价格、持仓、因子、操作区或交易策略", tone: "good" }
             ]}
           />
           <p>普通入口的 Tushare-first 按钮只在 execution request 有 scope hash 后启用；点击后只创建受控 POST task，DeepSeek 保持 skipped，不交易、不改 strategy action。</p>
+          <p>最近任务只显示本地 FastAPI 返回的 task id 和安全步骤；结果成功后通过 GET cache 回放 packet / ledger，不在普通页面展开审计表。</p>
           <p>一键生成量化投研图谱 当前只保存本地记录：校验股票代码，列出 Tushare / Factor / Next Session / DeepSeek / ECharts 待补证据；真实补证只走后台任务血缘。</p>
           <details className="developer-audit-details">
             <summary>搜票推演记录详情</summary>
