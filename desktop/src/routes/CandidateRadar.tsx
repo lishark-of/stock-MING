@@ -642,6 +642,8 @@ export default function CandidateRadar() {
       : "回放顺序：确认生成后先看任务编号，再刷新本地缓存，最后查看量化推演和次日图谱";
   const quantProjectionReplayBoundary =
     "回放链接只切换本地页面或锚点；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache";
+  const quantProjectionResultLocation =
+    "结果位置：股票量化推演页查看缓存结果，次日图谱页复核图谱；两个入口都只读回放";
   const candidateRadarStatusLabel = cache.status === "ready" ? "候选缓存可用" : "等待候选缓存";
   const candidatePoolCacheDetail = cache.status === "ready" ? "本地缓存可用" : "等待本地缓存";
   const candidatePoolSignalDetail = Number(scanCoverage.missing_signal_group_count ?? 0)
@@ -724,6 +726,7 @@ export default function CandidateRadar() {
         <p className="risk-note">候选池按 Top / Watch / Excluded 分组帮助复核优先级；分组结果不是买卖建议，也不会修改 strategy action。</p>
         <p className="risk-note">摘要按钮只读取本地 cache 或创建按钮门控 POST task；输入代码不会创建任务，也不会在 React 渲染中直连 Tushare、DeepSeek 或 GitHub。</p>
         <p className="risk-note">生成任务完成后，去 <a href="#factor">股票量化推演</a> 查看本地缓存结果；该链接只切换页面，不额外刷新外部数据或模型。</p>
+        <p className="risk-note">{quantProjectionResultLocation}</p>
         <p className="risk-note">工程审计明细默认收起；完整 call ledger、release gate 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
 
@@ -787,6 +790,7 @@ export default function CandidateRadar() {
               { label: "阻断/降级", value: quantProjectionBlockedState, tone: quantProjectionBlockedState.includes("阻断") || quantProjectionBlockedState.includes("未通过") ? "warn" : "good" },
               { label: "最近可用结果", value: quantProjectionLastResult },
               { label: "最近任务", value: quantProjectionLatestTaskState, tone: taskReceipt?.ok === false ? "warn" : "good" },
+              { label: "结果位置", value: quantProjectionResultLocation, tone: "good" },
               { label: "结果回放", value: quantProjectionInterpretationReplay || quantProjectionResultReplayState, tone: "good" },
               { label: "回放顺序", value: quantProjectionReplayOrder, tone: taskReceipt?.ok || quantProjectionProviderLedgerReady ? "good" : "warn" },
               { label: "回放边界", value: quantProjectionReplayBoundary, tone: "good" },
