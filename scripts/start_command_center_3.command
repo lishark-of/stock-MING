@@ -41,6 +41,29 @@ except Exception:
 PY
 }
 
+vite_command_center_ready() {
+  local url="$1"
+  "$PYTHON_BIN" - "$url" <<'PY' >/dev/null 2>&1
+import sys
+import urllib.request
+
+url = sys.argv[1]
+try:
+    with urllib.request.urlopen(url, timeout=1.5) as response:
+        if response.status < 200 or response.status >= 300:
+            sys.exit(1)
+        body = response.read(20000).decode("utf-8", errors="replace")
+except Exception:
+    sys.exit(1)
+
+required_markers = [
+    "stock-MING Command Center 3.0",
+    "/src/main.tsx",
+]
+sys.exit(0 if all(marker in body for marker in required_markers) else 1)
+PY
+}
+
 bootstrap_status_ready() {
   local url="$1"
   "$PYTHON_BIN" - "$url" <<'PY' >/dev/null 2>&1
@@ -82,6 +105,22 @@ wait_for_url() {
     index=$((index + 1))
   done
   echo "${name} still warming up: ${url}"
+  return 1
+}
+
+wait_for_vite_command_center() {
+  local url="$1"
+  local attempts="${2:-30}"
+  local index=1
+  while [ "$index" -le "$attempts" ]; do
+    if vite_command_center_ready "$url"; then
+      echo "React/Vite Command Center 3.0 app ready: ${url}"
+      return 0
+    fi
+    sleep 1
+    index=$((index + 1))
+  done
+  echo "React/Vite Command Center 3.0 app still warming up or wrong app on port: ${url}"
   return 1
 }
 
@@ -137,6 +176,7 @@ echo "P0: local one-click launcher starts/checks FastAPI and React/Vite before o
 echo "Mode: server config controls runtime mode; cache_only remains the safe default unless explicitly configured."
 echo "Link check: launcher verifies ${API_BASE%/}/health and ${API_BASE%/}/api/bootstrap/status before opening the page."
 echo "Bootstrap check: /api/bootstrap/status must return command_center_3_bootstrap_runtime_mode_packet JSON before the page opens."
+echo "Frontend check: Vite must serve stock-MING Command Center 3.0 index HTML before the page opens."
 echo "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution."
 echo "Safety: this launcher does not set live_light defaults and makes no Tushare, DeepSeek, GitHub, or trading call."
 echo "Acceptance: runtime_mode_config_current_acceptance_* markers are status/checkpoint drift guards, not launcher config or live_light enablement."
@@ -148,7 +188,7 @@ else
   PYTHON_BIN="$PYTHON_BIN" nohup "${PROJECT_ROOT}/scripts/dev_server.sh" >"$FASTAPI_LOG" 2>&1 &
 fi
 
-if url_ready "$VITE_URL"; then
+if vite_command_center_ready "$VITE_URL"; then
   echo "Vite already running."
 else
   echo "Starting React/Vite..."
@@ -167,7 +207,7 @@ if wait_for_bootstrap_status "${API_BASE%/}/api/bootstrap/status" 40; then
   API_STATUS_READY=1
 fi
 
-if wait_for_url "React/Vite" "$VITE_URL" 40; then
+if wait_for_vite_command_center "$VITE_URL" 40; then
   VITE_READY=1
 fi
 
@@ -176,7 +216,7 @@ if [ "$FASTAPI_READY" != "1" ] || [ "$API_STATUS_READY" != "1" ] || [ "$VITE_REA
   echo "请查看日志："
   echo "  FastAPI log: ${FASTAPI_LOG}"
   echo "  React/Vite log: ${VITE_LOG}"
-  echo "本地入口不会在前后端未联通时自动打开页面。"
+  echo "本地入口不会在前后端未联通或 Vite 端口不是 Command Center 3.0 页面时自动打开页面。"
   exit 1
 fi
 
