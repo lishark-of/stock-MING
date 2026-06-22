@@ -21,11 +21,16 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("search_quant_provider_model_acceptance_receipt", self.page)
         self.assertIn("tushare_call_ledger_evidence_done", self.page)
         self.assertIn("provider_api_success_count", self.page)
+        self.assertIn("provider_api_call_count", self.page)
         self.assertIn("deepseek_skipped_by_request", self.page)
         self.assertIn("Tushare ledger 已回放", self.page)
         self.assertIn("GET cache 已回放 Tushare provider ledger", self.page)
+        self.assertIn("quantProjectionSmallDataReplayState", self.page)
+        self.assertIn("cache / ledger / packet 已回放", self.page)
+        self.assertIn("packet=command_center_3_candidate_radar_cache", self.page)
         self.assertIn("DeepSeek 已跳过：等待 governed executor", self.page)
         self.assertIn('label: "Tushare ledger"', search_panel)
+        self.assertIn('label: "cache / ledger / packet"', search_panel)
         self.assertIn(
             "Tushare ledger 来自 cache / call_ledger 回放",
             search_panel,
