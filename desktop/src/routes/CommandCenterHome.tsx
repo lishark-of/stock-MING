@@ -216,6 +216,7 @@ export default function CommandCenterHome() {
   const dataHealthCounts = dataHealth.counts as Record<string, unknown> | undefined;
   const desktopRuntime = desktopPreflight.runtime as Record<string, unknown> | undefined;
   const desktopCounts = desktopPreflight.counts as Record<string, unknown> | undefined;
+  const oneClickStartupSummary = (desktopPreflight.one_click_startup_summary as Record<string, unknown> | undefined) ?? {};
   const desktopLauncherContract = (desktopPreflight.desktop_launcher_contract as Record<string, unknown> | undefined) ?? {};
   const recoveryCounts = recovery.counts as Record<string, unknown> | undefined;
   const taskCatalogPolicy = taskCatalog.policy as Record<string, unknown> | undefined;
@@ -372,6 +373,17 @@ export default function CommandCenterHome() {
       : "去桌面壳预检查看启动器缺口";
   const dailyCommandStartupBoundary =
     "首页不启动服务；一键启动只由本机快捷入口执行，状态来自 health/preflight cache";
+  const dailyCommandStartupSuccessCondition = String(
+    oneClickStartupSummary.success_condition ??
+      "FastAPI /health 必须返回 Command Center 3.0 健康 JSON，/api/bootstrap/status 必须返回 runtime-mode packet，React/Vite 必须返回 Command Center 3.0 前端 HTML 后才打开页面。"
+  );
+  const dailyCommandStartupFailureAction = String(
+    oneClickStartupSummary.blocked_next_action ??
+      "先看启动器的可操作诊断：FastAPI、bootstrap status、React/Vite 哪段失败；再检查 8710/5173 是否被占用，或进入桌面壳预检。"
+  );
+  const dailyCommandStartupDiagnosticSurfaces = Array.isArray(oneClickStartupSummary.diagnostic_surfaces)
+    ? oneClickStartupSummary.diagnostic_surfaces.join(" / ")
+    : "FastAPI /health Command Center 3.0 JSON / bootstrap status runtime-mode packet / React/Vite Command Center 3.0 HTML / 8710/5173 port occupancy guidance";
   const dailyCommandReviewOrder = error
     ? "先看一键启动预检恢复本地联通，再回今日作战台"
     : "先确认最近缓存和数据健康，再看下一票雷达，最后看股票量化推演结果";
@@ -450,6 +462,9 @@ export default function CommandCenterHome() {
             { label: "一键启动", value: dailyCommandLauncherState, tone: desktopLauncherContract.launcher_executable === true ? "good" : "warn" },
             { label: "启动恢复", value: dailyCommandStartupRecoveryLabel, tone: error || desktopLauncherContract.launcher_executable !== true ? "warn" : "good" },
             { label: "启动边界", value: dailyCommandStartupBoundary, tone: "good" },
+            { label: "启动成功条件", value: dailyCommandStartupSuccessCondition, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
+            { label: "启动诊断", value: dailyCommandStartupDiagnosticSurfaces, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
+            { label: "启动失败处理", value: dailyCommandStartupFailureAction, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
             { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
             { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
             { label: "今日查看顺序", value: dailyCommandReviewOrder, tone: error ? "warn" : "good" },
@@ -472,6 +487,7 @@ export default function CommandCenterHome() {
           ]}
         />
         <p className="risk-note">本地联通状态只读来自 FastAPI health 和 desktop preflight cache；不会启动服务、不会写配置、不会调用 provider/model。</p>
+        <p className="risk-note">启动诊断来自 desktop preflight cache：FastAPI /health、bootstrap status 和 React/Vite 前端 HTML 分段检查；首页只展示，不执行。</p>
         <p className="risk-note">主下一步会在联通异常时优先打开桌面壳预检；这个链接只读本地 health/preflight cache，不启动服务。</p>
         <div className="actions" aria-label="daily command primary next action">
           <a href={dailyCommandPrimaryActionHref} aria-label="open daily command primary next action">{dailyCommandPrimaryActionLabel}</a>
