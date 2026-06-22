@@ -299,6 +299,8 @@ export default function FactorQuantHub() {
     : `已读取本地量化缓存；搜票结果回放看 ${ordinaryQuantLastCache}`;
   const ordinaryQuantReplayLocation =
     "回放位置：Factor cache / Next Session preview / DeepSeek status；不从本页补调 provider/model";
+  const ordinaryQuantResultLocation =
+    "结果位置：本页看支持/压制与模型解释状态，次日图谱预览复核路径，下一票雷达回到代码确认入口；三个位置都只读回放";
   const ordinaryQuantReviewOrder = empty
     ? "先回下一票雷达输入代码并确认生成；本页只等本地结果回放"
     : "先看支持/压制，再看次日图谱预览，最后看模型解释状态；不要从工程审计表开始";
@@ -342,6 +344,7 @@ export default function FactorQuantHub() {
             { label: "last_successful_cache/result", value: ordinaryQuantLastCache },
             { label: "雷达搜票回放", value: ordinaryQuantRadarHandoffState, tone: empty ? "warn" : "good" },
             { label: "回放位置", value: ordinaryQuantReplayLocation, tone: "good" },
+            { label: "结果位置", value: ordinaryQuantResultLocation, tone: "good" },
             { label: "查看顺序", value: ordinaryQuantReviewOrder },
             { label: "结果组成", value: ordinaryQuantResultComposition },
             { label: "数据来源状态", value: ordinaryQuantSourceState },
@@ -366,6 +369,7 @@ export default function FactorQuantHub() {
         <p className="risk-note">没有标的时先去 <a href="#candidates">下一票雷达</a> 输入代码并点击生成 3.0 量化推演；这个链接只切换本地页面，不创建 task。</p>
         <p className="risk-note">本页不接收股票代码输入；换标的必须回下一票雷达确认按钮，避免把查看缓存误当成重新推演。</p>
         <p className="risk-note">来自下一票雷达的搜票结果在本页只回放 Factor cache、次日图谱预览和模型解释状态；本页链接不重新触发 Tushare-first 或 DeepSeek。</p>
+        <p className="risk-note">{ordinaryQuantResultLocation}</p>
         <p className="risk-note">生成后先按“支持/压制 → 次日图谱预览 → 模型解释状态”复核；缺数据就看 pending/缺少证据，不把空结果当成无风险。</p>
         <p className="risk-note">摘要里的查看链接只是本地锚点跳转，不创建 task、不调用 Tushare 或 DeepSeek、不写 cache，也不改变交易策略。</p>
         <p className="risk-note">工程审计明细默认收起；完整 factor/provider/model ledger 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
