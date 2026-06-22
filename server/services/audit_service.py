@@ -797,8 +797,8 @@ def _release_gate_readiness_audit() -> tuple[dict[str, Any], list[dict[str, Any]
         and "tests.test_command_center_migration_principles" in script
         and "migration_principle_docs_guard" in script,
         "migration_principle_docs_guard_order": script.find('run_step "Python unittest"') >= 0
-        and script.find('run_step "Python unittest"') < script.find('run_step "Migration principle docs guard"')
-        and script.find('run_step "Migration principle docs guard"') < script.find('run_step "Desktop build"'),
+        and script.find('run_step "Python unittest"') < script.find('run_step "Migration principle docs guard')
+        and script.find('run_step "Migration principle docs guard') < script.find('run_step "Desktop build"'),
         "smoke_script_exists": SMOKE_SCRIPT_PATH.exists() and bool(smoke_script),
         "data_health_freshness_contract_exists": DATA_HEALTH_FRESHNESS_CONTRACT_PATH.exists()
         and bool(data_health_freshness_script),
