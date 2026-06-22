@@ -369,6 +369,26 @@ class RuntimeConfigAllowlistTests(unittest.TestCase):
             text,
         )
 
+    def test_desktop_launcher_does_not_override_runtime_config_defaults(self):
+        launcher = Path(__file__).resolve().parents[1] / "scripts" / "start_command_center_3.command"
+        text = launcher.read_text(encoding="utf-8")
+
+        self.assertIn("server config controls runtime mode", text)
+        self.assertIn("cache_only remains the safe default unless explicitly configured", text)
+        self.assertIn("does not set live_light defaults", text)
+        self.assertIn("no Tushare, DeepSeek, GitHub, or trading call", text)
+        self.assertIn("runtime_mode_config_current_acceptance_* markers are status/checkpoint drift guards", text)
+        self.assertIn("not launcher config or live_light enablement", text)
+        self.assertNotIn("live_light startup is enabled for desktop use", text)
+        self.assertNotIn("STOCK_MING_DESKTOP_LIVE_STARTUP_EXECUTION", text)
+        self.assertNotIn(":-live_light", text)
+        self.assertNotIn(":-true", text)
+        self.assertNotIn(":-light_provider_model", text)
+        self.assertNotIn(":-provider_factor_next_model", text)
+
+        for name in config.COMMAND_CENTER_RUNTIME_CONFIG_NAMES:
+            self.assertNotIn(f"export {name}", text)
+
 
 if __name__ == "__main__":
     unittest.main()

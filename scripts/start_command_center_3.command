@@ -90,7 +90,9 @@ echo "Python: ${PYTHON_BIN}"
 echo "FastAPI: ${API_BASE}"
 echo "React/Vite: ${VITE_URL}"
 echo "Logs: ${LOG_DIR}"
-echo "Safety: local-only launcher; no Tushare, DeepSeek, GitHub, or trading call is made by this script."
+echo "Mode: server config controls runtime mode; cache_only remains the safe default unless explicitly configured."
+echo "Safety: this launcher does not set live_light defaults and makes no Tushare, DeepSeek, GitHub, or trading call."
+echo "Acceptance: runtime_mode_config_current_acceptance_* markers are status/checkpoint drift guards, not launcher config or live_light enablement."
 
 if url_ready "${API_BASE%/}/health"; then
   echo "FastAPI already running."
