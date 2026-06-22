@@ -10,7 +10,7 @@ import config
 from server.services import packet_service
 from storage.sqlite_meta import SQLiteMetaStore
 
-from .task_service import create_task_record, update_task_status
+from .task_service import create_task_record, list_task_statuses, update_task_status
 
 
 PACKET_KEY = "command_center_3_legacy_bridge_cache"
@@ -1885,6 +1885,131 @@ def run_legacy_audit_observation_dry_run_task(payload: Any = None) -> dict[str, 
     ) or task
 
 
+def _latest_legacy_audit_observation_status() -> dict[str, Any]:
+    tasks = [
+        task
+        for task in list_task_statuses()
+        if task.get("task_type") == LEGACY_AUDIT_OBSERVATION_DRY_RUN_TASK_TYPE
+    ]
+    if not tasks:
+        return {
+            "schema_version": "legacy_audit_latest_observation_status.v1",
+            "status": "no_legacy_audit_observation_dry_run_task_found",
+            "lookup_source": "task_service.list_task_statuses",
+            "lookup_creates_task": False,
+            "route": "POST /api/legacy/audit-observation-dry-run",
+            "task_type": LEGACY_AUDIT_OBSERVATION_DRY_RUN_TASK_TYPE,
+            "receipt_found": False,
+            "task_id": "",
+            "task_status": "",
+            "current_step": "",
+            "output_packet_key": "",
+            "storage_source": "",
+            "workflow_group": "",
+            "proposed_status": "",
+            "direct_user_evidence_recorded": False,
+            "direct_evidence_ready_for_keep_review": False,
+            "keep_promotion_allowed_this_round": False,
+            "ordinary_entry_promotion_allowed_this_round": False,
+            "streamlit_fallback_retirement_allowed": False,
+            "production_evidence": False,
+            "row_count": 0,
+            "rows": [],
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_open_streamlit": True,
+            "does_not_run_legacy_tools": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "call_ledger": [
+                {
+                    "api": "local_legacy_audit_latest_observation_status",
+                    "lookup_source": "task_service.list_task_statuses",
+                    "row_count": 0,
+                    "call_status": "latest_observation_missing_cache_read",
+                    "local_fetched_at": _now_iso(),
+                    "external": False,
+                    "external_calls_triggered": False,
+                    "tushare_called": False,
+                    "deepseek_called": False,
+                    "github_called": False,
+                    "does_not_open_streamlit": True,
+                    "does_not_run_legacy_tools": True,
+                    "does_not_execute_trades": True,
+                    "does_not_modify_strategy_action": True,
+                }
+            ],
+        }
+
+    latest_task = tasks[0]
+    payload = _as_dict(latest_task.get("payload_safe"))
+    receipt = _as_dict(payload.get("legacy_audit_observation_receipt"))
+    rows = _as_list(payload.get("legacy_audit_observation_rows"))
+    direct_recorded = receipt.get("direct_user_evidence_recorded") is True
+    return {
+        "schema_version": "legacy_audit_latest_observation_status.v1",
+        "status": "latest_legacy_audit_observation_visible_recorded"
+        if direct_recorded
+        else "latest_legacy_audit_observation_visible_blocked",
+        "lookup_source": "task_service.list_task_statuses",
+        "lookup_creates_task": False,
+        "route": "POST /api/legacy/audit-observation-dry-run",
+        "task_type": LEGACY_AUDIT_OBSERVATION_DRY_RUN_TASK_TYPE,
+        "receipt_found": True,
+        "task_id": latest_task.get("task_id"),
+        "task_status": latest_task.get("status"),
+        "current_step": latest_task.get("current_step"),
+        "output_packet_key": latest_task.get("output_packet_key"),
+        "storage_source": latest_task.get("storage_source") or "",
+        "workflow_group": receipt.get("workflow_group"),
+        "proposed_status": receipt.get("proposed_status"),
+        "receipt_status": receipt.get("status"),
+        "direct_user_evidence_recorded": direct_recorded,
+        "direct_evidence_ready_for_keep_review": False,
+        "keep_promotion_allowed_this_round": False,
+        "ordinary_entry_promotion_allowed_this_round": False,
+        "streamlit_fallback_retirement_allowed": False,
+        "production_evidence": False,
+        "row_count": len(rows),
+        "rows": rows,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_open_streamlit": True,
+        "does_not_run_legacy_tools": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "call_ledger": [
+            {
+                "api": "local_legacy_audit_latest_observation_status",
+                "lookup_source": "task_service.list_task_statuses",
+                "task_id": latest_task.get("task_id"),
+                "workflow_group": receipt.get("workflow_group"),
+                "direct_user_evidence_recorded": direct_recorded,
+                "keep_promotion_allowed_this_round": False,
+                "ordinary_entry_promotion_allowed_this_round": False,
+                "row_count": len(rows),
+                "call_status": "latest_observation_cache_read",
+                "local_fetched_at": _now_iso(),
+                "external": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_open_streamlit": True,
+                "does_not_run_legacy_tools": True,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+    }
+
+
 def run_streamlit_ordinary_workflow_parity_review_task(payload: Any = None) -> dict[str, Any]:
     payload_map = payload if isinstance(payload, dict) else {}
     task = create_task_record(
@@ -2045,6 +2170,7 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
     legacy_audit_first_round_intake, legacy_audit_first_round_intake_rows = (
         _legacy_audit_first_round_intake_status()
     )
+    latest_legacy_audit_observation_status = _latest_legacy_audit_observation_status()
     fallback_dependency_contract = _streamlit_fallback_dependency_contract(primary_workflow_exit_audit["route_rows"])
     ordinary_parity_review = _read_streamlit_ordinary_workflow_parity_review_packet()
     ordinary_parity_review_rows = _as_list(ordinary_parity_review.get("rows"))
@@ -2107,6 +2233,8 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         "legacy_bug_ux_module_rows": ordinary_entrance_acceptance_audit["legacy_bug_ux_module_rows"],
         "legacy_audit_first_round_intake": legacy_audit_first_round_intake,
         "legacy_audit_first_round_intake_rows": legacy_audit_first_round_intake_rows,
+        "legacy_audit_latest_observation_status": latest_legacy_audit_observation_status,
+        "legacy_audit_latest_observation_rows": latest_legacy_audit_observation_status["rows"],
         "streamlit_fallback_dependency_contract": fallback_dependency_contract,
         "streamlit_fallback_dependency_rows": fallback_dependency_contract["rows"],
         "streamlit_retirement_readiness_receipt": retirement_readiness_receipt,
@@ -2158,6 +2286,15 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
             "legacy_audit_first_round_intake_row_count": len(
                 legacy_audit_first_round_intake_rows
             ),
+            "legacy_audit_latest_observation_found_count": 1
+            if latest_legacy_audit_observation_status["receipt_found"]
+            else 0,
+            "legacy_audit_latest_observation_row_count": latest_legacy_audit_observation_status[
+                "row_count"
+            ],
+            "legacy_audit_latest_observation_direct_user_evidence_count": 1
+            if latest_legacy_audit_observation_status["direct_user_evidence_recorded"]
+            else 0,
             "streamlit_fallback_dependency_count": fallback_dependency_contract["full_streamlit_removal_blocker_count"],
             "ordinary_fallback_dependency_count": fallback_dependency_contract["ordinary_fallback_dependency_count"],
             "admin_debug_fallback_retained_count": fallback_dependency_contract["admin_debug_fallback_retained_count"],
@@ -2199,6 +2336,7 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         + durable_evidence_recipe["call_ledger"]
         + ordinary_entrance_acceptance_audit["call_ledger"]
         + legacy_audit_first_round_intake["call_ledger"]
+        + latest_legacy_audit_observation_status["call_ledger"]
         + ordinary_parity_review_call_ledger
         + fallback_retirement_review_call_ledger,
         "streamlit_ordinary_workflow_parity_review_ready": ordinary_parity_review.get(
@@ -2240,6 +2378,17 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
         "legacy_audit_first_round_intake_row_count": len(
             legacy_audit_first_round_intake_rows
         ),
+        "legacy_audit_latest_observation_visible": latest_legacy_audit_observation_status[
+            "receipt_found"
+        ],
+        "legacy_audit_latest_observation_status_text": latest_legacy_audit_observation_status[
+            "status"
+        ],
+        "legacy_audit_latest_observation_direct_user_evidence_recorded": latest_legacy_audit_observation_status[
+            "direct_user_evidence_recorded"
+        ],
+        "legacy_audit_latest_observation_is_not_keep_promotion": True,
+        "legacy_audit_latest_observation_is_not_streamlit_retirement": True,
         "external_calls_triggered": False,
         "tushare_called": False,
         "deepseek_called": False,
@@ -2258,6 +2407,7 @@ def read_legacy_bridge_cache() -> dict[str, Any]:
             "streamlit_fallback_retirement_review 只有显式 POST task 后才会出现；它是本地 fallback retirement review evidence，不是 fallback 删除或 production 退场完成。",
             "ordinary_entrance_acceptance_audit 只是三入口 Legacy/UX 审计地图；不是生产验收，也不会创建任务。",
             "legacy_audit_first_round_intake 只是第一轮取证模板；不能升级 KEEP，也不能让旧模块进入普通入口。",
+            "legacy_audit_latest_observation_status 只读回放显式 observation dry-run；不会创建任务、升级 KEEP 或退场 Streamlit。",
         ],
     }
     if status == "cache_missing":

@@ -115,6 +115,41 @@ class LegacyAuditObservationDryRunTests(unittest.TestCase):
         self.assertNotIn("api_key", rendered)
         self.assertNotIn("raw_packet_bodies", rendered)
 
+        task_count_before_cache = len(task_service.list_task_statuses())
+        cache_response = self.client.get("/api/legacy/cache")
+        self.assertEqual(cache_response.status_code, 200)
+        cache_body = cache_response.json()
+        self.assertTrue(cache_body["ok"])
+        cache_packet = cache_body["data"]
+        self.assertEqual(len(task_service.list_task_statuses()), task_count_before_cache)
+        latest = cache_packet["legacy_audit_latest_observation_status"]
+        self.assertTrue(latest["receipt_found"])
+        self.assertFalse(latest["lookup_creates_task"])
+        self.assertEqual(latest["task_id"], task["task_id"])
+        self.assertEqual(latest["workflow_group"], "searched-symbol quant projection")
+        self.assertEqual(latest["proposed_status"], "direct_evidence_observed_redesign_required")
+        self.assertTrue(latest["direct_user_evidence_recorded"])
+        self.assertFalse(latest["direct_evidence_ready_for_keep_review"])
+        self.assertFalse(latest["keep_promotion_allowed_this_round"])
+        self.assertFalse(latest["ordinary_entry_promotion_allowed_this_round"])
+        self.assertFalse(latest["streamlit_fallback_retirement_allowed"])
+        self.assertFalse(latest["production_evidence"])
+        self.assertFalse(latest["external_calls_triggered"])
+        self.assertTrue(latest["does_not_open_streamlit"])
+        self.assertEqual(cache_packet["legacy_audit_latest_observation_rows"], latest["rows"])
+        self.assertEqual(cache_packet["counts"]["legacy_audit_latest_observation_found_count"], 1)
+        self.assertEqual(cache_packet["counts"]["legacy_audit_latest_observation_row_count"], latest["row_count"])
+        self.assertEqual(cache_packet["counts"]["legacy_audit_latest_observation_direct_user_evidence_count"], 1)
+        self.assertTrue(cache_packet["legacy_audit_latest_observation_visible"])
+        self.assertTrue(cache_packet["legacy_audit_latest_observation_direct_user_evidence_recorded"])
+        self.assertTrue(cache_packet["legacy_audit_latest_observation_is_not_keep_promotion"])
+        self.assertTrue(cache_packet["legacy_audit_latest_observation_is_not_streamlit_retirement"])
+        self.assertIn(
+            "local_legacy_audit_latest_observation_status",
+            {row["api"] for row in cache_packet["call_ledger"]},
+        )
+        self.assertNotIn("SHOULD_DROP", json.dumps(cache_packet, ensure_ascii=False))
+
     def test_keep_request_is_blocked_even_with_complete_payload(self) -> None:
         response = self.client.post(
             "/api/legacy/audit-observation-dry-run",
