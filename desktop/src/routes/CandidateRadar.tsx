@@ -468,6 +468,8 @@ export default function CandidateRadar() {
   const ordinaryLastCache = String(
     cache.loaded_at ?? radarPacket.generated_at ?? radarPacket.updated_at ?? "暂无最近可用缓存"
   );
+  const ordinaryRadarResultLocation =
+    "结果位置：本页下一票候选池看 Top/Watch/Excluded；搜单票用搜票量化推演；生成后去股票量化推演和次日图谱，只读回放";
   const ordinaryCandidateTopCount = rows(cache.candidate_rows).length || Number(counts.candidate_count ?? 0);
   const ordinaryCandidateWatchCount = rows(radarPacket.watch_candidates).length;
   const ordinaryCandidateExcludedCount = rows(cache.excluded_candidates).length || rows(radarPacket.excluded_candidates).length;
@@ -690,6 +692,7 @@ export default function CandidateRadar() {
             { label: "pending", value: ordinaryPendingSourceLabel, tone: ordinaryPendingSourceLabel.includes("待补") ? "warn" : "good" },
             { label: "degraded", value: ordinaryDegradedSourceLabel, tone: ordinaryDegradedSourceLabel.includes("降级") && !ordinaryDegradedSourceLabel.includes("未标记") ? "warn" : "good" },
             { label: "last_successful_cache/result", value: ordinaryLastCache },
+            { label: "结果位置", value: ordinaryRadarResultLocation, tone: "good" },
             { label: "缺少证据", value: ordinaryMissingEvidence, tone: ordinaryMissingEvidence.includes("待补") || ordinaryMissingEvidence.includes("阻断") || ordinaryMissingEvidence.includes("验收") ? "warn" : "good" },
             { label: "阻断/降级", value: ordinaryBlockedState, tone: ordinaryBlockedState.includes("未标记") ? "good" : "warn" },
             { label: "最近可用缓存", value: ordinaryLastCache },
@@ -723,6 +726,7 @@ export default function CandidateRadar() {
           <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
         </div>
         <p className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
+        <p className="risk-note">{ordinaryRadarResultLocation}</p>
         <p className="risk-note">候选池按 Top / Watch / Excluded 分组帮助复核优先级；分组结果不是买卖建议，也不会修改 strategy action。</p>
         <p className="risk-note">摘要按钮只读取本地 cache 或创建按钮门控 POST task；输入代码不会创建任务，也不会在 React 渲染中直连 Tushare、DeepSeek 或 GitHub。</p>
         <p className="risk-note">生成任务完成后，去 <a href="#factor">股票量化推演</a> 查看本地缓存结果；该链接只切换页面，不额外刷新外部数据或模型。</p>
