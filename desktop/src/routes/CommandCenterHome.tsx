@@ -274,16 +274,25 @@ export default function CommandCenterHome() {
     ...(taskIndexEnvelopeLedger.length ? taskIndexEnvelopeLedger : taskIndexPayloadLedger).map((row) => ({ scope: "task_status_index", ...row }))
   ];
   const empty = !loading && !error && !Object.keys(health).length && !Object.keys(packets).length;
-  const dailyCommandNextClick = Number(candidateCounts?.candidate_count ?? 0)
+  const dailyCommandNeedsStartupRecovery = Boolean(error) || (!loading && String(health.status ?? "") !== "ok");
+  const dailyCommandNextClick = dailyCommandNeedsStartupRecovery
+    ? "先查看一键启动预检，恢复本地 FastAPI / React 联通"
+    : Number(candidateCounts?.candidate_count ?? 0)
     ? "先看下一票雷达；需要单票推演时输入代码并生成 3.0 量化推演"
     : "先确认数据健康和最近可用缓存，再运行候选雷达快扫";
-  const dailyCommandPrimaryActionLabel = Number(candidateCounts?.candidate_count ?? 0)
+  const dailyCommandPrimaryActionLabel = dailyCommandNeedsStartupRecovery
+    ? "查看一键启动预检"
+    : Number(candidateCounts?.candidate_count ?? 0)
     ? "查看下一票雷达"
     : "查看数据健康";
-  const dailyCommandPrimaryActionHref = Number(candidateCounts?.candidate_count ?? 0)
+  const dailyCommandPrimaryActionHref = dailyCommandNeedsStartupRecovery
+    ? "#desktop"
+    : Number(candidateCounts?.candidate_count ?? 0)
     ? "#candidates"
     : "#dataHealth";
-  const dailyCommandPrimaryActionBoundary = Number(candidateCounts?.candidate_count ?? 0)
+  const dailyCommandPrimaryActionBoundary = dailyCommandNeedsStartupRecovery
+    ? "主下一步只打开桌面壳预检，不启动服务、不创建 task、不刷新 provider/model"
+    : Number(candidateCounts?.candidate_count ?? 0)
     ? "主下一步只切换到下一票雷达；不创建 task、不刷新 provider/model"
     : "主下一步只查看本地数据健康；运行快扫仍需进入下一票雷达手动点击";
   const dailyCommandCacheSourceLabel = snapshotAvailable ? "本地缓存可用" : "等待本地缓存";
@@ -350,6 +359,9 @@ export default function CommandCenterHome() {
     : health.status === "ok"
       ? "本地前后端已联通"
       : "正在确认本地连接";
+  const dailyCommandConnectivityPriority = dailyCommandNeedsStartupRecovery
+    ? "先恢复本地联通；缓存和投研入口等 health/preflight 变绿后再看"
+    : "本地联通可用；按最近缓存、数据健康、下一票雷达、股票量化推演复核";
   const dailyCommandLauncherState = desktopLauncherContract.launcher_executable === true
     ? "一键启动入口可用；启动器会等 FastAPI 和页面 ready"
     : "一键启动入口待检查；可先使用本地启动器恢复";
@@ -432,6 +444,7 @@ export default function CommandCenterHome() {
             { label: "主下一步", value: dailyCommandPrimaryActionLabel },
             { label: "主下一步边界", value: dailyCommandPrimaryActionBoundary, tone: "good" },
             { label: "本地联通", value: dailyCommandConnectionState, tone: error ? "warn" : health.status === "ok" ? "good" : "warn" },
+            { label: "联通优先级", value: dailyCommandConnectivityPriority, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
             { label: "一键启动", value: dailyCommandLauncherState, tone: desktopLauncherContract.launcher_executable === true ? "good" : "warn" },
             { label: "启动恢复", value: dailyCommandStartupRecoveryLabel, tone: error || desktopLauncherContract.launcher_executable !== true ? "warn" : "good" },
             { label: "启动边界", value: dailyCommandStartupBoundary, tone: "good" },
@@ -456,6 +469,7 @@ export default function CommandCenterHome() {
           ]}
         />
         <p className="risk-note">本地联通状态只读来自 FastAPI health 和 desktop preflight cache；不会启动服务、不会写配置、不会调用 provider/model。</p>
+        <p className="risk-note">主下一步会在联通异常时优先打开桌面壳预检；这个链接只读本地 health/preflight cache，不启动服务。</p>
         <div className="actions" aria-label="daily command primary next action">
           <a href={dailyCommandPrimaryActionHref} aria-label="open daily command primary next action">{dailyCommandPrimaryActionLabel}</a>
         </div>
