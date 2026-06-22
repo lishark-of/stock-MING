@@ -177,6 +177,7 @@ export default function CandidateRadar() {
   const searchQuantProjectionActivation = (cache.search_quant_projection_activation_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionAcceptanceDryRun = (cache.search_quant_projection_acceptance_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionExecutionRequest = (cache.search_quant_projection_execution_request_receipt as Record<string, unknown> | undefined) ?? {};
+  const searchQuantProviderModelAcceptance = (cache.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
   const providerParityDryRun = (cache.provider_parity_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
   const fastScanRuntimeBudget = (cache.fast_scan_runtime_budget_contract as Record<string, unknown> | undefined) ?? {};
   const fastScanReadinessAudit = (cache.fast_scan_readiness_audit as Record<string, unknown> | undefined) ?? {};
@@ -486,14 +487,31 @@ export default function CandidateRadar() {
   const quantProjectionSubmitHint = quantProjectionDisplaySymbol
     ? "点击确认后创建 Tushare-first POST task / worker；DeepSeek 默认 skipped，需 governed executor 完成后再单独补。"
     : "先输入股票代码；仅输入不会创建 task，也不会调用 Tushare 或 DeepSeek。";
+  const quantProjectionProviderApiSuccessCount = Number(searchQuantProviderModelAcceptance.provider_api_success_count ?? 0);
+  const quantProjectionProviderApiSuccessLabel = Number.isFinite(quantProjectionProviderApiSuccessCount)
+    ? String(quantProjectionProviderApiSuccessCount)
+    : "0";
+  const quantProjectionProviderLedgerReady =
+    searchQuantProviderModelAcceptance.tushare_call_ledger_evidence_done === true ||
+    quantProjectionProviderApiSuccessCount > 0;
+  const quantProjectionDeepSeekSkipped =
+    searchQuantProviderModelAcceptance.deepseek_skipped_by_request === true ||
+    policy.search_quant_provider_model_acceptance_deepseek_skipped === true;
   const quantProjectionCacheSourceLabel =
     searchQuantProjectionReceipt.status ? "本地推演记录可用" : cache.status === "ready" ? "候选缓存可用" : "等待本地缓存";
-  const quantProjectionProviderSourceLabel =
-    searchQuantProjectionReceipt.provider_execution_implemented === true ? "数据源执行已接入" : "等待手动验收任务";
-  const quantProjectionModelSourceLabel =
-    searchQuantProjectionReceipt.model_execution_implemented === true ? "DeepSeek 解释执行已接入" : "等待手动验收任务";
+  const quantProjectionProviderSourceLabel = quantProjectionProviderLedgerReady
+    ? `Tushare ledger 已回放：${quantProjectionProviderApiSuccessLabel} 个接口`
+    : searchQuantProjectionReceipt.provider_execution_implemented === true ? "Tushare 数据有本地记录" : "待 execution-request 账本补证";
+  const quantProjectionModelSourceLabel = quantProjectionDeepSeekSkipped
+    ? "DeepSeek 已跳过：等待 governed executor"
+    : searchQuantProviderModelAcceptance.deepseek_model_ledger_evidence_done === true
+      ? "DeepSeek 解释有 model ledger"
+      : searchQuantProjectionReceipt.model_execution_implemented === true ? "DeepSeek 解释有本地记录" : "DeepSeek 待 governed executor";
   const quantProjectionTaskBoundary =
     "输入不触发外联；点击确认后只经 POST task / worker 后台运行，React 渲染不直连 Tushare 或 DeepSeek";
+  const quantProjectionProviderModelReplayState = quantProjectionProviderLedgerReady
+    ? "GET cache 已回放 Tushare provider ledger；DeepSeek skipped/pending，不改 action"
+    : "等待确认按钮创建 Tushare-first task；GET cache 只显示 pending";
   const quantProjectionSourceState = [
     `本地缓存：${quantProjectionCacheSourceLabel}`,
     `Tushare 数据：${quantProjectionProviderSourceLabel}`,
@@ -611,6 +629,7 @@ export default function CandidateRadar() {
               { label: "确认代码", value: quantProjectionConfirmedSymbol },
               { label: "输入校验", value: quantProjectionInputValidation, tone: quantProjectionInputValidation.includes("阻断") ? "warn" : "good" },
               { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn" },
+              { label: "Tushare ledger", value: quantProjectionProviderModelReplayState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
               { label: "数据来源状态", value: quantProjectionSourceState },
               { label: "任务边界", value: quantProjectionTaskBoundary },
               { label: "缺少证据", value: quantProjectionMissingEvidence, tone: quantProjectionMissingEvidence.includes("证据") || quantProjectionMissingEvidence.includes("验收") || quantProjectionMissingEvidence.includes("申请") ? "warn" : "good" },
@@ -623,6 +642,7 @@ export default function CandidateRadar() {
           />
           <p>普通入口的 Tushare-first 按钮只在 execution request 有 scope hash 后启用；点击后只创建受控 POST task，DeepSeek 保持 skipped，不交易、不改 strategy action。</p>
           <p>最近任务只显示本地 FastAPI 返回的 task id 和安全步骤；结果成功后通过 GET cache 回放 packet / ledger，不在普通页面展开审计表。</p>
+          <p className="risk-note">Tushare ledger 来自 cache / call_ledger 回放；DeepSeek 仍需 governed executor，普通页不展示 prompt/output。</p>
           <p>确认后创建 Tushare-first 按钮门控 POST task / worker；Tushare 小全量数据写入 call_ledger；DeepSeek 保持 skipped，待 governed executor / model_ledger 后再展示缓存，React render 不直接外联。</p>
           <details className="developer-audit-details">
             <summary>搜票推演记录详情</summary>
