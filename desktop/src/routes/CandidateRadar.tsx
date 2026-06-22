@@ -89,7 +89,8 @@ export default function CandidateRadar() {
       scan_mode: "search_quant_projection",
       symbol: normalizeAshareSymbolInput(searchSymbol).normalized,
       include_tushare: true,
-      include_deepseek: true,
+      include_deepseek: false,
+      user_approved: true,
       requested_by: "candidate_radar_page"
     }).then((res) => {
       setTaskReceipt(res);
@@ -462,7 +463,7 @@ export default function CandidateRadar() {
   const quantProjectionSymbolValidation = normalizeAshareSymbolInput(searchSymbol);
   const quantProjectionCanSubmit = quantProjectionSymbolValidation.valid;
   const quantProjectionDisabledReason = quantProjectionCanSubmit
-    ? `按钮已启用：点击后只创建本地量化推演 task；已确认 ${quantProjectionSymbolValidation.normalized}`
+    ? `按钮已启用：确认后创建 Tushare-first 按钮门控 POST task；DeepSeek 保持 skipped；已确认 ${quantProjectionSymbolValidation.normalized}`
     : searchSymbol.trim()
       ? `按钮不可用原因：${quantProjectionSymbolValidation.reason}；请输入 6 位 A 股代码或 002008.SZ 这类后缀`
       : "按钮不可用原因：先输入股票代码；输入本身不会创建 task";
@@ -480,10 +481,10 @@ export default function CandidateRadar() {
     ? `已确认输入：${quantProjectionSymbolValidation.normalized}`
     : "未确认；输入框不会创建任务";
   const quantProjectionNextClick = quantProjectionDisplaySymbol
-    ? "确认代码后点击生成 3.0 量化推演；需要真实数据或模型解释时，再按人工确认流程推进"
+    ? "确认代码后点击生成 3.0 量化推演；按钮门控 Tushare-first POST task / worker 推进，DeepSeek 等 governed executor"
     : "先输入并确认股票代码，按钮启用后再点击生成 3.0 量化推演";
   const quantProjectionSubmitHint = quantProjectionDisplaySymbol
-    ? "点击按钮只创建本地量化推演记录；真实 Tushare / DeepSeek 补证继续走人工确认和后台任务血缘。"
+    ? "点击确认后创建 Tushare-first POST task / worker；DeepSeek 默认 skipped，需 governed executor 完成后再单独补。"
     : "先输入股票代码；仅输入不会创建 task，也不会调用 Tushare 或 DeepSeek。";
   const quantProjectionCacheSourceLabel =
     searchQuantProjectionReceipt.status ? "本地推演记录可用" : cache.status === "ready" ? "候选缓存可用" : "等待本地缓存";
@@ -492,7 +493,7 @@ export default function CandidateRadar() {
   const quantProjectionModelSourceLabel =
     searchQuantProjectionReceipt.model_execution_implemented === true ? "DeepSeek 解释执行已接入" : "等待手动验收任务";
   const quantProjectionTaskBoundary =
-    "当前只创建本地记录；live_light 补证也必须经 POST task / worker，不在页面渲染中直连 Tushare 或 DeepSeek";
+    "输入不触发外联；点击确认后只经 POST task / worker 后台运行，React 渲染不直连 Tushare 或 DeepSeek";
   const quantProjectionSourceState = [
     `本地缓存：${quantProjectionCacheSourceLabel}`,
     `Tushare 数据：${quantProjectionProviderSourceLabel}`,
@@ -509,8 +510,8 @@ export default function CandidateRadar() {
   const quantProjectionBlockedState = searchQuantProjectionReceipt.symbol_valid === false
     ? "输入代码未通过本地校验；不会创建真实 provider/model 补证"
     : searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true
-      ? "可进入人工确认补证；仍不自动外联"
-      : "真实数据/模型补证仍阻断在人工确认和 ledger 前";
+      ? "可创建按钮门控补证请求；render 仍不自动外联"
+      : "等待确认按钮创建 Tushare-first task；DeepSeek governed executor 未完成前保持 skipped";
   const quantProjectionTushareFirstState = searchQuantProjectionExecutionRequest.acceptance_scope_hash
     ? "可点击确认 Tushare-first 补证；只走 POST task，DeepSeek 保持 skipped"
     : "先完成本地推演、联动 dry-run 和 execution request 后启用";
@@ -589,7 +590,7 @@ export default function CandidateRadar() {
           />
         </PacketCard>
 
-        <PacketCard title="搜票量化推演" subtitle="输入代码后生成本地量化推演记录；live_light 只允许后台补证 task" status={String(searchQuantProjectionReceipt.status ?? "local_receipt")}>
+        <PacketCard title="搜票量化推演" subtitle="输入代码并确认后创建 Tushare-first 按钮门控 POST task / worker；DeepSeek governed executor 单独补" status={String(searchQuantProjectionReceipt.status ?? "local_receipt")}>
           <div className="actions">
             <input
               value={searchSymbol}
@@ -597,7 +598,7 @@ export default function CandidateRadar() {
               placeholder="002008.SZ 或 002008"
               aria-label="search quant projection symbol"
             />
-            <button disabled={!quantProjectionCanSubmit} onClick={launchQuantProjection}>生成 3.0 量化推演</button>
+            <button disabled={!quantProjectionCanSubmit} onClick={launchQuantProjection}>确认并生成 3.0 量化推演</button>
             <button onClick={launchQuantProjectionProviderModelAcceptance} disabled={!searchQuantProjectionExecutionRequest.acceptance_scope_hash}>确认 Tushare-first 补证</button>
           </div>
           <p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>
@@ -622,7 +623,7 @@ export default function CandidateRadar() {
           />
           <p>普通入口的 Tushare-first 按钮只在 execution request 有 scope hash 后启用；点击后只创建受控 POST task，DeepSeek 保持 skipped，不交易、不改 strategy action。</p>
           <p>最近任务只显示本地 FastAPI 返回的 task id 和安全步骤；结果成功后通过 GET cache 回放 packet / ledger，不在普通页面展开审计表。</p>
-          <p>一键生成量化投研图谱 当前只保存本地记录：校验股票代码，列出 Tushare / Factor / Next Session / DeepSeek / ECharts 待补证据；真实补证只走后台任务血缘。</p>
+          <p>确认后创建 Tushare-first 按钮门控 POST task / worker；Tushare 小全量数据写入 call_ledger；DeepSeek 保持 skipped，待 governed executor / model_ledger 后再展示缓存，React render 不直接外联。</p>
           <details className="developer-audit-details">
             <summary>搜票推演记录详情</summary>
             <p>标的: {String(searchQuantProjectionReceipt.symbol ?? "--")}；代码有效: {String(searchQuantProjectionReceipt.symbol_valid === true)}；可进入真实数据源/模型推演: {String(searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true)}</p>

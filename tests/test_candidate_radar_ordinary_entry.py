@@ -102,18 +102,36 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("确认代码后点击生成 3.0 量化推演", self.page)
         self.assertIn("quantProjectionSubmitHint", self.page)
         self.assertIn("仅输入不会创建 task，也不会调用 Tushare 或 DeepSeek", self.page)
-        self.assertIn("点击按钮只创建本地量化推演记录", self.page)
+        self.assertIn("点击确认后创建 Tushare-first POST task / worker", self.page)
+        self.assertIn("DeepSeek 默认 skipped，需 governed executor 完成后再单独补", self.page)
         self.assertIn('aria-live="polite"', self.page)
         quant_projection_start = self.page.index('title="搜票量化推演"')
         self.assertLess(
             self.page.index('label: "确认代码"', quant_projection_start),
             self.page.index('label: "任务边界"', quant_projection_start),
         )
-        self.assertIn("当前只创建本地记录", self.page)
-        self.assertIn("live_light 补证也必须经 POST task / worker", self.page)
-        self.assertIn("不在页面渲染中直连 Tushare 或 DeepSeek", self.page)
-        self.assertIn("真实补证只走后台任务血缘", self.page)
+        self.assertIn("输入不触发外联；点击确认后只经 POST task / worker 后台运行", self.page)
+        self.assertIn("React 渲染不直连 Tushare 或 DeepSeek", self.page)
+        self.assertIn("Tushare 小全量数据写入 call_ledger", self.page)
+        self.assertIn("待 governed executor / model_ledger 后再展示缓存", self.page)
+        self.assertIn("DeepSeek 保持 skipped", self.page)
         self.assertIn("推演解释只整理已有证据；不覆盖价格、持仓、因子、操作区或交易策略", self.page)
+
+    def test_ordinary_quant_projection_submit_is_tushare_first_and_model_skipped(self):
+        submit_start = self.page.index("const launchQuantProjection = () =>")
+        submit_end = self.page.index("const launchQuantProjectionAcceptanceDryRun = () =>", submit_start)
+        submit_slice = self.page[submit_start:submit_end]
+
+        self.assertIn("postCandidateRadarQuantProjection({", submit_slice)
+        self.assertIn('scan_mode: "search_quant_projection"', submit_slice)
+        self.assertIn("symbol: normalizeAshareSymbolInput(searchSymbol).normalized", submit_slice)
+        self.assertIn("include_tushare: true", submit_slice)
+        self.assertIn("include_deepseek: false", submit_slice)
+        self.assertIn("user_approved: true", submit_slice)
+        self.assertIn('requested_by: "candidate_radar_page"', submit_slice)
+        self.assertNotIn("operator_approved", submit_slice)
+        self.assertNotIn("quant-projection-provider-model-acceptance", submit_slice)
+
 
     def test_candidate_radar_page_does_not_embed_provider_or_trade_calls(self):
         forbidden_fragments = (
