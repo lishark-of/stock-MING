@@ -720,6 +720,9 @@ export default function CandidateRadar() {
               </button>
             </div>
             <p>该按钮只在 execution request 有 scope hash 后可点；它通过 POST task 触发 Tushare light provider ledger，DeepSeek 保持 skipped，仍不交易、不改 strategy action。</p>
+            <p>点击后本区域会显示任务创建记录和状态；成功后自动刷新本地 cache，下一轮 GET 只回放 search_quant_provider_model_acceptance_receipt / call_ledger / packet，不在 React render 里补调 provider。</p>
+            <TaskLaunchReceipt receipt={taskReceipt} />
+            <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
             <DataLineageTable rows={objectRow(searchQuantProjectionExecutionRequest)} />
             <DataLineageTable rows={searchQuantProjectionExecutionRequestRows} />
           </PacketCard>
