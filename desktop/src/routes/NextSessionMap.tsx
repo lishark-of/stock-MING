@@ -161,6 +161,13 @@ export default function NextSessionMap() {
   ].filter(Boolean).join("；") || "暂无最近可用缓存";
   const nextSessionTaskBoundary = "GET cache 只读；生成或审查都必须走按钮门控 POST task；React 渲染不直连 Tushare 或 DeepSeek，不改 operation_zones";
   const nextSessionResearchOnlyLabel = "次日图谱只解释缓存场景；不是买卖指令，不真实交易、不下单、不改 strategy action";
+  const nextSessionChartReviewOrder = chartSummary.has_drawable_data === true
+    ? "先看图表路径、参考线和操作区，再看缺少证据；工程审计在开发详情"
+    : "先点击生成任务或查看缓存状态；有图表后再按路径、参考线、操作区复核";
+  const nextSessionReplayOrigin = chartSummary.is_exact_next_session_packet === true
+    ? "来自精确 next-session cache；可从下一票雷达/量化推演回放到本页"
+    : "来自 legacy/cache 投影或暂无精确 packet；只作降级预览";
+  const nextSessionOperationZoneBoundary = "operation_zones 只表示条件区间和复核提示；不是买卖指令，不写交易动作，不改 strategy action";
   const scenarioRows = rowsFromArray(chartPayload?.scenario_series).map((row) => ({
     scenario_key: row.scenario_key ?? row.scenario_name,
     scenario_name: row.scenario_name,
@@ -199,6 +206,9 @@ export default function NextSessionMap() {
           { label: "degraded", value: nextSessionDegradedSourceLabel, tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn" },
           { label: "缺少证据", value: nextSessionMissingEvidence, tone: nextSessionMissingEvidence === "当前摘要未标记缺口" ? "good" : "warn" },
           { label: "最近可用缓存", value: nextSessionLastCache },
+          { label: "查看顺序", value: nextSessionChartReviewOrder },
+          { label: "回放来源", value: nextSessionReplayOrigin, tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn" },
+          { label: "操作区边界", value: nextSessionOperationZoneBoundary, tone: "good" },
           { label: "任务边界", value: nextSessionTaskBoundary, tone: "good" },
           { label: "仅供研究", value: nextSessionResearchOnlyLabel }
         ]}
@@ -208,6 +218,7 @@ export default function NextSessionMap() {
         <button onClick={launchTask}>生成任务</button>
       </div>
       <p className="risk-note">摘要里的查看缓存只读取本地 GET cache；生成任务只创建按钮门控 POST task，不调用 Tushare 或 DeepSeek，不写交易动作。</p>
+      <p className="risk-note">普通用户先按“图表路径 -&gt; 参考线 -&gt; 操作区 -&gt; 缺少证据”复核；operation_zones 只是条件区间，不是买卖或下单指令。</p>
     </PacketCard>
 
     <PacketCard title="次日操作图谱" subtitle="缓存查看不触发外部刷新" status={String(packet.status ?? "cache")}>
