@@ -343,6 +343,13 @@ export default function CommandCenterHome() {
   const dailyCommandLauncherState = desktopLauncherContract.launcher_executable === true
     ? "一键启动入口可用；启动器会等 FastAPI 和页面 ready"
     : "一键启动入口待检查；可先使用本地启动器恢复";
+  const dailyCommandStartupRecoveryLabel = error
+    ? "打开桌面壳预检，按本地快捷入口重启"
+    : desktopLauncherContract.launcher_executable === true
+      ? "本地快捷入口可用；需要重启时去桌面壳预检"
+      : "去桌面壳预检查看启动器缺口";
+  const dailyCommandStartupBoundary =
+    "首页不启动服务；一键启动只由本机快捷入口执行，状态来自 health/preflight cache";
 
   const launchLiveBootstrap = () => {
     const mode = String(bootstrapStatus.mode ?? "cache_only");
@@ -417,6 +424,8 @@ export default function CommandCenterHome() {
             { label: "下一步", value: dailyCommandNextClick },
             { label: "本地联通", value: dailyCommandConnectionState, tone: error ? "warn" : health.status === "ok" ? "good" : "warn" },
             { label: "一键启动", value: dailyCommandLauncherState, tone: desktopLauncherContract.launcher_executable === true ? "good" : "warn" },
+            { label: "启动恢复", value: dailyCommandStartupRecoveryLabel, tone: error || desktopLauncherContract.launcher_executable !== true ? "warn" : "good" },
+            { label: "启动边界", value: dailyCommandStartupBoundary, tone: "good" },
             { label: "cache", value: dailyCommandCacheSourceLabel },
             { label: "Tushare", value: dailyCommandTushareSourceLabel },
             { label: "DeepSeek", value: dailyCommandDeepSeekSourceLabel },
@@ -433,6 +442,7 @@ export default function CommandCenterHome() {
           ]}
         />
         <p className="risk-note">本地联通状态只读来自 FastAPI health 和 desktop preflight cache；不会启动服务、不会写配置、不会调用 provider/model。</p>
+        <p className="risk-note">如果本地联通异常，先去 <a href="#desktop">桌面壳预检</a> 查看本地快捷入口；这个跳转只切换页面，不启动 FastAPI/Vite/浏览器。</p>
         <p className="risk-note">工程审计明细默认收起；完整 call ledger、release gate、runtime mode 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
       <details className="developer-audit-details">
