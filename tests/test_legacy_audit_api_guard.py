@@ -53,6 +53,7 @@ class LegacyAuditApiGuardTests(unittest.TestCase):
         self.assertEqual(entrance_audit["legacy_bug_ux_keep_count"], 0)
         self.assertFalse(entrance_audit["ordinary_entrance_acceptance_complete"])
         self.assertFalse(entrance_audit["legacy_modules_enter_ordinary_flow_without_audit"])
+        self.assertFalse(entrance_audit["legacy_module_entry_allowed_before_replacement_evidence"])
         self.assertEqual(
             entrance_audit["legacy_bug_ux_direct_evidence_pending_count"],
             entrance_audit["legacy_bug_ux_module_row_count"],
@@ -62,11 +63,19 @@ class LegacyAuditApiGuardTests(unittest.TestCase):
             entrance_audit["legacy_bug_ux_module_row_count"],
         )
         self.assertEqual(
+            entrance_audit["legacy_module_ordinary_entry_blocked_count"],
+            entrance_audit["legacy_bug_ux_module_row_count"],
+        )
+        self.assertEqual(entrance_audit["replacement_iteration_allowed_count"], 6)
+        self.assertEqual(
             {row["entrance"] for row in ordinary_rows},
             {"daily_command_center", "stock_quant_projection", "candidate_radar"},
         )
         self.assertTrue(all(row["classification"] == "REDESIGN" for row in ordinary_rows))
         self.assertTrue(all(row["ordinary_page_should_show_summary_only"] for row in ordinary_rows))
+        self.assertTrue(all(row["replacement_iteration_allowed"] for row in ordinary_rows))
+        self.assertTrue(all(row["ordinary_entry_promotion_requires_direct_evidence"] for row in ordinary_rows))
+        self.assertTrue(all(not row["legacy_module_ordinary_entry_allowed"] for row in ordinary_rows))
 
         for row in module_rows:
             self.assertNotEqual(row["classification"], "KEEP")
@@ -75,8 +84,19 @@ class LegacyAuditApiGuardTests(unittest.TestCase):
                 "seed_only_direct_evidence_pending_before_KEEP",
             )
             self.assertTrue(row["keep_upgrade_blocked_without_direct_evidence"])
+            self.assertFalse(row["legacy_module_ordinary_entry_allowed"])
+            self.assertFalse(row["ordinary_flow_entry_allowed"])
             self.assertEqual(row["ordinary_entrance_placement"], row["target_surface"])
             self.assertEqual(row["frozen_legacy_path"], row["legacy_ux_or_bug_path_not_migrated"])
+            if row["classification"] == "REDESIGN":
+                self.assertTrue(row["replacement_iteration_allowed"])
+                self.assertEqual(row["ordinary_entry_blocker"], "legacy_module_blocked_replacement_iteration_only")
+            else:
+                self.assertFalse(row["replacement_iteration_allowed"])
+                self.assertEqual(
+                    row["ordinary_entry_blocker"],
+                    "legacy_module_admin_debug_or_retired_no_ordinary_entry",
+                )
 
         intake = packet["legacy_audit_first_round_intake"]
         intake_rows = packet["legacy_audit_first_round_intake_rows"]

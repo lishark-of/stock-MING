@@ -552,15 +552,30 @@ def _ordinary_entrance_acceptance_audit() -> dict[str, Any]:
     }
     direct_evidence_pending_label = "seed_only_direct_evidence_pending_before_KEEP"
     for row in legacy_module_rows:
+        replacement_iteration_allowed = row["classification"] == "REDESIGN"
         row["direct_ux_bug_evidence_source"] = direct_evidence_pending_label
         row["ordinary_entrance_placement"] = row["target_surface"]
         row["frozen_legacy_path"] = row["legacy_ux_or_bug_path_not_migrated"]
         row["keep_upgrade_blocked_without_direct_evidence"] = True
+        row["legacy_module_ordinary_entry_allowed"] = False
+        row["replacement_iteration_allowed"] = replacement_iteration_allowed
+        row["ordinary_flow_entry_allowed"] = False
+        row["ordinary_entry_blocker"] = (
+            "legacy_module_blocked_replacement_iteration_only"
+            if replacement_iteration_allowed
+            else "legacy_module_admin_debug_or_retired_no_ordinary_entry"
+        )
     direct_evidence_pending_count = sum(
         1 for row in legacy_module_rows if row["direct_ux_bug_evidence_source"] == direct_evidence_pending_label
     )
     keep_upgrade_blocked_count = sum(
         1 for row in legacy_module_rows if row["keep_upgrade_blocked_without_direct_evidence"] is True
+    )
+    legacy_module_ordinary_entry_blocked_count = sum(
+        1 for row in legacy_module_rows if row["legacy_module_ordinary_entry_allowed"] is False
+    )
+    replacement_iteration_allowed_count = sum(
+        1 for row in legacy_module_rows if row["replacement_iteration_allowed"] is True
     )
     rows = [
         {
@@ -594,6 +609,9 @@ def _ordinary_entrance_acceptance_audit() -> dict[str, Any]:
             ),
             "engineering_details_destination": "Settings / Developer / Audit",
             "ordinary_page_should_show_summary_only": True,
+            "replacement_iteration_allowed": True,
+            "legacy_module_ordinary_entry_allowed": False,
+            "ordinary_entry_promotion_requires_direct_evidence": True,
         },
         {
             "entrance": "stock_quant_projection",
@@ -625,6 +643,9 @@ def _ordinary_entrance_acceptance_audit() -> dict[str, Any]:
             ),
             "engineering_details_destination": "Settings / Developer / Audit",
             "ordinary_page_should_show_summary_only": True,
+            "replacement_iteration_allowed": True,
+            "legacy_module_ordinary_entry_allowed": False,
+            "ordinary_entry_promotion_requires_direct_evidence": True,
         },
         {
             "entrance": "candidate_radar",
@@ -656,6 +677,9 @@ def _ordinary_entrance_acceptance_audit() -> dict[str, Any]:
             ),
             "engineering_details_destination": "Settings / Developer / Audit",
             "ordinary_page_should_show_summary_only": True,
+            "replacement_iteration_allowed": True,
+            "legacy_module_ordinary_entry_allowed": False,
+            "ordinary_entry_promotion_requires_direct_evidence": True,
         },
     ]
     commit_questions = [
@@ -680,7 +704,10 @@ def _ordinary_entrance_acceptance_audit() -> dict[str, Any]:
         "legacy_bug_ux_retire_count": classification_counts["RETIRE"],
         "legacy_bug_ux_direct_evidence_pending_count": direct_evidence_pending_count,
         "legacy_bug_ux_keep_upgrade_blocked_count": keep_upgrade_blocked_count,
+        "legacy_module_ordinary_entry_blocked_count": legacy_module_ordinary_entry_blocked_count,
+        "replacement_iteration_allowed_count": replacement_iteration_allowed_count,
         "legacy_modules_enter_ordinary_flow_without_audit": False,
+        "legacy_module_entry_allowed_before_replacement_evidence": False,
         "engineering_details_moved_to_settings_developer_audit": True,
         "commit_questions": commit_questions,
         "rows": rows,
