@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getBootstrapStatus, getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionPromotionReview, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
+import { getBootstrapStatus, getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionPromotionReview, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuantProjectionProviderModelAcceptance, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -198,6 +198,17 @@ export default function CandidateRadar() {
       scan_mode: "quant_projection_execution_request",
       operator_approved: true,
       acceptance_scope_hash: String(searchQuantProjectionAcceptanceDryRun.acceptance_scope_hash ?? ""),
+      requested_by: "candidate_radar_page"
+    }).then((res) => {
+      setTaskReceipt(res);
+      if (res.ok) setTaskId(res.data.task_id);
+    });
+  const launchQuantProjectionProviderModelAcceptance = () =>
+    void postCandidateRadarQuantProjectionProviderModelAcceptance({
+      scan_mode: "quant_projection_provider_model_acceptance",
+      operator_approved: true,
+      acceptance_scope_hash: String(searchQuantProjectionExecutionRequest.acceptance_scope_hash ?? ""),
+      include_deepseek: false,
       requested_by: "candidate_radar_page"
     }).then((res) => {
       setTaskReceipt(res);
@@ -703,6 +714,12 @@ export default function CandidateRadar() {
             <p>factor / next / echarts refreshed: {String(searchQuantProjectionExecutionRequest.factor_refresh_executed === true)} / {String(searchQuantProjectionExecutionRequest.next_session_refresh_executed === true)} / {String(searchQuantProjectionExecutionRequest.echarts_payload_refreshed === true)}</p>
             <p>tushare_called / deepseek_called / github_called: {String(searchQuantProjectionExecutionRequest.tushare_called === true)} / {String(searchQuantProjectionExecutionRequest.deepseek_called === true)} / {String(searchQuantProjectionExecutionRequest.github_called === true)}</p>
             <p>这个 execution request 只绑定 dry-run scope hash 和用户确认；它不创建真实 provider/model task，不调用 Tushare/DeepSeek，不刷新图谱，不生成交易指令。</p>
+            <div className="actions">
+              <button onClick={launchQuantProjectionProviderModelAcceptance} disabled={!searchQuantProjectionExecutionRequest.acceptance_scope_hash}>
+                确认 Tushare-first 补证
+              </button>
+            </div>
+            <p>该按钮只在 execution request 有 scope hash 后可点；它通过 POST task 触发 Tushare light provider ledger，DeepSeek 保持 skipped，仍不交易、不改 strategy action。</p>
             <DataLineageTable rows={objectRow(searchQuantProjectionExecutionRequest)} />
             <DataLineageTable rows={searchQuantProjectionExecutionRequestRows} />
           </PacketCard>
