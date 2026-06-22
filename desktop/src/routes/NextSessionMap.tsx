@@ -141,6 +141,26 @@ export default function NextSessionMap() {
   const payloadCallLedger = (packet.call_ledger as Array<Record<string, unknown>> | undefined) ?? [];
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((packet.warnings as Array<unknown> | undefined) ?? []);
+  const nextSessionStatusLabel = chartSummary.has_drawable_data === true ? "可查看缓存图谱" : "等待缓存图谱";
+  const nextSessionNextClick = chartSummary.has_drawable_data === true ? "先查看图谱；需要刷新时再点击生成任务" : "点击生成任务创建按钮门控图谱任务";
+  const nextSessionCacheSourceLabel = packet.status === "cache_missing" ? "暂无缓存" : String(packet.cache_source ?? "本地缓存");
+  const nextSessionTushareSourceLabel = chartSummary.uses_real_daily_close === true ? "真实 daily close 已在本地缓存" : "待 Tushare/cache 补证";
+  const nextSessionDeepSeekSourceLabel = chartPayload?.deepseek_status === "success" ? "已有本地解释记录" : "未调用或待 governed executor";
+  const nextSessionPendingSourceLabel = Number(productionStageScope.pending_stage_count ?? 0) > 0 ? "生产替代证据仍有 pending" : "当前图谱摘要未标记 pending";
+  const nextSessionDegradedSourceLabel = chartSummary.is_exact_next_session_packet === true ? "精确 packet 可用" : "非精确 packet 时只显示 legacy/cache 投影";
+  const nextSessionMissingEvidence = [
+    Number(replacementActivation.missing_evidence_count ?? 0) > 0 ? "替代激活证据未齐" : "",
+    browserQaEvidence.next_browser_qa_evidence_ready === true ? "" : "浏览器视觉 QA 未完成",
+    streamlitParityReview.streamlit_parity_complete === true ? "" : "retained signal/capability coverage 未完成",
+    chartSummary.uses_real_daily_close === true ? "" : "真实 close 证据待确认"
+  ].filter(Boolean).join("；") || "当前摘要未标记缺口";
+  const nextSessionLastCache = [
+    String(packet.cache_source ?? "cache source unknown"),
+    chartSummary.has_drawable_data === true ? `情景=${String(chartSummary.scenario_series_count ?? 0)} / 参考线=${String(chartSummary.reference_line_count ?? 0)} / 操作区=${String(chartSummary.operation_zone_count ?? 0)}` : "",
+    latestCloseAnchor.price ? `latest close=${String(latestCloseAnchor.price)}` : ""
+  ].filter(Boolean).join("；") || "暂无最近可用缓存";
+  const nextSessionTaskBoundary = "GET cache 只读；生成或审查都必须走按钮门控 POST task；React 渲染不直连 Tushare 或 DeepSeek，不改 operation_zones";
+  const nextSessionResearchOnlyLabel = "次日图谱只解释缓存场景；不是买卖指令，不真实交易、不下单、不改 strategy action";
   const scenarioRows = rowsFromArray(chartPayload?.scenario_series).map((row) => ({
     scenario_key: row.scenario_key ?? row.scenario_name,
     scenario_name: row.scenario_name,
@@ -160,7 +180,8 @@ export default function NextSessionMap() {
   const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
 
   return (
-    <PacketCard title="次日操作图谱" subtitle="缓存查看不触发外部刷新" status={String(packet.status ?? "cache")}>
+    <>
+    <PacketCard title="普通用户次日图谱摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={nextSessionStatusLabel}>
       <PageStateBanner
         loading={loading}
         error={error}
@@ -168,13 +189,28 @@ export default function NextSessionMap() {
         emptyTitle="暂无已缓存次日操作图谱"
         emptyDetail={cacheMissingMessage || "请在允许按钮任务的情况下点击生成任务；查看缓存不会触发 Tushare。"}
       />
+      <MetricGrid
+        items={[
+          { label: "主下一步", value: nextSessionNextClick },
+          { label: "cache", value: nextSessionCacheSourceLabel },
+          { label: "Tushare", value: nextSessionTushareSourceLabel },
+          { label: "DeepSeek", value: nextSessionDeepSeekSourceLabel },
+          { label: "pending", value: nextSessionPendingSourceLabel, tone: Number(productionStageScope.pending_stage_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "degraded", value: nextSessionDegradedSourceLabel, tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn" },
+          { label: "缺少证据", value: nextSessionMissingEvidence, tone: nextSessionMissingEvidence === "当前摘要未标记缺口" ? "good" : "warn" },
+          { label: "最近可用缓存", value: nextSessionLastCache },
+          { label: "任务边界", value: nextSessionTaskBoundary, tone: "good" },
+          { label: "仅供研究", value: nextSessionResearchOnlyLabel }
+        ]}
+      />
       <div className="actions">
         <button onClick={refreshCache}>查看缓存</button>
         <button onClick={launchTask}>生成任务</button>
-        <button onClick={reviewBrowserQa}>审查本地 QA</button>
-        <button onClick={reviewStreamlitParity}>审查信号/能力覆盖</button>
-        <button onClick={reviewProductionPromotion}>审查 promotion</button>
       </div>
+      <p className="risk-note">摘要里的查看缓存只读取本地 GET cache；生成任务只创建按钮门控 POST task，不调用 Tushare 或 DeepSeek，不写交易动作。</p>
+    </PacketCard>
+
+    <PacketCard title="次日操作图谱" subtitle="缓存查看不触发外部刷新" status={String(packet.status ?? "cache")}>
       <TaskLaunchReceipt receipt={taskReceipt} />
       <TaskLaunchReceipt receipt={browserQaReceipt} />
       <TaskLaunchReceipt receipt={streamlitParityReceipt} />
@@ -226,6 +262,14 @@ export default function NextSessionMap() {
       />
       <p className="risk-note">{String(packet.summary ?? "当前只读取 cache；无缓存时不会触发 Tushare。")}</p>
       <NextSessionChart payload={chartPayload} />
+      <details className="developer-audit-details">
+        <summary>开发 / 审计指标</summary>
+        <p className="risk-note">普通用户先看上方次日图谱摘要和图表；QA、coverage、promotion、cache ledger 和原始 packet 默认收起。</p>
+        <div className="actions">
+          <button onClick={reviewBrowserQa}>审查本地 QA</button>
+          <button onClick={reviewStreamlitParity}>审查信号/能力覆盖</button>
+          <button onClick={reviewProductionPromotion}>审查 promotion</button>
+        </div>
       <h3>ECharts 图表摘要</h3>
       <DataLineageTable rows={[chartSummary]} />
       <h3>ECharts 交互成熟度审计</h3>
@@ -306,6 +350,8 @@ export default function NextSessionMap() {
       <DataLineageTable rows={warningRows} />
       {legacy?.available ? <JsonDetails title="legacy projection 摘要" data={legacy} /> : null}
       <JsonDetails title="次日图谱 cache packet" data={packet} />
+      </details>
     </PacketCard>
+    </>
   );
 }
