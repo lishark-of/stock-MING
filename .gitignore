@@ -25,6 +25,9 @@ desktop/dist/
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
 
+# Local Codex handoff scratch notes
+docs/candidate_radar_tushare_first_handoff.md
+
 # Local secrets
 .streamlit/secrets.toml
 .streamlit/secrets.toml.save
