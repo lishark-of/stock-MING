@@ -153,14 +153,22 @@ class HandoffLegacyAuditIntakeTests(unittest.TestCase):
 
     def test_long_term_goal_priority_keeps_remote_ci_explicitly_gated(self):
         for priority_key in (
-            "fix_push_gate_ci_evidence",
-            "legacy_bug_ux_audit_for_streamlit_ordinary_workflows",
-            "rebuild_ltg13_candidate_radar_user_usable_workflow",
-            "searched_symbol_to_generate_3_0_quant_projection",
-            "show_provider_model_cache_pending_state_on_page",
-            "move_engineering_audit_tables_out_of_ordinary_flow",
+            "p0_one_click_startup_frontend_backend_connection",
+            "p1_confirmed_stock_code_tushare_first_data_chain",
+            "p2_small_data_write_cache_ledger_packet",
+            "p3_interpretable_candidate_radar_quant_projection_next_session_map",
+            "p4_demote_engineering_audit_noise_from_ordinary_pages",
+            "p5_deepseek_governed_executor_separate_nonblocking",
+            "p6_return_to_14_ltg_direct_evidence_strict_closeout",
         ):
             self.assertIn(priority_key, self.long_term_goals)
+        self.assertIn("Command Center 3.0 使用者可用化最短路径", self.long_term_goals)
+        self.assertIn("not active `14 LTG strict closeout`", self.long_term_goals)
+        self.assertIn("usable_path_progress_must_not_be_reported_as_all_14_ltg_complete", self.long_term_goals)
+        self.assertIn(
+            "p5_governed_executor_must_not_block_tushare_first_factor_light_or_next_session_maps",
+            self.long_term_goals,
+        )
         self.assertIn(
             "P0 priority does not by itself authorize GitHub/Actions inspection or push",
             self.long_term_goals,

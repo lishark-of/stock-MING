@@ -1484,17 +1484,28 @@ class DeepSeekModelConfigTests(unittest.TestCase):
         self.assertEqual(
             contract["priority_order"],
             [
-                "fix_push_gate_ci_evidence",
-                "legacy_bug_ux_audit_for_streamlit_ordinary_workflows",
-                "rebuild_ltg13_candidate_radar_user_usable_workflow",
-                "searched_symbol_to_generate_3_0_quant_projection",
-                "show_provider_model_cache_pending_state_on_page",
-                "move_engineering_audit_tables_out_of_ordinary_flow",
+                "p0_one_click_startup_frontend_backend_connection",
+                "p1_confirmed_stock_code_tushare_first_data_chain",
+                "p2_small_data_write_cache_ledger_packet",
+                "p3_interpretable_candidate_radar_quant_projection_next_session_map",
+                "p4_demote_engineering_audit_noise_from_ordinary_pages",
+                "p5_deepseek_governed_executor_separate_nonblocking",
+                "p6_return_to_14_ltg_direct_evidence_strict_closeout",
             ],
         )
         self.assertEqual(
             contract["priority_rule"],
-            "future_migration_slices_follow_current_priority_order_or_name_blocker_exception",
+            "future_migration_slices_follow_usable_path_p0_to_p6_or_name_blocker_exception",
+        )
+        self.assertEqual(contract["current_execution_target"], "command_center_3_user_usable_shortest_path")
+        self.assertEqual(contract["strict_closeout_status"], "paused_until_user_usable_path_is_stable")
+        self.assertEqual(
+            contract["p0_to_p5_not_ltg_completion_rule"],
+            "usable_path_progress_must_not_be_reported_as_all_14_ltg_complete",
+        )
+        self.assertEqual(
+            contract["deepseek_nonblocking_rule"],
+            "p5_governed_executor_must_not_block_tushare_first_factor_light_or_next_session_maps",
         )
         self.assertEqual(
             contract["ci_rule"],
@@ -2062,16 +2073,6 @@ class DeepSeekModelConfigTests(unittest.TestCase):
             self.assertIn("what_legacy_bug_or_patchwork_path_was_not_migrated", text)
             self.assertIn("what_became_simpler_for_nontechnical_user", text)
             self.assertIn("which_real_blocker_was_reduced", text)
-            self.assertIn("fix_push_gate_ci_evidence", text)
-            self.assertIn("legacy_bug_ux_audit_for_streamlit_ordinary_workflows", text)
-            self.assertIn("rebuild_ltg13_candidate_radar_user_usable_workflow", text)
-            self.assertIn("searched_symbol_to_generate_3_0_quant_projection", text)
-            self.assertIn("show_provider_model_cache_pending_state_on_page", text)
-            self.assertIn("move_engineering_audit_tables_out_of_ordinary_flow", text)
-            self.assertIn(
-                "future_migration_slices_follow_current_priority_order_or_name_blocker_exception",
-                text,
-            )
             self.assertIn(
                 "remote_ci_unverified_remains_release_blocker_until_current_green_or_reviewed_logs",
                 text,
@@ -2171,6 +2172,35 @@ class DeepSeekModelConfigTests(unittest.TestCase):
             self.assertIn("all_details_hidden_without_audit_link", text)
             self.assertIn("audit_placement_display_never_creates_tasks", text)
             self.assertIn("ordinary_audit_placement_contract_is_not_production_evidence", text)
+
+        self.assertIn("Command Center 3.0 使用者可用化最短路径", long_term_goals)
+        self.assertIn("not active `14 LTG strict closeout`", long_term_goals)
+        self.assertIn("`P0` | One-click startup and frontend/backend auto connection", long_term_goals)
+        self.assertIn("`P1` | Confirmed stock-code button triggers the Tushare-first data chain", long_term_goals)
+        self.assertIn("`P2` | Small data writes to cache / ledger / packet", long_term_goals)
+        self.assertIn(
+            "`P3` | Candidate Radar, Quant Projection, and Next Session map show interpretable results",
+            long_term_goals,
+        )
+        self.assertIn("`P4` | Ordinary user pages hide or demote engineering audit noise", long_term_goals)
+        self.assertIn("`P5` | DeepSeek governed executor is completed separately", long_term_goals)
+        self.assertIn("`P6` | Return to 14 LTG direct evidence / strict closeout", long_term_goals)
+        self.assertIn("p0_one_click_startup_frontend_backend_connection", long_term_goals)
+        self.assertIn("p1_confirmed_stock_code_tushare_first_data_chain", long_term_goals)
+        self.assertIn("p2_small_data_write_cache_ledger_packet", long_term_goals)
+        self.assertIn("p3_interpretable_candidate_radar_quant_projection_next_session_map", long_term_goals)
+        self.assertIn("p4_demote_engineering_audit_noise_from_ordinary_pages", long_term_goals)
+        self.assertIn("p5_deepseek_governed_executor_separate_nonblocking", long_term_goals)
+        self.assertIn("p6_return_to_14_ltg_direct_evidence_strict_closeout", long_term_goals)
+        self.assertIn(
+            "future_migration_slices_follow_usable_path_p0_to_p6_or_name_blocker_exception",
+            long_term_goals,
+        )
+        self.assertIn("usable_path_progress_must_not_be_reported_as_all_14_ltg_complete", long_term_goals)
+        self.assertIn(
+            "p5_governed_executor_must_not_block_tushare_first_factor_light_or_next_session_maps",
+            long_term_goals,
+        )
 
         self.assertIn("get_command_center_runtime_mode_state()", long_term_goals)
         self.assertIn("runtime_mode_policy_rows", migration_map)
