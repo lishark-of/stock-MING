@@ -10,7 +10,11 @@ class BackendOfflineNoticeGuidanceTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("本地后端未连接", notice)
-        self.assertIn("下一步：请使用桌面快捷方式或本地启动器重新打开 Command Center 3.0", notice)
+        self.assertIn('const COMMAND_CENTER_3_LAUNCHER_PATH = "scripts/start_command_center_3.command"', notice)
+        self.assertIn('const COMMAND_CENTER_3_DESKTOP_SHORTCUT = "stock-MING Command Center 3.command"', notice)
+        self.assertIn("下一步：请双击桌面快捷方式", notice)
+        self.assertIn("{COMMAND_CENTER_3_DESKTOP_SHORTCUT}", notice)
+        self.assertIn("{COMMAND_CENTER_3_LAUNCHER_PATH}", notice)
         self.assertIn("启动器会等待 FastAPI 和页面都 ready 后才打开入口", notice)
         self.assertIn("当前画面只显示离线保护状态", notice)
         self.assertIn("连接地址：{apiBase}", notice)
