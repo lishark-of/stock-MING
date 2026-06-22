@@ -381,6 +381,8 @@ export default function CommandCenterHome() {
     `次日图谱：${String(next.status ?? "等待缓存")}`,
     `风险：${String(riskCounts?.active_risk_count ?? riskCounts?.risk_count ?? 0)} 项`
   ].join(" / ");
+  const dailyCommandResultLocation =
+    "结果位置：今日作战台看总览，下一票雷达看候选，股票量化推演看单票结果，次日图谱看路径；入口都只读跳转";
   const dailyCommandMissingDataBoundary =
     "缺数据先看 pending / 缺少证据；不能把空缓存当成无风险，也不能当成生产验收完成";
 
@@ -452,6 +454,7 @@ export default function CommandCenterHome() {
             { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
             { label: "今日查看顺序", value: dailyCommandReviewOrder, tone: error ? "warn" : "good" },
             { label: "今日结果组成", value: dailyCommandResultComposition },
+            { label: "今日结果位置", value: dailyCommandResultLocation, tone: "good" },
             { label: "cache", value: dailyCommandCacheSourceLabel },
             { label: "Tushare", value: dailyCommandTushareSourceLabel },
             { label: "DeepSeek", value: dailyCommandDeepSeekSourceLabel },
@@ -480,6 +483,7 @@ export default function CommandCenterHome() {
           <a href="#desktop" aria-label="open one click startup preflight from daily command">查看一键启动预检</a>
         </div>
         <p className="risk-note">今日先按“最近缓存/数据健康 → 下一票雷达 → 股票量化推演”复核；缺数据就看 pending 和缺少证据，不把空结果当成无风险。</p>
+        <p className="risk-note">{dailyCommandResultLocation}</p>
         <p className="risk-note">如果本地联通异常，先去 <a href="#desktop">桌面壳预检</a> 查看本地快捷入口；这个跳转只切换页面，不启动 FastAPI/Vite/浏览器。</p>
         <p className="risk-note">这些入口链接只切换本地页面；不会创建 task、调用 Tushare/DeepSeek/GitHub、写 cache/config 或改变交易策略。</p>
         <p className="risk-note">live_light 补证入口下沉在开发详情；普通路径只看本地缓存、雷达和量化入口。</p>
