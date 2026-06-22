@@ -21,12 +21,15 @@ STREAMLIT_ORDINARY_WORKFLOW_PARITY_REVIEW_PACKET_KEY = (
 STREAMLIT_FALLBACK_RETIREMENT_REVIEW_PACKET_KEY = (
     "command_center_3_streamlit_fallback_retirement_review_packet"
 )
+LEGACY_AUDIT_OBSERVATION_DRY_RUN_PACKET_KEY = "command_center_3_legacy_audit_observation_dry_run_packet"
 STREAMLIT_ORDINARY_WORKFLOW_PARITY_REVIEW_TASK_TYPE = "run_streamlit_ordinary_workflow_parity_review"
 STREAMLIT_FALLBACK_RETIREMENT_REVIEW_TASK_TYPE = "run_streamlit_fallback_retirement_review"
+LEGACY_AUDIT_OBSERVATION_DRY_RUN_TASK_TYPE = "run_legacy_audit_observation_dry_run"
 STREAMLIT_ORDINARY_WORKFLOW_PARITY_REVIEW_SCHEMA_VERSION = (
     "streamlit_ordinary_workflow_parity_review.v1"
 )
 STREAMLIT_FALLBACK_RETIREMENT_REVIEW_SCHEMA_VERSION = "streamlit_fallback_retirement_review.v1"
+LEGACY_AUDIT_OBSERVATION_DRY_RUN_SCHEMA_VERSION = "legacy_audit_observation_dry_run.v1"
 STREAMLIT_RETIREMENT_DURABLE_EVIDENCE_SCHEMA_VERSION = "streamlit_retirement_durable_evidence_recipe.v1"
 ORDINARY_ENTRANCE_ACCEPTANCE_SCHEMA_VERSION = "ordinary_entrance_acceptance_audit.v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -767,6 +770,179 @@ def _legacy_audit_first_round_intake_status() -> tuple[dict[str, Any], list[dict
         ],
     }
     return summary, rows
+
+
+def _sanitize_legacy_audit_observation_payload(payload: Any) -> dict[str, Any]:
+    raw = payload if isinstance(payload, dict) else {}
+    return {
+        "schema_version": LEGACY_AUDIT_OBSERVATION_DRY_RUN_SCHEMA_VERSION,
+        "workflow_group": _safe_text(raw.get("workflow_group"), limit=160),
+        "user_observation": _safe_text(raw.get("user_observation"), limit=1000),
+        "legacy_ux_bug_or_patchwork": _safe_text(raw.get("legacy_ux_bug_or_patchwork"), limit=1000),
+        "data_lineage_observation": _safe_text(raw.get("data_lineage_observation"), limit=1000),
+        "replacement_user_path": _safe_text(raw.get("replacement_user_path"), limit=400),
+        "frozen_legacy_path": _safe_text(raw.get("frozen_legacy_path"), limit=400),
+        "evidence_attachment": _safe_text(raw.get("evidence_attachment"), limit=400),
+        "evidence_attachment_type": _safe_text(raw.get("evidence_attachment_type"), limit=120),
+        "requested_status": _safe_text(raw.get("requested_status"), limit=120),
+        "keep_promotion_decision": _safe_text(
+            raw.get("keep_promotion_decision") or "no_keep_promotion_this_round",
+            limit=160,
+        ),
+        "requested_by": _safe_text(raw.get("requested_by") or raw.get("operator") or "local_reviewer", limit=120),
+        "contains_secret": False,
+    }
+
+
+def _build_legacy_audit_observation_receipt(payload_safe: Mapping[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    contract = config.get_command_center_legacy_audit_classification_contract()
+    required_fields = list(contract.get("intake_required_fields") or [])
+    safe_sources = list(contract.get("intake_safe_attachment_sources") or [])
+    allowed_statuses = list(contract.get("intake_allowed_statuses") or [])
+    focus_workflows = list(contract.get("first_round_focus_workflows") or [])
+    requested_status = str(payload_safe.get("requested_status") or "direct_evidence_intake_pending")
+    requested_keep = requested_status == "KEEP" or str(payload_safe.get("keep_promotion_decision") or "") == "KEEP"
+    proposed_status = requested_status if requested_status in allowed_statuses else "direct_evidence_intake_pending"
+    required_present = {
+        field: bool(str(payload_safe.get(field) or "").strip())
+        for field in required_fields
+    }
+    missing_fields = [field for field, present in required_present.items() if not present]
+    workflow_group = str(payload_safe.get("workflow_group") or "")
+    workflow_known = workflow_group in focus_workflows
+    attachment_type = str(payload_safe.get("evidence_attachment_type") or "")
+    attachment_safe = attachment_type in safe_sources
+    local_record_ready = not missing_fields and workflow_known and attachment_safe and not requested_keep
+    if requested_keep:
+        status = "legacy_audit_observation_dry_run_blocked_keep_promotion_not_allowed"
+    elif missing_fields:
+        status = "legacy_audit_observation_dry_run_blocked_missing_required_fields"
+    elif not workflow_known:
+        status = "legacy_audit_observation_dry_run_blocked_unknown_workflow"
+    elif not attachment_safe:
+        status = "legacy_audit_observation_dry_run_blocked_unsafe_attachment_source"
+    else:
+        status = "legacy_audit_observation_dry_run_recorded_no_keep_promotion"
+    rows = [
+        {
+            "schema_version": LEGACY_AUDIT_OBSERVATION_DRY_RUN_SCHEMA_VERSION,
+            "criterion": "required_intake_fields_present",
+            "status": "passed" if not missing_fields else "blocked_missing_required_fields",
+            "passed": not missing_fields,
+            "missing_fields": missing_fields,
+            "external_calls_triggered": False,
+            "does_not_open_streamlit": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "schema_version": LEGACY_AUDIT_OBSERVATION_DRY_RUN_SCHEMA_VERSION,
+            "criterion": "workflow_group_in_first_round_scope",
+            "status": "passed" if workflow_known else "blocked_unknown_workflow",
+            "passed": workflow_known,
+            "workflow_group": workflow_group,
+            "external_calls_triggered": False,
+            "does_not_open_streamlit": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "schema_version": LEGACY_AUDIT_OBSERVATION_DRY_RUN_SCHEMA_VERSION,
+            "criterion": "safe_evidence_attachment_source",
+            "status": "passed" if attachment_safe else "blocked_unsafe_attachment_source",
+            "passed": attachment_safe,
+            "evidence_attachment_type": attachment_type,
+            "safe_attachment_sources": safe_sources,
+            "external_calls_triggered": False,
+            "does_not_open_streamlit": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "schema_version": LEGACY_AUDIT_OBSERVATION_DRY_RUN_SCHEMA_VERSION,
+            "criterion": "no_keep_or_ordinary_promotion_this_round",
+            "status": "blocked_keep_promotion_not_allowed" if requested_keep else "passed_no_keep_promotion",
+            "passed": not requested_keep,
+            "requested_status": requested_status,
+            "proposed_status": proposed_status,
+            "keep_promotion_allowed_this_round": False,
+            "ordinary_entry_promotion_allowed_this_round": False,
+            "external_calls_triggered": False,
+            "does_not_open_streamlit": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+    ]
+    receipt = {
+        "schema_version": LEGACY_AUDIT_OBSERVATION_DRY_RUN_SCHEMA_VERSION,
+        "status": status,
+        "scope": "button_gated_local_legacy_audit_observation_dry_run_no_streamlit_execution",
+        "workflow_group": workflow_group,
+        "workflow_group_known": workflow_known,
+        "allowed_statuses": allowed_statuses,
+        "proposed_status": proposed_status,
+        "requested_status": requested_status,
+        "required_fields": required_fields,
+        "missing_required_fields": missing_fields,
+        "safe_attachment_sources": safe_sources,
+        "evidence_attachment_type": attachment_type,
+        "evidence_attachment_safe": attachment_safe,
+        "direct_user_evidence_recorded": local_record_ready,
+        "direct_evidence_ready_for_keep_review": False,
+        "keep_request_rejected": requested_keep,
+        "keep_promotion_allowed_this_round": False,
+        "ordinary_entry_promotion_allowed_this_round": False,
+        "streamlit_fallback_retirement_allowed": False,
+        "production_evidence": False,
+        "observation_dry_run_only": True,
+        "opens_streamlit": False,
+        "runs_legacy_tools": False,
+        "creates_followup_tasks": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_open_streamlit": True,
+        "does_not_run_legacy_tools": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "contains_secret": False,
+        "row_count": len(rows),
+    }
+    return receipt, rows
+
+
+def _legacy_audit_observation_call_ledger(
+    *,
+    payload_safe: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+    now: str,
+) -> dict[str, Any]:
+    return {
+        "api": "local_legacy_audit_observation_dry_run",
+        "endpoint": "POST /api/legacy/audit-observation-dry-run",
+        "request_params_safe": {
+            "workflow_group": payload_safe.get("workflow_group"),
+            "requested_by": payload_safe.get("requested_by"),
+            "requested_status": receipt.get("requested_status"),
+            "proposed_status": receipt.get("proposed_status"),
+            "direct_user_evidence_recorded": receipt.get("direct_user_evidence_recorded"),
+            "keep_promotion_allowed_this_round": False,
+            "ordinary_entry_promotion_allowed_this_round": False,
+        },
+        "row_count": int(receipt.get("row_count") or 0),
+        "local_fetched_at": now,
+        "call_status": receipt.get("status"),
+        "external": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_open_streamlit": True,
+        "does_not_run_legacy_tools": True,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
 
 
 def _streamlit_retirement_readiness_receipt(
@@ -1646,6 +1822,67 @@ def _write_streamlit_fallback_retirement_review_packet(packet: Mapping[str, Any]
         STREAMLIT_FALLBACK_RETIREMENT_REVIEW_PACKET_KEY,
         _json_safe(packet),
     )
+
+
+def run_legacy_audit_observation_dry_run_task(payload: Any = None) -> dict[str, Any]:
+    payload_safe = _sanitize_legacy_audit_observation_payload(payload)
+    receipt, rows = _build_legacy_audit_observation_receipt(payload_safe)
+    payload_safe.update(
+        {
+            "task_type": LEGACY_AUDIT_OBSERVATION_DRY_RUN_TASK_TYPE,
+            "route": "POST /api/legacy/audit-observation-dry-run",
+            "output_packet_key": LEGACY_AUDIT_OBSERVATION_DRY_RUN_PACKET_KEY,
+            "legacy_audit_observation_receipt": receipt,
+            "legacy_audit_observation_rows": rows,
+            "observation_dry_run_only": True,
+            "keep_promotion_allowed_this_round": False,
+            "ordinary_entry_promotion_allowed_this_round": False,
+            "streamlit_fallback_retirement_allowed": False,
+            "production_evidence": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_open_streamlit": True,
+            "does_not_run_legacy_tools": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    )
+    if receipt["status"] == "legacy_audit_observation_dry_run_recorded_no_keep_promotion":
+        current_step = "legacy_audit_observation_dry_run_recorded_no_keep_promotion"
+    elif receipt["status"] == "legacy_audit_observation_dry_run_blocked_keep_promotion_not_allowed":
+        current_step = "legacy_audit_observation_dry_run_blocked_keep_promotion_not_allowed"
+    elif receipt["status"] == "legacy_audit_observation_dry_run_blocked_unknown_workflow":
+        current_step = "legacy_audit_observation_dry_run_blocked_unknown_workflow"
+    elif receipt["status"] == "legacy_audit_observation_dry_run_blocked_unsafe_attachment_source":
+        current_step = "legacy_audit_observation_dry_run_blocked_unsafe_attachment_source"
+    else:
+        current_step = "legacy_audit_observation_dry_run_blocked_missing_required_fields"
+    task = create_task_record(
+        LEGACY_AUDIT_OBSERVATION_DRY_RUN_TASK_TYPE,
+        output_packet_key=LEGACY_AUDIT_OBSERVATION_DRY_RUN_PACKET_KEY,
+        payload=payload_safe,
+        current_step="legacy_audit_observation_dry_run_requested_local_only",
+        warnings=[
+            "Legacy Audit observation dry-run 只记录脱敏问题陈述，不打开 Streamlit，不运行旧工具。",
+            "本任务不能升级 KEEP，不能让旧模块进入普通入口，也不能作为 Streamlit retirement evidence。",
+            "本任务不调用 Tushare、DeepSeek、GitHub，不执行真实交易，不修改 strategy action。",
+        ],
+    )
+    if task.get("dedupe_reused_existing"):
+        return task
+    now = _now_iso()
+    ledger = [_legacy_audit_observation_call_ledger(payload_safe=payload_safe, receipt=receipt, now=now)]
+    return update_task_status(
+        task["task_id"],
+        status="success",
+        progress=1.0,
+        current_step=current_step,
+        output_packet_key=LEGACY_AUDIT_OBSERVATION_DRY_RUN_PACKET_KEY,
+        call_ledger=ledger,
+        warning="legacy_audit_observation_dry_run_completed_no_streamlit_no_external_call",
+    ) or task
 
 
 def run_streamlit_ordinary_workflow_parity_review_task(payload: Any = None) -> dict[str, Any]:

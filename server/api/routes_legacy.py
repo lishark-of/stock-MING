@@ -18,6 +18,12 @@ def get_legacy_bridge_cache() -> dict:
     return envelope(packet, call_ledger=packet.get("call_ledger"), warnings=packet.get("warnings"))
 
 
+@router.post("/audit-observation-dry-run")
+def run_legacy_audit_observation_dry_run(payload: dict[str, Any] | None = None) -> dict:
+    task = legacy_service.run_legacy_audit_observation_dry_run_task(payload)
+    return task_envelope(task)
+
+
 @router.post("/ordinary-workflow-parity-review")
 def review_streamlit_ordinary_workflow_parity(payload: dict[str, Any] | None = None) -> dict:
     task = legacy_service.run_streamlit_ordinary_workflow_parity_review_task(payload)
