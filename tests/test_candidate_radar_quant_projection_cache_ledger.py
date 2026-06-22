@@ -125,7 +125,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(response["ok"])
         self.assertEqual(
             response["data"]["task"]["current_step"],
-            "candidate_radar_quant_projection_provider_chain_submitted",
+            "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
         )
 
         cache = self.client.get("/api/candidate-radar/cache").json()
