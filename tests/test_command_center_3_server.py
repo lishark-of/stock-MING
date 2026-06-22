@@ -12,6 +12,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import config as app_config
 from server.services import audit_service, bootstrap_service, candidate_service, data_capability_service, data_health_service, desktop_service, discipline_service, evidence_service, factor_service, legacy_service, market_service, model_strategy_service, next_session_service, packet_service, position_service, quant_service, recovery_service, risk_service, storage_service, strategy_service, task_service, trade_review_service, tushare_task_service, worker_service
 from server.services import migration_status_service
 from server.services.task_service import clear_task_statuses_for_tests, create_task_stub, read_task_status, update_task_status
@@ -1344,11 +1345,20 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(migration_goals["LTG-07"]["observed_stage_scope_pending_count"], 8)
         self.assertFalse(migration_goals["LTG-07"]["observed_stage_scope_can_close_goal"])
-        self.assertEqual(
+        self.assertIn(
             migration_goals["LTG-08"]["observed_stage_scope_manifest_status"],
-            "observed_in_next_session_map_static_contract",
+            {
+                "observed_in_next_session_map_static_contract",
+                "observed_next_session_direct_evidence_production_pending",
+            },
         )
-        self.assertGreaterEqual(migration_goals["LTG-08"]["observed_stage_scope_pending_count"], 8)
+        ltg08_goal_direct_count = int(
+            migration_goals["LTG-08"].get("observed_stage_scope_direct_evidence_count") or 0
+        )
+        self.assertEqual(
+            migration_goals["LTG-08"]["observed_stage_scope_pending_count"],
+            max(8 - ltg08_goal_direct_count, 0),
+        )
         self.assertFalse(migration_goals["LTG-08"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-09"]["stage_scope_manifest"], "tauri_production_package_stage_scope_manifest")
         self.assertIn("production package stage-scope manifest", migration_goals["LTG-09"]["current_state"])
@@ -1382,7 +1392,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(migration_goals["LTG-09"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-10"]["stage_scope_manifest"], "streamlit_retirement_stage_scope_manifest")
         self.assertIn("retirement stage-scope manifest", migration_goals["LTG-10"]["current_state"])
-        self.assertIn("React/Tauri workflow parity", migration_goals["LTG-10"]["next_evidence_required"])
+        self.assertIn("React/Tauri ordinary capability replacement evidence", migration_goals["LTG-10"]["next_evidence_required"])
         self.assertIn("fallback retirement review", migration_goals["LTG-10"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-10"]["production_complete"])
         self.assertEqual(
@@ -2789,7 +2799,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(chart["interaction_readiness_audit"]["production_replacement_complete"])
         self.assertFalse(chart["interaction_readiness_audit"]["external_calls_triggered"])
         self.assertIn(
-            "legacy signal/capability parity",
+            "retained signal/capability coverage",
             chart["interaction_readiness_audit"]["next_action"],
         )
         self.assertNotIn(
@@ -15480,7 +15490,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         catalog = task_service.build_task_catalog()
 
         self.assertEqual(catalog["packet_key"], "command_center_3_task_catalog")
-        self.assertEqual(catalog["task_count"], 82)
+        self.assertEqual(catalog["task_count"], 84)
         self.assertTrue(catalog["policy"]["get_catalog_cache_only"])
         self.assertTrue(catalog["policy"]["all_tasks_button_gated"])
         self.assertTrue(catalog["policy"]["all_known_post_routes_button_gated"])
@@ -15499,7 +15509,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(catalog["deepseek_called"])
         self.assertFalse(catalog["github_called"])
         self.assertEqual(catalog["call_ledger"][0]["api"], "local_task_catalog_cache")
-        self.assertEqual(catalog["call_ledger"][0]["row_count"], 82)
+        self.assertEqual(catalog["call_ledger"][0]["row_count"], 84)
         self.assertEqual(catalog["call_ledger"][0]["call_status"], "cache_read")
         self.assert_local_ledger_boundary(catalog["call_ledger"][0])
         self.assertIn("GET /api/tasks/catalog", catalog["warnings"][0])
@@ -15507,6 +15517,19 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(catalog["policy"]["does_not_modify_strategy_action"])
         self.assertEqual(set(catalog["external_sources"]), {"deepseek", "github", "tushare"})
         by_type = {item["task_type"]: item for item in catalog["tasks"]}
+        execution_request_task = by_type["command_center_live_bootstrap_provider_model_execution_request"]
+        self.assertEqual(
+            execution_request_task["route"],
+            "POST /api/bootstrap/provider-model-execution-request",
+        )
+        self.assertTrue(execution_request_task["button_gated"])
+        self.assertEqual(execution_request_task["runtime_modes"], ["manual", "live_light"])
+        self.assertEqual(execution_request_task["possible_external_sources"], [])
+        self.assertEqual(execution_request_task["future_external_sources"], ["tushare", "deepseek"])
+        self.assertTrue(execution_request_task["execution_request_only"])
+        self.assertFalse(execution_request_task["creates_provider_model_task"])
+        self.assertFalse(execution_request_task["provider_execution_implemented"])
+        self.assertFalse(execution_request_task["model_execution_implemented"])
         next_session_review_task = by_type["run_next_session_streamlit_parity_review"]
         self.assertEqual(
             next_session_review_task["label"],
@@ -15520,8 +15543,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         route_coverage = catalog["route_coverage"]
         implementation_status = catalog["implementation_status"]
         retry_policy_summary = catalog["retry_policy_summary"]
-        self.assertEqual(route_coverage["known_post_route_count"], 84)
-        self.assertEqual(route_coverage["task_creation_route_count"], 82)
+        self.assertEqual(route_coverage["known_post_route_count"], 86)
+        self.assertEqual(route_coverage["task_creation_route_count"], 84)
         self.assertEqual(route_coverage["local_lifecycle_route_count"], 2)
         self.assertEqual(route_coverage["uncovered_post_routes"], [])
         self.assertTrue(route_coverage["all_known_post_routes_button_gated"])
@@ -15530,11 +15553,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(route_coverage["retry_routes_external_calls"])
         self.assertFalse(route_coverage["lifecycle_routes_external_calls"])
         self.assertEqual(implementation_status["status"], "partial_migration")
-        self.assertEqual(implementation_status["task_count"], 82)
+        self.assertEqual(implementation_status["task_count"], 84)
         self.assertEqual(implementation_status["stub_task_count"], 2)
-        self.assertEqual(implementation_status["local_pipeline_task_count"], 79)
+        self.assertEqual(implementation_status["local_pipeline_task_count"], 80)
         self.assertEqual(implementation_status["guarded_local_task_count"], 1)
-        self.assertEqual(implementation_status["implemented_local_task_count"], 80)
+        self.assertEqual(implementation_status["implemented_local_task_count"], 81)
         self.assertEqual(implementation_status["external_capable_task_count"], 8)
         self.assertEqual(
             set(implementation_status["stub_task_types"]),
@@ -15554,6 +15577,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "refresh_factor_data",
                 "command_center_live_bootstrap",
                 "command_center_live_bootstrap_provider_model_acceptance_dry_run",
+                "command_center_live_bootstrap_provider_model_execution_request",
                 "run_tushare_deepseek_linkage_review",
                 "run_factor_light",
                 "run_factor_universe_research_plan",
@@ -15639,6 +15663,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "refresh_factor_data",
                 "command_center_live_bootstrap",
                 "command_center_live_bootstrap_provider_model_acceptance_dry_run",
+                "command_center_live_bootstrap_provider_model_execution_request",
                 "run_tushare_deepseek_linkage_review",
                 "run_factor_light",
                 "run_factor_universe_research_plan",
@@ -15738,6 +15763,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertIn(
             "POST /api/data-health/producer-cache-refresh",
+            route_coverage["known_post_routes"],
+        )
+        self.assertIn(
+            "POST /api/bootstrap/provider-model-execution-request",
             route_coverage["known_post_routes"],
         )
         self.assertIn(
@@ -17796,6 +17825,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(route_coverage["call_ledger_required_for_all_known_post_routes"])
         self.assertIn("POST /api/tasks/{task_id}/cancel", discovered_routes)
         self.assertIn("POST /api/bootstrap/provider-model-acceptance-dry-run", discovered_routes)
+        self.assertIn("POST /api/bootstrap/provider-model-execution-request", discovered_routes)
         self.assertIn("POST /api/migration/tushare-deepseek-linkage-review", discovered_routes)
         self.assertIn("POST /api/candidate-radar/provider-parity-execution-request", discovered_routes)
         self.assertIn("POST /api/tasks/refresh-tushare-facts", discovered_routes)
@@ -17876,16 +17906,16 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(packet["task_catalog_summary"]["call_ledger_required_for_all"])
         self.assertEqual(packet["task_catalog_summary"]["implementation_status"], "partial_migration")
         self.assertEqual(packet["task_catalog_summary"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 79)
+        self.assertEqual(packet["task_catalog_summary"]["local_pipeline_task_count"], 80)
         self.assertEqual(packet["task_catalog_summary"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 80)
+        self.assertEqual(packet["task_catalog_summary"]["implemented_local_task_count"], 81)
         self.assertEqual(packet["task_catalog_summary"]["retry_policy_status"], "audit_ready")
         self.assertFalse(packet["task_catalog_summary"]["auto_retry_enabled"])
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 79)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 80)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 80)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 81)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -18756,9 +18786,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_status_call_ledger_count", packet["counts"])
         self.assertIn("task_log_count", packet["task_status_summary"])
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 79)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 80)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 80)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 81)
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_button_gated"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_process_start"])
         self.assertTrue(packet["policy"]["worker_activation_review_task_is_not_production_completion"])
@@ -18982,9 +19012,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["model_strategy_purpose_count"], 7)
         self.assertEqual(packet["counts"]["model_strategy_cache_read_external_call_count"], 0)
         self.assertEqual(packet["counts"]["stub_task_count"], 2)
-        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 79)
+        self.assertEqual(packet["counts"]["local_pipeline_task_count"], 80)
         self.assertEqual(packet["counts"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["counts"]["implemented_local_task_count"], 80)
+        self.assertEqual(packet["counts"]["implemented_local_task_count"], 81)
         self.assertEqual(packet["counts"]["external_capable_task_count"], 8)
         self.assertEqual(packet["counts"]["external_call_count"], 0)
         self.assertEqual(packet["counts"]["action_risk_count"], 0)
@@ -19017,9 +19047,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("task_persistence_source_rows", packet)
         self.assertEqual(packet["task_implementation_status"]["status"], "partial_migration")
         self.assertEqual(packet["task_implementation_status"]["stub_task_count"], 2)
-        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 79)
+        self.assertEqual(packet["task_implementation_status"]["local_pipeline_task_count"], 80)
         self.assertEqual(packet["task_implementation_status"]["guarded_local_task_count"], 1)
-        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 80)
+        self.assertEqual(packet["task_implementation_status"]["implemented_local_task_count"], 81)
         self.assertIn("refresh_tushare_facts", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn("run_trade_cal_provider_acceptance_dry_run", packet["task_implementation_status"]["local_pipeline_task_types"])
         self.assertIn(
@@ -20326,13 +20356,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
     def _with_bootstrap_env(self, **values):
         keys = (
-            "COMMAND_CENTER_BOOTSTRAP_MODE",
-            "COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN",
-            "COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN",
-            "COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT",
-            "COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS",
-            "COMMAND_CENTER_LIVE_DEEPSEEK_MODEL",
-            "COMMAND_CENTER_LIVE_ALLOW_FULL_POOL",
+            *app_config.COMMAND_CENTER_RUNTIME_CONFIG_NAMES,
             "TUSHARE_TOKEN",
             "DEEPSEEK_API_KEY",
             "DEEPSEEK_TOKEN_1",
@@ -21827,11 +21851,908 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("TS_OK", json.dumps(cache_response, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache_response, ensure_ascii=False))
 
+    def test_bootstrap_status_manual_mode_is_explicit_post_task_only(self):
+        self._with_meta_store()
+        self._with_bootstrap_env(
+            COMMAND_CENTER_BOOTSTRAP_MODE="manual",
+            COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART="true",
+            COMMAND_CENTER_LIVE_STARTUP_AUTOSTART="true",
+            COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE="light_provider_model",
+            COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE="provider_factor_next_model",
+            COMMAND_CENTER_LIVE_PROVIDER_MODEL_ENABLEMENT="true",
+            COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT="true",
+            COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT="8",
+        )
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        response = self.client.get("/api/bootstrap/status").json()
+        packet = response["data"]
+        self.assertTrue(response["ok"])
+        self.assertEqual(packet["mode"], "manual")
+        self.assertEqual(packet["status"], "manual_ready_explicit_task_only")
+        self.assertFalse(packet["cache_only"])
+        self.assertTrue(packet["read_only"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+        self.assertEqual(task_service.list_task_statuses(), [])
+
+        manual = packet["manual"]
+        self.assertTrue(manual["enabled"])
+        self.assertEqual(manual["external_call_policy"], "explicit_post_task_only")
+        self.assertTrue(manual["button_gated_post_tasks_only"])
+        self.assertFalse(manual["auto_bootstrap_allowed"])
+        self.assertFalse(manual["react_mounted_auto_task_allowed"])
+        self.assertFalse(manual["cache_get_external_calls"])
+        self.assertFalse(manual["react_render_provider_calls"])
+        self.assertFalse(manual["live_startup_route_auto_allowed"])
+        self.assertTrue(manual["external_calls_require_explicit_post_task"])
+        self.assertTrue(manual["provider_execution_may_be_implemented_by_selected_post_task"])
+        self.assertFalse(manual["startup_provider_execution_implemented"])
+        self.assertTrue(manual["model_execution_requires_explicit_post_task"])
+        self.assertFalse(manual["token_key_exposure_allowed"])
+        self.assertTrue(manual["does_not_execute_trades"])
+        self.assertTrue(manual["does_not_modify_strategy_action"])
+        self.assertTrue(packet["policy"]["manual_requires_explicit_post_task"])
+        self.assertFalse(packet["policy"]["manual_auto_bootstrap_allowed"])
+        self.assertFalse(packet["policy"]["manual_react_mounted_auto_task_allowed"])
+        self.assertFalse(packet["policy"]["cache_api_external_calls"])
+        self.assertFalse(packet["policy"]["react_initial_render_external_calls"])
+
+        config_rows = {row["config"]: row for row in packet["config_rows"]}
+        tushare_config = config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]
+        deepseek_config = config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]
+        submit_config = config_rows["COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART"]
+        startup_config = config_rows["COMMAND_CENTER_LIVE_STARTUP_AUTOSTART"]
+        external_profile_config = config_rows["COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE"]
+        research_scope_config = config_rows["COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE"]
+        provider_model_config = config_rows["COMMAND_CENTER_LIVE_PROVIDER_MODEL_ENABLEMENT"]
+        frontend_enablement_config = config_rows["COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT"]
+        self.assertTrue(tushare_config["configured_value_safe"])
+        self.assertTrue(deepseek_config["configured_value_safe"])
+        self.assertTrue(submit_config["configured_value_safe"])
+        self.assertTrue(startup_config["configured_value_safe"])
+        self.assertEqual(external_profile_config["configured_value_safe"], "light_provider_model")
+        self.assertEqual(research_scope_config["configured_value_safe"], "provider_factor_next_model")
+        self.assertTrue(provider_model_config["configured_value_safe"])
+        self.assertTrue(frontend_enablement_config["configured_value_safe"])
+        self.assertFalse(tushare_config["effective_value_safe"])
+        self.assertFalse(deepseek_config["effective_value_safe"])
+        self.assertFalse(submit_config["effective_value_safe"])
+        self.assertFalse(startup_config["effective_value_safe"])
+        self.assertEqual(external_profile_config["effective_value_safe"], "plan_only")
+        self.assertEqual(research_scope_config["effective_value_safe"], "bootstrap_only")
+        self.assertFalse(provider_model_config["effective_value_safe"])
+        self.assertFalse(frontend_enablement_config["effective_value_safe"])
+        self.assertEqual(tushare_config["mode_gate"], "live_light")
+        self.assertEqual(deepseek_config["mode_gate"], "live_light")
+        self.assertEqual(submit_config["mode_gate"], "live_light")
+        self.assertEqual(tushare_config["effective_status"], "manual_source_switch_disabled_explicit_task_only")
+        self.assertEqual(deepseek_config["effective_status"], "manual_source_switch_disabled_explicit_task_only")
+        self.assertEqual(submit_config["effective_status"], "manual_explicit_button_submit_autostart_disabled")
+        self.assertFalse(tushare_config["automation_effective"])
+        self.assertFalse(deepseek_config["automation_effective"])
+        self.assertFalse(submit_config["automation_effective"])
+        self.assertEqual(tushare_config["inactive_reason"], "manual_requires_explicit_post_task")
+        self.assertEqual(deepseek_config["inactive_reason"], "manual_requires_explicit_post_task")
+        self.assertEqual(submit_config["inactive_reason"], "manual_requires_explicit_button")
+        self.assertEqual(startup_config["effective_status"], "manual_startup_autostart_disabled_explicit_task_only")
+        self.assertEqual(startup_config["inactive_reason"], "manual_requires_explicit_post_task")
+        self.assertFalse(startup_config["automation_effective"])
+        self.assertFalse(startup_config["creates_local_background_task_only"])
+        self.assertFalse(startup_config["creates_provider_model_task"])
+        self.assertEqual(
+            external_profile_config["effective_status"],
+            "manual_external_execution_profile_disabled_explicit_task_only",
+        )
+        self.assertEqual(
+            external_profile_config["inactive_reason"],
+            "manual_requires_explicit_post_task",
+        )
+        self.assertFalse(external_profile_config["provider_stage_allowed_by_profile"])
+        self.assertFalse(external_profile_config["model_stage_allowed_by_profile"])
+        self.assertFalse(external_profile_config["provider_execution_implemented"])
+        self.assertFalse(external_profile_config["model_execution_implemented"])
+        self.assertFalse(external_profile_config["calls_provider_model_now"])
+        self.assertEqual(
+            research_scope_config["effective_status"],
+            "manual_live_light_research_scope_disabled_explicit_task_only",
+        )
+        self.assertEqual(research_scope_config["inactive_reason"], "manual_requires_explicit_post_task")
+        self.assertFalse(research_scope_config["provider_stage_allowed_by_scope"])
+        self.assertFalse(research_scope_config["factor_light_allowed_by_scope"])
+        self.assertFalse(research_scope_config["next_session_cache_allowed_by_scope"])
+        self.assertFalse(research_scope_config["model_stage_allowed_by_scope"])
+        self.assertFalse(research_scope_config["creates_task"])
+        self.assertFalse(research_scope_config["creates_provider_model_task"])
+        self.assertFalse(research_scope_config["calls_provider_model_now"])
+        self.assertEqual(
+            provider_model_config["effective_status"],
+            "manual_provider_model_enablement_disabled_explicit_task_only",
+        )
+        self.assertEqual(
+            provider_model_config["inactive_reason"],
+            "manual_requires_explicit_provider_model_task",
+        )
+        self.assertFalse(provider_model_config["provider_model_task_creation_allowed"])
+        self.assertFalse(provider_model_config["creates_provider_model_task"])
+        self.assertFalse(provider_model_config["calls_provider_model_now"])
+        self.assertEqual(
+            frontend_enablement_config["effective_status"],
+            "manual_frontend_enablement_disabled_explicit_task_only",
+        )
+        self.assertEqual(frontend_enablement_config["inactive_reason"], "manual_requires_explicit_post_task")
+        self.assertFalse(frontend_enablement_config["automation_effective"])
+        self.assertFalse(frontend_enablement_config["frontend_enablement_allowed"])
+        self.assertFalse(frontend_enablement_config["frontend_writeback_allowed"])
+        self.assertFalse(frontend_enablement_config["creates_task"])
+        self.assertTrue(packet["safe_config_contract"]["configured_source_switches_visible"])
+        self.assertTrue(packet["safe_config_contract"]["effective_source_switches_mode_gated"])
+        self.assertFalse(packet["safe_config_contract"]["effective_tushare_on_open"])
+        self.assertFalse(packet["safe_config_contract"]["effective_deepseek_on_open"])
+        self.assertTrue(packet["safe_config_contract"]["configured_search_submit_autostart"])
+        self.assertFalse(packet["safe_config_contract"]["effective_search_submit_autostart"])
+        self.assertFalse(packet["safe_config_contract"]["effective_sources_enabled"])
+        self.assertTrue(packet["safe_config_contract"]["manual_or_cache_only_switches_do_not_autostart"])
+        self.assertTrue(packet["safe_config_contract"]["non_live_light_switches_do_not_autostart"])
+
+        submit_contract = packet["search_quant_projection_submit_autostart_contract"]
+        self.assertEqual(submit_contract["status"], "manual_explicit_button_submit_autostart_disabled")
+        self.assertEqual(submit_contract["mode"], "manual")
+        self.assertTrue(submit_contract["configured_submit_autostart"])
+        self.assertFalse(submit_contract["effective_submit_autostart"])
+        self.assertEqual(submit_contract["autostart_readiness_stage"], "manual_explicit_post_task_only")
+        self.assertEqual(submit_contract["inactive_reason"], "manual_requires_explicit_button")
+        self.assertFalse(submit_contract["active_mode_submit_autostart_allowed"])
+        self.assertFalse(submit_contract["search_submit_task_creation_allowed_in_active_mode"])
+        self.assertFalse(submit_contract["manual_search_submit_auto_start_allowed"])
+        self.assertTrue(submit_contract["manual_requires_explicit_button"])
+        self.assertTrue(submit_contract["manual_mode_blocks_submit_autostart"])
+        self.assertTrue(submit_contract["configured_true_but_manual_mode"])
+        self.assertFalse(submit_contract["search_typing_creates_task"])
+        self.assertFalse(submit_contract["react_render_creates_task"])
+        self.assertFalse(submit_contract["cache_get_creates_task"])
+        self.assertFalse(submit_contract["fastapi_startup_creates_task"])
+        self.assertFalse(submit_contract["latest_status_replay_lookup_creates_task"])
+        self.assertFalse(submit_contract["current_submit_autostart_calls_provider_model"])
+        self.assertFalse(submit_contract["provider_model_autostart_without_execution_request_allowed"])
+        self.assertFalse(submit_contract["external_calls_triggered"])
+        self.assertFalse(submit_contract["tushare_called"])
+        self.assertFalse(submit_contract["deepseek_called"])
+        self.assertFalse(submit_contract["github_called"])
+        self.assertTrue(submit_contract["does_not_execute_trades"])
+        self.assertTrue(submit_contract["does_not_modify_strategy_action"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_submit_autostart_allowed"])
+        self.assertFalse(packet["policy"]["search_quant_projection_submit_autostart_allowed"])
+        self.assertTrue(packet["policy"]["search_quant_projection_submit_autostart_configured"])
+        self.assertFalse(packet["policy"]["search_quant_projection_submit_autostart_effective"])
+
+        mode_rows = {row["mode"]: row for row in packet["mode_rows"]}
+        self.assertTrue(mode_rows["manual"]["active"])
+        self.assertEqual(mode_rows["manual"]["external_calls"], "selected_post_task_only")
+        self.assertTrue(mode_rows["manual"]["post_task_required"])
+        self.assertEqual(
+            mode_rows["manual"]["trigger_matrix_schema_version"],
+            "command_center_bootstrap_mode_trigger_matrix.v1",
+        )
+        self.assertFalse(mode_rows["manual"]["page_open_task_allowed"])
+        self.assertEqual(mode_rows["manual"]["page_open_task_policy"], "disabled_requires_explicit_post_task")
+        self.assertFalse(mode_rows["manual"]["react_initial_render_creates_task"])
+        self.assertFalse(mode_rows["manual"]["react_mounted_task_allowed_after_cache_render"])
+        self.assertFalse(mode_rows["manual"]["search_input_auto_task_allowed"])
+        self.assertEqual(mode_rows["manual"]["search_input_task_policy"], "never_on_typing")
+        self.assertTrue(mode_rows["manual"]["search_action_task_allowed"])
+        self.assertEqual(mode_rows["manual"]["search_action_task_policy"], "explicit_post_task_only")
+        self.assertFalse(mode_rows["manual"]["provider_model_execution_without_execution_request_allowed"])
+        self.assertFalse(mode_rows["manual"]["real_trading_task_allowed"])
+        self.assertFalse(mode_rows["manual"]["provider_execution_implemented"])
+        provider_linkage = {row["linkage_key"]: row for row in packet["provider_linkage_rows"]}
+        self.assertEqual(provider_linkage["cache_startup_render_boundary"]["status"], "offline_enforced")
+        self.assertEqual(provider_linkage["live_light_bootstrap_task_boundary"]["status"], "inactive_until_live_light")
+        self.assertFalse(provider_linkage["live_light_bootstrap_task_boundary"]["external_calls_allowed"])
+        self.assertEqual(provider_linkage["tushare_light_refresh"]["status"], "skipped_mode_not_live_light")
+        self.assertEqual(provider_linkage["deepseek_pro_after_task"]["status"], "skipped_mode_not_live_light")
+        self.assertEqual(provider_linkage["github_probe_boundary"]["status"], "manual_or_explicit_task_only")
+        self.assertFalse(provider_linkage["github_probe_boundary"]["live_light_on_open_allowed"])
+        self.assertFalse(provider_linkage["real_trading_boundary"]["real_trading_connected"])
+
+        created = self.client.post(
+            "/api/bootstrap/live-startup",
+            json={
+                "source": "unit_test_manual_mode",
+                "symbols": ["000001.SZ"],
+                "tushare": True,
+                "deepseek": True,
+                "api_key": "SHOULD_DROP",
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(created["ok"])
+        task = created["data"]["task"]
+        self.assertEqual(created["data"]["task_id"], task["task_id"])
+        self.assertEqual(task["task_type"], "command_center_live_bootstrap")
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "live_bootstrap_skipped_mode_not_live_light")
+        payload = task["payload_safe"]
+        self.assertEqual(payload["bootstrap_mode"], "manual")
+        self.assertFalse(payload["tushare_on_open"])
+        self.assertFalse(payload["deepseek_on_open"])
+        self.assertFalse(payload["sources_enabled"])
+        self.assertEqual(payload["symbols"], ["000001.SZ"])
+        self.assertEqual(payload["bootstrap_plan_summary"]["planned_provider_stage_count"], 0)
+        self.assertEqual(payload["bootstrap_plan_summary"]["planned_model_stage_count"], 0)
+        self.assertEqual(payload["bootstrap_plan_summary"]["local_compute_handoff_row_count"], 3)
+        self.assertEqual(payload["bootstrap_plan_summary"]["local_compute_handoff_enabled_row_count"], 0)
+        self.assertEqual(payload["bootstrap_plan_summary"]["local_compute_handoff_executed_row_count"], 0)
+        self.assertFalse(payload["bootstrap_plan_summary"]["external_calls_triggered"])
+        manual_handoff = payload["bootstrap_local_compute_handoff_summary"]
+        self.assertEqual(manual_handoff["status"], "local_compute_handoff_inactive_manual_explicit_task_only")
+        self.assertEqual(manual_handoff["mode"], "manual")
+        self.assertEqual(manual_handoff["mode_gate"], "live_light")
+        self.assertFalse(manual_handoff["mode_gate_satisfied"])
+        self.assertFalse(manual_handoff["source_switch_satisfied"])
+        self.assertEqual(manual_handoff["inactive_reason"], "manual_requires_explicit_post_task")
+        self.assertEqual(manual_handoff["handoff_row_count"], 3)
+        self.assertEqual(manual_handoff["enabled_handoff_row_count"], 0)
+        self.assertEqual(manual_handoff["executed_handoff_row_count"], 0)
+        self.assertEqual(manual_handoff["output_written_row_count"], 0)
+        self.assertEqual(
+            manual_handoff["lineage_contract_schema_version"],
+            "command_center_live_light_cache_lineage_contract.v1",
+        )
+        self.assertEqual(manual_handoff["lineage_write_policy"], "post_task_worker_or_local_pipeline_only")
+        self.assertEqual(manual_handoff["lineage_required_field_count"], 16)
+        self.assertEqual(manual_handoff["lineage_written_row_count"], 0)
+        self.assertFalse(manual_handoff["cache_get_may_write_lineage"])
+        self.assertFalse(manual_handoff["react_render_may_write_lineage"])
+        self.assertFalse(manual_handoff["fastapi_startup_may_write_lineage"])
+        self.assertFalse(manual_handoff["lineage_is_execution_evidence"])
+        self.assertFalse(manual_handoff["lineage_is_production_evidence"])
+        self.assertFalse(manual_handoff["bootstrap_task_executes_local_compute_now"])
+        self.assertFalse(manual_handoff["bootstrap_task_writes_output_now"])
+        for row in payload["bootstrap_local_compute_handoff_rows"]:
+            self.assertEqual(row["mode"], "manual")
+            self.assertEqual(row["mode_gate"], "live_light")
+            self.assertFalse(row["mode_gate_satisfied"])
+            self.assertFalse(row["source_switch_satisfied"])
+            self.assertEqual(row["inactive_reason"], "manual_requires_explicit_post_task")
+            self.assertEqual(
+                row["handoff_effective_status"],
+                "local_compute_handoff_inactive_manual_explicit_task_only",
+            )
+            self.assertFalse(row["enabled_in_current_mode"])
+            self.assertFalse(row["local_compute_executed_now"])
+            self.assertFalse(row["output_written_now"])
+            self.assertEqual(row["lineage_required_field_count"], 16)
+            self.assertFalse(row["lineage_written_now"])
+        self.assertEqual(
+            {row["status"] for row in payload["bootstrap_stage_rows"]},
+            {"skipped_mode_not_live_light"},
+        )
+        self.assertFalse(any(row["actual_external_calls_triggered"] for row in payload["bootstrap_stage_rows"]))
+        model_preview = payload["bootstrap_model_ledger_preview_rows"][0]
+        self.assertEqual(model_preview["status"], "skipped_mode_not_live_light")
+        self.assertFalse(model_preview["model_called"])
+        self.assertFalse(model_preview["deepseek_called"])
+        manual_ledger = task["call_ledger"][0]
+        self.assertEqual(manual_ledger["call_status"], "skipped_mode_not_live_light")
+        self.assertEqual(
+            manual_ledger["local_compute_handoff_status"],
+            "local_compute_handoff_inactive_manual_explicit_task_only",
+        )
+        self.assertEqual(manual_ledger["local_compute_handoff_mode_gate"], "live_light")
+        self.assertFalse(manual_ledger["local_compute_handoff_mode_gate_satisfied"])
+        self.assertFalse(manual_ledger["local_compute_handoff_source_switch_satisfied"])
+        self.assertEqual(manual_ledger["local_compute_handoff_inactive_reason"], "manual_requires_explicit_post_task")
+        self.assertEqual(manual_ledger["local_compute_handoff_row_count"], 3)
+        self.assertEqual(manual_ledger["local_compute_handoff_enabled_row_count"], 0)
+        self.assertEqual(manual_ledger["local_compute_handoff_executed_row_count"], 0)
+        self.assertEqual(manual_ledger["local_compute_handoff_output_written_row_count"], 0)
+        self.assertFalse(manual_ledger["local_compute_handoff_ledger_executes_local_compute"])
+        self.assertFalse(manual_ledger["local_compute_handoff_ledger_writes_output"])
+        self.assertFalse(manual_ledger["local_compute_handoff_ledger_is_execution_evidence"])
+        self.assertFalse(manual_ledger["local_compute_handoff_ledger_is_production_evidence"])
+        self.assertEqual(
+            manual_ledger["request_params_safe"]["local_compute_handoff_status"],
+            "local_compute_handoff_inactive_manual_explicit_task_only",
+        )
+        self.assertEqual(
+            manual_ledger["request_params_safe"]["local_compute_handoff_inactive_reason"],
+            "manual_requires_explicit_post_task",
+        )
+        self.assertFalse(manual_ledger["external"])
+        self.assertFalse(manual_ledger["external_calls_triggered"])
+        self.assertFalse(manual_ledger["tushare_called"])
+        self.assertFalse(manual_ledger["deepseek_called"])
+        self.assertFalse(manual_ledger["github_called"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+        self.assertEqual(len(task_service.list_task_statuses()), 1)
+        self.assertNotIn('"api_key"', json.dumps(task, ensure_ascii=False))
+        self.assertNotIn('"token"', json.dumps(task, ensure_ascii=False))
+        self.assertNotIn("SHOULD_DROP", json.dumps(task, ensure_ascii=False))
+
+    def test_bootstrap_status_invalid_config_values_are_redacted_and_defaulted(self):
+        self._with_bootstrap_env(
+            COMMAND_CENTER_BOOTSTRAP_MODE="token=DROP_MODE_TOKEN",
+            COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="maybe",
+            COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="maybe",
+            COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART="maybe",
+            COMMAND_CENTER_LIVE_STARTUP_AUTOSTART="maybe",
+            COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE="Bearer DROP_PROFILE_SECRET",
+            COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE="Bearer DROP_SCOPE_SECRET",
+            COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT="maybe",
+            COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT="9999",
+            COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS="1",
+            COMMAND_CENTER_LIVE_DEEPSEEK_MODEL="Bearer DROP_MODEL_SECRET",
+            COMMAND_CENTER_LIVE_ALLOW_FULL_POOL="maybe",
+        )
+
+        response = self.client.get("/api/bootstrap/status").json()
+        packet = response["data"]
+        packet_text = json.dumps(packet, ensure_ascii=False)
+        config_rows = {row["config"]: row for row in packet["config_rows"]}
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertEqual(packet["status"], "invalid_mode_defaulted_to_cache_only")
+        self.assertEqual(packet["configured_mode_raw"], "[invalid_redacted]")
+        self.assertEqual(packet["configured_mode_raw_safe"], "[invalid_redacted]")
+        self.assertFalse(packet["configured_mode_valid"])
+        self.assertTrue(packet["configured_mode_invalid_raw_redacted"])
+        self.assertNotIn("DROP_MODE_TOKEN", packet_text)
+        self.assertNotIn("DROP_MODEL_SECRET", packet_text)
+        self.assertNotIn("Bearer DROP_MODEL_SECRET", packet_text)
+        self.assertNotIn("DROP_PROFILE_SECRET", packet_text)
+        self.assertNotIn("Bearer DROP_PROFILE_SECRET", packet_text)
+        self.assertNotIn("DROP_SCOPE_SECRET", packet_text)
+        self.assertNotIn("Bearer DROP_SCOPE_SECRET", packet_text)
+
+        safe_config = packet["safe_config_contract"]
+        self.assertEqual(safe_config["schema_version"], "command_center_bootstrap_safe_config_contract.v1")
+        self.assertEqual(safe_config["status"], "safe_config_visible_invalid_values_redacted")
+        self.assertEqual(safe_config["mode"], "cache_only")
+        self.assertTrue(safe_config["runtime_mode_config_contract_visible"])
+        self.assertEqual(
+            safe_config["runtime_mode_config_evidence_factory_rule"],
+            "runtime_vocabulary_safe_config_rows_and_post_task_boundary_only_not_execution",
+        )
+        self.assertEqual(
+            safe_config["runtime_mode_config_current_acceptance_scope"],
+            "runtime_mode_vocabulary_config_rows_and_contract_tests_only",
+        )
+        self.assertEqual(
+            safe_config["runtime_mode_config_current_acceptance_rule"],
+            "docs_config_contract_evidence_only_not_live_light_implementation",
+        )
+        self.assertEqual(
+            safe_config["runtime_mode_config_current_acceptance_excludes"],
+            [
+                "frontend_autostart_wiring",
+                "provider_model_executor",
+                "worker_dispatch",
+                "cache_write_promotion",
+                "production_acceptance",
+            ],
+        )
+        self.assertFalse(safe_config["mode_value_valid"])
+        self.assertEqual(safe_config["mode_raw_value_safe"], "[invalid_redacted]")
+        self.assertTrue(safe_config["mode_raw_invalid_value_redacted"])
+        self.assertTrue(safe_config["invalid_mode_defaults_to_cache_only"])
+        self.assertFalse(safe_config["raw_config_values_exposed"])
+        self.assertTrue(safe_config["secret_like_model_value_redacted"])
+        self.assertTrue(safe_config["config_rows_frontend_visible"])
+        self.assertEqual(safe_config["config_rows_frontend_display_policy"], "safe_value_only")
+        self.assertFalse(safe_config["config_rows_frontend_editable"])
+        self.assertFalse(safe_config["config_rows_frontend_writeback_allowed"])
+        self.assertFalse(safe_config["status_endpoint_writeback_allowed"])
+        self.assertEqual(safe_config["config_source_of_truth"], "server_config_layer")
+        self.assertEqual(safe_config["config_change_channel"], "server_config_layer_only")
+        self.assertTrue(safe_config["config_rows_are_operator_guidance_not_controls"])
+        self.assertTrue(safe_config["configured_source_switches_visible"])
+        self.assertTrue(safe_config["effective_source_switches_mode_gated"])
+        self.assertFalse(safe_config["effective_tushare_on_open"])
+        self.assertFalse(safe_config["effective_deepseek_on_open"])
+        self.assertFalse(safe_config["effective_sources_enabled"])
+        self.assertFalse(safe_config["configured_startup_autostart"])
+        self.assertFalse(safe_config["effective_startup_autostart"])
+        self.assertTrue(safe_config["startup_autostart_requires_live_light"])
+        self.assertTrue(safe_config["startup_autostart_requires_sources_enabled"])
+        self.assertTrue(safe_config["startup_autostart_creates_local_task_only"])
+        self.assertFalse(safe_config["startup_autostart_calls_provider_model"])
+        self.assertEqual(safe_config["configured_external_execution_profile"], "plan_only")
+        self.assertEqual(safe_config["effective_external_execution_profile"], "plan_only")
+        self.assertFalse(safe_config["external_execution_profile_valid"])
+        self.assertTrue(safe_config["external_execution_profile_invalid_value_redacted"])
+        self.assertTrue(safe_config["external_execution_profile_requires_live_light"])
+        self.assertTrue(safe_config["external_execution_profile_requires_sources_enabled"])
+        self.assertFalse(safe_config["external_execution_profile_provider_stage_allowed"])
+        self.assertFalse(safe_config["external_execution_profile_model_stage_allowed"])
+        self.assertFalse(safe_config["external_execution_profile_executor_implemented"])
+        self.assertFalse(safe_config["external_execution_profile_calls_provider_model_now"])
+        self.assertTrue(safe_config["external_execution_profile_requires_post_task_worker_or_local_fallback"])
+        self.assertTrue(safe_config["external_execution_profile_requires_call_ledger"])
+        self.assertFalse(safe_config["external_execution_profile_requires_model_ledger_for_deepseek"])
+        self.assertEqual(safe_config["configured_live_light_research_scope"], "provider_factor_next_model")
+        self.assertEqual(safe_config["effective_live_light_research_scope"], "bootstrap_only")
+        self.assertFalse(safe_config["live_light_research_scope_valid"])
+        self.assertTrue(safe_config["live_light_research_scope_invalid_value_redacted"])
+        self.assertTrue(safe_config["live_light_research_scope_requires_live_light"])
+        self.assertTrue(safe_config["live_light_research_scope_requires_sources_enabled"])
+        self.assertFalse(safe_config["live_light_research_scope_provider_stage_allowed"])
+        self.assertFalse(safe_config["live_light_research_scope_factor_light_allowed"])
+        self.assertFalse(safe_config["live_light_research_scope_next_session_cache_allowed"])
+        self.assertFalse(safe_config["live_light_research_scope_model_stage_allowed"])
+        self.assertFalse(safe_config["live_light_research_scope_creates_task"])
+        self.assertFalse(safe_config["live_light_research_scope_creates_provider_model_task"])
+        self.assertFalse(safe_config["live_light_research_scope_calls_provider_model_now"])
+        self.assertFalse(safe_config["live_light_research_scope_local_compute_executes_now"])
+        self.assertFalse(safe_config["live_light_research_scope_is_production_evidence"])
+        self.assertEqual(safe_config["source_switch_mode_gate"], "live_light")
+        self.assertTrue(safe_config["manual_or_cache_only_switches_do_not_autostart"])
+        self.assertTrue(safe_config["non_live_light_switches_do_not_autostart"])
+        self.assertFalse(safe_config["token_key_exposure_allowed"])
+        self.assertFalse(safe_config["cache_get_creates_task"])
+        self.assertFalse(safe_config["external_calls_triggered"])
+        self.assertFalse(safe_config["tushare_called"])
+        self.assertFalse(safe_config["deepseek_called"])
+        self.assertFalse(safe_config["github_called"])
+        self.assertTrue(safe_config["does_not_execute_trades"])
+        self.assertTrue(safe_config["does_not_modify_strategy_action"])
+
+        for row in config_rows.values():
+            self.assertEqual(row["config_source_of_truth"], "server_config_layer")
+            self.assertTrue(row["frontend_visible"])
+            self.assertEqual(row["frontend_display_policy"], "safe_value_only")
+            self.assertFalse(row["frontend_editable"])
+            self.assertFalse(row["frontend_writeback_allowed"])
+            self.assertFalse(row["status_endpoint_writeback_allowed"])
+            self.assertEqual(row["operator_change_channel"], "server_config_layer_only")
+
+        mode_row = config_rows["COMMAND_CENTER_BOOTSTRAP_MODE"]
+        self.assertEqual(mode_row["value_type"], "enum")
+        self.assertEqual(mode_row["value_safe"], "cache_only")
+        self.assertEqual(mode_row["raw_value_safe"], "[invalid_redacted]")
+        self.assertFalse(mode_row["raw_value_valid"])
+        self.assertFalse(mode_row["raw_value_exposed"])
+        self.assertTrue(mode_row["raw_value_safe_visible"])
+        self.assertTrue(mode_row["raw_invalid_value_redacted"])
+        self.assertEqual(mode_row["fallback_value_safe"], "cache_only")
+        self.assertEqual(mode_row["fallback_reason"], "invalid_mode_defaulted_to_cache_only")
+        self.assertEqual(mode_row["source"], "configured_invalid_defaulted")
+        self.assertEqual(mode_row["allowed_values"], list(app_config.COMMAND_CENTER_RUNTIME_MODES))
+        self.assertFalse(mode_row["contains_secret"])
+
+        self.assertEqual(config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]["source"], "invalid_defaulted")
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]["value_safe"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]["effective_value_safe"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]["automation_effective"])
+        self.assertEqual(config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]["mode_gate"], "live_light")
+        self.assertEqual(config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]["source"], "invalid_defaulted")
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]["value_safe"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]["effective_value_safe"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]["automation_effective"])
+        self.assertEqual(config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]["mode_gate"], "live_light")
+        self.assertEqual(config_rows["COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART"]["source"], "invalid_defaulted")
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART"]["value_safe"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART"]["effective_value_safe"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART"]["automation_effective"])
+        self.assertEqual(config_rows["COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART"]["mode_gate"], "live_light")
+        self.assertEqual(
+            config_rows["COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART"]["effective_status"],
+            "cache_only_submit_autostart_disabled",
+        )
+        self.assertEqual(
+            config_rows["COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART"]["inactive_reason"],
+            "cache_only_read_only",
+        )
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART"]["creates_provider_model_task"])
+        startup_autostart_config = config_rows["COMMAND_CENTER_LIVE_STARTUP_AUTOSTART"]
+        self.assertEqual(startup_autostart_config["source"], "invalid_defaulted")
+        self.assertFalse(startup_autostart_config["value_safe"])
+        self.assertFalse(startup_autostart_config["configured_value_safe"])
+        self.assertFalse(startup_autostart_config["effective_value_safe"])
+        self.assertFalse(startup_autostart_config["automation_effective"])
+        self.assertEqual(startup_autostart_config["mode_gate"], "live_light_after_cache_render_and_sources_enabled")
+        self.assertEqual(startup_autostart_config["effective_status"], "cache_only_startup_autostart_disabled")
+        self.assertEqual(startup_autostart_config["inactive_reason"], "cache_only_read_only")
+        self.assertFalse(startup_autostart_config["creates_local_background_task_only"])
+        self.assertFalse(startup_autostart_config["creates_provider_model_task"])
+        external_profile_config = config_rows["COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE"]
+        self.assertEqual(external_profile_config["source"], "invalid_defaulted")
+        self.assertEqual(external_profile_config["value_safe"], "plan_only")
+        self.assertEqual(external_profile_config["configured_value_safe"], "plan_only")
+        self.assertEqual(external_profile_config["effective_value_safe"], "plan_only")
+        self.assertEqual(external_profile_config["raw_value_safe"], "[redacted_sensitive_text]")
+        self.assertFalse(external_profile_config["raw_value_valid"])
+        self.assertTrue(external_profile_config["raw_invalid_value_redacted"])
+        self.assertEqual(
+            external_profile_config["effective_status"],
+            "cache_only_external_execution_profile_disabled",
+        )
+        self.assertEqual(external_profile_config["inactive_reason"], "cache_only_read_only")
+        self.assertFalse(external_profile_config["provider_stage_allowed_by_profile"])
+        self.assertFalse(external_profile_config["model_stage_allowed_by_profile"])
+        self.assertFalse(external_profile_config["creates_provider_model_task"])
+        self.assertFalse(external_profile_config["calls_provider_model_now"])
+        research_scope_config = config_rows["COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE"]
+        self.assertEqual(research_scope_config["source"], "invalid_defaulted")
+        self.assertEqual(research_scope_config["value_safe"], "provider_factor_next_model")
+        self.assertEqual(research_scope_config["configured_value_safe"], "provider_factor_next_model")
+        self.assertEqual(research_scope_config["effective_value_safe"], "bootstrap_only")
+        self.assertEqual(research_scope_config["raw_value_safe"], "[redacted_sensitive_text]")
+        self.assertFalse(research_scope_config["raw_value_valid"])
+        self.assertTrue(research_scope_config["raw_invalid_value_redacted"])
+        self.assertEqual(
+            research_scope_config["effective_status"],
+            "cache_only_live_light_research_scope_disabled",
+        )
+        self.assertEqual(research_scope_config["inactive_reason"], "cache_only_read_only")
+        self.assertFalse(research_scope_config["provider_stage_allowed_by_scope"])
+        self.assertFalse(research_scope_config["factor_light_allowed_by_scope"])
+        self.assertFalse(research_scope_config["next_session_cache_allowed_by_scope"])
+        self.assertFalse(research_scope_config["model_stage_allowed_by_scope"])
+        self.assertFalse(research_scope_config["creates_task"])
+        self.assertFalse(research_scope_config["creates_provider_model_task"])
+        self.assertFalse(research_scope_config["calls_provider_model_now"])
+        self.assertEqual(config_rows["COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT"]["source"], "invalid_defaulted")
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT"]["value_safe"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT"]["effective_value_safe"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT"]["automation_effective"])
+        self.assertEqual(
+            config_rows["COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT"]["mode_gate"],
+            "live_light_and_frontend_enablement_promotion",
+        )
+        self.assertEqual(
+            config_rows["COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT"]["effective_status"],
+            "cache_only_frontend_enablement_disabled",
+        )
+        self.assertEqual(
+            config_rows["COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT"]["inactive_reason"],
+            "cache_only_read_only",
+        )
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT"]["frontend_enablement_allowed"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT"]["frontend_writeback_allowed"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT"]["creates_task"])
+        self.assertEqual(config_rows["COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT"]["source"], "clamped_max")
+        self.assertEqual(config_rows["COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT"]["value_safe"], 200)
+        self.assertEqual(config_rows["COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS"]["source"], "clamped_min")
+        self.assertEqual(config_rows["COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS"]["value_safe"], 60)
+        self.assertEqual(config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_MODEL"]["value_safe"], "[redacted_sensitive_text]")
+        self.assertTrue(config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_MODEL"]["secret_like_raw_redacted"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_MODEL"]["raw_value_exposed"])
+        self.assertEqual(config_rows["COMMAND_CENTER_LIVE_ALLOW_FULL_POOL"]["source"], "invalid_defaulted")
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_ALLOW_FULL_POOL"]["value_safe"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_ALLOW_FULL_POOL"]["effective_value_safe"])
+        self.assertTrue(config_rows["COMMAND_CENTER_LIVE_ALLOW_FULL_POOL"]["live_full_reserved"])
+        self.assertTrue(packet["policy"]["safe_config_contract_visible"])
+        self.assertFalse(packet["policy"]["raw_config_values_exposed"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+
+    def test_bootstrap_status_live_full_mode_is_reserved_even_when_switches_configured(self):
+        self._with_meta_store()
+        self._with_bootstrap_env(
+            COMMAND_CENTER_BOOTSTRAP_MODE="live_full",
+            COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART="true",
+            COMMAND_CENTER_LIVE_STARTUP_AUTOSTART="true",
+            COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE="light_provider_model",
+            COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE="provider_factor_next_model",
+            COMMAND_CENTER_LIVE_PROVIDER_MODEL_ENABLEMENT="true",
+            COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT="true",
+            COMMAND_CENTER_LIVE_ALLOW_FULL_POOL="true",
+        )
+        clear_task_statuses_for_tests(clear_persisted=True)
+
+        response = self.client.get("/api/bootstrap/status").json()
+        packet = response["data"]
+        config_rows = {row["config"]: row for row in packet["config_rows"]}
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(packet["mode"], "live_full")
+        self.assertEqual(packet["status"], "live_full_reserved_disabled")
+        self.assertFalse(packet["cache_only"])
+        self.assertTrue(packet["read_only"])
+        self.assertEqual(task_service.list_task_statuses(), [])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+
+        safe_config = packet["safe_config_contract"]
+        self.assertEqual(safe_config["mode"], "live_full")
+        self.assertTrue(safe_config["configured_source_switches_visible"])
+        self.assertTrue(safe_config["effective_source_switches_mode_gated"])
+        self.assertFalse(safe_config["effective_tushare_on_open"])
+        self.assertFalse(safe_config["effective_deepseek_on_open"])
+        self.assertFalse(safe_config["effective_sources_enabled"])
+        self.assertTrue(safe_config["configured_startup_autostart"])
+        self.assertFalse(safe_config["effective_startup_autostart"])
+        self.assertTrue(safe_config["startup_autostart_requires_live_light"])
+        self.assertTrue(safe_config["startup_autostart_requires_sources_enabled"])
+        self.assertTrue(safe_config["startup_autostart_creates_local_task_only"])
+        self.assertFalse(safe_config["startup_autostart_calls_provider_model"])
+        self.assertTrue(safe_config["non_live_light_switches_do_not_autostart"])
+        self.assertFalse(safe_config["cache_get_creates_task"])
+        self.assertFalse(safe_config["cache_get_external_calls"])
+        self.assertFalse(safe_config["external_calls_triggered"])
+
+        self.assertTrue(config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]["configured_value_safe"])
+        self.assertTrue(config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]["configured_value_safe"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]["effective_value_safe"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]["effective_value_safe"])
+        self.assertEqual(
+            config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]["effective_status"],
+            "live_full_source_switch_disabled_reserved",
+        )
+        self.assertEqual(
+            config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]["effective_status"],
+            "live_full_source_switch_disabled_reserved",
+        )
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]["automation_effective"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]["automation_effective"])
+        self.assertEqual(
+            config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]["inactive_reason"],
+            "live_full_reserved_requires_separate_authorization",
+        )
+        self.assertEqual(
+            config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]["inactive_reason"],
+            "live_full_reserved_requires_separate_authorization",
+        )
+        submit_autostart_config = config_rows["COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART"]
+        self.assertTrue(submit_autostart_config["configured_value_safe"])
+        self.assertFalse(submit_autostart_config["effective_value_safe"])
+        self.assertFalse(submit_autostart_config["automation_effective"])
+        self.assertEqual(submit_autostart_config["mode_gate"], "live_light")
+        self.assertEqual(
+            submit_autostart_config["effective_status"],
+            "live_full_reserved_submit_autostart_disabled",
+        )
+        self.assertEqual(
+            submit_autostart_config["inactive_reason"],
+            "live_full_reserved_requires_separate_authorization",
+        )
+        self.assertFalse(submit_autostart_config["creates_provider_model_task"])
+        startup_autostart_config = config_rows["COMMAND_CENTER_LIVE_STARTUP_AUTOSTART"]
+        self.assertTrue(startup_autostart_config["configured_value_safe"])
+        self.assertFalse(startup_autostart_config["effective_value_safe"])
+        self.assertFalse(startup_autostart_config["automation_effective"])
+        self.assertEqual(
+            startup_autostart_config["mode_gate"],
+            "live_light_after_cache_render_and_sources_enabled",
+        )
+        self.assertEqual(
+            startup_autostart_config["effective_status"],
+            "live_full_startup_autostart_disabled_reserved",
+        )
+        self.assertEqual(
+            startup_autostart_config["inactive_reason"],
+            "live_full_reserved_requires_separate_authorization",
+        )
+        self.assertFalse(startup_autostart_config["creates_local_background_task_only"])
+        self.assertFalse(startup_autostart_config["creates_provider_model_task"])
+        external_profile_config = config_rows["COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE"]
+        self.assertEqual(external_profile_config["configured_value_safe"], "light_provider_model")
+        self.assertEqual(external_profile_config["effective_value_safe"], "plan_only")
+        self.assertEqual(external_profile_config["mode_gate"], "live_light_post_task_worker_ledger")
+        self.assertEqual(
+            external_profile_config["effective_status"],
+            "live_full_external_execution_profile_disabled_reserved",
+        )
+        self.assertEqual(
+            external_profile_config["inactive_reason"],
+            "live_full_reserved_requires_separate_authorization",
+        )
+        self.assertFalse(external_profile_config["provider_stage_allowed_by_profile"])
+        self.assertFalse(external_profile_config["model_stage_allowed_by_profile"])
+        self.assertFalse(external_profile_config["provider_execution_implemented"])
+        self.assertFalse(external_profile_config["model_execution_implemented"])
+        self.assertFalse(external_profile_config["calls_provider_model_now"])
+        self.assertTrue(external_profile_config["requires_post_task_worker_or_local_fallback"])
+        self.assertTrue(external_profile_config["requires_call_ledger"])
+        self.assertFalse(external_profile_config["requires_model_ledger_for_deepseek"])
+        research_scope_config = config_rows["COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE"]
+        self.assertEqual(research_scope_config["configured_value_safe"], "provider_factor_next_model")
+        self.assertEqual(research_scope_config["effective_value_safe"], "bootstrap_only")
+        self.assertEqual(research_scope_config["mode_gate"], "live_light_research_scope_after_cache_render")
+        self.assertEqual(
+            research_scope_config["effective_status"],
+            "live_full_live_light_research_scope_disabled_reserved",
+        )
+        self.assertEqual(
+            research_scope_config["inactive_reason"],
+            "live_full_reserved_requires_separate_authorization",
+        )
+        self.assertFalse(research_scope_config["provider_stage_allowed_by_scope"])
+        self.assertFalse(research_scope_config["factor_light_allowed_by_scope"])
+        self.assertFalse(research_scope_config["next_session_cache_allowed_by_scope"])
+        self.assertFalse(research_scope_config["model_stage_allowed_by_scope"])
+        self.assertFalse(research_scope_config["creates_task"])
+        self.assertFalse(research_scope_config["creates_provider_model_task"])
+        self.assertFalse(research_scope_config["calls_provider_model_now"])
+        frontend_enablement_config = config_rows["COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT"]
+        self.assertTrue(frontend_enablement_config["configured_value_safe"])
+        self.assertFalse(frontend_enablement_config["effective_value_safe"])
+        self.assertFalse(frontend_enablement_config["automation_effective"])
+        self.assertEqual(
+            frontend_enablement_config["effective_status"],
+            "live_full_frontend_enablement_disabled_reserved",
+        )
+        self.assertEqual(
+            frontend_enablement_config["inactive_reason"],
+            "live_full_reserved_requires_separate_authorization",
+        )
+        self.assertFalse(frontend_enablement_config["frontend_enablement_allowed"])
+        self.assertFalse(frontend_enablement_config["frontend_writeback_allowed"])
+        self.assertFalse(frontend_enablement_config["creates_task"])
+        provider_model_config = config_rows["COMMAND_CENTER_LIVE_PROVIDER_MODEL_ENABLEMENT"]
+        self.assertTrue(provider_model_config["configured_value_safe"])
+        self.assertFalse(provider_model_config["effective_value_safe"])
+        self.assertEqual(
+            provider_model_config["effective_status"],
+            "live_full_provider_model_enablement_disabled_reserved",
+        )
+        self.assertEqual(
+            provider_model_config["inactive_reason"],
+            "live_full_reserved_requires_separate_authorization",
+        )
+        self.assertFalse(provider_model_config["provider_model_task_creation_allowed"])
+        self.assertFalse(provider_model_config["creates_provider_model_task"])
+        self.assertFalse(provider_model_config["calls_provider_model_now"])
+        full_pool_config = config_rows["COMMAND_CENTER_LIVE_ALLOW_FULL_POOL"]
+        self.assertTrue(full_pool_config["configured_value_safe"])
+        self.assertFalse(full_pool_config["effective_value_safe"])
+        self.assertEqual(full_pool_config["mode_gate"], "live_full_future_authorization")
+        self.assertFalse(full_pool_config["automation_effective"])
+        self.assertEqual(full_pool_config["inactive_reason"], "live_full_reserved_requires_separate_authorization")
+        self.assertTrue(full_pool_config["live_full_reserved"])
+        self.assertFalse(full_pool_config["full_pool_on_open_allowed"])
+
+        submit_contract = packet["search_quant_projection_submit_autostart_contract"]
+        self.assertEqual(
+            submit_contract["schema_version"],
+            "command_center_search_quant_projection_submit_autostart_contract.v1",
+        )
+        self.assertEqual(submit_contract["status"], "live_full_reserved_submit_autostart_disabled")
+        self.assertEqual(submit_contract["mode"], "live_full")
+        self.assertTrue(submit_contract["configured_submit_autostart"])
+        self.assertFalse(submit_contract["effective_submit_autostart"])
+        self.assertEqual(
+            submit_contract["autostart_readiness_stage"],
+            "live_full_reserved_requires_separate_authorization",
+        )
+        self.assertEqual(
+            submit_contract["inactive_reason"],
+            "live_full_reserved_requires_separate_authorization",
+        )
+        self.assertFalse(submit_contract["active_mode_submit_autostart_allowed"])
+        self.assertFalse(submit_contract["search_submit_task_creation_allowed_in_active_mode"])
+        self.assertFalse(submit_contract["live_full_search_submit_auto_start_allowed"])
+        self.assertTrue(submit_contract["live_full_reserved"])
+        self.assertTrue(submit_contract["live_full_requires_separate_authorization"])
+        self.assertTrue(submit_contract["configured_true_but_reserved_mode"])
+        self.assertTrue(submit_contract["reserved_mode_blocks_local_projection_task"])
+        self.assertTrue(submit_contract["reserved_mode_blocks_provider_model_task"])
+        self.assertTrue(submit_contract["reserved_mode_blocks_full_pool_or_deep_scan"])
+        self.assertFalse(submit_contract["search_typing_creates_task"])
+        self.assertFalse(submit_contract["react_render_creates_task"])
+        self.assertFalse(submit_contract["cache_get_creates_task"])
+        self.assertFalse(submit_contract["fastapi_startup_creates_task"])
+        self.assertFalse(submit_contract["latest_status_replay_lookup_creates_task"])
+        self.assertFalse(submit_contract["current_submit_autostart_calls_provider_model"])
+        self.assertFalse(submit_contract["provider_model_autostart_without_execution_request_allowed"])
+        self.assertFalse(submit_contract["external_calls_triggered"])
+        self.assertFalse(submit_contract["tushare_called"])
+        self.assertFalse(submit_contract["deepseek_called"])
+        self.assertFalse(submit_contract["github_called"])
+        self.assertTrue(submit_contract["does_not_execute_trades"])
+        self.assertTrue(submit_contract["does_not_modify_strategy_action"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_submit_autostart_allowed"])
+        self.assertFalse(packet["policy"]["search_quant_projection_submit_autostart_allowed"])
+        self.assertTrue(packet["policy"]["search_quant_projection_submit_autostart_configured"])
+        self.assertFalse(packet["policy"]["search_quant_projection_submit_autostart_effective"])
+
+        live_full = packet["live_full"]
+        self.assertFalse(live_full["enabled"])
+        self.assertTrue(live_full["active_mode_requested"])
+        self.assertEqual(live_full["status"], "live_full_reserved_disabled")
+        self.assertTrue(live_full["configured_allow_full_pool"])
+        self.assertFalse(live_full["effective_allow_full_pool"])
+        self.assertTrue(live_full["reserved_mode"])
+        self.assertTrue(live_full["future_worker_mode_only"])
+        self.assertTrue(live_full["separate_authorization_required"])
+        self.assertFalse(live_full["full_pool_on_open_allowed"])
+        self.assertFalse(live_full["deep_scan_on_open_allowed"])
+        self.assertFalse(live_full["page_open_task_allowed"])
+        self.assertFalse(live_full["react_mounted_auto_task_allowed"])
+        self.assertFalse(live_full["provider_execution_implemented"])
+        self.assertFalse(live_full["model_execution_implemented"])
+        self.assertFalse(live_full["worker_execution_implemented"])
+        self.assertFalse(live_full["production_live_full_complete"])
+        self.assertTrue(packet["policy"]["live_full_reserved_contract_visible"])
+        self.assertFalse(packet["policy"]["live_full_enabled"])
+        self.assertTrue(packet["policy"]["live_full_reserved"])
+        self.assertTrue(packet["policy"]["live_full_requires_separate_authorization"])
+        self.assertFalse(packet["policy"]["live_full_full_pool_on_open_allowed"])
+
+        contract = packet["live_full_reserved_contract"]
+        self.assertEqual(contract["schema_version"], "command_center_live_full_reserved_contract.v1")
+        self.assertEqual(contract["status"], "live_full_reserved_disabled")
+        self.assertEqual(contract["mode"], "live_full")
+        self.assertTrue(contract["active_mode_requested"])
+        self.assertTrue(contract["configured_allow_full_pool"])
+        self.assertFalse(contract["effective_allow_full_pool"])
+        self.assertTrue(contract["reserved_mode"])
+        self.assertTrue(contract["future_worker_mode_only"])
+        self.assertTrue(contract["separate_authorization_required"])
+        self.assertFalse(contract["page_open_task_allowed"])
+        self.assertFalse(contract["react_mounted_auto_task_allowed"])
+        self.assertFalse(contract["search_input_auto_task_allowed"])
+        self.assertFalse(contract["cache_get_creates_task"])
+        self.assertFalse(contract["live_light_bootstrap_task_allowed"])
+        self.assertFalse(contract["full_pool_on_open_allowed"])
+        self.assertFalse(contract["deep_scan_on_open_allowed"])
+        self.assertFalse(contract["provider_execution_implemented"])
+        self.assertFalse(contract["model_execution_implemented"])
+        self.assertFalse(contract["worker_execution_implemented"])
+        self.assertFalse(contract["production_live_full_complete"])
+        self.assertFalse(contract["external_calls_triggered"])
+        self.assertFalse(contract["tushare_called"])
+        self.assertFalse(contract["deepseek_called"])
+        self.assertFalse(contract["github_called"])
+        self.assertTrue(contract["does_not_execute_trades"])
+        self.assertTrue(contract["does_not_modify_strategy_action"])
+
+        created = self.client.post(
+            "/api/bootstrap/live-startup",
+            json={
+                "source": "unit_test_live_full_reserved",
+                "symbols": ["000001.SZ"],
+                "tushare": True,
+                "deepseek": True,
+            },
+        ).json()
+        self.assertTrue(created["ok"])
+        task = created["data"]["task"]
+        self.assertEqual(task["current_step"], "live_bootstrap_skipped_mode_not_live_light")
+        self.assertEqual(task["payload_safe"]["bootstrap_mode"], "live_full")
+        self.assertFalse(task["payload_safe"]["tushare_on_open"])
+        self.assertFalse(task["payload_safe"]["deepseek_on_open"])
+        self.assertFalse(task["payload_safe"]["sources_enabled"])
+        self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["planned_provider_stage_count"], 0)
+        self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["planned_model_stage_count"], 0)
+        self.assertFalse(task["payload_safe"]["bootstrap_plan_summary"]["external_calls_triggered"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+        self.assertTrue(task["does_not_execute_trades"])
+        self.assertTrue(task["does_not_modify_strategy_action"])
+
     def test_bootstrap_status_live_light_config_is_visible_without_execution(self):
+        clear_task_statuses_for_tests(clear_persisted=True)
         self._with_bootstrap_env(
             COMMAND_CENTER_BOOTSTRAP_MODE="live_light",
             COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="true",
             COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART="true",
+            COMMAND_CENTER_LIVE_STARTUP_AUTOSTART="true",
+            COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE="light_provider_model",
+            COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE="provider_factor_next_model",
+            COMMAND_CENTER_LIVE_PROVIDER_MODEL_ENABLEMENT="true",
+            COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT="true",
             COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT="12",
             COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS="900",
             COMMAND_CENTER_LIVE_DEEPSEEK_MODEL="custom-live-explain-model",
@@ -21849,6 +22770,2454 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(packet["live_light"]["tushare_on_open"])
         self.assertTrue(packet["live_light"]["deepseek_on_open"])
         self.assertTrue(packet["live_light"]["sources_enabled"])
+        self.assertTrue(packet["safe_config_contract"]["configured_search_submit_autostart"])
+        self.assertTrue(packet["safe_config_contract"]["effective_search_submit_autostart"])
+        self.assertTrue(packet["safe_config_contract"]["search_submit_autostart_requires_live_light"])
+        self.assertTrue(packet["safe_config_contract"]["search_submit_autostart_creates_local_projection_task_only"])
+        self.assertFalse(packet["safe_config_contract"]["search_submit_autostart_calls_provider_model"])
+        self.assertTrue(packet["safe_config_contract"]["configured_startup_autostart"])
+        self.assertTrue(packet["safe_config_contract"]["effective_startup_autostart"])
+        self.assertTrue(packet["safe_config_contract"]["startup_autostart_requires_live_light"])
+        self.assertTrue(packet["safe_config_contract"]["startup_autostart_requires_sources_enabled"])
+        self.assertTrue(packet["safe_config_contract"]["startup_autostart_creates_local_task_only"])
+        self.assertFalse(packet["safe_config_contract"]["startup_autostart_calls_provider_model"])
+        self.assertEqual(packet["safe_config_contract"]["configured_external_execution_profile"], "light_provider_model")
+        self.assertEqual(packet["safe_config_contract"]["effective_external_execution_profile"], "light_provider_model")
+        self.assertTrue(packet["safe_config_contract"]["external_execution_profile_valid"])
+        self.assertFalse(packet["safe_config_contract"]["external_execution_profile_invalid_value_redacted"])
+        self.assertTrue(packet["safe_config_contract"]["external_execution_profile_requires_live_light"])
+        self.assertTrue(packet["safe_config_contract"]["external_execution_profile_requires_sources_enabled"])
+        self.assertTrue(packet["safe_config_contract"]["external_execution_profile_provider_stage_allowed"])
+        self.assertTrue(packet["safe_config_contract"]["external_execution_profile_model_stage_allowed"])
+        self.assertFalse(packet["safe_config_contract"]["external_execution_profile_executor_implemented"])
+        self.assertFalse(packet["safe_config_contract"]["external_execution_profile_calls_provider_model_now"])
+        self.assertTrue(
+            packet["safe_config_contract"]["external_execution_profile_requires_post_task_worker_or_local_fallback"]
+        )
+        self.assertTrue(packet["safe_config_contract"]["external_execution_profile_requires_call_ledger"])
+        self.assertTrue(
+            packet["safe_config_contract"]["external_execution_profile_requires_model_ledger_for_deepseek"]
+        )
+        self.assertEqual(packet["safe_config_contract"]["configured_live_light_research_scope"], "provider_factor_next_model")
+        self.assertEqual(packet["safe_config_contract"]["effective_live_light_research_scope"], "provider_factor_next_model")
+        self.assertTrue(packet["safe_config_contract"]["live_light_research_scope_valid"])
+        self.assertFalse(packet["safe_config_contract"]["live_light_research_scope_invalid_value_redacted"])
+        self.assertTrue(packet["safe_config_contract"]["live_light_research_scope_requires_live_light"])
+        self.assertTrue(packet["safe_config_contract"]["live_light_research_scope_requires_sources_enabled"])
+        self.assertTrue(packet["safe_config_contract"]["live_light_research_scope_provider_stage_allowed"])
+        self.assertTrue(packet["safe_config_contract"]["live_light_research_scope_factor_light_allowed"])
+        self.assertTrue(packet["safe_config_contract"]["live_light_research_scope_next_session_cache_allowed"])
+        self.assertTrue(packet["safe_config_contract"]["live_light_research_scope_model_stage_allowed"])
+        self.assertFalse(packet["safe_config_contract"]["live_light_research_scope_creates_task"])
+        self.assertFalse(packet["safe_config_contract"]["live_light_research_scope_creates_provider_model_task"])
+        self.assertFalse(packet["safe_config_contract"]["live_light_research_scope_calls_provider_model_now"])
+        self.assertFalse(packet["safe_config_contract"]["live_light_research_scope_local_compute_executes_now"])
+        self.assertFalse(packet["safe_config_contract"]["live_light_research_scope_is_production_evidence"])
+        self.assertTrue(packet["safe_config_contract"]["configured_provider_model_enablement"])
+        self.assertFalse(packet["safe_config_contract"]["effective_provider_model_enablement"])
+        self.assertTrue(packet["safe_config_contract"]["provider_model_enablement_requires_live_light"])
+        self.assertTrue(packet["safe_config_contract"]["provider_model_enablement_requires_execution_request"])
+        self.assertTrue(packet["safe_config_contract"]["provider_model_enablement_requires_promotion"])
+        self.assertFalse(packet["safe_config_contract"]["provider_model_enablement_creates_task"])
+        self.assertFalse(packet["safe_config_contract"]["provider_model_enablement_creates_provider_model_task"])
+        self.assertFalse(packet["safe_config_contract"]["provider_model_enablement_calls_provider_model_now"])
+        self.assertFalse(packet["safe_config_contract"]["provider_model_enablement_frontend_writeback_allowed"])
+        self.assertTrue(packet["safe_config_contract"]["configured_frontend_enablement"])
+        self.assertFalse(packet["safe_config_contract"]["effective_frontend_enablement"])
+        self.assertTrue(packet["safe_config_contract"]["frontend_enablement_requires_live_light"])
+        self.assertTrue(packet["safe_config_contract"]["frontend_enablement_requires_promotion"])
+        self.assertFalse(packet["safe_config_contract"]["frontend_enablement_creates_task"])
+        self.assertFalse(packet["safe_config_contract"]["frontend_enablement_frontend_writeback_allowed"])
+        runtime_config_reference = packet["runtime_config_reference_contract"]
+        self.assertEqual(
+            runtime_config_reference["schema_version"],
+            "command_center_bootstrap_runtime_config_reference.v1",
+        )
+        self.assertEqual(runtime_config_reference["status"], "runtime_config_reference_visible_read_only")
+        self.assertEqual(runtime_config_reference["mode"], "live_light")
+        self.assertEqual(runtime_config_reference["config_reference_row_count"], 13)
+        self.assertEqual(runtime_config_reference["source_switch_count"], 3)
+        self.assertEqual(runtime_config_reference["runtime_budget_config_count"], 2)
+        self.assertEqual(runtime_config_reference["category_counts"]["runtime_mode"], 1)
+        self.assertEqual(runtime_config_reference["category_counts"]["source_switch"], 3)
+        self.assertEqual(runtime_config_reference["category_counts"]["startup_autostart_switch"], 1)
+        self.assertEqual(runtime_config_reference["category_counts"]["external_execution_profile"], 1)
+        self.assertEqual(runtime_config_reference["category_counts"]["live_light_research_scope"], 1)
+        self.assertEqual(runtime_config_reference["category_counts"]["provider_model_release_switch"], 1)
+        self.assertEqual(runtime_config_reference["category_counts"]["frontend_release_switch"], 1)
+        self.assertEqual(runtime_config_reference["category_counts"]["runtime_budget"], 2)
+        self.assertEqual(runtime_config_reference["category_counts"]["model_label"], 1)
+        self.assertEqual(runtime_config_reference["category_counts"]["reserved_full_mode"], 1)
+        self.assertEqual(len(runtime_config_reference["config_audit_id"]), 16)
+        self.assertEqual(runtime_config_reference["config_audit_algorithm"], "sha256_safe_reference_rows_v1")
+        self.assertEqual(runtime_config_reference["config_audit_input_surface"], "safe_reference_rows_only")
+        self.assertEqual(runtime_config_reference["config_audit_row_count"], 13)
+        self.assertEqual(runtime_config_reference["config_audit_bound_to_mode"], "live_light")
+        self.assertFalse(runtime_config_reference["config_audit_includes_raw_values"])
+        self.assertFalse(runtime_config_reference["config_audit_includes_credential_values"])
+        self.assertFalse(runtime_config_reference["config_audit_is_production_evidence"])
+        runtime_config_rows = {row["config"]: row for row in runtime_config_reference["reference_rows"]}
+        self.assertEqual(len(app_config.COMMAND_CENTER_RUNTIME_CONFIG_NAMES), 13)
+        self.assertLessEqual(set(app_config.COMMAND_CENTER_RUNTIME_CONFIG_NAMES), app_config.CONFIG_NAMES)
+        self.assertEqual(
+            runtime_config_reference["runtime_config_names_source"],
+            "config.COMMAND_CENTER_RUNTIME_CONFIG_NAMES",
+        )
+        self.assertEqual(
+            runtime_config_reference["runtime_config_names"],
+            list(app_config.COMMAND_CENTER_RUNTIME_CONFIG_NAMES),
+        )
+        self.assertEqual(runtime_config_reference["runtime_config_name_count"], 13)
+        self.assertTrue(runtime_config_reference["runtime_config_names_match_reference_rows"])
+        self.assertTrue(runtime_config_reference["runtime_config_names_are_allowlisted"])
+        self.assertEqual(runtime_config_reference["runtime_config_names_missing_from_allowlist"], [])
+        self.assertEqual(
+            set(runtime_config_rows),
+            set(app_config.COMMAND_CENTER_RUNTIME_CONFIG_NAMES),
+        )
+        mode_reference = runtime_config_rows["COMMAND_CENTER_BOOTSTRAP_MODE"]
+        self.assertEqual(mode_reference["category"], "runtime_mode")
+        self.assertEqual(mode_reference["default_value_safe"], app_config.COMMAND_CENTER_DEFAULT_RUNTIME_MODE)
+        self.assertEqual(mode_reference["effective_value_safe"], "live_light")
+        self.assertEqual(mode_reference["allowed_values"], list(app_config.COMMAND_CENTER_RUNTIME_MODES))
+        self.assertEqual(mode_reference["cache_only_behavior"], "read_cache_only_no_external_calls")
+        self.assertEqual(mode_reference["manual_behavior"], "explicit_post_task_only")
+        self.assertEqual(
+            mode_reference["live_light_behavior"],
+            "bounded_background_task_after_cache_render_or_safe_submit",
+        )
+        self.assertEqual(mode_reference["live_full_behavior"], "reserved_disabled_requires_future_authorization")
+        tushare_reference = runtime_config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]
+        self.assertEqual(tushare_reference["category"], "source_switch")
+        self.assertTrue(tushare_reference["configured_value_safe"])
+        self.assertTrue(tushare_reference["effective_value_safe"])
+        self.assertEqual(tushare_reference["mode_gate"], "live_light")
+        self.assertEqual(tushare_reference["automation_surface"], "post_bootstrap_task_only")
+        self.assertFalse(tushare_reference["creates_provider_model_task"])
+        self.assertTrue(tushare_reference["provider_execution_requires_execution_request"])
+        deepseek_reference = runtime_config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]
+        self.assertTrue(deepseek_reference["effective_value_safe"])
+        self.assertFalse(deepseek_reference["creates_provider_model_task"])
+        self.assertTrue(deepseek_reference["model_execution_requires_execution_request"])
+        self.assertFalse(deepseek_reference["deepseek_is_data_source"])
+        submit_reference = runtime_config_rows["COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART"]
+        self.assertTrue(submit_reference["effective_value_safe"])
+        self.assertEqual(submit_reference["automation_surface"], "safe_search_submit_local_projection_task_only")
+        self.assertFalse(submit_reference["creates_provider_model_task"])
+        self.assertTrue(submit_reference["provider_model_execution_requires_execution_request"])
+        self.assertTrue(submit_reference["global_config_allowlist_promoted"])
+        self.assertFalse(submit_reference["global_config_allowlist_promotion_pending"])
+        self.assertTrue(submit_reference["bootstrap_local_env_fallback_removed"])
+        self.assertFalse(submit_reference["bootstrap_local_env_fallback_removal_pending"])
+        startup_reference = runtime_config_rows["COMMAND_CENTER_LIVE_STARTUP_AUTOSTART"]
+        self.assertEqual(startup_reference["category"], "startup_autostart_switch")
+        self.assertFalse(startup_reference["default_value_safe"])
+        self.assertTrue(startup_reference["configured_value_safe"])
+        self.assertTrue(startup_reference["effective_value_safe"])
+        self.assertEqual(startup_reference["source"], "configured")
+        self.assertEqual(
+            startup_reference["mode_gate"],
+            "live_light_after_cache_render_and_sources_enabled",
+        )
+        self.assertEqual(
+            startup_reference["automation_surface"],
+            "react_after_cache_render_local_bootstrap_task_only",
+        )
+        self.assertTrue(startup_reference["creates_local_background_task_only"])
+        self.assertFalse(startup_reference["creates_provider_model_task"])
+        self.assertTrue(startup_reference["provider_model_execution_requires_execution_request"])
+        self.assertTrue(startup_reference["global_config_allowlist_promoted"])
+        self.assertFalse(startup_reference["global_config_allowlist_promotion_pending"])
+        external_profile_reference = runtime_config_rows["COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE"]
+        self.assertEqual(external_profile_reference["category"], "external_execution_profile")
+        self.assertEqual(
+            external_profile_reference["default_value_safe"],
+            app_config.COMMAND_CENTER_DEFAULT_EXTERNAL_EXECUTION_PROFILE,
+        )
+        self.assertEqual(external_profile_reference["configured_value_safe"], "light_provider_model")
+        self.assertEqual(external_profile_reference["effective_value_safe"], "light_provider_model")
+        self.assertEqual(
+            external_profile_reference["allowed_values"],
+            list(app_config.COMMAND_CENTER_EXTERNAL_EXECUTION_PROFILES),
+        )
+        self.assertEqual(external_profile_reference["source"], "configured")
+        self.assertEqual(external_profile_reference["mode_gate"], "live_light_post_task_worker_ledger")
+        self.assertEqual(
+            external_profile_reference["automation_surface"],
+            "post_bootstrap_or_search_task_worker_only",
+        )
+        self.assertTrue(external_profile_reference["provider_stage_allowed_by_profile"])
+        self.assertTrue(external_profile_reference["model_stage_allowed_by_profile"])
+        self.assertFalse(external_profile_reference["creates_provider_model_task"])
+        self.assertFalse(external_profile_reference["provider_execution_implemented"])
+        self.assertFalse(external_profile_reference["model_execution_implemented"])
+        self.assertFalse(external_profile_reference["calls_provider_model_now"])
+        self.assertTrue(external_profile_reference["requires_post_task_worker_or_local_fallback"])
+        self.assertTrue(external_profile_reference["requires_call_ledger"])
+        self.assertTrue(external_profile_reference["requires_model_ledger_for_deepseek"])
+        self.assertTrue(external_profile_reference["global_config_allowlist_promoted"])
+        self.assertFalse(external_profile_reference["global_config_allowlist_promotion_pending"])
+        research_scope_reference = runtime_config_rows["COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE"]
+        self.assertEqual(research_scope_reference["category"], "live_light_research_scope")
+        self.assertEqual(
+            research_scope_reference["default_value_safe"],
+            app_config.COMMAND_CENTER_DEFAULT_LIVE_LIGHT_RESEARCH_SCOPE,
+        )
+        self.assertEqual(research_scope_reference["configured_value_safe"], "provider_factor_next_model")
+        self.assertEqual(research_scope_reference["effective_value_safe"], "provider_factor_next_model")
+        self.assertEqual(
+            research_scope_reference["allowed_values"],
+            list(app_config.COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPES),
+        )
+        self.assertEqual(research_scope_reference["mode_gate"], "live_light_research_scope_after_cache_render")
+        self.assertEqual(research_scope_reference["automation_surface"], "stage_bundle_only_no_execution")
+        self.assertTrue(research_scope_reference["provider_stage_allowed_by_scope"])
+        self.assertTrue(research_scope_reference["factor_light_allowed_by_scope"])
+        self.assertTrue(research_scope_reference["next_session_cache_allowed_by_scope"])
+        self.assertTrue(research_scope_reference["model_stage_allowed_by_scope"])
+        self.assertFalse(research_scope_reference["creates_task"])
+        self.assertFalse(research_scope_reference["creates_provider_model_task"])
+        self.assertFalse(research_scope_reference["calls_provider_model_now"])
+        self.assertFalse(research_scope_reference["provider_execution_implemented"])
+        self.assertFalse(research_scope_reference["model_execution_implemented"])
+        self.assertFalse(research_scope_reference["local_compute_execution_implemented"])
+        self.assertTrue(research_scope_reference["requires_post_task_worker_or_local_fallback"])
+        self.assertTrue(research_scope_reference["requires_call_ledger"])
+        self.assertTrue(research_scope_reference["requires_model_ledger_for_deepseek"])
+        self.assertTrue(research_scope_reference["global_config_allowlist_promoted"])
+        self.assertFalse(research_scope_reference["global_config_allowlist_promotion_pending"])
+        provider_model_enablement_reference = runtime_config_rows["COMMAND_CENTER_LIVE_PROVIDER_MODEL_ENABLEMENT"]
+        self.assertEqual(provider_model_enablement_reference["category"], "provider_model_release_switch")
+        self.assertFalse(provider_model_enablement_reference["default_value_safe"])
+        self.assertTrue(provider_model_enablement_reference["configured_value_safe"])
+        self.assertFalse(provider_model_enablement_reference["effective_value_safe"])
+        self.assertEqual(
+            provider_model_enablement_reference["mode_gate"],
+            "live_light_and_provider_model_promotion",
+        )
+        self.assertEqual(
+            provider_model_enablement_reference["automation_surface"],
+            "provider_model_task_creation_release_switch_only",
+        )
+        self.assertFalse(provider_model_enablement_reference["provider_model_task_creation_allowed"])
+        self.assertTrue(provider_model_enablement_reference["provider_model_execution_requires_execution_request"])
+        self.assertTrue(provider_model_enablement_reference["requires_call_ledger"])
+        self.assertTrue(provider_model_enablement_reference["requires_model_ledger_for_deepseek"])
+        self.assertTrue(provider_model_enablement_reference["requires_browser_nonblocking_evidence"])
+        self.assertTrue(provider_model_enablement_reference["requires_redaction_review"])
+        self.assertFalse(provider_model_enablement_reference["frontend_writeback_allowed"])
+        self.assertTrue(provider_model_enablement_reference["global_config_allowlist_promoted"])
+        self.assertFalse(provider_model_enablement_reference["global_config_allowlist_promotion_pending"])
+        frontend_enablement_reference = runtime_config_rows["COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT"]
+        self.assertEqual(frontend_enablement_reference["category"], "frontend_release_switch")
+        self.assertFalse(frontend_enablement_reference["default_value_safe"])
+        self.assertTrue(frontend_enablement_reference["configured_value_safe"])
+        self.assertFalse(frontend_enablement_reference["effective_value_safe"])
+        self.assertEqual(
+            frontend_enablement_reference["mode_gate"],
+            "live_light_and_frontend_enablement_promotion",
+        )
+        self.assertEqual(
+            frontend_enablement_reference["automation_surface"],
+            "frontend_enablement_release_switch_only_no_task",
+        )
+        self.assertFalse(frontend_enablement_reference["release_switch_default_enabled"])
+        self.assertFalse(frontend_enablement_reference["frontend_enablement_allowed"])
+        self.assertFalse(frontend_enablement_reference["frontend_writeback_allowed"])
+        self.assertEqual(frontend_enablement_reference["source"], "configured")
+        self.assertTrue(frontend_enablement_reference["global_config_allowlist_promoted"])
+        self.assertFalse(frontend_enablement_reference["global_config_allowlist_promotion_pending"])
+        self.assertTrue(frontend_enablement_reference["rollback_on_evidence_regression_required"])
+        self.assertTrue(frontend_enablement_reference["production_promotion_required_after_switch"])
+        symbol_limit_reference = runtime_config_rows["COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT"]
+        self.assertEqual(symbol_limit_reference["category"], "runtime_budget")
+        self.assertEqual(symbol_limit_reference["effective_value_safe"], 12)
+        self.assertEqual(symbol_limit_reference["minimum"], 1)
+        self.assertEqual(symbol_limit_reference["maximum"], 200)
+        rate_limit_reference = runtime_config_rows["COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS"]
+        self.assertEqual(rate_limit_reference["effective_value_safe"], 900)
+        self.assertEqual(rate_limit_reference["minimum"], 60)
+        self.assertEqual(rate_limit_reference["maximum"], 86400)
+        model_reference = runtime_config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_MODEL"]
+        self.assertEqual(model_reference["category"], "model_label")
+        self.assertEqual(model_reference["effective_value_safe"], "custom-live-explain-model")
+        self.assertEqual(model_reference["automation_surface"], "label_only_no_model_call")
+        self.assertFalse(model_reference["raw_prompt_or_output_allowed"])
+        full_pool_reference = runtime_config_rows["COMMAND_CENTER_LIVE_ALLOW_FULL_POOL"]
+        self.assertEqual(full_pool_reference["category"], "reserved_full_mode")
+        self.assertTrue(full_pool_reference["configured_value_safe"])
+        self.assertFalse(full_pool_reference["effective_value_safe"])
+        self.assertEqual(full_pool_reference["automation_surface"], "reserved_disabled")
+        self.assertFalse(full_pool_reference["full_pool_on_open_allowed"])
+        self.assertFalse(full_pool_reference["deep_scan_on_open_allowed"])
+        for row in runtime_config_rows.values():
+            self.assertTrue(row["frontend_visible"])
+            self.assertFalse(row["frontend_editable"])
+            self.assertFalse(row["frontend_writeback_allowed"])
+            self.assertFalse(row["status_endpoint_writeback_allowed"])
+            self.assertEqual(row["config_source_of_truth"], "server_config_layer")
+            self.assertFalse(row["raw_value_exposed"])
+            self.assertFalse(row["credential_values_exposed"])
+            self.assertFalse(row["cache_get_creates_task"])
+            self.assertFalse(row["react_render_creates_task"])
+            self.assertFalse(row["fastapi_startup_creates_task"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertTrue(runtime_config_reference["frontend_visible"])
+        self.assertFalse(runtime_config_reference["frontend_editable"])
+        self.assertFalse(runtime_config_reference["frontend_writeback_allowed"])
+        self.assertFalse(runtime_config_reference["status_endpoint_writeback_allowed"])
+        self.assertTrue(runtime_config_reference["cache_only_default_offline_priority"])
+        self.assertTrue(runtime_config_reference["manual_requires_explicit_post_task"])
+        self.assertTrue(runtime_config_reference["live_light_allows_bounded_background_task"])
+        self.assertTrue(runtime_config_reference["live_full_reserved_requires_separate_authorization"])
+        self.assertTrue(runtime_config_reference["provider_model_execution_requires_execution_request"])
+        self.assertFalse(runtime_config_reference["config_reference_is_production_evidence"])
+        self.assertFalse(runtime_config_reference["production_config_complete"])
+        self.assertFalse(runtime_config_reference["raw_value_exposed"])
+        self.assertFalse(runtime_config_reference["credential_values_exposed"])
+        self.assertFalse(runtime_config_reference["credential_env_key_names_included"])
+        self.assertFalse(runtime_config_reference["cache_get_creates_task"])
+        self.assertFalse(runtime_config_reference["react_render_creates_task"])
+        self.assertFalse(runtime_config_reference["fastapi_startup_creates_task"])
+        self.assertFalse(runtime_config_reference["external_calls_triggered"])
+        self.assertFalse(runtime_config_reference["tushare_called"])
+        self.assertFalse(runtime_config_reference["deepseek_called"])
+        self.assertFalse(runtime_config_reference["github_called"])
+        self.assertFalse(runtime_config_reference["contains_secret"])
+        self.assertTrue(runtime_config_reference["does_not_execute_trades"])
+        self.assertTrue(runtime_config_reference["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["runtime_config_reference_contract_visible"])
+        self.assertEqual(packet["live_light"]["runtime_config_reference_row_count"], 13)
+        self.assertEqual(packet["live_light"]["runtime_config_reference_source_switch_count"], 3)
+        self.assertEqual(
+            packet["live_light"]["runtime_config_reference_audit_id"],
+            runtime_config_reference["config_audit_id"],
+        )
+        self.assertTrue(packet["live_light"]["runtime_config_reference_audit_uses_safe_rows_only"])
+        self.assertFalse(packet["live_light"]["runtime_config_reference_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_config_reference_contract_visible"])
+        self.assertEqual(packet["policy"]["runtime_config_reference_row_count"], 13)
+        self.assertEqual(packet["policy"]["runtime_config_reference_source_switch_count"], 3)
+        self.assertEqual(packet["policy"]["runtime_config_reference_audit_id"], runtime_config_reference["config_audit_id"])
+        self.assertTrue(packet["policy"]["runtime_config_reference_audit_uses_safe_rows_only"])
+        self.assertFalse(packet["policy"]["runtime_config_reference_is_production_evidence"])
+        config_ownership = packet["runtime_config_ownership_invariant_contract"]
+        self.assertEqual(
+            config_ownership["schema_version"],
+            "command_center_bootstrap_runtime_config_ownership_invariant.v1",
+        )
+        self.assertEqual(
+            config_ownership["status"],
+            "runtime_config_ownership_invariant_visible_global_config_allowlist_promoted_frontend_default_off",
+        )
+        self.assertEqual(config_ownership["mode"], "live_light")
+        self.assertEqual(config_ownership["ownership_row_count"], 13)
+        self.assertEqual(config_ownership["frontend_editable_row_count"], 0)
+        self.assertEqual(config_ownership["frontend_writeback_allowed_count"], 0)
+        self.assertEqual(config_ownership["status_endpoint_writeback_allowed_count"], 0)
+        self.assertEqual(config_ownership["bootstrap_local_env_fallback_count"], 0)
+        self.assertEqual(config_ownership["global_config_allowlist_promotion_pending_count"], 0)
+        ownership_rows = {row["config"]: row for row in config_ownership["ownership_rows"]}
+        self.assertEqual(set(ownership_rows), set(runtime_config_rows))
+        submit_ownership = ownership_rows["COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART"]
+        self.assertEqual(
+            submit_ownership["ownership_status"],
+            "server_config_layer_owned_global_config_allowlist_promoted",
+        )
+        self.assertEqual(
+            submit_ownership["current_read_path"],
+            "global_config_layer_only",
+        )
+        self.assertEqual(submit_ownership["target_read_path"], "global_config_layer_only")
+        self.assertFalse(submit_ownership["bootstrap_local_env_fallback_available"])
+        self.assertFalse(submit_ownership["bootstrap_local_env_fallback_is_temporary"])
+        self.assertTrue(submit_ownership["bootstrap_local_env_fallback_removed"])
+        self.assertTrue(submit_ownership["global_config_allowlist_promoted"])
+        self.assertFalse(submit_ownership["global_config_allowlist_promotion_pending"])
+        self.assertFalse(submit_ownership["fallback_removal_pending"])
+        self.assertFalse(submit_ownership["requires_future_config_py_file_scope"])
+        self.assertFalse(submit_ownership["fallback_is_production_config_evidence"])
+        startup_ownership = ownership_rows["COMMAND_CENTER_LIVE_STARTUP_AUTOSTART"]
+        self.assertEqual(
+            startup_ownership["ownership_status"],
+            "server_config_layer_owned_global_config_allowlist_promoted_default_off",
+        )
+        self.assertEqual(
+            startup_ownership["current_read_path"],
+            "global_config_layer_default_false_startup_autostart_guard",
+        )
+        self.assertEqual(startup_ownership["target_read_path"], "global_config_layer_only")
+        self.assertFalse(startup_ownership["bootstrap_local_env_fallback_available"])
+        self.assertTrue(startup_ownership["global_config_allowlist_promoted"])
+        self.assertFalse(startup_ownership["global_config_allowlist_promotion_pending"])
+        self.assertFalse(startup_ownership["fallback_removal_pending"])
+        self.assertFalse(startup_ownership["requires_future_config_py_file_scope"])
+        self.assertFalse(startup_ownership["fallback_is_production_config_evidence"])
+        external_profile_ownership = ownership_rows["COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE"]
+        self.assertEqual(
+            external_profile_ownership["ownership_status"],
+            "server_config_layer_owned_global_config_allowlist_promoted_default_plan_only",
+        )
+        self.assertEqual(
+            external_profile_ownership["current_read_path"],
+            "global_config_layer_default_plan_only_external_execution_guard",
+        )
+        self.assertEqual(external_profile_ownership["target_read_path"], "global_config_layer_only")
+        self.assertFalse(external_profile_ownership["bootstrap_local_env_fallback_available"])
+        self.assertTrue(external_profile_ownership["global_config_allowlist_promoted"])
+        self.assertFalse(external_profile_ownership["global_config_allowlist_promotion_pending"])
+        self.assertFalse(external_profile_ownership["fallback_removal_pending"])
+        self.assertFalse(external_profile_ownership["requires_future_config_py_file_scope"])
+        self.assertFalse(external_profile_ownership["fallback_is_production_config_evidence"])
+        research_scope_ownership = ownership_rows["COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE"]
+        self.assertEqual(
+            research_scope_ownership["ownership_status"],
+            "server_config_layer_owned_global_config_allowlist_promoted_default_research_scope",
+        )
+        self.assertEqual(
+            research_scope_ownership["current_read_path"],
+            "global_config_layer_default_live_light_research_scope_guard",
+        )
+        self.assertEqual(research_scope_ownership["target_read_path"], "global_config_layer_only")
+        self.assertFalse(research_scope_ownership["bootstrap_local_env_fallback_available"])
+        self.assertTrue(research_scope_ownership["global_config_allowlist_promoted"])
+        self.assertFalse(research_scope_ownership["global_config_allowlist_promotion_pending"])
+        self.assertFalse(research_scope_ownership["fallback_removal_pending"])
+        self.assertFalse(research_scope_ownership["requires_future_config_py_file_scope"])
+        self.assertFalse(research_scope_ownership["fallback_is_production_config_evidence"])
+        provider_model_enablement_ownership = ownership_rows["COMMAND_CENTER_LIVE_PROVIDER_MODEL_ENABLEMENT"]
+        self.assertEqual(
+            provider_model_enablement_ownership["ownership_status"],
+            "server_config_layer_owned_global_config_allowlist_promoted_default_off",
+        )
+        self.assertEqual(
+            provider_model_enablement_ownership["current_read_path"],
+            "global_config_layer_default_false_provider_model_enablement_guard",
+        )
+        self.assertEqual(provider_model_enablement_ownership["target_read_path"], "global_config_layer_only")
+        self.assertFalse(provider_model_enablement_ownership["bootstrap_local_env_fallback_available"])
+        self.assertTrue(provider_model_enablement_ownership["global_config_allowlist_promoted"])
+        self.assertFalse(provider_model_enablement_ownership["global_config_allowlist_promotion_pending"])
+        self.assertFalse(provider_model_enablement_ownership["fallback_removal_pending"])
+        self.assertFalse(provider_model_enablement_ownership["requires_future_config_py_file_scope"])
+        self.assertFalse(provider_model_enablement_ownership["fallback_is_production_config_evidence"])
+        frontend_enablement_ownership = ownership_rows["COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT"]
+        self.assertEqual(
+            frontend_enablement_ownership["ownership_status"],
+            "server_config_layer_owned_global_config_allowlist_promoted_default_off",
+        )
+        self.assertEqual(
+            frontend_enablement_ownership["current_read_path"],
+            "global_config_layer_default_false_release_switch_guard",
+        )
+        self.assertEqual(frontend_enablement_ownership["target_read_path"], "global_config_layer_only")
+        self.assertFalse(frontend_enablement_ownership["bootstrap_local_env_fallback_available"])
+        self.assertTrue(frontend_enablement_ownership["global_config_allowlist_promoted"])
+        self.assertFalse(frontend_enablement_ownership["global_config_allowlist_promotion_pending"])
+        self.assertFalse(frontend_enablement_ownership["fallback_removal_pending"])
+        self.assertFalse(frontend_enablement_ownership["requires_future_config_py_file_scope"])
+        self.assertFalse(frontend_enablement_ownership["fallback_is_production_config_evidence"])
+        for key, row in ownership_rows.items():
+            if key not in {
+                "COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART",
+                "COMMAND_CENTER_LIVE_STARTUP_AUTOSTART",
+                "COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE",
+                "COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE",
+                "COMMAND_CENTER_LIVE_PROVIDER_MODEL_ENABLEMENT",
+                "COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT",
+            }:
+                self.assertEqual(row["ownership_status"], "server_config_layer_owned")
+                self.assertFalse(row["bootstrap_local_env_fallback_available"])
+                self.assertFalse(row["global_config_allowlist_promotion_pending"])
+            self.assertTrue(row["frontend_visible"])
+            self.assertFalse(row["frontend_editable"])
+            self.assertFalse(row["frontend_writeback_allowed"])
+            self.assertFalse(row["status_endpoint_writeback_allowed"])
+            self.assertEqual(row["config_change_channel"], "server_config_layer_only")
+            self.assertEqual(row["config_source_of_truth"], "server_config_layer")
+            self.assertTrue(row["safe_value_visible_only"])
+            self.assertFalse(row["raw_value_exposed"])
+            self.assertFalse(row["credential_values_exposed"])
+            self.assertFalse(row["credential_env_key_names_included"])
+            self.assertFalse(row["config_row_is_production_evidence"])
+            self.assertFalse(row["cache_get_creates_task"])
+            self.assertFalse(row["react_render_creates_task"])
+            self.assertFalse(row["fastapi_startup_creates_task"])
+            self.assertFalse(row["search_typing_creates_task"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertEqual(config_ownership["config_source_of_truth"], "server_config_layer")
+        self.assertEqual(config_ownership["operator_change_channel"], "server_config_layer_only")
+        self.assertTrue(config_ownership["frontend_visible"])
+        self.assertFalse(config_ownership["frontend_editable"])
+        self.assertFalse(config_ownership["frontend_writeback_allowed"])
+        self.assertFalse(config_ownership["status_endpoint_writeback_allowed"])
+        self.assertFalse(config_ownership["current_cycle_modifies_global_config_file"])
+        self.assertTrue(config_ownership["current_cycle_file_limit_respected"])
+        self.assertFalse(config_ownership["requires_future_config_py_file_scope"])
+        self.assertTrue(config_ownership["bootstrap_local_env_fallback_removed"])
+        self.assertFalse(config_ownership["bootstrap_local_env_fallback_removal_pending"])
+        self.assertFalse(config_ownership["production_config_complete"])
+        self.assertFalse(config_ownership["ownership_invariant_is_production_evidence"])
+        self.assertEqual(
+            config_ownership["linked_runtime_config_reference_schema"],
+            "command_center_bootstrap_runtime_config_reference.v1",
+        )
+        self.assertEqual(
+            config_ownership["linked_runtime_config_reference_audit_id"],
+            runtime_config_reference["config_audit_id"],
+        )
+        self.assertEqual(
+            config_ownership["linked_search_submit_config_handoff_schema"],
+            "command_center_search_quant_projection_submit_autostart_config_handoff.v1",
+        )
+        self.assertEqual(
+            config_ownership["linked_search_submit_config_promotion_schema"],
+            "command_center_search_quant_projection_submit_autostart_config_promotion.v1",
+        )
+        self.assertEqual(config_ownership["promotion_step_count"], 5)
+        self.assertEqual(len(config_ownership["ownership_audit_id"]), 16)
+        self.assertEqual(config_ownership["ownership_audit_algorithm"], "sha256_safe_ownership_rows_v1")
+        self.assertEqual(
+            config_ownership["ownership_audit_input_surface"],
+            "safe_ownership_rows_and_reference_audit_id_only",
+        )
+        self.assertEqual(config_ownership["ownership_audit_row_count"], 13)
+        self.assertFalse(config_ownership["ownership_audit_includes_raw_values"])
+        self.assertFalse(config_ownership["ownership_audit_includes_credential_values"])
+        self.assertFalse(config_ownership["ownership_audit_is_production_evidence"])
+        self.assertFalse(config_ownership["raw_value_exposed"])
+        self.assertFalse(config_ownership["credential_values_exposed"])
+        self.assertFalse(config_ownership["credential_env_key_names_included"])
+        self.assertFalse(config_ownership["cache_get_creates_task"])
+        self.assertFalse(config_ownership["react_render_creates_task"])
+        self.assertFalse(config_ownership["fastapi_startup_creates_task"])
+        self.assertFalse(config_ownership["search_typing_creates_task"])
+        self.assertFalse(config_ownership["external_calls_triggered"])
+        self.assertFalse(config_ownership["tushare_called"])
+        self.assertFalse(config_ownership["deepseek_called"])
+        self.assertFalse(config_ownership["github_called"])
+        self.assertFalse(config_ownership["contains_secret"])
+        self.assertTrue(config_ownership["does_not_execute_trades"])
+        self.assertTrue(config_ownership["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["runtime_config_ownership_invariant_contract_visible"])
+        self.assertEqual(packet["live_light"]["runtime_config_ownership_row_count"], 13)
+        self.assertEqual(
+            packet["live_light"]["runtime_config_ownership_audit_id"],
+            config_ownership["ownership_audit_id"],
+        )
+        self.assertEqual(
+            packet["live_light"]["runtime_config_ownership_linked_reference_audit_id"],
+            runtime_config_reference["config_audit_id"],
+        )
+        self.assertEqual(packet["live_light"]["runtime_config_bootstrap_local_env_fallback_count"], 0)
+        self.assertEqual(
+            packet["live_light"]["runtime_config_global_config_allowlist_promotion_pending_count"],
+            0,
+        )
+        self.assertFalse(packet["live_light"]["runtime_config_frontend_writeback_allowed"])
+        self.assertFalse(packet["live_light"]["runtime_config_production_config_complete"])
+        self.assertFalse(packet["live_light"]["runtime_config_ownership_invariant_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_config_ownership_invariant_contract_visible"])
+        self.assertEqual(packet["policy"]["runtime_config_ownership_row_count"], 13)
+        self.assertEqual(
+            packet["policy"]["runtime_config_ownership_audit_id"],
+            config_ownership["ownership_audit_id"],
+        )
+        self.assertEqual(
+            packet["policy"]["runtime_config_ownership_linked_reference_audit_id"],
+            runtime_config_reference["config_audit_id"],
+        )
+        self.assertEqual(packet["policy"]["runtime_config_bootstrap_local_env_fallback_count"], 0)
+        self.assertEqual(
+            packet["policy"]["runtime_config_global_config_allowlist_promotion_pending_count"],
+            0,
+        )
+        self.assertFalse(packet["policy"]["runtime_config_frontend_writeback_allowed"])
+        self.assertFalse(packet["policy"]["runtime_config_production_config_complete"])
+        self.assertFalse(packet["policy"]["runtime_config_ownership_invariant_is_production_evidence"])
+        runtime_mode_acceptance = packet["runtime_mode_acceptance_contract"]
+        self.assertEqual(
+            runtime_mode_acceptance["schema_version"],
+            "command_center_bootstrap_runtime_mode_acceptance.v1",
+        )
+        self.assertEqual(
+            runtime_mode_acceptance["status"],
+            "runtime_mode_acceptance_matrix_visible_read_only",
+        )
+        self.assertEqual(runtime_mode_acceptance["mode"], "live_light")
+        self.assertEqual(runtime_mode_acceptance["acceptance_row_count"], 4)
+        self.assertEqual(runtime_mode_acceptance["active_acceptance_mode"], "live_light")
+        acceptance_rows = {row["mode"]: row for row in runtime_mode_acceptance["acceptance_rows"]}
+        self.assertEqual(set(acceptance_rows), {"cache_only", "manual", "live_light", "live_full"})
+        self.assertTrue(acceptance_rows["live_light"]["active"])
+        self.assertFalse(acceptance_rows["cache_only"]["active"])
+        self.assertFalse(acceptance_rows["manual"]["active"])
+        self.assertFalse(acceptance_rows["live_full"]["active"])
+        self.assertEqual(acceptance_rows["cache_only"]["acceptance_status"], "default_offline_cache_read_only")
+        self.assertEqual(acceptance_rows["cache_only"]["external_call_surface"], "none")
+        self.assertFalse(acceptance_rows["cache_only"]["page_open_task_allowed"])
+        self.assertFalse(acceptance_rows["cache_only"]["search_submit_task_allowed"])
+        self.assertFalse(acceptance_rows["cache_only"]["manual_button_task_allowed"])
+        self.assertFalse(acceptance_rows["cache_only"]["provider_model_execution_allowed"])
+        self.assertEqual(acceptance_rows["manual"]["acceptance_status"], "explicit_post_task_only")
+        self.assertFalse(acceptance_rows["manual"]["page_open_task_allowed"])
+        self.assertFalse(acceptance_rows["manual"]["search_submit_task_allowed"])
+        self.assertTrue(acceptance_rows["manual"]["manual_button_task_allowed"])
+        self.assertFalse(acceptance_rows["manual"]["live_light_background_task_allowed"])
+        self.assertTrue(acceptance_rows["manual"]["provider_model_execution_allowed"])
+        self.assertEqual(
+            acceptance_rows["manual"]["provider_model_execution_surface"],
+            "selected_explicit_post_task_only",
+        )
+        self.assertFalse(acceptance_rows["manual"]["provider_model_direct_execution_allowed"])
+        self.assertTrue(acceptance_rows["manual"]["provider_model_requires_explicit_post_task"])
+        self.assertTrue(acceptance_rows["manual"]["provider_model_execution_requires_task_contract"])
+        self.assertEqual(
+            acceptance_rows["live_light"]["acceptance_status"],
+            "bounded_background_task_creation_only",
+        )
+        self.assertTrue(acceptance_rows["live_light"]["page_open_task_allowed"])
+        self.assertEqual(
+            acceptance_rows["live_light"]["page_open_task_policy"],
+            "after_cache_render_rate_limited_local_task",
+        )
+        self.assertTrue(acceptance_rows["live_light"]["search_submit_task_allowed"])
+        self.assertEqual(
+            acceptance_rows["live_light"]["search_submit_task_policy"],
+            "safe_submit_local_projection_task_provider_model_request_gated",
+        )
+        self.assertTrue(acceptance_rows["live_light"]["manual_button_task_allowed"])
+        self.assertTrue(acceptance_rows["live_light"]["live_light_background_task_allowed"])
+        self.assertFalse(acceptance_rows["live_light"]["provider_model_execution_allowed"])
+        self.assertEqual(
+            acceptance_rows["live_light"]["provider_model_execution_surface"],
+            "execution_request_post_task_only",
+        )
+        self.assertFalse(acceptance_rows["live_light"]["provider_model_direct_execution_allowed"])
+        self.assertTrue(acceptance_rows["live_light"]["provider_model_requires_explicit_post_task"])
+        self.assertTrue(acceptance_rows["live_light"]["provider_model_execution_requires_task_contract"])
+        self.assertTrue(acceptance_rows["live_light"]["provider_model_execution_requires_execution_request"])
+        self.assertEqual(
+            acceptance_rows["live_full"]["acceptance_status"],
+            "reserved_disabled_requires_future_authorization",
+        )
+        self.assertFalse(acceptance_rows["live_full"]["page_open_task_allowed"])
+        self.assertFalse(acceptance_rows["live_full"]["search_submit_task_allowed"])
+        self.assertFalse(acceptance_rows["live_full"]["manual_button_task_allowed"])
+        self.assertFalse(acceptance_rows["live_full"]["provider_model_execution_allowed"])
+        self.assertEqual(acceptance_rows["live_full"]["provider_model_execution_surface"], "reserved_none_now")
+        self.assertFalse(acceptance_rows["live_full"]["provider_model_direct_execution_allowed"])
+        self.assertFalse(acceptance_rows["live_full"]["provider_model_requires_explicit_post_task"])
+        self.assertFalse(acceptance_rows["live_full"]["full_pool_or_deep_scan_allowed"])
+        for row in acceptance_rows.values():
+            self.assertEqual(row["schema_version"], "command_center_bootstrap_runtime_mode_acceptance.v1")
+            self.assertFalse(row["cache_get_external_calls"])
+            self.assertFalse(row["react_initial_render_creates_task"])
+            self.assertFalse(row["react_render_direct_provider_calls"])
+            self.assertFalse(row["search_typing_creates_task"])
+            self.assertFalse(row["fastapi_startup_creates_task"])
+            self.assertFalse(row["fastapi_startup_external_calls"])
+            self.assertFalse(row["token_key_exposure_allowed"])
+            self.assertFalse(row["raw_config_values_exposed"])
+            self.assertFalse(row["credential_values_exposed"])
+            self.assertFalse(row["radar_candidate_is_buy_instruction"])
+            self.assertFalse(row["deepseek_is_data_source"])
+            self.assertFalse(row["deepseek_may_overwrite_numeric_or_action_fields"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_modify_prices_positions_or_operation_zones"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertFalse(row["production_evidence"])
+        self.assertTrue(runtime_mode_acceptance["cache_only_default_offline"])
+        self.assertTrue(runtime_mode_acceptance["manual_explicit_post_only"])
+        self.assertEqual(
+            runtime_mode_acceptance["manual_provider_model_surface"],
+            "selected_explicit_post_task_only",
+        )
+        self.assertFalse(runtime_mode_acceptance["manual_provider_model_direct_execution_allowed"])
+        self.assertTrue(runtime_mode_acceptance["manual_provider_model_requires_explicit_post_task"])
+        self.assertTrue(runtime_mode_acceptance["live_light_bounded_background_task_only"])
+        self.assertEqual(
+            runtime_mode_acceptance["live_light_provider_model_surface"],
+            "execution_request_post_task_only",
+        )
+        self.assertFalse(runtime_mode_acceptance["live_light_provider_model_direct_execution_allowed"])
+        self.assertTrue(runtime_mode_acceptance["live_full_reserved_disabled"])
+        self.assertTrue(runtime_mode_acceptance["all_modes_require_post_task_for_external_calls"])
+        self.assertFalse(runtime_mode_acceptance["provider_model_direct_execution_allowed"])
+        self.assertTrue(runtime_mode_acceptance["provider_model_execution_requires_execution_request"])
+        self.assertTrue(runtime_mode_acceptance["frontend_visible"])
+        self.assertFalse(runtime_mode_acceptance["frontend_editable"])
+        self.assertFalse(runtime_mode_acceptance["frontend_writeback_allowed"])
+        self.assertFalse(runtime_mode_acceptance["status_endpoint_writeback_allowed"])
+        self.assertFalse(runtime_mode_acceptance["cache_get_external_calls"])
+        self.assertFalse(runtime_mode_acceptance["react_initial_render_creates_task"])
+        self.assertFalse(runtime_mode_acceptance["react_render_direct_provider_calls"])
+        self.assertFalse(runtime_mode_acceptance["search_typing_creates_task"])
+        self.assertFalse(runtime_mode_acceptance["fastapi_startup_creates_task"])
+        self.assertFalse(runtime_mode_acceptance["fastapi_startup_external_calls"])
+        self.assertFalse(runtime_mode_acceptance["token_key_exposure_allowed"])
+        self.assertFalse(runtime_mode_acceptance["credential_values_exposed"])
+        self.assertFalse(runtime_mode_acceptance["credential_env_key_names_included"])
+        self.assertFalse(runtime_mode_acceptance["runtime_mode_acceptance_is_production_evidence"])
+        self.assertFalse(runtime_mode_acceptance["production_live_light_complete"])
+        self.assertFalse(runtime_mode_acceptance["production_live_full_complete"])
+        self.assertFalse(runtime_mode_acceptance["external_calls_triggered"])
+        self.assertFalse(runtime_mode_acceptance["tushare_called"])
+        self.assertFalse(runtime_mode_acceptance["deepseek_called"])
+        self.assertFalse(runtime_mode_acceptance["github_called"])
+        self.assertFalse(runtime_mode_acceptance["contains_secret"])
+        self.assertTrue(runtime_mode_acceptance["does_not_execute_trades"])
+        self.assertTrue(runtime_mode_acceptance["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["runtime_mode_acceptance_contract_visible"])
+        self.assertEqual(packet["live_light"]["runtime_mode_acceptance_row_count"], 4)
+        self.assertFalse(packet["live_light"]["runtime_mode_acceptance_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_mode_acceptance_contract_visible"])
+        self.assertEqual(packet["policy"]["runtime_mode_acceptance_row_count"], 4)
+        self.assertFalse(packet["policy"]["runtime_mode_acceptance_is_production_evidence"])
+        rollout_roadmap = packet["live_light_rollout_roadmap_contract"]
+        self.assertEqual(rollout_roadmap["schema_version"], "command_center_live_light_rollout_roadmap.v1")
+        self.assertEqual(rollout_roadmap["status"], "live_light_rollout_roadmap_visible_execution_pending")
+        self.assertEqual(rollout_roadmap["mode"], "live_light")
+        self.assertEqual(rollout_roadmap["stage_count"], 9)
+        self.assertEqual(rollout_roadmap["local_ready_stage_count"], 4)
+        self.assertEqual(rollout_roadmap["production_evidence_complete_stage_count"], 0)
+        self.assertEqual(rollout_roadmap["next_implementation_stage_key"], "stage_04_frontend_nonblocking_wiring")
+        self.assertEqual(rollout_roadmap["next_browser_stage_key"], "stage_04_frontend_nonblocking_wiring")
+        self.assertEqual(
+            rollout_roadmap["next_execution_request_stage_key"],
+            "stage_05_provider_model_execution_request_route",
+        )
+        self.assertEqual(rollout_roadmap["next_provider_stage_key"], "stage_06_tushare_light_provider_acceptance")
+        rollout_rows = {row["stage_key"]: row for row in rollout_roadmap["rollout_rows"]}
+        self.assertEqual(
+            set(rollout_rows),
+            {
+                "stage_01_mode_config_contracts",
+                "stage_02_local_bootstrap_skeleton",
+                "stage_03_search_submit_local_projection",
+                "stage_04_frontend_nonblocking_wiring",
+                "stage_05_provider_model_execution_request_route",
+                "stage_06_tushare_light_provider_acceptance",
+                "stage_07_deepseek_pro_after_data_acceptance",
+                "stage_08_cache_lineage_and_output_surfaces",
+                "stage_09_release_promotion",
+            },
+        )
+        self.assertEqual(rollout_rows["stage_01_mode_config_contracts"]["status"], "local_contract_ready_not_production")
+        self.assertTrue(rollout_rows["stage_01_mode_config_contracts"]["local_ready"])
+        self.assertFalse(rollout_rows["stage_01_mode_config_contracts"]["implementation_pending"])
+        self.assertEqual(
+            rollout_rows["stage_02_local_bootstrap_skeleton"]["status"],
+            "local_task_skeleton_ready_no_provider_execution",
+        )
+        self.assertTrue(rollout_rows["stage_02_local_bootstrap_skeleton"]["local_ready"])
+        self.assertEqual(
+            rollout_rows["stage_03_search_submit_local_projection"]["status"],
+            "backend_local_route_ready_frontend_wiring_pending",
+        )
+        self.assertTrue(rollout_rows["stage_03_search_submit_local_projection"]["local_ready"])
+        self.assertEqual(
+            rollout_rows["stage_03_search_submit_local_projection"]["local_ready_scope"],
+            "backend_local_route_task_status_replay_and_contracts",
+        )
+        self.assertTrue(rollout_rows["stage_03_search_submit_local_projection"]["frontend_wiring_pending"])
+        self.assertTrue(rollout_rows["stage_03_search_submit_local_projection"]["browser_runtime_evidence_pending"])
+        self.assertTrue(rollout_rows["stage_03_search_submit_local_projection"]["implementation_pending"])
+        self.assertEqual(
+            rollout_rows["stage_04_frontend_nonblocking_wiring"]["status"],
+            "frontend_wiring_and_browser_evidence_pending",
+        )
+        self.assertIn(
+            "runtime_cache_first_polling_contract",
+            rollout_rows["stage_04_frontend_nonblocking_wiring"]["current_evidence"],
+        )
+        self.assertEqual(
+            rollout_rows["stage_05_provider_model_execution_request_route"]["status"],
+            "execution_request_route_registered_receipt_service_ready",
+        )
+        self.assertIn(
+            "runtime_operator_summary_contract",
+            rollout_rows["stage_05_provider_model_execution_request_route"]["current_evidence"],
+        )
+        self.assertEqual(
+            rollout_rows["stage_05_provider_model_execution_request_route"]["next_action"],
+            "verify_button_gated_route_adapter_before_real_provider_model_task",
+        )
+        self.assertTrue(rollout_rows["stage_05_provider_model_execution_request_route"]["local_ready"])
+        self.assertTrue(
+            rollout_rows["stage_05_provider_model_execution_request_route"]["local_receipt_service_ready"]
+        )
+        self.assertTrue(
+            rollout_rows["stage_05_provider_model_execution_request_route"]["operator_readiness_visible"]
+        )
+        self.assertTrue(rollout_rows["stage_05_provider_model_execution_request_route"]["route_implemented"])
+        self.assertFalse(
+            rollout_rows["stage_05_provider_model_execution_request_route"][
+                "provider_model_task_creation_allowed"
+            ]
+        )
+        self.assertEqual(
+            rollout_rows["stage_06_tushare_light_provider_acceptance"]["status"],
+            "real_tushare_call_ledger_pending_user_approved_run",
+        )
+        self.assertEqual(
+            rollout_rows["stage_07_deepseek_pro_after_data_acceptance"]["status"],
+            "real_deepseek_model_ledger_pending_user_approved_run",
+        )
+        self.assertEqual(
+            rollout_rows["stage_09_release_promotion"]["status"],
+            "production_promotion_pending_remote_ci_redaction_and_review",
+        )
+        for row in rollout_rows.values():
+            self.assertEqual(row["schema_version"], "command_center_live_light_rollout_roadmap.v1")
+            self.assertFalse(row["creates_task"])
+            self.assertFalse(row["cache_get_creates_task"])
+            self.assertFalse(row["react_render_creates_task"])
+            self.assertFalse(row["fastapi_startup_creates_task"])
+            self.assertFalse(row["search_typing_creates_task"])
+            self.assertFalse(row["provider_execution_implemented"])
+            self.assertFalse(row["model_execution_implemented"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertFalse(row["credential_values_exposed"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertFalse(row["production_evidence_complete"])
+        self.assertTrue(rollout_roadmap["frontend_wiring_pending"])
+        self.assertTrue(rollout_roadmap["backend_local_search_projection_ready"])
+        self.assertFalse(rollout_roadmap["execution_request_route_pending"])
+        self.assertTrue(rollout_roadmap["execution_request_receipt_service_ready"])
+        self.assertTrue(rollout_roadmap["execution_request_operator_readiness_visible"])
+        self.assertFalse(rollout_roadmap["execution_request_provider_model_task_creation_allowed"])
+        self.assertTrue(rollout_roadmap["real_tushare_call_ledger_pending"])
+        self.assertTrue(rollout_roadmap["real_deepseek_model_ledger_pending"])
+        self.assertTrue(rollout_roadmap["browser_nonblocking_evidence_pending"])
+        self.assertTrue(rollout_roadmap["cache_lineage_writeback_pending"])
+        self.assertTrue(rollout_roadmap["remote_ci_and_redaction_review_pending"])
+        self.assertTrue(rollout_roadmap["provider_model_execution_requires_execution_request"])
+        self.assertFalse(rollout_roadmap["rollout_roadmap_is_production_evidence"])
+        self.assertFalse(rollout_roadmap["production_live_light_complete"])
+        self.assertFalse(rollout_roadmap["creates_task"])
+        self.assertFalse(rollout_roadmap["cache_get_creates_task"])
+        self.assertFalse(rollout_roadmap["react_render_creates_task"])
+        self.assertFalse(rollout_roadmap["fastapi_startup_creates_task"])
+        self.assertFalse(rollout_roadmap["search_typing_creates_task"])
+        self.assertFalse(rollout_roadmap["external_calls_triggered"])
+        self.assertFalse(rollout_roadmap["tushare_called"])
+        self.assertFalse(rollout_roadmap["deepseek_called"])
+        self.assertFalse(rollout_roadmap["github_called"])
+        self.assertFalse(rollout_roadmap["contains_secret"])
+        self.assertFalse(rollout_roadmap["credential_values_exposed"])
+        self.assertFalse(rollout_roadmap["credential_env_key_names_included"])
+        self.assertTrue(rollout_roadmap["does_not_execute_trades"])
+        self.assertTrue(rollout_roadmap["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["live_light_rollout_roadmap_contract_visible"])
+        self.assertEqual(packet["live_light"]["live_light_rollout_roadmap_stage_count"], 9)
+        self.assertEqual(
+            packet["live_light"]["live_light_rollout_next_implementation_stage_key"],
+            "stage_04_frontend_nonblocking_wiring",
+        )
+        self.assertEqual(
+            packet["live_light"]["live_light_rollout_next_execution_request_stage_key"],
+            "stage_05_provider_model_execution_request_route",
+        )
+        self.assertTrue(packet["live_light"]["live_light_rollout_execution_request_receipt_service_ready"])
+        self.assertTrue(packet["live_light"]["live_light_rollout_execution_request_operator_readiness_visible"])
+        self.assertFalse(packet["live_light"]["live_light_rollout_execution_request_route_pending"])
+        self.assertFalse(
+            packet["live_light"]["live_light_rollout_execution_request_provider_model_task_creation_allowed"]
+        )
+        self.assertFalse(packet["live_light"]["live_light_rollout_roadmap_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_rollout_roadmap_contract_visible"])
+        self.assertEqual(packet["policy"]["live_light_rollout_roadmap_stage_count"], 9)
+        self.assertEqual(
+            packet["policy"]["live_light_rollout_next_implementation_stage_key"],
+            "stage_04_frontend_nonblocking_wiring",
+        )
+        self.assertEqual(
+            packet["policy"]["live_light_rollout_next_execution_request_stage_key"],
+            "stage_05_provider_model_execution_request_route",
+        )
+        self.assertTrue(packet["policy"]["live_light_rollout_execution_request_receipt_service_ready"])
+        self.assertTrue(packet["policy"]["live_light_rollout_execution_request_operator_readiness_visible"])
+        self.assertFalse(packet["policy"]["live_light_rollout_execution_request_route_pending"])
+        self.assertFalse(
+            packet["policy"]["live_light_rollout_execution_request_provider_model_task_creation_allowed"]
+        )
+        self.assertFalse(packet["policy"]["live_light_rollout_roadmap_is_production_evidence"])
+        task_creation_invariant = packet["task_creation_invariant_contract"]
+        self.assertEqual(
+            task_creation_invariant["schema_version"],
+            "command_center_bootstrap_task_creation_invariant.v1",
+        )
+        self.assertEqual(task_creation_invariant["status"], "task_creation_invariant_visible_read_only")
+        self.assertEqual(task_creation_invariant["mode"], "live_light")
+        self.assertEqual(task_creation_invariant["surface_row_count"], 9)
+        self.assertEqual(task_creation_invariant["allowed_task_surface_count"], 3)
+        invariant_rows = {row["surface_key"]: row for row in task_creation_invariant["invariant_rows"]}
+        self.assertEqual(
+            set(invariant_rows),
+            {
+                "fastapi_startup",
+                "get_bootstrap_status",
+                "get_cache_api",
+                "react_initial_render",
+                "react_after_cache_render_live_light_bootstrap",
+                "search_typing",
+                "safe_search_submit_autostart",
+                "manual_button_post_task",
+                "task_status_polling",
+            },
+        )
+        self.assertFalse(invariant_rows["fastapi_startup"]["task_creation_allowed"])
+        self.assertFalse(invariant_rows["get_bootstrap_status"]["task_creation_allowed"])
+        self.assertFalse(invariant_rows["get_cache_api"]["task_creation_allowed"])
+        self.assertFalse(invariant_rows["react_initial_render"]["task_creation_allowed"])
+        self.assertFalse(invariant_rows["search_typing"]["task_creation_allowed"])
+        self.assertFalse(invariant_rows["task_status_polling"]["task_creation_allowed"])
+        self.assertTrue(invariant_rows["react_after_cache_render_live_light_bootstrap"]["task_creation_allowed"])
+        self.assertEqual(
+            invariant_rows["react_after_cache_render_live_light_bootstrap"]["route_or_component"],
+            "POST /api/bootstrap/live-startup",
+        )
+        self.assertEqual(
+            invariant_rows["react_after_cache_render_live_light_bootstrap"]["task_type"],
+            "command_center_live_bootstrap",
+        )
+        self.assertTrue(invariant_rows["react_after_cache_render_live_light_bootstrap"]["requires_rate_limit"])
+        self.assertFalse(
+            invariant_rows["react_after_cache_render_live_light_bootstrap"]["creates_provider_model_task"]
+        )
+        self.assertTrue(invariant_rows["safe_search_submit_autostart"]["task_creation_allowed"])
+        self.assertEqual(
+            invariant_rows["safe_search_submit_autostart"]["route_or_component"],
+            "POST /api/candidate-radar/quant-projection",
+        )
+        self.assertEqual(
+            invariant_rows["safe_search_submit_autostart"]["task_type"],
+            "run_candidate_radar_quant_projection",
+        )
+        self.assertTrue(invariant_rows["safe_search_submit_autostart"]["requires_safe_symbol"])
+        self.assertTrue(invariant_rows["safe_search_submit_autostart"]["requires_submit_autostart_config"])
+        self.assertFalse(invariant_rows["safe_search_submit_autostart"]["creates_provider_model_task"])
+        self.assertTrue(invariant_rows["manual_button_post_task"]["task_creation_allowed"])
+        self.assertTrue(invariant_rows["manual_button_post_task"]["requires_user_action"])
+        for row in invariant_rows.values():
+            self.assertEqual(row["schema_version"], "command_center_bootstrap_task_creation_invariant.v1")
+            self.assertFalse(row["get_creates_task"])
+            self.assertFalse(row["typing_creates_task"])
+            self.assertFalse(row["render_direct_provider_calls"])
+            self.assertFalse(row["external_calls_triggered_by_contract"])
+            self.assertTrue(row["provider_model_execution_requires_execution_request"])
+            self.assertFalse(row["task_success_is_production_evidence"])
+            self.assertFalse(row["radar_candidate_is_buy_instruction"])
+            self.assertFalse(row["token_key_exposure_allowed"])
+            self.assertFalse(row["credential_values_exposed"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertFalse(task_creation_invariant["startup_task_creation_allowed"])
+        self.assertFalse(task_creation_invariant["get_status_task_creation_allowed"])
+        self.assertFalse(task_creation_invariant["get_cache_task_creation_allowed"])
+        self.assertFalse(task_creation_invariant["react_initial_render_task_creation_allowed"])
+        self.assertFalse(task_creation_invariant["search_typing_task_creation_allowed"])
+        self.assertFalse(task_creation_invariant["task_status_polling_creates_task"])
+        self.assertTrue(task_creation_invariant["live_light_after_cache_render_task_requires_rate_limit"])
+        self.assertTrue(task_creation_invariant["safe_search_submit_requires_live_light_and_config"])
+        self.assertTrue(task_creation_invariant["manual_task_creation_requires_explicit_user_action"])
+        self.assertTrue(task_creation_invariant["provider_model_execution_requires_execution_request"])
+        self.assertFalse(task_creation_invariant["contract_creates_task"])
+        self.assertFalse(task_creation_invariant["contract_is_production_evidence"])
+        self.assertFalse(task_creation_invariant["external_calls_triggered"])
+        self.assertFalse(task_creation_invariant["tushare_called"])
+        self.assertFalse(task_creation_invariant["deepseek_called"])
+        self.assertFalse(task_creation_invariant["github_called"])
+        self.assertFalse(task_creation_invariant["contains_secret"])
+        self.assertFalse(task_creation_invariant["credential_values_exposed"])
+        self.assertFalse(task_creation_invariant["credential_env_key_names_included"])
+        self.assertTrue(task_creation_invariant["does_not_execute_trades"])
+        self.assertTrue(task_creation_invariant["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["task_creation_invariant_contract_visible"])
+        self.assertEqual(packet["live_light"]["task_creation_invariant_surface_row_count"], 9)
+        self.assertEqual(packet["live_light"]["task_creation_invariant_allowed_surface_count"], 3)
+        self.assertFalse(packet["live_light"]["task_creation_invariant_is_production_evidence"])
+        self.assertTrue(packet["policy"]["task_creation_invariant_contract_visible"])
+        self.assertEqual(packet["policy"]["task_creation_invariant_surface_row_count"], 9)
+        self.assertEqual(packet["policy"]["task_creation_invariant_allowed_surface_count"], 3)
+        self.assertFalse(packet["policy"]["task_creation_invariant_is_production_evidence"])
+        external_silence = packet["runtime_external_silence_contract"]
+        self.assertEqual(
+            external_silence["schema_version"],
+            "command_center_runtime_external_silence_contract.v1",
+        )
+        self.assertEqual(external_silence["status"], "runtime_external_silence_visible_read_only")
+        self.assertEqual(external_silence["mode"], "live_light")
+        self.assertEqual(external_silence["silence_row_count"], 10)
+        self.assertEqual(external_silence["local_post_exception_count"], 3)
+        self.assertEqual(external_silence["direct_external_call_allowed_count"], 0)
+        self.assertEqual(external_silence["task_creation_allowed_surface_count"], 3)
+        self.assertEqual(external_silence["silent_read_surface_count"], 7)
+        external_silence_rows = {row["surface_key"]: row for row in external_silence["silence_rows"]}
+        self.assertEqual(
+            set(external_silence_rows),
+            {
+                "fastapi_startup",
+                "get_bootstrap_status",
+                "get_cache_api",
+                "react_initial_render",
+                "react_after_cache_render_live_light_bootstrap",
+                "search_typing",
+                "safe_search_submit_autostart",
+                "manual_button_post_task",
+                "task_status_polling",
+                "operator_summary_display",
+            },
+        )
+        self.assertFalse(external_silence_rows["fastapi_startup"]["local_backend_post_allowed"])
+        self.assertFalse(external_silence_rows["get_bootstrap_status"]["local_backend_post_allowed"])
+        self.assertFalse(external_silence_rows["get_cache_api"]["local_backend_post_allowed"])
+        self.assertFalse(external_silence_rows["react_initial_render"]["local_backend_post_allowed"])
+        self.assertFalse(external_silence_rows["search_typing"]["local_backend_post_allowed"])
+        self.assertFalse(external_silence_rows["task_status_polling"]["local_backend_post_allowed"])
+        self.assertTrue(
+            external_silence_rows["react_after_cache_render_live_light_bootstrap"]["local_backend_post_allowed"]
+        )
+        self.assertTrue(external_silence_rows["safe_search_submit_autostart"]["local_backend_post_allowed"])
+        self.assertTrue(external_silence_rows["manual_button_post_task"]["local_backend_post_allowed"])
+        self.assertTrue(external_silence_rows["react_after_cache_render_live_light_bootstrap"]["task_creation_allowed"])
+        self.assertTrue(external_silence_rows["safe_search_submit_autostart"]["task_creation_allowed"])
+        self.assertTrue(external_silence_rows["manual_button_post_task"]["task_creation_allowed"])
+        for row in external_silence_rows.values():
+            self.assertFalse(row["direct_external_calls_allowed"])
+            self.assertFalse(row["direct_provider_calls_allowed"])
+            self.assertFalse(row["direct_model_calls_allowed"])
+            self.assertFalse(row["github_calls_allowed"])
+            self.assertFalse(row["trading_calls_allowed"])
+            self.assertFalse(row["reads_credential_values"])
+            self.assertTrue(row["safe_summary_only"])
+            self.assertTrue(row["provider_model_execution_requires_post_task"])
+            self.assertTrue(row["provider_model_execution_requires_execution_request"])
+            self.assertFalse(row["row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertTrue(external_silence["provider_model_calls_must_use_post_task_worker_or_local_fallback"])
+        self.assertTrue(external_silence["provider_model_execution_requires_execution_request"])
+        self.assertFalse(external_silence["get_cache_direct_external_calls_allowed"])
+        self.assertFalse(external_silence["react_render_direct_provider_calls_allowed"])
+        self.assertFalse(external_silence["fastapi_startup_external_calls_allowed"])
+        self.assertFalse(external_silence["search_typing_task_creation_allowed"])
+        self.assertFalse(external_silence["task_status_polling_creates_task"])
+        self.assertFalse(external_silence["operator_summary_creates_task"])
+        self.assertTrue(external_silence["frontend_visible"])
+        self.assertFalse(external_silence["frontend_editable"])
+        self.assertFalse(external_silence["frontend_writeback_allowed"])
+        self.assertFalse(external_silence["status_endpoint_writeback_allowed"])
+        self.assertFalse(external_silence["contract_creates_task"])
+        self.assertFalse(external_silence["contract_calls_provider_or_model"])
+        self.assertFalse(external_silence["external_silence_contract_is_production_evidence"])
+        self.assertFalse(external_silence["production_live_light_complete"])
+        self.assertFalse(external_silence["external_calls_triggered"])
+        self.assertFalse(external_silence["tushare_called"])
+        self.assertFalse(external_silence["deepseek_called"])
+        self.assertFalse(external_silence["github_called"])
+        self.assertFalse(external_silence["contains_secret"])
+        self.assertFalse(external_silence["credential_values_exposed"])
+        self.assertFalse(external_silence["credential_env_key_names_included"])
+        self.assertTrue(external_silence["does_not_execute_trades"])
+        self.assertTrue(external_silence["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["runtime_external_silence_contract_visible"])
+        self.assertEqual(packet["live_light"]["runtime_external_silence_row_count"], 10)
+        self.assertEqual(packet["live_light"]["runtime_external_silence_local_post_exception_count"], 3)
+        self.assertEqual(packet["live_light"]["runtime_external_silence_direct_external_call_allowed_count"], 0)
+        self.assertFalse(packet["live_light"]["runtime_external_silence_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_external_silence_contract_visible"])
+        self.assertEqual(packet["policy"]["runtime_external_silence_row_count"], 10)
+        self.assertEqual(packet["policy"]["runtime_external_silence_local_post_exception_count"], 3)
+        self.assertEqual(packet["policy"]["runtime_external_silence_direct_external_call_allowed_count"], 0)
+        self.assertFalse(packet["policy"]["runtime_external_silence_is_production_evidence"])
+        hard_boundary = packet["runtime_hard_boundary_contract"]
+        self.assertEqual(hard_boundary["schema_version"], "command_center_runtime_hard_boundary_contract.v1")
+        self.assertEqual(hard_boundary["status"], "runtime_hard_boundaries_visible_read_only")
+        self.assertEqual(hard_boundary["mode"], "live_light")
+        self.assertEqual(hard_boundary["boundary_row_count"], 12)
+        self.assertEqual(hard_boundary["passed_boundary_count"], 12)
+        self.assertEqual(hard_boundary["blocking_boundary_count"], 0)
+        hard_boundary_rows = {row["boundary_key"]: row for row in hard_boundary["boundary_rows"]}
+        self.assertEqual(
+            set(hard_boundary_rows),
+            {
+                "get_cache_api_no_direct_external_calls",
+                "react_render_no_direct_provider_calls",
+                "fastapi_startup_no_auto_external_calls",
+                "external_work_requires_post_task_worker_or_local_fallback",
+                "provider_calls_require_call_ledger",
+                "deepseek_calls_require_model_ledger",
+                "deepseek_not_data_source",
+                "deepseek_no_price_holding_factor_zone_or_action_overwrite",
+                "no_real_trading_or_auto_orders",
+                "radar_candidate_not_buy_instruction",
+                "token_key_never_frontend_log_packet_or_cache",
+                "mock_receipt_matrix_sanitizer_not_production_evidence",
+            },
+        )
+        for row in hard_boundary_rows.values():
+            self.assertTrue(row["passed"])
+            self.assertFalse(row["row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertFalse(hard_boundary["get_cache_api_direct_external_calls_allowed"])
+        self.assertFalse(hard_boundary["react_render_direct_provider_calls_allowed"])
+        self.assertFalse(hard_boundary["fastapi_startup_external_calls_allowed"])
+        self.assertTrue(hard_boundary["external_work_requires_post_task_worker_or_local_fallback"])
+        self.assertTrue(hard_boundary["call_ledger_required_for_provider_calls"])
+        self.assertTrue(hard_boundary["model_ledger_required_for_deepseek_calls"])
+        self.assertFalse(hard_boundary["deepseek_is_data_source"])
+        self.assertFalse(hard_boundary["deepseek_may_overwrite_price"])
+        self.assertFalse(hard_boundary["deepseek_may_overwrite_holding"])
+        self.assertFalse(hard_boundary["deepseek_may_overwrite_factor"])
+        self.assertFalse(hard_boundary["deepseek_may_overwrite_operation_zones"])
+        self.assertFalse(hard_boundary["deepseek_may_modify_strategy_action"])
+        self.assertFalse(hard_boundary["real_trading_allowed"])
+        self.assertFalse(hard_boundary["auto_order_allowed"])
+        self.assertFalse(hard_boundary["radar_candidate_is_buy_instruction"])
+        self.assertFalse(hard_boundary["token_key_frontend_log_packet_cache_allowed"])
+        self.assertFalse(hard_boundary["mock_receipt_matrix_sanitizer_are_production_evidence"])
+        self.assertTrue(hard_boundary["frontend_visible"])
+        self.assertFalse(hard_boundary["frontend_editable"])
+        self.assertFalse(hard_boundary["frontend_writeback_allowed"])
+        self.assertFalse(hard_boundary["status_endpoint_writeback_allowed"])
+        self.assertFalse(hard_boundary["contract_creates_task"])
+        self.assertFalse(hard_boundary["contract_calls_provider_or_model"])
+        self.assertFalse(hard_boundary["contract_is_production_evidence"])
+        self.assertFalse(hard_boundary["external_calls_triggered"])
+        self.assertFalse(hard_boundary["contains_secret"])
+        self.assertTrue(hard_boundary["does_not_execute_trades"])
+        self.assertTrue(hard_boundary["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["runtime_hard_boundary_contract_visible"])
+        self.assertEqual(packet["live_light"]["runtime_hard_boundary_row_count"], 12)
+        self.assertEqual(packet["live_light"]["runtime_hard_boundary_blocking_count"], 0)
+        self.assertFalse(packet["live_light"]["runtime_hard_boundary_get_cache_external_calls_allowed"])
+        self.assertFalse(packet["live_light"]["runtime_hard_boundary_react_render_provider_calls_allowed"])
+        self.assertFalse(packet["live_light"]["runtime_hard_boundary_fastapi_startup_external_calls_allowed"])
+        self.assertTrue(packet["live_light"]["runtime_hard_boundary_post_task_worker_local_fallback_required"])
+        self.assertTrue(packet["live_light"]["runtime_hard_boundary_call_ledger_required"])
+        self.assertTrue(packet["live_light"]["runtime_hard_boundary_model_ledger_required_for_deepseek"])
+        self.assertFalse(packet["live_light"]["runtime_hard_boundary_deepseek_is_data_source"])
+        self.assertFalse(packet["live_light"]["runtime_hard_boundary_real_trading_allowed"])
+        self.assertFalse(packet["live_light"]["runtime_hard_boundary_token_key_frontend_log_packet_cache_allowed"])
+        self.assertFalse(packet["live_light"]["runtime_hard_boundary_contract_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_hard_boundary_contract_visible"])
+        self.assertEqual(packet["policy"]["runtime_hard_boundary_row_count"], 12)
+        self.assertEqual(packet["policy"]["runtime_hard_boundary_blocking_count"], 0)
+        self.assertFalse(packet["policy"]["runtime_hard_boundary_get_cache_external_calls_allowed"])
+        self.assertFalse(packet["policy"]["runtime_hard_boundary_react_render_provider_calls_allowed"])
+        self.assertFalse(packet["policy"]["runtime_hard_boundary_fastapi_startup_external_calls_allowed"])
+        self.assertTrue(packet["policy"]["runtime_hard_boundary_post_task_worker_local_fallback_required"])
+        self.assertTrue(packet["policy"]["runtime_hard_boundary_call_ledger_required"])
+        self.assertTrue(packet["policy"]["runtime_hard_boundary_model_ledger_required_for_deepseek"])
+        self.assertFalse(packet["policy"]["runtime_hard_boundary_deepseek_is_data_source"])
+        self.assertFalse(packet["policy"]["runtime_hard_boundary_real_trading_allowed"])
+        self.assertFalse(packet["policy"]["runtime_hard_boundary_token_key_frontend_log_packet_cache_allowed"])
+        self.assertFalse(packet["policy"]["runtime_hard_boundary_contract_is_production_evidence"])
+        cache_first_polling = packet["runtime_cache_first_polling_contract"]
+        self.assertEqual(
+            cache_first_polling["schema_version"],
+            "command_center_runtime_cache_first_polling_contract.v1",
+        )
+        self.assertEqual(
+            cache_first_polling["status"],
+            "runtime_cache_first_polling_visible_browser_evidence_pending",
+        )
+        self.assertEqual(cache_first_polling["mode"], "live_light")
+        self.assertEqual(cache_first_polling["phase_count"], 7)
+        self.assertEqual(
+            cache_first_polling["phase_order"],
+            [
+                "initial_cache_render",
+                "mode_and_config_status_read",
+                "after_cache_render_bootstrap_post",
+                "search_submit_local_projection_post",
+                "task_status_polling",
+                "success_refresh_cache_and_status",
+                "failure_recovery_last_good_cache",
+            ],
+        )
+        cache_polling_rows = {row["phase_key"]: row for row in cache_first_polling["phase_rows"]}
+        self.assertEqual(set(cache_polling_rows), set(cache_first_polling["phase_order"]))
+        self.assertEqual(
+            [cache_polling_rows[key]["phase_order"] for key in cache_first_polling["phase_order"]],
+            [1, 2, 3, 4, 5, 6, 7],
+        )
+        self.assertTrue(cache_polling_rows["initial_cache_render"]["cache_read_required"])
+        self.assertTrue(cache_polling_rows["initial_cache_render"]["must_complete_before_local_post"])
+        self.assertFalse(cache_polling_rows["initial_cache_render"]["local_backend_post_allowed"])
+        self.assertFalse(cache_polling_rows["mode_and_config_status_read"]["task_creation_allowed"])
+        self.assertTrue(cache_polling_rows["mode_and_config_status_read"]["bootstrap_status_read_required"])
+        self.assertTrue(cache_polling_rows["after_cache_render_bootstrap_post"]["local_backend_post_allowed"])
+        self.assertTrue(cache_polling_rows["after_cache_render_bootstrap_post"]["task_creation_allowed"])
+        self.assertEqual(
+            cache_polling_rows["after_cache_render_bootstrap_post"]["task_route"],
+            "POST /api/bootstrap/live-startup",
+        )
+        self.assertTrue(cache_polling_rows["search_submit_local_projection_post"]["local_backend_post_allowed"])
+        self.assertTrue(cache_polling_rows["search_submit_local_projection_post"]["task_creation_allowed"])
+        self.assertTrue(cache_polling_rows["search_submit_local_projection_post"]["safe_submit_required"])
+        self.assertEqual(
+            cache_polling_rows["search_submit_local_projection_post"]["task_route"],
+            "POST /api/candidate-radar/quant-projection",
+        )
+        self.assertTrue(cache_polling_rows["task_status_polling"]["polling_required"])
+        self.assertFalse(cache_polling_rows["task_status_polling"]["task_creation_allowed"])
+        self.assertTrue(cache_polling_rows["success_refresh_cache_and_status"]["success_refresh_required"])
+        self.assertTrue(cache_polling_rows["success_refresh_cache_and_status"]["cache_read_required"])
+        self.assertTrue(cache_polling_rows["success_refresh_cache_and_status"]["bootstrap_status_read_required"])
+        self.assertTrue(cache_polling_rows["failure_recovery_last_good_cache"]["last_good_cache_required"])
+        self.assertTrue(cache_polling_rows["failure_recovery_last_good_cache"]["manual_retry_only"])
+        self.assertTrue(cache_polling_rows["failure_recovery_last_good_cache"]["safe_error_required"])
+        for row in cache_polling_rows.values():
+            self.assertFalse(row["react_render_blocks_on_task"])
+            self.assertFalse(row["react_render_direct_provider_calls"])
+            self.assertFalse(row["direct_provider_or_model_call_allowed"])
+            self.assertFalse(row["frontend_provider_call_allowed"])
+            self.assertFalse(row["frontend_model_call_allowed"])
+            self.assertFalse(row["github_call_allowed"])
+            self.assertFalse(row["trading_call_allowed"])
+            self.assertFalse(row["credential_value_read_allowed"])
+            self.assertFalse(row["raw_payload_or_prompt_visible_allowed"])
+            self.assertTrue(row["provider_model_execution_requires_execution_request"])
+            self.assertFalse(row["phase_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertTrue(cache_first_polling["cache_first_render_required"])
+        self.assertTrue(cache_first_polling["post_task_after_cache_render_only"])
+        self.assertTrue(cache_first_polling["safe_search_submit_after_status_gate_only"])
+        self.assertTrue(cache_first_polling["polling_required"])
+        self.assertTrue(cache_first_polling["success_refreshes_cache_and_status"])
+        self.assertTrue(cache_first_polling["failure_recovery_keeps_last_good_cache"])
+        self.assertTrue(cache_first_polling["manual_retry_only_after_failure"])
+        self.assertFalse(cache_first_polling["unbounded_task_queue_allowed"])
+        self.assertEqual(cache_first_polling["rate_limit_seconds"], 900)
+        self.assertEqual(cache_first_polling["task_creation_allowed_phase_count"], 2)
+        self.assertEqual(cache_first_polling["local_backend_post_phase_count"], 2)
+        self.assertEqual(cache_first_polling["direct_external_call_allowed_phase_count"], 0)
+        self.assertEqual(cache_first_polling["direct_provider_or_model_call_allowed_phase_count"], 0)
+        self.assertEqual(
+            cache_first_polling["linked_external_silence_schema_version"],
+            "command_center_runtime_external_silence_contract.v1",
+        )
+        self.assertEqual(cache_first_polling["linked_external_silence_row_count"], 10)
+        self.assertEqual(
+            cache_first_polling["linked_operator_summary_schema_version"],
+            "command_center_runtime_operator_summary_contract.v1",
+        )
+        self.assertEqual(
+            cache_first_polling["linked_frontend_wiring_schema_version"],
+            "command_center_search_quant_projection_frontend_wiring_acceptance_contract.v1",
+        )
+        self.assertFalse(cache_first_polling["frontend_wiring_implemented"])
+        self.assertFalse(cache_first_polling["frontend_acceptance_test_implemented"])
+        self.assertTrue(cache_first_polling["browser_runtime_evidence_pending"])
+        self.assertFalse(cache_first_polling["browser_runtime_evidence_complete"])
+        self.assertFalse(cache_first_polling["performance_trace_evidence_complete"])
+        self.assertFalse(cache_first_polling["contract_creates_task"])
+        self.assertFalse(cache_first_polling["contract_calls_provider_or_model"])
+        self.assertFalse(cache_first_polling["provider_execution_implemented"])
+        self.assertFalse(cache_first_polling["model_execution_implemented"])
+        self.assertFalse(cache_first_polling["contract_is_production_evidence"])
+        self.assertFalse(cache_first_polling["production_live_light_complete"])
+        self.assertFalse(cache_first_polling["external_calls_triggered"])
+        self.assertFalse(cache_first_polling["tushare_called"])
+        self.assertFalse(cache_first_polling["deepseek_called"])
+        self.assertFalse(cache_first_polling["github_called"])
+        self.assertFalse(cache_first_polling["contains_secret"])
+        self.assertTrue(cache_first_polling["does_not_execute_trades"])
+        self.assertTrue(cache_first_polling["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["runtime_cache_first_polling_contract_visible"])
+        self.assertEqual(packet["live_light"]["runtime_cache_first_polling_phase_count"], 7)
+        self.assertTrue(packet["live_light"]["runtime_cache_first_polling_cache_first_render_required"])
+        self.assertTrue(packet["live_light"]["runtime_cache_first_polling_task_polling_required"])
+        self.assertTrue(packet["live_light"]["runtime_cache_first_polling_last_good_cache_required"])
+        self.assertFalse(packet["live_light"]["runtime_cache_first_polling_browser_evidence_complete"])
+        self.assertFalse(packet["live_light"]["runtime_cache_first_polling_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_cache_first_polling_contract_visible"])
+        self.assertEqual(packet["policy"]["runtime_cache_first_polling_phase_count"], 7)
+        self.assertTrue(packet["policy"]["runtime_cache_first_polling_cache_first_render_required"])
+        self.assertTrue(packet["policy"]["runtime_cache_first_polling_task_polling_required"])
+        self.assertTrue(packet["policy"]["runtime_cache_first_polling_last_good_cache_required"])
+        self.assertFalse(packet["policy"]["runtime_cache_first_polling_browser_evidence_complete"])
+        self.assertFalse(packet["policy"]["runtime_cache_first_polling_is_production_evidence"])
+        frontend_enablement_gate = packet["runtime_frontend_enablement_gate_contract"]
+        self.assertEqual(
+            frontend_enablement_gate["schema_version"],
+            "command_center_live_light_frontend_enablement_gate.v1",
+        )
+        self.assertEqual(
+            frontend_enablement_gate["status"],
+            "frontend_enablement_blocked_browser_and_wiring_evidence_pending",
+        )
+        self.assertEqual(frontend_enablement_gate["mode"], "live_light")
+        self.assertEqual(frontend_enablement_gate["target_stage_key"], "stage_04_frontend_nonblocking_wiring")
+        self.assertEqual(frontend_enablement_gate["target_frontend_route"], "desktop/src/routes/CandidateRadar.tsx")
+        self.assertEqual(frontend_enablement_gate["gate_row_count"], 12)
+        self.assertEqual(frontend_enablement_gate["passed_gate_count"], 5)
+        self.assertEqual(frontend_enablement_gate["blocking_row_count"], 7)
+        self.assertFalse(frontend_enablement_gate["frontend_enablement_allowed"])
+        self.assertFalse(frontend_enablement_gate["frontend_submit_autostart_wiring_can_be_enabled"])
+        self.assertTrue(frontend_enablement_gate["browser_network_trace_required"])
+        self.assertFalse(frontend_enablement_gate["browser_runtime_evidence_complete"])
+        self.assertFalse(frontend_enablement_gate["failure_recovery_evidence_complete"])
+        self.assertFalse(frontend_enablement_gate["frontend_wiring_implemented"])
+        self.assertFalse(frontend_enablement_gate["frontend_acceptance_test_implemented"])
+        self.assertTrue(frontend_enablement_gate["backend_local_search_projection_ready"])
+        self.assertEqual(
+            frontend_enablement_gate["linked_rollout_schema_version"],
+            "command_center_live_light_rollout_roadmap.v1",
+        )
+        self.assertEqual(
+            frontend_enablement_gate["linked_cache_first_polling_schema_version"],
+            "command_center_runtime_cache_first_polling_contract.v1",
+        )
+        self.assertEqual(
+            frontend_enablement_gate["linked_frontend_wiring_schema_version"],
+            "command_center_search_quant_projection_frontend_wiring_acceptance_contract.v1",
+        )
+        self.assertEqual(
+            frontend_enablement_gate["linked_external_silence_schema_version"],
+            "command_center_runtime_external_silence_contract.v1",
+        )
+        frontend_gate_rows = {row["gate_key"]: row for row in frontend_enablement_gate["gate_rows"]}
+        self.assertEqual(
+            set(frontend_gate_rows),
+            {
+                "stage_04_is_next_implementation",
+                "live_light_mode_and_safe_config_visible",
+                "backend_local_search_projection_ready",
+                "cache_first_polling_contract_ready",
+                "frontend_wiring_acceptance_contract_ready",
+                "initial_cache_render_silent_browser_trace",
+                "safe_submit_single_local_post_browser_trace",
+                "task_polling_and_success_refresh_browser_trace",
+                "failure_recovery_last_good_cache_browser_trace",
+                "frontend_provider_model_silence_browser_trace",
+                "research_only_boundaries_visible_browser_trace",
+                "frontend_code_wiring_implemented",
+            },
+        )
+        self.assertTrue(frontend_gate_rows["stage_04_is_next_implementation"]["passed"])
+        self.assertTrue(frontend_gate_rows["live_light_mode_and_safe_config_visible"]["passed"])
+        self.assertTrue(frontend_gate_rows["backend_local_search_projection_ready"]["passed"])
+        self.assertTrue(frontend_gate_rows["cache_first_polling_contract_ready"]["passed"])
+        self.assertTrue(frontend_gate_rows["frontend_wiring_acceptance_contract_ready"]["passed"])
+        self.assertFalse(frontend_gate_rows["initial_cache_render_silent_browser_trace"]["passed"])
+        self.assertTrue(frontend_gate_rows["initial_cache_render_silent_browser_trace"]["blocks_enablement"])
+        self.assertFalse(frontend_gate_rows["safe_submit_single_local_post_browser_trace"]["passed"])
+        self.assertTrue(frontend_gate_rows["safe_submit_single_local_post_browser_trace"]["blocks_enablement"])
+        self.assertFalse(frontend_gate_rows["task_polling_and_success_refresh_browser_trace"]["passed"])
+        self.assertTrue(frontend_gate_rows["task_polling_and_success_refresh_browser_trace"]["blocks_enablement"])
+        self.assertFalse(frontend_gate_rows["failure_recovery_last_good_cache_browser_trace"]["passed"])
+        self.assertTrue(frontend_gate_rows["failure_recovery_last_good_cache_browser_trace"]["blocks_enablement"])
+        self.assertFalse(frontend_gate_rows["frontend_provider_model_silence_browser_trace"]["passed"])
+        self.assertTrue(frontend_gate_rows["frontend_provider_model_silence_browser_trace"]["blocks_enablement"])
+        self.assertFalse(frontend_gate_rows["research_only_boundaries_visible_browser_trace"]["passed"])
+        self.assertTrue(frontend_gate_rows["research_only_boundaries_visible_browser_trace"]["blocks_enablement"])
+        self.assertFalse(frontend_gate_rows["frontend_code_wiring_implemented"]["passed"])
+        self.assertTrue(frontend_gate_rows["frontend_code_wiring_implemented"]["blocks_enablement"])
+        self.assertEqual(
+            frontend_enablement_gate["blocking_gate_keys"],
+            [
+                "initial_cache_render_silent_browser_trace",
+                "safe_submit_single_local_post_browser_trace",
+                "task_polling_and_success_refresh_browser_trace",
+                "failure_recovery_last_good_cache_browser_trace",
+                "frontend_provider_model_silence_browser_trace",
+                "research_only_boundaries_visible_browser_trace",
+                "frontend_code_wiring_implemented",
+            ],
+        )
+        self.assertEqual(
+            frontend_enablement_gate["next_required_evidence"],
+            [
+                "frontend_task_receipt_and_status_panel_wiring",
+                "browser_network_trace",
+                "failure_recovery_browser_trace",
+                "research_only_boundary_visual_check",
+            ],
+        )
+        for row in frontend_gate_rows.values():
+            self.assertTrue(row["required_before_enable"])
+            self.assertFalse(row["enables_external_call_directly"])
+            self.assertFalse(row["creates_task"])
+            self.assertFalse(row["cache_get_creates_task"])
+            self.assertFalse(row["react_render_creates_task"])
+            self.assertFalse(row["react_render_direct_provider_calls"])
+            self.assertTrue(row["provider_model_execution_requires_execution_request"])
+            self.assertFalse(row["gate_row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertFalse(frontend_enablement_gate["contract_creates_task"])
+        self.assertFalse(frontend_enablement_gate["contract_calls_provider_or_model"])
+        self.assertFalse(frontend_enablement_gate["provider_execution_implemented"])
+        self.assertFalse(frontend_enablement_gate["model_execution_implemented"])
+        self.assertFalse(frontend_enablement_gate["contract_is_production_evidence"])
+        self.assertFalse(frontend_enablement_gate["production_live_light_complete"])
+        self.assertFalse(frontend_enablement_gate["external_calls_triggered"])
+        self.assertFalse(frontend_enablement_gate["tushare_called"])
+        self.assertFalse(frontend_enablement_gate["deepseek_called"])
+        self.assertFalse(frontend_enablement_gate["github_called"])
+        self.assertFalse(frontend_enablement_gate["contains_secret"])
+        self.assertTrue(frontend_enablement_gate["does_not_execute_trades"])
+        self.assertTrue(frontend_enablement_gate["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["runtime_frontend_enablement_gate_contract_visible"])
+        self.assertFalse(packet["live_light"]["runtime_frontend_enablement_allowed"])
+        self.assertEqual(packet["live_light"]["runtime_frontend_enablement_blocking_row_count"], 7)
+        self.assertEqual(
+            packet["live_light"]["runtime_frontend_enablement_target_stage_key"],
+            "stage_04_frontend_nonblocking_wiring",
+        )
+        self.assertFalse(packet["live_light"]["runtime_frontend_enablement_browser_evidence_complete"])
+        self.assertFalse(packet["live_light"]["runtime_frontend_enablement_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_frontend_enablement_gate_contract_visible"])
+        self.assertFalse(packet["policy"]["runtime_frontend_enablement_allowed"])
+        self.assertEqual(packet["policy"]["runtime_frontend_enablement_blocking_row_count"], 7)
+        self.assertEqual(
+            packet["policy"]["runtime_frontend_enablement_target_stage_key"],
+            "stage_04_frontend_nonblocking_wiring",
+        )
+        self.assertFalse(packet["policy"]["runtime_frontend_enablement_browser_evidence_complete"])
+        self.assertFalse(packet["policy"]["runtime_frontend_enablement_is_production_evidence"])
+        browser_evidence = packet["runtime_browser_evidence_contract"]
+        self.assertEqual(
+            browser_evidence["schema_version"],
+            "command_center_live_light_browser_evidence_contract.v1",
+        )
+        self.assertEqual(browser_evidence["status"], "browser_evidence_contract_visible_collection_pending")
+        self.assertEqual(browser_evidence["mode"], "live_light")
+        self.assertEqual(browser_evidence["target_stage_key"], "stage_04_frontend_nonblocking_wiring")
+        self.assertEqual(browser_evidence["target_frontend_route"], "desktop/src/routes/CandidateRadar.tsx")
+        self.assertEqual(browser_evidence["evidence_row_count"], 7)
+        self.assertEqual(browser_evidence["collected_evidence_row_count"], 0)
+        self.assertEqual(browser_evidence["passed_evidence_row_count"], 0)
+        self.assertEqual(browser_evidence["blocking_evidence_row_count"], 7)
+        self.assertEqual(browser_evidence["required_viewports"], ["desktop", "laptop", "tablet", "mobile"])
+        self.assertTrue(browser_evidence["network_trace_required"])
+        self.assertTrue(browser_evidence["failure_recovery_trace_required"])
+        self.assertTrue(browser_evidence["visual_boundary_check_required"])
+        self.assertFalse(browser_evidence["browser_evidence_complete"])
+        self.assertFalse(browser_evidence["failure_recovery_evidence_complete"])
+        self.assertFalse(browser_evidence["research_only_visual_evidence_complete"])
+        self.assertFalse(browser_evidence["frontend_wiring_implemented"])
+        self.assertFalse(browser_evidence["frontend_enablement_allowed_after_browser_evidence"])
+        self.assertFalse(browser_evidence["contract_can_promote_frontend_enablement"])
+        self.assertEqual(
+            browser_evidence["linked_frontend_enablement_gate_schema_version"],
+            "command_center_live_light_frontend_enablement_gate.v1",
+        )
+        self.assertEqual(browser_evidence["linked_frontend_enablement_blocking_row_count"], 7)
+        self.assertEqual(
+            browser_evidence["linked_cache_first_polling_schema_version"],
+            "command_center_runtime_cache_first_polling_contract.v1",
+        )
+        self.assertEqual(
+            browser_evidence["linked_frontend_wiring_schema_version"],
+            "command_center_search_quant_projection_frontend_wiring_acceptance_contract.v1",
+        )
+        self.assertEqual(
+            browser_evidence["linked_external_silence_schema_version"],
+            "command_center_runtime_external_silence_contract.v1",
+        )
+        browser_evidence_rows = {row["evidence_key"]: row for row in browser_evidence["evidence_rows"]}
+        self.assertEqual(
+            set(browser_evidence_rows),
+            {
+                "initial_cache_render_silent_browser_trace",
+                "search_typing_silent_browser_trace",
+                "safe_submit_single_local_post_browser_trace",
+                "task_polling_and_success_refresh_browser_trace",
+                "failure_recovery_last_good_cache_browser_trace",
+                "frontend_provider_model_secret_silence_browser_trace",
+                "research_only_boundaries_visible_browser_trace",
+            },
+        )
+        self.assertEqual(
+            [browser_evidence_rows[key]["evidence_order"] for key in browser_evidence_rows],
+            [1, 2, 3, 4, 5, 6, 7],
+        )
+        self.assertIn(
+            "POST /api/bootstrap/live-startup before cache render completes",
+            browser_evidence_rows["initial_cache_render_silent_browser_trace"]["forbidden_route_patterns"],
+        )
+        self.assertIn(
+            "POST /api/candidate-radar/quant-projection",
+            browser_evidence_rows["search_typing_silent_browser_trace"]["forbidden_route_patterns"],
+        )
+        self.assertIn(
+            "GET /api/tasks/{task_id}",
+            browser_evidence_rows["safe_submit_single_local_post_browser_trace"]["allowed_route_patterns"],
+        )
+        self.assertIn(
+            "GET /api/candidate-radar/cache",
+            browser_evidence_rows["task_polling_and_success_refresh_browser_trace"]["allowed_route_patterns"],
+        )
+        self.assertIn(
+            "automatic retry POST",
+            browser_evidence_rows["failure_recovery_last_good_cache_browser_trace"]["forbidden_route_patterns"],
+        )
+        self.assertIn(
+            "Authorization/Bearer/token/key in packet",
+            browser_evidence_rows["frontend_provider_model_secret_silence_browser_trace"][
+                "forbidden_route_patterns"
+            ],
+        )
+        self.assertIn(
+            "strategy action mutation route",
+            browser_evidence_rows["research_only_boundaries_visible_browser_trace"]["forbidden_route_patterns"],
+        )
+        for row in browser_evidence_rows.values():
+            self.assertTrue(row["required_before_frontend_enablement"])
+            self.assertFalse(row["evidence_collected"])
+            self.assertFalse(row["passed"])
+            self.assertTrue(row["blocks_frontend_enablement"])
+            self.assertTrue(row["requires_browser_network_trace"])
+            self.assertTrue(row["frontend_wiring_required"])
+            self.assertFalse(row["creates_task"])
+            self.assertFalse(row["cache_get_creates_task"])
+            self.assertFalse(row["react_render_creates_task"])
+            self.assertFalse(row["react_render_direct_provider_calls"])
+            self.assertTrue(row["provider_model_execution_requires_execution_request"])
+            self.assertFalse(row["evidence_row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertFalse(browser_evidence["contract_creates_task"])
+        self.assertFalse(browser_evidence["contract_calls_provider_or_model"])
+        self.assertFalse(browser_evidence["provider_execution_implemented"])
+        self.assertFalse(browser_evidence["model_execution_implemented"])
+        self.assertFalse(browser_evidence["contract_is_production_evidence"])
+        self.assertFalse(browser_evidence["production_live_light_complete"])
+        self.assertFalse(browser_evidence["external_calls_triggered"])
+        self.assertFalse(browser_evidence["tushare_called"])
+        self.assertFalse(browser_evidence["deepseek_called"])
+        self.assertFalse(browser_evidence["github_called"])
+        self.assertFalse(browser_evidence["contains_secret"])
+        self.assertTrue(browser_evidence["does_not_execute_trades"])
+        self.assertTrue(browser_evidence["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["runtime_browser_evidence_contract_visible"])
+        self.assertEqual(packet["live_light"]["runtime_browser_evidence_row_count"], 7)
+        self.assertTrue(packet["live_light"]["runtime_browser_evidence_network_trace_required"])
+        self.assertFalse(packet["live_light"]["runtime_browser_evidence_complete"])
+        self.assertEqual(packet["live_light"]["runtime_browser_evidence_blocking_row_count"], 7)
+        self.assertFalse(packet["live_light"]["runtime_browser_evidence_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_browser_evidence_contract_visible"])
+        self.assertEqual(packet["policy"]["runtime_browser_evidence_row_count"], 7)
+        self.assertTrue(packet["policy"]["runtime_browser_evidence_network_trace_required"])
+        self.assertFalse(packet["policy"]["runtime_browser_evidence_complete"])
+        self.assertEqual(packet["policy"]["runtime_browser_evidence_blocking_row_count"], 7)
+        self.assertFalse(packet["policy"]["runtime_browser_evidence_is_production_evidence"])
+        frontend_wiring_manifest = packet["runtime_frontend_wiring_manifest_contract"]
+        self.assertEqual(
+            frontend_wiring_manifest["schema_version"],
+            "command_center_live_light_frontend_wiring_manifest.v1",
+        )
+        self.assertEqual(
+            frontend_wiring_manifest["status"],
+            "frontend_wiring_manifest_visible_implementation_pending",
+        )
+        self.assertEqual(frontend_wiring_manifest["mode"], "live_light")
+        self.assertEqual(frontend_wiring_manifest["target_stage_key"], "stage_04_frontend_nonblocking_wiring")
+        self.assertEqual(frontend_wiring_manifest["target_frontend_route"], "desktop/src/routes/CandidateRadar.tsx")
+        self.assertEqual(frontend_wiring_manifest["manifest_row_count"], 9)
+        self.assertEqual(frontend_wiring_manifest["implementation_done_row_count"], 0)
+        self.assertEqual(frontend_wiring_manifest["pending_manifest_row_count"], 9)
+        self.assertEqual(frontend_wiring_manifest["target_components"], ["TaskLaunchReceipt", "TaskStatusPanel"])
+        self.assertEqual(frontend_wiring_manifest["target_client_helpers"], ["postCandidateRadarQuantProjection"])
+        self.assertEqual(
+            frontend_wiring_manifest["required_local_routes"],
+            [
+                "GET /api/bootstrap/status",
+                "GET /api/candidate-radar/cache",
+                "POST /api/candidate-radar/quant-projection",
+                "GET /api/tasks/{task_id}",
+            ],
+        )
+        self.assertFalse(frontend_wiring_manifest["frontend_wiring_implemented"])
+        self.assertFalse(frontend_wiring_manifest["frontend_acceptance_test_implemented"])
+        self.assertFalse(frontend_wiring_manifest["browser_evidence_complete"])
+        self.assertFalse(frontend_wiring_manifest["frontend_enablement_allowed"])
+        self.assertFalse(frontend_wiring_manifest["manifest_can_enable_frontend"])
+        self.assertEqual(
+            frontend_wiring_manifest["linked_frontend_enablement_gate_schema_version"],
+            "command_center_live_light_frontend_enablement_gate.v1",
+        )
+        self.assertFalse(frontend_wiring_manifest["linked_frontend_enablement_allowed"])
+        self.assertEqual(
+            frontend_wiring_manifest["linked_browser_evidence_schema_version"],
+            "command_center_live_light_browser_evidence_contract.v1",
+        )
+        self.assertFalse(frontend_wiring_manifest["linked_browser_evidence_complete"])
+        self.assertEqual(
+            frontend_wiring_manifest["linked_cache_first_polling_schema_version"],
+            "command_center_runtime_cache_first_polling_contract.v1",
+        )
+        self.assertEqual(
+            frontend_wiring_manifest["linked_frontend_wiring_schema_version"],
+            "command_center_search_quant_projection_frontend_wiring_acceptance_contract.v1",
+        )
+        frontend_manifest_rows = {
+            row["manifest_key"]: row for row in frontend_wiring_manifest["manifest_rows"]
+        }
+        self.assertEqual(
+            set(frontend_manifest_rows),
+            {
+                "bootstrap_status_mode_gate",
+                "cache_first_initial_render_guard",
+                "safe_submit_handler",
+                "task_launch_receipt_binding",
+                "task_status_panel_polling",
+                "success_refresh_cache_and_status",
+                "failure_recovery_last_good_cache",
+                "provider_model_pending_boundary",
+                "browser_evidence_hook",
+            },
+        )
+        self.assertEqual(
+            [frontend_manifest_rows[key]["manifest_order"] for key in frontend_manifest_rows],
+            [1, 2, 3, 4, 5, 6, 7, 8, 9],
+        )
+        self.assertEqual(
+            frontend_manifest_rows["bootstrap_status_mode_gate"]["required_route"],
+            "GET /api/bootstrap/status",
+        )
+        self.assertEqual(
+            frontend_manifest_rows["safe_submit_handler"]["target_helper_or_component"],
+            "postCandidateRadarQuantProjection",
+        )
+        self.assertTrue(frontend_manifest_rows["safe_submit_handler"]["local_post_allowed_after_behavior"])
+        self.assertEqual(
+            frontend_manifest_rows["task_launch_receipt_binding"]["target_helper_or_component"],
+            "TaskLaunchReceipt",
+        )
+        self.assertEqual(
+            frontend_manifest_rows["task_status_panel_polling"]["target_helper_or_component"],
+            "TaskStatusPanel",
+        )
+        self.assertIn(
+            "candidate_cache_refreshed",
+            frontend_manifest_rows["success_refresh_cache_and_status"]["required_state"],
+        )
+        self.assertIn(
+            "manual_retry_only",
+            frontend_manifest_rows["failure_recovery_last_good_cache"]["required_state"],
+        )
+        self.assertIn(
+            "no_action_mutation",
+            frontend_manifest_rows["provider_model_pending_boundary"]["required_state"],
+        )
+        self.assertIn(
+            "network_trace",
+            frontend_manifest_rows["browser_evidence_hook"]["required_state"],
+        )
+        self.assertEqual(frontend_wiring_manifest["required_manifest_keys"], list(frontend_manifest_rows))
+        for row in frontend_manifest_rows.values():
+            self.assertTrue(row["required_before_frontend_enablement"])
+            self.assertFalse(row["implementation_done"])
+            self.assertTrue(row["browser_evidence_required"])
+            self.assertFalse(row["creates_task_from_render"])
+            self.assertFalse(row["creates_task_from_typing"])
+            self.assertFalse(row["cache_get_creates_task"])
+            self.assertFalse(row["react_render_direct_provider_calls"])
+            self.assertFalse(row["frontend_provider_call_allowed"])
+            self.assertFalse(row["frontend_model_call_allowed"])
+            self.assertFalse(row["token_key_exposure_allowed"])
+            self.assertTrue(row["provider_model_execution_requires_execution_request"])
+            self.assertFalse(row["manifest_row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertFalse(frontend_wiring_manifest["contract_creates_task"])
+        self.assertFalse(frontend_wiring_manifest["contract_calls_provider_or_model"])
+        self.assertFalse(frontend_wiring_manifest["provider_execution_implemented"])
+        self.assertFalse(frontend_wiring_manifest["model_execution_implemented"])
+        self.assertFalse(frontend_wiring_manifest["contract_is_production_evidence"])
+        self.assertFalse(frontend_wiring_manifest["production_live_light_complete"])
+        self.assertFalse(frontend_wiring_manifest["external_calls_triggered"])
+        self.assertFalse(frontend_wiring_manifest["tushare_called"])
+        self.assertFalse(frontend_wiring_manifest["deepseek_called"])
+        self.assertFalse(frontend_wiring_manifest["github_called"])
+        self.assertFalse(frontend_wiring_manifest["contains_secret"])
+        self.assertTrue(frontend_wiring_manifest["does_not_execute_trades"])
+        self.assertTrue(frontend_wiring_manifest["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["runtime_frontend_wiring_manifest_contract_visible"])
+        self.assertEqual(packet["live_light"]["runtime_frontend_wiring_manifest_row_count"], 9)
+        self.assertEqual(packet["live_light"]["runtime_frontend_wiring_manifest_pending_row_count"], 9)
+        self.assertFalse(packet["live_light"]["runtime_frontend_wiring_manifest_implemented"])
+        self.assertFalse(packet["live_light"]["runtime_frontend_wiring_manifest_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_frontend_wiring_manifest_contract_visible"])
+        self.assertEqual(packet["policy"]["runtime_frontend_wiring_manifest_row_count"], 9)
+        self.assertEqual(packet["policy"]["runtime_frontend_wiring_manifest_pending_row_count"], 9)
+        self.assertFalse(packet["policy"]["runtime_frontend_wiring_manifest_implemented"])
+        self.assertFalse(packet["policy"]["runtime_frontend_wiring_manifest_is_production_evidence"])
+        frontend_acceptance_runbook = packet["runtime_frontend_acceptance_runbook_contract"]
+        self.assertEqual(
+            frontend_acceptance_runbook["schema_version"],
+            "command_center_live_light_frontend_acceptance_runbook.v1",
+        )
+        self.assertEqual(
+            frontend_acceptance_runbook["status"],
+            "frontend_acceptance_runbook_visible_collection_pending",
+        )
+        self.assertEqual(frontend_acceptance_runbook["mode"], "live_light")
+        self.assertEqual(frontend_acceptance_runbook["target_stage_key"], "stage_04_frontend_nonblocking_wiring")
+        self.assertEqual(frontend_acceptance_runbook["target_frontend_route"], "desktop/src/routes/CandidateRadar.tsx")
+        self.assertEqual(frontend_acceptance_runbook["runbook_row_count"], 8)
+        self.assertEqual(frontend_acceptance_runbook["completed_runbook_row_count"], 0)
+        self.assertEqual(frontend_acceptance_runbook["pending_runbook_row_count"], 8)
+        expected_runbook_keys = [
+            "prepare_cache_only_baseline",
+            "prepare_live_light_config_probe",
+            "capture_initial_cache_render_silence",
+            "capture_search_typing_silence",
+            "capture_safe_submit_task_lifecycle",
+            "capture_success_refresh",
+            "capture_failure_recovery",
+            "capture_research_only_boundaries",
+        ]
+        expected_artifacts = [
+            "cache_only_network_trace.json",
+            "live_light_status_packet.json",
+            "initial_cache_render_trace.json",
+            "search_typing_trace.json",
+            "safe_submit_task_lifecycle_trace.json",
+            "success_refresh_trace.json",
+            "failure_recovery_trace.json",
+            "research_only_boundary_trace.json",
+        ]
+        self.assertEqual(frontend_acceptance_runbook["required_runbook_keys"], expected_runbook_keys)
+        self.assertEqual(frontend_acceptance_runbook["required_artifacts"], expected_artifacts)
+        self.assertTrue(frontend_acceptance_runbook["browser_evidence_contract_required"])
+        self.assertTrue(frontend_acceptance_runbook["frontend_wiring_manifest_required"])
+        self.assertFalse(frontend_acceptance_runbook["frontend_enablement_allowed_after_runbook"])
+        self.assertFalse(frontend_acceptance_runbook["runbook_can_promote_frontend_enablement"])
+        self.assertEqual(
+            frontend_acceptance_runbook["linked_frontend_enablement_gate_schema_version"],
+            "command_center_live_light_frontend_enablement_gate.v1",
+        )
+        self.assertFalse(frontend_acceptance_runbook["linked_frontend_enablement_allowed"])
+        self.assertEqual(
+            frontend_acceptance_runbook["linked_browser_evidence_schema_version"],
+            "command_center_live_light_browser_evidence_contract.v1",
+        )
+        self.assertFalse(frontend_acceptance_runbook["linked_browser_evidence_complete"])
+        self.assertEqual(
+            frontend_acceptance_runbook["linked_frontend_wiring_manifest_schema_version"],
+            "command_center_live_light_frontend_wiring_manifest.v1",
+        )
+        self.assertEqual(frontend_acceptance_runbook["linked_frontend_wiring_manifest_pending_row_count"], 9)
+        frontend_runbook_rows = {
+            row["runbook_key"]: row for row in frontend_acceptance_runbook["runbook_rows"]
+        }
+        self.assertEqual(list(frontend_runbook_rows), expected_runbook_keys)
+        self.assertEqual(
+            [frontend_runbook_rows[key]["runbook_order"] for key in expected_runbook_keys],
+            [1, 2, 3, 4, 5, 6, 7, 8],
+        )
+        self.assertEqual(
+            frontend_runbook_rows["prepare_cache_only_baseline"]["required_artifact"],
+            "cache_only_network_trace.json",
+        )
+        self.assertEqual(
+            frontend_runbook_rows["prepare_live_light_config_probe"]["required_route"],
+            "GET /api/bootstrap/status",
+        )
+        self.assertFalse(
+            frontend_runbook_rows["capture_search_typing_silence"]["future_collection_local_post_expected"]
+        )
+        self.assertTrue(
+            frontend_runbook_rows["capture_safe_submit_task_lifecycle"]["future_collection_local_post_expected"]
+        )
+        self.assertEqual(
+            frontend_runbook_rows["capture_safe_submit_task_lifecycle"]["future_collection_local_post_route"],
+            "POST /api/candidate-radar/quant-projection",
+        )
+        self.assertIn(
+            "GET /api/tasks/{task_id}",
+            frontend_runbook_rows["capture_failure_recovery"]["required_route"],
+        )
+        self.assertIn(
+            "no provider/model/GitHub/trading calls",
+            frontend_runbook_rows["capture_research_only_boundaries"]["required_observation"],
+        )
+        for row in frontend_runbook_rows.values():
+            self.assertTrue(row["required_before_frontend_enablement"])
+            self.assertFalse(row["runbook_step_complete"])
+            self.assertFalse(row["artifact_collected"])
+            self.assertTrue(row["blocks_frontend_enablement"])
+            self.assertFalse(row["creates_task"])
+            self.assertFalse(row["cache_get_creates_task"])
+            self.assertFalse(row["react_render_creates_task"])
+            self.assertFalse(row["frontend_provider_call_allowed"])
+            self.assertFalse(row["frontend_model_call_allowed"])
+            self.assertFalse(row["token_key_exposure_allowed"])
+            self.assertTrue(row["provider_model_execution_requires_execution_request"])
+            self.assertFalse(row["runbook_row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertFalse(frontend_acceptance_runbook["frontend_wiring_implemented"])
+        self.assertFalse(frontend_acceptance_runbook["browser_evidence_complete"])
+        self.assertFalse(frontend_acceptance_runbook["contract_creates_task"])
+        self.assertFalse(frontend_acceptance_runbook["contract_calls_provider_or_model"])
+        self.assertFalse(frontend_acceptance_runbook["provider_execution_implemented"])
+        self.assertFalse(frontend_acceptance_runbook["model_execution_implemented"])
+        self.assertFalse(frontend_acceptance_runbook["contract_is_production_evidence"])
+        self.assertFalse(frontend_acceptance_runbook["production_live_light_complete"])
+        self.assertFalse(frontend_acceptance_runbook["external_calls_triggered"])
+        self.assertFalse(frontend_acceptance_runbook["tushare_called"])
+        self.assertFalse(frontend_acceptance_runbook["deepseek_called"])
+        self.assertFalse(frontend_acceptance_runbook["github_called"])
+        self.assertFalse(frontend_acceptance_runbook["contains_secret"])
+        self.assertTrue(frontend_acceptance_runbook["does_not_execute_trades"])
+        self.assertTrue(frontend_acceptance_runbook["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["runtime_frontend_acceptance_runbook_contract_visible"])
+        self.assertEqual(packet["live_light"]["runtime_frontend_acceptance_runbook_row_count"], 8)
+        self.assertEqual(packet["live_light"]["runtime_frontend_acceptance_runbook_pending_row_count"], 8)
+        self.assertFalse(packet["live_light"]["runtime_frontend_acceptance_runbook_complete"])
+        self.assertFalse(packet["live_light"]["runtime_frontend_acceptance_runbook_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_frontend_acceptance_runbook_contract_visible"])
+        self.assertEqual(packet["policy"]["runtime_frontend_acceptance_runbook_row_count"], 8)
+        self.assertEqual(packet["policy"]["runtime_frontend_acceptance_runbook_pending_row_count"], 8)
+        self.assertFalse(packet["policy"]["runtime_frontend_acceptance_runbook_complete"])
+        self.assertFalse(packet["policy"]["runtime_frontend_acceptance_runbook_is_production_evidence"])
+        frontend_acceptance_artifact = packet["runtime_frontend_acceptance_artifact_contract"]
+        self.assertEqual(
+            frontend_acceptance_artifact["schema_version"],
+            "command_center_live_light_frontend_acceptance_artifact_contract.v1",
+        )
+        self.assertEqual(
+            frontend_acceptance_artifact["status"],
+            "frontend_acceptance_artifact_contract_visible_collection_pending",
+        )
+        self.assertEqual(frontend_acceptance_artifact["mode"], "live_light")
+        self.assertEqual(frontend_acceptance_artifact["target_stage_key"], "stage_04_frontend_nonblocking_wiring")
+        self.assertEqual(frontend_acceptance_artifact["target_frontend_route"], "desktop/src/routes/CandidateRadar.tsx")
+        self.assertEqual(frontend_acceptance_artifact["artifact_row_count"], 8)
+        self.assertEqual(frontend_acceptance_artifact["collected_artifact_count"], 0)
+        self.assertEqual(frontend_acceptance_artifact["pending_artifact_count"], 8)
+        self.assertFalse(frontend_acceptance_artifact["artifact_collection_complete"])
+        expected_artifact_keys = [
+            "cache_only_network_trace",
+            "live_light_status_packet",
+            "initial_cache_render_trace",
+            "search_typing_trace",
+            "safe_submit_task_lifecycle_trace",
+            "success_refresh_trace",
+            "failure_recovery_trace",
+            "research_only_boundary_trace",
+        ]
+        self.assertEqual(frontend_acceptance_artifact["required_artifact_keys"], expected_artifact_keys)
+        self.assertEqual(frontend_acceptance_artifact["required_artifact_files"], expected_artifacts)
+        self.assertEqual(
+            frontend_acceptance_artifact["required_storage_target"],
+            "local_redacted_stage_04_acceptance_artifacts",
+        )
+        self.assertTrue(frontend_acceptance_artifact["artifact_manifest_write_pending"])
+        self.assertTrue(frontend_acceptance_artifact["artifact_hashes_required"])
+        self.assertTrue(frontend_acceptance_artifact["artifact_redaction_review_required"])
+        self.assertFalse(frontend_acceptance_artifact["artifact_redaction_review_complete"])
+        self.assertFalse(frontend_acceptance_artifact["raw_trace_upload_allowed"])
+        self.assertFalse(frontend_acceptance_artifact["frontend_packet_may_include_artifact_body"])
+        self.assertTrue(frontend_acceptance_artifact["frontend_packet_may_include_artifact_hash"])
+        self.assertEqual(
+            frontend_acceptance_artifact["linked_frontend_acceptance_runbook_schema_version"],
+            "command_center_live_light_frontend_acceptance_runbook.v1",
+        )
+        self.assertEqual(frontend_acceptance_artifact["linked_frontend_acceptance_runbook_pending_row_count"], 8)
+        self.assertEqual(
+            frontend_acceptance_artifact["linked_browser_evidence_schema_version"],
+            "command_center_live_light_browser_evidence_contract.v1",
+        )
+        self.assertFalse(frontend_acceptance_artifact["linked_browser_evidence_complete"])
+        frontend_artifact_rows = {
+            row["artifact_key"]: row for row in frontend_acceptance_artifact["artifact_rows"]
+        }
+        self.assertEqual(list(frontend_artifact_rows), expected_artifact_keys)
+        self.assertEqual(
+            [frontend_artifact_rows[key]["artifact_order"] for key in expected_artifact_keys],
+            [1, 2, 3, 4, 5, 6, 7, 8],
+        )
+        self.assertEqual(
+            frontend_artifact_rows["cache_only_network_trace"]["linked_runbook_key"],
+            "prepare_cache_only_baseline",
+        )
+        self.assertEqual(
+            frontend_artifact_rows["live_light_status_packet"]["artifact_kind"],
+            "bootstrap_status_snapshot",
+        )
+        self.assertEqual(
+            frontend_artifact_rows["safe_submit_task_lifecycle_trace"]["artifact_kind"],
+            "browser_network_and_task_trace",
+        )
+        self.assertIn(
+            "trade_or_order_payload",
+            frontend_artifact_rows["research_only_boundary_trace"]["prohibited_content"],
+        )
+        self.assertIn(
+            "token_like_values",
+            frontend_artifact_rows["research_only_boundary_trace"]["required_redaction"],
+        )
+        for row in frontend_artifact_rows.values():
+            self.assertEqual(row["storage_target"], "local_redacted_stage_04_acceptance_artifacts")
+            self.assertTrue(row["artifact_manifest_write_pending"])
+            self.assertFalse(row["artifact_collected"])
+            self.assertFalse(row["artifact_exists"])
+            self.assertFalse(row["artifact_hash_recorded"])
+            self.assertFalse(row["artifact_redaction_reviewed"])
+            self.assertIn("local_route_method_status_timing", row["allowed_content"])
+            self.assertIn("credential_values", row["prohibited_content"])
+            self.assertIn("authorization_headers", row["required_redaction"])
+            self.assertTrue(row["required_before_frontend_enablement"])
+            self.assertTrue(row["blocks_frontend_enablement"])
+            self.assertFalse(row["artifact_row_is_production_evidence"])
+            self.assertFalse(row["creates_task"])
+            self.assertFalse(row["cache_get_creates_task"])
+            self.assertFalse(row["react_render_creates_task"])
+            self.assertFalse(row["frontend_provider_call_allowed"])
+            self.assertFalse(row["frontend_model_call_allowed"])
+            self.assertFalse(row["token_key_exposure_allowed"])
+            self.assertTrue(row["provider_model_execution_requires_execution_request"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertFalse(frontend_acceptance_artifact["frontend_wiring_implemented"])
+        self.assertFalse(frontend_acceptance_artifact["browser_evidence_complete"])
+        self.assertFalse(frontend_acceptance_artifact["contract_creates_task"])
+        self.assertFalse(frontend_acceptance_artifact["contract_calls_provider_or_model"])
+        self.assertFalse(frontend_acceptance_artifact["provider_execution_implemented"])
+        self.assertFalse(frontend_acceptance_artifact["model_execution_implemented"])
+        self.assertFalse(frontend_acceptance_artifact["contract_is_production_evidence"])
+        self.assertFalse(frontend_acceptance_artifact["production_live_light_complete"])
+        self.assertFalse(frontend_acceptance_artifact["external_calls_triggered"])
+        self.assertFalse(frontend_acceptance_artifact["tushare_called"])
+        self.assertFalse(frontend_acceptance_artifact["deepseek_called"])
+        self.assertFalse(frontend_acceptance_artifact["github_called"])
+        self.assertFalse(frontend_acceptance_artifact["contains_secret"])
+        self.assertTrue(frontend_acceptance_artifact["does_not_execute_trades"])
+        self.assertTrue(frontend_acceptance_artifact["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["runtime_frontend_acceptance_artifact_contract_visible"])
+        self.assertEqual(packet["live_light"]["runtime_frontend_acceptance_artifact_row_count"], 8)
+        self.assertEqual(packet["live_light"]["runtime_frontend_acceptance_artifact_pending_count"], 8)
+        self.assertTrue(packet["live_light"]["runtime_frontend_acceptance_artifact_redaction_review_required"])
+        self.assertFalse(packet["live_light"]["runtime_frontend_acceptance_artifact_collection_complete"])
+        self.assertFalse(packet["live_light"]["runtime_frontend_acceptance_artifact_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_frontend_acceptance_artifact_contract_visible"])
+        self.assertEqual(packet["policy"]["runtime_frontend_acceptance_artifact_row_count"], 8)
+        self.assertEqual(packet["policy"]["runtime_frontend_acceptance_artifact_pending_count"], 8)
+        self.assertTrue(packet["policy"]["runtime_frontend_acceptance_artifact_redaction_review_required"])
+        self.assertFalse(packet["policy"]["runtime_frontend_acceptance_artifact_collection_complete"])
+        self.assertFalse(packet["policy"]["runtime_frontend_acceptance_artifact_is_production_evidence"])
+        frontend_enablement_promotion = packet["runtime_frontend_enablement_promotion_contract"]
+        self.assertEqual(
+            frontend_enablement_promotion["schema_version"],
+            "command_center_live_light_frontend_enablement_promotion_contract.v1",
+        )
+        self.assertEqual(
+            frontend_enablement_promotion["status"],
+            "frontend_enablement_promotion_visible_blocked",
+        )
+        self.assertEqual(frontend_enablement_promotion["mode"], "live_light")
+        self.assertEqual(
+            frontend_enablement_promotion["target_stage_key"],
+            "stage_04_frontend_nonblocking_wiring",
+        )
+        self.assertEqual(
+            frontend_enablement_promotion["target_frontend_route"],
+            "desktop/src/routes/CandidateRadar.tsx",
+        )
+        self.assertEqual(frontend_enablement_promotion["promotion_row_count"], 8)
+        self.assertEqual(frontend_enablement_promotion["satisfied_promotion_row_count"], 0)
+        self.assertEqual(frontend_enablement_promotion["blocking_promotion_row_count"], 8)
+        expected_promotion_keys = [
+            "frontend_wiring_manifest_implemented",
+            "browser_evidence_collected",
+            "acceptance_runbook_completed",
+            "acceptance_artifacts_hashed_and_reviewed",
+            "cache_only_baseline_passed",
+            "safe_submit_lifecycle_passed",
+            "failure_recovery_passed",
+            "research_only_boundary_passed",
+        ]
+        self.assertEqual(frontend_enablement_promotion["required_promotion_keys"], expected_promotion_keys)
+        self.assertFalse(frontend_enablement_promotion["frontend_enablement_allowed"])
+        self.assertFalse(frontend_enablement_promotion["promotion_can_enable_frontend"])
+        self.assertTrue(frontend_enablement_promotion["browser_evidence_required"])
+        self.assertTrue(frontend_enablement_promotion["artifact_redaction_review_required"])
+        self.assertTrue(frontend_enablement_promotion["production_promotion_required_after_frontend_enablement"])
+        self.assertEqual(
+            frontend_enablement_promotion["linked_frontend_enablement_gate_schema_version"],
+            "command_center_live_light_frontend_enablement_gate.v1",
+        )
+        self.assertFalse(frontend_enablement_promotion["linked_frontend_enablement_allowed"])
+        self.assertEqual(
+            frontend_enablement_promotion["linked_browser_evidence_schema_version"],
+            "command_center_live_light_browser_evidence_contract.v1",
+        )
+        self.assertFalse(frontend_enablement_promotion["linked_browser_evidence_complete"])
+        self.assertEqual(
+            frontend_enablement_promotion["linked_frontend_wiring_manifest_schema_version"],
+            "command_center_live_light_frontend_wiring_manifest.v1",
+        )
+        self.assertEqual(frontend_enablement_promotion["linked_frontend_wiring_manifest_pending_row_count"], 9)
+        self.assertEqual(
+            frontend_enablement_promotion["linked_frontend_acceptance_runbook_schema_version"],
+            "command_center_live_light_frontend_acceptance_runbook.v1",
+        )
+        self.assertEqual(frontend_enablement_promotion["linked_frontend_acceptance_runbook_pending_row_count"], 8)
+        self.assertEqual(
+            frontend_enablement_promotion["linked_frontend_acceptance_artifact_schema_version"],
+            "command_center_live_light_frontend_acceptance_artifact_contract.v1",
+        )
+        self.assertEqual(frontend_enablement_promotion["linked_frontend_acceptance_artifact_pending_count"], 8)
+        frontend_promotion_rows = {
+            row["promotion_key"]: row for row in frontend_enablement_promotion["promotion_rows"]
+        }
+        self.assertEqual(list(frontend_promotion_rows), expected_promotion_keys)
+        self.assertEqual(
+            [frontend_promotion_rows[key]["promotion_order"] for key in expected_promotion_keys],
+            [1, 2, 3, 4, 5, 6, 7, 8],
+        )
+        self.assertEqual(
+            frontend_promotion_rows["frontend_wiring_manifest_implemented"]["current_blocker"],
+            "frontend_wiring_manifest_implemented_false",
+        )
+        self.assertEqual(
+            frontend_promotion_rows["browser_evidence_collected"]["required_source_contract"],
+            "runtime_browser_evidence_contract",
+        )
+        self.assertEqual(
+            frontend_promotion_rows["acceptance_artifacts_hashed_and_reviewed"]["current_blocker"],
+            "pending_artifacts_or_redaction_review",
+        )
+        self.assertIn(
+            "one local POST",
+            frontend_promotion_rows["safe_submit_lifecycle_passed"]["required_evidence"],
+        )
+        self.assertIn(
+            "no provider/model/GitHub/trading leakage",
+            frontend_promotion_rows["research_only_boundary_passed"]["required_evidence"],
+        )
+        for row in frontend_promotion_rows.values():
+            self.assertTrue(row["required_before_frontend_enablement"])
+            self.assertFalse(row["promotion_criterion_met"])
+            self.assertTrue(row["blocks_frontend_enablement"])
+            self.assertFalse(row["creates_task"])
+            self.assertFalse(row["cache_get_creates_task"])
+            self.assertFalse(row["react_render_creates_task"])
+            self.assertFalse(row["frontend_provider_call_allowed"])
+            self.assertFalse(row["frontend_model_call_allowed"])
+            self.assertFalse(row["token_key_exposure_allowed"])
+            self.assertTrue(row["provider_model_execution_requires_execution_request"])
+            self.assertFalse(row["promotion_row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertFalse(frontend_enablement_promotion["frontend_wiring_implemented"])
+        self.assertFalse(frontend_enablement_promotion["browser_evidence_complete"])
+        self.assertFalse(frontend_enablement_promotion["acceptance_runbook_complete"])
+        self.assertFalse(frontend_enablement_promotion["acceptance_artifact_collection_complete"])
+        self.assertFalse(frontend_enablement_promotion["artifact_redaction_review_complete"])
+        self.assertFalse(frontend_enablement_promotion["contract_creates_task"])
+        self.assertFalse(frontend_enablement_promotion["contract_calls_provider_or_model"])
+        self.assertFalse(frontend_enablement_promotion["provider_execution_implemented"])
+        self.assertFalse(frontend_enablement_promotion["model_execution_implemented"])
+        self.assertFalse(frontend_enablement_promotion["contract_is_production_evidence"])
+        self.assertFalse(frontend_enablement_promotion["production_live_light_complete"])
+        self.assertFalse(frontend_enablement_promotion["external_calls_triggered"])
+        self.assertFalse(frontend_enablement_promotion["tushare_called"])
+        self.assertFalse(frontend_enablement_promotion["deepseek_called"])
+        self.assertFalse(frontend_enablement_promotion["github_called"])
+        self.assertFalse(frontend_enablement_promotion["contains_secret"])
+        self.assertTrue(frontend_enablement_promotion["does_not_execute_trades"])
+        self.assertTrue(frontend_enablement_promotion["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["runtime_frontend_enablement_promotion_contract_visible"])
+        self.assertEqual(packet["live_light"]["runtime_frontend_enablement_promotion_row_count"], 8)
+        self.assertEqual(packet["live_light"]["runtime_frontend_enablement_promotion_blocking_row_count"], 8)
+        self.assertFalse(packet["live_light"]["runtime_frontend_enablement_promotion_allowed"])
+        self.assertFalse(packet["live_light"]["runtime_frontend_enablement_promotion_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_frontend_enablement_promotion_contract_visible"])
+        self.assertEqual(packet["policy"]["runtime_frontend_enablement_promotion_row_count"], 8)
+        self.assertEqual(packet["policy"]["runtime_frontend_enablement_promotion_blocking_row_count"], 8)
+        self.assertFalse(packet["policy"]["runtime_frontend_enablement_promotion_allowed"])
+        self.assertFalse(packet["policy"]["runtime_frontend_enablement_promotion_is_production_evidence"])
+        frontend_release_switch = packet["runtime_frontend_enablement_release_switch_contract"]
+        self.assertEqual(
+            frontend_release_switch["schema_version"],
+            "command_center_live_light_frontend_enablement_release_switch_contract.v1",
+        )
+        self.assertEqual(
+            frontend_release_switch["status"],
+            "frontend_enablement_release_switch_visible_default_off",
+        )
+        self.assertEqual(frontend_release_switch["mode"], "live_light")
+        self.assertEqual(frontend_release_switch["target_stage_key"], "stage_04_frontend_nonblocking_wiring")
+        self.assertEqual(frontend_release_switch["target_frontend_route"], "desktop/src/routes/CandidateRadar.tsx")
+        self.assertEqual(frontend_release_switch["release_switch_key"], "COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT")
+        self.assertEqual(frontend_release_switch["release_switch_row_count"], 7)
+        self.assertEqual(frontend_release_switch["satisfied_release_switch_row_count"], 0)
+        self.assertEqual(frontend_release_switch["blocking_release_switch_row_count"], 7)
+        expected_release_switch_keys = [
+            "frontend_enablement_switch_default_off",
+            "live_light_mode_required",
+            "promotion_contract_required",
+            "server_config_source_required",
+            "rollback_on_evidence_regression",
+            "research_only_boundary_required",
+            "production_promotion_separate",
+        ]
+        self.assertEqual(frontend_release_switch["required_release_switch_keys"], expected_release_switch_keys)
+        self.assertFalse(frontend_release_switch["release_switch_default_enabled"])
+        self.assertTrue(frontend_release_switch["release_switch_configured"])
+        self.assertFalse(frontend_release_switch["effective_frontend_enablement_allowed"])
+        self.assertFalse(frontend_release_switch["frontend_enablement_allowed"])
+        self.assertFalse(frontend_release_switch["release_switch_can_enable_frontend"])
+        self.assertEqual(
+            frontend_release_switch["release_switch_source_of_truth"],
+            "server_config_layer_global_config_key_default_off",
+        )
+        self.assertFalse(frontend_release_switch["frontend_writeback_allowed"])
+        self.assertTrue(frontend_release_switch["cache_only_manual_live_full_force_off"])
+        self.assertTrue(frontend_release_switch["rollback_on_evidence_regression_required"])
+        self.assertTrue(frontend_release_switch["rollback_if_artifact_redaction_fails"])
+        self.assertTrue(frontend_release_switch["rollback_if_browser_evidence_missing"])
+        self.assertTrue(frontend_release_switch["rollback_if_research_only_boundary_missing"])
+        self.assertEqual(
+            frontend_release_switch["linked_frontend_enablement_promotion_schema_version"],
+            "command_center_live_light_frontend_enablement_promotion_contract.v1",
+        )
+        self.assertEqual(frontend_release_switch["linked_frontend_enablement_promotion_blocking_row_count"], 8)
+        self.assertFalse(frontend_release_switch["linked_frontend_enablement_promotion_allowed"])
+        self.assertTrue(frontend_release_switch["requires_live_light_mode"])
+        self.assertTrue(frontend_release_switch["requires_promotion_allowed"])
+        self.assertTrue(frontend_release_switch["requires_browser_evidence_complete"])
+        self.assertTrue(frontend_release_switch["requires_artifact_redaction_review_complete"])
+        self.assertTrue(frontend_release_switch["requires_operator_opt_in"])
+        self.assertTrue(frontend_release_switch["production_promotion_required_after_switch"])
+        frontend_release_rows = {
+            row["release_switch_key"]: row for row in frontend_release_switch["release_switch_rows"]
+        }
+        self.assertEqual(list(frontend_release_rows), expected_release_switch_keys)
+        self.assertEqual(
+            [frontend_release_rows[key]["release_switch_order"] for key in expected_release_switch_keys],
+            [1, 2, 3, 4, 5, 6, 7],
+        )
+        self.assertEqual(
+            frontend_release_rows["frontend_enablement_switch_default_off"]["current_blocker"],
+            "release_switch_default_off_until_promotion_allowed",
+        )
+        self.assertEqual(
+            frontend_release_rows["server_config_source_required"]["required_evidence"],
+            "frontend cannot write enablement state or override server mode",
+        )
+        self.assertIn(
+            "forces off",
+            frontend_release_rows["rollback_on_evidence_regression"]["required_evidence"],
+        )
+        self.assertEqual(
+            frontend_release_rows["production_promotion_separate"]["current_blocker"],
+            "production_promotion_pending",
+        )
+        for row in frontend_release_rows.values():
+            self.assertTrue(row["required_before_frontend_enablement"])
+            self.assertFalse(row["release_switch_criterion_met"])
+            self.assertTrue(row["blocks_frontend_enablement"])
+            self.assertFalse(row["effective_frontend_enablement_allowed"])
+            self.assertFalse(row["creates_task"])
+            self.assertFalse(row["cache_get_creates_task"])
+            self.assertFalse(row["react_render_creates_task"])
+            self.assertFalse(row["frontend_provider_call_allowed"])
+            self.assertFalse(row["frontend_model_call_allowed"])
+            self.assertFalse(row["frontend_writeback_allowed"])
+            self.assertFalse(row["token_key_exposure_allowed"])
+            self.assertTrue(row["provider_model_execution_requires_execution_request"])
+            self.assertFalse(row["release_switch_row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertFalse(frontend_release_switch["frontend_wiring_implemented"])
+        self.assertFalse(frontend_release_switch["browser_evidence_complete"])
+        self.assertFalse(frontend_release_switch["acceptance_artifact_collection_complete"])
+        self.assertFalse(frontend_release_switch["artifact_redaction_review_complete"])
+        self.assertFalse(frontend_release_switch["contract_creates_task"])
+        self.assertFalse(frontend_release_switch["contract_calls_provider_or_model"])
+        self.assertFalse(frontend_release_switch["provider_execution_implemented"])
+        self.assertFalse(frontend_release_switch["model_execution_implemented"])
+        self.assertFalse(frontend_release_switch["contract_is_production_evidence"])
+        self.assertFalse(frontend_release_switch["production_live_light_complete"])
+        self.assertFalse(frontend_release_switch["external_calls_triggered"])
+        self.assertFalse(frontend_release_switch["tushare_called"])
+        self.assertFalse(frontend_release_switch["deepseek_called"])
+        self.assertFalse(frontend_release_switch["github_called"])
+        self.assertFalse(frontend_release_switch["contains_secret"])
+        self.assertTrue(frontend_release_switch["does_not_execute_trades"])
+        self.assertTrue(frontend_release_switch["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["runtime_frontend_enablement_release_switch_contract_visible"])
+        self.assertEqual(packet["live_light"]["runtime_frontend_enablement_release_switch_row_count"], 7)
+        self.assertEqual(packet["live_light"]["runtime_frontend_enablement_release_switch_blocking_row_count"], 7)
+        self.assertFalse(packet["live_light"]["runtime_frontend_enablement_release_switch_effective_allowed"])
+        self.assertFalse(packet["live_light"]["runtime_frontend_enablement_release_switch_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_frontend_enablement_release_switch_contract_visible"])
+        self.assertEqual(packet["policy"]["runtime_frontend_enablement_release_switch_row_count"], 7)
+        self.assertEqual(packet["policy"]["runtime_frontend_enablement_release_switch_blocking_row_count"], 7)
+        self.assertFalse(packet["policy"]["runtime_frontend_enablement_release_switch_effective_allowed"])
+        self.assertFalse(packet["policy"]["runtime_frontend_enablement_release_switch_is_production_evidence"])
+        frontend_config_promotion = packet["runtime_frontend_enablement_config_promotion_contract"]
+        self.assertEqual(
+            frontend_config_promotion["schema_version"],
+            "command_center_live_light_frontend_enablement_config_promotion_contract.v1",
+        )
+        self.assertEqual(
+            frontend_config_promotion["status"],
+            "frontend_enablement_config_promotion_visible_global_config_promoted_default_off_validation_pending",
+        )
+        self.assertEqual(frontend_config_promotion["mode"], "live_light")
+        self.assertEqual(frontend_config_promotion["config_key"], "COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT")
+        self.assertEqual(frontend_config_promotion["target_stage_key"], "stage_04_frontend_nonblocking_wiring")
+        self.assertEqual(
+            frontend_config_promotion["target_frontend_route"],
+            "desktop/src/routes/CandidateRadar.tsx",
+        )
+        expected_config_promotion_steps = [
+            "add_global_config_allowlist_key",
+            "prove_default_false_read_path",
+            "bind_to_promotion_contract",
+            "bind_to_release_switch_rollback",
+            "block_frontend_writeback",
+            "rerun_validation_gate",
+        ]
+        self.assertEqual(frontend_config_promotion["promotion_step_count"], 6)
+        self.assertEqual(frontend_config_promotion["completed_promotion_step_count"], 2)
+        self.assertEqual(frontend_config_promotion["pending_promotion_step_count"], 4)
+        self.assertEqual(
+            frontend_config_promotion["required_promotion_step_keys"],
+            expected_config_promotion_steps,
+        )
+        self.assertFalse(frontend_config_promotion["default_value_safe"])
+        self.assertTrue(frontend_config_promotion["configured_value_safe"])
+        self.assertFalse(frontend_config_promotion["effective_value_safe"])
+        self.assertFalse(frontend_config_promotion["bootstrap_local_env_fallback_allowed"])
+        self.assertEqual(frontend_config_promotion["bootstrap_local_env_fallback_count"], 0)
+        self.assertTrue(frontend_config_promotion["global_config_allowlist_promoted"])
+        self.assertFalse(frontend_config_promotion["global_config_allowlist_promotion_pending"])
+        self.assertFalse(frontend_config_promotion["current_cycle_modifies_global_config_file"])
+        self.assertFalse(frontend_config_promotion["requires_future_config_py_file_scope"])
+        self.assertFalse(frontend_config_promotion["config_py_update_pending"])
+        self.assertFalse(frontend_config_promotion["effective_frontend_enablement_allowed"])
+        self.assertFalse(frontend_config_promotion["release_switch_default_enabled"])
+        self.assertFalse(frontend_config_promotion["frontend_enablement_allowed"])
+        self.assertFalse(frontend_config_promotion["frontend_writeback_allowed"])
+        self.assertFalse(frontend_config_promotion["status_endpoint_writeback_allowed"])
+        self.assertEqual(
+            frontend_config_promotion["linked_runtime_config_ownership_schema_version"],
+            "command_center_bootstrap_runtime_config_ownership_invariant.v1",
+        )
+        self.assertEqual(frontend_config_promotion["linked_runtime_config_ownership_row_count"], 13)
+        self.assertEqual(
+            frontend_config_promotion["linked_frontend_enablement_ownership_status"],
+            "server_config_layer_owned_global_config_allowlist_promoted_default_off",
+        )
+        self.assertEqual(
+            frontend_config_promotion["linked_frontend_enablement_current_read_path"],
+            "global_config_layer_default_false_release_switch_guard",
+        )
+        self.assertEqual(
+            frontend_config_promotion["linked_frontend_enablement_target_read_path"],
+            "global_config_layer_only",
+        )
+        self.assertFalse(
+            frontend_config_promotion["linked_frontend_enablement_global_config_allowlist_promotion_pending"]
+        )
+        self.assertFalse(
+            frontend_config_promotion["linked_frontend_enablement_bootstrap_local_env_fallback_available"]
+        )
+        self.assertEqual(
+            frontend_config_promotion["linked_release_switch_schema_version"],
+            "command_center_live_light_frontend_enablement_release_switch_contract.v1",
+        )
+        self.assertEqual(frontend_config_promotion["linked_release_switch_row_count"], 7)
+        self.assertEqual(frontend_config_promotion["linked_release_switch_blocking_row_count"], 7)
+        self.assertFalse(frontend_config_promotion["linked_release_switch_effective_allowed"])
+        frontend_config_promotion_rows = {
+            row["step_key"]: row for row in frontend_config_promotion["promotion_rows"]
+        }
+        self.assertEqual(list(frontend_config_promotion_rows), expected_config_promotion_steps)
+        self.assertEqual(
+            [frontend_config_promotion_rows[key]["step_order"] for key in expected_config_promotion_steps],
+            [1, 2, 3, 4, 5, 6],
+        )
+        self.assertEqual(
+            frontend_config_promotion_rows["add_global_config_allowlist_key"]["current_blocker"],
+            "none_global_config_allowlist_key_present",
+        )
+        self.assertIn(
+            "no bootstrap-local env fallback",
+            frontend_config_promotion_rows["prove_default_false_read_path"]["required_evidence"],
+        )
+        self.assertEqual(
+            frontend_config_promotion_rows["bind_to_release_switch_rollback"]["current_blocker"],
+            "release_switch_rollback_contract_pending",
+        )
+        self.assertEqual(
+            frontend_config_promotion_rows["block_frontend_writeback"]["target_file"],
+            "desktop/src/routes/CandidateRadar.tsx",
+        )
+        self.assertEqual(
+            frontend_config_promotion_rows["add_global_config_allowlist_key"]["status"],
+            "passed_global_config_allowlist_key_present",
+        )
+        self.assertEqual(
+            frontend_config_promotion_rows["prove_default_false_read_path"]["status"],
+            "passed_default_false_global_config_read_path",
+        )
+        self.assertTrue(frontend_config_promotion_rows["add_global_config_allowlist_key"]["promotion_step_complete"])
+        self.assertTrue(frontend_config_promotion_rows["prove_default_false_read_path"]["promotion_step_complete"])
+        self.assertFalse(frontend_config_promotion_rows["add_global_config_allowlist_key"]["blocks_frontend_enablement"])
+        self.assertFalse(frontend_config_promotion_rows["prove_default_false_read_path"]["blocks_frontend_enablement"])
+        pending_frontend_config_steps = {
+            "bind_to_promotion_contract",
+            "bind_to_release_switch_rollback",
+            "block_frontend_writeback",
+            "rerun_validation_gate",
+        }
+        for key in pending_frontend_config_steps:
+            self.assertEqual(
+                frontend_config_promotion_rows[key]["status"],
+                "pending_frontend_enablement_validation_scope",
+            )
+            self.assertFalse(frontend_config_promotion_rows[key]["promotion_step_complete"])
+            self.assertTrue(frontend_config_promotion_rows[key]["blocks_frontend_enablement"])
+        for row in frontend_config_promotion_rows.values():
+            self.assertFalse(row["config_row_is_production_evidence"])
+            self.assertFalse(row["current_cycle_modifies_global_config_file"])
+            self.assertFalse(row["bootstrap_local_env_fallback_allowed"])
+            self.assertFalse(row["frontend_writeback_allowed"])
+            self.assertFalse(row["status_endpoint_writeback_allowed"])
+            self.assertFalse(row["cache_get_creates_task"])
+            self.assertFalse(row["react_render_creates_task"])
+            self.assertFalse(row["fastapi_startup_creates_task"])
+            self.assertFalse(row["search_typing_creates_task"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertFalse(frontend_config_promotion["cache_get_creates_task"])
+        self.assertFalse(frontend_config_promotion["react_render_creates_task"])
+        self.assertFalse(frontend_config_promotion["fastapi_startup_creates_task"])
+        self.assertFalse(frontend_config_promotion["search_typing_creates_task"])
+        self.assertFalse(frontend_config_promotion["contract_creates_task"])
+        self.assertFalse(frontend_config_promotion["contract_calls_provider_or_model"])
+        self.assertFalse(frontend_config_promotion["provider_execution_implemented"])
+        self.assertFalse(frontend_config_promotion["model_execution_implemented"])
+        self.assertFalse(frontend_config_promotion["external_calls_triggered"])
+        self.assertFalse(frontend_config_promotion["tushare_called"])
+        self.assertFalse(frontend_config_promotion["deepseek_called"])
+        self.assertFalse(frontend_config_promotion["github_called"])
+        self.assertFalse(frontend_config_promotion["contains_secret"])
+        self.assertFalse(frontend_config_promotion["credential_values_exposed"])
+        self.assertFalse(frontend_config_promotion["credential_env_key_names_included"])
+        self.assertTrue(frontend_config_promotion["does_not_execute_trades"])
+        self.assertTrue(frontend_config_promotion["does_not_modify_strategy_action"])
+        self.assertFalse(frontend_config_promotion["contract_is_production_evidence"])
+        self.assertFalse(frontend_config_promotion["production_config_complete"])
+        self.assertFalse(frontend_config_promotion["production_live_light_complete"])
+        self.assertTrue(packet["live_light"]["runtime_frontend_enablement_config_promotion_contract_visible"])
+        self.assertEqual(packet["live_light"]["runtime_frontend_enablement_config_promotion_step_count"], 6)
+        self.assertEqual(
+            packet["live_light"]["runtime_frontend_enablement_config_promotion_pending_step_count"],
+            4,
+        )
+        self.assertFalse(packet["live_light"]["runtime_frontend_enablement_config_promotion_effective_allowed"])
+        self.assertFalse(
+            packet["live_light"]["runtime_frontend_enablement_config_promotion_is_production_evidence"]
+        )
+        self.assertTrue(packet["policy"]["runtime_frontend_enablement_config_promotion_contract_visible"])
+        self.assertEqual(packet["policy"]["runtime_frontend_enablement_config_promotion_step_count"], 6)
+        self.assertEqual(
+            packet["policy"]["runtime_frontend_enablement_config_promotion_pending_step_count"],
+            4,
+        )
+        self.assertFalse(packet["policy"]["runtime_frontend_enablement_config_promotion_effective_allowed"])
+        self.assertFalse(
+            packet["policy"]["runtime_frontend_enablement_config_promotion_is_production_evidence"]
+        )
         self.assertEqual(packet["live_light"]["symbol_limit"], 12)
         self.assertEqual(packet["live_light"]["rate_limit_seconds"], 900)
         self.assertEqual(packet["live_light"]["deepseek_model"], "custom-live-explain-model")
@@ -21916,12 +25285,4803 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(packet["live_light"]["ready_for_model_execution"])
         self.assertTrue(packet["policy"]["live_light_activation_receipt_visible"])
         self.assertTrue(packet["policy"]["live_light_provider_model_acceptance_runbook_visible"])
+        self.assertTrue(packet["policy"]["live_light_background_task_contract_visible"])
+        self.assertTrue(packet["policy"]["live_light_background_task_auto_trigger_allowed"])
+        self.assertTrue(packet["policy"]["live_light_background_task_creates_or_reuses_task_only"])
+        self.assertTrue(packet["policy"]["live_light_background_task_rate_limit_reuses_existing_task"])
+        self.assertTrue(packet["policy"]["live_light_background_task_scope_light_only"])
+        self.assertFalse(packet["policy"]["live_light_background_task_full_pool_scope_allowed"])
+        self.assertTrue(packet["policy"]["live_light_background_task_payload_safe_only"])
+        self.assertTrue(packet["policy"]["live_light_scope_intake_contract_visible"])
+        self.assertTrue(packet["policy"]["live_light_scope_intake_symbol_dedupe_required"])
+        self.assertTrue(packet["policy"]["live_light_scope_intake_scope_hash_required"])
+        self.assertFalse(packet["policy"]["live_light_scope_intake_search_typing_creates_task"])
+        self.assertTrue(packet["policy"]["live_light_scope_intake_secret_like_payload_fields_dropped"])
+        self.assertFalse(packet["policy"]["live_light_scope_intake_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_stage_dependency_contract_visible"])
+        self.assertTrue(packet["policy"]["live_light_stage_dependency_deepseek_requires_data_ready"])
+        self.assertTrue(packet["policy"]["live_light_stage_dependency_safe_skip_required"])
+        self.assertFalse(packet["policy"]["live_light_stage_dependency_executor_implemented"])
+        self.assertFalse(packet["policy"]["live_light_stage_dependency_contract_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_freshness_provider_gap_contract_visible"])
+        self.assertTrue(packet["policy"]["live_light_freshness_state_visible_required"])
+        self.assertTrue(packet["policy"]["live_light_provider_gap_visible_required"])
+        self.assertTrue(packet["policy"]["live_light_stale_cache_label_required"])
+        self.assertFalse(packet["policy"]["live_light_empty_or_no_record_is_verified"])
+        self.assertFalse(packet["policy"]["live_light_freshness_provider_gap_contract_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_task_lifecycle_contract_visible"])
+        self.assertTrue(packet["policy"]["live_light_task_status_polling_required"])
+        self.assertTrue(packet["policy"]["live_light_task_status_route_read_only"])
+        self.assertFalse(packet["policy"]["live_light_task_status_get_creates_task"])
+        self.assertFalse(packet["policy"]["live_light_task_success_is_provider_model_evidence"])
+        self.assertFalse(packet["policy"]["live_light_task_success_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_task_control_contract_visible"])
+        self.assertTrue(packet["policy"]["live_light_task_control_manual_only"])
+        self.assertFalse(packet["policy"]["live_light_task_control_auto_retry_enabled"])
+        self.assertFalse(packet["policy"]["live_light_task_control_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_operator_status_contract_visible"])
+        self.assertTrue(packet["policy"]["live_light_operator_status_current_mode_visible_required"])
+        self.assertTrue(packet["policy"]["live_light_operator_status_effective_source_switches_visible_required"])
+        self.assertTrue(packet["policy"]["live_light_operator_status_latest_task_status_visible_required"])
+        self.assertTrue(packet["policy"]["live_light_operator_status_rate_limit_skipped_visible_required"])
+        self.assertTrue(packet["policy"]["live_light_operator_status_safe_error_visible_required"])
+        self.assertTrue(packet["policy"]["live_light_operator_status_read_only"])
+        self.assertFalse(packet["policy"]["live_light_operator_status_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_latest_bootstrap_task_status_visible"])
+        self.assertFalse(packet["policy"]["live_light_latest_bootstrap_task_lookup_creates_task"])
+        self.assertFalse(packet["policy"]["live_light_latest_bootstrap_task_success_is_provider_model_evidence"])
+        self.assertFalse(packet["policy"]["live_light_latest_bootstrap_task_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_promotion_gate_contract_visible"])
+        self.assertFalse(packet["policy"]["live_light_promotion_gate_real_provider_model_evidence_complete"])
+        self.assertFalse(packet["policy"]["live_light_promotion_gate_remote_ci_green"])
+        self.assertFalse(packet["policy"]["live_light_promotion_gate_ready_for_release"])
+        self.assertFalse(packet["policy"]["live_light_promotion_gate_contract_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_worker_dispatch_contract_visible"])
+        self.assertFalse(packet["policy"]["live_light_worker_dispatch_celery_implemented"])
+        self.assertTrue(packet["policy"]["live_light_worker_dispatch_provider_requires_execution_request"])
+        self.assertTrue(packet["policy"]["live_light_worker_dispatch_model_requires_execution_request"])
+        self.assertFalse(packet["policy"]["live_light_worker_dispatch_is_production_evidence"])
+        self.assertTrue(packet["policy"]["search_quant_projection_workflow_contract_visible"])
+        self.assertFalse(packet["policy"]["search_quant_projection_search_input_creates_task"])
+        self.assertTrue(packet["policy"]["search_quant_projection_requires_explicit_search_action"])
+        self.assertTrue(packet["policy"]["search_quant_projection_submit_autostart_contract_visible"])
+        self.assertTrue(packet["policy"]["search_quant_projection_submit_autostart_allowed"])
+        self.assertEqual(
+            packet["policy"]["search_quant_projection_submit_autostart_config_switch"],
+            "COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART",
+        )
+        self.assertTrue(packet["policy"]["search_quant_projection_submit_autostart_configured"])
+        self.assertTrue(packet["policy"]["search_quant_projection_submit_autostart_effective"])
+        self.assertTrue(packet["policy"]["search_quant_projection_submit_autostart_config_handoff_visible"])
+        self.assertFalse(
+            packet["policy"]["search_quant_projection_submit_autostart_local_env_fallback_available"]
+        )
+        self.assertTrue(
+            packet["policy"]["search_quant_projection_submit_autostart_global_config_allowlist_promoted"]
+        )
+        self.assertFalse(
+            packet["policy"]["search_quant_projection_submit_autostart_config_allowlist_promotion_pending"]
+        )
+        self.assertFalse(
+            packet["policy"]["search_quant_projection_submit_autostart_config_handoff_is_production_evidence"]
+        )
+        self.assertFalse(packet["policy"]["search_quant_projection_submit_autostart_search_typing_creates_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_submit_autostart_provider_model_without_request_allowed"])
+        self.assertTrue(packet["policy"]["search_quant_projection_submit_autostart_backend_ready"])
+        self.assertFalse(packet["policy"]["search_quant_projection_submit_autostart_frontend_wiring_implemented"])
+        self.assertTrue(packet["policy"]["search_quant_projection_submit_autostart_task_catalog_covered"])
+        self.assertFalse(packet["policy"]["search_quant_projection_submit_autostart_latest_status_lookup_creates_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_submit_autostart_is_production_evidence"])
+        self.assertTrue(packet["policy"]["search_quant_projection_frontend_wiring_acceptance_contract_visible"])
+        self.assertTrue(packet["policy"]["search_quant_projection_frontend_wiring_mode_matrix_visible"])
+        self.assertEqual(
+            packet["policy"]["search_quant_projection_frontend_wiring_active_mode_behavior"],
+            "safe_submit_may_create_or_reuse_local_task",
+        )
+        self.assertTrue(packet["policy"]["search_quant_projection_frontend_wiring_browser_acceptance_evidence_required"])
+        self.assertTrue(packet["policy"]["search_quant_projection_frontend_wiring_browser_network_trace_required"])
+        self.assertTrue(packet["policy"]["search_quant_projection_frontend_wiring_failure_recovery_evidence_required"])
+        self.assertFalse(packet["policy"]["search_quant_projection_frontend_wiring_unbounded_task_queue_allowed"])
+        self.assertFalse(packet["policy"]["search_quant_projection_frontend_wiring_implemented"])
+        self.assertTrue(packet["policy"]["search_quant_projection_frontend_wiring_requires_task_status_polling"])
+        self.assertFalse(packet["policy"]["search_quant_projection_frontend_wiring_browser_evidence_complete"])
+        self.assertFalse(packet["policy"]["search_quant_projection_frontend_wiring_is_production_evidence"])
+        self.assertTrue(packet["policy"]["search_quant_projection_provider_model_route_button_gated"])
+        self.assertFalse(packet["policy"]["search_quant_projection_production_complete"])
+        self.assertTrue(packet["policy"]["search_quant_projection_result_surface_contract_visible"])
+        self.assertTrue(packet["policy"]["search_quant_projection_result_surfaces_research_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_result_surface_trade_instruction_allowed"])
+        self.assertFalse(packet["policy"]["search_quant_projection_result_surface_contract_is_production_evidence"])
+        self.assertTrue(packet["policy"]["tushare_light_strategy_contract_visible"])
+        self.assertTrue(packet["policy"]["tushare_light_strategy_provider_execution_pending"])
+        self.assertFalse(packet["policy"]["tushare_light_strategy_matrix_or_receipt_is_provider_evidence"])
+        self.assertFalse(packet["policy"]["tushare_light_strategy_no_record_is_negative_evidence"])
+        self.assertFalse(packet["policy"]["tushare_light_strategy_unselected_api_verified_allowed"])
+        self.assertTrue(packet["policy"]["deepseek_pro_strategy_contract_visible"])
+        self.assertTrue(packet["policy"]["deepseek_pro_strategy_model_execution_pending"])
+        self.assertFalse(packet["policy"]["deepseek_pro_strategy_deepseek_is_data_source"])
+        self.assertFalse(packet["policy"]["deepseek_pro_strategy_numeric_or_action_overwrite_allowed"])
+        self.assertFalse(packet["policy"]["deepseek_pro_strategy_sanitizer_is_model_correctness_evidence"])
+        self.assertTrue(packet["policy"]["ui_nonblocking_runtime_contract_visible"])
+        self.assertTrue(packet["policy"]["live_light_local_fallback_contract_visible"])
+        self.assertTrue(packet["policy"]["live_light_local_fallback_uses_last_good_cache_allowed"])
+        self.assertTrue(packet["policy"]["live_light_local_fallback_stale_cache_label_required"])
+        self.assertTrue(packet["policy"]["live_light_local_fallback_provider_gap_visible_required"])
+        self.assertFalse(packet["policy"]["live_light_local_fallback_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_cache_lineage_contract_visible"])
+        self.assertTrue(packet["policy"]["live_light_cache_lineage_required_for_outputs"])
+        self.assertTrue(packet["policy"]["live_light_cache_lineage_written_by_post_task_only"])
+        self.assertFalse(packet["policy"]["live_light_memory_only_lineage_is_durable_evidence"])
+        self.assertTrue(packet["policy"]["live_light_output_surface_contract_visible"])
+        self.assertTrue(packet["policy"]["live_light_output_surface_written_by_post_task_only"])
+        self.assertEqual(packet["policy"]["live_light_output_surface_count"], 3)
+        self.assertTrue(packet["policy"]["live_light_factor_quant_hub_output_surface_required"])
+        self.assertTrue(packet["policy"]["live_light_next_session_output_surface_required"])
+        self.assertTrue(packet["policy"]["live_light_deepseek_explanation_output_surface_governed"])
+        self.assertFalse(packet["policy"]["live_light_output_surface_contract_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_runtime_budget_contract_visible"])
+        self.assertTrue(packet["policy"]["live_light_runtime_budget_token_usage_required"])
+        self.assertTrue(packet["policy"]["live_light_runtime_budget_cache_hit_skips_provider_call_allowed"])
+        self.assertTrue(packet["policy"]["live_light_runtime_budget_input_hash_dedupe_required"])
+        self.assertTrue(packet["policy"]["live_light_runtime_budget_rate_limit_reuses_existing_task"])
+        self.assertFalse(packet["policy"]["live_light_runtime_budget_enforcement_implemented"])
+        self.assertFalse(packet["policy"]["live_light_runtime_budget_contract_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_evidence_grade_contract_visible"])
+        self.assertTrue(packet["policy"]["live_light_credential_preflight_contract_visible"])
+        self.assertFalse(packet["policy"]["live_light_status_get_checks_credential_presence"])
+        self.assertTrue(packet["policy"]["live_light_credential_presence_check_requires_post"])
+        self.assertTrue(packet["policy"]["live_light_credential_presence_check_requires_user_approval"])
+        self.assertFalse(packet["policy"]["live_light_credential_values_exposed"])
+        self.assertTrue(packet["policy"]["live_light_provider_model_execution_request_contract_visible"])
+        self.assertTrue(packet["policy"]["live_light_provider_model_acceptance_requires_execution_request"])
+        self.assertTrue(packet["policy"]["live_light_provider_model_execution_request_implemented"])
+        self.assertFalse(packet["policy"]["live_light_dry_run_is_execution_request"])
+        self.assertTrue(packet["policy"]["live_light_execution_request_requires_latest_scope_hash"])
+        self.assertTrue(packet["policy"]["live_light_execution_request_requires_user_confirmation"])
+        self.assertTrue(packet["policy"]["live_light_execution_request_handoff_contract_visible"])
+        self.assertTrue(packet["policy"]["live_light_execution_request_handoff_route_implemented"])
+        self.assertTrue(packet["policy"]["live_light_execution_request_receipt_service_implemented"])
+        self.assertTrue(packet["policy"]["live_light_execution_request_receipt_persists_to_task_status"])
+        self.assertTrue(packet["policy"]["live_light_execution_request_route_adapter_contract_visible"])
+        self.assertEqual(
+            packet["policy"]["live_light_execution_request_route_adapter_target_file"],
+            "server/api/routes_bootstrap.py",
+        )
+        self.assertEqual(
+            packet["policy"]["live_light_execution_request_route_adapter_service_function"],
+            "run_provider_model_execution_request",
+        )
+        self.assertEqual(
+            packet["policy"]["live_light_execution_request_route_adapter_response_envelope"],
+            "task_envelope",
+        )
+        self.assertEqual(
+            packet["policy"]["live_light_execution_request_route_adapter_current_status"],
+            "registered_local_receipt_route",
+        )
+        self.assertFalse(
+            packet["policy"][
+                "live_light_execution_request_route_adapter_provider_model_task_creation_allowed"
+            ]
+        )
+        self.assertFalse(packet["policy"]["live_light_execution_request_route_adapter_calls_provider_or_model"])
+        self.assertTrue(packet["policy"]["live_light_latest_acceptance_dry_run_status_visible"])
+        self.assertFalse(packet["policy"]["live_light_latest_acceptance_dry_run_lookup_creates_task"])
+        self.assertFalse(packet["policy"]["live_light_latest_acceptance_dry_run_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_latest_execution_request_status_visible"])
+        self.assertFalse(packet["policy"]["live_light_latest_execution_request_lookup_creates_task"])
+        self.assertFalse(packet["policy"]["live_light_latest_execution_request_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_execution_request_handoff_requires_durable_receipt"])
+        self.assertTrue(packet["policy"]["live_light_execution_request_scope_hash_mismatch_blocks_handoff"])
+        self.assertFalse(packet["policy"]["live_light_execution_request_handoff_is_production_evidence"])
+        self.assertFalse(packet["policy"]["live_light_local_artifacts_are_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_production_evidence_pending"])
+        self.assertFalse(packet["policy"]["live_light_mock_receipt_matrix_sanitizer_can_promote"])
+        self.assertTrue(packet["policy"]["live_light_ledger_contract_visible"])
+        self.assertTrue(packet["policy"]["live_light_call_ledger_required"])
+        self.assertTrue(packet["policy"]["live_light_model_ledger_required"])
+        self.assertTrue(packet["policy"]["live_light_redaction_review_required_before_promotion"])
+        self.assertFalse(packet["policy"]["live_light_production_promotion_allowed_without_ledger"])
+        self.assertTrue(packet["policy"]["ui_nonblocking_cache_first_render_required"])
+        self.assertTrue(packet["policy"]["ui_nonblocking_task_polling_required"])
+        self.assertFalse(packet["policy"]["ui_nonblocking_browser_runtime_evidence_complete"])
         self.assertTrue(packet["policy"]["live_light_ready_for_provider_execution_design"])
         self.assertTrue(packet["policy"]["live_light_ready_for_acceptance_design"])
         self.assertFalse(packet["policy"]["live_light_ready_for_user_approved_acceptance_task"])
         self.assertFalse(packet["policy"]["live_light_ready_for_provider_execution"])
         self.assertFalse(packet["policy"]["live_light_ready_for_model_execution"])
         self.assertFalse(packet["policy"]["production_live_light_complete"])
+        self.assertTrue(packet["live_light"]["evidence_grade_contract_visible"])
+        self.assertTrue(packet["live_light"]["credential_preflight_contract_visible"])
+        self.assertEqual(
+            packet["live_light"]["credential_presence_check_route"],
+            "POST /api/bootstrap/provider-model-acceptance-dry-run",
+        )
+        self.assertFalse(packet["live_light"]["status_get_checks_credential_presence"])
+        self.assertTrue(packet["live_light"]["credential_presence_check_requires_post"])
+        self.assertTrue(packet["live_light"]["credential_presence_check_requires_user_approval"])
+        self.assertTrue(packet["live_light"]["provider_model_execution_request_contract_visible"])
+        self.assertEqual(
+            packet["live_light"]["provider_model_execution_request_route"],
+            "POST /api/bootstrap/provider-model-execution-request",
+        )
+        self.assertEqual(
+            packet["live_light"]["provider_model_acceptance_dry_run_route"],
+            "POST /api/bootstrap/provider-model-acceptance-dry-run",
+        )
+        self.assertEqual(
+            packet["live_light"]["provider_model_acceptance_target_route"],
+            "future POST /api/bootstrap/provider-model-acceptance",
+        )
+        self.assertTrue(packet["live_light"]["provider_model_acceptance_requires_execution_request"])
+        self.assertTrue(packet["live_light"]["provider_model_execution_request_implemented"])
+        self.assertFalse(packet["live_light"]["dry_run_is_execution_request"])
+        self.assertTrue(packet["live_light"]["execution_request_handoff_contract_visible"])
+        self.assertEqual(packet["live_light"]["execution_request_handoff_row_count"], 5)
+        self.assertTrue(packet["live_light"]["execution_request_handoff_route_implemented"])
+        self.assertTrue(packet["live_light"]["execution_request_receipt_service_implemented"])
+        self.assertEqual(
+            packet["live_light"]["execution_request_receipt_task_type"],
+            "command_center_live_bootstrap_provider_model_execution_request",
+        )
+        self.assertTrue(packet["live_light"]["execution_request_route_adapter_contract_visible"])
+        self.assertEqual(
+            packet["live_light"]["execution_request_route_adapter_target_file"],
+            "server/api/routes_bootstrap.py",
+        )
+        self.assertEqual(
+            packet["live_light"]["execution_request_route_adapter_service_function"],
+            "run_provider_model_execution_request",
+        )
+        self.assertEqual(packet["live_light"]["execution_request_route_adapter_response_envelope"], "task_envelope")
+        self.assertEqual(
+            packet["live_light"]["execution_request_route_adapter_current_status"],
+            "registered_local_receipt_route",
+        )
+        self.assertFalse(
+            packet["live_light"]["execution_request_route_adapter_provider_model_task_creation_allowed"]
+        )
+        self.assertFalse(packet["live_light"]["execution_request_route_adapter_calls_provider_or_model"])
+        self.assertTrue(packet["live_light"]["latest_acceptance_dry_run_status_visible"])
+        self.assertFalse(packet["live_light"]["latest_acceptance_dry_run_found"])
+        self.assertEqual(
+            packet["live_light"]["latest_acceptance_dry_run_status"],
+            "no_acceptance_dry_run_receipt_task_found",
+        )
+        self.assertFalse(packet["live_light"]["latest_acceptance_dry_run_ready_for_execution_request"])
+        self.assertFalse(packet["live_light"]["latest_acceptance_dry_run_durable_receipt_visible"])
+        self.assertFalse(packet["live_light"]["latest_acceptance_dry_run_lookup_creates_task"])
+        self.assertFalse(packet["live_light"]["latest_acceptance_dry_run_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["latest_execution_request_status_visible"])
+        self.assertFalse(packet["live_light"]["latest_execution_request_found"])
+        self.assertEqual(
+            packet["live_light"]["latest_execution_request_status"],
+            "no_execution_request_receipt_task_found",
+        )
+        self.assertFalse(packet["live_light"]["latest_execution_request_ready"])
+        self.assertFalse(packet["live_light"]["latest_execution_request_durable_receipt_visible"])
+        self.assertFalse(packet["live_light"]["latest_execution_request_lookup_creates_task"])
+        self.assertFalse(packet["live_light"]["latest_execution_request_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["execution_request_handoff_requires_durable_receipt"])
+        self.assertTrue(packet["live_light"]["execution_request_handoff_scope_hash_mismatch_blocks"])
+        self.assertFalse(packet["live_light"]["execution_request_handoff_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["task_lifecycle_contract_visible"])
+        self.assertEqual(packet["live_light"]["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertEqual(packet["live_light"]["task_index_route"], "GET /api/tasks")
+        self.assertTrue(packet["live_light"]["task_status_polling_required"])
+        self.assertFalse(packet["live_light"]["task_success_is_provider_model_evidence"])
+        self.assertFalse(packet["live_light"]["task_success_is_production_evidence"])
+        queue_budget = packet["live_light_task_queue_budget_contract"]
+        self.assertEqual(
+            queue_budget["schema_version"],
+            "command_center_live_light_task_queue_budget_contract.v1",
+        )
+        self.assertEqual(queue_budget["status"], "task_queue_budget_visible_frontend_wiring_pending")
+        self.assertEqual(queue_budget["mode"], "live_light")
+        self.assertEqual(queue_budget["task_route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(queue_budget["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertEqual(queue_budget["task_index_route"], "GET /api/tasks")
+        self.assertEqual(queue_budget["queue_row_count"], 5)
+        self.assertEqual(queue_budget["condition_satisfied_row_count"], 5)
+        self.assertEqual(queue_budget["max_active_local_startup_tasks_per_session"], 1)
+        self.assertEqual(queue_budget["max_new_tasks_per_rate_limit_window"], 1)
+        self.assertEqual(queue_budget["rate_limit_seconds"], 900)
+        self.assertEqual(queue_budget["symbol_limit"], 12)
+        self.assertTrue(queue_budget["startup_autostart_effective"])
+        self.assertTrue(queue_budget["bounded_queue_required"])
+        self.assertFalse(queue_budget["unbounded_queue_allowed"])
+        self.assertEqual(queue_budget["queue_overflow_policy"], "reuse_or_skip_existing_local_task")
+        self.assertTrue(queue_budget["rate_limit_reuses_existing_task"])
+        self.assertFalse(queue_budget["rate_limit_skip_creates_new_task"])
+        self.assertTrue(queue_budget["session_dedupe_required"])
+        self.assertTrue(queue_budget["task_polling_required"])
+        self.assertFalse(queue_budget["status_get_creates_task"])
+        self.assertFalse(queue_budget["task_polling_creates_task"])
+        self.assertFalse(queue_budget["search_typing_creates_task"])
+        self.assertFalse(queue_budget["cache_get_creates_task"])
+        self.assertFalse(queue_budget["fastapi_startup_creates_task"])
+        self.assertFalse(queue_budget["react_initial_render_creates_task"])
+        self.assertTrue(queue_budget["react_mounted_may_post_after_cache_render_only"])
+        self.assertFalse(queue_budget["creates_provider_model_task"])
+        self.assertTrue(queue_budget["provider_model_execution_requires_execution_request"])
+        self.assertFalse(queue_budget["provider_execution_implemented"])
+        self.assertFalse(queue_budget["model_execution_implemented"])
+        self.assertFalse(queue_budget["queue_contract_is_execution_evidence"])
+        self.assertFalse(queue_budget["queue_contract_is_production_evidence"])
+        queue_budget_rows = {row["budget_key"]: row for row in queue_budget["queue_rows"]}
+        self.assertEqual(
+            list(queue_budget_rows),
+            [
+                "startup_autostart_gate",
+                "single_active_local_startup_task",
+                "rate_limit_reuse_or_skip",
+                "status_reads_never_enqueue",
+                "provider_model_queue_blocked",
+            ],
+        )
+        self.assertEqual(queue_budget_rows["single_active_local_startup_task"]["current_policy"], "max_one_active_local_startup_task_per_session")
+        self.assertEqual(queue_budget_rows["rate_limit_reuse_or_skip"]["current_policy"], "rate_limit_reuses_existing_task_no_new_queue_item")
+        self.assertEqual(queue_budget_rows["status_reads_never_enqueue"]["current_policy"], "status_surfaces_are_read_only")
+        for row in queue_budget_rows.values():
+            self.assertTrue(row["condition_currently_satisfied"])
+            self.assertEqual(row["max_active_local_startup_tasks_per_session"], 1)
+            self.assertFalse(row["unbounded_queue_allowed"])
+            self.assertEqual(row["queue_overflow_policy"], "reuse_or_skip_existing_local_task")
+            self.assertFalse(row["status_get_creates_task"])
+            self.assertFalse(row["task_polling_creates_task"])
+            self.assertFalse(row["search_typing_creates_task"])
+            self.assertFalse(row["react_initial_render_creates_task"])
+            self.assertTrue(row["react_mounted_may_post_after_cache_render_only"])
+            self.assertFalse(row["creates_provider_model_task"])
+            self.assertTrue(row["provider_model_execution_requires_execution_request"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertFalse(row["row_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["task_queue_budget_contract_visible"])
+        self.assertEqual(packet["live_light"]["task_queue_budget_row_count"], 5)
+        self.assertEqual(packet["live_light"]["task_queue_budget_condition_satisfied_row_count"], 5)
+        self.assertEqual(packet["live_light"]["task_queue_budget_max_active_local_startup_tasks_per_session"], 1)
+        self.assertEqual(packet["live_light"]["task_queue_budget_rate_limit_seconds"], 900)
+        self.assertFalse(packet["live_light"]["task_queue_budget_unbounded_queue_allowed"])
+        self.assertFalse(packet["live_light"]["task_queue_budget_status_get_creates_task"])
+        self.assertFalse(packet["live_light"]["task_queue_budget_task_polling_creates_task"])
+        self.assertFalse(packet["live_light"]["task_queue_budget_creates_provider_model_task"])
+        self.assertFalse(packet["live_light"]["task_queue_budget_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_task_queue_budget_contract_visible"])
+        self.assertEqual(packet["policy"]["live_light_task_queue_budget_row_count"], 5)
+        self.assertEqual(packet["policy"]["live_light_task_queue_budget_condition_satisfied_row_count"], 5)
+        self.assertEqual(packet["policy"]["live_light_task_queue_budget_max_active_local_startup_tasks_per_session"], 1)
+        self.assertFalse(packet["policy"]["live_light_task_queue_budget_unbounded_queue_allowed"])
+        self.assertFalse(packet["policy"]["live_light_task_queue_budget_status_get_creates_task"])
+        self.assertFalse(packet["policy"]["live_light_task_queue_budget_task_polling_creates_task"])
+        self.assertFalse(packet["policy"]["live_light_task_queue_budget_creates_provider_model_task"])
+        self.assertFalse(packet["policy"]["live_light_task_queue_budget_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["task_control_contract_visible"])
+        self.assertEqual(packet["live_light"]["task_cancel_route"], "POST /api/tasks/{task_id}/cancel")
+        self.assertEqual(packet["live_light"]["task_retry_route"], "POST /api/tasks/{task_id}/retry")
+        self.assertTrue(packet["live_light"]["task_control_manual_only"])
+        self.assertFalse(packet["live_light"]["task_control_auto_retry_enabled"])
+        self.assertFalse(packet["live_light"]["task_control_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["operator_status_contract_visible"])
+        self.assertEqual(packet["live_light"]["operator_status_surface_count"], 7)
+        self.assertTrue(packet["live_light"]["operator_status_current_mode_visible_required"])
+        self.assertTrue(packet["live_light"]["operator_status_effective_source_switches_visible_required"])
+        self.assertTrue(packet["live_light"]["operator_status_external_execution_profile_visible_required"])
+        self.assertEqual(packet["live_light"]["operator_status_external_execution_profile"], "light_provider_model")
+        self.assertTrue(packet["live_light"]["operator_status_profile_provider_stage_allowed"])
+        self.assertTrue(packet["live_light"]["operator_status_profile_model_stage_allowed"])
+        self.assertFalse(packet["live_light"]["operator_status_profile_executor_implemented"])
+        self.assertFalse(packet["live_light"]["operator_status_profile_calls_provider_model_now"])
+        self.assertTrue(packet["live_light"]["operator_status_profile_source_rate_summary_visible"])
+        self.assertTrue(packet["live_light"]["operator_status_latest_task_status_visible_required"])
+        self.assertTrue(packet["live_light"]["operator_status_rate_limit_skipped_visible_required"])
+        self.assertTrue(packet["live_light"]["operator_status_safe_error_visible_required"])
+        self.assertTrue(packet["live_light"]["operator_status_read_only"])
+        self.assertFalse(packet["live_light"]["operator_status_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["latest_bootstrap_task_status_visible"])
+        self.assertFalse(packet["live_light"]["latest_bootstrap_task_found"])
+        self.assertEqual(packet["live_light"]["latest_bootstrap_task_status"], "no_bootstrap_task_found")
+        self.assertEqual(packet["live_light"]["latest_bootstrap_task_id"], "")
+        self.assertEqual(packet["live_light"]["latest_bootstrap_task_current_step"], "")
+        self.assertFalse(packet["live_light"]["latest_bootstrap_task_durable_visible"])
+        self.assertFalse(packet["live_light"]["latest_bootstrap_task_lookup_creates_task"])
+        self.assertFalse(packet["live_light"]["latest_bootstrap_task_success_is_provider_model_evidence"])
+        self.assertFalse(packet["live_light"]["latest_bootstrap_task_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["promotion_gate_contract_visible"])
+        self.assertEqual(packet["live_light"]["promotion_gate_layer_count"], 4)
+        self.assertFalse(packet["live_light"]["promotion_gate_real_provider_model_evidence_complete"])
+        self.assertFalse(packet["live_light"]["promotion_gate_remote_ci_green"])
+        self.assertFalse(packet["live_light"]["promotion_gate_ready_for_release"])
+        self.assertFalse(packet["live_light"]["promotion_gate_contract_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["worker_dispatch_contract_visible"])
+        self.assertEqual(packet["live_light"]["worker_dispatch_row_count"], 5)
+        self.assertEqual(packet["live_light"]["worker_dispatch_current_runtime"], "local_fallback_task_skeleton")
+        self.assertFalse(packet["live_light"]["worker_dispatch_celery_implemented"])
+        self.assertTrue(packet["live_light"]["worker_dispatch_provider_requires_execution_request"])
+        self.assertTrue(packet["live_light"]["worker_dispatch_model_requires_execution_request"])
+        self.assertFalse(packet["live_light"]["worker_dispatch_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["cache_lineage_contract_visible"])
+        self.assertTrue(packet["live_light"]["cache_lineage_required_for_outputs"])
+        self.assertTrue(packet["live_light"]["cache_lineage_written_by_post_task_only"])
+        self.assertFalse(packet["live_light"]["memory_only_lineage_is_durable_evidence"])
+        self.assertTrue(packet["live_light"]["output_surface_contract_visible"])
+        self.assertEqual(packet["live_light"]["output_surface_count"], 3)
+        self.assertTrue(packet["live_light"]["factor_quant_hub_output_surface_required"])
+        self.assertTrue(packet["live_light"]["next_session_output_surface_required"])
+        self.assertTrue(packet["live_light"]["deepseek_explanation_output_surface_governed"])
+        self.assertTrue(packet["live_light"]["output_surface_written_by_post_task_only"])
+        self.assertFalse(packet["live_light"]["output_surface_contract_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_result_surface_contract_visible"])
+        self.assertEqual(packet["live_light"]["search_quant_projection_result_surface_count"], 6)
+        self.assertTrue(packet["live_light"]["search_quant_projection_result_surfaces_research_only"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_result_surface_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["scope_intake_contract_visible"])
+        self.assertEqual(packet["live_light"]["scope_intake_symbol_limit"], 12)
+        self.assertTrue(packet["live_light"]["scope_intake_symbol_dedupe_required"])
+        self.assertTrue(packet["live_light"]["scope_intake_scope_hash_required"])
+        self.assertTrue(packet["live_light"]["scope_intake_secret_like_payload_fields_dropped"])
+        self.assertFalse(packet["live_light"]["scope_intake_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["stage_dependency_contract_visible"])
+        self.assertEqual(packet["live_light"]["stage_dependency_stage_count"], 9)
+        self.assertTrue(packet["live_light"]["stage_dependency_deepseek_requires_data_ready"])
+        self.assertTrue(packet["live_light"]["stage_dependency_safe_skip_required"])
+        self.assertFalse(packet["live_light"]["stage_dependency_executor_implemented"])
+        self.assertFalse(packet["live_light"]["stage_dependency_contract_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["freshness_provider_gap_contract_visible"])
+        self.assertTrue(packet["live_light"]["freshness_state_visible_required"])
+        self.assertTrue(packet["live_light"]["provider_gap_visible_required"])
+        self.assertTrue(packet["live_light"]["stale_cache_label_required"])
+        self.assertFalse(packet["live_light"]["empty_or_no_record_is_verified"])
+        self.assertFalse(packet["live_light"]["freshness_provider_gap_contract_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["runtime_budget_contract_visible"])
+        self.assertEqual(packet["live_light"]["runtime_budget_symbol_limit"], 12)
+        self.assertEqual(packet["live_light"]["runtime_budget_rate_limit_seconds"], 900)
+        self.assertTrue(packet["live_light"]["runtime_budget_cache_hit_skips_provider_call_allowed"])
+        self.assertTrue(packet["live_light"]["runtime_budget_token_usage_record_required"])
+        self.assertFalse(packet["live_light"]["runtime_budget_enforcement_implemented"])
+        self.assertFalse(packet["live_light"]["runtime_budget_contract_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["ledger_contract_visible"])
+        self.assertFalse(packet["live_light"]["local_artifacts_are_production_evidence"])
+        self.assertTrue(packet["live_light"]["production_evidence_pending"])
+        self.assertTrue(packet["live_light"]["call_ledger_required"])
+        self.assertTrue(packet["live_light"]["model_ledger_required"])
+        self.assertTrue(packet["live_light"]["redaction_review_required_before_promotion"])
+        mode_rows = {row["mode"]: row for row in packet["mode_rows"]}
+        live_light_mode = mode_rows["live_light"]
+        self.assertTrue(live_light_mode["active"])
+        self.assertEqual(
+            live_light_mode["trigger_matrix_schema_version"],
+            "command_center_bootstrap_mode_trigger_matrix.v1",
+        )
+        self.assertTrue(live_light_mode["page_open_task_allowed"])
+        self.assertEqual(live_light_mode["page_open_task_policy"], "after_cache_render_rate_limited_local_task")
+        self.assertFalse(live_light_mode["react_initial_render_creates_task"])
+        self.assertTrue(live_light_mode["react_mounted_task_allowed_after_cache_render"])
+        self.assertFalse(live_light_mode["search_input_auto_task_allowed"])
+        self.assertEqual(live_light_mode["search_input_task_policy"], "never_on_typing")
+        self.assertTrue(live_light_mode["search_action_task_allowed"])
+        self.assertEqual(
+            live_light_mode["search_action_task_policy"],
+            "explicit_search_action_local_task_provider_model_requires_execution_request",
+        )
+        self.assertFalse(live_light_mode["provider_model_execution_without_execution_request_allowed"])
+        self.assertFalse(live_light_mode["real_trading_task_allowed"])
+        self.assertFalse(mode_rows["cache_only"]["page_open_task_allowed"])
+        self.assertFalse(mode_rows["cache_only"]["search_action_task_allowed"])
+        self.assertFalse(mode_rows["live_full"]["page_open_task_allowed"])
+        self.assertFalse(mode_rows["live_full"]["search_action_task_allowed"])
+        config_rows = {row["config"]: row for row in packet["config_rows"]}
+        tushare_config = config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]
+        deepseek_config = config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]
+        startup_autostart_config = config_rows["COMMAND_CENTER_LIVE_STARTUP_AUTOSTART"]
+        frontend_enablement_config = config_rows["COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT"]
+        self.assertTrue(tushare_config["configured_value_safe"])
+        self.assertTrue(deepseek_config["configured_value_safe"])
+        self.assertTrue(tushare_config["effective_value_safe"])
+        self.assertTrue(deepseek_config["effective_value_safe"])
+        self.assertEqual(tushare_config["mode_gate"], "live_light")
+        self.assertEqual(deepseek_config["mode_gate"], "live_light")
+        self.assertEqual(tushare_config["effective_status"], "effective_in_live_light")
+        self.assertEqual(deepseek_config["effective_status"], "effective_in_live_light")
+        self.assertTrue(tushare_config["automation_effective"])
+        self.assertTrue(deepseek_config["automation_effective"])
+        self.assertEqual(tushare_config["inactive_reason"], "")
+        self.assertEqual(deepseek_config["inactive_reason"], "")
+        self.assertTrue(startup_autostart_config["configured_value_safe"])
+        self.assertTrue(startup_autostart_config["effective_value_safe"])
+        self.assertTrue(startup_autostart_config["automation_effective"])
+        self.assertEqual(
+            startup_autostart_config["mode_gate"],
+            "live_light_after_cache_render_and_sources_enabled",
+        )
+        self.assertEqual(startup_autostart_config["effective_status"], "effective_after_cache_render")
+        self.assertEqual(startup_autostart_config["inactive_reason"], "")
+        self.assertTrue(startup_autostart_config["creates_local_background_task_only"])
+        self.assertFalse(startup_autostart_config["creates_provider_model_task"])
+        self.assertTrue(frontend_enablement_config["configured_value_safe"])
+        self.assertFalse(frontend_enablement_config["effective_value_safe"])
+        self.assertEqual(frontend_enablement_config["mode_gate"], "live_light_and_frontend_enablement_promotion")
+        self.assertEqual(frontend_enablement_config["effective_status"], "release_switch_blocked_until_promotion")
+        self.assertFalse(frontend_enablement_config["automation_effective"])
+        self.assertEqual(frontend_enablement_config["inactive_reason"], "frontend_enablement_promotion_required")
+        self.assertFalse(frontend_enablement_config["frontend_enablement_allowed"])
+        self.assertFalse(frontend_enablement_config["frontend_writeback_allowed"])
+        self.assertFalse(frontend_enablement_config["creates_task"])
+        self.assertTrue(packet["safe_config_contract"]["configured_source_switches_visible"])
+        self.assertTrue(packet["safe_config_contract"]["effective_source_switches_mode_gated"])
+        self.assertTrue(packet["safe_config_contract"]["effective_tushare_on_open"])
+        self.assertTrue(packet["safe_config_contract"]["effective_deepseek_on_open"])
+        self.assertTrue(packet["safe_config_contract"]["effective_sources_enabled"])
+        self.assertFalse(packet["safe_config_contract"]["manual_or_cache_only_switches_do_not_autostart"])
+        self.assertFalse(packet["safe_config_contract"]["non_live_light_switches_do_not_autostart"])
+        background_contract = packet["live_light_background_task_contract"]
+        self.assertEqual(
+            background_contract["schema_version"],
+            "command_center_live_light_background_task_contract.v1",
+        )
+        self.assertEqual(background_contract["status"], "ready_local_task_skeleton_no_provider_execution")
+        self.assertEqual(background_contract["mode"], "live_light")
+        self.assertEqual(background_contract["route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(background_contract["task_type"], "command_center_live_bootstrap")
+        self.assertEqual(background_contract["config_switch"], "COMMAND_CENTER_LIVE_STARTUP_AUTOSTART")
+        self.assertTrue(background_contract["startup_autostart_configured"])
+        self.assertTrue(background_contract["startup_autostart_effective"])
+        self.assertTrue(background_contract["auto_trigger_allowed"])
+        self.assertFalse(background_contract["cache_get_creates_task"])
+        self.assertFalse(background_contract["fastapi_startup_creates_task"])
+        self.assertFalse(background_contract["react_initial_render_creates_task"])
+        self.assertFalse(background_contract["react_render_calls_provider"])
+        self.assertTrue(background_contract["initial_cache_render_required"])
+        self.assertTrue(background_contract["creates_or_reuses_background_task_only"])
+        self.assertTrue(background_contract["task_creation_rate_limited"])
+        self.assertEqual(background_contract["rate_limit_seconds"], 900)
+        self.assertTrue(background_contract["rate_limit_reuses_existing_task"])
+        self.assertFalse(background_contract["rate_limit_skip_creates_new_task"])
+        self.assertTrue(background_contract["session_dedupe_required"])
+        self.assertEqual(background_contract["symbol_limit"], 12)
+        self.assertTrue(background_contract["symbol_dedupe_required"])
+        self.assertTrue(background_contract["symbol_limit_truncation_required"])
+        self.assertEqual(
+            background_contract["allowed_symbol_sources"],
+            ["current_target", "searched_symbol", "symbols", "watchlist", "holdings"],
+        )
+        self.assertEqual(
+            background_contract["allowed_scope"],
+            "current_target_holdings_watchlist_searched_symbol_light_only",
+        )
+        self.assertFalse(background_contract["full_pool_scope_allowed"])
+        self.assertFalse(background_contract["deep_scan_scope_allowed"])
+        self.assertTrue(background_contract["payload_safe_only"])
+        self.assertTrue(background_contract["payload_secret_fields_dropped"])
+        self.assertTrue(background_contract["sources_enabled"])
+        self.assertTrue(background_contract["tushare_planned"])
+        self.assertTrue(background_contract["deepseek_planned"])
+        self.assertFalse(background_contract["provider_execution_implemented"])
+        self.assertFalse(background_contract["model_execution_implemented"])
+        self.assertFalse(background_contract["real_provider_model_execution_allowed_now"])
+        self.assertTrue(background_contract["external_calls_must_use_post_task_worker_or_local_fallback"])
+        self.assertTrue(background_contract["call_ledger_required"])
+        self.assertTrue(background_contract["model_ledger_required_for_deepseek"])
+        self.assertTrue(background_contract["ui_nonblocking_required"])
+        self.assertFalse(background_contract["external_calls_triggered"])
+        self.assertFalse(background_contract["tushare_called"])
+        self.assertFalse(background_contract["deepseek_called"])
+        self.assertFalse(background_contract["github_called"])
+        self.assertTrue(background_contract["does_not_execute_trades"])
+        self.assertTrue(background_contract["does_not_modify_strategy_action"])
+        startup_readiness = packet["live_light_startup_autostart_readiness_contract"]
+        self.assertEqual(
+            startup_readiness["schema_version"],
+            "command_center_live_light_startup_autostart_readiness_contract.v1",
+        )
+        self.assertEqual(
+            startup_readiness["status"],
+            "startup_autostart_readiness_visible_frontend_wiring_pending",
+        )
+        self.assertEqual(startup_readiness["mode"], "live_light")
+        self.assertEqual(startup_readiness["task_route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(startup_readiness["task_type"], "command_center_live_bootstrap")
+        self.assertEqual(startup_readiness["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertEqual(startup_readiness["trigger_surface"], "react_mounted_after_initial_cache_render")
+        expected_startup_readiness_keys = [
+            "bootstrap_status_read_before_autostart",
+            "initial_cache_render_completed",
+            "live_light_mode_and_source_switch_effective",
+            "single_local_post_task_boundary",
+            "rate_limit_and_session_dedupe_visible",
+            "task_polling_and_safe_failure_visible",
+            "provider_model_execution_deferred",
+        ]
+        self.assertEqual(startup_readiness["readiness_row_count"], 7)
+        self.assertEqual(startup_readiness["condition_satisfied_row_count"], 7)
+        self.assertEqual(startup_readiness["browser_evidence_collected_row_count"], 0)
+        self.assertEqual(startup_readiness["readiness_evidence_complete_row_count"], 0)
+        self.assertEqual(startup_readiness["blocking_readiness_row_count"], 7)
+        self.assertEqual(startup_readiness["required_readiness_keys"], expected_startup_readiness_keys)
+        self.assertTrue(startup_readiness["active_mode_live_light"])
+        self.assertTrue(startup_readiness["sources_effective"])
+        self.assertTrue(startup_readiness["startup_autostart_configured"])
+        self.assertTrue(startup_readiness["startup_autostart_config_effective"])
+        self.assertFalse(startup_readiness["frontend_startup_autostart_wiring_implemented"])
+        self.assertFalse(startup_readiness["browser_runtime_evidence_complete"])
+        self.assertFalse(startup_readiness["startup_autostart_effective_allowed"])
+        self.assertTrue(startup_readiness["startup_autostart_creates_local_task_only"])
+        self.assertFalse(startup_readiness["startup_autostart_provider_model_execution_allowed"])
+        self.assertTrue(startup_readiness["cache_first_render_required"])
+        self.assertTrue(startup_readiness["bootstrap_status_read_required"])
+        self.assertTrue(startup_readiness["rate_limit_reuse_required"])
+        self.assertTrue(startup_readiness["session_dedupe_required"])
+        self.assertTrue(startup_readiness["task_polling_required"])
+        self.assertTrue(startup_readiness["safe_failure_display_required"])
+        self.assertEqual(
+            startup_readiness["linked_background_task_schema_version"],
+            "command_center_live_light_background_task_contract.v1",
+        )
+        self.assertTrue(startup_readiness["linked_background_task_auto_trigger_allowed"])
+        self.assertEqual(startup_readiness["linked_background_task_rate_limit_seconds"], 900)
+        self.assertEqual(
+            startup_readiness["linked_cache_first_polling_schema_version"],
+            "command_center_runtime_cache_first_polling_contract.v1",
+        )
+        self.assertEqual(startup_readiness["linked_cache_first_polling_phase_count"], 7)
+        self.assertEqual(startup_readiness["linked_cache_first_polling_task_creation_allowed_phase_count"], 2)
+        startup_readiness_rows = {row["readiness_key"]: row for row in startup_readiness["readiness_rows"]}
+        self.assertEqual(list(startup_readiness_rows), expected_startup_readiness_keys)
+        self.assertEqual(
+            [startup_readiness_rows[key]["readiness_order"] for key in expected_startup_readiness_keys],
+            [1, 2, 3, 4, 5, 6, 7],
+        )
+        self.assertEqual(
+            startup_readiness_rows["bootstrap_status_read_before_autostart"]["linked_contract"],
+            "runtime_operator_summary_contract",
+        )
+        self.assertEqual(
+            startup_readiness_rows["single_local_post_task_boundary"]["required_state"],
+            "startup autostart may only call POST /api/bootstrap/live-startup",
+        )
+        self.assertEqual(
+            startup_readiness_rows["provider_model_execution_deferred"]["current_blocker"],
+            "provider_model_execution_request_still_required",
+        )
+        for row in startup_readiness_rows.values():
+            self.assertTrue(row["required_before_frontend_startup_autostart"])
+            self.assertTrue(row["condition_currently_satisfied"])
+            self.assertFalse(row["browser_evidence_collected"])
+            self.assertFalse(row["readiness_evidence_complete"])
+            self.assertTrue(row["blocks_frontend_startup_wiring"])
+            self.assertFalse(row["cache_get_creates_task"])
+            self.assertFalse(row["react_initial_render_creates_task"])
+            self.assertTrue(row["react_mounted_may_post_after_cache_render_only"])
+            self.assertFalse(row["fastapi_startup_creates_task"])
+            self.assertFalse(row["search_typing_creates_task"])
+            self.assertFalse(row["creates_provider_model_task"])
+            self.assertFalse(row["frontend_provider_call_allowed"])
+            self.assertFalse(row["frontend_model_call_allowed"])
+            self.assertTrue(row["provider_model_execution_requires_execution_request"])
+            self.assertFalse(row["row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertFalse(startup_readiness["cache_get_creates_task"])
+        self.assertFalse(startup_readiness["react_initial_render_creates_task"])
+        self.assertFalse(startup_readiness["react_render_calls_provider"])
+        self.assertFalse(startup_readiness["fastapi_startup_creates_task"])
+        self.assertFalse(startup_readiness["search_typing_creates_task"])
+        self.assertFalse(startup_readiness["creates_provider_model_task"])
+        self.assertFalse(startup_readiness["frontend_provider_call_allowed"])
+        self.assertFalse(startup_readiness["frontend_model_call_allowed"])
+        self.assertFalse(startup_readiness["provider_execution_implemented"])
+        self.assertFalse(startup_readiness["model_execution_implemented"])
+        self.assertTrue(startup_readiness["provider_model_execution_requires_execution_request"])
+        self.assertFalse(startup_readiness["external_calls_triggered"])
+        self.assertFalse(startup_readiness["tushare_called"])
+        self.assertFalse(startup_readiness["deepseek_called"])
+        self.assertFalse(startup_readiness["github_called"])
+        self.assertFalse(startup_readiness["contains_secret"])
+        self.assertFalse(startup_readiness["credential_values_exposed"])
+        self.assertFalse(startup_readiness["credential_env_key_names_included"])
+        self.assertTrue(startup_readiness["does_not_execute_trades"])
+        self.assertTrue(startup_readiness["does_not_modify_strategy_action"])
+        self.assertFalse(startup_readiness["contract_is_production_evidence"])
+        self.assertFalse(startup_readiness["production_live_light_complete"])
+        self.assertTrue(packet["live_light"]["startup_autostart_readiness_contract_visible"])
+        self.assertEqual(packet["live_light"]["startup_autostart_readiness_row_count"], 7)
+        self.assertEqual(packet["live_light"]["startup_autostart_condition_satisfied_row_count"], 7)
+        self.assertFalse(packet["live_light"]["startup_autostart_frontend_wiring_implemented"])
+        self.assertFalse(packet["live_light"]["startup_autostart_browser_evidence_complete"])
+        self.assertFalse(packet["live_light"]["startup_autostart_effective_allowed"])
+        self.assertFalse(packet["live_light"]["startup_autostart_readiness_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_startup_autostart_readiness_contract_visible"])
+        self.assertEqual(packet["policy"]["live_light_startup_autostart_readiness_row_count"], 7)
+        self.assertEqual(packet["policy"]["live_light_startup_autostart_condition_satisfied_row_count"], 7)
+        self.assertFalse(packet["policy"]["live_light_startup_autostart_frontend_wiring_implemented"])
+        self.assertFalse(packet["policy"]["live_light_startup_autostart_browser_evidence_complete"])
+        self.assertFalse(packet["policy"]["live_light_startup_autostart_effective_allowed"])
+        self.assertFalse(packet["policy"]["live_light_startup_autostart_readiness_is_production_evidence"])
+        unified_startup = packet["live_light_unified_startup_task_contract"]
+        self.assertEqual(
+            unified_startup["schema_version"],
+            "command_center_live_light_unified_startup_task_contract.v1",
+        )
+        self.assertEqual(
+            unified_startup["status"],
+            "unified_startup_task_contract_visible_executor_pending",
+        )
+        self.assertEqual(unified_startup["mode"], "live_light")
+        self.assertEqual(unified_startup["task_route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(unified_startup["task_type"], "command_center_live_bootstrap")
+        self.assertEqual(unified_startup["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertEqual(
+            unified_startup["trigger_surface"],
+            "react_mounted_after_initial_cache_render_or_safe_search_submit",
+        )
+        expected_unified_stage_keys = [
+            "cache_first_status_read",
+            "startup_task_envelope",
+            "scope_resolution",
+            "tushare_light_refresh",
+            "factor_light_runtime",
+            "next_session_cache_refresh",
+            "deepseek_pro_explanation",
+            "ui_polling_and_cache_refresh",
+        ]
+        self.assertEqual(unified_startup["stage_count"], 8)
+        self.assertEqual(unified_startup["required_stage_keys"], expected_unified_stage_keys)
+        unified_rows = {row["stage_key"]: row for row in unified_startup["stage_rows"]}
+        self.assertEqual(list(unified_rows), expected_unified_stage_keys)
+        self.assertEqual(
+            [unified_rows[key]["stage_order"] for key in expected_unified_stage_keys],
+            [1, 2, 3, 4, 5, 6, 7, 8],
+        )
+        self.assertEqual(unified_rows["cache_first_status_read"]["route"], "GET /api/bootstrap/status")
+        self.assertEqual(unified_rows["startup_task_envelope"]["current_runtime"], "local_task_skeleton")
+        self.assertEqual(unified_rows["tushare_light_refresh"]["future_external_provider"], "tushare")
+        self.assertEqual(
+            unified_rows["tushare_light_refresh"]["allowed_apis"],
+            ["trade_cal_if_needed", "daily", "daily_basic", "moneyflow"],
+        )
+        self.assertTrue(unified_rows["tushare_light_refresh"]["source_switch_effective"])
+        self.assertEqual(
+            unified_rows["tushare_light_refresh"]["external_execution_profile"],
+            "light_provider_model",
+        )
+        self.assertEqual(
+            unified_rows["tushare_light_refresh"]["profile_required"],
+            "light_provider_or_light_provider_model",
+        )
+        self.assertTrue(unified_rows["tushare_light_refresh"]["profile_stage_allowed"])
+        self.assertEqual(unified_rows["tushare_light_refresh"]["profile_inactive_reason"], "")
+        self.assertTrue(unified_rows["tushare_light_refresh"]["requires_execution_request_now"])
+        self.assertEqual(unified_rows["factor_light_runtime"]["stage_kind"], "local_compute")
+        self.assertEqual(unified_rows["next_session_cache_refresh"]["stage_kind"], "local_compute")
+        self.assertEqual(unified_rows["deepseek_pro_explanation"]["future_external_provider"], "deepseek")
+        self.assertEqual(
+            unified_rows["deepseek_pro_explanation"]["external_execution_profile"],
+            "light_provider_model",
+        )
+        self.assertEqual(unified_rows["deepseek_pro_explanation"]["profile_required"], "light_provider_model")
+        self.assertTrue(unified_rows["deepseek_pro_explanation"]["profile_stage_allowed"])
+        self.assertEqual(unified_rows["deepseek_pro_explanation"]["profile_inactive_reason"], "")
+        self.assertEqual(unified_rows["deepseek_pro_explanation"]["deepseek_model"], "custom-live-explain-model")
+        self.assertEqual(
+            unified_rows["deepseek_pro_explanation"]["allowed_output_fields"],
+            ["summary", "support_notes", "suppress_notes", "conflict_notes", "missing_data_notes", "discipline_notes"],
+        )
+        self.assertTrue(unified_rows["deepseek_pro_explanation"]["source_switch_effective"])
+        self.assertTrue(unified_rows["deepseek_pro_explanation"]["requires_data_ready"])
+        self.assertTrue(unified_rows["deepseek_pro_explanation"]["requires_model_ledger"])
+        self.assertFalse(unified_rows["deepseek_pro_explanation"]["deepseek_is_data_source"])
+        for row in unified_rows.values():
+            self.assertTrue(row["stage_status_must_be_pollable"])
+            self.assertTrue(row["safe_skip_allowed"])
+            self.assertFalse(row["cache_get_may_execute_stage"])
+            self.assertFalse(row["react_render_may_execute_stage"])
+            self.assertFalse(row["fastapi_startup_may_execute_stage"])
+            self.assertFalse(row["search_typing_may_execute_stage"])
+            self.assertFalse(row["provider_or_model_execution_allowed_now"])
+            self.assertFalse(row["provider_execution_implemented"])
+            self.assertFalse(row["model_execution_implemented"])
+            self.assertFalse(row["worker_dispatch_implemented"])
+            self.assertFalse(row["local_compute_may_synthesize_provider_rows"])
+            self.assertFalse(row["local_compute_may_synthesize_model_output"])
+            self.assertFalse(row["deepseek_may_overwrite_numeric_or_action_fields"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_modify_prices_positions_or_operation_zones"])
+            self.assertFalse(row["row_is_production_evidence"])
+        self.assertEqual(unified_startup["symbol_limit"], 12)
+        self.assertEqual(unified_startup["rate_limit_seconds"], 900)
+        self.assertEqual(
+            unified_startup["allowed_symbol_sources"],
+            ["current_target", "searched_symbol", "symbols", "watchlist", "holdings"],
+        )
+        self.assertEqual(
+            unified_startup["allowed_light_tushare_apis"],
+            ["trade_cal_if_needed", "daily", "daily_basic", "moneyflow"],
+        )
+        self.assertEqual(unified_startup["deepseek_model"], "custom-live-explain-model")
+        self.assertEqual(unified_startup["external_execution_profile"], "light_provider_model")
+        self.assertTrue(unified_startup["external_execution_profile_provider_stage_allowed"])
+        self.assertTrue(unified_startup["external_execution_profile_model_stage_allowed"])
+        self.assertFalse(unified_startup["external_execution_profile_executor_implemented"])
+        self.assertFalse(unified_startup["external_execution_profile_calls_provider_model_now"])
+        self.assertTrue(unified_startup["provider_stage_planned_by_profile"])
+        self.assertTrue(unified_startup["model_stage_planned_by_profile"])
+        self.assertTrue(unified_startup["active_mode_live_light"])
+        self.assertTrue(unified_startup["sources_effective"])
+        self.assertTrue(unified_startup["live_light_background_task_allowed_after_cache_render"])
+        self.assertTrue(unified_startup["cache_first_render_required"])
+        self.assertTrue(unified_startup["post_task_boundary_required"])
+        self.assertTrue(unified_startup["worker_or_local_fallback_required"])
+        self.assertTrue(unified_startup["ui_nonblocking_required"])
+        self.assertTrue(unified_startup["task_status_polling_required"])
+        self.assertTrue(unified_startup["rate_limit_required"])
+        self.assertTrue(unified_startup["session_dedupe_required"])
+        self.assertTrue(unified_startup["call_ledger_required"])
+        self.assertTrue(unified_startup["model_ledger_required_for_deepseek"])
+        self.assertTrue(unified_startup["provider_model_execution_requires_execution_request_now"])
+        self.assertTrue(unified_startup["future_live_light_provider_model_stage_inside_startup_task"])
+        self.assertTrue(unified_startup["future_external_execution_requires_worker_or_local_fallback"])
+        self.assertTrue(unified_startup["external_execution_profile_required_for_provider_model_stages"])
+        self.assertFalse(unified_startup["cache_get_creates_task"])
+        self.assertFalse(unified_startup["status_get_creates_task"])
+        self.assertFalse(unified_startup["react_initial_render_creates_task"])
+        self.assertFalse(unified_startup["react_render_calls_provider"])
+        self.assertFalse(unified_startup["fastapi_startup_creates_task"])
+        self.assertFalse(unified_startup["search_typing_creates_task"])
+        self.assertFalse(unified_startup["frontend_direct_provider_call_allowed"])
+        self.assertFalse(unified_startup["frontend_direct_model_call_allowed"])
+        self.assertFalse(unified_startup["provider_execution_implemented"])
+        self.assertFalse(unified_startup["model_execution_implemented"])
+        self.assertFalse(unified_startup["worker_dispatch_implemented"])
+        self.assertFalse(unified_startup["celery_dispatch_implemented"])
+        self.assertFalse(unified_startup["scheduler_auto_dispatch_allowed"])
+        self.assertFalse(unified_startup["deepseek_is_data_source"])
+        self.assertFalse(unified_startup["deepseek_may_overwrite_numeric_or_action_fields"])
+        self.assertFalse(unified_startup["radar_candidate_is_buy_instruction"])
+        self.assertFalse(unified_startup["token_key_exposure_allowed"])
+        self.assertFalse(unified_startup["credential_values_exposed"])
+        self.assertFalse(unified_startup["credential_env_key_names_included"])
+        self.assertEqual(
+            unified_startup["linked_background_task_schema_version"],
+            "command_center_live_light_background_task_contract.v1",
+        )
+        self.assertEqual(
+            unified_startup["linked_stage_dependency_schema_version"],
+            "command_center_live_light_stage_dependency_contract.v1",
+        )
+        self.assertEqual(unified_startup["linked_stage_dependency_stage_count"], 9)
+        self.assertEqual(
+            unified_startup["linked_worker_dispatch_schema_version"],
+            "command_center_live_light_worker_dispatch_contract.v1",
+        )
+        self.assertEqual(unified_startup["linked_worker_dispatch_row_count"], 5)
+        self.assertEqual(
+            unified_startup["linked_startup_readiness_schema_version"],
+            "command_center_live_light_startup_autostart_readiness_contract.v1",
+        )
+        self.assertEqual(unified_startup["linked_startup_readiness_row_count"], 7)
+        self.assertFalse(unified_startup["external_calls_triggered"])
+        self.assertFalse(unified_startup["tushare_called"])
+        self.assertFalse(unified_startup["deepseek_called"])
+        self.assertFalse(unified_startup["github_called"])
+        self.assertFalse(unified_startup["contains_secret"])
+        self.assertTrue(unified_startup["does_not_execute_trades"])
+        self.assertTrue(unified_startup["does_not_modify_strategy_action"])
+        self.assertTrue(unified_startup["does_not_modify_prices_positions_or_operation_zones"])
+        self.assertFalse(unified_startup["unified_startup_task_contract_is_execution_evidence"])
+        self.assertFalse(unified_startup["unified_startup_task_contract_is_production_evidence"])
+        self.assertFalse(unified_startup["production_live_light_complete"])
+        self.assertTrue(packet["live_light"]["unified_startup_task_contract_visible"])
+        self.assertEqual(packet["live_light"]["unified_startup_task_stage_count"], 8)
+        self.assertEqual(packet["live_light"]["unified_startup_task_route"], "POST /api/bootstrap/live-startup")
+        self.assertFalse(packet["live_light"]["unified_startup_task_provider_execution_implemented"])
+        self.assertFalse(packet["live_light"]["unified_startup_task_model_execution_implemented"])
+        self.assertFalse(packet["live_light"]["unified_startup_task_worker_dispatch_implemented"])
+        self.assertFalse(packet["live_light"]["unified_startup_task_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_unified_startup_task_contract_visible"])
+        self.assertEqual(packet["policy"]["live_light_unified_startup_task_stage_count"], 8)
+        self.assertEqual(
+            packet["policy"]["live_light_unified_startup_task_route"],
+            "POST /api/bootstrap/live-startup",
+        )
+        self.assertFalse(packet["policy"]["live_light_unified_startup_task_provider_execution_implemented"])
+        self.assertFalse(packet["policy"]["live_light_unified_startup_task_model_execution_implemented"])
+        self.assertFalse(packet["policy"]["live_light_unified_startup_task_worker_dispatch_implemented"])
+        self.assertFalse(packet["policy"]["live_light_unified_startup_task_is_production_evidence"])
+        scope_intake_contract = packet["live_light_scope_intake_contract"]
+        self.assertEqual(
+            scope_intake_contract["schema_version"],
+            "command_center_live_light_scope_intake_contract.v1",
+        )
+        self.assertEqual(
+            scope_intake_contract["status"],
+            "scope_intake_contract_visible_normalization_pending",
+        )
+        self.assertEqual(scope_intake_contract["mode"], "live_light")
+        self.assertEqual(scope_intake_contract["task_route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(
+            scope_intake_contract["search_quant_projection_route"],
+            "POST /api/candidate-radar/quant-projection",
+        )
+        self.assertEqual(
+            scope_intake_contract["allowed_symbol_sources"],
+            ["current_target", "searched_symbol", "symbols", "watchlist", "holdings"],
+        )
+        self.assertEqual(
+            scope_intake_contract["default_symbol_source_order"],
+            scope_intake_contract["allowed_symbol_sources"],
+        )
+        self.assertEqual(scope_intake_contract["symbol_limit"], 12)
+        self.assertTrue(scope_intake_contract["symbol_normalization_required"])
+        self.assertTrue(scope_intake_contract["symbol_dedupe_required"])
+        self.assertTrue(scope_intake_contract["symbol_limit_truncation_required"])
+        self.assertTrue(scope_intake_contract["empty_symbol_list_allowed"])
+        self.assertEqual(
+            scope_intake_contract["empty_symbol_list_status"],
+            "scope_empty_local_task_allowed_no_provider_execution",
+        )
+        self.assertTrue(scope_intake_contract["scope_hash_required"])
+        self.assertEqual(scope_intake_contract["scope_hash_algorithm"], "sha256_json_sorted_safe_payload")
+        self.assertTrue(scope_intake_contract["scope_hash_excludes_secret_fields"])
+        self.assertTrue(scope_intake_contract["safe_payload_required"])
+        self.assertTrue(scope_intake_contract["secret_like_payload_fields_dropped"])
+        self.assertFalse(scope_intake_contract["raw_user_input_logged"])
+        self.assertFalse(scope_intake_contract["raw_user_input_cached"])
+        self.assertFalse(scope_intake_contract["frontend_packet_may_contain_raw_query"])
+        self.assertFalse(scope_intake_contract["cache_get_may_expand_scope"])
+        self.assertFalse(scope_intake_contract["react_render_may_expand_scope"])
+        self.assertFalse(scope_intake_contract["fastapi_startup_may_expand_scope"])
+        self.assertFalse(scope_intake_contract["search_typing_may_create_task"])
+        self.assertTrue(scope_intake_contract["explicit_search_action_required"])
+        self.assertFalse(scope_intake_contract["full_pool_scope_allowed"])
+        self.assertFalse(scope_intake_contract["deep_scan_scope_allowed"])
+        self.assertTrue(scope_intake_contract["watchlist_scope_bounded"])
+        self.assertTrue(scope_intake_contract["holdings_scope_bounded"])
+        self.assertFalse(scope_intake_contract["provider_model_execution_from_scope_intake_allowed"])
+        self.assertFalse(scope_intake_contract["scope_intake_is_provider_execution_evidence"])
+        self.assertFalse(scope_intake_contract["scope_intake_is_production_evidence"])
+        self.assertFalse(scope_intake_contract["external_calls_triggered"])
+        self.assertFalse(scope_intake_contract["tushare_called"])
+        self.assertFalse(scope_intake_contract["deepseek_called"])
+        self.assertFalse(scope_intake_contract["github_called"])
+        self.assertFalse(scope_intake_contract["contains_secret"])
+        self.assertTrue(scope_intake_contract["does_not_execute_trades"])
+        self.assertTrue(scope_intake_contract["does_not_modify_strategy_action"])
+        stage_dependency_contract = packet["live_light_stage_dependency_contract"]
+        self.assertEqual(
+            stage_dependency_contract["schema_version"],
+            "command_center_live_light_stage_dependency_contract.v1",
+        )
+        self.assertEqual(
+            stage_dependency_contract["status"],
+            "stage_dependency_contract_visible_executor_pending",
+        )
+        self.assertEqual(stage_dependency_contract["mode"], "live_light")
+        self.assertEqual(stage_dependency_contract["task_route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(stage_dependency_contract["task_type"], "command_center_live_bootstrap")
+        self.assertEqual(stage_dependency_contract["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertEqual(
+            stage_dependency_contract["stage_sequence"],
+            [
+                "initial_cache_render",
+                "scope_resolution",
+                "trade_cal_if_needed",
+                "tushare_light_refresh",
+                "factor_light_runtime",
+                "factor_quant_hub_cache_refresh",
+                "next_session_cache_refresh",
+                "deepseek_pro_explanation",
+                "ui_task_polling",
+            ],
+        )
+        self.assertEqual(stage_dependency_contract["stage_count"], 9)
+        self.assertEqual(stage_dependency_contract["dependency_edge_count"], 9)
+        dependency_edges = {
+            (row["from_stage"], row["to_stage"]): row["gate"]
+            for row in stage_dependency_contract["dependency_edges"]
+        }
+        self.assertEqual(
+            dependency_edges[("initial_cache_render", "scope_resolution")],
+            "cache_first_render_complete",
+        )
+        self.assertEqual(
+            dependency_edges[("scope_resolution", "trade_cal_if_needed")],
+            "safe_scope_hash_ready",
+        )
+        self.assertEqual(
+            dependency_edges[("factor_quant_hub_cache_refresh", "deepseek_pro_explanation")],
+            "factor_quant_hub_cache_ready",
+        )
+        self.assertEqual(
+            dependency_edges[("next_session_cache_refresh", "deepseek_pro_explanation")],
+            "next_session_cache_ready",
+        )
+        dependency_rows = {row["stage_key"]: row for row in stage_dependency_contract["dependency_rows"]}
+        self.assertEqual(dependency_rows["scope_resolution"]["depends_on"], ["initial_cache_render"])
+        self.assertEqual(
+            set(dependency_rows["deepseek_pro_explanation"]["depends_on"]),
+            {"factor_quant_hub_cache_refresh", "next_session_cache_refresh"},
+        )
+        self.assertTrue(all(row["stage_status_must_be_pollable"] for row in dependency_rows.values()))
+        self.assertFalse(any(row["cache_get_may_execute_stage"] for row in dependency_rows.values()))
+        self.assertFalse(any(row["react_render_may_execute_stage"] for row in dependency_rows.values()))
+        self.assertFalse(any(row["fastapi_startup_may_execute_stage"] for row in dependency_rows.values()))
+        self.assertTrue(stage_dependency_contract["initial_cache_render_first"])
+        self.assertTrue(stage_dependency_contract["scope_intake_before_provider"])
+        self.assertTrue(stage_dependency_contract["tushare_before_factor_light"])
+        self.assertTrue(stage_dependency_contract["factor_light_before_factor_quant_hub"])
+        self.assertTrue(stage_dependency_contract["factor_light_before_next_session"])
+        self.assertTrue(stage_dependency_contract["deepseek_after_factor_and_next_ready"])
+        self.assertFalse(stage_dependency_contract["deepseek_may_run_without_data_ready"])
+        self.assertTrue(stage_dependency_contract["provider_gap_blocks_deepseek_or_requires_safe_skip"])
+        self.assertTrue(stage_dependency_contract["safe_skip_propagates_to_dependents"])
+        self.assertTrue(stage_dependency_contract["ui_polling_after_terminal_or_safe_skip"])
+        self.assertTrue(stage_dependency_contract["stage_status_history_required"])
+        self.assertTrue(stage_dependency_contract["stage_safe_error_required"])
+        self.assertTrue(stage_dependency_contract["stage_provider_gap_visible_required"])
+        self.assertFalse(stage_dependency_contract["cache_get_may_execute_stage"])
+        self.assertFalse(stage_dependency_contract["react_render_may_execute_stage"])
+        self.assertFalse(stage_dependency_contract["fastapi_startup_may_execute_stage"])
+        self.assertTrue(stage_dependency_contract["tushare_source_switch_enabled"])
+        self.assertTrue(stage_dependency_contract["deepseek_source_switch_enabled"])
+        self.assertTrue(stage_dependency_contract["provider_model_acceptance_requires_execution_request"])
+        self.assertFalse(stage_dependency_contract["live_light_executor_implemented"])
+        self.assertFalse(stage_dependency_contract["provider_execution_implemented"])
+        self.assertFalse(stage_dependency_contract["model_execution_implemented"])
+        self.assertFalse(stage_dependency_contract["stage_dependency_contract_is_execution_evidence"])
+        self.assertFalse(stage_dependency_contract["stage_dependency_contract_is_production_evidence"])
+        self.assertFalse(stage_dependency_contract["external_calls_triggered"])
+        self.assertFalse(stage_dependency_contract["tushare_called"])
+        self.assertFalse(stage_dependency_contract["deepseek_called"])
+        self.assertFalse(stage_dependency_contract["github_called"])
+        self.assertFalse(stage_dependency_contract["contains_secret"])
+        self.assertTrue(stage_dependency_contract["does_not_execute_trades"])
+        self.assertTrue(stage_dependency_contract["does_not_modify_strategy_action"])
+        freshness_contract = packet["live_light_freshness_provider_gap_contract"]
+        self.assertEqual(
+            freshness_contract["schema_version"],
+            "command_center_live_light_freshness_provider_gap_contract.v1",
+        )
+        self.assertEqual(
+            freshness_contract["status"],
+            "freshness_provider_gap_contract_visible_runtime_evidence_pending",
+        )
+        self.assertEqual(freshness_contract["mode"], "live_light")
+        self.assertEqual(freshness_contract["task_route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(freshness_contract["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertEqual(
+            freshness_contract["required_surfaces"],
+            ["factor_quant_hub_cache", "next_session_cache", "deepseek_explanation_cache"],
+        )
+        self.assertEqual(freshness_contract["freshness_row_count"], 3)
+        self.assertIn("fresh_provider", freshness_contract["freshness_state_values"])
+        self.assertIn("cache_hit_stale", freshness_contract["freshness_state_values"])
+        self.assertIn("provider_gap", freshness_contract["freshness_state_values"])
+        self.assertIn("credential_missing", freshness_contract["provider_gap_state_values"])
+        self.assertIn("permission_denied", freshness_contract["provider_gap_state_values"])
+        self.assertIn("empty_result", freshness_contract["provider_gap_state_values"])
+        self.assertIn("no_record", freshness_contract["provider_gap_state_values"])
+        freshness_rows = {row["surface_key"]: row for row in freshness_contract["freshness_rows"]}
+        self.assertEqual(
+            set(freshness_rows),
+            {"factor_quant_hub_cache", "next_session_cache", "deepseek_explanation_cache"},
+        )
+        self.assertTrue(all(row["freshness_state_required"] for row in freshness_rows.values()))
+        self.assertTrue(all(row["provider_gap_visible_required"] for row in freshness_rows.values()))
+        self.assertTrue(all(row["safe_error_visible_required"] for row in freshness_rows.values()))
+        self.assertFalse(any(row["empty_result_may_be_verified"] for row in freshness_rows.values()))
+        self.assertFalse(any(row["no_record_may_be_negative_evidence"] for row in freshness_rows.values()))
+        self.assertFalse(any(row["permission_denied_may_be_verified"] for row in freshness_rows.values()))
+        self.assertFalse(any(row["cache_hit_is_provider_execution_evidence"] for row in freshness_rows.values()))
+        self.assertTrue(freshness_rows["deepseek_explanation_cache"]["deepseek_skipped_when_data_not_ready"])
+        self.assertFalse(freshness_rows["deepseek_explanation_cache"]["deepseek_skip_is_model_correctness_evidence"])
+        self.assertTrue(freshness_contract["freshness_state_visible_required"])
+        self.assertTrue(freshness_contract["data_date_visible_required"])
+        self.assertTrue(freshness_contract["local_fetched_at_visible_required"])
+        self.assertTrue(freshness_contract["cache_source_visible_required"])
+        self.assertTrue(freshness_contract["provider_gap_visible_required"])
+        self.assertTrue(freshness_contract["safe_error_visible_required"])
+        self.assertTrue(freshness_contract["stale_cache_label_required"])
+        self.assertTrue(freshness_contract["last_good_cache_lineage_required"])
+        self.assertFalse(freshness_contract["cache_hit_is_provider_execution_evidence"])
+        self.assertFalse(freshness_contract["cache_hit_is_model_execution_evidence"])
+        self.assertFalse(freshness_contract["stale_cache_is_freshness_evidence"])
+        self.assertFalse(freshness_contract["empty_result_may_be_verified"])
+        self.assertFalse(freshness_contract["empty_result_may_close_provider_gap"])
+        self.assertFalse(freshness_contract["no_record_may_be_negative_evidence"])
+        self.assertFalse(freshness_contract["permission_denied_may_be_verified"])
+        self.assertFalse(freshness_contract["credential_missing_may_be_verified"])
+        self.assertFalse(freshness_contract["safe_error_may_be_verified"])
+        self.assertFalse(freshness_contract["provider_gap_may_be_synthesized"])
+        self.assertFalse(freshness_contract["fallback_may_synthesize_provider_rows"])
+        self.assertFalse(freshness_contract["fallback_may_synthesize_model_output"])
+        self.assertTrue(freshness_contract["deepseek_skipped_when_data_not_ready"])
+        self.assertFalse(freshness_contract["deepseek_skip_is_model_correctness_evidence"])
+        self.assertFalse(freshness_contract["freshness_contract_is_provider_execution_evidence"])
+        self.assertFalse(freshness_contract["freshness_contract_is_model_execution_evidence"])
+        self.assertFalse(freshness_contract["freshness_contract_is_production_evidence"])
+        self.assertFalse(freshness_contract["external_calls_triggered"])
+        self.assertFalse(freshness_contract["tushare_called"])
+        self.assertFalse(freshness_contract["deepseek_called"])
+        self.assertFalse(freshness_contract["github_called"])
+        self.assertFalse(freshness_contract["contains_secret"])
+        self.assertTrue(freshness_contract["does_not_execute_trades"])
+        self.assertTrue(freshness_contract["does_not_modify_strategy_action"])
+        lifecycle_contract = packet["live_light_task_lifecycle_contract"]
+        self.assertEqual(
+            lifecycle_contract["schema_version"],
+            "command_center_live_light_task_lifecycle_contract.v1",
+        )
+        self.assertEqual(
+            lifecycle_contract["status"],
+            "task_lifecycle_contract_visible_status_polling_pending",
+        )
+        self.assertEqual(lifecycle_contract["mode"], "live_light")
+        self.assertEqual(lifecycle_contract["task_route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(lifecycle_contract["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertEqual(lifecycle_contract["task_index_route"], "GET /api/tasks")
+        self.assertEqual(lifecycle_contract["task_type"], "command_center_live_bootstrap")
+        self.assertEqual(lifecycle_contract["output_packet_key"], "command_center_live_bootstrap_packet")
+        self.assertEqual(lifecycle_contract["lifecycle_surface"], "task_service_status_only")
+        self.assertEqual(
+            lifecycle_contract["allowed_task_statuses"],
+            ["pending", "running", "success", "failed", "cancelled"],
+        )
+        self.assertEqual(lifecycle_contract["terminal_task_statuses"], ["success", "failed", "cancelled"])
+        self.assertTrue(lifecycle_contract["success_status_may_still_mean_safe_skip"])
+        self.assertEqual(
+            lifecycle_contract["expected_live_light_success_current_step"],
+            "live_bootstrap_plan_recorded_no_provider_execution",
+        )
+        self.assertIn("live_bootstrap_skipped_due_to_rate_limit", lifecycle_contract["safe_skip_current_steps"])
+        self.assertIn("task_id", lifecycle_contract["required_visible_task_fields"])
+        self.assertIn("status_history", lifecycle_contract["required_visible_task_fields"])
+        self.assertIn("call_ledger", lifecycle_contract["required_visible_task_fields"])
+        self.assertEqual(lifecycle_contract["required_status_history_fields"], ["status", "progress", "current_step", "at"])
+        self.assertEqual(lifecycle_contract["progress_min"], 0.0)
+        self.assertEqual(lifecycle_contract["progress_max"], 1.0)
+        self.assertTrue(lifecycle_contract["progress_visible_required"])
+        self.assertTrue(lifecycle_contract["current_step_visible_required"])
+        self.assertTrue(lifecycle_contract["task_id_visible_required"])
+        self.assertTrue(lifecycle_contract["task_status_visible_required"])
+        self.assertTrue(lifecycle_contract["status_history_visible_required"])
+        self.assertTrue(lifecycle_contract["safe_error_visible_required"])
+        self.assertTrue(lifecycle_contract["rate_limit_skipped_state_visible_required"])
+        self.assertTrue(lifecycle_contract["rate_limit_reuses_existing_task"])
+        self.assertEqual(lifecycle_contract["rate_limit_seconds"], 900)
+        self.assertFalse(lifecycle_contract["status_get_creates_task"])
+        self.assertFalse(lifecycle_contract["status_index_creates_task"])
+        self.assertFalse(lifecycle_contract["status_get_calls_provider"])
+        self.assertFalse(lifecycle_contract["status_index_calls_provider"])
+        self.assertFalse(lifecycle_contract["react_initial_render_creates_task"])
+        self.assertFalse(lifecycle_contract["react_render_calls_provider"])
+        self.assertFalse(lifecycle_contract["polling_ui_thread_blocking_allowed"])
+        self.assertFalse(lifecycle_contract["raw_exception_exposed"])
+        self.assertTrue(lifecycle_contract["call_ledger_required"])
+        self.assertTrue(lifecycle_contract["call_ledger_visible_safe_summary_only"])
+        self.assertFalse(lifecycle_contract["task_success_is_provider_execution_evidence"])
+        self.assertFalse(lifecycle_contract["task_success_is_model_execution_evidence"])
+        self.assertFalse(lifecycle_contract["task_success_is_production_evidence"])
+        self.assertFalse(lifecycle_contract["safe_skip_is_provider_execution_evidence"])
+        self.assertFalse(lifecycle_contract["safe_skip_is_production_evidence"])
+        self.assertFalse(lifecycle_contract["provider_execution_implemented"])
+        self.assertFalse(lifecycle_contract["model_execution_implemented"])
+        self.assertFalse(lifecycle_contract["external_calls_triggered"])
+        self.assertFalse(lifecycle_contract["tushare_called"])
+        self.assertFalse(lifecycle_contract["deepseek_called"])
+        self.assertFalse(lifecycle_contract["github_called"])
+        self.assertFalse(lifecycle_contract["contains_secret"])
+        self.assertTrue(lifecycle_contract["does_not_execute_trades"])
+        self.assertTrue(lifecycle_contract["does_not_modify_strategy_action"])
+        task_control_contract = packet["live_light_task_control_contract"]
+        self.assertEqual(
+            task_control_contract["schema_version"],
+            "command_center_live_light_task_control_contract.v1",
+        )
+        self.assertEqual(
+            task_control_contract["status"],
+            "task_control_contract_visible_manual_cancel_retry_only",
+        )
+        self.assertEqual(task_control_contract["mode"], "live_light")
+        self.assertEqual(task_control_contract["task_route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(task_control_contract["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertEqual(task_control_contract["task_index_route"], "GET /api/tasks")
+        self.assertEqual(task_control_contract["cancel_route"], "POST /api/tasks/{task_id}/cancel")
+        self.assertEqual(task_control_contract["retry_route"], "POST /api/tasks/{task_id}/retry")
+        self.assertEqual(task_control_contract["control_row_count"], 2)
+        control_rows = {row["control_key"]: row for row in task_control_contract["control_rows"]}
+        self.assertEqual(set(control_rows), {"cancel", "retry"})
+        self.assertEqual(control_rows["cancel"]["allowed_task_statuses"], ["pending", "running"])
+        self.assertEqual(control_rows["cancel"]["result_status"], "cancelled")
+        self.assertEqual(control_rows["cancel"]["current_step"], "cancelled_by_user_no_external_call")
+        self.assertFalse(control_rows["cancel"]["creates_new_task"])
+        self.assertFalse(control_rows["cancel"]["provider_or_model_execution_allowed"])
+        self.assertEqual(control_rows["retry"]["allowed_task_statuses"], ["failed"])
+        self.assertEqual(control_rows["retry"]["result_status"], "pending")
+        self.assertEqual(control_rows["retry"]["current_step"], "manual_retry_queued_no_external_call")
+        self.assertTrue(control_rows["retry"]["creates_new_task"])
+        self.assertFalse(control_rows["retry"]["provider_or_model_execution_allowed"])
+        self.assertTrue(task_control_contract["cancel_route_available"])
+        self.assertTrue(task_control_contract["retry_route_available"])
+        self.assertTrue(task_control_contract["manual_operator_action_required"])
+        self.assertFalse(task_control_contract["auto_cancel_enabled"])
+        self.assertFalse(task_control_contract["auto_retry_enabled"])
+        self.assertTrue(task_control_contract["retry_requires_failed_task"])
+        self.assertTrue(task_control_contract["retry_creates_new_local_task_only"])
+        self.assertFalse(task_control_contract["cancel_may_stop_provider_call_in_flight"])
+        self.assertTrue(task_control_contract["control_reason_sanitized"])
+        self.assertFalse(task_control_contract["raw_control_reason_logged"])
+        self.assertFalse(task_control_contract["raw_control_reason_cached"])
+        self.assertFalse(task_control_contract["credential_values_exposed"])
+        self.assertTrue(task_control_contract["task_id_sanitized_when_missing"])
+        self.assertTrue(task_control_contract["control_call_ledger_required"])
+        self.assertTrue(task_control_contract["control_call_ledger_safe_summary_only"])
+        self.assertTrue(task_control_contract["status_history_append_required"])
+        self.assertTrue(task_control_contract["task_log_append_required"])
+        self.assertFalse(task_control_contract["cache_get_may_cancel_or_retry"])
+        self.assertFalse(task_control_contract["react_render_may_cancel_or_retry"])
+        self.assertFalse(task_control_contract["fastapi_startup_may_cancel_or_retry"])
+        self.assertFalse(task_control_contract["provider_execution_implemented"])
+        self.assertFalse(task_control_contract["model_execution_implemented"])
+        self.assertFalse(task_control_contract["control_contract_is_provider_execution_evidence"])
+        self.assertFalse(task_control_contract["control_contract_is_model_execution_evidence"])
+        self.assertFalse(task_control_contract["control_contract_is_production_evidence"])
+        self.assertFalse(task_control_contract["external_calls_triggered"])
+        self.assertFalse(task_control_contract["tushare_called"])
+        self.assertFalse(task_control_contract["deepseek_called"])
+        self.assertFalse(task_control_contract["github_called"])
+        self.assertFalse(task_control_contract["contains_secret"])
+        self.assertTrue(task_control_contract["does_not_execute_trades"])
+        self.assertTrue(task_control_contract["does_not_modify_strategy_action"])
+        operator_status_contract = packet["live_light_operator_status_contract"]
+        self.assertEqual(
+            operator_status_contract["schema_version"],
+            "command_center_live_light_operator_status_contract.v1",
+        )
+        self.assertEqual(
+            operator_status_contract["status"],
+            "operator_status_contract_visible_read_only_task_status_pending",
+        )
+        self.assertEqual(operator_status_contract["mode"], "live_light")
+        self.assertEqual(operator_status_contract["status_route"], "GET /api/bootstrap/status")
+        self.assertEqual(operator_status_contract["task_route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(operator_status_contract["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertEqual(operator_status_contract["task_index_route"], "GET /api/tasks")
+        self.assertEqual(operator_status_contract["task_type"], "command_center_live_bootstrap")
+        self.assertEqual(operator_status_contract["status_surface_count"], 7)
+        self.assertEqual(
+            operator_status_contract["required_operator_surfaces"],
+            [
+                "runtime_mode",
+                "source_switches",
+                "external_execution_profile",
+                "latest_bootstrap_task",
+                "rate_limit_state",
+                "safe_error_state",
+                "evidence_boundary_state",
+            ],
+        )
+        operator_status_rows = {
+            row["surface_key"]: row for row in operator_status_contract["status_rows"]
+        }
+        self.assertEqual(operator_status_rows["runtime_mode"]["current_value_safe"], "live_light")
+        self.assertFalse(operator_status_rows["runtime_mode"]["status_get_creates_task"])
+        self.assertTrue(operator_status_rows["source_switches"]["configured_tushare_on_open"])
+        self.assertTrue(operator_status_rows["source_switches"]["configured_deepseek_on_open"])
+        self.assertTrue(operator_status_rows["source_switches"]["effective_tushare_on_open"])
+        self.assertTrue(operator_status_rows["source_switches"]["effective_deepseek_on_open"])
+        self.assertEqual(operator_status_rows["source_switches"]["mode_gate"], "live_light")
+        profile_status = operator_status_rows["external_execution_profile"]
+        self.assertEqual(profile_status["source"], "GET /api/bootstrap/status")
+        self.assertEqual(profile_status["current_value_safe"], "light_provider_model")
+        self.assertEqual(profile_status["mode_gate"], "live_light_post_task_worker_ledger")
+        self.assertTrue(profile_status["source_switches_effective"])
+        self.assertTrue(profile_status["provider_stage_allowed_by_profile"])
+        self.assertTrue(profile_status["model_stage_allowed_by_profile"])
+        self.assertFalse(profile_status["provider_execution_implemented"])
+        self.assertFalse(profile_status["model_execution_implemented"])
+        self.assertFalse(profile_status["calls_provider_model_now"])
+        self.assertFalse(profile_status["creates_provider_model_task"])
+        self.assertEqual(profile_status["linked_rate_limit_seconds_visible_safe"], 900)
+        self.assertEqual(operator_status_rows["latest_bootstrap_task"]["source"], "GET /api/tasks")
+        self.assertTrue(
+            operator_status_rows["latest_bootstrap_task"][
+                "latest_task_status_may_be_skeleton_or_safe_skip"
+            ]
+        )
+        self.assertFalse(operator_status_rows["latest_bootstrap_task"]["status_get_creates_task"])
+        self.assertEqual(operator_status_rows["rate_limit_state"]["rate_limit_seconds"], 900)
+        self.assertEqual(
+            operator_status_rows["rate_limit_state"]["skipped_current_step"],
+            "live_bootstrap_skipped_due_to_rate_limit",
+        )
+        self.assertTrue(operator_status_rows["rate_limit_state"]["rate_limit_reuses_existing_task"])
+        self.assertFalse(operator_status_rows["rate_limit_state"]["rate_limit_skip_creates_new_task"])
+        self.assertTrue(operator_status_rows["safe_error_state"]["safe_error_visible_required"])
+        self.assertFalse(operator_status_rows["safe_error_state"]["raw_exception_visible_allowed"])
+        self.assertFalse(operator_status_rows["safe_error_state"]["raw_task_payload_visible_allowed"])
+        self.assertFalse(operator_status_rows["evidence_boundary_state"]["provider_execution_implemented"])
+        self.assertFalse(operator_status_rows["evidence_boundary_state"]["model_execution_implemented"])
+        self.assertTrue(operator_status_rows["evidence_boundary_state"]["production_evidence_pending"])
+        self.assertTrue(
+            all(row["frontend_visible"] for row in operator_status_contract["status_rows"])
+        )
+        self.assertFalse(
+            any(row["frontend_editable"] for row in operator_status_contract["status_rows"])
+        )
+        self.assertFalse(
+            any(
+                row["provider_or_model_execution_evidence"]
+                for row in operator_status_contract["status_rows"]
+            )
+        )
+        self.assertTrue(operator_status_contract["current_mode_visible_required"])
+        self.assertTrue(operator_status_contract["configured_source_switches_visible_required"])
+        self.assertTrue(operator_status_contract["effective_source_switches_visible_required"])
+        self.assertTrue(operator_status_contract["external_execution_profile_visible_required"])
+        self.assertTrue(operator_status_contract["latest_bootstrap_task_id_visible_required"])
+        self.assertTrue(operator_status_contract["latest_bootstrap_task_status_visible_required"])
+        self.assertTrue(operator_status_contract["latest_bootstrap_current_step_visible_required"])
+        self.assertTrue(operator_status_contract["latest_bootstrap_safe_error_visible_required"])
+        self.assertTrue(operator_status_contract["rate_limit_skipped_state_visible_required"])
+        self.assertTrue(operator_status_contract["source_switches_effective"])
+        self.assertTrue(operator_status_contract["tushare_on_open_effective"])
+        self.assertTrue(operator_status_contract["deepseek_on_open_effective"])
+        self.assertEqual(operator_status_contract["external_execution_profile"], "light_provider_model")
+        self.assertTrue(operator_status_contract["external_execution_profile_provider_stage_allowed"])
+        self.assertTrue(operator_status_contract["external_execution_profile_model_stage_allowed"])
+        self.assertFalse(operator_status_contract["external_execution_profile_executor_implemented"])
+        self.assertFalse(operator_status_contract["external_execution_profile_calls_provider_model_now"])
+        self.assertTrue(operator_status_contract["profile_source_rate_summary_visible_required"])
+        self.assertEqual(operator_status_contract["symbol_limit_visible_safe"], 12)
+        self.assertEqual(operator_status_contract["rate_limit_seconds_visible_safe"], 900)
+        self.assertTrue(operator_status_contract["operator_status_read_only"])
+        self.assertFalse(operator_status_contract["operator_status_frontend_editable"])
+        self.assertFalse(operator_status_contract["frontend_writeback_allowed"])
+        self.assertFalse(operator_status_contract["status_get_creates_task"])
+        self.assertFalse(operator_status_contract["status_get_calls_provider"])
+        self.assertFalse(operator_status_contract["status_get_calls_model"])
+        self.assertFalse(operator_status_contract["task_index_creates_task"])
+        self.assertFalse(operator_status_contract["task_status_get_creates_task"])
+        self.assertFalse(operator_status_contract["react_initial_render_may_block_on_task"])
+        self.assertFalse(operator_status_contract["react_render_direct_provider_calls"])
+        self.assertTrue(operator_status_contract["safe_summary_only"])
+        self.assertFalse(operator_status_contract["raw_config_values_exposed"])
+        self.assertFalse(operator_status_contract["raw_task_payload_visible_allowed"])
+        self.assertFalse(operator_status_contract["raw_exception_visible_allowed"])
+        self.assertFalse(operator_status_contract["raw_prompt_or_raw_model_output_visible_allowed"])
+        self.assertFalse(operator_status_contract["credential_values_exposed"])
+        self.assertFalse(operator_status_contract["credential_env_key_names_exposed"])
+        self.assertFalse(operator_status_contract["latest_task_success_is_provider_model_evidence"])
+        self.assertFalse(operator_status_contract["rate_limit_skip_is_provider_model_evidence"])
+        self.assertFalse(operator_status_contract["operator_status_contract_is_provider_execution_evidence"])
+        self.assertFalse(operator_status_contract["operator_status_contract_is_model_execution_evidence"])
+        self.assertFalse(operator_status_contract["operator_status_contract_is_production_evidence"])
+        self.assertFalse(operator_status_contract["provider_execution_implemented"])
+        self.assertFalse(operator_status_contract["model_execution_implemented"])
+        self.assertFalse(operator_status_contract["external_calls_triggered"])
+        self.assertFalse(operator_status_contract["tushare_called"])
+        self.assertFalse(operator_status_contract["deepseek_called"])
+        self.assertFalse(operator_status_contract["github_called"])
+        self.assertFalse(operator_status_contract["contains_secret"])
+        self.assertTrue(operator_status_contract["does_not_execute_trades"])
+        self.assertTrue(operator_status_contract["does_not_modify_strategy_action"])
+        hard_boundary = packet["runtime_hard_boundary_contract"]
+        runtime_operator_summary = packet["runtime_operator_summary_contract"]
+        self.assertEqual(
+            runtime_operator_summary["schema_version"],
+            "command_center_runtime_operator_summary_contract.v1",
+        )
+        self.assertEqual(runtime_operator_summary["status"], "runtime_operator_summary_visible_read_only")
+        self.assertEqual(runtime_operator_summary["mode"], "live_light")
+        self.assertEqual(runtime_operator_summary["summary_row_count"], 4)
+        operator_summary_rows = {row["mode"]: row for row in runtime_operator_summary["summary_rows"]}
+        self.assertEqual(set(operator_summary_rows), {"cache_only", "manual", "live_light", "live_full"})
+        self.assertTrue(operator_summary_rows["live_light"]["active"])
+        self.assertFalse(operator_summary_rows["cache_only"]["active"])
+        self.assertEqual(runtime_operator_summary["active_mode_operator_label"], "Live light")
+        self.assertEqual(
+            runtime_operator_summary["active_mode_display_status"],
+            "bounded_background_task_after_cache_render",
+        )
+        self.assertTrue(runtime_operator_summary["release_blocker_summary_visible"])
+        self.assertEqual(
+            runtime_operator_summary["release_blocker_source_contract"],
+            "live_light_promotion_gate_contract",
+        )
+        self.assertFalse(runtime_operator_summary["release_real_provider_model_evidence_complete"])
+        self.assertTrue(runtime_operator_summary["release_browser_nonblocking_runtime_evidence_required"])
+        self.assertTrue(runtime_operator_summary["release_ledger_redaction_review_required"])
+        self.assertTrue(runtime_operator_summary["release_fresh_local_gate_run_required"])
+        self.assertFalse(runtime_operator_summary["release_remote_ci_status_known"])
+        self.assertFalse(runtime_operator_summary["release_remote_ci_green"])
+        self.assertFalse(runtime_operator_summary["release_github_api_called"])
+        self.assertTrue(runtime_operator_summary["release_production_promotion_review_required"])
+        self.assertFalse(runtime_operator_summary["release_ready_for_promotion"])
+        self.assertFalse(runtime_operator_summary["release_local_contracts_are_production_evidence"])
+        self.assertFalse(runtime_operator_summary["release_blocker_summary_is_production_evidence"])
+        self.assertTrue(runtime_operator_summary["hard_boundary_summary_visible"])
+        self.assertEqual(runtime_operator_summary["hard_boundary_source_contract"], "runtime_hard_boundary_contract")
+        self.assertEqual(runtime_operator_summary["hard_boundary_row_count"], hard_boundary["boundary_row_count"])
+        self.assertEqual(
+            runtime_operator_summary["hard_boundary_blocking_count"],
+            hard_boundary["blocking_boundary_count"],
+        )
+        self.assertFalse(runtime_operator_summary["hard_boundary_get_cache_external_calls_allowed"])
+        self.assertFalse(runtime_operator_summary["hard_boundary_react_render_provider_calls_allowed"])
+        self.assertFalse(runtime_operator_summary["hard_boundary_fastapi_startup_external_calls_allowed"])
+        self.assertTrue(runtime_operator_summary["hard_boundary_post_task_worker_local_fallback_required"])
+        self.assertTrue(runtime_operator_summary["hard_boundary_call_ledger_required"])
+        self.assertTrue(runtime_operator_summary["hard_boundary_model_ledger_required_for_deepseek"])
+        self.assertFalse(runtime_operator_summary["hard_boundary_deepseek_is_data_source"])
+        self.assertFalse(runtime_operator_summary["hard_boundary_real_trading_allowed"])
+        self.assertFalse(runtime_operator_summary["hard_boundary_token_key_frontend_log_packet_cache_allowed"])
+        self.assertFalse(runtime_operator_summary["hard_boundary_summary_is_production_evidence"])
+        self.assertTrue(runtime_operator_summary["cache_first_polling_summary_visible"])
+        self.assertEqual(
+            runtime_operator_summary["cache_first_polling_source_contract"],
+            "runtime_cache_first_polling_contract",
+        )
+        self.assertEqual(
+            runtime_operator_summary["cache_first_polling_schema_version"],
+            cache_first_polling["schema_version"],
+        )
+        self.assertEqual(
+            runtime_operator_summary["cache_first_polling_phase_count"],
+            cache_first_polling["phase_count"],
+        )
+        self.assertTrue(runtime_operator_summary["cache_first_polling_cache_first_render_required"])
+        self.assertTrue(runtime_operator_summary["cache_first_polling_task_polling_required"])
+        self.assertTrue(runtime_operator_summary["cache_first_polling_success_refresh_required"])
+        self.assertTrue(runtime_operator_summary["cache_first_polling_last_good_cache_required"])
+        self.assertTrue(runtime_operator_summary["cache_first_polling_manual_retry_only_after_failure"])
+        self.assertEqual(
+            runtime_operator_summary["cache_first_polling_task_creation_allowed_phase_count"],
+            cache_first_polling["task_creation_allowed_phase_count"],
+        )
+        self.assertEqual(
+            runtime_operator_summary["cache_first_polling_direct_external_call_allowed_phase_count"],
+            cache_first_polling["direct_external_call_allowed_phase_count"],
+        )
+        self.assertFalse(runtime_operator_summary["cache_first_polling_browser_evidence_complete"])
+        self.assertFalse(runtime_operator_summary["cache_first_polling_summary_is_production_evidence"])
+        self.assertTrue(runtime_operator_summary["operator_trigger_policy_summary_visible"])
+        self.assertEqual(
+            runtime_operator_summary["operator_trigger_policy_source_contract"],
+            "runtime_mode_acceptance_contract",
+        )
+        self.assertTrue(runtime_operator_summary["active_page_open_task_allowed"])
+        self.assertTrue(runtime_operator_summary["active_search_submit_task_allowed"])
+        self.assertTrue(runtime_operator_summary["active_manual_button_task_allowed"])
+        self.assertTrue(runtime_operator_summary["active_live_light_background_task_allowed"])
+        self.assertFalse(runtime_operator_summary["active_provider_model_execution_allowed"])
+        self.assertEqual(
+            runtime_operator_summary["active_provider_model_execution_surface"],
+            "execution_request_post_task_only",
+        )
+        self.assertFalse(runtime_operator_summary["active_provider_model_direct_execution_allowed"])
+        self.assertTrue(runtime_operator_summary["active_provider_model_requires_explicit_post_task"])
+        self.assertTrue(runtime_operator_summary["active_provider_model_execution_requires_task_contract"])
+        self.assertTrue(runtime_operator_summary["active_provider_model_execution_requires_execution_request"])
+        self.assertFalse(runtime_operator_summary["active_full_pool_or_deep_scan_allowed"])
+        self.assertFalse(runtime_operator_summary["trigger_policy_summary_is_production_evidence"])
+        self.assertTrue(runtime_operator_summary["runtime_vocab_source_visible_required"])
+        self.assertEqual(
+            runtime_operator_summary["runtime_mode_vocab_source"],
+            packet["safe_config_contract"]["runtime_mode_vocab_source"],
+        )
+        self.assertEqual(
+            runtime_operator_summary["default_mode_source"],
+            packet["safe_config_contract"]["default_mode_source"],
+        )
+        self.assertEqual(
+            runtime_operator_summary["external_execution_profile_vocab_source"],
+            packet["safe_config_contract"]["external_execution_profile_vocab_source"],
+        )
+        self.assertEqual(
+            runtime_operator_summary["external_execution_profile_default_source"],
+            packet["safe_config_contract"]["external_execution_profile_default_source"],
+        )
+        self.assertEqual(runtime_operator_summary["allowed_operator_action_count"], 4)
+        self.assertEqual(runtime_operator_summary["blocked_operator_action_count"], 5)
+        self.assertIn(
+            "create_or_reuse_rate_limited_bootstrap_task_after_cache_render",
+            runtime_operator_summary["allowed_operator_actions"],
+        )
+        self.assertIn(
+            "safe_search_submit_may_create_local_projection_task",
+            runtime_operator_summary["allowed_operator_actions"],
+        )
+        self.assertIn(
+            "provider_model_execution_without_execution_request",
+            runtime_operator_summary["blocked_operator_actions"],
+        )
+        self.assertIn("production_promotion_from_local_contracts", runtime_operator_summary["blocked_operator_actions"])
+        for row in operator_summary_rows.values():
+            self.assertTrue(row["trigger_policy_summary_visible"])
+            self.assertEqual(row["trigger_policy_source_contract"], "runtime_mode_acceptance_contract")
+            self.assertTrue(row["frontend_visible"])
+            self.assertFalse(row["frontend_editable"])
+            self.assertFalse(row["frontend_writeback_allowed"])
+            self.assertFalse(row["status_endpoint_writeback_allowed"])
+            self.assertFalse(row["cache_get_creates_task"])
+            self.assertFalse(row["react_initial_render_creates_task"])
+            self.assertFalse(row["search_typing_creates_task"])
+            self.assertFalse(row["operator_row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertFalse(operator_summary_rows["cache_only"]["page_open_task_allowed"])
+        self.assertFalse(operator_summary_rows["cache_only"]["search_submit_task_allowed"])
+        self.assertFalse(operator_summary_rows["cache_only"]["manual_button_task_allowed"])
+        self.assertFalse(operator_summary_rows["cache_only"]["provider_model_execution_allowed"])
+        self.assertFalse(operator_summary_rows["manual"]["page_open_task_allowed"])
+        self.assertFalse(operator_summary_rows["manual"]["search_submit_task_allowed"])
+        self.assertTrue(operator_summary_rows["manual"]["manual_button_task_allowed"])
+        self.assertTrue(operator_summary_rows["manual"]["provider_model_execution_allowed"])
+        self.assertEqual(
+            operator_summary_rows["manual"]["provider_model_execution_surface"],
+            "selected_explicit_post_task_only",
+        )
+        self.assertFalse(operator_summary_rows["manual"]["provider_model_direct_execution_allowed"])
+        self.assertTrue(operator_summary_rows["manual"]["provider_model_requires_explicit_post_task"])
+        self.assertTrue(operator_summary_rows["manual"]["provider_model_execution_requires_task_contract"])
+        self.assertTrue(operator_summary_rows["live_light"]["page_open_task_allowed"])
+        self.assertTrue(operator_summary_rows["live_light"]["search_submit_task_allowed"])
+        self.assertTrue(operator_summary_rows["live_light"]["manual_button_task_allowed"])
+        self.assertTrue(operator_summary_rows["live_light"]["live_light_background_task_allowed"])
+        self.assertFalse(operator_summary_rows["live_light"]["provider_model_execution_allowed"])
+        self.assertEqual(
+            operator_summary_rows["live_light"]["provider_model_execution_surface"],
+            "execution_request_post_task_only",
+        )
+        self.assertFalse(operator_summary_rows["live_light"]["provider_model_direct_execution_allowed"])
+        self.assertTrue(operator_summary_rows["live_light"]["provider_model_requires_explicit_post_task"])
+        self.assertTrue(operator_summary_rows["live_light"]["provider_model_execution_requires_task_contract"])
+        self.assertTrue(operator_summary_rows["live_light"]["provider_model_execution_requires_execution_request"])
+        self.assertFalse(operator_summary_rows["live_light"]["full_pool_or_deep_scan_allowed"])
+        self.assertFalse(operator_summary_rows["live_full"]["page_open_task_allowed"])
+        self.assertFalse(operator_summary_rows["live_full"]["search_submit_task_allowed"])
+        self.assertFalse(operator_summary_rows["live_full"]["manual_button_task_allowed"])
+        self.assertEqual(operator_summary_rows["live_full"]["provider_model_execution_surface"], "reserved_none_now")
+        self.assertFalse(operator_summary_rows["live_full"]["provider_model_direct_execution_allowed"])
+        self.assertFalse(operator_summary_rows["live_full"]["provider_model_requires_explicit_post_task"])
+        self.assertFalse(operator_summary_rows["live_full"]["full_pool_or_deep_scan_allowed"])
+        self.assertTrue(runtime_operator_summary["mode_rows_visible_required"])
+        self.assertTrue(runtime_operator_summary["config_rows_visible_required"])
+        self.assertTrue(runtime_operator_summary["config_ownership_visible_required"])
+        self.assertTrue(runtime_operator_summary["effective_source_switches_visible_required"])
+        self.assertTrue(runtime_operator_summary["latest_bootstrap_task_visible_required"])
+        self.assertTrue(runtime_operator_summary["latest_search_quant_projection_visible_required"])
+        self.assertTrue(runtime_operator_summary["provider_model_execution_flags_visible_required"])
+        self.assertTrue(runtime_operator_summary["production_blockers_visible_required"])
+        self.assertEqual(
+            runtime_operator_summary["safe_config_contract_status"],
+            packet["safe_config_contract"]["status"],
+        )
+        self.assertTrue(runtime_operator_summary["configured_source_switches_visible"])
+        self.assertTrue(runtime_operator_summary["effective_source_switches_mode_gated"])
+        self.assertTrue(runtime_operator_summary["effective_sources_enabled"])
+        self.assertTrue(runtime_operator_summary["external_execution_profile_visible_required"])
+        self.assertEqual(runtime_operator_summary["effective_external_execution_profile"], "light_provider_model")
+        self.assertTrue(runtime_operator_summary["external_execution_profile_provider_stage_allowed"])
+        self.assertTrue(runtime_operator_summary["external_execution_profile_model_stage_allowed"])
+        self.assertFalse(runtime_operator_summary["external_execution_profile_executor_implemented"])
+        self.assertFalse(runtime_operator_summary["external_execution_profile_calls_provider_model_now"])
+        self.assertTrue(runtime_operator_summary["provider_model_enablement_summary_visible"])
+        self.assertEqual(
+            runtime_operator_summary["provider_model_enablement_source_config"],
+            "COMMAND_CENTER_LIVE_PROVIDER_MODEL_ENABLEMENT",
+        )
+        self.assertEqual(
+            runtime_operator_summary["provider_model_enablement_configured"],
+            packet["safe_config_contract"]["configured_provider_model_enablement"],
+        )
+        self.assertFalse(runtime_operator_summary["provider_model_enablement_effective"])
+        self.assertTrue(runtime_operator_summary["provider_model_enablement_requires_live_light"])
+        self.assertTrue(runtime_operator_summary["provider_model_enablement_requires_execution_request"])
+        self.assertTrue(runtime_operator_summary["provider_model_enablement_requires_promotion"])
+        self.assertFalse(runtime_operator_summary["provider_model_enablement_creates_task"])
+        self.assertFalse(runtime_operator_summary["provider_model_enablement_creates_provider_model_task"])
+        self.assertFalse(runtime_operator_summary["provider_model_enablement_calls_provider_model_now"])
+        self.assertFalse(runtime_operator_summary["provider_model_enablement_frontend_writeback_allowed"])
+        self.assertFalse(runtime_operator_summary["provider_model_enablement_summary_is_production_evidence"])
+        self.assertTrue(runtime_operator_summary["operator_profile_source_rate_summary_visible"])
+        self.assertEqual(
+            runtime_operator_summary["operator_profile_source_rate_summary_status"],
+            "profile_selected_executor_pending",
+        )
+        self.assertEqual(runtime_operator_summary["operator_rate_limit_seconds_visible_safe"], 900)
+        self.assertEqual(runtime_operator_summary["config_ownership_row_count"], 13)
+        self.assertEqual(
+            runtime_operator_summary["config_reference_audit_id"],
+            runtime_config_reference["config_audit_id"],
+        )
+        self.assertEqual(
+            runtime_operator_summary["config_ownership_audit_id"],
+            config_ownership["ownership_audit_id"],
+        )
+        self.assertEqual(
+            runtime_operator_summary["config_audit_input_surface"],
+            "safe_reference_and_ownership_rows_only",
+        )
+        self.assertTrue(runtime_operator_summary["config_audit_visible_required"])
+        self.assertFalse(runtime_operator_summary["config_audit_includes_raw_values"])
+        self.assertFalse(runtime_operator_summary["config_audit_includes_credential_values"])
+        self.assertFalse(runtime_operator_summary["config_audit_is_production_evidence"])
+        self.assertEqual(runtime_operator_summary["bootstrap_local_env_fallback_count"], 0)
+        self.assertEqual(runtime_operator_summary["global_config_allowlist_promotion_pending_count"], 0)
+        self.assertEqual(runtime_operator_summary["runtime_mode_acceptance_row_count"], 4)
+        self.assertEqual(runtime_operator_summary["task_creation_invariant_surface_row_count"], 9)
+        self.assertEqual(runtime_operator_summary["task_creation_invariant_allowed_surface_count"], 3)
+        self.assertTrue(runtime_operator_summary["task_control_contract_visible"])
+        self.assertEqual(runtime_operator_summary["task_control_row_count"], 2)
+        self.assertEqual(
+            runtime_operator_summary["task_control_cancel_route"],
+            "POST /api/tasks/{task_id}/cancel",
+        )
+        self.assertEqual(
+            runtime_operator_summary["task_control_retry_route"],
+            "POST /api/tasks/{task_id}/retry",
+        )
+        self.assertTrue(runtime_operator_summary["task_control_manual_only"])
+        self.assertFalse(runtime_operator_summary["task_control_auto_retry_enabled"])
+        self.assertTrue(runtime_operator_summary["task_control_safe_reason_required"])
+        self.assertTrue(runtime_operator_summary["task_control_call_ledger_required"])
+        self.assertFalse(runtime_operator_summary["task_control_is_production_evidence"])
+        self.assertEqual(
+            runtime_operator_summary["operator_status_surface_count"],
+            operator_status_contract["status_surface_count"],
+        )
+        self.assertFalse(runtime_operator_summary["latest_bootstrap_task_found"])
+        self.assertEqual(runtime_operator_summary["latest_bootstrap_task_status"], "no_bootstrap_task_found")
+        self.assertFalse(runtime_operator_summary["latest_quant_projection_task_found"])
+        self.assertEqual(runtime_operator_summary["latest_quant_projection_status"], "no_quant_projection_task_found")
+        self.assertTrue(runtime_operator_summary["frontend_visible"])
+        self.assertFalse(runtime_operator_summary["frontend_editable"])
+        self.assertFalse(runtime_operator_summary["frontend_writeback_allowed"])
+        self.assertFalse(runtime_operator_summary["status_endpoint_writeback_allowed"])
+        self.assertFalse(runtime_operator_summary["status_get_creates_task"])
+        self.assertFalse(runtime_operator_summary["cache_get_creates_task"])
+        self.assertFalse(runtime_operator_summary["react_initial_render_creates_task"])
+        self.assertFalse(runtime_operator_summary["react_render_direct_provider_calls"])
+        self.assertFalse(runtime_operator_summary["search_typing_creates_task"])
+        self.assertTrue(runtime_operator_summary["safe_summary_only"])
+        self.assertFalse(runtime_operator_summary["raw_config_values_exposed"])
+        self.assertFalse(runtime_operator_summary["raw_task_payload_visible_allowed"])
+        self.assertFalse(runtime_operator_summary["raw_prompt_or_raw_model_output_visible_allowed"])
+        self.assertFalse(runtime_operator_summary["credential_values_exposed"])
+        self.assertFalse(runtime_operator_summary["credential_env_key_names_included"])
+        self.assertFalse(runtime_operator_summary["latest_task_success_is_provider_model_evidence"])
+        self.assertFalse(runtime_operator_summary["operator_summary_is_provider_execution_evidence"])
+        self.assertFalse(runtime_operator_summary["operator_summary_is_model_execution_evidence"])
+        self.assertFalse(runtime_operator_summary["operator_summary_is_production_evidence"])
+        self.assertFalse(runtime_operator_summary["provider_execution_implemented"])
+        self.assertFalse(runtime_operator_summary["model_execution_implemented"])
+        self.assertFalse(runtime_operator_summary["production_live_light_complete"])
+        self.assertFalse(runtime_operator_summary["external_calls_triggered"])
+        self.assertFalse(runtime_operator_summary["tushare_called"])
+        self.assertFalse(runtime_operator_summary["deepseek_called"])
+        self.assertFalse(runtime_operator_summary["github_called"])
+        self.assertFalse(runtime_operator_summary["contains_secret"])
+        self.assertTrue(runtime_operator_summary["does_not_execute_trades"])
+        self.assertTrue(runtime_operator_summary["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["runtime_operator_summary_contract_visible"])
+        self.assertEqual(packet["live_light"]["runtime_operator_active_mode"], "live_light")
+        self.assertEqual(
+            packet["live_light"]["runtime_operator_active_display_status"],
+            "bounded_background_task_after_cache_render",
+        )
+        self.assertTrue(packet["live_light"]["runtime_operator_release_blocker_summary_visible"])
+        self.assertFalse(packet["live_light"]["runtime_operator_release_remote_ci_status_known"])
+        self.assertFalse(packet["live_light"]["runtime_operator_release_remote_ci_green"])
+        self.assertFalse(packet["live_light"]["runtime_operator_release_github_api_called"])
+        self.assertTrue(packet["live_light"]["runtime_operator_release_fresh_local_gate_run_required"])
+        self.assertTrue(packet["live_light"]["runtime_operator_release_production_promotion_review_required"])
+        self.assertFalse(packet["live_light"]["runtime_operator_release_ready_for_promotion"])
+        self.assertFalse(packet["live_light"]["runtime_operator_release_local_contracts_are_production_evidence"])
+        self.assertFalse(packet["live_light"]["runtime_operator_release_blocker_summary_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["runtime_operator_trigger_policy_summary_visible"])
+        self.assertTrue(packet["live_light"]["runtime_operator_active_page_open_task_allowed"])
+        self.assertTrue(packet["live_light"]["runtime_operator_active_search_submit_task_allowed"])
+        self.assertTrue(packet["live_light"]["runtime_operator_active_manual_button_task_allowed"])
+        self.assertTrue(packet["live_light"]["runtime_operator_active_live_light_background_task_allowed"])
+        self.assertFalse(packet["live_light"]["runtime_operator_active_provider_model_execution_allowed"])
+        self.assertEqual(
+            packet["live_light"]["runtime_operator_active_provider_model_execution_surface"],
+            "execution_request_post_task_only",
+        )
+        self.assertFalse(packet["live_light"]["runtime_operator_active_provider_model_direct_execution_allowed"])
+        self.assertTrue(packet["live_light"]["runtime_operator_active_provider_model_requires_explicit_post_task"])
+        self.assertTrue(
+            packet["live_light"]["runtime_operator_active_provider_model_execution_requires_task_contract"]
+        )
+        self.assertTrue(
+            packet["live_light"]["runtime_operator_active_provider_model_execution_requires_execution_request"]
+        )
+        self.assertFalse(packet["live_light"]["runtime_operator_active_full_pool_or_deep_scan_allowed"])
+        self.assertFalse(
+            packet["live_light"]["runtime_operator_trigger_policy_summary_is_production_evidence"]
+        )
+        self.assertEqual(
+            packet["live_light"]["runtime_operator_config_reference_audit_id"],
+            runtime_config_reference["config_audit_id"],
+        )
+        self.assertEqual(
+            packet["live_light"]["runtime_operator_config_ownership_audit_id"],
+            config_ownership["ownership_audit_id"],
+        )
+        self.assertTrue(packet["live_light"]["runtime_operator_config_audit_uses_safe_rows_only"])
+        self.assertEqual(packet["live_light"]["runtime_operator_external_execution_profile"], "light_provider_model")
+        self.assertTrue(packet["live_light"]["runtime_operator_profile_provider_stage_allowed"])
+        self.assertTrue(packet["live_light"]["runtime_operator_profile_model_stage_allowed"])
+        self.assertTrue(packet["live_light"]["runtime_operator_provider_model_enablement_summary_visible"])
+        self.assertEqual(
+            packet["live_light"]["runtime_operator_provider_model_enablement_source_config"],
+            "COMMAND_CENTER_LIVE_PROVIDER_MODEL_ENABLEMENT",
+        )
+        self.assertEqual(
+            packet["live_light"]["runtime_operator_provider_model_enablement_configured"],
+            packet["safe_config_contract"]["configured_provider_model_enablement"],
+        )
+        self.assertFalse(packet["live_light"]["runtime_operator_provider_model_enablement_effective"])
+        self.assertTrue(packet["live_light"]["runtime_operator_provider_model_enablement_requires_live_light"])
+        self.assertTrue(
+            packet["live_light"]["runtime_operator_provider_model_enablement_requires_execution_request"]
+        )
+        self.assertTrue(packet["live_light"]["runtime_operator_provider_model_enablement_requires_promotion"])
+        self.assertFalse(
+            packet["live_light"]["runtime_operator_provider_model_enablement_creates_provider_model_task"]
+        )
+        self.assertFalse(packet["live_light"]["runtime_operator_provider_model_enablement_calls_provider_model_now"])
+        self.assertFalse(
+            packet["live_light"]["runtime_operator_provider_model_enablement_is_production_evidence"]
+        )
+        self.assertTrue(packet["live_light"]["runtime_operator_profile_source_rate_summary_visible"])
+        self.assertEqual(
+            packet["live_light"]["runtime_operator_profile_source_rate_summary_status"],
+            "profile_selected_executor_pending",
+        )
+        self.assertEqual(packet["live_light"]["runtime_operator_rate_limit_seconds_visible_safe"], 900)
+        self.assertTrue(packet["live_light"]["runtime_operator_task_control_visible"])
+        self.assertEqual(packet["live_light"]["runtime_operator_task_control_row_count"], 2)
+        self.assertTrue(packet["live_light"]["runtime_operator_task_control_manual_only"])
+        self.assertFalse(packet["live_light"]["runtime_operator_task_control_auto_retry_enabled"])
+        self.assertFalse(packet["live_light"]["runtime_operator_task_control_is_production_evidence"])
+        self.assertEqual(packet["live_light"]["runtime_operator_summary_row_count"], 4)
+        self.assertEqual(packet["live_light"]["runtime_operator_allowed_action_count"], 4)
+        self.assertEqual(packet["live_light"]["runtime_operator_blocked_action_count"], 5)
+        self.assertFalse(packet["live_light"]["runtime_operator_summary_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["runtime_operator_cache_first_polling_summary_visible"])
+        self.assertEqual(
+            packet["live_light"]["runtime_operator_cache_first_polling_source_contract"],
+            "runtime_cache_first_polling_contract",
+        )
+        self.assertEqual(packet["live_light"]["runtime_operator_cache_first_polling_phase_count"], 7)
+        self.assertTrue(
+            packet["live_light"]["runtime_operator_cache_first_polling_cache_first_render_required"]
+        )
+        self.assertTrue(packet["live_light"]["runtime_operator_cache_first_polling_task_polling_required"])
+        self.assertTrue(packet["live_light"]["runtime_operator_cache_first_polling_last_good_cache_required"])
+        self.assertFalse(packet["live_light"]["runtime_operator_cache_first_polling_browser_evidence_complete"])
+        self.assertFalse(
+            packet["live_light"]["runtime_operator_cache_first_polling_summary_is_production_evidence"]
+        )
+        self.assertTrue(packet["policy"]["runtime_operator_summary_contract_visible"])
+        self.assertEqual(packet["policy"]["runtime_operator_active_mode"], "live_light")
+        self.assertEqual(
+            packet["policy"]["runtime_operator_active_display_status"],
+            "bounded_background_task_after_cache_render",
+        )
+        self.assertTrue(packet["policy"]["runtime_operator_release_blocker_summary_visible"])
+        self.assertFalse(packet["policy"]["runtime_operator_release_remote_ci_status_known"])
+        self.assertFalse(packet["policy"]["runtime_operator_release_remote_ci_green"])
+        self.assertFalse(packet["policy"]["runtime_operator_release_github_api_called"])
+        self.assertTrue(packet["policy"]["runtime_operator_release_fresh_local_gate_run_required"])
+        self.assertTrue(packet["policy"]["runtime_operator_release_production_promotion_review_required"])
+        self.assertFalse(packet["policy"]["runtime_operator_release_ready_for_promotion"])
+        self.assertFalse(packet["policy"]["runtime_operator_release_local_contracts_are_production_evidence"])
+        self.assertFalse(packet["policy"]["runtime_operator_release_blocker_summary_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_operator_trigger_policy_summary_visible"])
+        self.assertTrue(packet["policy"]["runtime_operator_active_page_open_task_allowed"])
+        self.assertTrue(packet["policy"]["runtime_operator_active_search_submit_task_allowed"])
+        self.assertTrue(packet["policy"]["runtime_operator_active_manual_button_task_allowed"])
+        self.assertTrue(packet["policy"]["runtime_operator_active_live_light_background_task_allowed"])
+        self.assertFalse(packet["policy"]["runtime_operator_active_provider_model_execution_allowed"])
+        self.assertEqual(
+            packet["policy"]["runtime_operator_active_provider_model_execution_surface"],
+            "execution_request_post_task_only",
+        )
+        self.assertFalse(packet["policy"]["runtime_operator_active_provider_model_direct_execution_allowed"])
+        self.assertTrue(packet["policy"]["runtime_operator_active_provider_model_requires_explicit_post_task"])
+        self.assertTrue(packet["policy"]["runtime_operator_active_provider_model_execution_requires_task_contract"])
+        self.assertTrue(
+            packet["policy"]["runtime_operator_active_provider_model_execution_requires_execution_request"]
+        )
+        self.assertFalse(packet["policy"]["runtime_operator_active_full_pool_or_deep_scan_allowed"])
+        self.assertFalse(
+            packet["policy"]["runtime_operator_trigger_policy_summary_is_production_evidence"]
+        )
+        self.assertEqual(
+            packet["policy"]["runtime_operator_config_reference_audit_id"],
+            runtime_config_reference["config_audit_id"],
+        )
+        self.assertEqual(
+            packet["policy"]["runtime_operator_config_ownership_audit_id"],
+            config_ownership["ownership_audit_id"],
+        )
+        self.assertTrue(packet["policy"]["runtime_operator_config_audit_uses_safe_rows_only"])
+        self.assertTrue(packet["policy"]["runtime_operator_provider_model_enablement_summary_visible"])
+        self.assertEqual(
+            packet["policy"]["runtime_operator_provider_model_enablement_source_config"],
+            "COMMAND_CENTER_LIVE_PROVIDER_MODEL_ENABLEMENT",
+        )
+        self.assertEqual(
+            packet["policy"]["runtime_operator_provider_model_enablement_configured"],
+            packet["safe_config_contract"]["configured_provider_model_enablement"],
+        )
+        self.assertFalse(packet["policy"]["runtime_operator_provider_model_enablement_effective"])
+        self.assertTrue(packet["policy"]["runtime_operator_provider_model_enablement_requires_live_light"])
+        self.assertTrue(
+            packet["policy"]["runtime_operator_provider_model_enablement_requires_execution_request"]
+        )
+        self.assertTrue(packet["policy"]["runtime_operator_provider_model_enablement_requires_promotion"])
+        self.assertFalse(
+            packet["policy"]["runtime_operator_provider_model_enablement_creates_provider_model_task"]
+        )
+        self.assertFalse(packet["policy"]["runtime_operator_provider_model_enablement_calls_provider_model_now"])
+        self.assertFalse(packet["policy"]["runtime_operator_provider_model_enablement_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_operator_task_control_visible"])
+        self.assertEqual(packet["policy"]["runtime_operator_task_control_row_count"], 2)
+        self.assertTrue(packet["policy"]["runtime_operator_task_control_manual_only"])
+        self.assertFalse(packet["policy"]["runtime_operator_task_control_auto_retry_enabled"])
+        self.assertFalse(packet["policy"]["runtime_operator_task_control_is_production_evidence"])
+        self.assertEqual(packet["policy"]["runtime_operator_summary_row_count"], 4)
+        self.assertEqual(packet["policy"]["runtime_operator_allowed_action_count"], 4)
+        self.assertEqual(packet["policy"]["runtime_operator_blocked_action_count"], 5)
+        self.assertFalse(packet["policy"]["runtime_operator_summary_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_operator_cache_first_polling_summary_visible"])
+        self.assertEqual(
+            packet["policy"]["runtime_operator_cache_first_polling_source_contract"],
+            "runtime_cache_first_polling_contract",
+        )
+        self.assertEqual(packet["policy"]["runtime_operator_cache_first_polling_phase_count"], 7)
+        self.assertTrue(packet["policy"]["runtime_operator_cache_first_polling_cache_first_render_required"])
+        self.assertTrue(packet["policy"]["runtime_operator_cache_first_polling_task_polling_required"])
+        self.assertTrue(packet["policy"]["runtime_operator_cache_first_polling_last_good_cache_required"])
+        self.assertFalse(packet["policy"]["runtime_operator_cache_first_polling_browser_evidence_complete"])
+        self.assertFalse(
+            packet["policy"]["runtime_operator_cache_first_polling_summary_is_production_evidence"]
+        )
+        latest_bootstrap_status = packet["live_light_latest_bootstrap_task_status"]
+        self.assertEqual(
+            latest_bootstrap_status["schema_version"],
+            "command_center_live_light_latest_bootstrap_task_status.v1",
+        )
+        self.assertEqual(latest_bootstrap_status["status"], "no_bootstrap_task_found")
+        self.assertEqual(latest_bootstrap_status["lookup_source"], "task_service.list_task_statuses")
+        self.assertFalse(latest_bootstrap_status["lookup_creates_task"])
+        self.assertTrue(latest_bootstrap_status["route_implemented"])
+        self.assertFalse(latest_bootstrap_status["task_found"])
+        self.assertFalse(latest_bootstrap_status["durable_task_visible"])
+        self.assertFalse(latest_bootstrap_status["memory_only_task_is_durable_evidence"])
+        self.assertFalse(latest_bootstrap_status["rate_limit_reused_existing_task"])
+        self.assertFalse(latest_bootstrap_status["task_success_is_provider_model_evidence"])
+        self.assertFalse(latest_bootstrap_status["task_success_is_production_evidence"])
+        self.assertFalse(latest_bootstrap_status["provider_execution_implemented"])
+        self.assertFalse(latest_bootstrap_status["model_execution_implemented"])
+        self.assertFalse(latest_bootstrap_status["external_calls_triggered"])
+        self.assertFalse(latest_bootstrap_status["tushare_called"])
+        self.assertFalse(latest_bootstrap_status["deepseek_called"])
+        self.assertFalse(latest_bootstrap_status["github_called"])
+        self.assertFalse(latest_bootstrap_status["contains_secret"])
+        self.assertTrue(latest_bootstrap_status["does_not_execute_trades"])
+        self.assertTrue(latest_bootstrap_status["does_not_modify_strategy_action"])
+        promotion_gate_contract = packet["live_light_promotion_gate_contract"]
+        self.assertEqual(
+            promotion_gate_contract["schema_version"],
+            "command_center_live_light_promotion_gate_contract.v1",
+        )
+        self.assertEqual(
+            promotion_gate_contract["status"],
+            "promotion_gate_visible_release_blockers_pending",
+        )
+        self.assertEqual(promotion_gate_contract["mode"], "live_light")
+        self.assertEqual(promotion_gate_contract["status_route"], "GET /api/bootstrap/status")
+        self.assertEqual(promotion_gate_contract["task_route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(
+            promotion_gate_contract["acceptance_dry_run_route"],
+            "POST /api/bootstrap/provider-model-acceptance-dry-run",
+        )
+        self.assertEqual(
+            promotion_gate_contract["execution_request_route"],
+            "POST /api/bootstrap/provider-model-execution-request",
+        )
+        self.assertEqual(
+            promotion_gate_contract["provider_model_acceptance_route"],
+            "future POST /api/bootstrap/provider-model-acceptance",
+        )
+        self.assertEqual(promotion_gate_contract["promotion_layer_count"], 4)
+        self.assertEqual(
+            promotion_gate_contract["required_layer_order"],
+            [
+                "l1_mode_contract",
+                "l2_local_bootstrap_readiness",
+                "l3_real_provider_model_evidence",
+                "l4_release_promotion",
+            ],
+        )
+        promotion_layers = {
+            row["layer_key"]: row for row in promotion_gate_contract["layer_rows"]
+        }
+        self.assertEqual(
+            promotion_layers["l1_mode_contract"]["status"],
+            "passed_local_mode_contract_visible",
+        )
+        self.assertEqual(
+            promotion_layers["l2_local_bootstrap_readiness"]["status"],
+            "passed_local_bootstrap_scaffold_visible_provider_model_pending",
+        )
+        self.assertEqual(
+            promotion_layers["l3_real_provider_model_evidence"]["status"],
+            "blocked_real_provider_model_evidence_pending",
+        )
+        self.assertEqual(
+            promotion_layers["l4_release_promotion"]["status"],
+            "blocked_remote_ci_and_promotion_review_pending",
+        )
+        self.assertFalse(promotion_layers["l1_mode_contract"]["production_blocker"])
+        self.assertFalse(promotion_layers["l2_local_bootstrap_readiness"]["production_blocker"])
+        self.assertTrue(promotion_layers["l3_real_provider_model_evidence"]["production_blocker"])
+        self.assertTrue(promotion_layers["l4_release_promotion"]["production_blocker"])
+        self.assertFalse(promotion_layers["l1_mode_contract"]["real_provider_model_required"])
+        self.assertFalse(promotion_layers["l2_local_bootstrap_readiness"]["real_provider_model_required"])
+        self.assertTrue(promotion_layers["l3_real_provider_model_evidence"]["real_provider_model_required"])
+        self.assertTrue(promotion_layers["l4_release_promotion"]["remote_ci_required"])
+        self.assertIn(
+            "real Tushare call ledger for trade_cal/daily/daily_basic/moneyflow",
+            promotion_layers["l3_real_provider_model_evidence"]["required_evidence"],
+        )
+        self.assertIn(
+            "remote CI green",
+            promotion_layers["l4_release_promotion"]["required_evidence"],
+        )
+        self.assertTrue(promotion_gate_contract["local_mode_contract_visible"])
+        self.assertTrue(promotion_gate_contract["local_bootstrap_readiness_visible"])
+        self.assertFalse(promotion_gate_contract["real_provider_model_evidence_complete"])
+        self.assertFalse(promotion_gate_contract["production_promotion_review_complete"])
+        self.assertFalse(promotion_gate_contract["remote_ci_status_known"])
+        self.assertFalse(promotion_gate_contract["remote_ci_green"])
+        self.assertFalse(promotion_gate_contract["github_api_called"])
+        self.assertTrue(promotion_gate_contract["fresh_local_gate_run_required"])
+        self.assertTrue(promotion_gate_contract["remote_ci_green_required"])
+        self.assertTrue(promotion_gate_contract["production_promotion_review_required"])
+        self.assertTrue(promotion_gate_contract["local_contracts_may_pass"])
+        self.assertFalse(promotion_gate_contract["local_contracts_are_production_evidence"])
+        self.assertTrue(promotion_gate_contract["provider_model_execution_required_before_promotion"])
+        self.assertTrue(promotion_gate_contract["browser_nonblocking_runtime_evidence_required"])
+        self.assertTrue(promotion_gate_contract["ledger_redaction_review_required"])
+        self.assertTrue(promotion_gate_contract["secret_artifact_scan_required"])
+        self.assertTrue(promotion_gate_contract["release_safe_docs_required"])
+        self.assertTrue(promotion_gate_contract["ready_for_provider_execution_design"])
+        self.assertTrue(promotion_gate_contract["ready_for_local_research_client_iteration"])
+        self.assertFalse(promotion_gate_contract["ready_for_release_promotion"])
+        self.assertFalse(promotion_gate_contract["production_live_light_complete"])
+        self.assertEqual(
+            promotion_gate_contract["allowed_next_step"],
+            "collect_real_provider_model_evidence_then_remote_ci_promotion_review",
+        )
+        self.assertIn(
+            "treat local bootstrap skeleton as production evidence",
+            promotion_gate_contract["not_allowed_next_steps"],
+        )
+        self.assertIn(
+            "promote live_light without remote CI green",
+            promotion_gate_contract["not_allowed_next_steps"],
+        )
+        self.assertEqual(promotion_gate_contract["symbol_limit_visible_safe"], 12)
+        self.assertEqual(promotion_gate_contract["rate_limit_seconds_visible_safe"], 900)
+        self.assertTrue(promotion_gate_contract["source_switches_effective"])
+        self.assertFalse(promotion_gate_contract["provider_execution_implemented"])
+        self.assertFalse(promotion_gate_contract["model_execution_implemented"])
+        self.assertFalse(promotion_gate_contract["external_calls_triggered"])
+        self.assertFalse(promotion_gate_contract["tushare_called"])
+        self.assertFalse(promotion_gate_contract["deepseek_called"])
+        self.assertFalse(promotion_gate_contract["github_called"])
+        self.assertFalse(promotion_gate_contract["contains_secret"])
+        self.assertTrue(promotion_gate_contract["does_not_execute_trades"])
+        self.assertTrue(promotion_gate_contract["does_not_modify_strategy_action"])
+        worker_dispatch_contract = packet["live_light_worker_dispatch_contract"]
+        self.assertEqual(
+            worker_dispatch_contract["schema_version"],
+            "command_center_live_light_worker_dispatch_contract.v1",
+        )
+        self.assertEqual(
+            worker_dispatch_contract["status"],
+            "worker_dispatch_contract_visible_executor_pending",
+        )
+        self.assertEqual(worker_dispatch_contract["mode"], "live_light")
+        self.assertEqual(worker_dispatch_contract["task_route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(worker_dispatch_contract["task_type"], "command_center_live_bootstrap")
+        self.assertEqual(worker_dispatch_contract["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertEqual(worker_dispatch_contract["dispatch_row_count"], 5)
+        self.assertEqual(
+            worker_dispatch_contract["declared_future_queues"],
+            ["provider_refresh", "model_explain", "local_compute", "local_maintenance"],
+        )
+        dispatch_rows = {row["stage_key"]: row for row in worker_dispatch_contract["dispatch_rows"]}
+        self.assertEqual(
+            set(dispatch_rows),
+            {
+                "bootstrap_entrypoint",
+                "tushare_light_refresh",
+                "factor_light_runtime",
+                "next_session_cache_refresh",
+                "deepseek_pro_explanation",
+            },
+        )
+        self.assertEqual(dispatch_rows["bootstrap_entrypoint"]["current_runtime"], "local_task_skeleton")
+        self.assertEqual(dispatch_rows["bootstrap_entrypoint"]["future_queue"], "local_maintenance")
+        self.assertEqual(dispatch_rows["tushare_light_refresh"]["future_queue"], "provider_refresh")
+        self.assertEqual(
+            dispatch_rows["tushare_light_refresh"]["allowed_apis"],
+            ["trade_cal", "daily", "daily_basic", "moneyflow"],
+        )
+        self.assertTrue(dispatch_rows["tushare_light_refresh"]["requires_execution_request"])
+        self.assertEqual(dispatch_rows["factor_light_runtime"]["future_queue"], "local_compute")
+        self.assertEqual(dispatch_rows["next_session_cache_refresh"]["future_queue"], "local_compute")
+        self.assertTrue(dispatch_rows["next_session_cache_refresh"]["cache_lineage_required"])
+        self.assertEqual(dispatch_rows["deepseek_pro_explanation"]["future_queue"], "model_explain")
+        self.assertTrue(dispatch_rows["deepseek_pro_explanation"]["requires_data_ready"])
+        self.assertTrue(dispatch_rows["deepseek_pro_explanation"]["model_ledger_required"])
+        self.assertFalse(
+            any(row["worker_dispatch_implemented"] for row in worker_dispatch_contract["dispatch_rows"])
+        )
+        self.assertFalse(
+            any(
+                row["provider_or_model_execution_allowed_now"]
+                for row in worker_dispatch_contract["dispatch_rows"]
+            )
+        )
+        self.assertTrue(all(row["safe_ledger_required"] for row in worker_dispatch_contract["dispatch_rows"]))
+        self.assertEqual(worker_dispatch_contract["current_runtime"], "local_fallback_task_skeleton")
+        self.assertTrue(worker_dispatch_contract["post_task_boundary_required"])
+        self.assertTrue(worker_dispatch_contract["worker_or_local_fallback_required"])
+        self.assertTrue(worker_dispatch_contract["local_fallback_allowed_now"])
+        self.assertFalse(worker_dispatch_contract["celery_dispatch_implemented"])
+        self.assertFalse(worker_dispatch_contract["redis_broker_required_for_current_contract"])
+        self.assertFalse(worker_dispatch_contract["redis_broker_pinged"])
+        self.assertFalse(worker_dispatch_contract["worker_process_started"])
+        self.assertFalse(worker_dispatch_contract["scheduler_auto_dispatch_allowed"])
+        self.assertFalse(worker_dispatch_contract["cache_get_dispatches_worker"])
+        self.assertFalse(worker_dispatch_contract["status_get_dispatches_worker"])
+        self.assertFalse(worker_dispatch_contract["react_render_dispatches_worker"])
+        self.assertFalse(worker_dispatch_contract["fastapi_startup_dispatches_worker"])
+        self.assertFalse(worker_dispatch_contract["page_open_direct_worker_dispatch_allowed"])
+        self.assertTrue(worker_dispatch_contract["react_after_cache_render_may_create_post_task"])
+        self.assertTrue(worker_dispatch_contract["post_task_may_route_to_worker_in_future"])
+        self.assertTrue(worker_dispatch_contract["provider_worker_requires_execution_request"])
+        self.assertTrue(worker_dispatch_contract["model_worker_requires_execution_request"])
+        self.assertTrue(worker_dispatch_contract["provider_worker_requires_call_ledger"])
+        self.assertTrue(worker_dispatch_contract["model_worker_requires_model_ledger"])
+        self.assertTrue(worker_dispatch_contract["local_compute_may_refresh_from_existing_cache"])
+        self.assertFalse(worker_dispatch_contract["local_compute_may_synthesize_provider_rows"])
+        self.assertFalse(worker_dispatch_contract["local_compute_may_synthesize_model_output"])
+        self.assertFalse(worker_dispatch_contract["unbounded_queue_allowed"])
+        self.assertTrue(worker_dispatch_contract["rate_limit_must_apply_before_dispatch"])
+        self.assertTrue(worker_dispatch_contract["session_dedupe_must_apply_before_dispatch"])
+        self.assertTrue(worker_dispatch_contract["source_switches_effective"])
+        self.assertFalse(worker_dispatch_contract["worker_dispatch_contract_is_provider_execution_evidence"])
+        self.assertFalse(worker_dispatch_contract["worker_dispatch_contract_is_model_execution_evidence"])
+        self.assertFalse(worker_dispatch_contract["worker_dispatch_contract_is_production_evidence"])
+        self.assertFalse(worker_dispatch_contract["provider_execution_implemented"])
+        self.assertFalse(worker_dispatch_contract["model_execution_implemented"])
+        self.assertFalse(worker_dispatch_contract["external_calls_triggered"])
+        self.assertFalse(worker_dispatch_contract["tushare_called"])
+        self.assertFalse(worker_dispatch_contract["deepseek_called"])
+        self.assertFalse(worker_dispatch_contract["github_called"])
+        self.assertFalse(worker_dispatch_contract["contains_secret"])
+        self.assertTrue(worker_dispatch_contract["does_not_execute_trades"])
+        self.assertTrue(worker_dispatch_contract["does_not_modify_strategy_action"])
+        evidence_contract = packet["live_light_evidence_grade_contract"]
+        self.assertEqual(
+            evidence_contract["schema_version"],
+            "command_center_live_light_evidence_grade_contract.v1",
+        )
+        self.assertEqual(evidence_contract["status"], "local_evidence_visible_production_evidence_pending")
+        self.assertEqual(evidence_contract["mode"], "live_light")
+        self.assertEqual(evidence_contract["local_evidence_grade"], "contract_receipt_plan_only")
+        self.assertEqual(
+            evidence_contract["production_evidence_grade"],
+            "pending_real_provider_model_runtime_promotion",
+        )
+        self.assertFalse(evidence_contract["local_task_skeleton_is_production_evidence"])
+        self.assertFalse(evidence_contract["activation_receipt_is_production_evidence"])
+        self.assertFalse(evidence_contract["acceptance_runbook_is_production_evidence"])
+        self.assertFalse(evidence_contract["provider_linkage_matrix_is_provider_evidence"])
+        self.assertFalse(evidence_contract["model_ledger_preview_is_model_execution_evidence"])
+        self.assertFalse(evidence_contract["sanitizer_is_model_correctness_evidence"])
+        self.assertFalse(evidence_contract["mock_receipt_matrix_sanitizer_can_promote"])
+        self.assertFalse(evidence_contract["provider_execution_evidence_done"])
+        self.assertFalse(evidence_contract["model_execution_evidence_done"])
+        self.assertFalse(evidence_contract["browser_runtime_evidence_done"])
+        self.assertFalse(evidence_contract["ledger_redaction_review_done"])
+        self.assertFalse(evidence_contract["production_promotion_review_done"])
+        self.assertFalse(evidence_contract["production_live_light_complete"])
+        self.assertIn("real Tushare call ledger", " ".join(evidence_contract["required_production_evidence"]))
+        self.assertIn("real DeepSeek model ledger", " ".join(evidence_contract["required_production_evidence"]))
+        self.assertIn("promote local task skeleton as production evidence", evidence_contract["not_allowed_next_steps"])
+        self.assertFalse(evidence_contract["external_calls_triggered"])
+        self.assertFalse(evidence_contract["tushare_called"])
+        self.assertFalse(evidence_contract["deepseek_called"])
+        self.assertFalse(evidence_contract["github_called"])
+        self.assertTrue(evidence_contract["does_not_execute_trades"])
+        self.assertTrue(evidence_contract["does_not_modify_strategy_action"])
+        credential_contract = packet["live_light_credential_preflight_contract"]
+        self.assertEqual(
+            credential_contract["schema_version"],
+            "command_center_live_light_credential_preflight_contract.v1",
+        )
+        self.assertEqual(
+            credential_contract["status"],
+            "credential_preflight_contract_visible_post_only",
+        )
+        self.assertEqual(credential_contract["mode"], "live_light")
+        self.assertFalse(credential_contract["status_get_reads_credential_values"])
+        self.assertFalse(credential_contract["status_get_checks_credential_presence"])
+        self.assertFalse(credential_contract["status_get_exposes_env_key_names"])
+        self.assertFalse(credential_contract["status_get_exposes_credential_values"])
+        self.assertEqual(
+            credential_contract["credential_presence_check_route"],
+            "POST /api/bootstrap/provider-model-acceptance-dry-run",
+        )
+        self.assertTrue(credential_contract["credential_presence_check_requires_post"])
+        self.assertTrue(credential_contract["credential_presence_check_requires_user_approval"])
+        self.assertEqual(credential_contract["credential_presence_check_method"], "environment_key_membership_only")
+        self.assertFalse(credential_contract["credential_presence_check_reads_values"])
+        self.assertFalse(credential_contract["credential_presence_check_exposes_values"])
+        self.assertFalse(credential_contract["credential_presence_check_exposes_env_key_names"])
+        self.assertFalse(credential_contract["credential_presence_check_exposes_value_lengths"])
+        self.assertTrue(credential_contract["safe_provider_labels_only"])
+        self.assertEqual(credential_contract["allowed_provider_labels"], ["tushare", "deepseek"])
+        self.assertFalse(credential_contract["frontend_packet_may_contain_token_key"])
+        self.assertFalse(credential_contract["logs_may_contain_token_key"])
+        self.assertFalse(credential_contract["cache_may_contain_token_key"])
+        self.assertFalse(credential_contract["raw_config_dump_allowed"])
+        self.assertFalse(credential_contract["provider_execution_allowed_from_preflight"])
+        self.assertFalse(credential_contract["model_execution_allowed_from_preflight"])
+        self.assertFalse(credential_contract["production_promotion_allowed_from_preflight"])
+        self.assertFalse(credential_contract["external_calls_triggered"])
+        self.assertFalse(credential_contract["tushare_called"])
+        self.assertFalse(credential_contract["deepseek_called"])
+        self.assertFalse(credential_contract["github_called"])
+        self.assertFalse(credential_contract["contains_secret"])
+        self.assertTrue(credential_contract["does_not_execute_trades"])
+        self.assertTrue(credential_contract["does_not_modify_strategy_action"])
+        execution_request_contract = packet["live_light_provider_model_execution_request_contract"]
+        self.assertEqual(
+            execution_request_contract["schema_version"],
+            "command_center_live_light_provider_model_execution_request_contract.v1",
+        )
+        self.assertEqual(
+            execution_request_contract["status"],
+            "execution_request_contract_visible_provider_model_pending",
+        )
+        self.assertEqual(execution_request_contract["mode"], "live_light")
+        self.assertEqual(
+            execution_request_contract["acceptance_dry_run_route"],
+            "POST /api/bootstrap/provider-model-acceptance-dry-run",
+        )
+        self.assertEqual(
+            execution_request_contract["execution_request_route"],
+            "POST /api/bootstrap/provider-model-execution-request",
+        )
+        self.assertEqual(
+            execution_request_contract["target_provider_model_route"],
+            "future POST /api/bootstrap/provider-model-acceptance",
+        )
+        self.assertEqual(
+            execution_request_contract["target_provider_model_task_type"],
+            "command_center_live_bootstrap_provider_model_acceptance",
+        )
+        self.assertFalse(execution_request_contract["dry_run_is_execution_request"])
+        self.assertFalse(execution_request_contract["dry_run_may_call_provider_or_model"])
+        self.assertFalse(execution_request_contract["execution_request_is_provider_execution"])
+        self.assertFalse(execution_request_contract["execution_request_creates_provider_model_task"])
+        self.assertFalse(execution_request_contract["cache_get_initializes_execution_request"])
+        self.assertFalse(execution_request_contract["react_render_initializes_execution_request"])
+        self.assertFalse(execution_request_contract["page_open_initializes_execution_request"])
+        self.assertFalse(execution_request_contract["search_typing_initializes_execution_request"])
+        self.assertTrue(execution_request_contract["requires_latest_acceptance_scope_hash"])
+        self.assertTrue(execution_request_contract["requires_scope_hash_match"])
+        self.assertTrue(execution_request_contract["requires_explicit_user_confirmation"])
+        self.assertTrue(execution_request_contract["requires_credential_preflight_ready"])
+        self.assertTrue(execution_request_contract["requires_selected_provider_or_model_scope"])
+        self.assertTrue(execution_request_contract["requires_call_ledger"])
+        self.assertTrue(execution_request_contract["requires_model_ledger_for_deepseek"])
+        self.assertTrue(execution_request_contract["requires_ledger_redaction_review_before_promotion"])
+        self.assertFalse(execution_request_contract["provider_model_execution_implemented"])
+        self.assertTrue(execution_request_contract["execution_request_route_implemented"])
+        self.assertTrue(execution_request_contract["local_execution_request_receipt_service_implemented"])
+        self.assertEqual(
+            execution_request_contract["local_execution_request_receipt_task_type"],
+            "command_center_live_bootstrap_provider_model_execution_request",
+        )
+        self.assertEqual(
+            execution_request_contract["local_execution_request_receipt_packet_key"],
+            "command_center_live_bootstrap_provider_model_execution_request_packet",
+        )
+        self.assertTrue(execution_request_contract["local_execution_request_receipt_persists_to_task_status"])
+        self.assertFalse(execution_request_contract["provider_execution_implemented"])
+        self.assertFalse(execution_request_contract["model_execution_implemented"])
+        self.assertFalse(execution_request_contract["automatic_provider_model_execution_allowed"])
+        self.assertFalse(execution_request_contract["production_promotion_allowed_from_execution_request"])
+        self.assertEqual(
+            execution_request_contract["allowed_next_step"],
+            "verify_button_gated_execution_request_route_before_provider_model_task",
+        )
+        self.assertIn(
+            "treat acceptance dry-run as execution request",
+            execution_request_contract["not_allowed_next_steps"],
+        )
+        self.assertIn(
+            "execute provider/model without latest scope hash match",
+            execution_request_contract["not_allowed_next_steps"],
+        )
+        self.assertFalse(execution_request_contract["external_calls_triggered"])
+        self.assertFalse(execution_request_contract["tushare_called"])
+        self.assertFalse(execution_request_contract["deepseek_called"])
+        self.assertFalse(execution_request_contract["github_called"])
+        self.assertFalse(execution_request_contract["contains_secret"])
+        self.assertTrue(execution_request_contract["does_not_execute_trades"])
+        self.assertTrue(execution_request_contract["does_not_modify_strategy_action"])
+        handoff_contract = packet["live_light_execution_request_handoff_contract"]
+        self.assertEqual(
+            handoff_contract["schema_version"],
+            "command_center_live_light_execution_request_handoff_contract.v1",
+        )
+        self.assertEqual(
+            handoff_contract["status"],
+            "execution_request_handoff_contract_visible_route_registered",
+        )
+        self.assertEqual(handoff_contract["mode"], "live_light")
+        self.assertEqual(
+            handoff_contract["acceptance_dry_run_route"],
+            "POST /api/bootstrap/provider-model-acceptance-dry-run",
+        )
+        self.assertEqual(
+            handoff_contract["execution_request_route"],
+            "POST /api/bootstrap/provider-model-execution-request",
+        )
+        self.assertEqual(
+            handoff_contract["target_provider_model_route"],
+            "future POST /api/bootstrap/provider-model-acceptance",
+        )
+        self.assertEqual(handoff_contract["handoff_row_count"], 5)
+        handoff_rows = {row["handoff_key"]: row for row in handoff_contract["handoff_rows"]}
+        self.assertEqual(
+            set(handoff_rows),
+            {
+                "dry_run_receipt_lookup",
+                "scope_hash_binding",
+                "operator_confirmation",
+                "credential_preflight_summary",
+                "provider_model_task_handoff",
+            },
+        )
+        self.assertEqual(
+            handoff_rows["dry_run_receipt_lookup"]["source"],
+            "task_service_status_or_sqlite_meta",
+        )
+        self.assertIn(
+            "acceptance_scope_hash",
+            handoff_rows["dry_run_receipt_lookup"]["required_fields"],
+        )
+        self.assertTrue(handoff_rows["scope_hash_binding"]["scope_hash_mismatch_blocks_handoff"])
+        self.assertTrue(handoff_rows["operator_confirmation"]["requires_explicit_user_confirmation"])
+        self.assertTrue(handoff_rows["credential_preflight_summary"]["booleans_only"])
+        self.assertFalse(handoff_rows["credential_preflight_summary"]["credential_values_exposed"])
+        self.assertEqual(
+            handoff_rows["provider_model_task_handoff"]["target_route"],
+            "future POST /api/bootstrap/provider-model-acceptance",
+        )
+        self.assertFalse(handoff_rows["provider_model_task_handoff"]["creates_provider_model_task_now"])
+        self.assertIn("latest_acceptance_dry_run_task_id", handoff_contract["required_handoff_fields"])
+        self.assertIn("acceptance_scope_hash", handoff_contract["required_handoff_fields"])
+        self.assertIn("user_confirmed", handoff_contract["required_handoff_fields"])
+        self.assertIn("safe_payload_only", handoff_contract["required_handoff_fields"])
+        self.assertTrue(handoff_contract["dry_run_receipt_required"])
+        self.assertTrue(handoff_contract["latest_dry_run_task_id_required"])
+        self.assertTrue(handoff_contract["acceptance_scope_hash_required"])
+        self.assertTrue(handoff_contract["scope_hash_algorithm_required"])
+        self.assertTrue(handoff_contract["scope_hash_mismatch_blocks_handoff"])
+        self.assertTrue(handoff_contract["explicit_user_confirmation_required"])
+        self.assertTrue(handoff_contract["selected_provider_or_model_scope_required"])
+        self.assertTrue(handoff_contract["credential_preflight_ready_required"])
+        self.assertTrue(handoff_contract["credential_presence_booleans_only"])
+        self.assertTrue(handoff_contract["safe_payload_only"])
+        self.assertTrue(handoff_contract["durable_receipt_visibility_required"])
+        self.assertFalse(handoff_contract["memory_only_dry_run_receipt_is_durable_evidence"])
+        self.assertFalse(handoff_contract["dry_run_is_execution_request"])
+        self.assertTrue(handoff_contract["execution_request_route_implemented"])
+        self.assertTrue(handoff_contract["route_adapter_contract_visible"])
+        self.assertEqual(handoff_contract["route_adapter_target_file"], "server/api/routes_bootstrap.py")
+        self.assertEqual(
+            handoff_contract["route_adapter_function_name"],
+            "post_bootstrap_provider_model_execution_request",
+        )
+        self.assertEqual(handoff_contract["route_adapter_service_function"], "run_provider_model_execution_request")
+        self.assertEqual(handoff_contract["route_adapter_response_envelope"], "task_envelope")
+        self.assertEqual(handoff_contract["route_adapter_payload_type"], "dict[str, Any] | None")
+        self.assertEqual(handoff_contract["route_adapter_current_status"], "registered_local_receipt_route")
+        self.assertTrue(handoff_contract["route_adapter_must_be_button_gated"])
+        self.assertTrue(handoff_contract["route_adapter_accepts_safe_payload_only"])
+        self.assertTrue(handoff_contract["route_adapter_must_return_task_envelope"])
+        self.assertFalse(handoff_contract["route_adapter_creates_provider_model_task"])
+        self.assertFalse(handoff_contract["route_adapter_calls_provider_or_model"])
+        self.assertFalse(handoff_contract["route_adapter_external_calls_triggered"])
+        self.assertEqual(
+            handoff_contract["route_adapter_allowed_next_step"],
+            "verify_button_gated_route_adapter_then_keep_provider_model_pending",
+        )
+        self.assertIn(
+            "call provider/model from route adapter",
+            handoff_contract["route_adapter_not_allowed_next_steps"],
+        )
+        self.assertIn(
+            "treat route adapter success as provider/model acceptance",
+            handoff_contract["route_adapter_not_allowed_next_steps"],
+        )
+        self.assertTrue(handoff_contract["local_execution_request_receipt_service_implemented"])
+        self.assertEqual(
+            handoff_contract["local_execution_request_receipt_task_type"],
+            "command_center_live_bootstrap_provider_model_execution_request",
+        )
+        self.assertEqual(
+            handoff_contract["local_execution_request_receipt_packet_key"],
+            "command_center_live_bootstrap_provider_model_execution_request_packet",
+        )
+        self.assertTrue(handoff_contract["local_execution_request_receipt_persists_to_task_status"])
+        self.assertFalse(handoff_contract["execution_request_creates_provider_model_task"])
+        self.assertFalse(handoff_contract["execution_request_receipt_persisted"])
+        self.assertFalse(handoff_contract["provider_model_task_created"])
+        self.assertFalse(handoff_contract["status_get_initializes_handoff"])
+        self.assertFalse(handoff_contract["cache_get_initializes_handoff"])
+        self.assertFalse(handoff_contract["react_render_initializes_handoff"])
+        self.assertFalse(handoff_contract["page_open_initializes_handoff"])
+        self.assertFalse(handoff_contract["search_typing_initializes_handoff"])
+        self.assertFalse(handoff_contract["fastapi_startup_initializes_handoff"])
+        self.assertTrue(handoff_contract["call_ledger_required"])
+        self.assertTrue(handoff_contract["model_ledger_required_for_deepseek"])
+        self.assertTrue(handoff_contract["redaction_review_required_before_promotion"])
+        self.assertFalse(handoff_contract["credential_values_exposed"])
+        self.assertFalse(handoff_contract["credential_env_key_names_exposed"])
+        self.assertFalse(handoff_contract["local_handoff_contract_is_provider_execution_evidence"])
+        self.assertFalse(handoff_contract["local_handoff_contract_is_model_execution_evidence"])
+        self.assertFalse(handoff_contract["local_handoff_contract_is_production_evidence"])
+        self.assertFalse(handoff_contract["provider_execution_implemented"])
+        self.assertFalse(handoff_contract["model_execution_implemented"])
+        self.assertFalse(handoff_contract["provider_model_execution_implemented"])
+        self.assertFalse(handoff_contract["external_calls_triggered"])
+        self.assertFalse(handoff_contract["tushare_called"])
+        self.assertFalse(handoff_contract["deepseek_called"])
+        self.assertFalse(handoff_contract["github_called"])
+        self.assertFalse(handoff_contract["contains_secret"])
+        self.assertTrue(handoff_contract["does_not_execute_trades"])
+        self.assertTrue(handoff_contract["does_not_modify_strategy_action"])
+        self.assertTrue(handoff_contract["does_not_modify_prices_positions_or_operation_zones"])
+        latest_dry_run_status = packet["live_light_latest_acceptance_dry_run_status"]
+        self.assertEqual(
+            latest_dry_run_status["schema_version"],
+            "command_center_live_light_latest_acceptance_dry_run_status.v1",
+        )
+        self.assertEqual(latest_dry_run_status["status"], "no_acceptance_dry_run_receipt_task_found")
+        self.assertEqual(latest_dry_run_status["lookup_source"], "task_service.list_task_statuses")
+        self.assertFalse(latest_dry_run_status["lookup_creates_task"])
+        self.assertTrue(latest_dry_run_status["route_implemented"])
+        self.assertFalse(latest_dry_run_status["receipt_found"])
+        self.assertFalse(latest_dry_run_status["dry_run_ready_for_execution_request"])
+        self.assertFalse(latest_dry_run_status["credential_preflight_ready"])
+        self.assertFalse(latest_dry_run_status["durable_receipt_visible"])
+        self.assertFalse(latest_dry_run_status["memory_only_receipt_is_durable_evidence"])
+        self.assertFalse(latest_dry_run_status["provider_model_task_created"])
+        self.assertFalse(latest_dry_run_status["provider_model_task_dispatched"])
+        self.assertFalse(latest_dry_run_status["provider_execution_implemented"])
+        self.assertFalse(latest_dry_run_status["model_execution_implemented"])
+        self.assertFalse(latest_dry_run_status["external_calls_triggered"])
+        self.assertFalse(latest_dry_run_status["tushare_called"])
+        self.assertFalse(latest_dry_run_status["deepseek_called"])
+        self.assertFalse(latest_dry_run_status["github_called"])
+        self.assertFalse(latest_dry_run_status["contains_secret"])
+        self.assertTrue(latest_dry_run_status["does_not_execute_trades"])
+        self.assertTrue(latest_dry_run_status["does_not_modify_strategy_action"])
+        latest_execution_status = packet["live_light_latest_execution_request_status"]
+        self.assertEqual(
+            latest_execution_status["schema_version"],
+            "command_center_live_light_latest_execution_request_status.v1",
+        )
+        self.assertEqual(latest_execution_status["status"], "no_execution_request_receipt_task_found")
+        self.assertFalse(latest_execution_status["lookup_creates_task"])
+        self.assertFalse(latest_execution_status["receipt_found"])
+        self.assertTrue(latest_execution_status["route_implemented"])
+        self.assertFalse(latest_execution_status["local_execution_request_ready"])
+        self.assertFalse(latest_execution_status["durable_receipt_visible"])
+        self.assertFalse(latest_execution_status["memory_only_receipt_is_durable_evidence"])
+        self.assertFalse(latest_execution_status["provider_model_task_created"])
+        self.assertFalse(latest_execution_status["provider_model_task_dispatched"])
+        self.assertFalse(latest_execution_status["provider_execution_implemented"])
+        self.assertFalse(latest_execution_status["model_execution_implemented"])
+        self.assertFalse(latest_execution_status["external_calls_triggered"])
+        self.assertFalse(latest_execution_status["tushare_called"])
+        self.assertFalse(latest_execution_status["deepseek_called"])
+        self.assertFalse(latest_execution_status["github_called"])
+        self.assertFalse(latest_execution_status["contains_secret"])
+        self.assertTrue(latest_execution_status["does_not_execute_trades"])
+        self.assertTrue(latest_execution_status["does_not_modify_strategy_action"])
+        self.assertTrue(runtime_operator_summary["provider_model_handoff_contract_visible"])
+        self.assertEqual(
+            runtime_operator_summary["provider_model_handoff_row_count"],
+            handoff_contract["handoff_row_count"],
+        )
+        self.assertEqual(
+            runtime_operator_summary["provider_model_handoff_route"],
+            "POST /api/bootstrap/provider-model-execution-request",
+        )
+        self.assertTrue(runtime_operator_summary["provider_model_handoff_route_implemented"])
+        self.assertTrue(runtime_operator_summary["provider_model_handoff_receipt_service_implemented"])
+        self.assertFalse(runtime_operator_summary["provider_model_handoff_creates_provider_model_task"])
+        self.assertFalse(runtime_operator_summary["provider_model_handoff_is_production_evidence"])
+        self.assertTrue(runtime_operator_summary["latest_acceptance_dry_run_visible_required"])
+        self.assertEqual(
+            runtime_operator_summary["latest_acceptance_dry_run_receipt_found"],
+            latest_dry_run_status["receipt_found"],
+        )
+        self.assertEqual(
+            runtime_operator_summary["latest_acceptance_dry_run_status"],
+            latest_dry_run_status["status"],
+        )
+        self.assertEqual(
+            runtime_operator_summary["latest_acceptance_dry_run_ready_for_execution_request"],
+            latest_dry_run_status["dry_run_ready_for_execution_request"],
+        )
+        self.assertFalse(runtime_operator_summary["latest_acceptance_dry_run_lookup_creates_task"])
+        self.assertFalse(runtime_operator_summary["latest_acceptance_dry_run_is_production_evidence"])
+        self.assertTrue(runtime_operator_summary["latest_execution_request_visible_required"])
+        self.assertEqual(
+            runtime_operator_summary["latest_execution_request_receipt_found"],
+            latest_execution_status["receipt_found"],
+        )
+        self.assertEqual(
+            runtime_operator_summary["latest_execution_request_status"],
+            latest_execution_status["status"],
+        )
+        self.assertEqual(
+            runtime_operator_summary["latest_execution_request_ready"],
+            latest_execution_status["local_execution_request_ready"],
+        )
+        self.assertFalse(runtime_operator_summary["latest_execution_request_scope_hash_matches_latest"])
+        self.assertFalse(runtime_operator_summary["latest_execution_request_lookup_creates_task"])
+        self.assertFalse(runtime_operator_summary["latest_execution_request_is_production_evidence"])
+        self.assertFalse(runtime_operator_summary["provider_model_task_created"])
+        self.assertFalse(runtime_operator_summary["provider_model_task_dispatched"])
+        self.assertFalse(runtime_operator_summary["provider_model_execution_implemented"])
+        self.assertFalse(runtime_operator_summary["provider_model_operator_summary_is_production_evidence"])
+        self.assertTrue(packet["live_light"]["runtime_operator_provider_model_handoff_visible"])
+        self.assertTrue(packet["live_light"]["runtime_operator_provider_model_handoff_route_implemented"])
+        self.assertTrue(
+            packet["live_light"]["runtime_operator_provider_model_handoff_receipt_service_implemented"]
+        )
+        self.assertFalse(packet["live_light"]["runtime_operator_latest_acceptance_dry_run_receipt_found"])
+        self.assertFalse(
+            packet["live_light"]["runtime_operator_latest_acceptance_dry_run_ready_for_execution_request"]
+        )
+        self.assertFalse(packet["live_light"]["runtime_operator_latest_execution_request_receipt_found"])
+        self.assertFalse(packet["live_light"]["runtime_operator_latest_execution_request_ready"])
+        self.assertFalse(packet["live_light"]["runtime_operator_latest_execution_request_lookup_creates_task"])
+        self.assertFalse(packet["live_light"]["runtime_operator_provider_model_task_created"])
+        self.assertFalse(packet["live_light"]["runtime_operator_provider_model_execution_implemented"])
+        self.assertFalse(packet["live_light"]["runtime_operator_provider_model_is_production_evidence"])
+        self.assertTrue(packet["policy"]["runtime_operator_provider_model_handoff_visible"])
+        self.assertTrue(packet["policy"]["runtime_operator_provider_model_handoff_route_implemented"])
+        self.assertTrue(packet["policy"]["runtime_operator_provider_model_handoff_receipt_service_implemented"])
+        self.assertFalse(packet["policy"]["runtime_operator_latest_acceptance_dry_run_receipt_found"])
+        self.assertFalse(
+            packet["policy"]["runtime_operator_latest_acceptance_dry_run_ready_for_execution_request"]
+        )
+        self.assertFalse(packet["policy"]["runtime_operator_latest_execution_request_receipt_found"])
+        self.assertFalse(packet["policy"]["runtime_operator_latest_execution_request_ready"])
+        self.assertFalse(packet["policy"]["runtime_operator_latest_execution_request_lookup_creates_task"])
+        self.assertFalse(packet["policy"]["runtime_operator_provider_model_task_created"])
+        self.assertFalse(packet["policy"]["runtime_operator_provider_model_execution_implemented"])
+        self.assertFalse(packet["policy"]["runtime_operator_provider_model_is_production_evidence"])
+        ledger_contract = packet["live_light_ledger_contract"]
+        self.assertEqual(ledger_contract["schema_version"], "command_center_live_light_ledger_contract.v1")
+        self.assertEqual(ledger_contract["status"], "ledger_contract_visible_runtime_execution_pending")
+        self.assertEqual(ledger_contract["mode"], "live_light")
+        self.assertTrue(ledger_contract["call_ledger_required_for_provider"])
+        self.assertTrue(ledger_contract["model_ledger_required_for_deepseek"])
+        self.assertIn("request_params_safe", ledger_contract["required_call_ledger_fields"])
+        self.assertIn("external_calls_triggered", ledger_contract["required_call_ledger_fields"])
+        self.assertIn("token_usage", ledger_contract["required_model_ledger_fields"])
+        self.assertIn("input_hash", ledger_contract["required_model_ledger_fields"])
+        self.assertIn("output_hash", ledger_contract["required_model_ledger_fields"])
+        self.assertIn("sanitizer_status", ledger_contract["required_model_ledger_fields"])
+        self.assertTrue(ledger_contract["request_params_must_be_safe"])
+        self.assertFalse(ledger_contract["credential_values_exposed"])
+        self.assertFalse(ledger_contract["credential_env_key_names_exposed_to_frontend"])
+        self.assertFalse(ledger_contract["frontend_packet_may_contain_token_key"])
+        self.assertFalse(ledger_contract["logs_may_contain_token_key"])
+        self.assertFalse(ledger_contract["cache_may_contain_token_key"])
+        self.assertFalse(ledger_contract["raw_prompt_or_raw_model_output_exposed"])
+        self.assertTrue(ledger_contract["prompt_output_hashes_required"])
+        self.assertTrue(ledger_contract["token_usage_required"])
+        self.assertTrue(ledger_contract["parse_status_required"])
+        self.assertTrue(ledger_contract["cache_hit_or_miss_required"])
+        self.assertTrue(ledger_contract["sanitizer_status_required"])
+        self.assertTrue(ledger_contract["redaction_review_required_before_promotion"])
+        self.assertFalse(ledger_contract["provider_execution_implemented"])
+        self.assertFalse(ledger_contract["model_execution_implemented"])
+        self.assertFalse(ledger_contract["production_promotion_allowed_without_ledger"])
+        self.assertFalse(ledger_contract["external_calls_triggered"])
+        self.assertFalse(ledger_contract["tushare_called"])
+        self.assertFalse(ledger_contract["deepseek_called"])
+        self.assertFalse(ledger_contract["github_called"])
+        self.assertFalse(ledger_contract["contains_secret"])
+        self.assertTrue(ledger_contract["does_not_execute_trades"])
+        self.assertTrue(ledger_contract["does_not_modify_strategy_action"])
+        ledger_redaction_invariant = packet["live_light_ledger_redaction_invariant_contract"]
+        self.assertEqual(
+            ledger_redaction_invariant["schema_version"],
+            "command_center_live_light_ledger_redaction_invariant.v1",
+        )
+        self.assertEqual(
+            ledger_redaction_invariant["status"],
+            "ledger_redaction_invariant_visible_promotion_blocking",
+        )
+        self.assertEqual(ledger_redaction_invariant["mode"], "live_light")
+        self.assertEqual(ledger_redaction_invariant["prohibited_surface_count"], 6)
+        self.assertEqual(ledger_redaction_invariant["required_ledger_row_count"], 5)
+        self.assertTrue(
+            {
+                "credential_value",
+                "credential_env_key_name",
+                "credential_material_label",
+                "secret_material_label",
+                "authorization_header",
+                "raw_prompt",
+                "raw_model_output",
+                "raw_provider_response",
+            }.issubset(set(ledger_redaction_invariant["prohibited_fields"]))
+        )
+        self.assertIn("safe_error", ledger_redaction_invariant["allowed_safe_summary_fields"])
+        redaction_surfaces = {
+            row["surface_key"]: row for row in ledger_redaction_invariant["prohibited_surface_rows"]
+        }
+        self.assertEqual(
+            set(redaction_surfaces),
+            {
+                "frontend_packet",
+                "log_line",
+                "cache_payload",
+                "task_status_payload",
+                "call_ledger_request_params_safe",
+                "model_ledger_safe_summary",
+            },
+        )
+        for row in redaction_surfaces.values():
+            self.assertTrue(row["safe_summary_only"])
+            self.assertFalse(row["credential_value_allowed"])
+            self.assertFalse(row["credential_env_key_name_allowed"])
+            self.assertFalse(row["token_key_allowed"])
+            self.assertFalse(row["authorization_header_allowed"])
+            self.assertFalse(row["raw_prompt_allowed"])
+            self.assertFalse(row["raw_model_output_allowed"])
+            self.assertFalse(row["raw_provider_response_allowed"])
+            self.assertTrue(row["redacted_safe_summary_required"])
+        redaction_required_ledgers = {
+            row["ledger_key"]: row for row in ledger_redaction_invariant["required_ledger_rows"]
+        }
+        self.assertEqual(
+            set(redaction_required_ledgers),
+            {
+                "tushare_call_ledger",
+                "deepseek_model_ledger",
+                "redaction_review",
+                "prompt_output_hashes",
+                "no_action_mutation_flags",
+            },
+        )
+        for row in redaction_required_ledgers.values():
+            self.assertTrue(row["required_before_promotion"])
+            self.assertTrue(row["production_promotion_blocker_until_complete"])
+            self.assertFalse(row["contract_row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertFalse(ledger_redaction_invariant["frontend_packet_may_contain_token_key"])
+        self.assertFalse(ledger_redaction_invariant["logs_may_contain_token_key"])
+        self.assertFalse(ledger_redaction_invariant["cache_may_contain_token_key"])
+        self.assertFalse(ledger_redaction_invariant["task_status_may_contain_token_key"])
+        self.assertFalse(ledger_redaction_invariant["credential_values_exposed"])
+        self.assertFalse(ledger_redaction_invariant["credential_env_key_names_included"])
+        self.assertFalse(ledger_redaction_invariant["raw_prompt_or_raw_model_output_exposed"])
+        self.assertFalse(ledger_redaction_invariant["raw_provider_response_exposed"])
+        self.assertTrue(ledger_redaction_invariant["request_params_must_be_safe"])
+        self.assertTrue(ledger_redaction_invariant["safe_summary_only"])
+        self.assertTrue(ledger_redaction_invariant["call_ledger_required_for_provider"])
+        self.assertTrue(ledger_redaction_invariant["model_ledger_required_for_deepseek"])
+        self.assertTrue(ledger_redaction_invariant["redaction_review_required_before_promotion"])
+        self.assertTrue(ledger_redaction_invariant["provider_model_execution_requires_execution_request"])
+        self.assertFalse(ledger_redaction_invariant["deepseek_is_data_source"])
+        self.assertFalse(
+            ledger_redaction_invariant["deepseek_may_overwrite_prices_positions_factors_zones_or_actions"]
+        )
+        self.assertFalse(ledger_redaction_invariant["production_promotion_allowed_without_redaction_review"])
+        self.assertFalse(ledger_redaction_invariant["ledger_redaction_invariant_is_production_evidence"])
+        self.assertFalse(ledger_redaction_invariant["production_live_light_complete"])
+        self.assertFalse(ledger_redaction_invariant["provider_execution_implemented"])
+        self.assertFalse(ledger_redaction_invariant["model_execution_implemented"])
+        self.assertFalse(ledger_redaction_invariant["external_calls_triggered"])
+        self.assertFalse(ledger_redaction_invariant["tushare_called"])
+        self.assertFalse(ledger_redaction_invariant["deepseek_called"])
+        self.assertFalse(ledger_redaction_invariant["github_called"])
+        self.assertFalse(ledger_redaction_invariant["contains_secret"])
+        self.assertTrue(ledger_redaction_invariant["does_not_execute_trades"])
+        self.assertTrue(ledger_redaction_invariant["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["ledger_redaction_invariant_contract_visible"])
+        self.assertEqual(packet["live_light"]["ledger_redaction_prohibited_surface_count"], 6)
+        self.assertEqual(packet["live_light"]["ledger_redaction_required_ledger_row_count"], 5)
+        self.assertTrue(packet["live_light"]["ledger_redaction_review_required_before_promotion"])
+        self.assertFalse(packet["live_light"]["ledger_redaction_raw_payload_exposed"])
+        self.assertFalse(packet["live_light"]["ledger_redaction_credential_material_exposed"])
+        self.assertFalse(packet["live_light"]["ledger_redaction_invariant_is_production_evidence"])
+        self.assertTrue(packet["policy"]["live_light_ledger_redaction_invariant_contract_visible"])
+        self.assertEqual(packet["policy"]["live_light_ledger_redaction_prohibited_surface_count"], 6)
+        self.assertEqual(packet["policy"]["live_light_ledger_redaction_required_ledger_row_count"], 5)
+        self.assertTrue(packet["policy"]["live_light_ledger_redaction_review_required_before_promotion"])
+        self.assertFalse(packet["policy"]["live_light_ledger_redaction_raw_payload_exposed"])
+        self.assertFalse(packet["policy"]["live_light_ledger_redaction_credential_material_exposed"])
+        self.assertFalse(packet["policy"]["live_light_ledger_redaction_invariant_is_production_evidence"])
+        search_contract = packet["search_quant_projection_workflow_contract"]
+        self.assertEqual(
+            search_contract["schema_version"],
+            "command_center_search_quant_projection_workflow_contract.v1",
+        )
+        self.assertEqual(
+            search_contract["status"],
+            "search_quant_projection_task_contract_visible_provider_model_pending",
+        )
+        self.assertEqual(search_contract["mode"], "live_light")
+        self.assertEqual(search_contract["display_action"], "生成 3.0 量化推演")
+        self.assertEqual(search_contract["allowed_modes"], ["manual", "live_light"])
+        self.assertFalse(search_contract["cache_only_allowed_to_create_task"])
+        self.assertTrue(search_contract["manual_requires_explicit_button"])
+        self.assertTrue(search_contract["live_light_requires_explicit_search_action"])
+        self.assertFalse(search_contract["search_input_creates_task"])
+        self.assertFalse(search_contract["react_render_creates_task"])
+        self.assertFalse(search_contract["cache_get_creates_task"])
+        self.assertFalse(search_contract["react_render_calls_provider"])
+        self.assertEqual(
+            search_contract["route_sequence"],
+            [
+                "POST /api/candidate-radar/quant-projection",
+                "POST /api/candidate-radar/quant-projection-acceptance-dry-run",
+                "POST /api/candidate-radar/quant-projection-execution-request",
+                "POST /api/candidate-radar/quant-projection-provider-model-acceptance",
+            ],
+        )
+        self.assertTrue(search_contract["provider_model_route_requires_execution_request"])
+        self.assertTrue(search_contract["provider_model_route_is_button_gated"])
+        self.assertTrue(search_contract["provider_model_route_may_call_tushare_when_user_approved"])
+        self.assertTrue(search_contract["provider_model_route_may_call_deepseek_when_user_approved"])
+        self.assertFalse(search_contract["automatic_provider_model_execution_allowed"])
+        self.assertEqual(search_contract["allowed_light_apis"], ["trade_cal", "daily", "daily_basic", "moneyflow"])
+        self.assertEqual(search_contract["default_symbol_limit"], 12)
+        self.assertEqual(search_contract["rate_limit_seconds"], 900)
+        self.assertTrue(search_contract["call_ledger_required"])
+        self.assertTrue(search_contract["model_ledger_required_for_deepseek"])
+        self.assertTrue(search_contract["ui_progress_required"])
+        self.assertTrue(search_contract["freshness_visible_required"])
+        self.assertTrue(search_contract["provider_gap_visible_required"])
+        self.assertFalse(search_contract["full_pool_or_deep_scan_on_render_allowed"])
+        self.assertFalse(search_contract["radar_candidate_is_buy_instruction"])
+        self.assertFalse(search_contract["deepseek_is_data_source"])
+        self.assertFalse(search_contract["deepseek_may_overwrite_numeric_or_action_fields"])
+        self.assertFalse(search_contract["token_key_exposure_allowed"])
+        self.assertFalse(search_contract["production_quant_projection_complete"])
+        self.assertFalse(search_contract["external_calls_triggered"])
+        self.assertFalse(search_contract["tushare_called"])
+        self.assertFalse(search_contract["deepseek_called"])
+        self.assertFalse(search_contract["github_called"])
+        self.assertTrue(search_contract["does_not_execute_trades"])
+        self.assertTrue(search_contract["does_not_modify_strategy_action"])
+        submit_autostart_contract = packet["search_quant_projection_submit_autostart_contract"]
+        self.assertEqual(
+            submit_autostart_contract["schema_version"],
+            "command_center_search_quant_projection_submit_autostart_contract.v1",
+        )
+        self.assertEqual(
+            submit_autostart_contract["status"],
+            "ready_after_safe_search_submit_local_task_only",
+        )
+        self.assertEqual(submit_autostart_contract["mode"], "live_light")
+        self.assertEqual(submit_autostart_contract["surface"], "searched_symbol_submit")
+        self.assertEqual(submit_autostart_contract["allowed_auto_start_mode"], "live_light")
+        self.assertEqual(
+            submit_autostart_contract["config_switch"],
+            "COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART",
+        )
+        self.assertFalse(submit_autostart_contract["config_switch_default"])
+        self.assertEqual(submit_autostart_contract["config_switch_source"], "configured")
+        self.assertTrue(submit_autostart_contract["server_config_switch_required"])
+        self.assertTrue(submit_autostart_contract["configured_submit_autostart"])
+        self.assertTrue(submit_autostart_contract["effective_submit_autostart"])
+        self.assertEqual(submit_autostart_contract["display_action"], "生成 3.0 量化推演")
+        self.assertEqual(submit_autostart_contract["task_route"], "POST /api/candidate-radar/quant-projection")
+        self.assertEqual(submit_autostart_contract["task_type"], "run_candidate_radar_quant_projection")
+        self.assertEqual(submit_autostart_contract["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertEqual(
+            submit_autostart_contract["provider_model_route"],
+            "POST /api/candidate-radar/quant-projection-provider-model-acceptance",
+        )
+        self.assertEqual(
+            submit_autostart_contract["acceptance_dry_run_route"],
+            "POST /api/candidate-radar/quant-projection-acceptance-dry-run",
+        )
+        self.assertEqual(
+            submit_autostart_contract["execution_request_route"],
+            "POST /api/candidate-radar/quant-projection-execution-request",
+        )
+        self.assertEqual(submit_autostart_contract["task_catalog_route"], "GET /api/tasks/catalog")
+        self.assertEqual(submit_autostart_contract["task_catalog_task_type"], "run_candidate_radar_quant_projection")
+        self.assertTrue(submit_autostart_contract["task_catalog_button_gated"])
+        self.assertEqual(submit_autostart_contract["task_catalog_current_backend"], "local_cache_pipeline")
+        self.assertEqual(
+            submit_autostart_contract["task_catalog_external_call_policy"],
+            "local_search_quant_projection_receipt_only_no_external_call",
+        )
+        self.assertEqual(submit_autostart_contract["task_catalog_possible_external_sources"], [])
+        self.assertEqual(submit_autostart_contract["task_catalog_future_external_sources"], ["tushare", "deepseek"])
+        self.assertTrue(submit_autostart_contract["local_projection_route_implemented"])
+        self.assertTrue(submit_autostart_contract["local_projection_creates_task_status_record"])
+        self.assertEqual(
+            submit_autostart_contract["local_projection_writes_output_packet_key"],
+            "command_center_3_candidate_radar_cache",
+        )
+        self.assertTrue(submit_autostart_contract["latest_status_replay_after_submit_required"])
+        self.assertEqual(submit_autostart_contract["latest_status_replay_route"], "GET /api/bootstrap/status")
+        self.assertFalse(submit_autostart_contract["latest_status_replay_lookup_creates_task"])
+        self.assertEqual(
+            submit_autostart_contract["autostart_readiness_stage"],
+            "backend_local_route_ready_frontend_wiring_pending",
+        )
+        self.assertTrue(submit_autostart_contract["backend_local_task_creation_ready"])
+        self.assertFalse(submit_autostart_contract["frontend_submit_autostart_wiring_implemented"])
+        self.assertTrue(submit_autostart_contract["ui_can_poll_created_task"])
+        self.assertFalse(submit_autostart_contract["no_new_frontend_config_switch"])
+        self.assertTrue(submit_autostart_contract["inherits_bootstrap_mode_config"])
+        self.assertTrue(submit_autostart_contract["inherits_symbol_limit_and_rate_limit"])
+        self.assertEqual(
+            submit_autostart_contract["safe_submit_payload_fields"],
+            ["symbol", "include_tushare", "include_deepseek"],
+        )
+        self.assertTrue(submit_autostart_contract["secret_like_payload_fields_dropped"])
+        self.assertTrue(submit_autostart_contract["live_light_search_submit_auto_start_allowed"])
+        self.assertFalse(submit_autostart_contract["manual_search_submit_auto_start_allowed"])
+        self.assertFalse(submit_autostart_contract["cache_only_search_submit_auto_start_allowed"])
+        self.assertFalse(submit_autostart_contract["live_full_search_submit_auto_start_allowed"])
+        self.assertFalse(submit_autostart_contract["search_typing_creates_task"])
+        self.assertFalse(submit_autostart_contract["search_input_change_creates_task"])
+        self.assertFalse(submit_autostart_contract["react_render_creates_task"])
+        self.assertFalse(submit_autostart_contract["cache_get_creates_task"])
+        self.assertFalse(submit_autostart_contract["fastapi_startup_creates_task"])
+        self.assertTrue(submit_autostart_contract["safe_search_submit_event_required"])
+        self.assertTrue(submit_autostart_contract["safe_symbol_normalization_required"])
+        self.assertEqual(submit_autostart_contract["symbol_limit"], 12)
+        self.assertTrue(submit_autostart_contract["symbol_dedupe_required"])
+        self.assertTrue(submit_autostart_contract["create_or_reuse_local_projection_task_only"])
+        self.assertEqual(submit_autostart_contract["rate_limit_seconds"], 900)
+        self.assertTrue(submit_autostart_contract["rate_limit_reuses_existing_task"])
+        self.assertFalse(submit_autostart_contract["rate_limit_skip_creates_new_task"])
+        self.assertTrue(submit_autostart_contract["session_dedupe_required"])
+        self.assertTrue(submit_autostart_contract["ui_nonblocking_required"])
+        self.assertTrue(submit_autostart_contract["task_status_polling_required"])
+        self.assertEqual(submit_autostart_contract["result_surface_count"], 6)
+        self.assertTrue(submit_autostart_contract["local_receipt_only_until_execution_request"])
+        self.assertTrue(submit_autostart_contract["provider_model_route_requires_execution_request"])
+        self.assertTrue(submit_autostart_contract["future_provider_model_after_submit_allowed_with_execution_request"])
+        self.assertFalse(submit_autostart_contract["current_submit_autostart_calls_provider_model"])
+        self.assertFalse(submit_autostart_contract["provider_model_autostart_without_execution_request_allowed"])
+        self.assertFalse(submit_autostart_contract["provider_execution_implemented"])
+        self.assertFalse(submit_autostart_contract["model_execution_implemented"])
+        self.assertFalse(submit_autostart_contract["factor_refresh_executed"])
+        self.assertFalse(submit_autostart_contract["next_session_refresh_executed"])
+        self.assertFalse(submit_autostart_contract["echarts_payload_refreshed"])
+        self.assertFalse(submit_autostart_contract["production_quant_projection_complete"])
+        self.assertTrue(submit_autostart_contract["call_ledger_required"])
+        self.assertTrue(submit_autostart_contract["model_ledger_required_for_deepseek"])
+        self.assertTrue(submit_autostart_contract["safe_error_required"])
+        self.assertFalse(submit_autostart_contract["raw_user_query_logged"])
+        self.assertFalse(submit_autostart_contract["raw_user_query_cached"])
+        self.assertFalse(submit_autostart_contract["token_key_exposure_allowed"])
+        self.assertFalse(submit_autostart_contract["radar_candidate_is_buy_instruction"])
+        self.assertFalse(submit_autostart_contract["deepseek_is_data_source"])
+        self.assertFalse(submit_autostart_contract["deepseek_may_overwrite_numeric_or_action_fields"])
+        self.assertFalse(submit_autostart_contract["external_calls_triggered"])
+        self.assertFalse(submit_autostart_contract["tushare_called"])
+        self.assertFalse(submit_autostart_contract["deepseek_called"])
+        self.assertFalse(submit_autostart_contract["github_called"])
+        self.assertFalse(submit_autostart_contract["contains_secret"])
+        self.assertTrue(submit_autostart_contract["does_not_execute_trades"])
+        self.assertTrue(submit_autostart_contract["does_not_modify_strategy_action"])
+        config_handoff_contract = packet["search_quant_projection_submit_autostart_config_handoff_contract"]
+        self.assertEqual(
+            config_handoff_contract["schema_version"],
+            "command_center_search_quant_projection_submit_autostart_config_handoff.v1",
+        )
+        self.assertEqual(
+            config_handoff_contract["status"],
+            "global_config_allowlist_promoted_bootstrap_fallback_removed",
+        )
+        self.assertEqual(config_handoff_contract["mode"], "live_light")
+        self.assertEqual(
+            config_handoff_contract["config_key"],
+            "COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART",
+        )
+        self.assertFalse(config_handoff_contract["default_value_safe"])
+        self.assertTrue(config_handoff_contract["configured_value_safe"])
+        self.assertTrue(config_handoff_contract["effective_value_safe"])
+        self.assertEqual(config_handoff_contract["source"], "configured")
+        self.assertEqual(
+            config_handoff_contract["current_read_path"],
+            "global_config_layer_only",
+        )
+        self.assertEqual(
+            config_handoff_contract["target_read_path"],
+            "global_config_layer_only",
+        )
+        self.assertFalse(config_handoff_contract["bootstrap_local_env_fallback_available"])
+        self.assertFalse(config_handoff_contract["bootstrap_local_env_fallback_is_temporary"])
+        self.assertTrue(config_handoff_contract["bootstrap_local_env_fallback_removed"])
+        self.assertFalse(config_handoff_contract["uses_env_value_when_config_layer_omits_key"])
+        self.assertFalse(config_handoff_contract["fallback_effective_after_global_config_read"])
+        self.assertTrue(config_handoff_contract["global_config_allowlist_promoted"])
+        self.assertTrue(config_handoff_contract["global_config_key_registered"])
+        self.assertFalse(config_handoff_contract["global_config_allowlist_promotion_pending"])
+        self.assertFalse(config_handoff_contract["config_py_update_pending"])
+        self.assertFalse(config_handoff_contract["fallback_removal_pending"])
+        self.assertTrue(config_handoff_contract["fallback_removal_complete"])
+        self.assertTrue(config_handoff_contract["fallback_removal_allowed_after_global_config_promotion"])
+        self.assertTrue(config_handoff_contract["frontend_visible"])
+        self.assertFalse(config_handoff_contract["frontend_editable"])
+        self.assertFalse(config_handoff_contract["frontend_writeback_allowed"])
+        self.assertFalse(config_handoff_contract["status_endpoint_writeback_allowed"])
+        self.assertEqual(config_handoff_contract["operator_change_channel"], "server_config_layer_only")
+        self.assertTrue(config_handoff_contract["live_light_required_for_effective_autostart"])
+        self.assertFalse(config_handoff_contract["cache_only_manual_live_full_effective_false"])
+        self.assertEqual(config_handoff_contract["task_route"], "POST /api/candidate-radar/quant-projection")
+        self.assertEqual(config_handoff_contract["task_type"], "run_candidate_radar_quant_projection")
+        self.assertTrue(config_handoff_contract["creates_local_projection_task_only"])
+        self.assertFalse(config_handoff_contract["creates_provider_model_task"])
+        self.assertTrue(config_handoff_contract["provider_model_execution_requires_execution_request"])
+        self.assertFalse(config_handoff_contract["config_handoff_is_production_evidence"])
+        self.assertFalse(config_handoff_contract["production_config_complete"])
+        self.assertFalse(config_handoff_contract["search_typing_creates_task"])
+        self.assertFalse(config_handoff_contract["react_render_creates_task"])
+        self.assertFalse(config_handoff_contract["cache_get_creates_task"])
+        self.assertFalse(config_handoff_contract["fastapi_startup_creates_task"])
+        self.assertFalse(config_handoff_contract["external_calls_triggered"])
+        self.assertFalse(config_handoff_contract["tushare_called"])
+        self.assertFalse(config_handoff_contract["deepseek_called"])
+        self.assertFalse(config_handoff_contract["github_called"])
+        self.assertFalse(config_handoff_contract["contains_secret"])
+        self.assertFalse(config_handoff_contract["credential_values_exposed"])
+        self.assertFalse(config_handoff_contract["credential_env_key_names_included"])
+        self.assertTrue(config_handoff_contract["does_not_execute_trades"])
+        self.assertTrue(config_handoff_contract["does_not_modify_strategy_action"])
+        config_promotion_contract = packet["search_quant_projection_submit_autostart_config_promotion_contract"]
+        self.assertEqual(
+            config_promotion_contract["schema_version"],
+            "command_center_search_quant_projection_submit_autostart_config_promotion.v1",
+        )
+        self.assertEqual(
+            config_promotion_contract["status"],
+            "config_allowlist_promoted_fallback_removed_validation_pending",
+        )
+        self.assertEqual(config_promotion_contract["mode"], "live_light")
+        self.assertEqual(
+            config_promotion_contract["config_key"],
+            "COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART",
+        )
+        self.assertEqual(
+            config_promotion_contract["current_handoff_status"],
+            "global_config_allowlist_promoted_bootstrap_fallback_removed",
+        )
+        self.assertEqual(
+            config_promotion_contract["current_read_path"],
+            "global_config_layer_only",
+        )
+        self.assertEqual(
+            config_promotion_contract["target_read_path"],
+            "global_config_layer_only",
+        )
+        self.assertEqual(config_promotion_contract["promotion_step_count"], 5)
+        promotion_rows = {
+            row["step_key"]: row
+            for row in config_promotion_contract["promotion_rows"]
+        }
+        self.assertEqual(
+            set(promotion_rows),
+            {
+                "add_global_config_allowlist_key",
+                "prove_global_config_read_path",
+                "remove_bootstrap_local_env_fallback",
+                "preserve_safe_config_surface",
+                "rerun_validation_gate",
+            },
+        )
+        self.assertEqual(promotion_rows["add_global_config_allowlist_key"]["target_file"], "config.py")
+        self.assertEqual(
+            promotion_rows["add_global_config_allowlist_key"]["status"],
+            "passed_global_config_allowlist_key_present",
+        )
+        self.assertFalse(promotion_rows["add_global_config_allowlist_key"]["requires_future_file_scope"])
+        self.assertTrue(promotion_rows["add_global_config_allowlist_key"]["step_complete"])
+        self.assertFalse(promotion_rows["add_global_config_allowlist_key"]["external_calls_triggered"])
+        self.assertFalse(promotion_rows["add_global_config_allowlist_key"]["production_evidence"])
+        self.assertEqual(
+            promotion_rows["prove_global_config_read_path"]["status"],
+            "passed_safe_config_row_reads_global_config_layer",
+        )
+        self.assertTrue(promotion_rows["prove_global_config_read_path"]["step_complete"])
+        self.assertEqual(
+            promotion_rows["remove_bootstrap_local_env_fallback"]["status"],
+            "passed_bootstrap_local_env_fallback_removed",
+        )
+        self.assertTrue(promotion_rows["remove_bootstrap_local_env_fallback"]["step_complete"])
+        self.assertEqual(
+            promotion_rows["preserve_safe_config_surface"]["status"],
+            "passed_safe_config_surface_read_only",
+        )
+        self.assertTrue(promotion_rows["preserve_safe_config_surface"]["step_complete"])
+        self.assertEqual(
+            promotion_rows["rerun_validation_gate"]["status"],
+            "ready_for_local_validation_after_fallback_removal",
+        )
+        self.assertFalse(config_promotion_contract["current_cycle_modifies_global_config_file"])
+        self.assertTrue(config_promotion_contract["global_config_file_already_promoted"])
+        self.assertTrue(config_promotion_contract["current_cycle_file_limit_respected"])
+        self.assertFalse(config_promotion_contract["requires_future_config_py_file_scope"])
+        self.assertFalse(config_promotion_contract["config_py_update_pending"])
+        self.assertFalse(config_promotion_contract["bootstrap_local_env_fallback_removal_pending"])
+        self.assertTrue(config_promotion_contract["bootstrap_local_env_fallback_removed"])
+        self.assertTrue(config_promotion_contract["fallback_removal_allowed_after_global_config_promotion"])
+        self.assertTrue(config_promotion_contract["global_config_allowlist_promoted"])
+        self.assertFalse(config_promotion_contract["global_config_allowlist_promotion_pending"])
+        self.assertTrue(config_promotion_contract["frontend_visible"])
+        self.assertFalse(config_promotion_contract["frontend_editable"])
+        self.assertFalse(config_promotion_contract["frontend_writeback_allowed"])
+        self.assertFalse(config_promotion_contract["status_endpoint_writeback_allowed"])
+        self.assertFalse(config_promotion_contract["status_get_creates_task"])
+        self.assertFalse(config_promotion_contract["react_render_creates_task"])
+        self.assertFalse(config_promotion_contract["search_typing_creates_task"])
+        self.assertFalse(config_promotion_contract["fastapi_startup_creates_task"])
+        self.assertTrue(config_promotion_contract["provider_model_execution_requires_execution_request"])
+        self.assertFalse(config_promotion_contract["promotion_contract_is_production_evidence"])
+        self.assertFalse(config_promotion_contract["production_config_complete"])
+        self.assertFalse(config_promotion_contract["external_calls_triggered"])
+        self.assertFalse(config_promotion_contract["tushare_called"])
+        self.assertFalse(config_promotion_contract["deepseek_called"])
+        self.assertFalse(config_promotion_contract["github_called"])
+        self.assertFalse(config_promotion_contract["contains_secret"])
+        self.assertFalse(config_promotion_contract["credential_values_exposed"])
+        self.assertFalse(config_promotion_contract["credential_env_key_names_included"])
+        self.assertTrue(config_promotion_contract["does_not_execute_trades"])
+        self.assertTrue(config_promotion_contract["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_submit_autostart_contract_visible"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_submit_autostart_allowed"])
+        self.assertEqual(
+            packet["live_light"]["search_quant_projection_submit_autostart_config_switch"],
+            "COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART",
+        )
+        self.assertTrue(packet["live_light"]["search_quant_projection_submit_autostart_configured"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_submit_autostart_effective"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_submit_autostart_config_handoff_visible"])
+        self.assertEqual(
+            packet["live_light"]["search_quant_projection_submit_autostart_config_handoff_status"],
+            "global_config_allowlist_promoted_bootstrap_fallback_removed",
+        )
+        self.assertFalse(packet["live_light"]["search_quant_projection_submit_autostart_local_env_fallback_available"])
+        self.assertTrue(
+            packet["live_light"]["search_quant_projection_submit_autostart_global_config_allowlist_promoted"]
+        )
+        self.assertFalse(
+            packet["live_light"]["search_quant_projection_submit_autostart_config_allowlist_promotion_pending"]
+        )
+        self.assertFalse(
+            packet["live_light"]["search_quant_projection_submit_autostart_config_handoff_is_production_evidence"]
+        )
+        self.assertTrue(
+            packet["live_light"]["search_quant_projection_submit_autostart_config_promotion_contract_visible"]
+        )
+        self.assertEqual(
+            packet["live_light"]["search_quant_projection_submit_autostart_config_promotion_status"],
+            "config_allowlist_promoted_fallback_removed_validation_pending",
+        )
+        self.assertEqual(
+            packet["live_light"]["search_quant_projection_submit_autostart_config_promotion_step_count"],
+            5,
+        )
+        self.assertFalse(packet["live_light"]["search_quant_projection_submit_autostart_config_py_update_pending"])
+        self.assertFalse(
+            packet["live_light"]["search_quant_projection_submit_autostart_bootstrap_fallback_removal_pending"]
+        )
+        self.assertFalse(
+            packet["live_light"]["search_quant_projection_submit_autostart_config_promotion_is_production_evidence"]
+        )
+        self.assertTrue(
+            packet["policy"]["search_quant_projection_submit_autostart_config_promotion_contract_visible"]
+        )
+        self.assertEqual(
+            packet["policy"]["search_quant_projection_submit_autostart_config_promotion_step_count"],
+            5,
+        )
+        self.assertFalse(packet["policy"]["search_quant_projection_submit_autostart_config_py_update_pending"])
+        self.assertFalse(
+            packet["policy"]["search_quant_projection_submit_autostart_bootstrap_fallback_removal_pending"]
+        )
+        self.assertFalse(
+            packet["policy"]["search_quant_projection_submit_autostart_config_promotion_is_production_evidence"]
+        )
+        self.assertEqual(
+            packet["live_light"]["search_quant_projection_submit_autostart_route"],
+            "POST /api/candidate-radar/quant-projection",
+        )
+        self.assertEqual(
+            packet["live_light"]["search_quant_projection_submit_autostart_readiness_stage"],
+            "backend_local_route_ready_frontend_wiring_pending",
+        )
+        self.assertTrue(packet["live_light"]["search_quant_projection_submit_autostart_backend_ready"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_submit_autostart_frontend_wiring_implemented"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_submit_autostart_task_catalog_covered"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_submit_autostart_provider_model_pending"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_submit_autostart_is_production_evidence"])
+        frontend_wiring_contract = packet["search_quant_projection_frontend_wiring_acceptance_contract"]
+        self.assertEqual(
+            frontend_wiring_contract["schema_version"],
+            "command_center_search_quant_projection_frontend_wiring_acceptance_contract.v1",
+        )
+        self.assertEqual(frontend_wiring_contract["status"], "frontend_wiring_acceptance_pending_backend_ready")
+        self.assertEqual(frontend_wiring_contract["mode"], "live_light")
+        self.assertEqual(frontend_wiring_contract["surface"], "candidate_radar_search_quant_projection")
+        self.assertEqual(
+            frontend_wiring_contract["config_switch"],
+            "COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART",
+        )
+        self.assertTrue(frontend_wiring_contract["configured_submit_autostart"])
+        self.assertTrue(frontend_wiring_contract["effective_submit_autostart"])
+        self.assertEqual(frontend_wiring_contract["target_frontend_route"], "desktop/src/routes/CandidateRadar.tsx")
+        self.assertEqual(frontend_wiring_contract["target_client_helper"], "postCandidateRadarQuantProjection")
+        self.assertEqual(frontend_wiring_contract["target_task_receipt_component"], "TaskLaunchReceipt")
+        self.assertEqual(frontend_wiring_contract["target_task_status_component"], "TaskStatusPanel")
+        self.assertEqual(frontend_wiring_contract["task_route"], "POST /api/candidate-radar/quant-projection")
+        self.assertEqual(frontend_wiring_contract["task_type"], "run_candidate_radar_quant_projection")
+        self.assertEqual(frontend_wiring_contract["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertEqual(frontend_wiring_contract["status_replay_route"], "GET /api/bootstrap/status")
+        self.assertEqual(frontend_wiring_contract["cache_refresh_route"], "GET /api/candidate-radar/cache")
+        self.assertTrue(frontend_wiring_contract["manual_button_path_available"])
+        mode_rows = {row["mode"]: row for row in frontend_wiring_contract["mode_acceptance_rows"]}
+        self.assertEqual(frontend_wiring_contract["mode_acceptance_row_count"], 4)
+        self.assertTrue(frontend_wiring_contract["mode_acceptance_matrix_visible"])
+        self.assertEqual(set(mode_rows), {"cache_only", "manual", "live_light", "live_full"})
+        self.assertFalse(mode_rows["cache_only"]["frontend_submit_autostart_allowed"])
+        self.assertFalse(mode_rows["cache_only"]["manual_button_allowed"])
+        self.assertEqual(mode_rows["cache_only"]["expected_frontend_behavior"], "read_cache_only_no_submit_task")
+        self.assertEqual(mode_rows["cache_only"]["task_creation_surface"], "none")
+        self.assertFalse(mode_rows["manual"]["frontend_submit_autostart_allowed"])
+        self.assertTrue(mode_rows["manual"]["manual_button_allowed"])
+        self.assertEqual(mode_rows["manual"]["expected_frontend_behavior"], "explicit_button_only")
+        self.assertEqual(mode_rows["manual"]["task_creation_surface"], "button_click")
+        self.assertTrue(mode_rows["live_light"]["active"])
+        self.assertTrue(mode_rows["live_light"]["frontend_submit_autostart_allowed"])
+        self.assertTrue(mode_rows["live_light"]["manual_button_allowed"])
+        self.assertEqual(
+            mode_rows["live_light"]["expected_frontend_behavior"],
+            "safe_submit_may_create_or_reuse_local_task",
+        )
+        self.assertEqual(mode_rows["live_light"]["task_creation_surface"], "safe_submit_after_bootstrap_status")
+        self.assertTrue(mode_rows["live_light"]["browser_acceptance_required_before_enable"])
+        self.assertFalse(mode_rows["live_full"]["frontend_submit_autostart_allowed"])
+        self.assertFalse(mode_rows["live_full"]["manual_button_allowed"])
+        self.assertEqual(
+            mode_rows["live_full"]["expected_frontend_behavior"],
+            "reserved_disabled_requires_future_authorization",
+        )
+        for row in mode_rows.values():
+            self.assertFalse(row["typing_creates_task"])
+            self.assertFalse(row["render_creates_task"])
+            self.assertFalse(row["cache_get_creates_task"])
+            self.assertFalse(row["provider_model_execution_allowed"])
+        self.assertTrue(frontend_wiring_contract["active_mode_frontend_submit_autostart_allowed"])
+        self.assertEqual(
+            frontend_wiring_contract["active_mode_expected_frontend_behavior"],
+            "safe_submit_may_create_or_reuse_local_task",
+        )
+        self.assertEqual(
+            frontend_wiring_contract["active_mode_task_creation_surface"],
+            "safe_submit_after_bootstrap_status",
+        )
+        browser_rows = {row["criterion"]: row for row in frontend_wiring_contract["browser_acceptance_rows"]}
+        self.assertEqual(frontend_wiring_contract["browser_acceptance_row_count"], 7)
+        self.assertTrue(frontend_wiring_contract["browser_acceptance_evidence_required"])
+        self.assertFalse(frontend_wiring_contract["browser_acceptance_evidence_complete"])
+        self.assertTrue(frontend_wiring_contract["browser_network_trace_required"])
+        self.assertEqual(frontend_wiring_contract["browser_viewports_required"], ["desktop", "laptop", "tablet", "mobile"])
+        self.assertTrue(frontend_wiring_contract["browser_reduced_motion_check_required"])
+        self.assertFalse(frontend_wiring_contract["browser_acceptance_can_promote_frontend_wiring"])
+        self.assertEqual(
+            set(browser_rows),
+            {
+                "initial_cache_render_silent",
+                "typing_does_not_create_task",
+                "safe_submit_creates_single_local_task",
+                "task_status_polling_visible",
+                "success_refreshes_research_surfaces",
+                "frontend_provider_model_silence",
+                "research_only_boundaries_visible",
+            },
+        )
+        self.assertIn("no POST /api/candidate-radar/quant-projection", browser_rows["initial_cache_render_silent"]["expected"])
+        self.assertIn("no POST task", browser_rows["typing_does_not_create_task"]["expected"])
+        self.assertIn("at most one POST", browser_rows["safe_submit_creates_single_local_task"]["required_evidence"])
+        self.assertIn("GET /api/tasks/{task_id}", browser_rows["task_status_polling_visible"]["required_evidence"])
+        self.assertIn("Candidate Radar cache", browser_rows["success_refreshes_research_surfaces"]["required_evidence"])
+        self.assertIn("no frontend Tushare/DeepSeek/GitHub", browser_rows["frontend_provider_model_silence"]["required_evidence"])
+        self.assertIn("no-trade", browser_rows["research_only_boundaries_visible"]["required_evidence"])
+        self.assertTrue(all(row["required_before_wiring_done"] for row in browser_rows.values()))
+        failure_rows = {row["criterion"]: row for row in frontend_wiring_contract["failure_recovery_rows"]}
+        self.assertEqual(frontend_wiring_contract["failure_recovery_row_count"], 7)
+        self.assertTrue(frontend_wiring_contract["failure_recovery_evidence_required"])
+        self.assertFalse(frontend_wiring_contract["failure_recovery_evidence_complete"])
+        self.assertTrue(frontend_wiring_contract["safe_error_display_required"])
+        self.assertTrue(frontend_wiring_contract["rate_limit_reuse_visible_required"])
+        self.assertTrue(frontend_wiring_contract["manual_retry_only_required"])
+        self.assertTrue(frontend_wiring_contract["last_good_cache_fallback_required"])
+        self.assertFalse(frontend_wiring_contract["unbounded_task_queue_allowed"])
+        self.assertEqual(
+            set(failure_rows),
+            {
+                "invalid_symbol_safe_block",
+                "post_failure_preserves_cache",
+                "task_failure_safe_error_visible",
+                "rate_limit_reuse_visible",
+                "manual_retry_only",
+                "stale_cache_fallback_visible",
+                "queue_boundaries_visible",
+            },
+        )
+        self.assertIn("invalid symbol", failure_rows["invalid_symbol_safe_block"]["expected"])
+        self.assertIn("previous Candidate Radar cache", failure_rows["post_failure_preserves_cache"]["required_ui_surface"])
+        self.assertIn("safe_error", failure_rows["task_failure_safe_error_visible"]["required_ui_surface"])
+        self.assertIn("rate-limit", failure_rows["rate_limit_reuse_visible"]["expected"])
+        self.assertIn("explicit user action", failure_rows["manual_retry_only"]["required_ui_surface"])
+        self.assertIn("last-good cache", failure_rows["stale_cache_fallback_visible"]["required_ui_surface"])
+        self.assertIn("unbounded local task queue", failure_rows["queue_boundaries_visible"]["expected"])
+        self.assertTrue(all(row["required_before_wiring_done"] for row in failure_rows.values()))
+        self.assertFalse(frontend_wiring_contract["frontend_submit_autostart_wiring_implemented"])
+        self.assertFalse(frontend_wiring_contract["frontend_acceptance_test_implemented"])
+        self.assertFalse(frontend_wiring_contract["browser_runtime_evidence_complete"])
+        self.assertTrue(frontend_wiring_contract["live_light_wiring_allowed"])
+        self.assertTrue(frontend_wiring_contract["manual_mode_requires_explicit_button"])
+        self.assertFalse(frontend_wiring_contract["cache_only_wiring_disabled"])
+        self.assertFalse(frontend_wiring_contract["live_full_wiring_reserved_disabled"])
+        self.assertTrue(frontend_wiring_contract["safe_symbol_required"])
+        self.assertEqual(
+            frontend_wiring_contract["safe_submit_payload_fields"],
+            ["symbol", "include_tushare", "include_deepseek"],
+        )
+        self.assertEqual(frontend_wiring_contract["symbol_limit"], 12)
+        self.assertEqual(frontend_wiring_contract["rate_limit_seconds"], 900)
+        self.assertTrue(frontend_wiring_contract["must_read_bootstrap_status_before_autostart"])
+        self.assertTrue(frontend_wiring_contract["must_require_live_light_mode"])
+        self.assertTrue(frontend_wiring_contract["must_require_submit_autostart_config_switch"])
+        self.assertTrue(frontend_wiring_contract["must_require_submit_autostart_contract_allowed"])
+        self.assertTrue(frontend_wiring_contract["must_not_create_task_on_typing"])
+        self.assertTrue(frontend_wiring_contract["must_not_create_task_on_react_initial_render"])
+        self.assertTrue(frontend_wiring_contract["must_not_create_task_from_get_cache"])
+        self.assertTrue(frontend_wiring_contract["must_not_call_provider_from_frontend"])
+        self.assertTrue(frontend_wiring_contract["must_set_task_id_from_post_response"])
+        self.assertTrue(frontend_wiring_contract["must_render_task_launch_receipt"])
+        self.assertTrue(frontend_wiring_contract["must_poll_task_status_panel"])
+        self.assertTrue(frontend_wiring_contract["must_refresh_candidate_cache_on_success"])
+        self.assertTrue(frontend_wiring_contract["must_refresh_bootstrap_status_after_task"])
+        self.assertTrue(frontend_wiring_contract["must_show_latest_status_replay"])
+        self.assertTrue(frontend_wiring_contract["must_show_provider_model_pending"])
+        self.assertTrue(frontend_wiring_contract["must_show_no_trade_no_action_boundary"])
+        self.assertTrue(frontend_wiring_contract["provider_model_execution_requires_execution_request"])
+        self.assertFalse(frontend_wiring_contract["frontend_packet_may_contain_token_key"])
+        self.assertFalse(frontend_wiring_contract["raw_user_query_logged"])
+        self.assertFalse(frontend_wiring_contract["raw_user_query_cached"])
+        self.assertFalse(frontend_wiring_contract["local_receipt_is_production_evidence"])
+        self.assertFalse(frontend_wiring_contract["provider_execution_implemented"])
+        self.assertFalse(frontend_wiring_contract["model_execution_implemented"])
+        self.assertFalse(frontend_wiring_contract["production_quant_projection_complete"])
+        self.assertFalse(frontend_wiring_contract["external_calls_triggered"])
+        self.assertFalse(frontend_wiring_contract["tushare_called"])
+        self.assertFalse(frontend_wiring_contract["deepseek_called"])
+        self.assertFalse(frontend_wiring_contract["github_called"])
+        self.assertFalse(frontend_wiring_contract["contains_secret"])
+        self.assertTrue(frontend_wiring_contract["does_not_execute_trades"])
+        self.assertTrue(frontend_wiring_contract["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_frontend_wiring_acceptance_contract_visible"])
+        self.assertEqual(
+            packet["live_light"]["search_quant_projection_frontend_wiring_status"],
+            "frontend_wiring_acceptance_pending_backend_ready",
+        )
+        self.assertTrue(packet["live_light"]["search_quant_projection_frontend_wiring_mode_matrix_visible"])
+        self.assertEqual(packet["live_light"]["search_quant_projection_frontend_wiring_mode_row_count"], 4)
+        self.assertEqual(
+            packet["live_light"]["search_quant_projection_frontend_wiring_active_mode_behavior"],
+            "safe_submit_may_create_or_reuse_local_task",
+        )
+        self.assertEqual(packet["live_light"]["search_quant_projection_frontend_wiring_browser_acceptance_row_count"], 7)
+        self.assertTrue(packet["live_light"]["search_quant_projection_frontend_wiring_browser_network_trace_required"])
+        self.assertEqual(packet["live_light"]["search_quant_projection_frontend_wiring_failure_recovery_row_count"], 7)
+        self.assertTrue(packet["live_light"]["search_quant_projection_frontend_wiring_safe_error_display_required"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_frontend_wiring_rate_limit_reuse_visible_required"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_frontend_wiring_implemented"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_frontend_wiring_browser_evidence_complete"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_frontend_wiring_failure_recovery_evidence_complete"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_frontend_wiring_is_production_evidence"])
+        unified_handoff = packet["search_quant_projection_unified_startup_handoff_contract"]
+        self.assertEqual(
+            unified_handoff["schema_version"],
+            "command_center_search_quant_projection_unified_startup_handoff_contract.v1",
+        )
+        self.assertEqual(
+            unified_handoff["status"],
+            "search_quant_unified_startup_handoff_visible_frontend_wiring_pending",
+        )
+        self.assertEqual(unified_handoff["mode"], "live_light")
+        self.assertEqual(unified_handoff["surface"], "candidate_radar_search_submit_to_unified_startup")
+        self.assertEqual(unified_handoff["source_route"], "POST /api/candidate-radar/quant-projection")
+        self.assertEqual(unified_handoff["source_task_type"], "run_candidate_radar_quant_projection")
+        self.assertEqual(unified_handoff["target_route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(unified_handoff["target_task_type"], "command_center_live_bootstrap")
+        self.assertEqual(unified_handoff["task_status_route"], "GET /api/tasks/{task_id}")
+        expected_handoff_keys = [
+            "bootstrap_status_precheck",
+            "safe_symbol_scope_intake",
+            "local_projection_receipt",
+            "provider_model_stage_mapping",
+            "execution_request_boundary",
+            "ui_polling_refresh",
+        ]
+        self.assertEqual(unified_handoff["handoff_row_count"], 6)
+        self.assertEqual(unified_handoff["required_handoff_keys"], expected_handoff_keys)
+        handoff_rows = {row["handoff_key"]: row for row in unified_handoff["handoff_rows"]}
+        self.assertEqual(list(handoff_rows), expected_handoff_keys)
+        self.assertEqual(
+            [handoff_rows[key]["handoff_order"] for key in expected_handoff_keys],
+            [1, 2, 3, 4, 5, 6],
+        )
+        self.assertEqual(
+            handoff_rows["bootstrap_status_precheck"]["maps_to_unified_stage"],
+            "cache_first_status_read",
+        )
+        self.assertEqual(
+            handoff_rows["safe_symbol_scope_intake"]["maps_to_unified_stage"],
+            "scope_resolution",
+        )
+        self.assertEqual(
+            handoff_rows["local_projection_receipt"]["current_runtime"],
+            "local_projection_receipt_only",
+        )
+        self.assertIn(
+            "deepseek_pro_explanation",
+            handoff_rows["provider_model_stage_mapping"]["maps_to_unified_stage"],
+        )
+        self.assertEqual(
+            handoff_rows["execution_request_boundary"]["current_runtime"],
+            "provider_model_execution_pending",
+        )
+        self.assertEqual(
+            handoff_rows["ui_polling_refresh"]["maps_to_unified_stage"],
+            "ui_polling_and_cache_refresh",
+        )
+        for row in handoff_rows.values():
+            self.assertTrue(row["handoff_contract_only"])
+            self.assertFalse(row["handoff_implemented_now"])
+            self.assertFalse(row["cache_get_creates_task"])
+            self.assertFalse(row["react_render_creates_task"])
+            self.assertFalse(row["search_typing_creates_task"])
+            self.assertFalse(row["fastapi_startup_creates_task"])
+            self.assertFalse(row["search_submit_creates_unified_startup_task_now"])
+            self.assertFalse(row["frontend_direct_provider_call_allowed"])
+            self.assertFalse(row["provider_or_model_execution_allowed_now"])
+            self.assertFalse(row["provider_execution_implemented"])
+            self.assertFalse(row["model_execution_implemented"])
+            self.assertFalse(row["worker_dispatch_implemented"])
+            self.assertTrue(row["call_ledger_required"])
+            self.assertTrue(row["model_ledger_required_for_deepseek"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_modify_prices_positions_or_operation_zones"])
+            self.assertFalse(row["row_is_production_evidence"])
+        self.assertEqual(
+            unified_handoff["linked_search_workflow_schema_version"],
+            "command_center_search_quant_projection_workflow_contract.v1",
+        )
+        self.assertEqual(
+            unified_handoff["linked_submit_autostart_schema_version"],
+            "command_center_search_quant_projection_submit_autostart_contract.v1",
+        )
+        self.assertEqual(
+            unified_handoff["linked_frontend_wiring_schema_version"],
+            "command_center_search_quant_projection_frontend_wiring_acceptance_contract.v1",
+        )
+        self.assertEqual(
+            unified_handoff["linked_unified_startup_schema_version"],
+            "command_center_live_light_unified_startup_task_contract.v1",
+        )
+        self.assertEqual(unified_handoff["linked_unified_startup_stage_count"], 8)
+        self.assertTrue(unified_handoff["search_submit_autostart_allowed"])
+        self.assertFalse(unified_handoff["frontend_wiring_implemented"])
+        self.assertFalse(unified_handoff["browser_runtime_evidence_complete"])
+        self.assertTrue(unified_handoff["unified_stage_vocabulary_shared"])
+        self.assertTrue(unified_handoff["search_submit_creates_local_projection_task_now"])
+        self.assertFalse(unified_handoff["search_submit_creates_unified_startup_task_now"])
+        self.assertFalse(unified_handoff["search_submit_fans_out_provider_model_now"])
+        self.assertTrue(unified_handoff["future_unified_task_handoff_allowed_after_frontend_acceptance"])
+        self.assertTrue(unified_handoff["future_handoff_requires_execution_request_for_provider_model"])
+        self.assertTrue(unified_handoff["safe_symbol_scope_required"])
+        self.assertTrue(unified_handoff["cache_first_status_read_required"])
+        self.assertTrue(unified_handoff["task_status_polling_required"])
+        self.assertTrue(unified_handoff["candidate_cache_refresh_required_after_success"])
+        self.assertTrue(unified_handoff["bootstrap_status_refresh_required_after_success"])
+        self.assertFalse(unified_handoff["cache_get_creates_task"])
+        self.assertFalse(unified_handoff["react_render_creates_task"])
+        self.assertFalse(unified_handoff["search_typing_creates_task"])
+        self.assertFalse(unified_handoff["fastapi_startup_creates_task"])
+        self.assertFalse(unified_handoff["frontend_direct_provider_call_allowed"])
+        self.assertFalse(unified_handoff["provider_execution_implemented"])
+        self.assertFalse(unified_handoff["model_execution_implemented"])
+        self.assertFalse(unified_handoff["worker_dispatch_implemented"])
+        self.assertFalse(unified_handoff["deepseek_is_data_source"])
+        self.assertFalse(unified_handoff["deepseek_may_overwrite_numeric_or_action_fields"])
+        self.assertFalse(unified_handoff["radar_candidate_is_buy_instruction"])
+        self.assertFalse(unified_handoff["token_key_exposure_allowed"])
+        self.assertFalse(unified_handoff["credential_values_exposed"])
+        self.assertFalse(unified_handoff["credential_env_key_names_included"])
+        self.assertFalse(unified_handoff["external_calls_triggered"])
+        self.assertFalse(unified_handoff["tushare_called"])
+        self.assertFalse(unified_handoff["deepseek_called"])
+        self.assertFalse(unified_handoff["github_called"])
+        self.assertFalse(unified_handoff["contains_secret"])
+        self.assertTrue(unified_handoff["does_not_execute_trades"])
+        self.assertTrue(unified_handoff["does_not_modify_strategy_action"])
+        self.assertTrue(unified_handoff["does_not_modify_prices_positions_or_operation_zones"])
+        self.assertFalse(unified_handoff["handoff_contract_is_execution_evidence"])
+        self.assertFalse(unified_handoff["handoff_contract_is_production_evidence"])
+        self.assertFalse(unified_handoff["production_search_unified_handoff_complete"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_unified_startup_handoff_contract_visible"])
+        self.assertEqual(packet["live_light"]["search_quant_projection_unified_startup_handoff_row_count"], 6)
+        self.assertFalse(packet["live_light"]["search_quant_projection_unified_startup_handoff_implemented"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_unified_startup_task_created_now"])
+        self.assertFalse(
+            packet["live_light"]["search_quant_projection_unified_startup_handoff_is_production_evidence"]
+        )
+        self.assertTrue(packet["policy"]["search_quant_projection_unified_startup_handoff_contract_visible"])
+        self.assertEqual(packet["policy"]["search_quant_projection_unified_startup_handoff_row_count"], 6)
+        self.assertFalse(packet["policy"]["search_quant_projection_unified_startup_handoff_implemented"])
+        self.assertFalse(packet["policy"]["search_quant_projection_unified_startup_task_created_now"])
+        self.assertFalse(
+            packet["policy"]["search_quant_projection_unified_startup_handoff_is_production_evidence"]
+        )
+        result_surface_contract = packet["search_quant_projection_result_surface_contract"]
+        self.assertEqual(
+            result_surface_contract["schema_version"],
+            "command_center_search_quant_projection_result_surface_contract.v1",
+        )
+        self.assertEqual(
+            result_surface_contract["status"],
+            "search_quant_projection_result_surface_contract_visible_execution_pending",
+        )
+        self.assertEqual(result_surface_contract["mode"], "live_light")
+        self.assertEqual(result_surface_contract["display_action"], "生成 3.0 量化推演")
+        self.assertEqual(result_surface_contract["allowed_modes"], ["manual", "live_light"])
+        self.assertEqual(result_surface_contract["task_route"], "POST /api/candidate-radar/quant-projection")
+        self.assertEqual(result_surface_contract["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertEqual(
+            result_surface_contract["provider_model_route"],
+            "POST /api/candidate-radar/quant-projection-provider-model-acceptance",
+        )
+        self.assertTrue(result_surface_contract["provider_model_route_requires_execution_request"])
+        self.assertTrue(result_surface_contract["live_light_bootstrap_can_prepare_context"])
+        self.assertFalse(result_surface_contract["search_input_creates_result_surface"])
+        self.assertFalse(result_surface_contract["search_typing_creates_task"])
+        self.assertFalse(result_surface_contract["react_render_creates_result_surface"])
+        self.assertFalse(result_surface_contract["cache_get_creates_result_surface"])
+        self.assertTrue(result_surface_contract["explicit_search_action_required"])
+        self.assertEqual(result_surface_contract["result_surface_count"], 6)
+        self.assertEqual(
+            result_surface_contract["required_result_surfaces"],
+            [
+                "task_progress",
+                "data_provenance",
+                "freshness_provider_gap",
+                "factor_evidence_effects",
+                "next_session_echarts_projection",
+                "deepseek_status",
+            ],
+        )
+        result_surface_rows = {row["surface_key"]: row for row in result_surface_contract["result_surface_rows"]}
+        self.assertIn("task_progress", result_surface_rows)
+        self.assertIn("data_provenance", result_surface_rows)
+        self.assertIn("freshness_provider_gap", result_surface_rows)
+        self.assertIn("factor_evidence_effects", result_surface_rows)
+        self.assertIn("next_session_echarts_projection", result_surface_rows)
+        self.assertIn("deepseek_status", result_surface_rows)
+        self.assertTrue(result_surface_rows["factor_evidence_effects"]["research_only"])
+        self.assertEqual(
+            result_surface_rows["next_session_echarts_projection"]["operation_zone_action_mode_required"],
+            "condition_only",
+        )
+        self.assertEqual(
+            result_surface_rows["deepseek_status"]["source"],
+            "search_quant_projection_deepseek_output_acceptance_contract",
+        )
+        self.assertFalse(result_surface_rows["deepseek_status"]["model_correctness_evidence"])
+        self.assertTrue(result_surface_contract["task_progress_visible_required"])
+        self.assertTrue(result_surface_contract["data_provenance_visible_required"])
+        self.assertTrue(result_surface_contract["freshness_state_visible_required"])
+        self.assertTrue(result_surface_contract["provider_gap_visible_required"])
+        self.assertTrue(result_surface_contract["factor_support_suppress_neutral_missing_required"])
+        self.assertTrue(result_surface_contract["next_session_echarts_payload_required"])
+        self.assertTrue(result_surface_contract["deepseek_status_visible_required"])
+        self.assertTrue(result_surface_contract["call_ledger_safe_summary_visible_required"])
+        self.assertTrue(result_surface_contract["model_ledger_safe_summary_visible_when_deepseek_used"])
+        self.assertFalse(result_surface_contract["raw_prompt_or_raw_model_output_visible_allowed"])
+        self.assertFalse(result_surface_contract["token_key_exposure_allowed"])
+        self.assertFalse(result_surface_contract["radar_candidate_is_buy_instruction"])
+        self.assertFalse(result_surface_contract["factor_score_is_buy_instruction"])
+        self.assertFalse(result_surface_contract["deepseek_text_is_buy_instruction"])
+        self.assertFalse(result_surface_contract["trade_instruction_allowed"])
+        self.assertFalse(result_surface_contract["may_overwrite_price"])
+        self.assertFalse(result_surface_contract["may_overwrite_holding"])
+        self.assertFalse(result_surface_contract["may_overwrite_factor"])
+        self.assertFalse(result_surface_contract["may_overwrite_operation_zones"])
+        self.assertFalse(result_surface_contract["may_modify_strategy_action"])
+        self.assertFalse(result_surface_contract["provider_execution_implemented"])
+        self.assertFalse(result_surface_contract["model_execution_implemented"])
+        self.assertFalse(result_surface_contract["result_surface_contract_is_provider_execution_evidence"])
+        self.assertFalse(result_surface_contract["result_surface_contract_is_model_correctness_evidence"])
+        self.assertFalse(result_surface_contract["result_surface_contract_is_production_evidence"])
+        self.assertFalse(result_surface_contract["external_calls_triggered"])
+        self.assertFalse(result_surface_contract["tushare_called"])
+        self.assertFalse(result_surface_contract["deepseek_called"])
+        self.assertFalse(result_surface_contract["github_called"])
+        self.assertFalse(result_surface_contract["contains_secret"])
+        self.assertTrue(result_surface_contract["does_not_execute_trades"])
+        self.assertTrue(result_surface_contract["does_not_modify_strategy_action"])
+        factor_next_handoff = packet["search_quant_projection_factor_next_handoff_contract"]
+        self.assertEqual(
+            factor_next_handoff["schema_version"],
+            "command_center_search_quant_projection_factor_next_handoff_contract.v1",
+        )
+        self.assertEqual(
+            factor_next_handoff["status"],
+            "search_quant_factor_next_handoff_visible_cache_write_pending",
+        )
+        self.assertEqual(factor_next_handoff["mode"], "live_light")
+        self.assertEqual(factor_next_handoff["display_action"], "生成 3.0 量化推演")
+        self.assertEqual(factor_next_handoff["allowed_modes"], ["manual", "live_light"])
+        self.assertEqual(factor_next_handoff["task_route"], "POST /api/candidate-radar/quant-projection")
+        self.assertEqual(factor_next_handoff["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertEqual(factor_next_handoff["future_factor_route"], "POST /api/factor-quant/run-light")
+        self.assertEqual(factor_next_handoff["future_next_session_route"], "POST /api/next-session/generate")
+        self.assertEqual(
+            factor_next_handoff["future_task_types"],
+            ["run_factor_light", "build_next_session_projection"],
+        )
+        self.assertEqual(
+            factor_next_handoff["output_packet_keys"],
+            ["command_center_factor_quant_hub_packet", "command_center_next_session_projection_packet"],
+        )
+        self.assertEqual(
+            factor_next_handoff["input_packet_keys"],
+            [
+                "command_center_candidate_radar_quant_projection_receipt",
+                "command_center_factor_quant_hub_packet",
+                "command_center_next_session_projection_packet",
+            ],
+        )
+        expected_handoff_keys = [
+            "safe_symbol_scope_bound",
+            "local_projection_receipt_ready",
+            "provider_fact_ledger_or_gap_ready",
+            "factor_light_runtime_pending",
+            "factor_quant_hub_cache_lineage_pending",
+            "next_session_cache_lineage_pending",
+        ]
+        self.assertEqual(factor_next_handoff["handoff_row_count"], 6)
+        self.assertEqual(factor_next_handoff["ready_now_row_count"], 0)
+        self.assertEqual(factor_next_handoff["executed_handoff_row_count"], 0)
+        self.assertEqual(factor_next_handoff["output_written_row_count"], 0)
+        self.assertEqual(factor_next_handoff["required_handoff_keys"], expected_handoff_keys)
+        self.assertTrue(factor_next_handoff["live_light_bootstrap_can_prepare_context"])
+        self.assertTrue(factor_next_handoff["requires_safe_symbol_scope"])
+        self.assertTrue(factor_next_handoff["requires_local_projection_receipt"])
+        self.assertTrue(factor_next_handoff["requires_call_ledger_or_provider_gap"])
+        self.assertTrue(factor_next_handoff["requires_factor_light_cache_lineage"])
+        self.assertTrue(factor_next_handoff["requires_next_session_cache_lineage"])
+        self.assertTrue(factor_next_handoff["requires_stale_cache_label"])
+        self.assertTrue(factor_next_handoff["requires_safe_error_when_missing_cache"])
+        self.assertTrue(factor_next_handoff["feeds_deepseek_readiness_contract"])
+        self.assertFalse(factor_next_handoff["deepseek_may_run_before_factor_next_ready"])
+        self.assertFalse(factor_next_handoff["search_input_creates_handoff"])
+        self.assertFalse(factor_next_handoff["search_typing_creates_task"])
+        self.assertFalse(factor_next_handoff["react_render_executes_factor_next"])
+        self.assertFalse(factor_next_handoff["cache_get_executes_factor_next"])
+        self.assertFalse(factor_next_handoff["fastapi_startup_executes_factor_next"])
+        self.assertFalse(factor_next_handoff["current_search_submit_executes_factor_next_now"])
+        self.assertFalse(factor_next_handoff["current_search_submit_writes_factor_next_cache_now"])
+        self.assertFalse(factor_next_handoff["local_compute_execution_implemented"])
+        self.assertFalse(factor_next_handoff["cache_write_implemented"])
+        self.assertFalse(factor_next_handoff["provider_execution_implemented"])
+        self.assertFalse(factor_next_handoff["model_execution_implemented"])
+        self.assertFalse(factor_next_handoff["handoff_contract_is_provider_execution_evidence"])
+        self.assertFalse(factor_next_handoff["handoff_contract_is_model_correctness_evidence"])
+        self.assertFalse(factor_next_handoff["handoff_contract_is_production_evidence"])
+        self.assertFalse(factor_next_handoff["token_key_exposure_allowed"])
+        self.assertFalse(factor_next_handoff["external_calls_triggered"])
+        self.assertFalse(factor_next_handoff["tushare_called"])
+        self.assertFalse(factor_next_handoff["deepseek_called"])
+        self.assertFalse(factor_next_handoff["github_called"])
+        self.assertFalse(factor_next_handoff["contains_secret"])
+        self.assertTrue(factor_next_handoff["does_not_execute_trades"])
+        self.assertTrue(factor_next_handoff["does_not_modify_strategy_action"])
+        self.assertTrue(factor_next_handoff["does_not_modify_prices_positions_or_operation_zones"])
+        handoff_rows = {row["handoff_key"]: row for row in factor_next_handoff["handoff_rows"]}
+        self.assertEqual(list(handoff_rows), expected_handoff_keys)
+        self.assertEqual(
+            handoff_rows["provider_fact_ledger_or_gap_ready"]["source_contract"],
+            "tushare_light_strategy_contract",
+        )
+        self.assertEqual(
+            handoff_rows["factor_light_runtime_pending"]["future_local_route"],
+            "POST /api/factor-quant/run-light",
+        )
+        self.assertEqual(handoff_rows["factor_light_runtime_pending"]["future_task_type"], "run_factor_light")
+        self.assertEqual(
+            handoff_rows["factor_quant_hub_cache_lineage_pending"]["output_packet_key"],
+            "command_center_factor_quant_hub_packet",
+        )
+        self.assertEqual(
+            handoff_rows["next_session_cache_lineage_pending"]["future_local_route"],
+            "POST /api/next-session/generate",
+        )
+        self.assertEqual(
+            handoff_rows["next_session_cache_lineage_pending"]["future_task_type"],
+            "build_next_session_projection",
+        )
+        self.assertEqual(
+            handoff_rows["next_session_cache_lineage_pending"]["output_packet_key"],
+            "command_center_next_session_projection_packet",
+        )
+        for row in handoff_rows.values():
+            self.assertTrue(row["handoff_contract_only"])
+            self.assertFalse(row["ready_now"])
+            self.assertFalse(row["local_compute_execution_implemented"])
+            self.assertFalse(row["cache_write_implemented"])
+            self.assertFalse(row["local_task_created_now"])
+            self.assertFalse(row["local_compute_executed_now"])
+            self.assertFalse(row["output_written_now"])
+            self.assertFalse(row["cache_get_may_execute_local_compute"])
+            self.assertFalse(row["react_render_may_execute_local_compute"])
+            self.assertFalse(row["search_typing_may_execute_local_compute"])
+            self.assertFalse(row["fastapi_startup_may_execute_local_compute"])
+            self.assertFalse(row["cache_get_may_write_cache"])
+            self.assertFalse(row["react_render_may_write_cache"])
+            self.assertFalse(row["fastapi_startup_may_write_cache"])
+            self.assertTrue(row["call_ledger_required"])
+            self.assertTrue(row["cache_lineage_required"])
+            self.assertTrue(row["provider_gap_visible_required"])
+            self.assertTrue(row["stale_cache_label_required"])
+            self.assertTrue(row["safe_error_required_when_missing_cache"])
+            self.assertTrue(row["provider_model_execution_requires_execution_request"])
+            self.assertTrue(row["feeds_deepseek_readiness_contract"])
+            self.assertFalse(row["deepseek_may_run_before_factor_next_ready"])
+            self.assertFalse(row["row_is_provider_execution_evidence"])
+            self.assertFalse(row["row_is_model_correctness_evidence"])
+            self.assertFalse(row["row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_modify_prices_positions_or_operation_zones"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_factor_next_handoff_contract_visible"])
+        self.assertEqual(packet["live_light"]["search_quant_projection_factor_next_handoff_row_count"], 6)
+        self.assertEqual(packet["live_light"]["search_quant_projection_factor_next_handoff_ready_now_row_count"], 0)
+        self.assertEqual(
+            packet["live_light"]["search_quant_projection_factor_next_handoff_output_written_row_count"],
+            0,
+        )
+        self.assertTrue(packet["live_light"]["search_quant_projection_factor_next_handoff_feeds_deepseek_readiness"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_factor_next_executes_local_compute_now"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_factor_next_writes_cache_now"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_factor_next_handoff_is_production_evidence"])
+        self.assertTrue(packet["policy"]["search_quant_projection_factor_next_handoff_contract_visible"])
+        self.assertEqual(packet["policy"]["search_quant_projection_factor_next_handoff_row_count"], 6)
+        self.assertTrue(packet["policy"]["search_quant_projection_factor_next_handoff_requires_call_ledger_or_gap"])
+        self.assertTrue(packet["policy"]["search_quant_projection_factor_next_handoff_requires_cache_lineage"])
+        self.assertTrue(packet["policy"]["search_quant_projection_factor_next_handoff_feeds_deepseek_readiness"])
+        self.assertFalse(packet["policy"]["search_quant_projection_factor_next_executes_local_compute_now"])
+        self.assertFalse(packet["policy"]["search_quant_projection_factor_next_writes_cache_now"])
+        self.assertFalse(packet["policy"]["search_quant_projection_factor_next_handoff_is_production_evidence"])
+        cache_write_preflight = packet["search_quant_projection_cache_write_preflight_contract"]
+        self.assertEqual(
+            cache_write_preflight["schema_version"],
+            "command_center_search_quant_projection_cache_write_preflight_contract.v1",
+        )
+        self.assertEqual(
+            cache_write_preflight["status"],
+            "search_quant_cache_write_preflight_visible_write_pending",
+        )
+        self.assertEqual(cache_write_preflight["mode"], "live_light")
+        self.assertEqual(cache_write_preflight["display_action"], "生成 3.0 量化推演")
+        self.assertEqual(cache_write_preflight["allowed_modes"], ["manual", "live_light"])
+        self.assertEqual(cache_write_preflight["task_route"], "POST /api/candidate-radar/quant-projection")
+        self.assertEqual(cache_write_preflight["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertEqual(cache_write_preflight["future_factor_route"], "POST /api/factor-quant/run-light")
+        self.assertEqual(cache_write_preflight["future_next_session_route"], "POST /api/next-session/generate")
+        self.assertEqual(
+            cache_write_preflight["target_cache_keys"],
+            ["factor_quant_hub_cache", "next_session_projection_cache"],
+        )
+        self.assertEqual(
+            cache_write_preflight["output_packet_keys"],
+            ["command_center_factor_quant_hub_packet", "command_center_next_session_projection_packet"],
+        )
+        expected_preflight_keys = [
+            "scope_hash_matches_projection_receipt",
+            "provider_ledger_or_gap_bound",
+            "factor_next_handoff_rows_bound",
+            "lineage_fields_complete",
+            "stale_cache_and_safe_error_policy_bound",
+            "deepseek_cache_dependency_blocked_until_factor_next_written",
+            "no_price_position_factor_action_overwrite_guard",
+        ]
+        self.assertEqual(cache_write_preflight["preflight_row_count"], 7)
+        self.assertEqual(cache_write_preflight["ready_now_row_count"], 0)
+        self.assertEqual(cache_write_preflight["cache_written_row_count"], 0)
+        self.assertEqual(cache_write_preflight["lineage_written_row_count"], 0)
+        self.assertEqual(cache_write_preflight["required_preflight_keys"], expected_preflight_keys)
+        self.assertEqual(
+            cache_write_preflight["linked_factor_next_handoff_schema_version"],
+            "command_center_search_quant_projection_factor_next_handoff_contract.v1",
+        )
+        self.assertEqual(cache_write_preflight["linked_factor_next_handoff_row_count"], 6)
+        self.assertTrue(cache_write_preflight["live_light_bootstrap_can_prepare_context"])
+        self.assertTrue(cache_write_preflight["requires_scope_hash_match"])
+        self.assertTrue(cache_write_preflight["requires_provider_call_ledger_or_gap"])
+        self.assertTrue(cache_write_preflight["requires_factor_next_handoff"])
+        self.assertTrue(cache_write_preflight["requires_cache_lineage"])
+        self.assertTrue(cache_write_preflight["requires_storage_backend"])
+        self.assertTrue(cache_write_preflight["requires_freshness_state"])
+        self.assertTrue(cache_write_preflight["requires_stale_cache_label"])
+        self.assertTrue(cache_write_preflight["requires_safe_error_when_missing_cache"])
+        self.assertTrue(cache_write_preflight["requires_no_overwrite_guard"])
+        self.assertTrue(cache_write_preflight["feeds_deepseek_readiness_contract"])
+        self.assertTrue(cache_write_preflight["deepseek_cache_write_blocked_until_factor_next_cache_lineage"])
+        self.assertFalse(cache_write_preflight["cache_get_may_write_cache"])
+        self.assertFalse(cache_write_preflight["react_render_may_write_cache"])
+        self.assertFalse(cache_write_preflight["search_typing_may_write_cache"])
+        self.assertFalse(cache_write_preflight["fastapi_startup_may_write_cache"])
+        self.assertFalse(cache_write_preflight["current_search_submit_writes_factor_next_cache_now"])
+        self.assertFalse(cache_write_preflight["current_search_submit_writes_deepseek_cache_now"])
+        self.assertFalse(cache_write_preflight["cache_write_allowed_now"])
+        self.assertFalse(cache_write_preflight["cache_write_implemented"])
+        self.assertFalse(cache_write_preflight["local_compute_execution_implemented"])
+        self.assertFalse(cache_write_preflight["provider_execution_implemented"])
+        self.assertFalse(cache_write_preflight["model_execution_implemented"])
+        self.assertFalse(cache_write_preflight["may_overwrite_price"])
+        self.assertFalse(cache_write_preflight["may_overwrite_holding"])
+        self.assertFalse(cache_write_preflight["may_overwrite_factor"])
+        self.assertFalse(cache_write_preflight["may_overwrite_operation_zones"])
+        self.assertFalse(cache_write_preflight["may_modify_strategy_action"])
+        self.assertFalse(cache_write_preflight["preflight_contract_is_provider_execution_evidence"])
+        self.assertFalse(cache_write_preflight["preflight_contract_is_model_correctness_evidence"])
+        self.assertFalse(cache_write_preflight["preflight_contract_is_production_evidence"])
+        self.assertFalse(cache_write_preflight["token_key_exposure_allowed"])
+        self.assertFalse(cache_write_preflight["external_calls_triggered"])
+        self.assertFalse(cache_write_preflight["tushare_called"])
+        self.assertFalse(cache_write_preflight["deepseek_called"])
+        self.assertFalse(cache_write_preflight["github_called"])
+        self.assertFalse(cache_write_preflight["contains_secret"])
+        self.assertTrue(cache_write_preflight["does_not_execute_trades"])
+        self.assertTrue(cache_write_preflight["does_not_modify_strategy_action"])
+        self.assertTrue(cache_write_preflight["does_not_modify_prices_positions_or_operation_zones"])
+        preflight_rows = {row["preflight_key"]: row for row in cache_write_preflight["preflight_rows"]}
+        self.assertEqual(list(preflight_rows), expected_preflight_keys)
+        self.assertEqual(
+            preflight_rows["factor_next_handoff_rows_bound"]["source_contract"],
+            "search_quant_projection_factor_next_handoff_contract",
+        )
+        self.assertEqual(preflight_rows["lineage_fields_complete"]["source_contract"], "live_light_cache_lineage_contract")
+        self.assertEqual(
+            preflight_rows["deepseek_cache_dependency_blocked_until_factor_next_written"]["target_cache"],
+            "DeepSeek explanation cache",
+        )
+        self.assertIn("scope_hash", preflight_rows["scope_hash_matches_projection_receipt"]["required_fields"])
+        self.assertIn("storage_backend", preflight_rows["lineage_fields_complete"]["required_fields"])
+        self.assertIn("stale_cache_label", preflight_rows["stale_cache_and_safe_error_policy_bound"]["required_fields"])
+        self.assertIn(
+            "target_fields_allowlist",
+            preflight_rows["no_price_position_factor_action_overwrite_guard"]["required_fields"],
+        )
+        for row in preflight_rows.values():
+            self.assertTrue(row["preflight_contract_only"])
+            self.assertFalse(row["ready_now"])
+            self.assertFalse(row["cache_write_allowed_now"])
+            self.assertFalse(row["cache_write_implemented"])
+            self.assertFalse(row["local_compute_execution_implemented"])
+            self.assertFalse(row["cache_written_now"])
+            self.assertFalse(row["lineage_written_now"])
+            self.assertFalse(row["cache_get_may_write_cache"])
+            self.assertFalse(row["react_render_may_write_cache"])
+            self.assertFalse(row["search_typing_may_write_cache"])
+            self.assertFalse(row["fastapi_startup_may_write_cache"])
+            self.assertTrue(row["post_task_or_worker_required_for_write"])
+            self.assertTrue(row["call_ledger_required"])
+            self.assertTrue(row["cache_lineage_required"])
+            self.assertTrue(row["provider_gap_visible_required"])
+            self.assertTrue(row["safe_error_required"])
+            self.assertTrue(row["stale_cache_label_required"])
+            self.assertFalse(row["row_is_provider_execution_evidence"])
+            self.assertFalse(row["row_is_model_correctness_evidence"])
+            self.assertFalse(row["row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_modify_prices_positions_or_operation_zones"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_cache_write_preflight_contract_visible"])
+        self.assertEqual(packet["live_light"]["search_quant_projection_cache_write_preflight_row_count"], 7)
+        self.assertEqual(packet["live_light"]["search_quant_projection_cache_write_preflight_ready_now_row_count"], 0)
+        self.assertEqual(packet["live_light"]["search_quant_projection_cache_write_preflight_cache_written_row_count"], 0)
+        self.assertTrue(packet["live_light"]["search_quant_projection_cache_write_preflight_feeds_deepseek_readiness"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_cache_write_preflight_writes_cache_now"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_cache_write_preflight_is_production_evidence"])
+        self.assertTrue(packet["policy"]["search_quant_projection_cache_write_preflight_contract_visible"])
+        self.assertEqual(packet["policy"]["search_quant_projection_cache_write_preflight_row_count"], 7)
+        self.assertTrue(packet["policy"]["search_quant_projection_cache_write_preflight_requires_scope_hash_match"])
+        self.assertTrue(packet["policy"]["search_quant_projection_cache_write_preflight_requires_cache_lineage"])
+        self.assertTrue(packet["policy"]["search_quant_projection_cache_write_preflight_requires_no_overwrite_guard"])
+        self.assertTrue(packet["policy"]["search_quant_projection_cache_write_preflight_feeds_deepseek_readiness"])
+        self.assertFalse(packet["policy"]["search_quant_projection_cache_write_preflight_writes_cache_now"])
+        self.assertFalse(packet["policy"]["search_quant_projection_cache_write_preflight_is_production_evidence"])
+        deepseek_model_preflight = packet["search_quant_projection_deepseek_model_preflight_contract"]
+        self.assertEqual(
+            deepseek_model_preflight["schema_version"],
+            "command_center_search_quant_projection_deepseek_model_preflight_contract.v1",
+        )
+        self.assertEqual(
+            deepseek_model_preflight["status"],
+            "search_quant_deepseek_model_preflight_visible_model_call_pending",
+        )
+        self.assertEqual(deepseek_model_preflight["mode"], "live_light")
+        self.assertEqual(deepseek_model_preflight["display_action"], "生成 3.0 量化推演")
+        self.assertEqual(deepseek_model_preflight["allowed_modes"], ["manual", "live_light"])
+        self.assertEqual(deepseek_model_preflight["task_route"], "POST /api/candidate-radar/quant-projection")
+        self.assertEqual(
+            deepseek_model_preflight["provider_model_route"],
+            "POST /api/candidate-radar/quant-projection-provider-model-acceptance",
+        )
+        self.assertTrue(deepseek_model_preflight["provider_model_route_requires_execution_request"])
+        self.assertTrue(deepseek_model_preflight["deepseek_configured_for_live_light"])
+        self.assertEqual(deepseek_model_preflight["deepseek_model_label"], "custom-live-explain-model")
+        self.assertEqual(
+            deepseek_model_preflight["linked_cache_write_preflight_schema_version"],
+            "command_center_search_quant_projection_cache_write_preflight_contract.v1",
+        )
+        self.assertEqual(deepseek_model_preflight["linked_cache_write_preflight_row_count"], 7)
+        expected_model_preflight_keys = [
+            "factor_next_cache_lineage_ready",
+            "model_input_packet_whitelist_bound",
+            "prompt_redaction_boundary_bound",
+            "model_ledger_fields_bound",
+            "output_schema_whitelist_bound",
+            "model_cache_lineage_policy_bound",
+            "execution_request_and_rate_limit_bound",
+        ]
+        self.assertEqual(deepseek_model_preflight["preflight_row_count"], 7)
+        self.assertEqual(deepseek_model_preflight["ready_now_row_count"], 0)
+        self.assertEqual(deepseek_model_preflight["model_called_row_count"], 0)
+        self.assertEqual(deepseek_model_preflight["model_cache_written_row_count"], 0)
+        self.assertEqual(deepseek_model_preflight["model_ledger_written_row_count"], 0)
+        self.assertEqual(deepseek_model_preflight["required_preflight_keys"], expected_model_preflight_keys)
+        self.assertEqual(
+            deepseek_model_preflight["required_input_packet_keys"],
+            ["command_center_factor_quant_hub_packet", "command_center_next_session_projection_packet"],
+        )
+        self.assertEqual(
+            deepseek_model_preflight["allowed_output_fields"],
+            ["summary", "support_notes", "suppress_notes", "conflict_notes", "missing_data_notes", "discipline_notes"],
+        )
+        self.assertEqual(deepseek_model_preflight["allowed_output_field_count"], 6)
+        self.assertEqual(
+            deepseek_model_preflight["required_model_ledger_fields"],
+            [
+                "model_used",
+                "purpose",
+                "token_usage",
+                "parse_status",
+                "cache_status",
+                "sanitizer_status",
+                "input_hash",
+                "output_hash",
+            ],
+        )
+        self.assertTrue(deepseek_model_preflight["requires_cache_write_preflight"])
+        self.assertTrue(deepseek_model_preflight["requires_factor_next_cache_lineage"])
+        self.assertTrue(deepseek_model_preflight["requires_model_input_whitelist"])
+        self.assertTrue(deepseek_model_preflight["requires_prompt_redaction_boundary"])
+        self.assertTrue(deepseek_model_preflight["requires_model_ledger"])
+        self.assertTrue(deepseek_model_preflight["requires_output_schema_whitelist"])
+        self.assertTrue(deepseek_model_preflight["requires_model_cache_lineage"])
+        self.assertTrue(deepseek_model_preflight["requires_execution_request_and_rate_limit"])
+        self.assertTrue(deepseek_model_preflight["safe_skip_allowed_when_preflight_missing"])
+        self.assertFalse(deepseek_model_preflight["cache_get_may_call_deepseek"])
+        self.assertFalse(deepseek_model_preflight["react_render_may_call_deepseek"])
+        self.assertFalse(deepseek_model_preflight["search_typing_may_call_deepseek"])
+        self.assertFalse(deepseek_model_preflight["fastapi_startup_may_call_deepseek"])
+        self.assertFalse(deepseek_model_preflight["search_submit_may_call_deepseek_now"])
+        self.assertFalse(deepseek_model_preflight["current_submit_autostart_calls_model"])
+        self.assertFalse(deepseek_model_preflight["model_call_allowed_now"])
+        self.assertFalse(deepseek_model_preflight["model_execution_implemented"])
+        self.assertFalse(deepseek_model_preflight["deepseek_called"])
+        self.assertFalse(deepseek_model_preflight["model_cache_write_implemented"])
+        self.assertFalse(deepseek_model_preflight["model_ledger_write_implemented"])
+        self.assertFalse(deepseek_model_preflight["raw_prompt_visible_allowed"])
+        self.assertFalse(deepseek_model_preflight["raw_model_output_visible_allowed"])
+        self.assertFalse(deepseek_model_preflight["token_key_exposure_allowed"])
+        self.assertFalse(deepseek_model_preflight["deepseek_is_data_source"])
+        self.assertFalse(deepseek_model_preflight["may_overwrite_price"])
+        self.assertFalse(deepseek_model_preflight["may_overwrite_holding"])
+        self.assertFalse(deepseek_model_preflight["may_overwrite_factor"])
+        self.assertFalse(deepseek_model_preflight["may_overwrite_operation_zones"])
+        self.assertFalse(deepseek_model_preflight["may_modify_strategy_action"])
+        self.assertFalse(deepseek_model_preflight["preflight_contract_is_model_correctness_evidence"])
+        self.assertFalse(deepseek_model_preflight["preflight_contract_is_production_evidence"])
+        self.assertFalse(deepseek_model_preflight["external_calls_triggered"])
+        self.assertFalse(deepseek_model_preflight["tushare_called"])
+        self.assertFalse(deepseek_model_preflight["github_called"])
+        self.assertFalse(deepseek_model_preflight["contains_secret"])
+        self.assertTrue(deepseek_model_preflight["does_not_execute_trades"])
+        self.assertTrue(deepseek_model_preflight["does_not_modify_strategy_action"])
+        self.assertTrue(deepseek_model_preflight["does_not_modify_prices_positions_or_operation_zones"])
+        model_preflight_rows = {row["preflight_key"]: row for row in deepseek_model_preflight["preflight_rows"]}
+        self.assertEqual(list(model_preflight_rows), expected_model_preflight_keys)
+        self.assertEqual(
+            model_preflight_rows["factor_next_cache_lineage_ready"]["source_contract"],
+            "search_quant_projection_cache_write_preflight_contract",
+        )
+        self.assertEqual(
+            model_preflight_rows["prompt_redaction_boundary_bound"]["source_contract"],
+            "live_light_ledger_redaction_invariant_contract",
+        )
+        self.assertEqual(
+            model_preflight_rows["model_ledger_fields_bound"]["source_contract"],
+            "deepseek_pro_strategy_contract",
+        )
+        self.assertEqual(
+            model_preflight_rows["execution_request_and_rate_limit_bound"]["source_contract"],
+            "live_light_execution_request_handoff_contract",
+        )
+        self.assertIn("input_hash", model_preflight_rows["model_ledger_fields_bound"]["required_fields"])
+        self.assertIn("summary", model_preflight_rows["output_schema_whitelist_bound"]["required_fields"])
+        self.assertIn("rate_limit_seconds", model_preflight_rows["execution_request_and_rate_limit_bound"]["required_fields"])
+        for row in model_preflight_rows.values():
+            self.assertTrue(row["preflight_contract_only"])
+            self.assertFalse(row["ready_now"])
+            self.assertFalse(row["model_call_allowed_now"])
+            self.assertFalse(row["model_execution_implemented"])
+            self.assertFalse(row["model_called_now"])
+            self.assertFalse(row["model_cache_written_now"])
+            self.assertFalse(row["model_ledger_written_now"])
+            self.assertFalse(row["cache_get_may_call_deepseek"])
+            self.assertFalse(row["react_render_may_call_deepseek"])
+            self.assertFalse(row["search_typing_may_call_deepseek"])
+            self.assertFalse(row["fastapi_startup_may_call_deepseek"])
+            self.assertFalse(row["search_submit_may_call_deepseek_now"])
+            self.assertTrue(row["provider_model_execution_requires_execution_request"])
+            self.assertTrue(row["model_ledger_required"])
+            self.assertFalse(row["raw_prompt_visible_allowed"])
+            self.assertFalse(row["raw_model_output_visible_allowed"])
+            self.assertFalse(row["token_key_exposure_allowed"])
+            self.assertFalse(row["deepseek_is_data_source"])
+            self.assertFalse(row["deepseek_may_overwrite_numeric_or_action_fields"])
+            self.assertFalse(row["row_is_model_correctness_evidence"])
+            self.assertFalse(row["row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_modify_prices_positions_or_operation_zones"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_deepseek_model_preflight_contract_visible"])
+        self.assertEqual(packet["live_light"]["search_quant_projection_deepseek_model_preflight_row_count"], 7)
+        self.assertEqual(packet["live_light"]["search_quant_projection_deepseek_model_preflight_ready_now_row_count"], 0)
+        self.assertEqual(packet["live_light"]["search_quant_projection_deepseek_model_preflight_model_called_row_count"], 0)
+        self.assertEqual(packet["live_light"]["search_quant_projection_deepseek_model_preflight_allowed_output_field_count"], 6)
+        self.assertTrue(packet["live_light"]["search_quant_projection_deepseek_model_preflight_requires_model_ledger"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_deepseek_model_preflight_calls_model_now"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_deepseek_model_preflight_is_production_evidence"])
+        self.assertTrue(packet["policy"]["search_quant_projection_deepseek_model_preflight_contract_visible"])
+        self.assertEqual(packet["policy"]["search_quant_projection_deepseek_model_preflight_row_count"], 7)
+        self.assertTrue(packet["policy"]["search_quant_projection_deepseek_model_preflight_requires_cache_write_preflight"])
+        self.assertTrue(packet["policy"]["search_quant_projection_deepseek_model_preflight_requires_model_ledger"])
+        self.assertFalse(packet["policy"]["search_quant_projection_deepseek_model_preflight_raw_prompt_or_output_visible_allowed"])
+        self.assertFalse(packet["policy"]["search_quant_projection_deepseek_model_preflight_calls_model_now"])
+        self.assertFalse(packet["policy"]["search_quant_projection_deepseek_model_preflight_is_production_evidence"])
+        deepseek_output_acceptance = packet["search_quant_projection_deepseek_output_acceptance_contract"]
+        self.assertEqual(
+            deepseek_output_acceptance["schema_version"],
+            "command_center_search_quant_projection_deepseek_output_acceptance_contract.v1",
+        )
+        self.assertEqual(
+            deepseek_output_acceptance["status"],
+            "search_quant_deepseek_output_acceptance_visible_output_pending",
+        )
+        self.assertEqual(deepseek_output_acceptance["mode"], "live_light")
+        self.assertEqual(deepseek_output_acceptance["display_action"], "生成 3.0 量化推演")
+        self.assertEqual(deepseek_output_acceptance["allowed_modes"], ["manual", "live_light"])
+        self.assertEqual(deepseek_output_acceptance["task_route"], "POST /api/candidate-radar/quant-projection")
+        self.assertEqual(
+            deepseek_output_acceptance["provider_model_route"],
+            "POST /api/candidate-radar/quant-projection-provider-model-acceptance",
+        )
+        self.assertTrue(deepseek_output_acceptance["provider_model_route_requires_execution_request"])
+        self.assertTrue(deepseek_output_acceptance["deepseek_configured_for_live_light"])
+        self.assertEqual(deepseek_output_acceptance["deepseek_model_label"], "custom-live-explain-model")
+        self.assertEqual(
+            deepseek_output_acceptance["linked_model_preflight_schema_version"],
+            "command_center_search_quant_projection_deepseek_model_preflight_contract.v1",
+        )
+        self.assertEqual(deepseek_output_acceptance["linked_model_preflight_row_count"], 7)
+        expected_output_acceptance_keys = [
+            "model_ledger_evidence_bound",
+            "parse_status_gate_bound",
+            "sanitizer_status_gate_bound",
+            "output_schema_whitelist_enforced",
+            "safe_summary_surface_bound",
+            "model_cache_lineage_bound",
+            "no_numeric_or_action_overwrite_bound",
+        ]
+        self.assertEqual(deepseek_output_acceptance["acceptance_row_count"], 7)
+        self.assertEqual(deepseek_output_acceptance["ready_now_row_count"], 0)
+        self.assertEqual(deepseek_output_acceptance["output_accepted_row_count"], 0)
+        self.assertEqual(deepseek_output_acceptance["model_cache_written_row_count"], 0)
+        self.assertEqual(deepseek_output_acceptance["model_ledger_written_row_count"], 0)
+        self.assertEqual(deepseek_output_acceptance["required_acceptance_keys"], expected_output_acceptance_keys)
+        self.assertEqual(
+            deepseek_output_acceptance["accepted_output_fields"],
+            ["summary", "support_notes", "suppress_notes", "conflict_notes", "missing_data_notes", "discipline_notes"],
+        )
+        self.assertEqual(deepseek_output_acceptance["accepted_output_field_count"], 6)
+        self.assertEqual(
+            deepseek_output_acceptance["safe_surface_fields"],
+            ["status", "model_label", "parse_status", "safe_summary", "safe_error"],
+        )
+        self.assertTrue(deepseek_output_acceptance["requires_model_preflight"])
+        self.assertTrue(deepseek_output_acceptance["requires_model_ledger_evidence"])
+        self.assertTrue(deepseek_output_acceptance["requires_parse_status_passed"])
+        self.assertTrue(deepseek_output_acceptance["requires_sanitizer_status_passed"])
+        self.assertTrue(deepseek_output_acceptance["requires_output_schema_whitelist"])
+        self.assertTrue(deepseek_output_acceptance["requires_safe_summary_surface"])
+        self.assertTrue(deepseek_output_acceptance["requires_model_cache_lineage"])
+        self.assertTrue(deepseek_output_acceptance["requires_no_numeric_or_action_overwrite"])
+        self.assertTrue(deepseek_output_acceptance["safe_skip_allowed_when_parse_or_sanitizer_fails"])
+        self.assertFalse(deepseek_output_acceptance["cache_get_may_accept_model_output"])
+        self.assertFalse(deepseek_output_acceptance["react_render_may_accept_model_output"])
+        self.assertFalse(deepseek_output_acceptance["search_typing_may_accept_model_output"])
+        self.assertFalse(deepseek_output_acceptance["fastapi_startup_may_accept_model_output"])
+        self.assertFalse(deepseek_output_acceptance["search_submit_may_accept_model_output_now"])
+        self.assertFalse(deepseek_output_acceptance["model_output_acceptance_implemented"])
+        self.assertFalse(deepseek_output_acceptance["model_cache_write_implemented"])
+        self.assertFalse(deepseek_output_acceptance["model_ledger_write_implemented"])
+        self.assertFalse(deepseek_output_acceptance["model_execution_implemented"])
+        self.assertFalse(deepseek_output_acceptance["deepseek_called"])
+        self.assertFalse(deepseek_output_acceptance["raw_prompt_visible_allowed"])
+        self.assertFalse(deepseek_output_acceptance["raw_model_output_visible_allowed"])
+        self.assertFalse(deepseek_output_acceptance["token_key_exposure_allowed"])
+        self.assertFalse(deepseek_output_acceptance["deepseek_is_data_source"])
+        self.assertFalse(deepseek_output_acceptance["may_overwrite_price"])
+        self.assertFalse(deepseek_output_acceptance["may_overwrite_holding"])
+        self.assertFalse(deepseek_output_acceptance["may_overwrite_factor"])
+        self.assertFalse(deepseek_output_acceptance["may_overwrite_operation_zones"])
+        self.assertFalse(deepseek_output_acceptance["may_modify_strategy_action"])
+        self.assertFalse(deepseek_output_acceptance["accepted_output_is_buy_sell_instruction"])
+        self.assertFalse(deepseek_output_acceptance["acceptance_contract_is_model_correctness_evidence"])
+        self.assertFalse(deepseek_output_acceptance["acceptance_contract_is_production_evidence"])
+        self.assertFalse(deepseek_output_acceptance["external_calls_triggered"])
+        self.assertFalse(deepseek_output_acceptance["tushare_called"])
+        self.assertFalse(deepseek_output_acceptance["github_called"])
+        self.assertFalse(deepseek_output_acceptance["contains_secret"])
+        self.assertTrue(deepseek_output_acceptance["does_not_execute_trades"])
+        self.assertTrue(deepseek_output_acceptance["does_not_modify_strategy_action"])
+        self.assertTrue(deepseek_output_acceptance["does_not_modify_prices_positions_or_operation_zones"])
+        output_acceptance_rows = {
+            row["acceptance_key"]: row for row in deepseek_output_acceptance["acceptance_rows"]
+        }
+        self.assertEqual(list(output_acceptance_rows), expected_output_acceptance_keys)
+        self.assertEqual(
+            output_acceptance_rows["model_ledger_evidence_bound"]["source_contract"],
+            "search_quant_projection_deepseek_model_preflight_contract",
+        )
+        self.assertEqual(
+            output_acceptance_rows["sanitizer_status_gate_bound"]["source_contract"],
+            "live_light_ledger_redaction_invariant_contract",
+        )
+        self.assertEqual(
+            output_acceptance_rows["safe_summary_surface_bound"]["source_contract"],
+            "search_quant_projection_result_surface_contract",
+        )
+        self.assertEqual(
+            output_acceptance_rows["model_cache_lineage_bound"]["source_contract"],
+            "live_light_cache_lineage_contract",
+        )
+        self.assertIn("safe_summary", output_acceptance_rows["safe_summary_surface_bound"]["required_fields"])
+        self.assertIn("summary", output_acceptance_rows["output_schema_whitelist_enforced"]["required_fields"])
+        self.assertIn("trade_instruction_allowed", output_acceptance_rows["no_numeric_or_action_overwrite_bound"]["required_fields"])
+        for row in output_acceptance_rows.values():
+            self.assertTrue(row["acceptance_contract_only"])
+            self.assertFalse(row["ready_now"])
+            self.assertFalse(row["output_accepted_now"])
+            self.assertFalse(row["model_cache_written_now"])
+            self.assertFalse(row["model_ledger_written_now"])
+            self.assertFalse(row["model_called_now"])
+            self.assertFalse(row["parse_passed_now"])
+            self.assertFalse(row["sanitizer_passed_now"])
+            self.assertTrue(row["safe_skip_allowed"])
+            self.assertFalse(row["cache_get_may_accept_model_output"])
+            self.assertFalse(row["react_render_may_accept_model_output"])
+            self.assertFalse(row["search_typing_may_accept_model_output"])
+            self.assertFalse(row["fastapi_startup_may_accept_model_output"])
+            self.assertFalse(row["search_submit_may_accept_model_output_now"])
+            self.assertTrue(row["provider_model_execution_requires_execution_request"])
+            self.assertTrue(row["model_ledger_required"])
+            self.assertTrue(row["model_cache_lineage_required"])
+            self.assertTrue(row["allowed_output_fields_only"])
+            self.assertFalse(row["raw_prompt_visible_allowed"])
+            self.assertFalse(row["raw_model_output_visible_allowed"])
+            self.assertFalse(row["token_key_exposure_allowed"])
+            self.assertFalse(row["deepseek_is_data_source"])
+            self.assertFalse(row["deepseek_may_overwrite_numeric_or_action_fields"])
+            self.assertFalse(row["row_is_model_correctness_evidence"])
+            self.assertFalse(row["row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_modify_prices_positions_or_operation_zones"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_deepseek_output_acceptance_contract_visible"])
+        self.assertEqual(packet["live_light"]["search_quant_projection_deepseek_output_acceptance_row_count"], 7)
+        self.assertEqual(packet["live_light"]["search_quant_projection_deepseek_output_accepted_row_count"], 0)
+        self.assertEqual(
+            packet["live_light"]["search_quant_projection_deepseek_output_acceptance_cache_written_row_count"],
+            0,
+        )
+        self.assertEqual(packet["live_light"]["search_quant_projection_deepseek_output_acceptance_safe_field_count"], 6)
+        self.assertFalse(packet["live_light"]["search_quant_projection_deepseek_output_acceptance_raw_output_visible_allowed"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_deepseek_output_acceptance_is_production_evidence"])
+        self.assertTrue(packet["policy"]["search_quant_projection_deepseek_output_acceptance_contract_visible"])
+        self.assertEqual(packet["policy"]["search_quant_projection_deepseek_output_acceptance_row_count"], 7)
+        self.assertTrue(packet["policy"]["search_quant_projection_deepseek_output_acceptance_requires_model_preflight"])
+        self.assertTrue(packet["policy"]["search_quant_projection_deepseek_output_acceptance_requires_parse_and_sanitizer"])
+        self.assertFalse(packet["policy"]["search_quant_projection_deepseek_output_acceptance_raw_prompt_or_output_visible_allowed"])
+        self.assertFalse(packet["policy"]["search_quant_projection_deepseek_output_acceptance_is_model_correctness_evidence"])
+        self.assertFalse(packet["policy"]["search_quant_projection_deepseek_output_acceptance_is_production_evidence"])
+        deepseek_readiness = packet["search_quant_projection_deepseek_readiness_contract"]
+        self.assertEqual(
+            deepseek_readiness["schema_version"],
+            "command_center_search_quant_projection_deepseek_readiness_contract.v1",
+        )
+        self.assertEqual(
+            deepseek_readiness["status"],
+            "search_quant_deepseek_readiness_visible_model_execution_pending",
+        )
+        self.assertEqual(deepseek_readiness["mode"], "live_light")
+        self.assertEqual(deepseek_readiness["display_action"], "生成 3.0 量化推演")
+        self.assertEqual(deepseek_readiness["allowed_modes"], ["manual", "live_light"])
+        self.assertEqual(deepseek_readiness["task_route"], "POST /api/candidate-radar/quant-projection")
+        self.assertEqual(
+            deepseek_readiness["provider_model_route"],
+            "POST /api/candidate-radar/quant-projection-provider-model-acceptance",
+        )
+        self.assertTrue(deepseek_readiness["provider_model_route_requires_execution_request"])
+        self.assertTrue(deepseek_readiness["live_light_bootstrap_can_prepare_context"])
+        self.assertTrue(deepseek_readiness["deepseek_configured_for_live_light"])
+        self.assertEqual(deepseek_readiness["deepseek_model_label"], "custom-live-explain-model")
+        expected_readiness_keys = [
+            "safe_symbol_scope_bound",
+            "provider_call_ledger_ready",
+            "factor_light_cache_ready",
+            "next_session_cache_ready",
+            "model_ledger_contract_ready",
+            "safe_skip_if_data_not_ready",
+        ]
+        self.assertEqual(deepseek_readiness["readiness_row_count"], 6)
+        self.assertEqual(deepseek_readiness["ready_now_row_count"], 0)
+        self.assertEqual(deepseek_readiness["required_readiness_keys"], expected_readiness_keys)
+        self.assertTrue(deepseek_readiness["requires_safe_symbol_scope"])
+        self.assertTrue(deepseek_readiness["requires_provider_call_ledger_or_gap"])
+        self.assertTrue(deepseek_readiness["requires_factor_light_cache"])
+        self.assertTrue(deepseek_readiness["requires_next_session_cache"])
+        self.assertTrue(deepseek_readiness["requires_model_ledger"])
+        self.assertTrue(deepseek_readiness["requires_safe_skip_when_data_not_ready"])
+        self.assertEqual(
+            deepseek_readiness["allowed_output_fields"],
+            ["summary", "support_notes", "suppress_notes", "conflict_notes", "missing_data_notes", "discipline_notes"],
+        )
+        self.assertEqual(deepseek_readiness["allowed_output_field_count"], 6)
+        self.assertEqual(
+            deepseek_readiness["model_ledger_required_fields"],
+            [
+                "model_used",
+                "purpose",
+                "token_usage",
+                "parse_status",
+                "cache_status",
+                "sanitizer_status",
+                "input_hash",
+                "output_hash",
+            ],
+        )
+        readiness_rows = {row["readiness_key"]: row for row in deepseek_readiness["readiness_rows"]}
+        self.assertEqual(list(readiness_rows), expected_readiness_keys)
+        self.assertEqual(
+            [readiness_rows[key]["readiness_order"] for key in expected_readiness_keys],
+            [1, 2, 3, 4, 5, 6],
+        )
+        self.assertEqual(readiness_rows["provider_call_ledger_ready"]["source_contract"], "tushare_light_strategy_contract")
+        self.assertEqual(
+            readiness_rows["factor_light_cache_ready"]["source_contract"],
+            "search_quant_projection_cache_write_preflight_contract",
+        )
+        self.assertEqual(
+            readiness_rows["next_session_cache_ready"]["source_contract"],
+            "search_quant_projection_cache_write_preflight_contract",
+        )
+        self.assertEqual(
+            readiness_rows["model_ledger_contract_ready"]["source_contract"],
+            "search_quant_projection_deepseek_model_preflight_contract",
+        )
+        for row in readiness_rows.values():
+            self.assertTrue(row["required_before_deepseek_call"])
+            self.assertFalse(row["ready_now"])
+            self.assertTrue(row["safe_skip_allowed"])
+            self.assertFalse(row["cache_get_may_call_deepseek"])
+            self.assertFalse(row["react_render_may_call_deepseek"])
+            self.assertFalse(row["search_typing_may_call_deepseek"])
+            self.assertFalse(row["fastapi_startup_may_call_deepseek"])
+            self.assertFalse(row["search_submit_may_call_deepseek_now"])
+            self.assertTrue(row["provider_model_execution_requires_execution_request"])
+            self.assertTrue(row["model_ledger_required"])
+            self.assertFalse(row["raw_prompt_visible_allowed"])
+            self.assertFalse(row["raw_model_output_visible_allowed"])
+            self.assertFalse(row["token_key_exposure_allowed"])
+            self.assertFalse(row["deepseek_is_data_source"])
+            self.assertFalse(row["deepseek_may_overwrite_numeric_or_action_fields"])
+            self.assertFalse(row["row_is_model_correctness_evidence"])
+            self.assertFalse(row["row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["contains_secret"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+            self.assertTrue(row["does_not_modify_prices_positions_or_operation_zones"])
+        self.assertFalse(deepseek_readiness["cache_get_may_call_deepseek"])
+        self.assertFalse(deepseek_readiness["react_render_may_call_deepseek"])
+        self.assertFalse(deepseek_readiness["search_typing_may_call_deepseek"])
+        self.assertFalse(deepseek_readiness["fastapi_startup_may_call_deepseek"])
+        self.assertFalse(deepseek_readiness["search_submit_may_call_deepseek_now"])
+        self.assertFalse(deepseek_readiness["current_submit_autostart_calls_model"])
+        self.assertTrue(deepseek_readiness["provider_model_execution_requires_execution_request"])
+        self.assertFalse(deepseek_readiness["model_execution_implemented"])
+        self.assertFalse(deepseek_readiness["deepseek_called"])
+        self.assertFalse(deepseek_readiness["external_calls_triggered"])
+        self.assertFalse(deepseek_readiness["raw_prompt_visible_allowed"])
+        self.assertFalse(deepseek_readiness["raw_model_output_visible_allowed"])
+        self.assertFalse(deepseek_readiness["token_key_exposure_allowed"])
+        self.assertFalse(deepseek_readiness["deepseek_is_data_source"])
+        self.assertFalse(deepseek_readiness["may_overwrite_price"])
+        self.assertFalse(deepseek_readiness["may_overwrite_holding"])
+        self.assertFalse(deepseek_readiness["may_overwrite_factor"])
+        self.assertFalse(deepseek_readiness["may_overwrite_operation_zones"])
+        self.assertFalse(deepseek_readiness["may_modify_strategy_action"])
+        self.assertFalse(deepseek_readiness["readiness_contract_is_model_correctness_evidence"])
+        self.assertFalse(deepseek_readiness["readiness_contract_is_production_evidence"])
+        self.assertFalse(deepseek_readiness["production_deepseek_explanation_complete"])
+        self.assertFalse(deepseek_readiness["contains_secret"])
+        self.assertTrue(deepseek_readiness["does_not_execute_trades"])
+        self.assertTrue(deepseek_readiness["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_deepseek_readiness_contract_visible"])
+        self.assertEqual(packet["live_light"]["search_quant_projection_deepseek_readiness_row_count"], 6)
+        self.assertEqual(packet["live_light"]["search_quant_projection_deepseek_ready_now_row_count"], 0)
+        self.assertEqual(packet["live_light"]["search_quant_projection_deepseek_allowed_output_field_count"], 6)
+        self.assertTrue(packet["live_light"]["search_quant_projection_deepseek_requires_model_ledger"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_deepseek_calls_model_now"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_deepseek_is_production_evidence"])
+        self.assertTrue(packet["policy"]["search_quant_projection_deepseek_readiness_contract_visible"])
+        self.assertEqual(packet["policy"]["search_quant_projection_deepseek_readiness_row_count"], 6)
+        self.assertEqual(packet["policy"]["search_quant_projection_deepseek_ready_now_row_count"], 0)
+        self.assertTrue(packet["policy"]["search_quant_projection_deepseek_requires_provider_factor_next_ready"])
+        self.assertTrue(packet["policy"]["search_quant_projection_deepseek_requires_model_ledger"])
+        self.assertFalse(packet["policy"]["search_quant_projection_deepseek_calls_model_now"])
+        self.assertFalse(packet["policy"]["search_quant_projection_deepseek_is_production_evidence"])
+        latest_quant_status = packet["search_quant_projection_latest_status"]
+        self.assertEqual(
+            latest_quant_status["schema_version"],
+            "command_center_search_quant_projection_latest_status.v1",
+        )
+        self.assertEqual(latest_quant_status["status"], "no_quant_projection_task_found")
+        self.assertEqual(latest_quant_status["lookup_source"], "task_service.list_task_statuses")
+        self.assertFalse(latest_quant_status["lookup_creates_task"])
+        self.assertTrue(latest_quant_status["route_implemented"])
+        self.assertFalse(latest_quant_status["task_found"])
+        self.assertFalse(latest_quant_status["durable_task_visible"])
+        self.assertFalse(latest_quant_status["memory_only_task_is_durable_evidence"])
+        self.assertFalse(latest_quant_status["local_receipt_visible"])
+        self.assertFalse(latest_quant_status["provider_model_pending"])
+        self.assertTrue(latest_quant_status["acceptance_dry_run_required"])
+        self.assertTrue(latest_quant_status["execution_request_required"])
+        self.assertFalse(latest_quant_status["task_success_is_provider_model_evidence"])
+        self.assertFalse(latest_quant_status["task_success_is_production_evidence"])
+        self.assertFalse(latest_quant_status["provider_execution_implemented"])
+        self.assertFalse(latest_quant_status["model_execution_implemented"])
+        self.assertFalse(latest_quant_status["external_calls_triggered"])
+        self.assertFalse(latest_quant_status["tushare_called"])
+        self.assertFalse(latest_quant_status["deepseek_called"])
+        self.assertFalse(latest_quant_status["github_called"])
+        self.assertFalse(latest_quant_status["contains_secret"])
+        self.assertTrue(latest_quant_status["candidate_is_not_buy_instruction"])
+        self.assertTrue(latest_quant_status["does_not_execute_trades"])
+        self.assertTrue(latest_quant_status["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_latest_status_visible"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_latest_task_found"])
+        self.assertEqual(packet["live_light"]["search_quant_projection_latest_status"], "no_quant_projection_task_found")
+        self.assertFalse(packet["live_light"]["search_quant_projection_latest_local_receipt_visible"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_latest_lookup_creates_task"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_latest_is_production_evidence"])
+        self.assertTrue(packet["policy"]["search_quant_projection_latest_status_visible"])
+        self.assertFalse(packet["policy"]["search_quant_projection_latest_lookup_creates_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_latest_is_production_evidence"])
+        latest_provider_model_status = packet["search_quant_projection_provider_model_latest_status"]
+        self.assertEqual(
+            latest_provider_model_status["schema_version"],
+            "command_center_search_quant_projection_provider_model_latest_status.v1",
+        )
+        self.assertEqual(
+            latest_provider_model_status["status"],
+            "no_quant_projection_provider_model_task_found",
+        )
+        self.assertEqual(latest_provider_model_status["lookup_source"], "task_service.list_task_statuses")
+        self.assertFalse(latest_provider_model_status["lookup_creates_task"])
+        self.assertEqual(
+            latest_provider_model_status["route"],
+            "POST /api/candidate-radar/quant-projection-provider-model-acceptance",
+        )
+        self.assertTrue(latest_provider_model_status["route_implemented"])
+        self.assertEqual(
+            latest_provider_model_status["task_type"],
+            "run_candidate_radar_quant_projection_provider_model_acceptance",
+        )
+        self.assertTrue(latest_provider_model_status["task_catalog_covered"])
+        self.assertFalse(latest_provider_model_status["task_found"])
+        self.assertFalse(latest_provider_model_status["durable_task_visible"])
+        self.assertFalse(latest_provider_model_status["memory_only_task_is_durable_evidence"])
+        self.assertFalse(latest_provider_model_status["provider_model_acceptance_visible"])
+        self.assertFalse(latest_provider_model_status["provider_call_ledger_evidence_done"])
+        self.assertFalse(latest_provider_model_status["tushare_call_ledger_evidence_done"])
+        self.assertFalse(latest_provider_model_status["deepseek_model_ledger_evidence_done"])
+        self.assertTrue(latest_provider_model_status["deepseek_output_acceptance_contract_visible"])
+        self.assertTrue(latest_provider_model_status["deepseek_output_acceptance_required_when_deepseek_used"])
+        self.assertFalse(latest_provider_model_status["deepseek_output_acceptance_required"])
+        self.assertFalse(latest_provider_model_status["deepseek_output_acceptance_done"])
+        self.assertEqual(latest_provider_model_status["deepseek_output_acceptance_status"], "not_required_no_task")
+        self.assertFalse(latest_provider_model_status["deepseek_output_cache_written"])
+        self.assertFalse(latest_provider_model_status["deepseek_output_safe_summary_visible"])
+        self.assertTrue(latest_provider_model_status["deepseek_skipped_by_default"])
+        self.assertFalse(latest_provider_model_status["provider_execution_observed"])
+        self.assertFalse(latest_provider_model_status["model_execution_observed"])
+        self.assertFalse(latest_provider_model_status["task_success_is_provider_call_evidence"])
+        self.assertFalse(latest_provider_model_status["task_success_is_model_evidence"])
+        self.assertFalse(latest_provider_model_status["task_success_is_model_output_evidence"])
+        self.assertFalse(latest_provider_model_status["task_success_is_provider_model_evidence"])
+        self.assertFalse(latest_provider_model_status["task_success_is_production_evidence"])
+        self.assertFalse(latest_provider_model_status["production_quant_projection_complete"])
+        self.assertFalse(latest_provider_model_status["production_radar_replacement_complete"])
+        self.assertFalse(latest_provider_model_status["status_get_external_calls"])
+        self.assertFalse(latest_provider_model_status["external_calls_triggered"])
+        self.assertFalse(latest_provider_model_status["tushare_called"])
+        self.assertFalse(latest_provider_model_status["deepseek_called"])
+        self.assertFalse(latest_provider_model_status["github_called"])
+        self.assertFalse(latest_provider_model_status["contains_secret"])
+        self.assertTrue(latest_provider_model_status["candidate_is_not_buy_instruction"])
+        self.assertTrue(latest_provider_model_status["does_not_execute_trades"])
+        self.assertTrue(latest_provider_model_status["does_not_modify_strategy_action"])
+        self.assertTrue(packet["live_light"]["search_quant_projection_provider_model_latest_status_visible"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_provider_model_latest_task_found"])
+        self.assertEqual(
+            packet["live_light"]["search_quant_projection_provider_model_latest_status"],
+            "no_quant_projection_provider_model_task_found",
+        )
+        self.assertFalse(
+            packet["live_light"][
+                "search_quant_projection_provider_model_latest_provider_call_ledger_evidence_done"
+            ]
+        )
+        self.assertFalse(
+            packet["live_light"][
+                "search_quant_projection_provider_model_latest_deepseek_model_ledger_evidence_done"
+            ]
+        )
+        self.assertFalse(
+            packet["live_light"][
+                "search_quant_projection_provider_model_latest_deepseek_output_acceptance_done"
+            ]
+        )
+        self.assertEqual(
+            packet["live_light"][
+                "search_quant_projection_provider_model_latest_deepseek_output_acceptance_status"
+            ],
+            "not_required_no_task",
+        )
+        self.assertFalse(
+            packet["live_light"][
+                "search_quant_projection_provider_model_latest_deepseek_output_cache_written"
+            ]
+        )
+        self.assertFalse(packet["live_light"]["search_quant_projection_provider_model_latest_acceptance_visible"])
+        self.assertFalse(
+            packet["live_light"][
+                "search_quant_projection_provider_model_latest_task_success_is_model_output_evidence"
+            ]
+        )
+        self.assertFalse(packet["live_light"]["search_quant_projection_provider_model_latest_lookup_creates_task"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_provider_model_latest_status_get_external_calls"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_provider_model_latest_is_production_evidence"])
+        self.assertTrue(packet["policy"]["search_quant_projection_provider_model_latest_status_visible"])
+        self.assertFalse(packet["policy"]["search_quant_projection_provider_model_latest_lookup_creates_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_provider_model_latest_status_get_external_calls"])
+        self.assertTrue(packet["policy"]["search_quant_projection_provider_model_latest_requires_deepseek_output_acceptance"])
+        self.assertTrue(
+            packet["policy"][
+                "search_quant_projection_provider_model_latest_output_cache_write_requires_acceptance"
+            ]
+        )
+        self.assertFalse(
+            packet["policy"][
+                "search_quant_projection_provider_model_latest_task_success_is_model_output_evidence"
+            ]
+        )
+        self.assertFalse(
+            packet["policy"][
+                "search_quant_projection_provider_model_latest_task_success_is_provider_model_evidence"
+            ]
+        )
+        self.assertFalse(packet["policy"]["search_quant_projection_provider_model_latest_is_production_evidence"])
+        tushare_contract = packet["tushare_light_strategy_contract"]
+        self.assertEqual(
+            tushare_contract["schema_version"],
+            "command_center_tushare_light_strategy_contract.v1",
+        )
+        self.assertEqual(
+            tushare_contract["status"],
+            "tushare_light_strategy_visible_provider_execution_pending",
+        )
+        self.assertEqual(tushare_contract["mode"], "live_light")
+        self.assertEqual(tushare_contract["provider"], "tushare")
+        self.assertEqual(
+            tushare_contract["allowed_live_light_startup_apis"],
+            ["trade_cal_if_needed", "daily", "daily_basic", "moneyflow"],
+        )
+        self.assertEqual(
+            tushare_contract["allowed_acceptance_apis"],
+            ["trade_cal", "daily", "daily_basic", "moneyflow"],
+        )
+        self.assertEqual(tushare_contract["allowed_scope"], "current_target_holdings_watchlist_light_only")
+        self.assertEqual(tushare_contract["symbol_limit"], 12)
+        self.assertTrue(tushare_contract["live_light_tushare_planned"])
+        self.assertFalse(tushare_contract["cache_get_calls_tushare"])
+        self.assertFalse(tushare_contract["fastapi_startup_calls_tushare"])
+        self.assertFalse(tushare_contract["react_render_calls_tushare"])
+        self.assertTrue(tushare_contract["post_task_required"])
+        self.assertTrue(tushare_contract["call_ledger_required"])
+        self.assertTrue(tushare_contract["request_params_safe_required"])
+        self.assertTrue(tushare_contract["safe_error_required"])
+        self.assertFalse(tushare_contract["provider_execution_implemented"])
+        self.assertFalse(tushare_contract["production_tushare_light_verified"])
+        self.assertFalse(tushare_contract["matrix_or_receipt_is_provider_evidence"])
+        self.assertFalse(tushare_contract["no_record_is_negative_evidence"])
+        self.assertFalse(tushare_contract["permission_denied_is_verified"])
+        self.assertFalse(tushare_contract["empty_dataframe_is_verified"])
+        self.assertFalse(tushare_contract["unselected_api_may_be_marked_verified"])
+        self.assertFalse(tushare_contract["full_pool_on_open_allowed"])
+        self.assertFalse(tushare_contract["token_key_exposure_allowed"])
+        self.assertFalse(tushare_contract["external_calls_triggered"])
+        self.assertFalse(tushare_contract["tushare_called"])
+        self.assertFalse(tushare_contract["deepseek_called"])
+        self.assertFalse(tushare_contract["github_called"])
+        self.assertTrue(tushare_contract["does_not_execute_trades"])
+        self.assertTrue(tushare_contract["does_not_modify_strategy_action"])
+        deepseek_contract = packet["deepseek_pro_strategy_contract"]
+        self.assertEqual(
+            deepseek_contract["schema_version"],
+            "command_center_deepseek_pro_strategy_contract.v1",
+        )
+        self.assertEqual(deepseek_contract["status"], "deepseek_pro_strategy_visible_model_execution_pending")
+        self.assertEqual(deepseek_contract["mode"], "live_light")
+        self.assertEqual(deepseek_contract["provider"], "deepseek")
+        self.assertEqual(deepseek_contract["model"], "custom-live-explain-model")
+        self.assertEqual(deepseek_contract["purpose"], "explain_after_data_ready")
+        self.assertEqual(deepseek_contract["allowed_modes"], ["manual", "live_light"])
+        self.assertTrue(deepseek_contract["live_light_deepseek_planned"])
+        self.assertFalse(deepseek_contract["cache_get_calls_deepseek"])
+        self.assertFalse(deepseek_contract["fastapi_startup_calls_deepseek"])
+        self.assertFalse(deepseek_contract["react_render_calls_deepseek"])
+        self.assertTrue(deepseek_contract["post_task_required"])
+        self.assertTrue(deepseek_contract["model_ledger_required"])
+        self.assertIn("token_usage", deepseek_contract["required_model_ledger_fields"])
+        self.assertTrue(deepseek_contract["input_hash_required"])
+        self.assertTrue(deepseek_contract["output_hash_required"])
+        self.assertTrue(deepseek_contract["parse_status_required"])
+        self.assertTrue(deepseek_contract["sanitizer_required"])
+        self.assertTrue(deepseek_contract["parse_failed_discard_required"])
+        self.assertEqual(
+            deepseek_contract["allowed_output_fields"],
+            ["summary", "support_notes", "suppress_notes", "conflict_notes", "missing_data_notes", "discipline_notes"],
+        )
+        self.assertTrue(deepseek_contract["allowed_output_fields_only"])
+        self.assertFalse(deepseek_contract["deepseek_is_data_source"])
+        self.assertFalse(deepseek_contract["may_overwrite_price"])
+        self.assertFalse(deepseek_contract["may_overwrite_holding"])
+        self.assertFalse(deepseek_contract["may_overwrite_factor"])
+        self.assertFalse(deepseek_contract["may_overwrite_operation_zones"])
+        self.assertFalse(deepseek_contract["may_overwrite_strategy_action"])
+        self.assertFalse(deepseek_contract["numeric_field_overwrite_allowed"])
+        self.assertFalse(deepseek_contract["buy_sell_instruction_allowed"])
+        self.assertFalse(deepseek_contract["sanitizer_is_model_correctness_evidence"])
+        self.assertFalse(deepseek_contract["prompt_preview_is_model_evidence"])
+        self.assertFalse(deepseek_contract["mock_or_receipt_is_model_evidence"])
+        self.assertFalse(deepseek_contract["model_execution_implemented"])
+        self.assertFalse(deepseek_contract["production_deepseek_pro_verified"])
+        self.assertFalse(deepseek_contract["token_key_exposure_allowed"])
+        self.assertFalse(deepseek_contract["external_calls_triggered"])
+        self.assertFalse(deepseek_contract["tushare_called"])
+        self.assertFalse(deepseek_contract["deepseek_called"])
+        self.assertFalse(deepseek_contract["github_called"])
+        self.assertTrue(deepseek_contract["does_not_execute_trades"])
+        self.assertTrue(deepseek_contract["does_not_modify_strategy_action"])
+        ui_contract = packet["ui_nonblocking_runtime_contract"]
+        self.assertEqual(
+            ui_contract["schema_version"],
+            "command_center_ui_nonblocking_runtime_contract.v1",
+        )
+        self.assertEqual(ui_contract["status"], "ui_nonblocking_contract_visible_browser_evidence_pending")
+        self.assertEqual(ui_contract["mode"], "live_light")
+        self.assertTrue(ui_contract["cache_first_render_required"])
+        self.assertFalse(ui_contract["initial_cache_render_calls_provider"])
+        self.assertFalse(ui_contract["fastapi_startup_external_calls"])
+        self.assertFalse(ui_contract["react_initial_render_external_calls"])
+        self.assertFalse(ui_contract["react_render_direct_provider_calls"])
+        self.assertFalse(ui_contract["get_status_creates_task"])
+        self.assertTrue(ui_contract["background_post_task_after_cache_render_only"])
+        self.assertTrue(ui_contract["live_light_auto_task_allowed_after_cache_render"])
+        self.assertEqual(ui_contract["task_route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(ui_contract["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertTrue(ui_contract["task_polling_required"])
+        self.assertTrue(ui_contract["task_id_visible_required"])
+        self.assertTrue(ui_contract["task_status_visible_required"])
+        self.assertTrue(ui_contract["progress_visible_required"])
+        self.assertTrue(ui_contract["safe_error_visible_required"])
+        self.assertTrue(ui_contract["rate_limit_skipped_state_visible_required"])
+        self.assertEqual(ui_contract["rate_limit_seconds"], 900)
+        self.assertFalse(ui_contract["ui_thread_blocking_provider_call_allowed"])
+        self.assertFalse(ui_contract["streamlit_style_sync_rerun_blocking_allowed"])
+        self.assertFalse(ui_contract["browser_runtime_evidence_complete"])
+        self.assertFalse(ui_contract["performance_trace_evidence_complete"])
+        self.assertTrue(ui_contract["local_contract_only"])
+        self.assertFalse(ui_contract["provider_execution_implemented"])
+        self.assertFalse(ui_contract["model_execution_implemented"])
+        self.assertFalse(ui_contract["production_ui_nonblocking_verified"])
+        self.assertFalse(ui_contract["external_calls_triggered"])
+        self.assertFalse(ui_contract["tushare_called"])
+        self.assertFalse(ui_contract["deepseek_called"])
+        self.assertFalse(ui_contract["github_called"])
+        self.assertTrue(ui_contract["does_not_execute_trades"])
+        self.assertTrue(ui_contract["does_not_modify_strategy_action"])
+        fallback_contract = packet["live_light_local_fallback_contract"]
+        self.assertEqual(
+            fallback_contract["schema_version"],
+            "command_center_live_light_local_fallback_contract.v1",
+        )
+        self.assertEqual(
+            fallback_contract["status"],
+            "local_fallback_contract_visible_runtime_evidence_pending",
+        )
+        self.assertEqual(fallback_contract["mode"], "live_light")
+        self.assertEqual(fallback_contract["fallback_surface"], "post_task_worker_or_local_pipeline_only")
+        self.assertEqual(fallback_contract["task_route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(fallback_contract["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertTrue(fallback_contract["cache_first_render_required"])
+        self.assertTrue(fallback_contract["fallback_after_provider_error_allowed"])
+        self.assertTrue(fallback_contract["fallback_after_model_error_allowed"])
+        self.assertFalse(fallback_contract["fallback_from_get_cache_allowed"])
+        self.assertFalse(fallback_contract["fallback_from_react_render_allowed"])
+        self.assertFalse(fallback_contract["fastapi_startup_fallback_refresh_allowed"])
+        self.assertTrue(fallback_contract["uses_last_good_cache_allowed"])
+        self.assertTrue(fallback_contract["last_good_cache_lineage_required"])
+        self.assertTrue(fallback_contract["stale_cache_label_required"])
+        self.assertTrue(fallback_contract["provider_gap_visible_required"])
+        self.assertTrue(fallback_contract["safe_error_visible_required"])
+        self.assertTrue(fallback_contract["rate_limit_skipped_state_visible_required"])
+        self.assertTrue(fallback_contract["fallback_may_refresh_local_factor_from_existing_cache"])
+        self.assertTrue(fallback_contract["fallback_may_refresh_next_session_from_existing_cache"])
+        self.assertFalse(fallback_contract["fallback_may_synthesize_provider_rows"])
+        self.assertFalse(fallback_contract["fallback_may_synthesize_model_output"])
+        self.assertFalse(fallback_contract["fallback_is_provider_evidence"])
+        self.assertFalse(fallback_contract["fallback_is_model_correctness_evidence"])
+        self.assertFalse(fallback_contract["fallback_is_production_evidence"])
+        self.assertFalse(fallback_contract["fallback_may_overwrite_price"])
+        self.assertFalse(fallback_contract["fallback_may_overwrite_holding"])
+        self.assertFalse(fallback_contract["fallback_may_overwrite_factor"])
+        self.assertFalse(fallback_contract["fallback_may_overwrite_operation_zones"])
+        self.assertFalse(fallback_contract["fallback_may_modify_strategy_action"])
+        self.assertFalse(fallback_contract["fallback_may_create_radar_buy_instruction"])
+        self.assertFalse(fallback_contract["browser_runtime_evidence_complete"])
+        self.assertFalse(fallback_contract["performance_trace_evidence_complete"])
+        self.assertFalse(fallback_contract["provider_execution_implemented"])
+        self.assertFalse(fallback_contract["model_execution_implemented"])
+        self.assertFalse(fallback_contract["external_calls_triggered"])
+        self.assertFalse(fallback_contract["tushare_called"])
+        self.assertFalse(fallback_contract["deepseek_called"])
+        self.assertFalse(fallback_contract["github_called"])
+        self.assertFalse(fallback_contract["contains_secret"])
+        self.assertTrue(fallback_contract["does_not_execute_trades"])
+        self.assertTrue(fallback_contract["does_not_modify_strategy_action"])
+        cache_lineage_contract = packet["live_light_cache_lineage_contract"]
+        self.assertEqual(
+            cache_lineage_contract["schema_version"],
+            "command_center_live_light_cache_lineage_contract.v1",
+        )
+        self.assertEqual(
+            cache_lineage_contract["status"],
+            "cache_lineage_contract_visible_runtime_evidence_pending",
+        )
+        self.assertEqual(cache_lineage_contract["mode"], "live_light")
+        self.assertIn("source_task_id", cache_lineage_contract["required_lineage_fields"])
+        self.assertIn("source_route", cache_lineage_contract["required_lineage_fields"])
+        self.assertIn("source_scope_hash", cache_lineage_contract["required_lineage_fields"])
+        self.assertIn("provider_call_ledger_ids", cache_lineage_contract["required_lineage_fields"])
+        self.assertIn("model_ledger_ids", cache_lineage_contract["required_lineage_fields"])
+        self.assertIn("input_packet_keys", cache_lineage_contract["required_lineage_fields"])
+        self.assertIn("output_packet_keys", cache_lineage_contract["required_lineage_fields"])
+        self.assertIn("cache_source", cache_lineage_contract["required_lineage_fields"])
+        self.assertIn("storage_backend", cache_lineage_contract["required_lineage_fields"])
+        self.assertIn("freshness_state", cache_lineage_contract["required_lineage_fields"])
+        self.assertTrue(cache_lineage_contract["lineage_required_for_factor_quant_hub_cache"])
+        self.assertTrue(cache_lineage_contract["lineage_required_for_next_session_cache"])
+        self.assertTrue(cache_lineage_contract["lineage_required_for_deepseek_explanation_cache"])
+        self.assertTrue(cache_lineage_contract["sqlite_meta_visibility_required"])
+        self.assertTrue(cache_lineage_contract["snapshot_visibility_allowed_as_fallback"])
+        self.assertFalse(cache_lineage_contract["memory_only_lineage_is_durable_evidence"])
+        self.assertFalse(cache_lineage_contract["cache_get_may_write_lineage"])
+        self.assertFalse(cache_lineage_contract["react_render_may_write_lineage"])
+        self.assertFalse(cache_lineage_contract["fastapi_startup_may_write_lineage"])
+        self.assertTrue(cache_lineage_contract["lineage_written_by_post_task_only"])
+        self.assertTrue(cache_lineage_contract["lineage_must_reference_call_ledger"])
+        self.assertTrue(cache_lineage_contract["lineage_must_reference_model_ledger_for_deepseek"])
+        self.assertTrue(cache_lineage_contract["lineage_must_include_safe_error_when_degraded"])
+        self.assertTrue(cache_lineage_contract["lineage_must_include_provider_gap_when_degraded"])
+        self.assertTrue(cache_lineage_contract["lineage_must_exclude_credential_values"])
+        self.assertTrue(cache_lineage_contract["lineage_must_exclude_env_key_names"])
+        self.assertTrue(cache_lineage_contract["lineage_must_exclude_raw_prompt_or_output"])
+        self.assertFalse(cache_lineage_contract["lineage_may_overwrite_price"])
+        self.assertFalse(cache_lineage_contract["lineage_may_overwrite_holding"])
+        self.assertFalse(cache_lineage_contract["lineage_may_overwrite_factor"])
+        self.assertFalse(cache_lineage_contract["lineage_may_overwrite_operation_zones"])
+        self.assertFalse(cache_lineage_contract["lineage_may_modify_strategy_action"])
+        self.assertFalse(cache_lineage_contract["lineage_is_provider_execution_evidence"])
+        self.assertFalse(cache_lineage_contract["lineage_is_model_correctness_evidence"])
+        self.assertFalse(cache_lineage_contract["lineage_is_production_evidence_without_real_ledgers"])
+        self.assertFalse(cache_lineage_contract["provider_execution_implemented"])
+        self.assertFalse(cache_lineage_contract["model_execution_implemented"])
+        self.assertFalse(cache_lineage_contract["external_calls_triggered"])
+        self.assertFalse(cache_lineage_contract["tushare_called"])
+        self.assertFalse(cache_lineage_contract["deepseek_called"])
+        self.assertFalse(cache_lineage_contract["github_called"])
+        self.assertFalse(cache_lineage_contract["contains_secret"])
+        self.assertTrue(cache_lineage_contract["does_not_execute_trades"])
+        self.assertTrue(cache_lineage_contract["does_not_modify_strategy_action"])
+        output_surface_contract = packet["live_light_output_surface_contract"]
+        self.assertEqual(
+            output_surface_contract["schema_version"],
+            "command_center_live_light_output_surface_contract.v1",
+        )
+        self.assertEqual(
+            output_surface_contract["status"],
+            "output_surface_contract_visible_runtime_evidence_pending",
+        )
+        self.assertEqual(output_surface_contract["mode"], "live_light")
+        self.assertEqual(output_surface_contract["task_route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(output_surface_contract["task_status_route"], "GET /api/tasks/{task_id}")
+        self.assertEqual(
+            output_surface_contract["required_output_surfaces"],
+            ["factor_quant_hub_cache", "next_session_cache", "deepseek_explanation_cache"],
+        )
+        self.assertIn("command_center_factor_quant_hub_packet", output_surface_contract["output_packet_keys"])
+        self.assertIn("command_center_next_session_projection_packet", output_surface_contract["output_packet_keys"])
+        self.assertIn(
+            "command_center_factor_quant_hub_packet:data.deepseek_explanation",
+            output_surface_contract["output_packet_keys"],
+        )
+        self.assertEqual(output_surface_contract["output_surface_count"], 3)
+        surface_rows = {row["surface_key"]: row for row in output_surface_contract["output_surface_rows"]}
+        self.assertEqual(surface_rows["factor_quant_hub_cache"]["packet_key"], "command_center_factor_quant_hub_packet")
+        self.assertEqual(surface_rows["factor_quant_hub_cache"]["source_stage"], "factor_quant_hub_cache_refresh")
+        self.assertEqual(
+            surface_rows["next_session_cache"]["packet_key"],
+            "command_center_next_session_projection_packet",
+        )
+        self.assertEqual(surface_rows["next_session_cache"]["source_stage"], "next_session_cache_refresh")
+        self.assertEqual(surface_rows["deepseek_explanation_cache"]["nested_path"], "data.deepseek_explanation")
+        self.assertEqual(surface_rows["deepseek_explanation_cache"]["source_stage"], "deepseek_pro_explanation")
+        self.assertTrue(surface_rows["deepseek_explanation_cache"]["model_ledger_required"])
+        self.assertEqual(
+            surface_rows["deepseek_explanation_cache"]["allowed_output_fields"],
+            ["summary", "support_notes", "suppress_notes", "conflict_notes", "missing_data_notes", "discipline_notes"],
+        )
+        for row in surface_rows.values():
+            self.assertEqual(row["allowed_writer"], "post_task_worker_or_local_pipeline_only")
+            self.assertTrue(row["lineage_required"])
+            self.assertTrue(row["call_ledger_required"])
+            self.assertTrue(row["freshness_state_required"])
+            self.assertTrue(row["provider_gap_visible_required"])
+            self.assertTrue(row["safe_error_visible_required"])
+            self.assertFalse(row["cache_get_may_write"])
+            self.assertFalse(row["react_render_may_write"])
+            self.assertFalse(row["fastapi_startup_may_write"])
+            self.assertFalse(row["may_overwrite_price"])
+            self.assertFalse(row["may_overwrite_holding"])
+            self.assertFalse(row["may_overwrite_factor"])
+            self.assertFalse(row["may_overwrite_operation_zones"])
+            self.assertFalse(row["may_modify_strategy_action"])
+            self.assertFalse(row["production_output_ready"])
+        self.assertTrue(output_surface_contract["output_written_by_post_task_only"])
+        self.assertFalse(output_surface_contract["cache_get_may_write_output"])
+        self.assertFalse(output_surface_contract["react_render_may_write_output"])
+        self.assertFalse(output_surface_contract["fastapi_startup_may_write_output"])
+        self.assertTrue(output_surface_contract["all_outputs_require_lineage"])
+        self.assertTrue(output_surface_contract["all_outputs_require_safe_error_or_provider_gap_when_degraded"])
+        self.assertTrue(output_surface_contract["factor_quant_hub_cache_required"])
+        self.assertTrue(output_surface_contract["next_session_cache_required"])
+        self.assertTrue(output_surface_contract["deepseek_explanation_optional_after_data_ready"])
+        self.assertTrue(output_surface_contract["deepseek_output_fields_whitelisted"])
+        self.assertFalse(output_surface_contract["deepseek_is_data_source"])
+        self.assertFalse(output_surface_contract["fallback_may_synthesize_provider_rows"])
+        self.assertFalse(output_surface_contract["fallback_may_synthesize_model_output"])
+        self.assertFalse(output_surface_contract["may_overwrite_price"])
+        self.assertFalse(output_surface_contract["may_overwrite_holding"])
+        self.assertFalse(output_surface_contract["may_overwrite_factor"])
+        self.assertFalse(output_surface_contract["may_overwrite_operation_zones"])
+        self.assertFalse(output_surface_contract["may_modify_strategy_action"])
+        self.assertFalse(output_surface_contract["radar_candidate_is_buy_instruction"])
+        self.assertFalse(output_surface_contract["provider_execution_implemented"])
+        self.assertFalse(output_surface_contract["model_execution_implemented"])
+        self.assertFalse(output_surface_contract["output_surface_contract_is_execution_evidence"])
+        self.assertFalse(output_surface_contract["output_surface_contract_is_production_evidence"])
+        self.assertFalse(output_surface_contract["external_calls_triggered"])
+        self.assertFalse(output_surface_contract["tushare_called"])
+        self.assertFalse(output_surface_contract["deepseek_called"])
+        self.assertFalse(output_surface_contract["github_called"])
+        self.assertFalse(output_surface_contract["contains_secret"])
+        self.assertTrue(output_surface_contract["does_not_execute_trades"])
+        self.assertTrue(output_surface_contract["does_not_modify_strategy_action"])
+        runtime_budget_contract = packet["live_light_runtime_budget_contract"]
+        self.assertEqual(
+            runtime_budget_contract["schema_version"],
+            "command_center_live_light_runtime_budget_contract.v1",
+        )
+        self.assertEqual(
+            runtime_budget_contract["status"],
+            "runtime_budget_contract_visible_execution_pending",
+        )
+        self.assertEqual(runtime_budget_contract["mode"], "live_light")
+        self.assertEqual(runtime_budget_contract["task_route"], "POST /api/bootstrap/live-startup")
+        self.assertEqual(
+            runtime_budget_contract["acceptance_dry_run_route"],
+            "POST /api/bootstrap/provider-model-acceptance-dry-run",
+        )
+        self.assertEqual(
+            runtime_budget_contract["execution_request_route"],
+            "POST /api/bootstrap/provider-model-execution-request",
+        )
+        self.assertEqual(runtime_budget_contract["symbol_limit"], 12)
+        self.assertEqual(runtime_budget_contract["rate_limit_seconds"], 900)
+        self.assertEqual(
+            runtime_budget_contract["allowed_live_light_tushare_apis"],
+            ["trade_cal_if_needed", "daily", "daily_basic", "moneyflow"],
+        )
+        self.assertEqual(runtime_budget_contract["max_provider_api_count_per_task"], 4)
+        self.assertEqual(runtime_budget_contract["max_model_call_count_per_task"], 1)
+        self.assertEqual(runtime_budget_contract["max_background_task_count_per_rate_window"], 1)
+        self.assertTrue(runtime_budget_contract["cache_hit_skips_provider_call_allowed"])
+        self.assertTrue(runtime_budget_contract["input_hash_dedupe_required"])
+        self.assertTrue(runtime_budget_contract["scope_hash_dedupe_required"])
+        self.assertTrue(runtime_budget_contract["rate_limit_skip_must_reuse_existing_task"])
+        self.assertIn("token_usage", runtime_budget_contract["required_budget_ledger_fields"])
+        self.assertIn("model_cost_estimate", runtime_budget_contract["required_budget_ledger_fields"])
+        self.assertIn("budget_status", runtime_budget_contract["required_budget_ledger_fields"])
+        self.assertTrue(runtime_budget_contract["token_usage_record_required"])
+        self.assertTrue(runtime_budget_contract["model_cost_estimate_record_required"])
+        self.assertTrue(runtime_budget_contract["budget_status_record_required"])
+        self.assertIn("skipped_budget_exceeded", runtime_budget_contract["budget_status_values"])
+        self.assertTrue(runtime_budget_contract["budget_state_visible_required"])
+        self.assertTrue(runtime_budget_contract["token_usage_visible_safe_summary_only"])
+        self.assertFalse(runtime_budget_contract["raw_prompt_or_output_budget_log_allowed"])
+        self.assertFalse(runtime_budget_contract["credential_value_budget_log_allowed"])
+        self.assertFalse(runtime_budget_contract["env_key_name_budget_log_allowed"])
+        self.assertFalse(runtime_budget_contract["deepseek_is_data_source"])
+        self.assertFalse(runtime_budget_contract["deepseek_may_overwrite_price"])
+        self.assertFalse(runtime_budget_contract["deepseek_may_modify_strategy_action"])
+        self.assertFalse(runtime_budget_contract["provider_execution_implemented"])
+        self.assertFalse(runtime_budget_contract["model_execution_implemented"])
+        self.assertFalse(runtime_budget_contract["budget_enforcement_implemented"])
+        self.assertFalse(runtime_budget_contract["budget_contract_is_execution_evidence"])
+        self.assertFalse(runtime_budget_contract["budget_contract_is_production_evidence"])
+        self.assertFalse(runtime_budget_contract["external_calls_triggered"])
+        self.assertFalse(runtime_budget_contract["tushare_called"])
+        self.assertFalse(runtime_budget_contract["deepseek_called"])
+        self.assertFalse(runtime_budget_contract["github_called"])
+        self.assertFalse(runtime_budget_contract["contains_secret"])
+        self.assertTrue(runtime_budget_contract["does_not_execute_trades"])
+        self.assertTrue(runtime_budget_contract["does_not_modify_strategy_action"])
         activation = packet["live_light_activation_receipt"]
         self.assertEqual(activation["schema_version"], "command_center_live_bootstrap_activation_receipt.v1")
         self.assertEqual(activation["status"], "live_light_activation_receipt_ready_execution_blocked")
@@ -22023,7 +30183,147 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
     def test_bootstrap_live_startup_cache_only_creates_safe_skipped_task(self):
         self._with_meta_store()
-        self._with_bootstrap_env(COMMAND_CENTER_BOOTSTRAP_MODE="cache_only")
+        self._with_bootstrap_env(
+            COMMAND_CENTER_BOOTSTRAP_MODE="cache_only",
+            COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART="true",
+            COMMAND_CENTER_LIVE_STARTUP_AUTOSTART="true",
+            COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE="light_provider_model",
+            COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE="provider_factor_next_model",
+            COMMAND_CENTER_LIVE_PROVIDER_MODEL_ENABLEMENT="true",
+            COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT="true",
+        )
+
+        status = self.client.get("/api/bootstrap/status").json()
+        packet = status["data"]
+        config_rows = {row["config"]: row for row in packet["config_rows"]}
+        self.assertTrue(status["ok"])
+        self.assertEqual(packet["mode"], "cache_only")
+        self.assertEqual(packet["status"], "cache_only_ready_no_bootstrap")
+        self.assertTrue(config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]["configured_value_safe"])
+        self.assertTrue(config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]["configured_value_safe"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]["effective_value_safe"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]["effective_value_safe"])
+        self.assertEqual(
+            config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]["effective_status"],
+            "cache_only_source_switch_disabled",
+        )
+        self.assertEqual(
+            config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]["effective_status"],
+            "cache_only_source_switch_disabled",
+        )
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]["automation_effective"])
+        self.assertFalse(config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]["automation_effective"])
+        self.assertEqual(config_rows["COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN"]["inactive_reason"], "cache_only_read_only")
+        self.assertEqual(config_rows["COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN"]["inactive_reason"], "cache_only_read_only")
+        submit_autostart_config = config_rows["COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART"]
+        self.assertTrue(submit_autostart_config["configured_value_safe"])
+        self.assertFalse(submit_autostart_config["effective_value_safe"])
+        self.assertFalse(submit_autostart_config["automation_effective"])
+        self.assertEqual(submit_autostart_config["effective_status"], "cache_only_submit_autostart_disabled")
+        self.assertEqual(submit_autostart_config["inactive_reason"], "cache_only_read_only")
+        self.assertFalse(submit_autostart_config["creates_provider_model_task"])
+        startup_autostart_config = config_rows["COMMAND_CENTER_LIVE_STARTUP_AUTOSTART"]
+        self.assertTrue(startup_autostart_config["configured_value_safe"])
+        self.assertFalse(startup_autostart_config["effective_value_safe"])
+        self.assertFalse(startup_autostart_config["automation_effective"])
+        self.assertEqual(startup_autostart_config["effective_status"], "cache_only_startup_autostart_disabled")
+        self.assertEqual(startup_autostart_config["inactive_reason"], "cache_only_read_only")
+        self.assertFalse(startup_autostart_config["creates_local_background_task_only"])
+        self.assertFalse(startup_autostart_config["creates_provider_model_task"])
+        external_profile_config = config_rows["COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE"]
+        self.assertEqual(external_profile_config["configured_value_safe"], "light_provider_model")
+        self.assertEqual(external_profile_config["effective_value_safe"], "plan_only")
+        self.assertEqual(
+            external_profile_config["effective_status"],
+            "cache_only_external_execution_profile_disabled",
+        )
+        self.assertEqual(external_profile_config["inactive_reason"], "cache_only_read_only")
+        self.assertFalse(external_profile_config["provider_stage_allowed_by_profile"])
+        self.assertFalse(external_profile_config["model_stage_allowed_by_profile"])
+        self.assertFalse(external_profile_config["provider_execution_implemented"])
+        self.assertFalse(external_profile_config["model_execution_implemented"])
+        self.assertFalse(external_profile_config["calls_provider_model_now"])
+        research_scope_config = config_rows["COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE"]
+        self.assertEqual(research_scope_config["configured_value_safe"], "provider_factor_next_model")
+        self.assertEqual(research_scope_config["effective_value_safe"], "bootstrap_only")
+        self.assertEqual(
+            research_scope_config["effective_status"],
+            "cache_only_live_light_research_scope_disabled",
+        )
+        self.assertEqual(research_scope_config["inactive_reason"], "cache_only_read_only")
+        self.assertFalse(research_scope_config["provider_stage_allowed_by_scope"])
+        self.assertFalse(research_scope_config["factor_light_allowed_by_scope"])
+        self.assertFalse(research_scope_config["next_session_cache_allowed_by_scope"])
+        self.assertFalse(research_scope_config["model_stage_allowed_by_scope"])
+        self.assertFalse(research_scope_config["creates_task"])
+        self.assertFalse(research_scope_config["creates_provider_model_task"])
+        self.assertFalse(research_scope_config["calls_provider_model_now"])
+        provider_model_config = config_rows["COMMAND_CENTER_LIVE_PROVIDER_MODEL_ENABLEMENT"]
+        self.assertTrue(provider_model_config["configured_value_safe"])
+        self.assertFalse(provider_model_config["effective_value_safe"])
+        self.assertEqual(
+            provider_model_config["effective_status"],
+            "cache_only_provider_model_enablement_disabled",
+        )
+        self.assertEqual(provider_model_config["inactive_reason"], "cache_only_read_only")
+        self.assertFalse(provider_model_config["provider_model_task_creation_allowed"])
+        self.assertFalse(provider_model_config["creates_provider_model_task"])
+        self.assertFalse(provider_model_config["calls_provider_model_now"])
+        frontend_enablement_config = config_rows["COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT"]
+        self.assertTrue(frontend_enablement_config["configured_value_safe"])
+        self.assertFalse(frontend_enablement_config["effective_value_safe"])
+        self.assertEqual(
+            frontend_enablement_config["effective_status"],
+            "cache_only_frontend_enablement_disabled",
+        )
+        self.assertEqual(frontend_enablement_config["inactive_reason"], "cache_only_read_only")
+        self.assertFalse(frontend_enablement_config["automation_effective"])
+        self.assertFalse(frontend_enablement_config["frontend_enablement_allowed"])
+        self.assertFalse(frontend_enablement_config["frontend_writeback_allowed"])
+        self.assertFalse(frontend_enablement_config["creates_task"])
+        self.assertTrue(packet["safe_config_contract"]["cache_only_switches_do_not_autostart"])
+        self.assertTrue(packet["safe_config_contract"]["non_live_light_switches_do_not_autostart"])
+        self.assertTrue(packet["safe_config_contract"]["configured_search_submit_autostart"])
+        self.assertFalse(packet["safe_config_contract"]["effective_search_submit_autostart"])
+        self.assertFalse(packet["safe_config_contract"]["effective_sources_enabled"])
+        self.assertTrue(packet["policy"]["cache_only_switches_do_not_autostart"])
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertFalse(packet["github_called"])
+
+        submit_contract = packet["search_quant_projection_submit_autostart_contract"]
+        self.assertEqual(submit_contract["status"], "cache_only_submit_autostart_disabled")
+        self.assertEqual(submit_contract["mode"], "cache_only")
+        self.assertTrue(submit_contract["configured_submit_autostart"])
+        self.assertFalse(submit_contract["effective_submit_autostart"])
+        self.assertEqual(submit_contract["autostart_readiness_stage"], "cache_only_read_only_no_submit_task")
+        self.assertEqual(submit_contract["inactive_reason"], "cache_only_read_only")
+        self.assertFalse(submit_contract["active_mode_submit_autostart_allowed"])
+        self.assertFalse(submit_contract["search_submit_task_creation_allowed_in_active_mode"])
+        self.assertFalse(submit_contract["cache_only_search_submit_auto_start_allowed"])
+        self.assertTrue(submit_contract["cache_only_read_only"])
+        self.assertTrue(submit_contract["cache_only_blocks_local_projection_task"])
+        self.assertTrue(submit_contract["configured_true_but_cache_only_mode"])
+        self.assertFalse(submit_contract["search_typing_creates_task"])
+        self.assertFalse(submit_contract["react_render_creates_task"])
+        self.assertFalse(submit_contract["cache_get_creates_task"])
+        self.assertFalse(submit_contract["fastapi_startup_creates_task"])
+        self.assertFalse(submit_contract["latest_status_replay_lookup_creates_task"])
+        self.assertFalse(submit_contract["current_submit_autostart_calls_provider_model"])
+        self.assertFalse(submit_contract["provider_model_autostart_without_execution_request_allowed"])
+        self.assertFalse(submit_contract["external_calls_triggered"])
+        self.assertFalse(submit_contract["tushare_called"])
+        self.assertFalse(submit_contract["deepseek_called"])
+        self.assertFalse(submit_contract["github_called"])
+        self.assertTrue(submit_contract["does_not_execute_trades"])
+        self.assertTrue(submit_contract["does_not_modify_strategy_action"])
+        self.assertFalse(packet["live_light"]["search_quant_projection_submit_autostart_allowed"])
+        self.assertFalse(packet["policy"]["search_quant_projection_submit_autostart_allowed"])
+        self.assertTrue(packet["policy"]["search_quant_projection_submit_autostart_configured"])
+        self.assertFalse(packet["policy"]["search_quant_projection_submit_autostart_effective"])
 
         response = self.client.post(
             "/api/bootstrap/live-startup",
@@ -22044,6 +30344,9 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(task["output_packet_key"], "command_center_live_bootstrap_packet")
         self.assertEqual(task["payload_safe"]["bootstrap_mode"], "cache_only")
         self.assertEqual(task["payload_safe"]["symbols"], ["000001.SZ"])
+        self.assertFalse(task["payload_safe"]["tushare_on_open"])
+        self.assertFalse(task["payload_safe"]["deepseek_on_open"])
+        self.assertFalse(task["payload_safe"]["sources_enabled"])
         self.assertEqual(task["payload_safe"]["bootstrap_stage_schema_version"], "command_center_live_bootstrap_stage_plan.v1")
         self.assertEqual(task["payload_safe"]["bootstrap_model_ledger_schema_version"], "command_center_live_bootstrap_model_ledger_preview.v1")
         self.assertEqual(len(task["payload_safe"]["bootstrap_stage_rows"]), 9)
@@ -22051,7 +30354,47 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual({row["status"] for row in task["payload_safe"]["bootstrap_stage_rows"]}, {"skipped_mode_not_live_light"})
         self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["stage_count"], 9)
         self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["model_ledger_preview_count"], 1)
+        self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["local_compute_handoff_row_count"], 3)
+        self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["local_compute_handoff_enabled_row_count"], 0)
+        self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["local_compute_handoff_executed_row_count"], 0)
         self.assertFalse(task["payload_safe"]["bootstrap_plan_summary"]["external_calls_triggered"])
+        cache_only_handoff = task["payload_safe"]["bootstrap_local_compute_handoff_summary"]
+        self.assertEqual(cache_only_handoff["status"], "local_compute_handoff_inactive_cache_only_read_only")
+        self.assertEqual(cache_only_handoff["mode"], "cache_only")
+        self.assertEqual(cache_only_handoff["mode_gate"], "live_light")
+        self.assertFalse(cache_only_handoff["mode_gate_satisfied"])
+        self.assertFalse(cache_only_handoff["source_switch_satisfied"])
+        self.assertEqual(cache_only_handoff["inactive_reason"], "cache_only_read_only")
+        self.assertEqual(cache_only_handoff["handoff_row_count"], 3)
+        self.assertEqual(cache_only_handoff["enabled_handoff_row_count"], 0)
+        self.assertEqual(cache_only_handoff["executed_handoff_row_count"], 0)
+        self.assertEqual(cache_only_handoff["output_written_row_count"], 0)
+        self.assertEqual(
+            cache_only_handoff["lineage_contract_schema_version"],
+            "command_center_live_light_cache_lineage_contract.v1",
+        )
+        self.assertEqual(cache_only_handoff["lineage_write_policy"], "post_task_worker_or_local_pipeline_only")
+        self.assertEqual(cache_only_handoff["lineage_required_field_count"], 16)
+        self.assertEqual(cache_only_handoff["lineage_written_row_count"], 0)
+        self.assertFalse(cache_only_handoff["cache_get_may_write_lineage"])
+        self.assertFalse(cache_only_handoff["react_render_may_write_lineage"])
+        self.assertFalse(cache_only_handoff["fastapi_startup_may_write_lineage"])
+        self.assertFalse(cache_only_handoff["lineage_is_execution_evidence"])
+        self.assertFalse(cache_only_handoff["lineage_is_production_evidence"])
+        self.assertFalse(cache_only_handoff["bootstrap_task_executes_local_compute_now"])
+        self.assertFalse(cache_only_handoff["bootstrap_task_writes_output_now"])
+        for row in task["payload_safe"]["bootstrap_local_compute_handoff_rows"]:
+            self.assertEqual(row["mode"], "cache_only")
+            self.assertEqual(row["mode_gate"], "live_light")
+            self.assertFalse(row["mode_gate_satisfied"])
+            self.assertFalse(row["source_switch_satisfied"])
+            self.assertEqual(row["inactive_reason"], "cache_only_read_only")
+            self.assertEqual(row["handoff_effective_status"], "local_compute_handoff_inactive_cache_only_read_only")
+            self.assertFalse(row["enabled_in_current_mode"])
+            self.assertFalse(row["local_compute_executed_now"])
+            self.assertFalse(row["output_written_now"])
+            self.assertEqual(row["lineage_required_field_count"], 16)
+            self.assertFalse(row["lineage_written_now"])
         model_preview = task["payload_safe"]["bootstrap_model_ledger_preview_rows"][0]
         self.assertEqual(model_preview["status"], "skipped_mode_not_live_light")
         self.assertFalse(model_preview["model_called"])
@@ -22068,6 +30411,30 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(task["call_ledger"][0]["call_status"], "skipped_mode_not_live_light")
         self.assertEqual(task["call_ledger"][0]["bootstrap_stage_count"], 9)
         self.assertEqual(task["call_ledger"][0]["model_ledger_preview_count"], 1)
+        self.assertEqual(
+            task["call_ledger"][0]["local_compute_handoff_status"],
+            "local_compute_handoff_inactive_cache_only_read_only",
+        )
+        self.assertEqual(task["call_ledger"][0]["local_compute_handoff_mode_gate"], "live_light")
+        self.assertFalse(task["call_ledger"][0]["local_compute_handoff_mode_gate_satisfied"])
+        self.assertFalse(task["call_ledger"][0]["local_compute_handoff_source_switch_satisfied"])
+        self.assertEqual(task["call_ledger"][0]["local_compute_handoff_inactive_reason"], "cache_only_read_only")
+        self.assertEqual(task["call_ledger"][0]["local_compute_handoff_row_count"], 3)
+        self.assertEqual(task["call_ledger"][0]["local_compute_handoff_enabled_row_count"], 0)
+        self.assertEqual(task["call_ledger"][0]["local_compute_handoff_executed_row_count"], 0)
+        self.assertEqual(task["call_ledger"][0]["local_compute_handoff_output_written_row_count"], 0)
+        self.assertFalse(task["call_ledger"][0]["local_compute_handoff_ledger_executes_local_compute"])
+        self.assertFalse(task["call_ledger"][0]["local_compute_handoff_ledger_writes_output"])
+        self.assertFalse(task["call_ledger"][0]["local_compute_handoff_ledger_is_execution_evidence"])
+        self.assertFalse(task["call_ledger"][0]["local_compute_handoff_ledger_is_production_evidence"])
+        self.assertEqual(
+            task["call_ledger"][0]["request_params_safe"]["local_compute_handoff_status"],
+            "local_compute_handoff_inactive_cache_only_read_only",
+        )
+        self.assertEqual(
+            task["call_ledger"][0]["request_params_safe"]["local_compute_handoff_inactive_reason"],
+            "cache_only_read_only",
+        )
         self.assertEqual(task["call_ledger"][0]["planned_provider_stage_count"], 0)
         self.assertEqual(task["call_ledger"][0]["planned_model_stage_count"], 0)
         self.assertFalse(task["call_ledger"][0]["external"])
@@ -22082,12 +30449,189 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(task["does_not_execute_trades"])
         self.assertTrue(task["does_not_modify_strategy_action"])
 
-    def test_bootstrap_live_startup_live_light_records_plan_and_rate_limits(self):
+    def test_bootstrap_live_startup_live_light_plan_only_profile_does_not_plan_provider_model_stages(self):
         self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
         self._with_bootstrap_env(
             COMMAND_CENTER_BOOTSTRAP_MODE="live_light",
             COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="true",
             COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT="2",
+            COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS="600",
+        )
+
+        response = self.client.post(
+            "/api/bootstrap/live-startup",
+            json={
+                "source": "unit_test_plan_only_profile",
+                "symbols": ["000001.SZ", "000002.SZ"],
+                "tushare": True,
+                "deepseek": True,
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        summary = task["payload_safe"]["bootstrap_plan_summary"]
+        stage_by_key = {row["stage_key"]: row for row in task["payload_safe"]["bootstrap_stage_rows"]}
+        model_preview = task["payload_safe"]["bootstrap_model_ledger_preview_rows"][0]
+        ledger = task["call_ledger"][0]
+
+        self.assertEqual(task["current_step"], "live_bootstrap_plan_recorded_no_provider_execution")
+        self.assertEqual(summary["external_execution_profile"], "plan_only")
+        self.assertFalse(summary["external_execution_profile_provider_stage_allowed"])
+        self.assertFalse(summary["external_execution_profile_model_stage_allowed"])
+        self.assertFalse(summary["external_execution_profile_executor_implemented"])
+        self.assertTrue(summary["provider_stage_source_switch_enabled"])
+        self.assertTrue(summary["model_stage_source_switch_enabled"])
+        self.assertEqual(summary["planned_provider_stage_count"], 0)
+        self.assertEqual(summary["planned_model_stage_count"], 0)
+        self.assertFalse(summary["external_calls_triggered"])
+
+        self.assertEqual(stage_by_key["trade_cal_if_needed"]["status"], "skipped_by_config")
+        self.assertEqual(stage_by_key["tushare_light_refresh"]["status"], "skipped_by_config")
+        self.assertEqual(stage_by_key["deepseek_pro_explanation"]["status"], "skipped_by_config")
+        self.assertFalse(stage_by_key["trade_cal_if_needed"]["profile_stage_allowed"])
+        self.assertFalse(stage_by_key["tushare_light_refresh"]["profile_stage_allowed"])
+        self.assertFalse(stage_by_key["deepseek_pro_explanation"]["profile_stage_allowed"])
+        self.assertTrue(stage_by_key["trade_cal_if_needed"]["source_switch_enabled"])
+        self.assertTrue(stage_by_key["deepseek_pro_explanation"]["source_switch_enabled"])
+        self.assertEqual(
+            stage_by_key["trade_cal_if_needed"]["profile_inactive_reason"],
+            "external_execution_profile_does_not_allow_stage",
+        )
+        self.assertEqual(
+            stage_by_key["deepseek_pro_explanation"]["profile_inactive_reason"],
+            "external_execution_profile_does_not_allow_stage",
+        )
+        self.assertFalse(any(row["planned_external_call"] for row in task["payload_safe"]["bootstrap_stage_rows"]))
+        self.assertFalse(any(row["actual_external_calls_triggered"] for row in task["payload_safe"]["bootstrap_stage_rows"]))
+        self.assertEqual(model_preview["status"], "skipped_by_config")
+        self.assertEqual(model_preview["external_execution_profile"], "plan_only")
+        self.assertFalse(model_preview["profile_stage_allowed"])
+        self.assertFalse(model_preview["model_called"])
+        self.assertFalse(model_preview["deepseek_called"])
+
+        self.assertEqual(ledger["planned_provider_stage_count"], 0)
+        self.assertEqual(ledger["planned_model_stage_count"], 0)
+        self.assertEqual(ledger["external_execution_profile"], "plan_only")
+        self.assertFalse(ledger["external_execution_profile_provider_stage_allowed"])
+        self.assertFalse(ledger["external_execution_profile_model_stage_allowed"])
+        self.assertFalse(ledger["external_execution_profile_executor_implemented"])
+        self.assertFalse(ledger["external_calls_triggered"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+
+        status_after_bootstrap = self.client.get("/api/bootstrap/status").json()
+        latest_bootstrap = status_after_bootstrap["data"]["live_light_latest_bootstrap_task_status"]
+        self.assertEqual(latest_bootstrap["external_execution_profile"], "plan_only")
+        self.assertFalse(latest_bootstrap["external_execution_profile_provider_stage_allowed"])
+        self.assertFalse(latest_bootstrap["external_execution_profile_model_stage_allowed"])
+        self.assertFalse(latest_bootstrap["external_execution_profile_executor_implemented"])
+        self.assertEqual(latest_bootstrap["planned_provider_stage_count"], 0)
+        self.assertEqual(latest_bootstrap["planned_model_stage_count"], 0)
+        self.assertFalse(latest_bootstrap["external_calls_triggered"])
+
+    def test_bootstrap_live_startup_live_light_light_provider_profile_plans_provider_only(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_bootstrap_env(
+            COMMAND_CENTER_BOOTSTRAP_MODE="live_light",
+            COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE="light_provider",
+            COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT="2",
+            COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS="600",
+        )
+
+        response = self.client.post(
+            "/api/bootstrap/live-startup",
+            json={
+                "source": "unit_test_light_provider_profile",
+                "symbols": ["000001.SZ", "000002.SZ"],
+                "tushare": True,
+                "deepseek": True,
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        summary = task["payload_safe"]["bootstrap_plan_summary"]
+        stage_by_key = {row["stage_key"]: row for row in task["payload_safe"]["bootstrap_stage_rows"]}
+        model_preview = task["payload_safe"]["bootstrap_model_ledger_preview_rows"][0]
+        ledger = task["call_ledger"][0]
+
+        self.assertEqual(task["current_step"], "live_bootstrap_plan_recorded_no_provider_execution")
+        self.assertEqual(summary["external_execution_profile"], "light_provider")
+        self.assertTrue(summary["external_execution_profile_provider_stage_allowed"])
+        self.assertFalse(summary["external_execution_profile_model_stage_allowed"])
+        self.assertFalse(summary["external_execution_profile_executor_implemented"])
+        self.assertTrue(summary["provider_stage_source_switch_enabled"])
+        self.assertTrue(summary["model_stage_source_switch_enabled"])
+        self.assertEqual(summary["planned_provider_stage_count"], 2)
+        self.assertEqual(summary["planned_model_stage_count"], 0)
+        self.assertEqual(summary["actual_provider_execution_count"], 0)
+        self.assertEqual(summary["actual_model_call_count"], 0)
+        self.assertFalse(summary["external_calls_triggered"])
+
+        self.assertEqual(stage_by_key["trade_cal_if_needed"]["status"], "planned_provider_pending_not_executed")
+        self.assertEqual(stage_by_key["tushare_light_refresh"]["status"], "planned_provider_pending_not_executed")
+        self.assertEqual(stage_by_key["deepseek_pro_explanation"]["status"], "skipped_by_config")
+        self.assertTrue(stage_by_key["trade_cal_if_needed"]["profile_stage_allowed"])
+        self.assertTrue(stage_by_key["tushare_light_refresh"]["profile_stage_allowed"])
+        self.assertFalse(stage_by_key["deepseek_pro_explanation"]["profile_stage_allowed"])
+        self.assertTrue(stage_by_key["trade_cal_if_needed"]["source_switch_enabled"])
+        self.assertTrue(stage_by_key["deepseek_pro_explanation"]["source_switch_enabled"])
+        self.assertEqual(stage_by_key["trade_cal_if_needed"]["external_execution_profile"], "light_provider")
+        self.assertEqual(stage_by_key["deepseek_pro_explanation"]["external_execution_profile"], "light_provider")
+        self.assertEqual(
+            stage_by_key["deepseek_pro_explanation"]["profile_inactive_reason"],
+            "external_execution_profile_does_not_allow_stage",
+        )
+        self.assertTrue(stage_by_key["trade_cal_if_needed"]["planned_external_call"])
+        self.assertTrue(stage_by_key["tushare_light_refresh"]["planned_external_call"])
+        self.assertFalse(stage_by_key["deepseek_pro_explanation"]["planned_external_call"])
+        self.assertFalse(any(row["actual_external_calls_triggered"] for row in task["payload_safe"]["bootstrap_stage_rows"]))
+        self.assertEqual(model_preview["status"], "skipped_by_config")
+        self.assertEqual(model_preview["external_execution_profile"], "light_provider")
+        self.assertFalse(model_preview["profile_stage_allowed"])
+        self.assertFalse(model_preview["model_called"])
+        self.assertFalse(model_preview["deepseek_called"])
+
+        self.assertEqual(ledger["planned_provider_stage_count"], 2)
+        self.assertEqual(ledger["planned_model_stage_count"], 0)
+        self.assertEqual(ledger["external_execution_profile"], "light_provider")
+        self.assertTrue(ledger["external_execution_profile_provider_stage_allowed"])
+        self.assertFalse(ledger["external_execution_profile_model_stage_allowed"])
+        self.assertFalse(ledger["external_execution_profile_executor_implemented"])
+        self.assertFalse(ledger["external_calls_triggered"])
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+        self.assertFalse(task["github_called"])
+
+        status_after_bootstrap = self.client.get("/api/bootstrap/status").json()
+        latest_bootstrap = status_after_bootstrap["data"]["live_light_latest_bootstrap_task_status"]
+        self.assertEqual(latest_bootstrap["external_execution_profile"], "light_provider")
+        self.assertTrue(latest_bootstrap["external_execution_profile_provider_stage_allowed"])
+        self.assertFalse(latest_bootstrap["external_execution_profile_model_stage_allowed"])
+        self.assertFalse(latest_bootstrap["external_execution_profile_executor_implemented"])
+        self.assertEqual(latest_bootstrap["planned_provider_stage_count"], 2)
+        self.assertEqual(latest_bootstrap["planned_model_stage_count"], 0)
+        self.assertEqual(latest_bootstrap["actual_provider_execution_count"], 0)
+        self.assertEqual(latest_bootstrap["actual_model_call_count"], 0)
+        self.assertFalse(latest_bootstrap["external_calls_triggered"])
+
+    def test_bootstrap_live_startup_live_light_records_plan_and_rate_limits(self):
+        self._with_meta_store()
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_bootstrap_env(
+            COMMAND_CENTER_BOOTSTRAP_MODE="live_light",
+            COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE="light_provider_model",
             COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT="2",
             COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS="600",
         )
@@ -22116,8 +30660,17 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(task["payload_safe"]["provider_execution_implemented"])
         self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["stage_count"], 9)
         self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["model_ledger_preview_count"], 1)
+        self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["local_compute_handoff_row_count"], 3)
+        self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["local_compute_handoff_enabled_row_count"], 3)
+        self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["local_compute_handoff_executed_row_count"], 0)
+        self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["local_compute_handoff_lineage_required_field_count"], 16)
+        self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["local_compute_handoff_lineage_written_row_count"], 0)
         self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["planned_provider_stage_count"], 2)
         self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["planned_model_stage_count"], 1)
+        self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["external_execution_profile"], "light_provider_model")
+        self.assertTrue(task["payload_safe"]["bootstrap_plan_summary"]["external_execution_profile_provider_stage_allowed"])
+        self.assertTrue(task["payload_safe"]["bootstrap_plan_summary"]["external_execution_profile_model_stage_allowed"])
+        self.assertFalse(task["payload_safe"]["bootstrap_plan_summary"]["external_execution_profile_executor_implemented"])
         self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["actual_provider_execution_count"], 0)
         self.assertEqual(task["payload_safe"]["bootstrap_plan_summary"]["actual_model_call_count"], 0)
         self.assertFalse(task["payload_safe"]["bootstrap_plan_summary"]["external_calls_triggered"])
@@ -22125,11 +30678,171 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(stage_by_key["trade_cal_if_needed"]["status"], "planned_provider_pending_not_executed")
         self.assertEqual(stage_by_key["tushare_light_refresh"]["status"], "planned_provider_pending_not_executed")
         self.assertEqual(stage_by_key["deepseek_pro_explanation"]["status"], "planned_model_pending_not_executed")
+        self.assertTrue(stage_by_key["trade_cal_if_needed"]["profile_stage_allowed"])
+        self.assertTrue(stage_by_key["tushare_light_refresh"]["profile_stage_allowed"])
+        self.assertTrue(stage_by_key["deepseek_pro_explanation"]["profile_stage_allowed"])
+        self.assertEqual(stage_by_key["trade_cal_if_needed"]["external_execution_profile"], "light_provider_model")
+        self.assertEqual(stage_by_key["deepseek_pro_explanation"]["external_execution_profile"], "light_provider_model")
         self.assertEqual(stage_by_key["factor_light_runtime"]["status"], "planned_local_step_pending_not_executed")
         self.assertFalse(stage_by_key["trade_cal_if_needed"]["actual_external_calls_triggered"])
         self.assertFalse(stage_by_key["deepseek_pro_explanation"]["deepseek_called"])
+        self.assertEqual(
+            task["payload_safe"]["bootstrap_local_compute_handoff_schema_version"],
+            "command_center_live_bootstrap_local_compute_handoff.v1",
+        )
+        local_compute_handoff = task["payload_safe"]["bootstrap_local_compute_handoff_summary"]
+        self.assertEqual(local_compute_handoff["schema_version"], "command_center_live_bootstrap_local_compute_handoff.v1")
+        self.assertEqual(local_compute_handoff["status"], "local_compute_handoff_visible_execution_pending")
+        self.assertEqual(local_compute_handoff["mode"], "live_light")
+        self.assertEqual(local_compute_handoff["mode_gate"], "live_light")
+        self.assertTrue(local_compute_handoff["mode_gate_satisfied"])
+        self.assertTrue(local_compute_handoff["source_switch_satisfied"])
+        self.assertEqual(local_compute_handoff["inactive_reason"], "")
+        self.assertEqual(local_compute_handoff["handoff_row_count"], 3)
+        self.assertEqual(local_compute_handoff["enabled_handoff_row_count"], 3)
+        self.assertEqual(local_compute_handoff["executed_handoff_row_count"], 0)
+        self.assertEqual(local_compute_handoff["output_written_row_count"], 0)
+        self.assertEqual(
+            local_compute_handoff["required_handoff_keys"],
+            ["factor_light_runtime", "factor_quant_hub_cache_refresh", "next_session_cache_refresh"],
+        )
+        self.assertEqual(
+            local_compute_handoff["future_local_routes"],
+            ["POST /api/factor-quant/run-light", "POST /api/next-session/generate"],
+        )
+        self.assertEqual(
+            local_compute_handoff["future_task_types"],
+            ["build_next_session_projection", "run_factor_light"],
+        )
+        self.assertEqual(
+            local_compute_handoff["output_packet_keys"],
+            ["command_center_factor_quant_hub_packet", "command_center_next_session_projection_packet"],
+        )
+        self.assertEqual(
+            local_compute_handoff["input_packet_keys"],
+            ["command_center_factor_quant_hub_packet", "command_center_next_session_projection_packet"],
+        )
+        self.assertEqual(
+            local_compute_handoff["lineage_contract_schema_version"],
+            "command_center_live_light_cache_lineage_contract.v1",
+        )
+        self.assertEqual(local_compute_handoff["lineage_write_policy"], "post_task_worker_or_local_pipeline_only")
+        required_lineage_fields = {
+            "source_task_id",
+            "source_task_type",
+            "source_route",
+            "runtime_mode",
+            "scope_hash",
+            "provider_call_ledger_ids",
+            "model_ledger_ids",
+            "input_packet_keys",
+            "output_packet_key",
+            "cache_source",
+            "storage_backend",
+            "local_fetched_at",
+            "freshness_state",
+            "data_date",
+            "provider_gap",
+            "safe_error",
+        }
+        self.assertEqual(set(local_compute_handoff["required_output_lineage_fields"]), required_lineage_fields)
+        self.assertEqual(local_compute_handoff["lineage_required_field_count"], 16)
+        self.assertEqual(local_compute_handoff["lineage_written_row_count"], 0)
+        self.assertFalse(local_compute_handoff["cache_get_may_write_lineage"])
+        self.assertFalse(local_compute_handoff["react_render_may_write_lineage"])
+        self.assertFalse(local_compute_handoff["fastapi_startup_may_write_lineage"])
+        self.assertFalse(local_compute_handoff["lineage_is_execution_evidence"])
+        self.assertFalse(local_compute_handoff["lineage_is_production_evidence"])
+        self.assertTrue(local_compute_handoff["local_compute_from_existing_cache_allowed"])
+        self.assertFalse(local_compute_handoff["bootstrap_task_executes_local_compute_now"])
+        self.assertFalse(local_compute_handoff["bootstrap_task_writes_output_now"])
+        self.assertFalse(local_compute_handoff["cache_get_may_execute_local_compute"])
+        self.assertFalse(local_compute_handoff["react_render_may_execute_local_compute"])
+        self.assertFalse(local_compute_handoff["fastapi_startup_may_execute_local_compute"])
+        self.assertFalse(local_compute_handoff["search_typing_may_execute_local_compute"])
+        self.assertFalse(local_compute_handoff["local_compute_may_synthesize_provider_rows"])
+        self.assertFalse(local_compute_handoff["local_compute_may_synthesize_model_output"])
+        self.assertTrue(local_compute_handoff["output_lineage_required"])
+        self.assertTrue(local_compute_handoff["safe_error_required_when_missing_cache"])
+        self.assertTrue(local_compute_handoff["provider_gap_visible_when_provider_data_missing"])
+        self.assertFalse(local_compute_handoff["provider_execution_implemented"])
+        self.assertFalse(local_compute_handoff["model_execution_implemented"])
+        self.assertFalse(local_compute_handoff["handoff_is_provider_execution_evidence"])
+        self.assertFalse(local_compute_handoff["handoff_is_model_correctness_evidence"])
+        self.assertFalse(local_compute_handoff["handoff_is_production_evidence"])
+        self.assertFalse(local_compute_handoff["external_calls_triggered"])
+        self.assertFalse(local_compute_handoff["tushare_called"])
+        self.assertFalse(local_compute_handoff["deepseek_called"])
+        self.assertFalse(local_compute_handoff["github_called"])
+        self.assertTrue(local_compute_handoff["does_not_execute_trades"])
+        self.assertTrue(local_compute_handoff["does_not_modify_strategy_action"])
+        local_compute_rows = {
+            row["handoff_key"]: row for row in task["payload_safe"]["bootstrap_local_compute_handoff_rows"]
+        }
+        self.assertEqual(list(local_compute_rows), local_compute_handoff["required_handoff_keys"])
+        self.assertEqual(local_compute_rows["factor_light_runtime"]["future_local_route"], "POST /api/factor-quant/run-light")
+        self.assertEqual(local_compute_rows["factor_light_runtime"]["future_task_type"], "run_factor_light")
+        self.assertEqual(local_compute_rows["factor_light_runtime"]["input_packet_keys"], ["command_center_factor_quant_hub_packet"])
+        self.assertEqual(local_compute_rows["factor_quant_hub_cache_refresh"]["output_packet_key"], "command_center_factor_quant_hub_packet")
+        self.assertEqual(
+            local_compute_rows["factor_quant_hub_cache_refresh"]["input_packet_keys"],
+            ["command_center_factor_quant_hub_packet"],
+        )
+        self.assertEqual(local_compute_rows["next_session_cache_refresh"]["future_local_route"], "POST /api/next-session/generate")
+        self.assertEqual(local_compute_rows["next_session_cache_refresh"]["future_task_type"], "build_next_session_projection")
+        self.assertEqual(local_compute_rows["next_session_cache_refresh"]["output_packet_key"], "command_center_next_session_projection_packet")
+        self.assertEqual(
+            local_compute_rows["next_session_cache_refresh"]["input_packet_keys"],
+            ["command_center_factor_quant_hub_packet", "command_center_next_session_projection_packet"],
+        )
+        for row in local_compute_rows.values():
+            self.assertTrue(row["enabled_in_current_mode"])
+            self.assertEqual(row["mode_gate"], "live_light")
+            self.assertTrue(row["mode_gate_satisfied"])
+            self.assertTrue(row["source_switch_satisfied"])
+            self.assertEqual(row["inactive_reason"], "")
+            self.assertEqual(row["handoff_effective_status"], "local_compute_handoff_visible_execution_pending")
+            self.assertEqual(row["future_queue"], "local_compute")
+            self.assertTrue(row["local_compute_from_existing_cache_allowed"])
+            self.assertFalse(row["local_task_created_now"])
+            self.assertFalse(row["local_compute_executed_now"])
+            self.assertFalse(row["output_written_now"])
+            self.assertFalse(row["cache_get_may_execute"])
+            self.assertFalse(row["react_render_may_execute"])
+            self.assertFalse(row["fastapi_startup_may_execute"])
+            self.assertFalse(row["search_typing_may_execute"])
+            self.assertFalse(row["provider_execution_required"])
+            self.assertFalse(row["model_execution_required"])
+            self.assertFalse(row["provider_rows_synthesized"])
+            self.assertFalse(row["model_output_synthesized"])
+            self.assertTrue(row["output_lineage_required"])
+            self.assertEqual(row["lineage_contract_schema_version"], "command_center_live_light_cache_lineage_contract.v1")
+            self.assertEqual(row["lineage_write_policy"], "post_task_worker_or_local_pipeline_only")
+            self.assertEqual(set(row["required_output_lineage_fields"]), required_lineage_fields)
+            self.assertEqual(row["lineage_required_field_count"], 16)
+            self.assertFalse(row["lineage_written_now"])
+            self.assertFalse(row["cache_get_may_write_lineage"])
+            self.assertFalse(row["react_render_may_write_lineage"])
+            self.assertFalse(row["fastapi_startup_may_write_lineage"])
+            self.assertFalse(row["lineage_is_execution_evidence"])
+            self.assertFalse(row["lineage_is_production_evidence"])
+            self.assertTrue(row["safe_error_required_when_missing_cache"])
+            self.assertTrue(row["provider_gap_visible_when_provider_data_missing"])
+            self.assertFalse(row["row_is_provider_execution_evidence"])
+            self.assertFalse(row["row_is_model_correctness_evidence"])
+            self.assertFalse(row["row_is_production_evidence"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(local_compute_handoff, ensure_ascii=False))
+        self.assertNotIn("SHOULD_DROP", json.dumps(local_compute_rows, ensure_ascii=False))
         model_preview = task["payload_safe"]["bootstrap_model_ledger_preview_rows"][0]
         self.assertEqual(model_preview["status"], "planned_model_pending_not_executed")
+        self.assertEqual(model_preview["external_execution_profile"], "light_provider_model")
+        self.assertTrue(model_preview["profile_stage_allowed"])
         self.assertFalse(model_preview["model_call_implemented"])
         self.assertFalse(model_preview["model_called"])
         self.assertFalse(model_preview["deepseek_called"])
@@ -22138,8 +30851,30 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(task["call_ledger"][0]["bootstrap_task_implemented"])
         self.assertEqual(task["call_ledger"][0]["bootstrap_stage_count"], 9)
         self.assertEqual(task["call_ledger"][0]["model_ledger_preview_count"], 1)
+        self.assertEqual(task["call_ledger"][0]["local_compute_handoff_status"], "local_compute_handoff_visible_execution_pending")
+        self.assertEqual(task["call_ledger"][0]["local_compute_handoff_mode_gate"], "live_light")
+        self.assertTrue(task["call_ledger"][0]["local_compute_handoff_mode_gate_satisfied"])
+        self.assertTrue(task["call_ledger"][0]["local_compute_handoff_source_switch_satisfied"])
+        self.assertEqual(task["call_ledger"][0]["local_compute_handoff_inactive_reason"], "")
+        self.assertEqual(task["call_ledger"][0]["local_compute_handoff_row_count"], 3)
+        self.assertEqual(task["call_ledger"][0]["local_compute_handoff_enabled_row_count"], 3)
+        self.assertEqual(task["call_ledger"][0]["local_compute_handoff_executed_row_count"], 0)
+        self.assertEqual(task["call_ledger"][0]["local_compute_handoff_output_written_row_count"], 0)
+        self.assertFalse(task["call_ledger"][0]["local_compute_handoff_ledger_executes_local_compute"])
+        self.assertFalse(task["call_ledger"][0]["local_compute_handoff_ledger_writes_output"])
+        self.assertFalse(task["call_ledger"][0]["local_compute_handoff_ledger_is_execution_evidence"])
+        self.assertFalse(task["call_ledger"][0]["local_compute_handoff_ledger_is_production_evidence"])
+        self.assertEqual(
+            task["call_ledger"][0]["request_params_safe"]["local_compute_handoff_status"],
+            "local_compute_handoff_visible_execution_pending",
+        )
+        self.assertEqual(task["call_ledger"][0]["request_params_safe"]["local_compute_handoff_inactive_reason"], "")
         self.assertEqual(task["call_ledger"][0]["planned_provider_stage_count"], 2)
         self.assertEqual(task["call_ledger"][0]["planned_model_stage_count"], 1)
+        self.assertEqual(task["call_ledger"][0]["external_execution_profile"], "light_provider_model")
+        self.assertTrue(task["call_ledger"][0]["external_execution_profile_provider_stage_allowed"])
+        self.assertTrue(task["call_ledger"][0]["external_execution_profile_model_stage_allowed"])
+        self.assertFalse(task["call_ledger"][0]["external_execution_profile_executor_implemented"])
         self.assertFalse(task["call_ledger"][0]["provider_execution_implemented"])
         self.assertFalse(task["call_ledger"][0]["external_calls_triggered"])
         self.assertFalse(task["call_ledger"][0]["tushare_called"])
@@ -22163,14 +30898,194 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(repeated_task["call_ledger"][-1]["reused_task_id"], task["task_id"])
         self.assertEqual(repeated_task["call_ledger"][-1]["bootstrap_stage_count"], 9)
         self.assertEqual(repeated_task["call_ledger"][-1]["model_ledger_preview_count"], 1)
+        self.assertEqual(
+            repeated_task["call_ledger"][-1]["local_compute_handoff_status"],
+            "local_compute_handoff_visible_execution_pending",
+        )
+        self.assertEqual(repeated_task["call_ledger"][-1]["local_compute_handoff_mode_gate"], "live_light")
+        self.assertTrue(repeated_task["call_ledger"][-1]["local_compute_handoff_mode_gate_satisfied"])
+        self.assertTrue(repeated_task["call_ledger"][-1]["local_compute_handoff_source_switch_satisfied"])
+        self.assertEqual(repeated_task["call_ledger"][-1]["local_compute_handoff_inactive_reason"], "")
+        self.assertEqual(repeated_task["call_ledger"][-1]["local_compute_handoff_row_count"], 3)
+        self.assertEqual(repeated_task["call_ledger"][-1]["local_compute_handoff_enabled_row_count"], 3)
+        self.assertEqual(repeated_task["call_ledger"][-1]["local_compute_handoff_executed_row_count"], 0)
+        self.assertEqual(repeated_task["call_ledger"][-1]["local_compute_handoff_output_written_row_count"], 0)
+        self.assertFalse(repeated_task["call_ledger"][-1]["local_compute_handoff_ledger_executes_local_compute"])
+        self.assertFalse(repeated_task["call_ledger"][-1]["local_compute_handoff_ledger_writes_output"])
+        self.assertFalse(repeated_task["call_ledger"][-1]["local_compute_handoff_ledger_is_execution_evidence"])
+        self.assertFalse(repeated_task["call_ledger"][-1]["local_compute_handoff_ledger_is_production_evidence"])
         self.assertEqual(repeated_task["call_ledger"][-1]["planned_provider_stage_count"], 2)
         self.assertEqual(repeated_task["call_ledger"][-1]["planned_model_stage_count"], 1)
+        self.assertEqual(repeated_task["call_ledger"][-1]["external_execution_profile"], "light_provider_model")
+        self.assertTrue(repeated_task["call_ledger"][-1]["external_execution_profile_provider_stage_allowed"])
+        self.assertTrue(repeated_task["call_ledger"][-1]["external_execution_profile_model_stage_allowed"])
         self.assertFalse(repeated_task["external_calls_triggered"])
         self.assertFalse(repeated_task["tushare_called"])
         self.assertFalse(repeated_task["deepseek_called"])
         self.assertFalse(repeated_task["github_called"])
         self.assertTrue(repeated_task["does_not_execute_trades"])
         self.assertTrue(repeated_task["does_not_modify_strategy_action"])
+
+        status_after_bootstrap = self.client.get("/api/bootstrap/status").json()
+        self.assertTrue(status_after_bootstrap["ok"])
+        latest_bootstrap = status_after_bootstrap["data"]["live_light_latest_bootstrap_task_status"]
+        latest_live_light = status_after_bootstrap["data"]["live_light"]
+        latest_policy = status_after_bootstrap["data"]["policy"]
+        self.assertEqual(
+            latest_bootstrap["schema_version"],
+            "command_center_live_light_latest_bootstrap_task_status.v1",
+        )
+        self.assertEqual(latest_bootstrap["status"], "latest_bootstrap_task_visible_rate_limited_reuse")
+        self.assertEqual(latest_bootstrap["lookup_source"], "task_service.list_task_statuses")
+        self.assertFalse(latest_bootstrap["lookup_creates_task"])
+        self.assertEqual(latest_bootstrap["route"], "POST /api/bootstrap/live-startup")
+        self.assertTrue(latest_bootstrap["route_implemented"])
+        self.assertTrue(latest_bootstrap["task_found"])
+        self.assertEqual(latest_bootstrap["task_id"], task["task_id"])
+        self.assertEqual(latest_bootstrap["task_status"], "success")
+        self.assertEqual(latest_bootstrap["current_step"], "live_bootstrap_skipped_due_to_rate_limit")
+        self.assertEqual(latest_bootstrap["output_packet_key"], "command_center_live_bootstrap_packet")
+        self.assertIn(latest_bootstrap["storage_source"], {"memory_and_sqlite", "sqlite_meta"})
+        self.assertTrue(latest_bootstrap["durable_task_visible"])
+        self.assertFalse(latest_bootstrap["memory_only_task_is_durable_evidence"])
+        self.assertEqual(latest_bootstrap["bootstrap_mode"], "live_light")
+        self.assertEqual(latest_bootstrap["source"], "unit_test")
+        self.assertEqual(latest_bootstrap["symbol_count"], 2)
+        self.assertEqual(latest_bootstrap["symbol_limit"], 2)
+        self.assertTrue(latest_bootstrap["truncated_by_symbol_limit"])
+        self.assertTrue(latest_bootstrap["sources_enabled"])
+        self.assertTrue(latest_bootstrap["tushare_on_open"])
+        self.assertTrue(latest_bootstrap["deepseek_on_open"])
+        self.assertEqual(latest_bootstrap["external_execution_profile"], "light_provider_model")
+        self.assertTrue(latest_bootstrap["external_execution_profile_provider_stage_allowed"])
+        self.assertTrue(latest_bootstrap["external_execution_profile_model_stage_allowed"])
+        self.assertFalse(latest_bootstrap["external_execution_profile_executor_implemented"])
+        self.assertEqual(latest_bootstrap["bootstrap_stage_count"], 9)
+        self.assertEqual(latest_bootstrap["model_ledger_preview_count"], 1)
+        self.assertTrue(latest_bootstrap["local_compute_handoff_visible"])
+        self.assertEqual(
+            latest_bootstrap["local_compute_handoff_schema_version"],
+            "command_center_live_bootstrap_local_compute_handoff.v1",
+        )
+        self.assertEqual(
+            latest_bootstrap["local_compute_handoff_status"],
+            "local_compute_handoff_visible_execution_pending",
+        )
+        self.assertEqual(latest_bootstrap["local_compute_handoff_mode_gate"], "live_light")
+        self.assertTrue(latest_bootstrap["local_compute_handoff_mode_gate_satisfied"])
+        self.assertTrue(latest_bootstrap["local_compute_handoff_source_switch_satisfied"])
+        self.assertEqual(latest_bootstrap["local_compute_handoff_inactive_reason"], "")
+        self.assertEqual(latest_bootstrap["local_compute_handoff_row_count"], 3)
+        self.assertEqual(latest_bootstrap["local_compute_handoff_enabled_row_count"], 3)
+        self.assertEqual(latest_bootstrap["local_compute_handoff_executed_row_count"], 0)
+        self.assertEqual(latest_bootstrap["local_compute_handoff_output_written_row_count"], 0)
+        self.assertEqual(
+            latest_bootstrap["local_compute_handoff_future_local_routes"],
+            ["POST /api/factor-quant/run-light", "POST /api/next-session/generate"],
+        )
+        self.assertEqual(
+            latest_bootstrap["local_compute_handoff_future_task_types"],
+            ["build_next_session_projection", "run_factor_light"],
+        )
+        self.assertEqual(
+            latest_bootstrap["local_compute_handoff_output_packet_keys"],
+            ["command_center_factor_quant_hub_packet", "command_center_next_session_projection_packet"],
+        )
+        self.assertEqual(
+            latest_bootstrap["local_compute_handoff_input_packet_keys"],
+            ["command_center_factor_quant_hub_packet", "command_center_next_session_projection_packet"],
+        )
+        self.assertEqual(
+            latest_bootstrap["local_compute_handoff_lineage_contract_schema_version"],
+            "command_center_live_light_cache_lineage_contract.v1",
+        )
+        self.assertEqual(
+            latest_bootstrap["local_compute_handoff_lineage_write_policy"],
+            "post_task_worker_or_local_pipeline_only",
+        )
+        self.assertEqual(latest_bootstrap["local_compute_handoff_lineage_required_field_count"], 16)
+        self.assertEqual(latest_bootstrap["local_compute_handoff_lineage_written_row_count"], 0)
+        self.assertFalse(latest_bootstrap["local_compute_handoff_cache_get_may_write_lineage"])
+        self.assertFalse(latest_bootstrap["local_compute_handoff_react_render_may_write_lineage"])
+        self.assertFalse(latest_bootstrap["local_compute_handoff_fastapi_startup_may_write_lineage"])
+        self.assertFalse(latest_bootstrap["local_compute_handoff_lineage_is_execution_evidence"])
+        self.assertFalse(latest_bootstrap["local_compute_handoff_lineage_is_production_evidence"])
+        self.assertFalse(latest_bootstrap["local_compute_handoff_replay_executes_local_compute"])
+        self.assertFalse(latest_bootstrap["local_compute_handoff_replay_writes_output"])
+        self.assertFalse(latest_bootstrap["local_compute_handoff_replay_is_execution_evidence"])
+        self.assertFalse(latest_bootstrap["local_compute_handoff_replay_is_production_evidence"])
+        self.assertEqual(latest_bootstrap["planned_provider_stage_count"], 2)
+        self.assertEqual(latest_bootstrap["planned_model_stage_count"], 1)
+        self.assertEqual(latest_bootstrap["actual_provider_execution_count"], 0)
+        self.assertEqual(latest_bootstrap["actual_model_call_count"], 0)
+        self.assertTrue(latest_bootstrap["rate_limit_reused_existing_task"])
+        self.assertEqual(latest_bootstrap["call_ledger_count"], 2)
+        self.assertFalse(latest_bootstrap["task_success_is_provider_model_evidence"])
+        self.assertFalse(latest_bootstrap["task_success_is_production_evidence"])
+        self.assertFalse(latest_bootstrap["provider_execution_implemented"])
+        self.assertFalse(latest_bootstrap["model_execution_implemented"])
+        self.assertFalse(latest_bootstrap["provider_model_execution_implemented"])
+        self.assertFalse(latest_bootstrap["production_live_light_complete"])
+        self.assertFalse(latest_bootstrap["is_production_evidence"])
+        self.assertFalse(latest_bootstrap["external_calls_triggered"])
+        self.assertFalse(latest_bootstrap["tushare_called"])
+        self.assertFalse(latest_bootstrap["deepseek_called"])
+        self.assertFalse(latest_bootstrap["github_called"])
+        self.assertFalse(latest_bootstrap["credential_values_exposed"])
+        self.assertFalse(latest_bootstrap["env_key_names_included"])
+        self.assertTrue(latest_bootstrap["does_not_execute_trades"])
+        self.assertTrue(latest_bootstrap["does_not_modify_strategy_action"])
+        self.assertTrue(latest_live_light["latest_bootstrap_task_status_visible"])
+        self.assertTrue(latest_live_light["latest_bootstrap_task_found"])
+        self.assertEqual(
+            latest_live_light["latest_bootstrap_task_status"],
+            "latest_bootstrap_task_visible_rate_limited_reuse",
+        )
+        self.assertEqual(latest_live_light["latest_bootstrap_task_id"], task["task_id"])
+        self.assertEqual(latest_live_light["latest_bootstrap_task_current_step"], "live_bootstrap_skipped_due_to_rate_limit")
+        self.assertTrue(latest_live_light["latest_bootstrap_task_durable_visible"])
+        self.assertFalse(latest_live_light["latest_bootstrap_task_lookup_creates_task"])
+        self.assertFalse(latest_live_light["latest_bootstrap_task_success_is_provider_model_evidence"])
+        self.assertFalse(latest_live_light["latest_bootstrap_task_is_production_evidence"])
+        self.assertTrue(latest_live_light["latest_bootstrap_local_compute_handoff_visible"])
+        self.assertEqual(
+            latest_live_light["latest_bootstrap_local_compute_handoff_status"],
+            "local_compute_handoff_visible_execution_pending",
+        )
+        self.assertEqual(latest_live_light["latest_bootstrap_local_compute_handoff_mode_gate"], "live_light")
+        self.assertTrue(latest_live_light["latest_bootstrap_local_compute_handoff_mode_gate_satisfied"])
+        self.assertTrue(latest_live_light["latest_bootstrap_local_compute_handoff_source_switch_satisfied"])
+        self.assertEqual(latest_live_light["latest_bootstrap_local_compute_handoff_inactive_reason"], "")
+        self.assertEqual(latest_live_light["latest_bootstrap_local_compute_handoff_row_count"], 3)
+        self.assertEqual(latest_live_light["latest_bootstrap_local_compute_handoff_enabled_row_count"], 3)
+        self.assertEqual(latest_live_light["latest_bootstrap_local_compute_handoff_executed_row_count"], 0)
+        self.assertEqual(latest_live_light["latest_bootstrap_local_compute_handoff_output_written_row_count"], 0)
+        self.assertEqual(latest_live_light["latest_bootstrap_local_compute_handoff_lineage_required_field_count"], 16)
+        self.assertEqual(latest_live_light["latest_bootstrap_local_compute_handoff_lineage_written_row_count"], 0)
+        self.assertEqual(
+            latest_live_light["latest_bootstrap_local_compute_handoff_lineage_write_policy"],
+            "post_task_worker_or_local_pipeline_only",
+        )
+        self.assertFalse(latest_live_light["latest_bootstrap_local_compute_handoff_cache_get_may_write_lineage"])
+        self.assertFalse(latest_live_light["latest_bootstrap_local_compute_handoff_react_render_may_write_lineage"])
+        self.assertFalse(latest_live_light["latest_bootstrap_local_compute_handoff_fastapi_startup_may_write_lineage"])
+        self.assertFalse(latest_live_light["latest_bootstrap_local_compute_handoff_lineage_is_execution_evidence"])
+        self.assertFalse(latest_live_light["latest_bootstrap_local_compute_handoff_lineage_is_production_evidence"])
+        self.assertFalse(latest_live_light["latest_bootstrap_local_compute_handoff_executes_compute"])
+        self.assertFalse(latest_live_light["latest_bootstrap_local_compute_handoff_writes_output"])
+        self.assertFalse(latest_live_light["latest_bootstrap_local_compute_handoff_is_execution_evidence"])
+        self.assertFalse(latest_live_light["latest_bootstrap_local_compute_handoff_is_production_evidence"])
+        self.assertTrue(latest_policy["live_light_latest_bootstrap_task_status_visible"])
+        self.assertFalse(latest_policy["live_light_latest_bootstrap_task_lookup_creates_task"])
+        self.assertFalse(latest_policy["live_light_latest_bootstrap_task_success_is_provider_model_evidence"])
+        self.assertFalse(latest_policy["live_light_latest_bootstrap_task_is_production_evidence"])
+        self.assertTrue(latest_policy["live_light_latest_bootstrap_local_compute_handoff_visible"])
+        self.assertFalse(latest_policy["live_light_latest_bootstrap_local_compute_handoff_lookup_creates_task"])
+        self.assertFalse(latest_policy["live_light_latest_bootstrap_local_compute_handoff_executes_compute"])
+        self.assertFalse(latest_policy["live_light_latest_bootstrap_local_compute_handoff_writes_output"])
+        self.assertFalse(latest_policy["live_light_latest_bootstrap_local_compute_handoff_is_execution_evidence"])
+        self.assertFalse(latest_policy["live_light_latest_bootstrap_local_compute_handoff_is_production_evidence"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(status_after_bootstrap, ensure_ascii=False))
 
     def test_bootstrap_provider_model_acceptance_dry_run_records_preflight_without_execution(self):
         self._with_meta_store()
@@ -22345,6 +31260,330 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("token", payload)
         self.assertNotIn("DROP_TS", json.dumps(task, ensure_ascii=False))
         self.assertNotIn("DROP_DS", json.dumps(task, ensure_ascii=False))
+
+        status_after_dry_run = self.client.get("/api/bootstrap/status").json()
+        self.assertTrue(status_after_dry_run["ok"])
+        latest_dry_run = status_after_dry_run["data"]["live_light_latest_acceptance_dry_run_status"]
+        latest_dry_live_light = status_after_dry_run["data"]["live_light"]
+        latest_dry_policy = status_after_dry_run["data"]["policy"]
+        self.assertEqual(
+            latest_dry_run["schema_version"],
+            "command_center_live_light_latest_acceptance_dry_run_status.v1",
+        )
+        self.assertEqual(latest_dry_run["status"], "latest_acceptance_dry_run_receipt_visible_ready")
+        self.assertEqual(latest_dry_run["lookup_source"], "task_service.list_task_statuses")
+        self.assertFalse(latest_dry_run["lookup_creates_task"])
+        self.assertEqual(
+            latest_dry_run["route"],
+            "POST /api/bootstrap/provider-model-acceptance-dry-run",
+        )
+        self.assertTrue(latest_dry_run["route_implemented"])
+        self.assertTrue(latest_dry_run["receipt_found"])
+        self.assertEqual(latest_dry_run["task_id"], task["task_id"])
+        self.assertEqual(latest_dry_run["task_status"], "success")
+        self.assertEqual(
+            latest_dry_run["current_step"],
+            "provider_model_acceptance_dry_run_recorded_user_approval_no_external_call",
+        )
+        self.assertEqual(
+            latest_dry_run["output_packet_key"],
+            "command_center_live_bootstrap_provider_model_acceptance_dry_run_packet",
+        )
+        self.assertIn(latest_dry_run["storage_source"], {"memory_and_sqlite", "sqlite_meta"})
+        self.assertTrue(latest_dry_run["durable_receipt_visible"])
+        self.assertFalse(latest_dry_run["memory_only_receipt_is_durable_evidence"])
+        self.assertEqual(latest_dry_run["receipt_status"], "acceptance_dry_run_ready_execution_pending")
+        self.assertEqual(latest_dry_run["acceptance_scope_hash_short"], scope_ticket["scope_hash_short"])
+        self.assertEqual(latest_dry_run["acceptance_scope_hash_algorithm"], "sha256")
+        self.assertTrue(latest_dry_run["user_approved"])
+        self.assertEqual(latest_dry_run["selected_apis"], ["trade_cal", "daily", "moneyflow"])
+        self.assertEqual(latest_dry_run["ignored_apis"], ["fina_indicator"])
+        self.assertTrue(latest_dry_run["include_tushare"])
+        self.assertTrue(latest_dry_run["include_deepseek"])
+        self.assertEqual(
+            latest_dry_run["credential_presence_status"],
+            "all_required_env_keys_present_no_values_read",
+        )
+        self.assertTrue(latest_dry_run["credential_preflight_ready"])
+        self.assertEqual(latest_dry_run["credential_required_provider_count"], 2)
+        self.assertEqual(latest_dry_run["credential_present_provider_count"], 2)
+        self.assertEqual(latest_dry_run["credential_missing_provider_count"], 0)
+        self.assertTrue(latest_dry_run["dry_run_ready_for_execution_request"])
+        self.assertTrue(latest_dry_run["ready_for_user_approved_real_acceptance"])
+        self.assertEqual(latest_dry_run["selected_provider_phase_count"], 2)
+        self.assertEqual(latest_dry_run["selected_model_phase_count"], 1)
+        self.assertEqual(
+            latest_dry_run["real_acceptance_preflight_status"],
+            "real_acceptance_preflight_blocked_execution_not_implemented",
+        )
+        self.assertFalse(latest_dry_run["real_acceptance_preflight_ready_to_execute"])
+        self.assertFalse(latest_dry_run["provider_model_task_created"])
+        self.assertFalse(latest_dry_run["provider_model_task_dispatched"])
+        self.assertFalse(latest_dry_run["provider_execution_implemented"])
+        self.assertFalse(latest_dry_run["model_execution_implemented"])
+        self.assertFalse(latest_dry_run["provider_model_execution_implemented"])
+        self.assertFalse(latest_dry_run["production_live_light_complete"])
+        self.assertFalse(latest_dry_run["is_production_evidence"])
+        self.assertFalse(latest_dry_run["external_calls_triggered"])
+        self.assertFalse(latest_dry_run["tushare_called"])
+        self.assertFalse(latest_dry_run["deepseek_called"])
+        self.assertFalse(latest_dry_run["github_called"])
+        self.assertFalse(latest_dry_run["credential_values_exposed"])
+        self.assertFalse(latest_dry_run["env_key_names_included"])
+        self.assertTrue(latest_dry_run["does_not_execute_trades"])
+        self.assertTrue(latest_dry_run["does_not_modify_strategy_action"])
+        self.assertTrue(latest_dry_live_light["latest_acceptance_dry_run_found"])
+        self.assertEqual(
+            latest_dry_live_light["latest_acceptance_dry_run_status"],
+            "latest_acceptance_dry_run_receipt_visible_ready",
+        )
+        self.assertEqual(latest_dry_live_light["latest_acceptance_dry_run_task_id"], task["task_id"])
+        self.assertTrue(latest_dry_live_light["latest_acceptance_dry_run_ready_for_execution_request"])
+        self.assertTrue(latest_dry_live_light["latest_acceptance_dry_run_durable_receipt_visible"])
+        self.assertFalse(latest_dry_live_light["latest_acceptance_dry_run_lookup_creates_task"])
+        self.assertFalse(latest_dry_live_light["latest_acceptance_dry_run_is_production_evidence"])
+        self.assertTrue(latest_dry_policy["live_light_latest_acceptance_dry_run_status_visible"])
+        self.assertFalse(latest_dry_policy["live_light_latest_acceptance_dry_run_lookup_creates_task"])
+        self.assertFalse(latest_dry_policy["live_light_latest_acceptance_dry_run_is_production_evidence"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(status_after_dry_run, ensure_ascii=False))
+        self.assertNotIn("DROP_TS", json.dumps(status_after_dry_run, ensure_ascii=False))
+        self.assertNotIn("DROP_DS", json.dumps(status_after_dry_run, ensure_ascii=False))
+
+        execution_response = self.client.post(
+            "/api/bootstrap/provider-model-execution-request",
+            json={
+                "source": "unit_test_execution_request",
+                "confirmed_by_user": True,
+                "acceptance_scope_hash": scope_ticket["scope_hash"],
+                "selected_apis": ["trade_cal", "daily", "moneyflow"],
+                "include_tushare": True,
+                "include_deepseek": True,
+                "api_key": "SHOULD_DROP",
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+        self.assertTrue(execution_response["ok"])
+        execution_request = execution_response["data"]["task"]
+        self.assertEqual(execution_response["data"]["task_id"], execution_request["task_id"])
+        self.assertEqual(
+            execution_response["call_ledger"][0]["api"],
+            "local_live_light_provider_model_execution_request",
+        )
+        self.assertEqual(
+            execution_request["task_type"],
+            "command_center_live_bootstrap_provider_model_execution_request",
+        )
+        self.assertEqual(execution_request["status"], "success")
+        self.assertEqual(
+            execution_request["current_step"],
+            "provider_model_execution_request_ready_manual_provider_model_task_pending",
+        )
+        self.assertEqual(
+            execution_request["output_packet_key"],
+            "command_center_live_bootstrap_provider_model_execution_request_packet",
+        )
+        request_payload = execution_request["payload_safe"]
+        self.assertEqual(
+            request_payload["schema_version"],
+            "command_center_live_bootstrap_provider_model_execution_request.v1",
+        )
+        self.assertEqual(request_payload["bootstrap_mode"], "live_light")
+        self.assertEqual(
+            request_payload["route"],
+            "POST /api/bootstrap/provider-model-execution-request",
+        )
+        self.assertTrue(request_payload["execution_request_only"])
+        self.assertFalse(request_payload["provider_model_task_created"])
+        self.assertFalse(request_payload["provider_model_task_dispatched"])
+        receipt = request_payload["execution_request_receipt"]
+        self.assertEqual(
+            receipt["schema_version"],
+            "command_center_live_bootstrap_provider_model_execution_request.v1",
+        )
+        self.assertEqual(
+            receipt["status"],
+            "execution_request_ready_manual_provider_model_task_pending",
+        )
+        self.assertEqual(receipt["latest_acceptance_dry_run_task_id"], task["task_id"])
+        self.assertEqual(receipt["latest_acceptance_dry_run_status"], "acceptance_dry_run_ready_execution_pending")
+        self.assertIn(receipt["latest_acceptance_dry_run_storage_source"], {"memory_and_sqlite", "sqlite_meta"})
+        self.assertTrue(receipt["durable_receipt_visible"])
+        self.assertFalse(receipt["memory_only_dry_run_receipt_is_durable_evidence"])
+        self.assertEqual(receipt["acceptance_scope_hash"], scope_ticket["scope_hash"])
+        self.assertEqual(receipt["acceptance_scope_hash_short"], scope_ticket["scope_hash_short"])
+        self.assertEqual(receipt["acceptance_scope_hash_algorithm"], "sha256")
+        self.assertTrue(receipt["requested_acceptance_scope_hash_matches_latest"])
+        self.assertTrue(receipt["user_confirmed"])
+        self.assertEqual(receipt["selected_apis"], ["trade_cal", "daily", "moneyflow"])
+        self.assertTrue(receipt["include_tushare"])
+        self.assertTrue(receipt["include_deepseek"])
+        self.assertEqual(receipt["credential_presence_status"], "all_required_env_keys_present_no_values_read")
+        self.assertTrue(receipt["credential_preflight_ready"])
+        self.assertFalse(receipt["credential_values_read"])
+        self.assertFalse(receipt["credential_values_exposed"])
+        self.assertFalse(receipt["env_key_names_included"])
+        self.assertTrue(receipt["call_ledger_required"])
+        self.assertTrue(receipt["model_ledger_required_for_deepseek"])
+        self.assertTrue(receipt["redaction_review_required_before_promotion"])
+        self.assertTrue(receipt["local_execution_request_ready"])
+        self.assertTrue(receipt["ready_for_manual_provider_model_task_submission"])
+        self.assertFalse(receipt["provider_model_task_created"])
+        self.assertFalse(receipt["provider_model_task_dispatched"])
+        self.assertFalse(receipt["provider_execution_implemented"])
+        self.assertFalse(receipt["model_execution_implemented"])
+        self.assertFalse(receipt["provider_model_execution_implemented"])
+        self.assertTrue(receipt["execution_request_route_implemented"])
+        self.assertFalse(receipt["production_live_light_complete"])
+        self.assertEqual(receipt["local_blocker_count"], 0)
+        self.assertGreater(receipt["production_blocker_count"], 0)
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertFalse(receipt["tushare_called"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(receipt["does_not_modify_strategy_action"])
+        request_rows = {row["criterion"]: row for row in request_payload["execution_request_rows"]}
+        self.assertEqual(
+            request_rows["latest_acceptance_dry_run_receipt_visible"]["status"],
+            "passed_durable_dry_run_receipt_visible",
+        )
+        self.assertEqual(request_rows["acceptance_dry_run_ready"]["status"], "passed_dry_run_ready")
+        self.assertEqual(request_rows["acceptance_scope_hash_bound"]["status"], "passed_scope_hash_bound")
+        self.assertEqual(
+            request_rows["explicit_user_confirmation_recorded"]["status"],
+            "passed_user_confirmed",
+        )
+        self.assertEqual(
+            request_rows["credential_preflight_ready"]["status"],
+            "passed_credential_preflight_ready",
+        )
+        self.assertEqual(request_rows["provider_model_task_not_created"]["status"], "passed_request_only")
+        self.assertTrue(request_rows["provider_model_task_not_created"]["production_blocker"])
+        self.assertEqual(
+            execution_request["call_ledger"][0]["api"],
+            "local_live_light_provider_model_execution_request",
+        )
+        self.assertEqual(
+            execution_request["call_ledger"][0]["call_status"],
+            "local_execution_request_ready_no_external_call",
+        )
+        self.assertTrue(
+            execution_request["call_ledger"][0]["request_params_safe"][
+                "requested_acceptance_scope_hash_matches_latest"
+            ]
+        )
+        self.assertTrue(execution_request["call_ledger"][0]["request_params_safe"]["local_execution_request_ready"])
+        self.assertFalse(execution_request["call_ledger"][0]["request_params_safe"]["provider_model_task_created"])
+        self.assertFalse(execution_request["external_calls_triggered"])
+        self.assertFalse(execution_request["tushare_called"])
+        self.assertFalse(execution_request["deepseek_called"])
+        self.assertFalse(execution_request["github_called"])
+        self.assertTrue(execution_request["does_not_execute_trades"])
+        self.assertTrue(execution_request["does_not_modify_strategy_action"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(execution_request, ensure_ascii=False))
+        self.assertNotIn("DROP_TS", json.dumps(execution_request, ensure_ascii=False))
+        self.assertNotIn("DROP_DS", json.dumps(execution_request, ensure_ascii=False))
+
+        status_after_request = self.client.get("/api/bootstrap/status").json()
+        self.assertTrue(status_after_request["ok"])
+        latest_status = status_after_request["data"]["live_light_latest_execution_request_status"]
+        latest_live_light = status_after_request["data"]["live_light"]
+        latest_policy = status_after_request["data"]["policy"]
+        self.assertEqual(
+            latest_status["schema_version"],
+            "command_center_live_light_latest_execution_request_status.v1",
+        )
+        self.assertEqual(latest_status["status"], "latest_execution_request_receipt_visible_ready")
+        self.assertEqual(latest_status["lookup_source"], "task_service.list_task_statuses")
+        self.assertFalse(latest_status["lookup_creates_task"])
+        self.assertTrue(latest_status["route_implemented"])
+        self.assertTrue(latest_status["receipt_found"])
+        self.assertEqual(latest_status["task_id"], execution_request["task_id"])
+        self.assertEqual(latest_status["task_status"], "success")
+        self.assertEqual(
+            latest_status["current_step"],
+            "provider_model_execution_request_ready_manual_provider_model_task_pending",
+        )
+        self.assertEqual(
+            latest_status["output_packet_key"],
+            "command_center_live_bootstrap_provider_model_execution_request_packet",
+        )
+        self.assertIn(latest_status["storage_source"], {"memory_and_sqlite", "sqlite_meta"})
+        self.assertTrue(latest_status["durable_receipt_visible"])
+        self.assertFalse(latest_status["memory_only_receipt_is_durable_evidence"])
+        self.assertTrue(latest_status["local_execution_request_ready"])
+        self.assertTrue(latest_status["ready_for_manual_provider_model_task_submission"])
+        self.assertEqual(
+            latest_status["receipt_status"],
+            "execution_request_ready_manual_provider_model_task_pending",
+        )
+        self.assertEqual(latest_status["latest_acceptance_dry_run_task_id"], task["task_id"])
+        self.assertEqual(latest_status["acceptance_scope_hash_short"], scope_ticket["scope_hash_short"])
+        self.assertEqual(latest_status["requested_acceptance_scope_hash_short"], scope_ticket["scope_hash_short"])
+        self.assertTrue(latest_status["scope_hash_matches_latest"])
+        self.assertEqual(latest_status["credential_presence_status"], "all_required_env_keys_present_no_values_read")
+        self.assertTrue(latest_status["credential_preflight_ready"])
+        self.assertEqual(latest_status["local_blocker_count"], 0)
+        self.assertGreater(latest_status["production_blocker_count"], 0)
+        self.assertFalse(latest_status["provider_model_task_created"])
+        self.assertFalse(latest_status["provider_model_task_dispatched"])
+        self.assertFalse(latest_status["provider_execution_implemented"])
+        self.assertFalse(latest_status["model_execution_implemented"])
+        self.assertFalse(latest_status["external_calls_triggered"])
+        self.assertFalse(latest_status["tushare_called"])
+        self.assertFalse(latest_status["deepseek_called"])
+        self.assertFalse(latest_status["github_called"])
+        self.assertFalse(latest_status["credential_values_exposed"])
+        self.assertFalse(latest_status["env_key_names_included"])
+        self.assertTrue(latest_status["does_not_execute_trades"])
+        self.assertTrue(latest_status["does_not_modify_strategy_action"])
+        self.assertTrue(latest_live_light["latest_execution_request_found"])
+        self.assertEqual(
+            latest_live_light["latest_execution_request_status"],
+            "latest_execution_request_receipt_visible_ready",
+        )
+        self.assertEqual(latest_live_light["latest_execution_request_task_id"], execution_request["task_id"])
+        self.assertTrue(latest_live_light["latest_execution_request_ready"])
+        self.assertTrue(latest_live_light["latest_execution_request_durable_receipt_visible"])
+        self.assertFalse(latest_live_light["latest_execution_request_lookup_creates_task"])
+        self.assertFalse(latest_live_light["latest_execution_request_is_production_evidence"])
+        self.assertTrue(latest_policy["live_light_latest_execution_request_status_visible"])
+        self.assertFalse(latest_policy["live_light_latest_execution_request_lookup_creates_task"])
+        self.assertFalse(latest_policy["live_light_latest_execution_request_is_production_evidence"])
+        self.assertNotIn("DROP_TS", json.dumps(status_after_request, ensure_ascii=False))
+        self.assertNotIn("DROP_DS", json.dumps(status_after_request, ensure_ascii=False))
+        self.assertNotIn("SHOULD_DROP", json.dumps(status_after_request, ensure_ascii=False))
+
+        blocked_response = self.client.post(
+            "/api/bootstrap/provider-model-execution-request",
+            json={
+                "source": "unit_test_execution_request_scope_mismatch",
+                "confirmed_by_user": True,
+                "acceptance_scope_hash": "0" * 64,
+                "selected_apis": ["trade_cal"],
+                "include_tushare": True,
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+        self.assertTrue(blocked_response["ok"])
+        blocked_request = blocked_response["data"]["task"]
+        blocked_receipt = blocked_request["payload_safe"]["execution_request_receipt"]
+        blocked_rows = {row["criterion"]: row for row in blocked_request["payload_safe"]["execution_request_rows"]}
+        self.assertEqual(blocked_receipt["status"], "execution_request_blocked_scope_hash_mismatch")
+        self.assertFalse(blocked_receipt["local_execution_request_ready"])
+        self.assertFalse(blocked_receipt["requested_acceptance_scope_hash_matches_latest"])
+        self.assertIn("acceptance_scope_hash_bound", blocked_receipt["blocking_criteria"])
+        self.assertEqual(
+            blocked_rows["acceptance_scope_hash_bound"]["status"],
+            "blocked_scope_hash_mismatch_or_missing",
+        )
+        self.assertTrue(blocked_rows["acceptance_scope_hash_bound"]["local_blocker"])
+        self.assertFalse(blocked_receipt["provider_model_task_created"])
+        self.assertFalse(blocked_request["external_calls_triggered"])
+        self.assertFalse(blocked_request["tushare_called"])
+        self.assertFalse(blocked_request["deepseek_called"])
+        self.assertFalse(blocked_request["github_called"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(blocked_request, ensure_ascii=False))
 
     def test_bootstrap_provider_model_acceptance_dry_run_blocks_missing_credentials(self):
         self._with_meta_store()
@@ -22549,12 +31788,198 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(
             {row["mode"] for row in bootstrap["data"]["mode_rows"]},
-            {"cache_only", "manual", "live_light", "live_full"},
+            set(app_config.COMMAND_CENTER_RUNTIME_MODES),
         )
-        self.assertEqual({row["config"] for row in bootstrap["data"]["config_rows"]}, {
+        runtime_mode_policy_rows = bootstrap["data"]["runtime_mode_policy_rows"]
+        runtime_mode_policy_by_mode = {row["mode"]: row for row in runtime_mode_policy_rows}
+        config_policy_by_mode = {
+            row["mode"]: row for row in app_config.get_command_center_runtime_mode_policies()
+        }
+        self.assertEqual(
+            [row["mode"] for row in runtime_mode_policy_rows],
+            list(app_config.COMMAND_CENTER_RUNTIME_MODES),
+        )
+        self.assertEqual(
+            [row["mode"] for row in runtime_mode_policy_rows if row["default"]],
+            [app_config.COMMAND_CENTER_DEFAULT_RUNTIME_MODE],
+        )
+        self.assertEqual(
+            runtime_mode_policy_by_mode["cache_only"]["external_call_rule"],
+            config_policy_by_mode["cache_only"]["external_call_rule"],
+        )
+        self.assertEqual(
+            runtime_mode_policy_by_mode["manual"]["task_creation_rule"],
+            config_policy_by_mode["manual"]["task_creation_rule"],
+        )
+        self.assertEqual(
+            runtime_mode_policy_by_mode["live_light"]["startup_rule"],
+            config_policy_by_mode["live_light"]["startup_rule"],
+        )
+        self.assertEqual(
+            runtime_mode_policy_by_mode["live_full"]["external_call_rule"],
+            "reserved_future_authorization",
+        )
+        for row in runtime_mode_policy_rows:
+            self.assertEqual(row["policy_source"], "config.COMMAND_CENTER_RUNTIME_MODE_POLICIES")
+            config_policy = config_policy_by_mode[row["mode"]]
+            for policy_field in (
+                "page_open_rule",
+                "search_submit_rule",
+                "fastapi_startup_rule",
+                "search_typing_rule",
+                "cache_get_rule",
+                "react_render_rule",
+                "ledger_rule",
+                "ordinary_entrance_visibility_rule",
+                "ordinary_mode_banner_rule",
+                "configured_switch_rule",
+                "effective_external_call_rule",
+                "production_evidence_rule",
+            ):
+                self.assertEqual(row[policy_field], config_policy[policy_field])
+            self.assertEqual(
+                row["fastapi_startup_rule"],
+                "no_provider_model_worker_trade_or_task_creation",
+            )
+            self.assertEqual(
+                row["search_typing_rule"],
+                "no_task_provider_model_call_config_write_or_cache_write",
+            )
+            self.assertEqual(row["cache_get_rule"], "read_only_no_provider_model_worker_or_trade")
+            self.assertEqual(row["react_render_rule"], "read_only_no_provider_model_worker_or_trade")
+            self.assertEqual(
+                row["ordinary_entrance_visibility_rule"],
+                "show_task_boundary_in_user_summary_before_settings_developer_audit",
+            )
+            self.assertEqual(
+                row["ordinary_mode_banner_rule"],
+                "read_only_status_banner_not_task_launcher_or_config_writer",
+            )
+            self.assertEqual(
+                row["configured_switch_rule"],
+                "configured_true_is_operator_intent_not_effective_external_call",
+            )
+            self.assertEqual(
+                row["effective_external_call_rule"],
+                "effective_external_call_requires_mode_task_gate_ledgers_redaction_and_promotion",
+            )
+            self.assertEqual(
+                row["production_evidence_rule"],
+                "config_policy_row_is_not_production_evidence",
+            )
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["is_production_evidence"])
+        self.assertEqual(
+            runtime_mode_policy_by_mode["cache_only"]["ledger_rule"],
+            "no_external_call_no_ledger_required",
+        )
+        self.assertEqual(
+            runtime_mode_policy_by_mode["manual"]["ledger_rule"],
+            "call_ledger_and_model_ledger_required_for_external_work",
+        )
+        self.assertEqual(
+            runtime_mode_policy_by_mode["live_light"]["ledger_rule"],
+            "call_ledger_and_model_ledger_required_for_external_work",
+        )
+        self.assertEqual(
+            runtime_mode_policy_by_mode["live_full"]["ledger_rule"],
+            "reserved_future_authorization_required",
+        )
+        mode_rows_by_mode = {row["mode"]: row for row in bootstrap["data"]["mode_rows"]}
+        self.assertEqual(
+            mode_rows_by_mode["live_light"]["external_call_rule"],
+            config_policy_by_mode["live_light"]["external_call_rule"],
+        )
+        self.assertEqual(
+            mode_rows_by_mode["manual"]["startup_rule"],
+            config_policy_by_mode["manual"]["startup_rule"],
+        )
+        self.assertEqual(bootstrap_service.BOOTSTRAP_MODES, app_config.COMMAND_CENTER_RUNTIME_MODES)
+        self.assertEqual(bootstrap_service.DEFAULT_MODE, app_config.COMMAND_CENTER_DEFAULT_RUNTIME_MODE)
+        self.assertEqual(
+            bootstrap_service.EXTERNAL_EXECUTION_PROFILES,
+            app_config.COMMAND_CENTER_EXTERNAL_EXECUTION_PROFILES,
+        )
+        self.assertEqual(
+            bootstrap_service.DEFAULT_EXTERNAL_EXECUTION_PROFILE,
+            app_config.COMMAND_CENTER_DEFAULT_EXTERNAL_EXECUTION_PROFILE,
+        )
+        self.assertEqual(
+            bootstrap_service.LIVE_LIGHT_RESEARCH_SCOPES,
+            app_config.COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPES,
+        )
+        self.assertEqual(
+            bootstrap_service.DEFAULT_LIVE_LIGHT_RESEARCH_SCOPE,
+            app_config.COMMAND_CENTER_DEFAULT_LIVE_LIGHT_RESEARCH_SCOPE,
+        )
+        self.assertEqual(
+            bootstrap["data"]["safe_config_contract"]["allowed_modes"],
+            list(app_config.COMMAND_CENTER_RUNTIME_MODES),
+        )
+        self.assertEqual(
+            bootstrap["data"]["safe_config_contract"]["runtime_mode_vocab_source"],
+            "config.COMMAND_CENTER_RUNTIME_MODES",
+        )
+        self.assertEqual(
+            bootstrap["data"]["safe_config_contract"]["runtime_mode_policy_source"],
+            "config.COMMAND_CENTER_RUNTIME_MODE_POLICIES",
+        )
+        self.assertEqual(
+            bootstrap["data"]["safe_config_contract"]["runtime_mode_policy_row_count"],
+            len(app_config.COMMAND_CENTER_RUNTIME_MODES),
+        )
+        self.assertTrue(bootstrap["data"]["policy"]["runtime_mode_policy_rows_visible"])
+        self.assertEqual(
+            bootstrap["data"]["policy"]["runtime_mode_policy_row_count"],
+            len(app_config.COMMAND_CENTER_RUNTIME_MODES),
+        )
+        self.assertFalse(bootstrap["data"]["policy"]["runtime_mode_policy_is_production_evidence"])
+        self.assertEqual(
+            bootstrap["data"]["safe_config_contract"]["default_mode"],
+            app_config.COMMAND_CENTER_DEFAULT_RUNTIME_MODE,
+        )
+        self.assertEqual(
+            bootstrap["data"]["safe_config_contract"]["default_mode_source"],
+            "config.COMMAND_CENTER_DEFAULT_RUNTIME_MODE",
+        )
+        self.assertEqual(
+            bootstrap["data"]["safe_config_contract"]["external_execution_profile_vocab_source"],
+            "config.COMMAND_CENTER_EXTERNAL_EXECUTION_PROFILES",
+        )
+        self.assertEqual(
+            bootstrap["data"]["safe_config_contract"]["external_execution_profile_default_source"],
+            "config.COMMAND_CENTER_DEFAULT_EXTERNAL_EXECUTION_PROFILE",
+        )
+        config_rows_by_key = {row["config"]: row for row in bootstrap["data"]["config_rows"]}
+        self.assertEqual(
+            config_rows_by_key["COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE"]["allowed_values"],
+            list(app_config.COMMAND_CENTER_EXTERNAL_EXECUTION_PROFILES),
+        )
+        self.assertEqual(
+            config_rows_by_key["COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE"]["default_value_safe"],
+            app_config.COMMAND_CENTER_DEFAULT_EXTERNAL_EXECUTION_PROFILE,
+        )
+        self.assertEqual(
+            config_rows_by_key["COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE"]["allowed_values"],
+            list(app_config.COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPES),
+        )
+        self.assertEqual(
+            config_rows_by_key["COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE"]["default_value_safe"],
+            app_config.COMMAND_CENTER_DEFAULT_LIVE_LIGHT_RESEARCH_SCOPE,
+        )
+        self.assertEqual(set(config_rows_by_key), {
             "COMMAND_CENTER_BOOTSTRAP_MODE",
             "COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN",
             "COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN",
+            "COMMAND_CENTER_LIVE_SEARCH_SUBMIT_AUTOSTART",
+            "COMMAND_CENTER_LIVE_STARTUP_AUTOSTART",
+            "COMMAND_CENTER_LIVE_EXTERNAL_EXECUTION_PROFILE",
+            "COMMAND_CENTER_LIVE_LIGHT_RESEARCH_SCOPE",
+            "COMMAND_CENTER_LIVE_PROVIDER_MODEL_ENABLEMENT",
+            "COMMAND_CENTER_LIVE_FRONTEND_ENABLEMENT",
             "COMMAND_CENTER_LIVE_BOOTSTRAP_SYMBOL_LIMIT",
             "COMMAND_CENTER_LIVE_BOOTSTRAP_RATE_LIMIT_SECONDS",
             "COMMAND_CENTER_LIVE_DEEPSEEK_MODEL",
@@ -23188,9 +32613,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             observed_stage_rows["LTG-08"]["stage_scope_manifest"],
             "next_session_production_replacement_stage_scope_manifest",
         )
-        self.assertEqual(observed_stage_rows["LTG-08"]["status"], "observed_in_next_session_map_static_contract")
+        self.assertIn(
+            observed_stage_rows["LTG-08"]["status"],
+            {
+                "observed_in_next_session_map_static_contract",
+                "observed_next_session_direct_evidence_production_pending",
+            },
+        )
         self.assertGreaterEqual(observed_stage_rows["LTG-08"]["row_count"], 8)
-        self.assertGreaterEqual(observed_stage_rows["LTG-08"]["pending_stage_count"], 8)
+        ltg08_direct_count = int(observed_stage_rows["LTG-08"].get("direct_evidence_stage_count") or 0)
+        self.assertEqual(observed_stage_rows["LTG-08"]["pending_stage_count"], max(8 - ltg08_direct_count, 0))
         self.assertGreaterEqual(observed_stage_rows["LTG-08"]["local_evidence_stage_count"], 2)
         self.assertFalse(observed_stage_rows["LTG-08"]["production_replacement_complete"])
         self.assertFalse(observed_stage_rows["LTG-08"]["browser_visual_qa_done"])
@@ -23449,11 +32881,20 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         )
         self.assertEqual(migration_goals["LTG-07"]["observed_stage_scope_pending_count"], 8)
         self.assertFalse(migration_goals["LTG-07"]["observed_stage_scope_can_close_goal"])
-        self.assertEqual(
+        self.assertIn(
             migration_goals["LTG-08"]["observed_stage_scope_manifest_status"],
-            "observed_in_next_session_map_static_contract",
+            {
+                "observed_in_next_session_map_static_contract",
+                "observed_next_session_direct_evidence_production_pending",
+            },
         )
-        self.assertGreaterEqual(migration_goals["LTG-08"]["observed_stage_scope_pending_count"], 8)
+        ltg08_goal_direct_count = int(
+            migration_goals["LTG-08"].get("observed_stage_scope_direct_evidence_count") or 0
+        )
+        self.assertEqual(
+            migration_goals["LTG-08"]["observed_stage_scope_pending_count"],
+            max(8 - ltg08_goal_direct_count, 0),
+        )
         self.assertFalse(migration_goals["LTG-08"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-09"]["stage_scope_manifest"], "tauri_production_package_stage_scope_manifest")
         self.assertIn("production package stage-scope manifest", migration_goals["LTG-09"]["current_state"])
@@ -23479,7 +32920,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(migration_goals["LTG-09"]["observed_stage_scope_can_close_goal"])
         self.assertEqual(migration_goals["LTG-10"]["stage_scope_manifest"], "streamlit_retirement_stage_scope_manifest")
         self.assertIn("retirement stage-scope manifest", migration_goals["LTG-10"]["current_state"])
-        self.assertIn("React/Tauri workflow parity", migration_goals["LTG-10"]["next_evidence_required"])
+        self.assertIn("React/Tauri ordinary capability replacement evidence", migration_goals["LTG-10"]["next_evidence_required"])
         self.assertIn("fallback retirement review", migration_goals["LTG-10"]["next_evidence_required"])
         self.assertFalse(migration_goals["LTG-10"]["production_complete"])
         self.assertEqual(
@@ -23657,7 +33098,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         task_catalog = self.client.get("/api/tasks/catalog").json()
         self.assertTrue(task_catalog["ok"])
-        self.assertEqual(task_catalog["data"]["task_count"], 82)
+        self.assertEqual(task_catalog["data"]["task_count"], 84)
         self.assertIn(
             "POST /api/desktop/tauri-package-artifact-review",
             task_catalog["data"]["route_coverage"]["known_post_routes"],
@@ -25679,6 +35120,79 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(fallback_contract["does_not_open_streamlit"])
         self.assertTrue(fallback_contract["does_not_run_legacy_tools"])
         self.assertTrue(fallback_contract["does_not_create_tasks"])
+        entrance_audit = packet["ordinary_entrance_acceptance_audit"]
+        self.assertEqual(entrance_audit["schema_version"], "ordinary_entrance_acceptance_audit.v1")
+        self.assertEqual(entrance_audit["status"], "ordinary_entrance_acceptance_map_ready_audit_pending")
+        self.assertFalse(entrance_audit["ordinary_entrance_acceptance_complete"])
+        self.assertTrue(entrance_audit["requires_legacy_bug_ux_audit_before_major_migration"])
+        self.assertTrue(entrance_audit["engineering_details_moved_to_settings_developer_audit"])
+        self.assertTrue(entrance_audit["does_not_create_tasks"])
+        self.assertFalse(entrance_audit["external_calls_triggered"])
+        self.assertFalse(entrance_audit["tushare_called"])
+        self.assertFalse(entrance_audit["deepseek_called"])
+        self.assertFalse(entrance_audit["github_called"])
+        self.assertTrue(entrance_audit["does_not_execute_trades"])
+        self.assertTrue(entrance_audit["does_not_modify_strategy_action"])
+        self.assertEqual(len(entrance_audit["commit_questions"]), 5)
+        self.assertEqual(entrance_audit["legacy_bug_ux_module_row_count"], 10)
+        self.assertEqual(entrance_audit["legacy_bug_ux_redesign_count"], 6)
+        self.assertEqual(entrance_audit["legacy_bug_ux_legacy_debug_count"], 3)
+        self.assertEqual(entrance_audit["legacy_bug_ux_retire_count"], 1)
+        self.assertEqual(entrance_audit["legacy_bug_ux_direct_evidence_pending_count"], 10)
+        self.assertEqual(entrance_audit["legacy_bug_ux_keep_upgrade_blocked_count"], 10)
+        self.assertFalse(entrance_audit["legacy_modules_enter_ordinary_flow_without_audit"])
+        entrance_rows = {row["entrance"]: row for row in packet["ordinary_entrance_acceptance_rows"]}
+        self.assertEqual(
+            set(entrance_rows),
+            {"daily_command_center", "stock_quant_projection", "candidate_radar"},
+        )
+        self.assertIn("next_click", entrance_rows["daily_command_center"]["required_visible_state"])
+        self.assertIn(
+            "generate_3_0_quant_projection_button",
+            entrance_rows["stock_quant_projection"]["required_visible_state"],
+        )
+        self.assertIn(
+            "candidate_is_not_buy_instruction",
+            entrance_rows["candidate_radar"]["required_visible_state"],
+        )
+        self.assertIn(
+            "streamlit_multi_button_rerun_home",
+            entrance_rows["daily_command_center"]["legacy_ux_or_bug_path_not_migrated"],
+        )
+        module_rows = {row["legacy_module"]: row for row in packet["legacy_bug_ux_module_rows"]}
+        for module_row in module_rows.values():
+            self.assertIn("direct_ux_bug_evidence_source", module_row)
+            self.assertIn("ordinary_entrance_placement", module_row)
+            self.assertIn("frozen_legacy_path", module_row)
+            self.assertEqual(module_row["ordinary_entrance_placement"], module_row["target_surface"])
+        self.assertEqual(module_rows["single_stock_quant_room"]["classification"], "REDESIGN")
+        self.assertEqual(
+            module_rows["single_stock_quant_room"]["direct_ux_bug_evidence_source"],
+            "seed_only_direct_evidence_pending_before_KEEP",
+        )
+        self.assertEqual(module_rows["single_stock_quant_room"]["ordinary_entrance_placement"], "Stock Quant Projection")
+        self.assertTrue(module_rows["single_stock_quant_room"]["keep_upgrade_blocked_without_direct_evidence"])
+        self.assertEqual(
+            module_rows["single_stock_quant_room"]["frozen_legacy_path"],
+            module_rows["single_stock_quant_room"]["legacy_ux_or_bug_path_not_migrated"],
+        )
+        self.assertIn(
+            "blocking_projection",
+            module_rows["single_stock_quant_room"]["legacy_ux_or_bug_path_not_migrated"],
+        )
+        self.assertEqual(module_rows["provider_health_console"]["classification"], "LEGACY-DEBUG")
+        self.assertFalse(module_rows["provider_health_console"]["ordinary_flow_entry_allowed"])
+        self.assertEqual(module_rows["legacy_ai_strategy_advisor"]["classification"], "RETIRE")
+        self.assertIn("direct_trade_advice", module_rows["legacy_ai_strategy_advisor"]["legacy_ux_or_bug_path_not_migrated"])
+        self.assertEqual(packet["counts"]["ordinary_entrance_acceptance_row_count"], 3)
+        self.assertEqual(packet["counts"]["legacy_bug_ux_module_row_count"], 10)
+        self.assertEqual(packet["counts"]["legacy_bug_ux_redesign_count"], 6)
+        self.assertEqual(packet["counts"]["legacy_bug_ux_legacy_debug_count"], 3)
+        self.assertEqual(packet["counts"]["legacy_bug_ux_retire_count"], 1)
+        self.assertEqual(packet["counts"]["legacy_bug_ux_direct_evidence_pending_count"], 10)
+        self.assertEqual(packet["counts"]["legacy_bug_ux_keep_upgrade_blocked_count"], 10)
+        self.assertEqual(packet["counts"]["ordinary_entrance_acceptance_complete_count"], 0)
+        self.assertIn("local_ordinary_entrance_acceptance_audit", {row["api"] for row in packet["call_ledger"]})
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
@@ -27705,6 +37219,65 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(task["github_called"])
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
 
+        bootstrap_status = self.client.get("/api/bootstrap/status").json()
+        self.assertTrue(bootstrap_status["ok"])
+        latest_quant = bootstrap_status["data"]["search_quant_projection_latest_status"]
+        self.assertEqual(
+            latest_quant["schema_version"],
+            "command_center_search_quant_projection_latest_status.v1",
+        )
+        self.assertEqual(latest_quant["status"], "no_quant_projection_task_found")
+        self.assertEqual(latest_quant["lookup_source"], "task_service.list_task_statuses")
+        self.assertFalse(latest_quant["lookup_creates_task"])
+        self.assertEqual(latest_quant["route"], "POST /api/candidate-radar/quant-projection")
+        self.assertTrue(latest_quant["route_implemented"])
+        self.assertFalse(latest_quant["task_found"])
+        self.assertEqual(latest_quant["task_id"], "")
+        self.assertEqual(latest_quant["task_status"], "")
+        self.assertEqual(latest_quant["current_step"], "")
+        self.assertEqual(latest_quant["output_packet_key"], "")
+        self.assertEqual(latest_quant["storage_source"], "")
+        self.assertFalse(latest_quant["durable_task_visible"])
+        self.assertFalse(latest_quant["memory_only_task_is_durable_evidence"])
+        self.assertEqual(latest_quant["symbol"], "")
+        self.assertFalse(latest_quant["symbol_valid"])
+        self.assertEqual(latest_quant["scan_mode"], "search_quant_projection")
+        self.assertEqual(latest_quant["selected_light_apis"], [])
+        self.assertFalse(latest_quant["include_tushare_requested"])
+        self.assertFalse(latest_quant["include_deepseek_requested"])
+        self.assertFalse(latest_quant["local_receipt_visible"])
+        self.assertFalse(latest_quant["provider_model_pending"])
+        self.assertTrue(latest_quant["acceptance_dry_run_required"])
+        self.assertTrue(latest_quant["execution_request_required"])
+        self.assertEqual(
+            latest_quant["provider_model_route"],
+            "POST /api/candidate-radar/quant-projection-provider-model-acceptance",
+        )
+        self.assertEqual(latest_quant["result_surface_count"], 6)
+        self.assertEqual(latest_quant["call_ledger_count"], 0)
+        self.assertEqual(latest_quant["call_status"], "")
+        self.assertFalse(latest_quant["task_success_is_provider_model_evidence"])
+        self.assertFalse(latest_quant["task_success_is_production_evidence"])
+        self.assertFalse(latest_quant["provider_execution_implemented"])
+        self.assertFalse(latest_quant["model_execution_implemented"])
+        self.assertFalse(latest_quant["factor_refresh_executed"])
+        self.assertFalse(latest_quant["next_session_refresh_executed"])
+        self.assertFalse(latest_quant["echarts_payload_refreshed"])
+        self.assertFalse(latest_quant["production_quant_projection_complete"])
+        self.assertFalse(latest_quant["external_calls_triggered"])
+        self.assertFalse(latest_quant["tushare_called"])
+        self.assertFalse(latest_quant["deepseek_called"])
+        self.assertFalse(latest_quant["github_called"])
+        self.assertFalse(latest_quant["credential_values_exposed"])
+        self.assertFalse(latest_quant["env_key_names_included"])
+        self.assertTrue(latest_quant["candidate_is_not_buy_instruction"])
+        self.assertTrue(latest_quant["does_not_execute_trades"])
+        self.assertTrue(latest_quant["does_not_modify_strategy_action"])
+        self.assertTrue(bootstrap_status["data"]["policy"]["search_quant_projection_latest_status_visible"])
+        self.assertFalse(bootstrap_status["data"]["policy"]["search_quant_projection_latest_lookup_creates_task"])
+        self.assertFalse(bootstrap_status["data"]["policy"]["search_quant_projection_latest_is_production_evidence"])
+        self.assertNotIn("SHOULD_DROP", json.dumps(bootstrap_status, ensure_ascii=False))
+
         cache = self.client.get("/api/candidate-radar/cache").json()
         self.assertTrue(cache["ok"])
         packet = cache["data"]
@@ -28216,6 +37789,173 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(response, ensure_ascii=False))
         self.assertNotIn("TUSHARE_TOKEN", json.dumps(response, ensure_ascii=False))
 
+        bootstrap_status = self.client.get("/api/bootstrap/status").json()
+        self.assertTrue(bootstrap_status["ok"])
+        latest_provider_model = bootstrap_status["data"]["search_quant_projection_provider_model_latest_status"]
+        self.assertEqual(
+            latest_provider_model["schema_version"],
+            "command_center_search_quant_projection_provider_model_latest_status.v1",
+        )
+        self.assertEqual(
+            latest_provider_model["status"],
+            "latest_quant_projection_provider_acceptance_visible_deepseek_skipped",
+        )
+        self.assertEqual(latest_provider_model["lookup_source"], "task_service.list_task_statuses")
+        self.assertFalse(latest_provider_model["lookup_creates_task"])
+        self.assertEqual(
+            latest_provider_model["route"],
+            "POST /api/candidate-radar/quant-projection-provider-model-acceptance",
+        )
+        self.assertTrue(latest_provider_model["route_implemented"])
+        self.assertEqual(
+            latest_provider_model["task_type"],
+            "run_candidate_radar_quant_projection_provider_model_acceptance",
+        )
+        self.assertTrue(latest_provider_model["task_catalog_covered"])
+        self.assertTrue(latest_provider_model["task_found"])
+        self.assertEqual(latest_provider_model["task_id"], task["task_id"])
+        self.assertEqual(latest_provider_model["task_status"], "success")
+        self.assertEqual(
+            latest_provider_model["current_step"],
+            "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped",
+        )
+        self.assertEqual(latest_provider_model["output_packet_key"], "command_center_3_candidate_radar_cache")
+        self.assertIn(latest_provider_model["storage_source"], {"memory_and_sqlite", "sqlite_meta"})
+        self.assertTrue(latest_provider_model["durable_task_visible"])
+        self.assertFalse(latest_provider_model["memory_only_task_is_durable_evidence"])
+        self.assertEqual(latest_provider_model["symbol"], "002008.SZ")
+        self.assertEqual(latest_provider_model["selected_apis"], ["trade_cal", "daily", "daily_basic", "moneyflow"])
+        self.assertFalse(latest_provider_model["include_deepseek_requested"])
+        self.assertEqual(latest_provider_model["call_ledger_count"], 5)
+        self.assertEqual(latest_provider_model["provider_call_ledger_count"], 4)
+        self.assertEqual(latest_provider_model["provider_api_success_count"], 4)
+        self.assertEqual(latest_provider_model["model_ledger_count"], 0)
+        self.assertEqual(
+            latest_provider_model["call_status"],
+            "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped",
+        )
+        self.assertTrue(latest_provider_model["provider_model_acceptance_visible"])
+        self.assertTrue(latest_provider_model["provider_call_ledger_evidence_done"])
+        self.assertTrue(latest_provider_model["tushare_call_ledger_evidence_done"])
+        self.assertFalse(latest_provider_model["deepseek_model_ledger_evidence_done"])
+        self.assertTrue(latest_provider_model["deepseek_output_acceptance_contract_visible"])
+        self.assertTrue(latest_provider_model["deepseek_output_acceptance_required_when_deepseek_used"])
+        self.assertFalse(latest_provider_model["deepseek_output_acceptance_required"])
+        self.assertFalse(latest_provider_model["deepseek_output_acceptance_done"])
+        self.assertEqual(
+            latest_provider_model["deepseek_output_acceptance_status"],
+            "not_required_deepseek_skipped",
+        )
+        self.assertFalse(latest_provider_model["deepseek_output_cache_written"])
+        self.assertFalse(latest_provider_model["deepseek_output_safe_summary_visible"])
+        self.assertTrue(latest_provider_model["deepseek_skipped_by_default"])
+        self.assertTrue(latest_provider_model["provider_execution_observed"])
+        self.assertFalse(latest_provider_model["model_execution_observed"])
+        self.assertTrue(latest_provider_model["task_success_is_provider_call_evidence"])
+        self.assertFalse(latest_provider_model["task_success_is_model_evidence"])
+        self.assertFalse(latest_provider_model["task_success_is_model_output_evidence"])
+        self.assertFalse(latest_provider_model["task_success_is_provider_model_evidence"])
+        self.assertFalse(latest_provider_model["task_success_is_production_evidence"])
+        self.assertFalse(latest_provider_model["production_quant_projection_complete"])
+        self.assertFalse(latest_provider_model["production_radar_replacement_complete"])
+        self.assertFalse(latest_provider_model["status_get_external_calls"])
+        self.assertTrue(latest_provider_model["external_calls_triggered"])
+        self.assertTrue(latest_provider_model["tushare_called"])
+        self.assertFalse(latest_provider_model["deepseek_called"])
+        self.assertFalse(latest_provider_model["github_called"])
+        self.assertFalse(latest_provider_model["contains_secret"])
+        self.assertTrue(latest_provider_model["candidate_is_not_buy_instruction"])
+        self.assertTrue(latest_provider_model["does_not_execute_trades"])
+        self.assertTrue(latest_provider_model["does_not_modify_strategy_action"])
+        self.assertTrue(
+            bootstrap_status["data"]["live_light"]["search_quant_projection_provider_model_latest_status_visible"]
+        )
+        self.assertTrue(
+            bootstrap_status["data"]["live_light"]["search_quant_projection_provider_model_latest_task_found"]
+        )
+        self.assertEqual(
+            bootstrap_status["data"]["live_light"]["search_quant_projection_provider_model_latest_status"],
+            "latest_quant_projection_provider_acceptance_visible_deepseek_skipped",
+        )
+        self.assertEqual(
+            bootstrap_status["data"]["live_light"]["search_quant_projection_provider_model_latest_task_id"],
+            task["task_id"],
+        )
+        self.assertTrue(
+            bootstrap_status["data"]["live_light"][
+                "search_quant_projection_provider_model_latest_provider_call_ledger_evidence_done"
+            ]
+        )
+        self.assertFalse(
+            bootstrap_status["data"]["live_light"][
+                "search_quant_projection_provider_model_latest_deepseek_model_ledger_evidence_done"
+            ]
+        )
+        self.assertFalse(
+            bootstrap_status["data"]["live_light"][
+                "search_quant_projection_provider_model_latest_deepseek_output_acceptance_done"
+            ]
+        )
+        self.assertEqual(
+            bootstrap_status["data"]["live_light"][
+                "search_quant_projection_provider_model_latest_deepseek_output_acceptance_status"
+            ],
+            "not_required_deepseek_skipped",
+        )
+        self.assertFalse(
+            bootstrap_status["data"]["live_light"][
+                "search_quant_projection_provider_model_latest_deepseek_output_cache_written"
+            ]
+        )
+        self.assertTrue(
+            bootstrap_status["data"]["live_light"]["search_quant_projection_provider_model_latest_acceptance_visible"]
+        )
+        self.assertFalse(
+            bootstrap_status["data"]["live_light"][
+                "search_quant_projection_provider_model_latest_task_success_is_model_output_evidence"
+            ]
+        )
+        self.assertFalse(
+            bootstrap_status["data"]["live_light"][
+                "search_quant_projection_provider_model_latest_is_production_evidence"
+            ]
+        )
+        self.assertTrue(
+            bootstrap_status["data"]["policy"]["search_quant_projection_provider_model_latest_status_visible"]
+        )
+        self.assertFalse(
+            bootstrap_status["data"]["policy"]["search_quant_projection_provider_model_latest_lookup_creates_task"]
+        )
+        self.assertFalse(
+            bootstrap_status["data"]["policy"]["search_quant_projection_provider_model_latest_status_get_external_calls"]
+        )
+        self.assertTrue(
+            bootstrap_status["data"]["policy"][
+                "search_quant_projection_provider_model_latest_requires_deepseek_output_acceptance"
+            ]
+        )
+        self.assertTrue(
+            bootstrap_status["data"]["policy"][
+                "search_quant_projection_provider_model_latest_output_cache_write_requires_acceptance"
+            ]
+        )
+        self.assertFalse(
+            bootstrap_status["data"]["policy"][
+                "search_quant_projection_provider_model_latest_task_success_is_model_output_evidence"
+            ]
+        )
+        self.assertFalse(
+            bootstrap_status["data"]["policy"][
+                "search_quant_projection_provider_model_latest_task_success_is_provider_model_evidence"
+            ]
+        )
+        self.assertFalse(
+            bootstrap_status["data"]["policy"]["search_quant_projection_provider_model_latest_is_production_evidence"]
+        )
+        self.assertNotIn("SHOULD_DROP", json.dumps(bootstrap_status, ensure_ascii=False))
+        self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(bootstrap_status, ensure_ascii=False))
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(bootstrap_status, ensure_ascii=False))
+
         cache = self.client.get("/api/candidate-radar/cache").json()
         self.assertTrue(cache["ok"])
         packet = cache["data"]
@@ -28274,6 +38014,240 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg13["external_calls_triggered"])
         self.assertFalse(ltg13["tushare_called"])
         self.assertFalse(ltg13["deepseek_called"])
+
+    def test_candidate_radar_quant_projection_confirm_autostarts_tushare_first_with_deepseek_pending(self):
+        self._with_meta_store()
+        self._with_bootstrap_env(
+            TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE",
+            DEEPSEEK_API_KEY="REAL_DEEPSEEK_SECRET_VALUE",
+        )
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "候选缓存"},
+                "data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"},
+            }
+        )
+
+        original_run_tushare = candidate_service.tushare_task_service.run_tushare_refresh_task
+
+        def fake_run_tushare_refresh_task(payload, **_kwargs):
+            rows = []
+            for api in payload["apis"]:
+                rows.append(
+                    {
+                        "api": api,
+                        "request_params_safe": {
+                            "ts_code": payload["ts_code"],
+                            "start_date": payload["start_date"],
+                            "end_date": payload["end_date"],
+                        },
+                        "row_count": 3,
+                        "data_date": payload["end_date"],
+                        "local_fetched_at": "2026-06-19T10:00:00",
+                        "call_status": "success",
+                        "error_message_safe": "",
+                        "external": True,
+                        "external_calls_triggered": True,
+                        "tushare_called": True,
+                        "deepseek_called": False,
+                        "github_called": False,
+                        "does_not_execute_trades": True,
+                        "does_not_modify_strategy_action": True,
+                    }
+                )
+            return {
+                "task_id": "fake-tushare-light-autostart",
+                "status": "success",
+                "current_step": "tushare_refresh_completed",
+                "call_ledger": rows,
+            }
+
+        candidate_service.tushare_task_service.run_tushare_refresh_task = fake_run_tushare_refresh_task
+        self.addCleanup(
+            setattr,
+            candidate_service.tushare_task_service,
+            "run_tushare_refresh_task",
+            original_run_tushare,
+        )
+
+        response = self.client.post(
+            "/api/candidate-radar/quant-projection",
+            json={
+                "symbol": "002008",
+                "include_tushare": True,
+                "include_deepseek": True,
+                "user_approved": True,
+                "run_provider_model_now": True,
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(task["current_step"], "candidate_radar_quant_projection_provider_chain_submitted")
+        self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
+
+        cache = self.client.get("/api/candidate-radar/cache").json()
+        self.assertTrue(cache["ok"])
+        packet = cache["data"]
+        provider_receipt = packet["search_quant_provider_model_acceptance_receipt"]
+        provider_rows = {row["criterion"]: row for row in packet["search_quant_provider_model_acceptance_rows"]}
+        self.assertEqual(
+            provider_receipt["status"],
+            "search_quant_provider_model_acceptance_waiting_deepseek_output_acceptance",
+        )
+        self.assertEqual(provider_receipt["selected_apis"], ["trade_cal", "daily", "daily_basic", "moneyflow"])
+        self.assertTrue(provider_receipt["provider_execution_implemented"])
+        self.assertTrue(provider_receipt["tushare_call_ledger_evidence_done"])
+        self.assertEqual(provider_receipt["provider_api_success_count"], 4)
+        self.assertFalse(provider_receipt["model_execution_implemented"])
+        self.assertFalse(provider_receipt["deepseek_model_ledger_evidence_done"])
+        self.assertFalse(provider_receipt["direct_evidence_verified"])
+        self.assertFalse(provider_receipt["deepseek_skipped_by_request"])
+        self.assertFalse(provider_receipt["deepseek_called"])
+        self.assertTrue(provider_receipt["external_calls_triggered_by_task"])
+        self.assertTrue(provider_receipt["tushare_called_by_task"])
+        self.assertFalse(provider_receipt["github_called"])
+        self.assertFalse(provider_receipt["contains_secret"])
+        self.assertTrue(provider_receipt["does_not_execute_trades"])
+        self.assertTrue(provider_receipt["does_not_modify_strategy_action"])
+        self.assertEqual(
+            provider_rows["deepseek_model_ledger_policy"]["status"],
+            "pending_deepseek_model_ledger",
+        )
+        self.assertEqual(
+            provider_rows["tushare_light_provider_call_ledger"]["status"],
+            "passed_tushare_light_provider_ledger",
+        )
+        provider_ledger = provider_receipt["provider_call_ledger"]
+        self.assertEqual(len(provider_ledger), 4)
+        self.assertTrue(all(row["tushare_called"] is True for row in provider_ledger))
+        self.assertFalse(any(row["deepseek_called"] is True for row in provider_ledger))
+        self.assertFalse(any(row["github_called"] is True for row in provider_ledger))
+        self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
+        self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
+        self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
+        self.assertNotIn("TUSHARE_TOKEN", json.dumps(cache, ensure_ascii=False))
+        self.assertNotIn("DEEPSEEK_API_KEY", json.dumps(cache, ensure_ascii=False))
+
+    def test_bootstrap_provider_model_latest_status_keeps_deepseek_requested_output_acceptance_pending(self):
+        self._with_meta_store()
+        self._with_bootstrap_env(
+            COMMAND_CENTER_BOOTSTRAP_MODE="live_light",
+            COMMAND_CENTER_LIVE_TUSHARE_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_DEEPSEEK_ON_OPEN="true",
+            COMMAND_CENTER_LIVE_DEEPSEEK_MODEL="custom-live-explain-model",
+        )
+        clear_task_statuses_for_tests(clear_persisted=True)
+        task = task_service.create_task_record(
+            "run_candidate_radar_quant_projection_provider_model_acceptance",
+            output_packet_key="command_center_3_candidate_radar_cache",
+            payload={"source": "unit_test_deepseek_output_acceptance_pending", "symbol": "002008.SZ"},
+            current_step="candidate_radar_quant_projection_provider_model_acceptance_queued",
+        )
+        local_ledger = {
+            "api": "local_candidate_radar_quant_projection_provider_model_acceptance",
+            "endpoint": "POST /api/candidate-radar/quant-projection-provider-model-acceptance",
+            "call_status": "search_quant_provider_model_acceptance_waiting_deepseek_output_acceptance",
+            "row_count": 2,
+            "request_params_safe": {
+                "symbol": "002008.SZ",
+                "selected_apis": ["trade_cal", "daily", "daily_basic", "moneyflow"],
+                "include_deepseek": True,
+                "provider_execution_implemented": True,
+                "model_execution_implemented": False,
+                "tushare_call_ledger_evidence_done": True,
+                "deepseek_model_ledger_evidence_done": False,
+                "production_quant_projection_complete": False,
+            },
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+        provider_ledger = {
+            "api": "daily",
+            "endpoint": "tushare.daily",
+            "call_status": "success",
+            "row_count": 2,
+            "request_params_safe": {"ts_code": "002008.SZ"},
+            "external": False,
+            "external_calls_triggered": False,
+            "tushare_called": True,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+        updated = update_task_status(
+            task["task_id"],
+            status="success",
+            progress=1.0,
+            current_step="search_quant_provider_model_acceptance_waiting_deepseek_output_acceptance",
+            output_packet_key="command_center_3_candidate_radar_cache",
+            call_ledger=[local_ledger, provider_ledger],
+            warning="unit_test_deepseek_output_acceptance_pending_no_external_call",
+        )
+        self.assertIsNotNone(updated)
+        bootstrap_status = self.client.get("/api/bootstrap/status").json()
+        self.assertTrue(bootstrap_status["ok"])
+        latest = bootstrap_status["data"]["search_quant_projection_provider_model_latest_status"]
+        self.assertEqual(
+            latest["status"],
+            "latest_quant_projection_provider_model_task_visible_output_acceptance_pending",
+        )
+        self.assertTrue(latest["task_found"])
+        self.assertEqual(latest["task_status"], "success")
+        self.assertTrue(latest["provider_call_ledger_evidence_done"])
+        self.assertTrue(latest["tushare_call_ledger_evidence_done"])
+        self.assertTrue(latest["include_deepseek_requested"])
+        self.assertTrue(latest["deepseek_output_acceptance_required"])
+        self.assertEqual(latest["deepseek_output_acceptance_status"], "pending_model_ledger")
+        self.assertFalse(latest["deepseek_model_ledger_evidence_done"])
+        self.assertFalse(latest["deepseek_output_acceptance_done"])
+        self.assertFalse(latest["deepseek_output_cache_written"])
+        self.assertFalse(latest["deepseek_output_safe_summary_visible"])
+        self.assertFalse(latest["provider_model_acceptance_visible"])
+        self.assertTrue(latest["task_success_is_provider_call_evidence"])
+        self.assertFalse(latest["task_success_is_model_evidence"])
+        self.assertFalse(latest["task_success_is_model_output_evidence"])
+        self.assertFalse(latest["task_success_is_provider_model_evidence"])
+        self.assertFalse(latest["task_success_is_production_evidence"])
+        self.assertFalse(latest["status_get_external_calls"])
+        self.assertFalse(latest["deepseek_called"])
+        self.assertFalse(latest["github_called"])
+        self.assertFalse(latest["contains_secret"])
+        self.assertTrue(latest["does_not_execute_trades"])
+        self.assertTrue(latest["does_not_modify_strategy_action"])
+        self.assertEqual(
+            bootstrap_status["data"]["live_light"]["search_quant_projection_provider_model_latest_status"],
+            "latest_quant_projection_provider_model_task_visible_output_acceptance_pending",
+        )
+        self.assertFalse(
+            bootstrap_status["data"]["live_light"]["search_quant_projection_provider_model_latest_acceptance_visible"]
+        )
+        self.assertEqual(
+            bootstrap_status["data"]["live_light"][
+                "search_quant_projection_provider_model_latest_deepseek_output_acceptance_status"
+            ],
+            "pending_model_ledger",
+        )
+        self.assertFalse(
+            bootstrap_status["data"]["policy"][
+                "search_quant_projection_provider_model_latest_task_success_is_model_output_evidence"
+            ]
+        )
+        self.assertFalse(
+            bootstrap_status["data"]["policy"][
+                "search_quant_projection_provider_model_latest_task_success_is_provider_model_evidence"
+            ]
+        )
+        self.assertNotIn("SHOULD_DROP", json.dumps(bootstrap_status, ensure_ascii=False))
 
     def test_candidate_radar_quant_projection_execution_request_blocks_scope_hash_mismatch(self):
         self._with_meta_store()
@@ -32834,11 +42808,11 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         ltg08_goal = long_term_goals["LTG-08"]
         self.assertTrue(ltg08_goal["observed_next_session_browser_qa_direct_evidence_done"])
         self.assertFalse(ltg08_goal["observed_next_session_browser_qa_is_production_replacement"])
-        self.assertIn("same-packet legacy signal/capability parity", ltg08_goal["next_step"])
+        self.assertIn("same-packet retained signal/capability coverage", ltg08_goal["next_step"])
         self.assertNotIn("same-packet Streamlit parity", ltg08_goal["next_step"])
         self.assertIn("durable CI/release evidence", ltg08_goal["next_step"])
         self.assertIn("do not rerun local browser QA", ltg08_goal["next_step"])
-        self.assertIn("legacy signal/capability reference capture", ltg08_goal["not_complete_because"])
+        self.assertIn("same-packet retained signal/capability reference capture", ltg08_goal["not_complete_because"])
         self.assertIn("local browser visual/performance/reduced-motion QA is observed", ltg08_goal["not_complete_because"])
 
     def test_next_session_streamlit_parity_review_is_same_packet_local_only(self):
