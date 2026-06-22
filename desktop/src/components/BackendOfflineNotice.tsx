@@ -16,7 +16,8 @@ export default function BackendOfflineNotice({
   return (
     <div className="backend-offline-notice motion-surface" data-backend-offline="true" role="status">
       <strong>本地后端未连接</strong>
-      <p>请先启动本地 FastAPI 后端服务，再刷新本页。当前画面只显示离线保护状态。</p>
+      <p>下一步：请使用桌面快捷方式或本地启动器重新打开 Command Center 3.0，然后刷新本页。</p>
+      <p>启动器会等待 FastAPI 和页面都 ready 后才打开入口；当前画面只显示离线保护状态。</p>
       <p>连接地址：{apiBase}</p>
       <ul>
         <li>不会调用 Tushare、DeepSeek 或 GitHub。</li>
