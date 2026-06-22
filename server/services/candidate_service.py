@@ -49,6 +49,9 @@ QUANT_PROJECTION_EXECUTION_REQUEST_ROUTE = "POST /api/candidate-radar/quant-proj
 QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION = (
     "candidate_radar_search_quant_provider_model_acceptance.v1"
 )
+QUANT_PROJECTION_SMALL_DATA_WRITEBACK_SCHEMA_VERSION = (
+    "candidate_radar_search_quant_projection_small_data_writeback.v1"
+)
 QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_TASK_TYPE = (
     "run_candidate_radar_quant_projection_provider_model_acceptance"
 )
@@ -13680,6 +13683,7 @@ def _build_candidate_radar_packet(
     packet["fast_scan_task_pipeline_contract"] = task_pipeline_contract
     packet["fast_scan_task_pipeline_rows"] = task_pipeline_rows
     packet = _attach_no_feature_loss_acceptance_contract(packet)
+    packet = _attach_search_quant_projection_small_data_writeback_summary(packet)
     return _json_safe(packet)
 
 
@@ -13936,6 +13940,7 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     view = _attach_no_feature_loss_acceptance_contract(view)
     view = _attach_candidate_radar_durable_evidence_recipe(view)
     view = _attach_candidate_radar_production_stage_scope_manifest(view)
+    view = _attach_search_quant_projection_small_data_writeback_summary(view)
     return _json_safe(view)
 
 
@@ -14123,6 +14128,7 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
     packet["warnings"] = [
         "搜票量化推演已写入本地回执；真实 Tushare / Factor / Next Session / DeepSeek / ECharts 证据仍待后续显式任务补齐。"
     ] + [warning for warning in _as_list(packet.get("warnings")) if "搜票量化推演" not in str(warning)]
+    packet = _attach_search_quant_projection_small_data_writeback_summary(packet)
     try:
         SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
     except Exception:
@@ -14317,6 +14323,7 @@ def run_candidate_quant_projection_acceptance_dry_run_task(payload: Any = None) 
     packet["warnings"] = [
         "搜票量化推演联动验收 dry-run 已写入本地预检；真实 Tushare / DeepSeek / Factor / Next / ECharts 仍未执行。"
     ] + [warning for warning in _as_list(packet.get("warnings")) if "搜票量化推演联动验收" not in str(warning)]
+    packet = _attach_search_quant_projection_small_data_writeback_summary(packet)
     try:
         SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
     except Exception:
@@ -14427,6 +14434,7 @@ def run_candidate_quant_projection_execution_request_task(payload: Any = None) -
         for warning in _as_list(packet.get("warnings"))
         if "provider/model execution request" not in str(warning)
     ]
+    packet = _attach_search_quant_projection_small_data_writeback_summary(packet)
     try:
         SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
     except Exception:
@@ -14662,6 +14670,122 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
     return receipt, rows
 
 
+def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, Any]) -> dict[str, Any]:
+    quant_receipt = _as_dict(packet.get("search_quant_projection_receipt"))
+    dry_run = _as_dict(packet.get("search_quant_projection_acceptance_dry_run_receipt"))
+    execution_request = _as_dict(packet.get("search_quant_projection_execution_request_receipt"))
+    provider_receipt = _as_dict(packet.get("search_quant_provider_model_acceptance_receipt"))
+    provider_ledger = [
+        row for row in _as_list(provider_receipt.get("provider_call_ledger")) if isinstance(row, dict)
+    ]
+    provider_api_call_count = int(provider_receipt.get("provider_api_call_count") or len(provider_ledger) or 0)
+    provider_api_success_count = int(provider_receipt.get("provider_api_success_count") or 0)
+    credential_missing_count = int(dry_run.get("credential_missing_provider_count") or 0)
+    provider_ready = provider_receipt.get("tushare_call_ledger_evidence_done") is True
+    provider_ledger_visible = provider_ready or provider_api_success_count > 0
+    provider_external_call_observed = (
+        provider_receipt.get("external_calls_triggered_by_task") is True
+        or provider_receipt.get("provider_execution_implemented") is True
+    )
+    cache_packet_written = bool(quant_receipt or dry_run or execution_request or provider_receipt)
+    execution_request_ready = execution_request.get("local_execution_request_ready") is True
+    if provider_ready:
+        status = "small_data_writeback_ready_tushare_ledger_replayed"
+        summary_label = (
+            f"cache / ledger / packet 已回放：Tushare {provider_api_success_count}/{provider_api_call_count} "
+            f"个接口；packet={PACKET_KEY}"
+        )
+        next_action = "查看量化推演和次日图谱只读回放；Factor/Next/ECharts 仍需后续本地刷新证据。"
+    elif credential_missing_count:
+        status = "small_data_writeback_blocked_missing_credentials"
+        summary_label = "cache / ledger / packet 已写入本地阻断：缺少服务端 Tushare 凭据；未调用 provider。"
+        next_action = "配置服务端凭据后重新点击确认；页面渲染和 GET cache 仍不外联。"
+    elif provider_ledger_visible:
+        status = "small_data_writeback_partial_provider_ledger"
+        summary_label = (
+            f"cache / ledger / packet 已回放部分 Tushare ledger："
+            f"{provider_api_success_count}/{provider_api_call_count} 个接口；仍需补齐。"
+        )
+        next_action = "补齐 Tushare light ledger 后再联动 Factor/Next/ECharts；DeepSeek 仍保持 skipped。"
+    elif execution_request:
+        status = (
+            "small_data_writeback_waiting_provider_ledger"
+            if execution_request_ready
+            else "small_data_writeback_blocked_execution_request"
+        )
+        summary_label = "cache / ledger / packet 已写入本地申请；等待 Tushare-first provider ledger 回放。"
+        next_action = "执行请求 ready 后才允许按钮门控 provider task；DeepSeek 仍保持 skipped。"
+    elif quant_receipt:
+        status = "small_data_writeback_local_receipt_ready_provider_pending"
+        summary_label = "cache / ledger / packet 已写入本地搜票记录；等待确认链路补齐 Tushare-first ledger。"
+        next_action = "点击确认按钮创建后台任务；仅输入代码不会创建任务或外联。"
+    else:
+        status = "small_data_writeback_waiting_confirm"
+        summary_label = "cache / ledger / packet 等待输入代码并点击确认。"
+        next_action = "先输入 6 位 A 股代码，再点击确认并生成 3.0 量化推演。"
+    return {
+        "schema_version": QUANT_PROJECTION_SMALL_DATA_WRITEBACK_SCHEMA_VERSION,
+        "status": status,
+        "summary_label": summary_label,
+        "next_action": next_action,
+        "packet_key": PACKET_KEY,
+        "symbol": (
+            provider_receipt.get("symbol")
+            or execution_request.get("symbol")
+            or dry_run.get("symbol")
+            or quant_receipt.get("symbol")
+            or ""
+        ),
+        "cache_packet_written": cache_packet_written,
+        "local_receipt_written": bool(quant_receipt),
+        "acceptance_dry_run_written": bool(dry_run),
+        "execution_request_written": bool(execution_request),
+        "provider_acceptance_written": bool(provider_receipt),
+        "small_data_writeback_ready": provider_ready,
+        "provider_call_ledger_written": bool(provider_ledger),
+        "provider_call_ledger_api_count": len(provider_ledger),
+        "provider_api_call_count": provider_api_call_count,
+        "provider_api_success_count": provider_api_success_count,
+        "credential_missing_provider_count": credential_missing_count,
+        "execution_request_ready": execution_request_ready,
+        "deepseek_skipped_by_request": provider_receipt.get("deepseek_skipped_by_request") is True,
+        "factor_refresh_executed": provider_receipt.get("factor_refresh_executed") is True,
+        "next_session_refresh_executed": provider_receipt.get("next_session_refresh_executed") is True,
+        "echarts_payload_refreshed": provider_receipt.get("echarts_payload_refreshed") is True,
+        "provider_external_call_observed_in_post_task": provider_external_call_observed,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping[str, Any]) -> dict[str, Any]:
+    view = dict(packet)
+    summary = _search_quant_projection_small_data_writeback_summary(view)
+    view["search_quant_projection_small_data_writeback_summary"] = summary
+    counts = dict(_as_dict(view.get("counts")))
+    counts["search_quant_projection_small_data_writeback_ready"] = (
+        summary.get("small_data_writeback_ready") is True
+    )
+    counts["search_quant_projection_small_data_writeback_provider_api_success_count"] = summary.get(
+        "provider_api_success_count", 0
+    )
+    view["counts"] = counts
+    policy = dict(_as_dict(view.get("policy")))
+    policy["search_quant_projection_small_data_writeback_is_cache_replay"] = True
+    policy["search_quant_projection_small_data_writeback_cache_get_external_calls"] = False
+    policy["search_quant_projection_small_data_writeback_is_not_trade_signal"] = True
+    view["policy"] = policy
+    return view
+
+
 def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any = None) -> dict[str, Any]:
     task = task_service.create_task_record(
         QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_TASK_TYPE,
@@ -14796,6 +14920,7 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
         for warning in _as_list(packet.get("warnings"))
         if "provider/model acceptance" not in str(warning)
     ]
+    packet = _attach_search_quant_projection_small_data_writeback_summary(packet)
     try:
         SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
     except Exception:

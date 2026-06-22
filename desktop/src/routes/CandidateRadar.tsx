@@ -178,6 +178,7 @@ export default function CandidateRadar() {
   const searchQuantProjectionAcceptanceDryRun = (cache.search_quant_projection_acceptance_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionExecutionRequest = (cache.search_quant_projection_execution_request_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProviderModelAcceptance = (cache.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
+  const searchQuantProjectionSmallDataWriteback = (cache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
   const providerParityDryRun = (cache.provider_parity_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
   const fastScanRuntimeBudget = (cache.fast_scan_runtime_budget_contract as Record<string, unknown> | undefined) ?? {};
   const fastScanReadinessAudit = (cache.fast_scan_readiness_audit as Record<string, unknown> | undefined) ?? {};
@@ -549,11 +550,15 @@ export default function CandidateRadar() {
   const quantProjectionProviderModelReplayState = quantProjectionProviderLedgerReady
     ? "GET cache 已回放 Tushare provider ledger；DeepSeek skipped/pending，不改 action"
     : "等待确认按钮创建 Tushare-first task；GET cache 只显示 pending";
-  const quantProjectionSmallDataReplayState = quantProjectionProviderLedgerReady
-    ? `cache / ledger / packet 已回放：Tushare ${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel} 个接口；packet=command_center_3_candidate_radar_cache`
-    : searchQuantProjectionReceipt.status
-      ? `cache / ledger / packet 等待 Tushare-first 回放；本地记录=${String(searchQuantProjectionReceipt.status)}`
-      : "cache / ledger / packet 等待确认按钮创建 task";
+  const quantProjectionSmallDataReady =
+    searchQuantProjectionSmallDataWriteback.small_data_writeback_ready === true || quantProjectionProviderLedgerReady;
+  const quantProjectionSmallDataReplayState =
+    String(searchQuantProjectionSmallDataWriteback.summary_label ?? "") ||
+    (quantProjectionProviderLedgerReady
+      ? `cache / ledger / packet 已回放：Tushare ${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel} 个接口；packet=command_center_3_candidate_radar_cache`
+      : searchQuantProjectionReceipt.status
+        ? `cache / ledger / packet 等待 Tushare-first 回放；本地记录=${String(searchQuantProjectionReceipt.status)}`
+        : "cache / ledger / packet 等待确认按钮创建 task");
   const quantProjectionFactorNextReady =
     searchQuantProviderModelAcceptance.factor_refresh_executed === true ||
     searchQuantProviderModelAcceptance.next_session_refresh_executed === true ||
@@ -722,7 +727,7 @@ export default function CandidateRadar() {
               { label: "输入校验", value: quantProjectionInputValidation, tone: quantProjectionInputValidation.includes("阻断") ? "warn" : "good" },
               { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn" },
               { label: "Tushare ledger", value: quantProjectionProviderModelReplayState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
-              { label: "cache / ledger / packet", value: quantProjectionSmallDataReplayState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
+              { label: "cache / ledger / packet", value: quantProjectionSmallDataReplayState, tone: quantProjectionSmallDataReady ? "good" : "warn" },
               { label: "投研图谱联动", value: quantProjectionResearchMapState, tone: quantProjectionFactorNextReady ? "good" : "warn" },
               { label: "图谱下一步", value: quantProjectionMapNextStep },
               { label: "数据来源状态", value: quantProjectionSourceState },
