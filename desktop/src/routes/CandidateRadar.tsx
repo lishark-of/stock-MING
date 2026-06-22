@@ -179,6 +179,7 @@ export default function CandidateRadar() {
   const searchQuantProjectionExecutionRequest = (cache.search_quant_projection_execution_request_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProviderModelAcceptance = (cache.search_quant_provider_model_acceptance_receipt as Record<string, unknown> | undefined) ?? {};
   const searchQuantProjectionSmallDataWriteback = (cache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
+  const searchQuantProjectionInterpretation = (cache.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
   const providerParityDryRun = (cache.provider_parity_dry_run_receipt as Record<string, unknown> | undefined) ?? {};
   const fastScanRuntimeBudget = (cache.fast_scan_runtime_budget_contract as Record<string, unknown> | undefined) ?? {};
   const fastScanReadinessAudit = (cache.fast_scan_readiness_audit as Record<string, unknown> | undefined) ?? {};
@@ -576,6 +577,19 @@ export default function CandidateRadar() {
   const quantProjectionMapNextStep = quantProjectionProviderLedgerReady
     ? "查看量化推演结果，再看次日图谱预览；链接只读回放，不额外刷新外部数据或模型"
     : "先点击确认并生成 3.0 量化推演，再回放量化推演 / Next Session 图谱";
+  const quantProjectionInterpretationReady =
+    searchQuantProjectionInterpretation.interpretation_ready === true || quantProjectionProviderLedgerReady;
+  const quantProjectionInterpretationState =
+    String(searchQuantProjectionInterpretation.summary_label ?? "") ||
+    (quantProjectionProviderLedgerReady
+      ? "可解释结果：Tushare ledger 已回放；等待 Factor/Next/ECharts 本地图谱补齐"
+      : "解释结果等待 Tushare-first 账本");
+  const quantProjectionInterpretationNext =
+    String(searchQuantProjectionInterpretation.next_action ?? "") ||
+    "先点击确认并生成 3.0 量化推演；DeepSeek governed executor 单独补";
+  const quantProjectionInterpretationReplay =
+    String(searchQuantProjectionInterpretation.result_replay_label ?? "") ||
+    "成功后回放本地结果、ledger 和 packet；GET cache 只读展示";
   const quantProjectionSourceState = [
     `本地缓存：${quantProjectionCacheSourceLabel}`,
     `Tushare 数据：${quantProjectionProviderSourceLabel}`,
@@ -729,6 +743,8 @@ export default function CandidateRadar() {
               { label: "Tushare ledger", value: quantProjectionProviderModelReplayState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
               { label: "cache / ledger / packet", value: quantProjectionSmallDataReplayState, tone: quantProjectionSmallDataReady ? "good" : "warn" },
               { label: "投研图谱联动", value: quantProjectionResearchMapState, tone: quantProjectionFactorNextReady ? "good" : "warn" },
+              { label: "解释结果", value: quantProjectionInterpretationState, tone: quantProjectionInterpretationReady ? "good" : "warn" },
+              { label: "解释下一步", value: quantProjectionInterpretationNext },
               { label: "图谱下一步", value: quantProjectionMapNextStep },
               { label: "数据来源状态", value: quantProjectionSourceState },
               { label: "任务边界", value: quantProjectionTaskBoundary },
@@ -736,7 +752,7 @@ export default function CandidateRadar() {
               { label: "阻断/降级", value: quantProjectionBlockedState, tone: quantProjectionBlockedState.includes("阻断") || quantProjectionBlockedState.includes("未通过") ? "warn" : "good" },
               { label: "最近可用结果", value: quantProjectionLastResult },
               { label: "最近任务", value: quantProjectionLatestTaskState, tone: taskReceipt?.ok === false ? "warn" : "good" },
-              { label: "结果回放", value: quantProjectionResultReplayState, tone: "good" },
+              { label: "结果回放", value: quantProjectionInterpretationReplay || quantProjectionResultReplayState, tone: "good" },
               { label: "仅供研究", value: "推演解释只整理已有证据；不覆盖价格、持仓、因子、操作区或交易策略", tone: "good" }
             ]}
           />

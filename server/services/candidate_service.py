@@ -52,6 +52,9 @@ QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION = (
 QUANT_PROJECTION_SMALL_DATA_WRITEBACK_SCHEMA_VERSION = (
     "candidate_radar_search_quant_projection_small_data_writeback.v1"
 )
+QUANT_PROJECTION_INTERPRETATION_SCHEMA_VERSION = (
+    "candidate_radar_search_quant_projection_interpretation.v1"
+)
 QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_TASK_TYPE = (
     "run_candidate_radar_quant_projection_provider_model_acceptance"
 )
@@ -13684,6 +13687,7 @@ def _build_candidate_radar_packet(
     packet["fast_scan_task_pipeline_rows"] = task_pipeline_rows
     packet = _attach_no_feature_loss_acceptance_contract(packet)
     packet = _attach_search_quant_projection_small_data_writeback_summary(packet)
+    packet = _attach_search_quant_projection_interpretation_summary(packet)
     return _json_safe(packet)
 
 
@@ -13941,6 +13945,7 @@ def _cache_view_from_persisted(packet: Mapping[str, Any]) -> dict[str, Any]:
     view = _attach_candidate_radar_durable_evidence_recipe(view)
     view = _attach_candidate_radar_production_stage_scope_manifest(view)
     view = _attach_search_quant_projection_small_data_writeback_summary(view)
+    view = _attach_search_quant_projection_interpretation_summary(view)
     return _json_safe(view)
 
 
@@ -14129,6 +14134,7 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
         "搜票量化推演已写入本地回执；真实 Tushare / Factor / Next Session / DeepSeek / ECharts 证据仍待后续显式任务补齐。"
     ] + [warning for warning in _as_list(packet.get("warnings")) if "搜票量化推演" not in str(warning)]
     packet = _attach_search_quant_projection_small_data_writeback_summary(packet)
+    packet = _attach_search_quant_projection_interpretation_summary(packet)
     try:
         SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
     except Exception:
@@ -14324,6 +14330,7 @@ def run_candidate_quant_projection_acceptance_dry_run_task(payload: Any = None) 
         "搜票量化推演联动验收 dry-run 已写入本地预检；真实 Tushare / DeepSeek / Factor / Next / ECharts 仍未执行。"
     ] + [warning for warning in _as_list(packet.get("warnings")) if "搜票量化推演联动验收" not in str(warning)]
     packet = _attach_search_quant_projection_small_data_writeback_summary(packet)
+    packet = _attach_search_quant_projection_interpretation_summary(packet)
     try:
         SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
     except Exception:
@@ -14435,6 +14442,7 @@ def run_candidate_quant_projection_execution_request_task(payload: Any = None) -
         if "provider/model execution request" not in str(warning)
     ]
     packet = _attach_search_quant_projection_small_data_writeback_summary(packet)
+    packet = _attach_search_quant_projection_interpretation_summary(packet)
     try:
         SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
     except Exception:
@@ -14786,6 +14794,113 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     return view
 
 
+def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -> dict[str, Any]:
+    quant_receipt = _as_dict(packet.get("search_quant_projection_receipt"))
+    provider_receipt = _as_dict(packet.get("search_quant_provider_model_acceptance_receipt"))
+    small_data = _as_dict(packet.get("search_quant_projection_small_data_writeback_summary"))
+    provider_success_count = int(
+        provider_receipt.get("provider_api_success_count") or small_data.get("provider_api_success_count") or 0
+    )
+    provider_call_count = int(
+        provider_receipt.get("provider_api_call_count") or small_data.get("provider_api_call_count") or 0
+    )
+    small_data_ready = small_data.get("small_data_writeback_ready") is True
+    factor_next_ready = bool(
+        provider_receipt.get("factor_refresh_executed") is True
+        or provider_receipt.get("next_session_refresh_executed") is True
+        or provider_receipt.get("echarts_payload_refreshed") is True
+    )
+    missing_evidence: list[str] = []
+    if not small_data_ready:
+        missing_evidence.append("Tushare-first provider ledger")
+    if not factor_next_ready:
+        missing_evidence.append("Factor/Next/ECharts local cache replay")
+    if provider_receipt.get("deepseek_skipped_by_request") is not True:
+        missing_evidence.append("DeepSeek governed executor/model ledger")
+    if small_data_ready:
+        status = (
+            "interpretation_ready_tushare_ledger_with_local_map"
+            if factor_next_ready
+            else "interpretation_ready_tushare_ledger_pending_local_map"
+        )
+        summary_label = (
+            f"可解释结果：Tushare {provider_success_count}/{provider_call_count} 接口账本已回放；"
+            "当前解释只说明数据来源和待补图谱，不生成买卖动作。"
+        )
+        result_replay_label = (
+            "量化推演可先读 Tushare-first 证据；Next Session 图谱仍等待本地 cache 刷新。"
+            if not factor_next_ready
+            else "量化推演和 Next Session 图谱已有本地回放，可只读查看。"
+        )
+        next_action = "查看量化推演摘要，再补 Factor/Next/ECharts 本地刷新证据；DeepSeek 单独等待 governed executor。"
+    elif small_data.get("status") == "small_data_writeback_blocked_missing_credentials":
+        status = "interpretation_blocked_missing_tushare_credentials"
+        summary_label = "解释结果暂不可用：服务端 Tushare 凭据缺失，只有本地阻断记录，没有 provider 账本。"
+        result_replay_label = "当前只能回放本地阻断原因；不会从 GET cache 或 React render 补调 provider。"
+        next_action = "配置服务端凭据后重新确认；DeepSeek 仍保持 skipped。"
+    elif quant_receipt:
+        status = "interpretation_waiting_tushare_first_ledger"
+        summary_label = "解释结果等待 Tushare-first 账本：已有本地搜票记录，但还不能解释真实数据来源。"
+        result_replay_label = "当前只回放本地 receipt 和 pending 状态。"
+        next_action = "点击确认按钮创建后台任务；仅输入代码不会创建任务或外联。"
+    else:
+        status = "interpretation_waiting_symbol_confirm"
+        summary_label = "解释结果等待输入股票代码并确认。"
+        result_replay_label = "暂无量化推演结果可回放。"
+        next_action = "先输入 6 位 A 股代码，再点击确认并生成 3.0 量化推演。"
+    return {
+        "schema_version": QUANT_PROJECTION_INTERPRETATION_SCHEMA_VERSION,
+        "status": status,
+        "summary_label": summary_label,
+        "result_replay_label": result_replay_label,
+        "next_action": next_action,
+        "symbol": small_data.get("symbol") or quant_receipt.get("symbol") or "",
+        "interpretation_ready": small_data_ready,
+        "provider_api_success_count": provider_success_count,
+        "provider_api_call_count": provider_call_count,
+        "factor_next_echarts_ready": factor_next_ready,
+        "next_session_map_state": "local_map_ready" if factor_next_ready else "pending_local_cache_refresh",
+        "missing_evidence": missing_evidence,
+        "missing_evidence_count": len(missing_evidence),
+        "uses_tushare_ledger": small_data_ready,
+        "uses_deepseek_output": False,
+        "deepseek_skipped_by_request": provider_receipt.get("deepseek_skipped_by_request") is True,
+        "model_output_used": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_holdings": True,
+        "does_not_modify_prices": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+
+
+def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -> dict[str, Any]:
+    view = dict(packet)
+    if not isinstance(view.get("search_quant_projection_small_data_writeback_summary"), dict):
+        view = _attach_search_quant_projection_small_data_writeback_summary(view)
+    summary = _search_quant_projection_interpretation_summary(view)
+    view["search_quant_projection_interpretation_summary"] = summary
+    counts = dict(_as_dict(view.get("counts")))
+    counts["search_quant_projection_interpretation_ready"] = summary.get("interpretation_ready") is True
+    counts["search_quant_projection_interpretation_missing_evidence_count"] = summary.get(
+        "missing_evidence_count", 0
+    )
+    view["counts"] = counts
+    policy = dict(_as_dict(view.get("policy")))
+    policy["search_quant_projection_interpretation_is_cache_replay"] = True
+    policy["search_quant_projection_interpretation_does_not_call_model"] = True
+    policy["search_quant_projection_interpretation_is_not_trade_signal"] = True
+    view["policy"] = policy
+    return view
+
+
 def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any = None) -> dict[str, Any]:
     task = task_service.create_task_record(
         QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_TASK_TYPE,
@@ -14921,6 +15036,7 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
         if "provider/model acceptance" not in str(warning)
     ]
     packet = _attach_search_quant_projection_small_data_writeback_summary(packet)
+    packet = _attach_search_quant_projection_interpretation_summary(packet)
     try:
         SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, packet)
     except Exception:

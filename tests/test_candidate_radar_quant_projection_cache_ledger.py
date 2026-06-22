@@ -133,6 +133,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         packet = cache["data"]
         receipt = packet["search_quant_provider_model_acceptance_receipt"]
         small_data = packet["search_quant_projection_small_data_writeback_summary"]
+        interpretation = packet["search_quant_projection_interpretation_summary"]
         self.assertEqual(
             receipt["status"],
             "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped",
@@ -179,6 +180,26 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(small_data["deepseek_called"])
         self.assertTrue(small_data["does_not_execute_trades"])
         self.assertTrue(small_data["does_not_modify_strategy_action"])
+        self.assertEqual(
+            interpretation["schema_version"],
+            "candidate_radar_search_quant_projection_interpretation.v1",
+        )
+        self.assertEqual(
+            interpretation["status"],
+            "interpretation_ready_tushare_ledger_pending_local_map",
+        )
+        self.assertIn("Tushare 4/4 接口账本已回放", interpretation["summary_label"])
+        self.assertTrue(interpretation["interpretation_ready"])
+        self.assertEqual(interpretation["provider_api_success_count"], 4)
+        self.assertEqual(interpretation["next_session_map_state"], "pending_local_cache_refresh")
+        self.assertIn("Factor/Next/ECharts local cache replay", interpretation["missing_evidence"])
+        self.assertFalse(interpretation["uses_deepseek_output"])
+        self.assertFalse(interpretation["model_output_used"])
+        self.assertFalse(interpretation["cache_get_external_calls"])
+        self.assertFalse(interpretation["react_render_external_calls"])
+        self.assertTrue(interpretation["does_not_execute_trades"])
+        self.assertTrue(interpretation["does_not_modify_strategy_action"])
+        self.assertTrue(interpretation["does_not_modify_prices"])
 
         dumped = json.dumps(cache, ensure_ascii=False)
         self.assertNotIn("SHOULD_DROP", dumped)
@@ -274,6 +295,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         execution_request = packet["search_quant_projection_execution_request_receipt"]
         provider_receipt = packet["search_quant_provider_model_acceptance_receipt"]
         small_data = packet["search_quant_projection_small_data_writeback_summary"]
+        interpretation = packet["search_quant_projection_interpretation_summary"]
 
         self.assertEqual(
             dry_run["status"],
@@ -299,6 +321,13 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(small_data["provider_external_call_observed_in_post_task"])
         self.assertFalse(small_data["cache_get_external_calls"])
         self.assertFalse(small_data["external_calls_triggered"])
+        self.assertEqual(interpretation["status"], "interpretation_blocked_missing_tushare_credentials")
+        self.assertIn("服务端 Tushare 凭据缺失", interpretation["summary_label"])
+        self.assertFalse(interpretation["interpretation_ready"])
+        self.assertIn("Tushare-first provider ledger", interpretation["missing_evidence"])
+        self.assertFalse(interpretation["uses_deepseek_output"])
+        self.assertFalse(interpretation["cache_get_external_calls"])
+        self.assertFalse(interpretation["external_calls_triggered"])
         self.assertFalse(packet["external_calls_triggered"])
         self.assertFalse(packet["tushare_called"])
         self.assertFalse(packet["deepseek_called"])
