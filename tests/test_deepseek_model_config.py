@@ -1484,18 +1484,17 @@ class DeepSeekModelConfigTests(unittest.TestCase):
         self.assertEqual(
             contract["priority_order"],
             [
-                "p0_one_click_startup_frontend_backend_connection",
-                "p1_confirmed_stock_code_tushare_first_data_chain",
-                "p2_small_data_write_cache_ledger_packet",
-                "p3_interpretable_candidate_radar_quant_projection_next_session_map",
-                "p4_demote_engineering_audit_noise_from_ordinary_pages",
-                "p5_deepseek_governed_executor_separate_nonblocking",
-                "p6_return_to_14_ltg_direct_evidence_strict_closeout",
+                "fix_push_gate_ci_evidence",
+                "legacy_bug_ux_audit_for_streamlit_ordinary_workflows",
+                "rebuild_ltg13_candidate_radar_user_usable_workflow",
+                "searched_symbol_to_generate_3_0_quant_projection",
+                "show_provider_model_cache_pending_state_on_page",
+                "move_engineering_audit_tables_out_of_ordinary_flow",
             ],
         )
         self.assertEqual(
             contract["priority_rule"],
-            "future_migration_slices_follow_usable_path_p0_to_p6_or_name_blocker_exception",
+            "future_migration_slices_follow_current_priority_order_or_name_blocker_exception",
         )
         self.assertEqual(contract["current_execution_target"], "command_center_3_user_usable_shortest_path")
         self.assertEqual(contract["strict_closeout_status"], "paused_until_user_usable_path_is_stable")
@@ -2193,7 +2192,7 @@ class DeepSeekModelConfigTests(unittest.TestCase):
         self.assertIn("p5_deepseek_governed_executor_separate_nonblocking", long_term_goals)
         self.assertIn("p6_return_to_14_ltg_direct_evidence_strict_closeout", long_term_goals)
         self.assertIn(
-            "future_migration_slices_follow_usable_path_p0_to_p6_or_name_blocker_exception",
+            "future_migration_slices_follow_current_priority_order_or_name_blocker_exception",
             long_term_goals,
         )
         self.assertIn("usable_path_progress_must_not_be_reported_as_all_14_ltg_complete", long_term_goals)
