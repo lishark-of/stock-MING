@@ -92,6 +92,7 @@ echo "React/Vite: ${VITE_URL}"
 echo "Logs: ${LOG_DIR}"
 echo "P0: local one-click launcher starts/checks FastAPI and React/Vite before opening the page."
 echo "Mode: server config controls runtime mode; cache_only remains the safe default unless explicitly configured."
+echo "Link check: launcher verifies ${API_BASE%/}/health and ${API_BASE%/}/api/bootstrap/status before opening the page."
 echo "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution."
 echo "Safety: this launcher does not set live_light defaults and makes no Tushare, DeepSeek, GitHub, or trading call."
 echo "Acceptance: runtime_mode_config_current_acceptance_* markers are status/checkpoint drift guards, not launcher config or live_light enablement."
@@ -111,18 +112,23 @@ else
 fi
 
 FASTAPI_READY=0
+API_STATUS_READY=0
 VITE_READY=0
 
 if wait_for_url "FastAPI" "${API_BASE%/}/health" 40; then
   FASTAPI_READY=1
 fi
 
+if wait_for_url "FastAPI status API" "${API_BASE%/}/api/bootstrap/status" 40; then
+  API_STATUS_READY=1
+fi
+
 if wait_for_url "React/Vite" "$VITE_URL" 40; then
   VITE_READY=1
 fi
 
-if [ "$FASTAPI_READY" != "1" ] || [ "$VITE_READY" != "1" ]; then
-  echo "Command Center 3.0 启动未完成：FastAPI ready=${FASTAPI_READY}, React/Vite ready=${VITE_READY}"
+if [ "$FASTAPI_READY" != "1" ] || [ "$API_STATUS_READY" != "1" ] || [ "$VITE_READY" != "1" ]; then
+  echo "Command Center 3.0 启动未完成：FastAPI ready=${FASTAPI_READY}, API status ready=${API_STATUS_READY}, React/Vite ready=${VITE_READY}"
   echo "请查看日志："
   echo "  FastAPI log: ${FASTAPI_LOG}"
   echo "  React/Vite log: ${VITE_LOG}"

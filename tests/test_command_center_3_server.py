@@ -1578,7 +1578,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(one_click["scope"], "ordinary_user_local_startup_and_frontend_backend_connection")
         self.assertIn("stock-MING Command Center 3.command", one_click["what_user_should_click_next"])
         self.assertIn("scripts/start_command_center_3.command", one_click["what_user_should_click_next"])
-        self.assertEqual(one_click["success_condition"], "FastAPI /health 与 React/Vite 都 ready 后才打开 3.0 页面。")
+        self.assertEqual(
+            one_click["success_condition"],
+            "FastAPI /health、/api/bootstrap/status 与 React/Vite 都 ready 后才打开 3.0 页面。",
+        )
         self.assertIn(".stock_ming_3/logs/command_center_3_fastapi.log", one_click["blocked_next_action"])
         self.assertEqual(one_click["api_health_endpoint"], "http://127.0.0.1:8710/health")
         self.assertEqual(one_click["vite_url"], "http://127.0.0.1:5173")
@@ -1587,6 +1590,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(one_click["launcher_executable"])
         self.assertTrue(one_click["frontend_dependencies_present"])
         self.assertTrue(one_click["fastapi_health_wait_before_open"])
+        self.assertTrue(one_click["fastapi_status_api_wait_before_open"])
         self.assertTrue(one_click["vite_wait_before_open"])
         self.assertTrue(one_click["browser_opens_only_after_frontend_backend_ready"])
         self.assertTrue(one_click["frontend_api_client_uses_local_fastapi"])
