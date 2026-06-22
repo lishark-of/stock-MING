@@ -21,6 +21,18 @@ class BackendOfflineNoticeGuidanceTests(unittest.TestCase):
         self.assertNotIn("DEEPSEEK_API_KEY", notice)
         self.assertNotIn("GITHUB_TOKEN", notice)
 
+    def test_page_state_banner_hides_raw_backend_offline_error_from_ordinary_user(self):
+        root = Path(__file__).resolve().parents[1]
+        page_state = (
+            root / "desktop" / "src" / "components" / "PageStateBanner.tsx"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('import { BACKEND_OFFLINE_ERROR } from "../api/client";', page_state)
+        self.assertIn("const isBackendOffline = error.includes(BACKEND_OFFLINE_ERROR)", page_state)
+        self.assertIn("本地后端未连接；请按上方步骤使用本地启动器恢复连接。", page_state)
+        self.assertIn(": error}</p>", page_state)
+        self.assertNotIn("<p>{error}</p>", page_state)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,3 +1,4 @@
+import { BACKEND_OFFLINE_ERROR } from "../api/client";
 import BackendOfflineNotice from "./BackendOfflineNotice";
 import StateClarityRail from "./StateClarityRail";
 
@@ -33,11 +34,12 @@ export default function PageStateBanner({
   }
 
   if (error) {
+    const isBackendOffline = error.includes(BACKEND_OFFLINE_ERROR);
     return (
       <div className="page-state page-state-error motion-surface" data-page-state="error" data-motion-scope="cache_refresh_clarity" data-motion-purpose="state_change_confirmation">
         <strong>缓存读取失败</strong>
         <BackendOfflineNotice error={error} />
-        <p>{error}</p>
+        <p>{isBackendOffline ? "本地后端未连接；请按上方步骤使用本地启动器恢复连接。" : error}</p>
         <StateClarityRail
           label="cache error state"
           state="error"
