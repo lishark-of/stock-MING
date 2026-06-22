@@ -515,10 +515,20 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "P0: local one-click launcher starts/checks FastAPI and React/Vite before opening the page.",
         "Link check: launcher verifies",
         "/api/bootstrap/status before opening the page.",
+        "Health check: /health must return stock-MING Command Center 3.0 JSON with external_calls_on_startup=false.",
         "Bootstrap check: /api/bootstrap/status must return command_center_3_bootstrap_runtime_mode_packet JSON before the page opens.",
+        "Frontend check: Vite must serve stock-MING Command Center 3.0 index HTML before the page opens.",
+        "command_center_health_ready",
+        "wait_for_command_center_health",
         "bootstrap_status_ready",
         "wait_for_bootstrap_status",
+        "vite_command_center_ready",
+        "wait_for_vite_command_center",
         "command_center_3_bootstrap_runtime_mode_packet",
+        "stock-MING Command Center 3.0",
+        "external_calls_on_startup",
+        "可操作诊断",
+        "下一步：先关闭占用 8710/5173 的本地进程",
         "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution.",
         "scripts/dev_server.sh",
         "npm run dev",
@@ -666,14 +676,32 @@ def _one_click_startup_summary(
             "does_not_modify_strategy_action": True,
         }
 
-    fastapi_wait_ready = 'if wait_for_url "FastAPI" "${API_BASE%/}/health" 40; then' in launcher_source
+    health_identity_ready = (
+        'if wait_for_command_center_health "FastAPI" "${API_BASE%/}/health" 40; then'
+        in launcher_source
+        and "command_center_health_ready" in launcher_source
+        and 'data.get("service") != "stock-MING Command Center 3.0"' in launcher_source
+        and 'data.get("external_calls_on_startup") is not False' in launcher_source
+    )
     api_status_wait_ready = (
         'if wait_for_bootstrap_status "${API_BASE%/}/api/bootstrap/status" 40; then'
         in launcher_source
         and "command_center_3_bootstrap_runtime_mode_packet" in launcher_source
         and "command_center_bootstrap_runtime_mode.v1" in launcher_source
     )
-    vite_wait_ready = 'if wait_for_url "React/Vite" "$VITE_URL" 40; then' in launcher_source
+    vite_identity_ready = (
+        'if wait_for_vite_command_center "$VITE_URL" 40; then' in launcher_source
+        and "vite_command_center_ready" in launcher_source
+        and "stock-MING Command Center 3.0" in launcher_source
+        and "/src/main.tsx" in launcher_source
+    )
+    startup_diagnostics_visible = (
+        "print_startup_diagnostics" in launcher_source
+        and "FastAPI：${API_BASE%/}/health 未返回 Command Center 3.0 健康 JSON" in launcher_source
+        and "Bootstrap status：${API_BASE%/}/api/bootstrap/status 未返回 runtime-mode packet" in launcher_source
+        and "React/Vite：${VITE_URL} 未返回 Command Center 3.0 前端 HTML" in launcher_source
+        and "下一步：先关闭占用 8710/5173 的本地进程" in launcher_source
+    )
     open_is_gated = (
         'if [ "$FASTAPI_READY" != "1" ] || [ "$API_STATUS_READY" != "1" ] || [ "$VITE_READY" != "1" ]; then'
         in launcher_source
@@ -699,8 +727,8 @@ def _one_click_startup_summary(
         ),
         row(
             "fastapi_health_wait_before_open",
-            fastapi_wait_ready,
-            f"{_path_label(COMMAND_CENTER_3_LAUNCHER)} waits for {api_base_info.get('expected_health_endpoint')}",
+            health_identity_ready,
+            f"{_path_label(COMMAND_CENTER_3_LAUNCHER)} waits for {api_base_info.get('expected_health_endpoint')} to return stock-MING Command Center 3.0 health JSON with external_calls_on_startup=false",
         ),
         row(
             "fastapi_status_api_wait_before_open",
@@ -709,8 +737,13 @@ def _one_click_startup_summary(
         ),
         row(
             "vite_wait_before_open",
-            vite_wait_ready,
-            f"{_path_label(COMMAND_CENTER_3_LAUNCHER)} waits for http://127.0.0.1:5173",
+            vite_identity_ready,
+            f"{_path_label(COMMAND_CENTER_3_LAUNCHER)} waits for http://127.0.0.1:5173 to serve stock-MING Command Center 3.0 index HTML",
+        ),
+        row(
+            "startup_failure_diagnostics_visible",
+            startup_diagnostics_visible,
+            "launcher prints separate FastAPI, bootstrap status, and React/Vite diagnostics with 8710/5173 recovery guidance",
         ),
         row(
             "browser_opens_only_after_frontend_backend_ready",
@@ -748,8 +781,14 @@ def _one_click_startup_summary(
         "scope": "ordinary_user_local_startup_and_frontend_backend_connection",
         "headline": "一键启动会启动或复用本地 FastAPI 与 React/Vite，并在后端状态 API 与页面都联通后打开页面。",
         "what_user_should_click_next": "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。",
-        "success_condition": "FastAPI /health、/api/bootstrap/status bootstrap JSON 与 React/Vite 都 ready 后才打开 3.0 页面。",
-        "blocked_next_action": "若未打开页面，查看 .stock_ming_3/logs/command_center_3_fastapi.log 与 command_center_3_vite.log；若页面已打开但仍离线，关闭旧 React/Vite dev server 后重新运行启动器。",
+        "success_condition": "FastAPI /health 必须返回 Command Center 3.0 健康 JSON，/api/bootstrap/status 必须返回 runtime-mode packet，React/Vite 必须返回 Command Center 3.0 前端 HTML 后才打开页面。",
+        "blocked_next_action": "若未打开页面，先看启动器的可操作诊断：FastAPI、bootstrap status、React/Vite 哪段失败；再检查 8710/5173 是否被占用，或查看 .stock_ming_3/logs/command_center_3_fastapi.log 与 command_center_3_vite.log。",
+        "diagnostic_surfaces": [
+            "FastAPI /health Command Center 3.0 JSON",
+            "bootstrap status runtime-mode packet",
+            "React/Vite Command Center 3.0 HTML",
+            "8710/5173 port occupancy guidance",
+        ],
         "safe_fallback_path": "后端离线时页面显示本地离线提示；GET preflight 只读展示状态。",
         "launcher_path": desktop_launcher_contract.get("launcher_path"),
         "desktop_shortcut_target_name": desktop_launcher_contract.get("desktop_shortcut_target_name"),
@@ -759,10 +798,13 @@ def _one_click_startup_summary(
         "launcher_ready": desktop_launcher_contract.get("status") == "local_one_click_launcher_ready",
         "launcher_executable": desktop_launcher_contract.get("launcher_executable") is True,
         "frontend_dependencies_present": node_modules_present,
-        "fastapi_health_wait_before_open": fastapi_wait_ready,
+        "fastapi_health_wait_before_open": health_identity_ready,
+        "fastapi_health_identity_validated_before_open": health_identity_ready,
         "fastapi_status_api_wait_before_open": api_status_wait_ready,
         "fastapi_bootstrap_status_json_validated_before_open": api_status_wait_ready,
-        "vite_wait_before_open": vite_wait_ready,
+        "vite_wait_before_open": vite_identity_ready,
+        "vite_frontend_identity_validated_before_open": vite_identity_ready,
+        "startup_failure_diagnostics_visible": startup_diagnostics_visible,
         "browser_opens_only_after_frontend_backend_ready": open_is_gated,
         "frontend_api_client_uses_local_fastapi": frontend_api_client_local,
         "backend_offline_notice_available": offline_notice_ready,
