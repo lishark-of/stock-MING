@@ -507,6 +507,16 @@ export default function MigrationStatus() {
   const ltgAcceptanceRunwayRows = packetAcceptanceRunwayRows.length ? packetAcceptanceRunwayRows : localAcceptanceRunwayRows;
   const legacyAuditObservationTargets = [
     {
+      key: "legacy_intake_home_daily_command",
+      workflow_group: "home/daily command",
+      next_click: "记录首页 / 今日作战台 UX 观察",
+      user_observation: "Reviewer observed that daily command needs one clear first-view next step instead of legacy home rerun buttons and engineering tables.",
+      legacy_ux_bug_or_patchwork: "Legacy home/rerun flow mixes refresh buttons, status coupling, and engineering tables before daily summary, making the next click unclear.",
+      data_lineage_observation: "Check whether cache/provider/pending source, missing evidence, blocked/degraded state, and last-good cache are visible before audit tables.",
+      replacement_user_path: "今日作战台 / Daily Command Center first-view summary",
+      frozen_legacy_path: "旧 Streamlit 首页按钮 / rerun flow"
+    },
+    {
       key: "searched_symbol_quant_projection",
       workflow_group: "searched-symbol quant projection",
       next_click: "记录搜票量化观察 dry-run",
@@ -515,6 +525,16 @@ export default function MigrationStatus() {
       data_lineage_observation: "Provider/cache/model/pending states need to be separated before the workflow enters an ordinary user path.",
       replacement_user_path: "股票量化推演 / Stock Quant Projection -> 生成 3.0 量化推演",
       frozen_legacy_path: "legacy searched-symbol synchronous projection path stays admin/debug fallback until redesigned"
+    },
+    {
+      key: "legacy_intake_candidate_radar",
+      workflow_group: "candidate radar",
+      next_click: "记录下一票雷达 UX 观察",
+      user_observation: "Reviewer observed that candidate review must distinguish Top/Watch/Excluded, scan scope, and no-buy boundary before legacy fallback or promotion details.",
+      legacy_ux_bug_or_patchwork: "Legacy radar fallback can blur quick-scan/full-pool/deep-scan boundaries, make candidates look like buy instructions, and hide provider/performance gaps.",
+      data_lineage_observation: "Check whether candidate source, last radar cache, provider gap, pending/degraded state, browser/CI/provider missing evidence, and no-buy boundary are visible.",
+      replacement_user_path: "下一票雷达 / Candidate Radar ordinary summary and 搜票量化推演",
+      frozen_legacy_path: "旧 fallback 雷达路径、推荐式文案和未证明性能路径"
     },
     {
       key: "factor_risk_provider_health",
