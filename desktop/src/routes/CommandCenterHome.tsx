@@ -321,6 +321,12 @@ export default function CommandCenterHome() {
         : Number(taskUncoveredPostRoutes?.length ?? 0)
           ? "任务路由覆盖缺口见下方明细"
           : "当前缓存未标记阻断或降级";
+  const dailyCommandPendingSourceLabel = dailyCommandMissingEvidence.includes("核心缓存已可见")
+    ? "pending：当前摘要未标记新增待补"
+    : `pending：${dailyCommandMissingEvidence}`;
+  const dailyCommandDegradedSourceLabel = dailyCommandBlockedState.includes("未标记")
+    ? "degraded：未标记降级"
+    : `degraded：${dailyCommandBlockedState}`;
   const dailyCommandLastCache = String(
     packets.loaded_at ?? market.loaded_at ?? factor.loaded_at ?? next.loaded_at ?? dataHealth.loaded_at ?? "暂无最近可用缓存"
   );
@@ -402,6 +408,12 @@ export default function CommandCenterHome() {
         <MetricGrid
           items={[
             { label: "下一步", value: dailyCommandNextClick },
+            { label: "cache", value: dailyCommandCacheSourceLabel },
+            { label: "Tushare", value: dailyCommandTushareSourceLabel },
+            { label: "DeepSeek", value: dailyCommandDeepSeekSourceLabel },
+            { label: "pending", value: dailyCommandPendingSourceLabel, tone: dailyCommandPendingSourceLabel.includes("待补") || dailyCommandPendingSourceLabel.includes("验收") || dailyCommandPendingSourceLabel.includes("缓存") ? "warn" : "good" },
+            { label: "degraded", value: dailyCommandDegradedSourceLabel, tone: dailyCommandDegradedSourceLabel.includes("未标记") ? "good" : "warn" },
+            { label: "last_successful_cache/result", value: dailyCommandLastCache },
             { label: "数据来源", value: dailyCommandSourceState },
             { label: "后台状态", value: dailyCommandBackgroundTaskState, tone: dailyCommandBackgroundTaskTone },
             { label: "缺少证据", value: dailyCommandMissingEvidence, tone: dailyCommandMissingEvidence.includes("缓存") || dailyCommandMissingEvidence.includes("验收") || dailyCommandMissingEvidence.includes("收口") ? "warn" : "good" },
