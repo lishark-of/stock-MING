@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getHealth, getMigrationStatus } from "../api/client";
+import { getDesktopPreflightCache, getHealth, getMigrationStatus } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -11,6 +11,9 @@ export default function HealthStatus() {
   const [healthEnvelopeLedger, setHealthEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [healthEnvelopeWarnings, setHealthEnvelopeWarnings] = useState<Array<string>>([]);
   const [migration, setMigration] = useState<Record<string, unknown>>({});
+  const [desktopPreflight, setDesktopPreflight] = useState<Record<string, unknown>>({});
+  const [desktopPreflightEnvelopeLedger, setDesktopPreflightEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
+  const [desktopPreflightEnvelopeWarnings, setDesktopPreflightEnvelopeWarnings] = useState<Array<string>>([]);
 
   useEffect(() => {
     void getHealth().then((res) => {
@@ -19,6 +22,11 @@ export default function HealthStatus() {
       setHealthEnvelopeWarnings(res.warnings ?? []);
     });
     void getMigrationStatus().then((res) => setMigration(res.data));
+    void getDesktopPreflightCache().then((res) => {
+      setDesktopPreflight(res.data);
+      setDesktopPreflightEnvelopeLedger(res.call_ledger ?? []);
+      setDesktopPreflightEnvelopeWarnings(res.warnings ?? []);
+    });
   }, []);
 
   const modelStrategy = health.deepseek_model_strategy as Record<string, unknown> | undefined;
@@ -34,6 +42,11 @@ export default function HealthStatus() {
   const progress = (migration.progress_baseline as Array<Record<string, unknown>> | undefined) ?? [];
   const migrationPolicy = migration.api_policy as Record<string, unknown> | undefined;
   const healthWarnings = healthEnvelopeWarnings.length ? healthEnvelopeWarnings : ((health.warnings as Array<string> | undefined) ?? []);
+  const oneClickStartupSummary = (desktopPreflight.one_click_startup_summary as Record<string, unknown> | undefined) ?? {};
+  const desktopLauncherContract = (desktopPreflight.desktop_launcher_contract as Record<string, unknown> | undefined) ?? {};
+  const oneClickConnectionRows = (desktopPreflight.one_click_connection_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const desktopPreflightWarnings = desktopPreflightEnvelopeWarnings.length ? desktopPreflightEnvelopeWarnings : ((desktopPreflight.warnings as Array<string> | undefined) ?? []);
+  const p0ConnectionReady = oneClickStartupSummary.frontend_backend_connection_ready === true;
 
   return (
     <>
@@ -42,9 +55,20 @@ export default function HealthStatus() {
         <StatusBadge label={String(health.status ?? "loading")} tone={health.status === "ok" ? "good" : "warn"} />
       </div>
 
+      <PacketCard title="P0 前后端联通摘要" subtitle="普通用户先确认本地 FastAPI / React 是否已联通" status={String(oneClickStartupSummary.status ?? "preflight_cache_loading")}>
+        <p>联通状态：{p0ConnectionReady ? "已具备本地一键联通条件" : "需要检查本地一键入口"}</p>
+        <p>下一步：{String(oneClickStartupSummary.what_user_should_click_next ?? "打开桌面壳预检，按本地快捷入口重启。")}</p>
+        <p>快捷入口：{String(desktopLauncherContract.desktop_shortcut_target_name ?? "stock-MING Command Center 3.command")}</p>
+        <p>失败处理：{String(oneClickStartupSummary.blocked_next_action ?? "查看本地 FastAPI/Vite 日志或进入桌面壳预检。")}</p>
+        <p>只读边界：本卡只读取 GET /health 与 GET /api/desktop/preflight-cache；不会启动 FastAPI/Vite、不会创建 task、不会调用 Tushare/DeepSeek/GitHub 或交易路径。</p>
+        <DataLineageTable rows={oneClickConnectionRows} />
+      </PacketCard>
+
       <MetricGrid
         items={[
           { label: "FastAPI", value: health.status as string | undefined, tone: health.status === "ok" ? "good" : "warn" },
+          { label: "P0 front/back", value: p0ConnectionReady ? "ready" : "check", tone: p0ConnectionReady ? "good" : "warn" },
+          { label: "one-click launcher", value: desktopLauncherContract.launcher_executable === true ? "ready" : "check", tone: desktopLauncherContract.launcher_executable === true ? "good" : "warn" },
           { label: "startup external calls", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" },
           { label: "Tushare", value: health.tushare_called === true ? "已调用" : "未调用", tone: health.tushare_called === true ? "bad" : "good" },
           { label: "DeepSeek", value: health.deepseek_called === true ? "已调用" : "未调用", tone: health.deepseek_called === true ? "bad" : "good" },
@@ -54,7 +78,9 @@ export default function HealthStatus() {
           { label: "迁移基线", value: String(migration.status ?? "loading") },
           { label: "cache only", value: migrationPolicy?.cache_only, tone: migrationPolicy?.cache_only === false ? "bad" : "good" },
           { label: "health envelope ledger", value: healthEnvelopeLedger.length },
-          { label: "health warnings", value: healthWarnings.length }
+          { label: "desktop preflight ledger", value: desktopPreflightEnvelopeLedger.length },
+          { label: "health warnings", value: healthWarnings.length },
+          { label: "desktop preflight warnings", value: desktopPreflightWarnings.length }
         ]}
       />
 
