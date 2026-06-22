@@ -20,6 +20,8 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('label: "pending"', source)
         self.assertIn('label: "degraded"', source)
         self.assertIn('label: "last_successful_cache/result"', source)
+        self.assertIn('label: "雷达搜票回放"', source)
+        self.assertIn('label: "回放位置"', source)
         self.assertIn('label: "数据来源状态"', source)
         self.assertIn('label: "补证方式"', source)
         self.assertIn('label: "缺少证据"', source)
@@ -34,6 +36,13 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(source.index('label: "last_successful_cache/result"'), source.index("开发 / 审计指标"))
         self.assertIn("ordinaryQuantDegradedSourceLabel", source)
         self.assertIn("degraded：未标记降级", source)
+        self.assertIn("ordinaryQuantRadarHandoffState", source)
+        self.assertIn("ordinaryQuantReplayLocation", source)
+        self.assertIn("等待下一票雷达搜票生成本地量化推演", source)
+        self.assertIn("Factor cache / Next Session preview / DeepSeek status", source)
+        self.assertIn("不从本页补调 provider/model", source)
+        self.assertIn("本页链接不重新触发 Tushare-first 或 DeepSeek", source)
+        self.assertLess(source.index('label: "雷达搜票回放"'), source.index("高级验收任务"))
 
     def test_stock_quant_projection_explains_evidence_task_mode(self):
         source = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")

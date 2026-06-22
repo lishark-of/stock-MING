@@ -286,6 +286,11 @@ export default function FactorQuantHub() {
   const ordinaryQuantLastCache = String(
     packet.loaded_at ?? packet.updated_at ?? packet.generated_at ?? freshnessGate.latest_data_date ?? "暂无最近可用缓存"
   );
+  const ordinaryQuantRadarHandoffState = empty
+    ? "等待下一票雷达搜票生成本地量化推演"
+    : `已读取本地量化缓存；搜票结果回放看 ${ordinaryQuantLastCache}`;
+  const ordinaryQuantReplayLocation =
+    "回放位置：Factor cache / Next Session preview / DeepSeek status；不从本页补调 provider/model";
   const ordinaryQuantRuntimeModeLabel = `运行模式：${runtimeModeLabel(ordinaryQuantRuntimeMode)}`;
   const ordinaryQuantTaskBoundary =
     "本页 GET cache 只读；手动刷新、轻量推演、模型整理或 live_light 补证都必须走 POST task，不在 React 渲染中直连 Tushare 或 DeepSeek";
@@ -311,6 +316,8 @@ export default function FactorQuantHub() {
             { label: "pending", value: ordinaryQuantPendingStateLabel, tone: ordinaryQuantPendingStateLabel.includes("待补") || ordinaryQuantPendingStateLabel.includes("等待") ? "warn" : "good" },
             { label: "degraded", value: ordinaryQuantDegradedSourceLabel, tone: ordinaryQuantDegradedSourceLabel.includes("未标记") ? "good" : "warn" },
             { label: "last_successful_cache/result", value: ordinaryQuantLastCache },
+            { label: "雷达搜票回放", value: ordinaryQuantRadarHandoffState, tone: empty ? "warn" : "good" },
+            { label: "回放位置", value: ordinaryQuantReplayLocation, tone: "good" },
             { label: "数据来源状态", value: ordinaryQuantSourceState },
             { label: "补证方式", value: ordinaryQuantEvidenceTaskState, tone: ordinaryQuantEvidenceTaskState.includes("等待") || ordinaryQuantEvidenceTaskState.includes("待补") || ordinaryQuantEvidenceTaskState.includes("未知") ? "warn" : "good" },
             { label: "缺少证据", value: ordinaryQuantMissingEvidence, tone: ordinaryQuantMissingEvidence.includes("待补") || ordinaryQuantMissingEvidence.includes("待确认") ? "warn" : "good" },
@@ -321,6 +328,7 @@ export default function FactorQuantHub() {
           ]}
         />
         <p className="risk-note">没有标的时先去 <a href="#candidates">下一票雷达</a> 输入代码并点击生成 3.0 量化推演；这个链接只切换本地页面，不创建 task。</p>
+        <p className="risk-note">来自下一票雷达的搜票结果在本页只回放 Factor cache、次日图谱预览和模型解释状态；本页链接不重新触发 Tushare-first 或 DeepSeek。</p>
         <p className="risk-note">工程审计明细默认收起；完整 factor/provider/model ledger 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
       <div className="actions">
