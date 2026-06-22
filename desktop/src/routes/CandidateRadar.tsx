@@ -423,7 +423,7 @@ export default function CandidateRadar() {
     ? "查看本地候选池"
     : "运行本地快扫";
   const ordinaryPrimaryActionBoundary = Number(counts.candidate_count ?? 0)
-    ? "主下一步只跳转本地候选池，不创建 task、不刷新 provider/model"
+    ? "主下一步只跳转本地候选池，不创建 task、不刷新外部数据或模型"
     : "主下一步只创建按钮门控本地快扫 POST task，不直连 Tushare/DeepSeek";
   const ordinaryOptionalNextClick = Number(counts.candidate_count ?? 0)
     ? "需要更新时再运行本地快扫；搜单票时输入代码后点击生成 3.0 量化推演"
@@ -520,7 +520,7 @@ export default function CandidateRadar() {
     searchQuantProjectionReceipt.status ? "本地推演记录可用" : cache.status === "ready" ? "候选缓存可用" : "等待本地缓存";
   const quantProjectionProviderSourceLabel = quantProjectionProviderLedgerReady
     ? `Tushare ledger 已回放：${quantProjectionProviderApiSuccessLabel} 个接口`
-    : searchQuantProjectionReceipt.provider_execution_implemented === true ? "Tushare 数据有本地记录" : "待 execution-request 账本补证";
+    : searchQuantProjectionReceipt.provider_execution_implemented === true ? "Tushare 数据有本地记录" : "待后台补证账本回放";
   const quantProjectionModelSourceLabel = quantProjectionDeepSeekSkipped
     ? "DeepSeek 已跳过：等待 governed executor"
     : searchQuantProviderModelAcceptance.deepseek_model_ledger_evidence_done === true
@@ -551,7 +551,7 @@ export default function CandidateRadar() {
       ? "本地搜票记录已生成；等待 Tushare-first 后再联动量化推演 / Next Session 图谱"
       : "等待确认按钮创建搜票任务后联动量化推演 / Next Session 图谱";
   const quantProjectionMapNextStep = quantProjectionProviderLedgerReady
-    ? "查看量化推演结果，再看次日图谱预览；链接只读回放，不补调 provider/model"
+    ? "查看量化推演结果，再看次日图谱预览；链接只读回放，不额外刷新外部数据或模型"
     : "先点击确认并生成 3.0 量化推演，再回放量化推演 / Next Session 图谱";
   const quantProjectionSourceState = [
     `本地缓存：${quantProjectionCacheSourceLabel}`,
@@ -560,21 +560,21 @@ export default function CandidateRadar() {
     `运行模式：${candidateRadarRuntimeModeLabel}`
   ].join(" / ");
   const quantProjectionMissingEvidence = [
-    searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true ? "" : "真实数据和模型解释证据待补",
-    searchQuantProjectionReceipt.production_quant_projection_complete === true ? "" : "完整推演验收待补",
+    searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true ? "" : "真实数据回放待补",
+    searchQuantProjectionReceipt.production_quant_projection_complete === true ? "" : "完整推演结果待补",
     searchQuantProjectionActivation.local_activation_receipt_ready === true ? "" : "本地推演准备记录待补",
-    searchQuantProjectionAcceptanceDryRun.ready_for_user_approved_real_acceptance === true ? "" : "execution-request 账本待补",
-    searchQuantProjectionExecutionRequest.local_execution_request_ready === true ? "" : "执行准备记录待补"
+    searchQuantProjectionAcceptanceDryRun.ready_for_user_approved_real_acceptance === true ? "" : "后台补证申请待准备",
+    searchQuantProjectionExecutionRequest.local_execution_request_ready === true ? "" : "后台执行准备待补"
   ].filter(Boolean).join(" / ") || "本地推演记录已显示；当前摘要未标记阻断";
   const quantProjectionBlockedState = searchQuantProjectionReceipt.symbol_valid === false
-    ? "输入代码未通过本地校验；不会创建真实 provider/model 补证"
+    ? "输入代码未通过本地校验；不会创建真实数据或模型补证"
     : searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true
-      ? "可创建按钮门控补证请求；render 仍不自动外联"
+      ? "可创建按钮门控补证请求；页面显示仍不自动外联"
       : "等待确认按钮创建 Tushare-first task；DeepSeek governed executor 未完成前保持 skipped";
   const quantProjectionTushareFirstState = quantProjectionProviderLedgerReady
     ? "Tushare-first 数据已回放；下一步看量化推演和次日图谱预览"
     : searchQuantProjectionReceipt.status
-      ? "等待 Tushare-first 回放；普通页无需处理 scope/hash"
+      ? "等待 Tushare-first 回放；普通页只看回放状态"
       : "输入代码并确认后创建 Tushare-first 任务";
   const quantProjectionLastResult = [
     `当前标的：${quantProjectionDisplaySymbol || "--"}`,
@@ -654,7 +654,7 @@ export default function CandidateRadar() {
         </div>
         <p className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
         <p className="risk-note">摘要按钮只读取本地 cache 或创建按钮门控 POST task；输入代码不会创建任务，也不会在 React 渲染中直连 Tushare、DeepSeek 或 GitHub。</p>
-        <p className="risk-note">生成任务完成后，去 <a href="#factor">股票量化推演</a> 查看本地缓存结果；该链接只切换页面，不额外刷新 provider/model。</p>
+        <p className="risk-note">生成任务完成后，去 <a href="#factor">股票量化推演</a> 查看本地缓存结果；该链接只切换页面，不额外刷新外部数据或模型。</p>
         <p className="risk-note">工程审计明细默认收起；完整 call ledger、release gate 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
 

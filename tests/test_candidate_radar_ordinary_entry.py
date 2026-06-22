@@ -46,7 +46,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("ordinaryPrimaryActionLabel", self.page)
         self.assertIn("ordinaryPrimaryActionBoundary", self.page)
         self.assertIn("查看本地候选池", self.page)
-        self.assertIn("主下一步只跳转本地候选池，不创建 task、不刷新 provider/model", self.page)
+        self.assertIn("主下一步只跳转本地候选池，不创建 task、不刷新外部数据或模型", self.page)
         self.assertIn("主下一步只创建按钮门控本地快扫 POST task，不直连 Tushare/DeepSeek", self.page)
         self.assertIn("ordinaryOptionalNextClick", self.page)
         self.assertIn("需要更新时再运行本地快扫", self.page)

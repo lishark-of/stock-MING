@@ -39,8 +39,14 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn('label: "图谱下一步"', search_panel)
         self.assertIn("普通入口只保留一个确认按钮", search_panel)
         self.assertIn("工程补证入口已下沉到调用审计", search_panel)
+        self.assertIn("后台补证申请待准备", self.page)
+        self.assertIn("普通页只看回放状态", self.page)
+        self.assertIn("不额外刷新外部数据或模型", self.page)
         self.assertNotIn("确认 Tushare-first 补证", search_panel)
         self.assertNotIn("生成 provider/model execution request", search_panel)
+        self.assertNotIn("scope/hash", search_panel)
+        self.assertNotIn("execution-request", search_panel)
+        self.assertNotIn("provider/model", search_panel)
         self.assertIn("确认 Tushare-first 补证", self.page)
         self.assertIn(
             "Tushare ledger 来自 cache / call_ledger 回放",
