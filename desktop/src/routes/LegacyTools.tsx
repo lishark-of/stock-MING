@@ -64,6 +64,20 @@ export default function LegacyTools() {
   const legacyBugUxModuleRows = rows(cache.legacy_bug_ux_module_rows);
   const legacyAuditFirstRoundIntake = (cache.legacy_audit_first_round_intake as Record<string, unknown> | undefined) ?? {};
   const legacyAuditFirstRoundIntakeRows = rows(cache.legacy_audit_first_round_intake_rows);
+  const legacyAuditNextEvidenceRows = legacyAuditFirstRoundIntakeRows.slice(0, 3).map((row, index) => ({
+    priority: index + 1,
+    workflow_group: row.workflow_group ?? row.workflow ?? row.legacy_module ?? row.id,
+    next_click: row.next_action ?? "capture_safe_user_observation_lineage_and_freeze_decision",
+    replacement_user_path: row.replacement_user_path ?? row.ordinary_entrance_placement ?? "pending_3_0_replacement_path_review",
+    evidence_attachment: row.evidence_attachment ?? "pending_safe_screenshot_or_redacted_reviewer_note",
+    frozen_legacy_path: row.frozen_legacy_path ?? "retain_streamlit_fallback_until_direct_evidence_ready",
+    keep_promotion_decision: row.keep_promotion_decision ?? "no_keep_promotion_this_round",
+  }));
+  const legacyAuditNextEvidenceFocus = legacyAuditNextEvidenceRows.length
+    ? legacyAuditNextEvidenceRows.map((row) => String(row.workflow_group ?? "--")).join(" / ")
+    : "home_daily_command / searched_symbol_quant_projection / candidate_radar";
+  const legacyAuditNextEvidenceBoundary = "只允许 safe screenshot、redacted reviewer note 或 safe log summary；不能贴 raw packet、raw log、token/key 或未脱敏模型输出";
+  const legacyAuditNextEvidenceBlockedState = "KEEP 和 ordinary entry 继续 blocked；direct evidence ready 前不能退掉 Streamlit fallback";
   const legacyBugUxEvidenceSlotRows = legacyBugUxModuleRows.map((row) => ({
     legacy_module: row.legacy_module,
     classification: row.classification,
@@ -183,6 +197,19 @@ export default function LegacyTools() {
       <PacketCard title="迁移 commit checkpoint" subtitle="未来迁移提交必须回答这 5 个问题；不是 production evidence" status="commit_questions">
         <p>每个后续迁移 slice 都要说明：保留了什么用户能力、移除了什么旧 UX 问题、哪些 bug/patchwork 没有迁入、非技术用户哪里更简单、减少了哪个真实 blocker。</p>
         <DataLineageTable rows={migrationCommitQuestionRows} />
+      </PacketCard>
+
+      <PacketCard title="Legacy 下一次取证" subtitle="first-round direct UX/bug evidence checklist；只读，不升级 KEEP" status="direct_evidence_intake_pending">
+        <MetricGrid
+          items={[
+            { label: "优先工作流", value: legacyAuditNextEvidenceFocus },
+            { label: "取证方式", value: legacyAuditNextEvidenceBoundary, tone: "good" },
+            { label: "升级状态", value: legacyAuditNextEvidenceBlockedState, tone: "warn" }
+          ]}
+        />
+        <p>下一次只记录用户真实操作卡点、旧 UX/bug/patchwork、数据血缘、替代 3.0 入口和冻结旧路径；这不是 production evidence。</p>
+        <p>本卡片不打开 Streamlit、不创建 task、不调用 provider/model，不把 inventory / receipt / matrix 升级成 KEEP。</p>
+        <DataLineageTable rows={legacyAuditNextEvidenceRows} />
       </PacketCard>
 
       <PacketCard title="Legacy first-round intake" subtitle="第一轮 Legacy Bug / UX Audit 取证模板；admin/debug only，不升级 KEEP" status={String(legacyAuditFirstRoundIntake.status ?? "legacy_audit_intake")}>
