@@ -28,3 +28,9 @@ def post_bootstrap_live_startup(payload: dict[str, Any] | None = None) -> dict:
 def post_bootstrap_provider_model_acceptance_dry_run(payload: dict[str, Any] | None = None) -> dict:
     task = bootstrap_service.run_provider_model_acceptance_dry_run(payload)
     return task_envelope(task)
+
+
+@router.post("/provider-model-execution-request")
+def post_bootstrap_provider_model_execution_request(payload: dict[str, Any] | None = None) -> dict:
+    task = bootstrap_service.run_provider_model_execution_request(payload)
+    return task_envelope(task)

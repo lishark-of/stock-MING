@@ -18,11 +18,16 @@ BOOTSTRAP_TASK_TYPE = "command_center_live_bootstrap"
 BOOTSTRAP_ACCEPTANCE_DRY_RUN_PACKET_KEY = "command_center_live_bootstrap_provider_model_acceptance_dry_run_packet"
 BOOTSTRAP_ACCEPTANCE_DRY_RUN_SCHEMA_VERSION = "command_center_live_bootstrap_provider_model_acceptance_dry_run.v1"
 BOOTSTRAP_ACCEPTANCE_DRY_RUN_TASK_TYPE = "command_center_live_bootstrap_provider_model_acceptance_dry_run"
+BOOTSTRAP_EXECUTION_REQUEST_PACKET_KEY = "command_center_live_bootstrap_provider_model_execution_request_packet"
+BOOTSTRAP_EXECUTION_REQUEST_SCHEMA_VERSION = "command_center_live_bootstrap_provider_model_execution_request.v1"
+BOOTSTRAP_EXECUTION_REQUEST_TASK_TYPE = "command_center_live_bootstrap_provider_model_execution_request"
 BOOTSTRAP_MODES = ("cache_only", "manual", "live_light", "live_full")
 DEFAULT_MODE = "cache_only"
 BOOTSTRAP_STATUS_ROUTE = "GET /api/bootstrap/status"
 PLANNED_BOOTSTRAP_TASK_ROUTE = "POST /api/bootstrap/live-startup"
 PLANNED_BOOTSTRAP_ACCEPTANCE_DRY_RUN_ROUTE = "POST /api/bootstrap/provider-model-acceptance-dry-run"
+PLANNED_BOOTSTRAP_EXECUTION_REQUEST_ROUTE = "POST /api/bootstrap/provider-model-execution-request"
+FUTURE_BOOTSTRAP_PROVIDER_MODEL_ACCEPTANCE_ROUTE = "future POST /api/bootstrap/provider-model-acceptance"
 DEFAULT_LIGHT_TUSHARE_APIS = ("trade_cal_if_needed", "daily", "daily_basic", "moneyflow")
 ACCEPTANCE_DRY_RUN_ALLOWED_APIS = ("trade_cal", "daily", "daily_basic", "moneyflow")
 TUSHARE_ACCEPTANCE_ENV_KEYS = ("TUSHARE_TOKEN",)
@@ -236,6 +241,33 @@ def _sanitize_acceptance_dry_run_payload(payload: Any, *, symbol_limit: int) -> 
         "selected_apis": selected_apis,
         "ignored_apis": ignored_apis,
         "allowed_apis": list(ACCEPTANCE_DRY_RUN_ALLOWED_APIS),
+        "contains_secret": False,
+    }
+
+
+def _sanitize_execution_request_payload(payload: Any) -> dict[str, Any]:
+    raw = payload if isinstance(payload, dict) else {}
+    requested_scope_hash = _safe_text(
+        raw.get("acceptance_scope_hash") or raw.get("requested_acceptance_scope_hash") or "",
+        limit=80,
+    )
+    requested_apis = _safe_api_list(raw.get("apis") or raw.get("selected_apis"), limit=16)
+    user_confirmed = _safe_bool(
+        raw.get("confirmed_by_user", raw.get("operator_approved", raw.get("approved_by_user"))),
+        False,
+    )
+    return {
+        "schema_version": BOOTSTRAP_EXECUTION_REQUEST_SCHEMA_VERSION,
+        "source": _safe_text(raw.get("source") or "command_center_3", limit=80),
+        "requested_by": _safe_text(raw.get("requested_by") or "local_user", limit=80),
+        "user_confirmed": user_confirmed,
+        "confirmation_mode": "explicit_payload_true" if user_confirmed else "missing_or_false",
+        "requested_acceptance_scope_hash": requested_scope_hash,
+        "requested_acceptance_scope_hash_short": requested_scope_hash[:16] if requested_scope_hash else "",
+        "selected_apis": [api for api in requested_apis if api in ACCEPTANCE_DRY_RUN_ALLOWED_APIS],
+        "ignored_apis": [api for api in requested_apis if api not in ACCEPTANCE_DRY_RUN_ALLOWED_APIS],
+        "include_tushare": _safe_bool(raw.get("include_tushare", raw.get("tushare")), bool(requested_apis)),
+        "include_deepseek": _safe_bool(raw.get("include_deepseek", raw.get("deepseek")), False),
         "contains_secret": False,
     }
 
@@ -1411,6 +1443,250 @@ def _acceptance_dry_run_call_ledger(
     }
 
 
+def _latest_acceptance_dry_run_task(requested_scope_hash: str = "") -> dict[str, Any] | None:
+    tasks = [
+        task
+        for task in task_service.list_task_statuses()
+        if task.get("task_type") == BOOTSTRAP_ACCEPTANCE_DRY_RUN_TASK_TYPE
+    ]
+    if requested_scope_hash:
+        for task in tasks:
+            payload = _dict(task.get("payload_safe"))
+            summary = _dict(payload.get("acceptance_dry_run_summary"))
+            if str(summary.get("acceptance_scope_hash") or "") == requested_scope_hash:
+                return task
+    return tasks[0] if tasks else None
+
+
+def _execution_request_row(
+    criterion: str,
+    status: str,
+    evidence: str,
+    *,
+    passed: bool,
+    local_blocker: bool = False,
+    production_blocker: bool = False,
+) -> dict[str, Any]:
+    return {
+        "schema_version": BOOTSTRAP_EXECUTION_REQUEST_SCHEMA_VERSION,
+        "criterion": criterion,
+        "status": status,
+        "passed": bool(passed),
+        "local_blocker": bool(local_blocker),
+        "production_blocker": bool(production_blocker),
+        "evidence": evidence,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
+def _build_execution_request_receipt(
+    *,
+    payload_safe: dict[str, Any],
+    latest_dry_run_task: dict[str, Any] | None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    latest_payload = _dict(latest_dry_run_task.get("payload_safe")) if latest_dry_run_task else {}
+    latest_summary = _dict(latest_payload.get("acceptance_dry_run_summary"))
+    latest_scope_hash = str(latest_summary.get("acceptance_scope_hash") or "")
+    latest_scope_hash_short = str(latest_summary.get("acceptance_scope_hash_short") or "")
+    requested_scope_hash = str(payload_safe.get("requested_acceptance_scope_hash") or "")
+    scope_matches = bool(requested_scope_hash and requested_scope_hash == latest_scope_hash)
+    storage_source = str(latest_dry_run_task.get("storage_source") or "") if latest_dry_run_task else ""
+    durable_receipt_visible = storage_source in {"memory_and_sqlite", "sqlite_meta"}
+    dry_run_ready = latest_summary.get("ready_for_user_approved_real_acceptance") is True
+    credential_missing_count = int(latest_summary.get("credential_missing_provider_count") or 0)
+    credential_ready = bool(latest_dry_run_task) and credential_missing_count == 0
+    user_confirmed = payload_safe.get("user_confirmed") is True
+    selected_apis = list(payload_safe.get("selected_apis") or latest_summary.get("selected_apis") or [])
+    ignored_apis = list(payload_safe.get("ignored_apis") or latest_summary.get("ignored_apis") or [])
+    include_tushare = payload_safe.get("include_tushare") is True or latest_summary.get("include_tushare") is True
+    include_deepseek = payload_safe.get("include_deepseek") is True or latest_summary.get("include_deepseek") is True
+    selected_scope_ready = bool(selected_apis or include_tushare or include_deepseek)
+    rows = [
+        _execution_request_row(
+            "latest_acceptance_dry_run_receipt_visible",
+            "passed_durable_dry_run_receipt_visible"
+            if latest_dry_run_task and durable_receipt_visible
+            else "blocked_missing_durable_dry_run_receipt",
+            f"task_id={latest_dry_run_task.get('task_id') if latest_dry_run_task else ''}; storage_source={storage_source}",
+            passed=bool(latest_dry_run_task) and durable_receipt_visible,
+            local_blocker=not (bool(latest_dry_run_task) and durable_receipt_visible),
+        ),
+        _execution_request_row(
+            "acceptance_dry_run_ready",
+            "passed_dry_run_ready" if dry_run_ready else "blocked_dry_run_not_ready",
+            f"dry_run_status={latest_summary.get('status')}; missing_credentials={credential_missing_count}",
+            passed=dry_run_ready,
+            local_blocker=not dry_run_ready,
+        ),
+        _execution_request_row(
+            "acceptance_scope_hash_bound",
+            "passed_scope_hash_bound" if scope_matches else "blocked_scope_hash_mismatch_or_missing",
+            f"requested={payload_safe.get('requested_acceptance_scope_hash_short')}; latest={latest_scope_hash_short}",
+            passed=scope_matches,
+            local_blocker=not scope_matches,
+        ),
+        _execution_request_row(
+            "explicit_user_confirmation_recorded",
+            "passed_user_confirmed" if user_confirmed else "blocked_user_confirmation_required",
+            f"user_confirmed={user_confirmed}",
+            passed=user_confirmed,
+            local_blocker=not user_confirmed,
+        ),
+        _execution_request_row(
+            "credential_preflight_ready",
+            "passed_credential_preflight_ready" if credential_ready else "blocked_credential_preflight_not_ready",
+            f"credential_presence_status={latest_summary.get('credential_presence_status')}; missing={credential_missing_count}",
+            passed=credential_ready,
+            local_blocker=not credential_ready,
+        ),
+        _execution_request_row(
+            "selected_provider_model_scope_ready",
+            "passed_selected_scope_ready" if selected_scope_ready else "blocked_selected_scope_missing",
+            f"selected_apis={selected_apis}; include_deepseek={include_deepseek}",
+            passed=selected_scope_ready,
+            local_blocker=not selected_scope_ready,
+        ),
+        _execution_request_row(
+            "provider_model_task_not_created",
+            "passed_request_only",
+            "Execution request records a local receipt only; provider/model task creation remains a future route.",
+            passed=True,
+            production_blocker=True,
+        ),
+        _execution_request_row(
+            "no_provider_model_trade_secret_boundary",
+            "passed_no_side_effects",
+            "No Tushare, DeepSeek, GitHub, token/key exposure, real trade, or strategy action mutation.",
+            passed=True,
+        ),
+    ]
+    local_blockers = [row["criterion"] for row in rows if row.get("local_blocker")]
+    production_blockers = [row["criterion"] for row in rows if row.get("production_blocker")]
+    local_ready = not local_blockers
+    if not latest_dry_run_task:
+        status = "execution_request_blocked_missing_acceptance_dry_run"
+    elif not user_confirmed:
+        status = "execution_request_blocked_user_confirmation_required"
+    elif not scope_matches:
+        status = "execution_request_blocked_scope_hash_mismatch"
+    elif not dry_run_ready:
+        status = "execution_request_blocked_dry_run_not_ready"
+    elif not credential_ready:
+        status = "execution_request_blocked_credential_preflight_not_ready"
+    else:
+        status = "execution_request_ready_manual_provider_model_task_pending"
+    receipt = {
+        "schema_version": BOOTSTRAP_EXECUTION_REQUEST_SCHEMA_VERSION,
+        "status": status,
+        "scope": "local_provider_model_execution_request_no_provider_or_model_execution",
+        "route": PLANNED_BOOTSTRAP_EXECUTION_REQUEST_ROUTE,
+        "task_type": BOOTSTRAP_EXECUTION_REQUEST_TASK_TYPE,
+        "acceptance_dry_run_route": PLANNED_BOOTSTRAP_ACCEPTANCE_DRY_RUN_ROUTE,
+        "target_provider_model_route": FUTURE_BOOTSTRAP_PROVIDER_MODEL_ACCEPTANCE_ROUTE,
+        "latest_acceptance_dry_run_task_id": latest_dry_run_task.get("task_id") if latest_dry_run_task else "",
+        "latest_acceptance_dry_run_status": latest_summary.get("status"),
+        "latest_acceptance_dry_run_storage_source": storage_source,
+        "durable_receipt_visible": durable_receipt_visible,
+        "memory_only_dry_run_receipt_is_durable_evidence": False,
+        "acceptance_scope_hash": latest_scope_hash,
+        "acceptance_scope_hash_short": latest_scope_hash_short,
+        "acceptance_scope_hash_algorithm": latest_summary.get("acceptance_scope_hash_algorithm"),
+        "requested_acceptance_scope_hash": requested_scope_hash,
+        "requested_acceptance_scope_hash_short": payload_safe.get("requested_acceptance_scope_hash_short"),
+        "requested_acceptance_scope_hash_matches_latest": scope_matches,
+        "user_confirmed": user_confirmed,
+        "selected_apis": selected_apis,
+        "ignored_apis": ignored_apis,
+        "include_tushare": include_tushare,
+        "include_deepseek": include_deepseek,
+        "credential_presence_status": latest_summary.get("credential_presence_status"),
+        "credential_required_provider_count": latest_summary.get("credential_required_provider_count", 0),
+        "credential_present_provider_count": latest_summary.get("credential_present_provider_count", 0),
+        "credential_missing_provider_count": credential_missing_count,
+        "credential_preflight_ready": credential_ready,
+        "credential_values_read": False,
+        "credential_values_exposed": False,
+        "env_key_names_included": False,
+        "call_ledger_required": True,
+        "model_ledger_required_for_deepseek": True,
+        "redaction_review_required_before_promotion": True,
+        "local_execution_request_ready": local_ready,
+        "ready_for_manual_provider_model_task_submission": local_ready,
+        "provider_model_task_created": False,
+        "provider_model_task_dispatched": False,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "provider_model_execution_implemented": False,
+        "execution_request_route_implemented": True,
+        "production_live_light_complete": False,
+        "local_blocker_count": len(local_blockers),
+        "production_blocker_count": len(production_blockers),
+        "blocking_criteria": local_blockers,
+        "row_count": len(rows),
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_prices_positions_or_operation_zones": True,
+    }
+    return receipt, rows
+
+
+def _execution_request_call_ledger(
+    *,
+    payload_safe: dict[str, Any],
+    receipt: dict[str, Any],
+    now: str,
+) -> dict[str, Any]:
+    return {
+        "api": "local_live_light_provider_model_execution_request",
+        "endpoint": PLANNED_BOOTSTRAP_EXECUTION_REQUEST_ROUTE,
+        "request_params_safe": {
+            "source": payload_safe.get("source"),
+            "requested_by": payload_safe.get("requested_by"),
+            "user_confirmed": payload_safe.get("user_confirmed"),
+            "latest_acceptance_dry_run_task_id": receipt.get("latest_acceptance_dry_run_task_id"),
+            "requested_acceptance_scope_hash_short": receipt.get("requested_acceptance_scope_hash_short"),
+            "latest_acceptance_scope_hash_short": receipt.get("acceptance_scope_hash_short"),
+            "requested_acceptance_scope_hash_matches_latest": receipt.get(
+                "requested_acceptance_scope_hash_matches_latest"
+            ),
+            "credential_presence_status": receipt.get("credential_presence_status"),
+            "credential_missing_provider_count": receipt.get("credential_missing_provider_count"),
+            "local_execution_request_ready": receipt.get("local_execution_request_ready"),
+            "provider_model_task_created": False,
+            "provider_model_task_dispatched": False,
+            "provider_execution_implemented": False,
+            "model_execution_implemented": False,
+        },
+        "row_count": int(receipt.get("row_count") or 0),
+        "local_blocker_count": int(receipt.get("local_blocker_count") or 0),
+        "production_blocker_count": int(receipt.get("production_blocker_count") or 0),
+        "local_fetched_at": now,
+        "call_status": "local_execution_request_ready_no_external_call"
+        if receipt.get("local_execution_request_ready") is True
+        else "local_execution_request_blocked_no_external_call",
+        "external": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "provider_execution_implemented": False,
+        "model_execution_implemented": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+    }
+
+
 def _planned_stage_status(mode: str, enabled: bool, stage_kind: str) -> str:
     if mode != "live_light":
         return "skipped_mode_not_live_light"
@@ -2084,5 +2360,70 @@ def run_provider_model_acceptance_dry_run(payload: Any = None) -> dict[str, Any]
         progress=1.0,
         current_step=current_step,
         output_packet_key=BOOTSTRAP_ACCEPTANCE_DRY_RUN_PACKET_KEY,
+        call_ledger=ledger,
+    ) or task
+
+
+def run_provider_model_execution_request(payload: Any = None) -> dict[str, Any]:
+    payload_safe = _sanitize_execution_request_payload(payload)
+    latest_dry_run_task = _latest_acceptance_dry_run_task(
+        str(payload_safe.get("requested_acceptance_scope_hash") or "")
+    )
+    receipt, rows = _build_execution_request_receipt(
+        payload_safe=payload_safe,
+        latest_dry_run_task=latest_dry_run_task,
+    )
+    payload_safe.update(
+        {
+            "task_type": BOOTSTRAP_EXECUTION_REQUEST_TASK_TYPE,
+            "bootstrap_mode": read_bootstrap_status_cache().get("mode"),
+            "route": PLANNED_BOOTSTRAP_EXECUTION_REQUEST_ROUTE,
+            "acceptance_dry_run_route": PLANNED_BOOTSTRAP_ACCEPTANCE_DRY_RUN_ROUTE,
+            "target_provider_model_route": FUTURE_BOOTSTRAP_PROVIDER_MODEL_ACCEPTANCE_ROUTE,
+            "execution_request_receipt": receipt,
+            "execution_request_rows": rows,
+            "execution_request_only": True,
+            "provider_model_task_created": False,
+            "provider_model_task_dispatched": False,
+            "provider_execution_implemented": False,
+            "model_execution_implemented": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+    )
+    if receipt["status"] == "execution_request_ready_manual_provider_model_task_pending":
+        current_step = "provider_model_execution_request_ready_manual_provider_model_task_pending"
+    elif receipt["status"] == "execution_request_blocked_scope_hash_mismatch":
+        current_step = "provider_model_execution_request_blocked_scope_hash_mismatch_no_external_call"
+    elif receipt["status"] == "execution_request_blocked_user_confirmation_required":
+        current_step = "provider_model_execution_request_blocked_user_confirmation_required_no_external_call"
+    elif receipt["status"] == "execution_request_blocked_missing_acceptance_dry_run":
+        current_step = "provider_model_execution_request_blocked_missing_dry_run_no_external_call"
+    else:
+        current_step = "provider_model_execution_request_blocked_dry_run_not_ready_no_external_call"
+
+    task = task_service.create_task_record(
+        BOOTSTRAP_EXECUTION_REQUEST_TASK_TYPE,
+        output_packet_key=BOOTSTRAP_EXECUTION_REQUEST_PACKET_KEY,
+        payload=payload_safe,
+        current_step="provider_model_execution_request_requested_local_only",
+        warnings=[
+            "provider/model execution-request 只生成本地 scope-bound ticket，不调用 Tushare、DeepSeek、GitHub。",
+            "execution-request 不创建 provider/model task；未来 route 仍需显式接入。",
+            "execution-request 不读取或返回 token/key 值，不执行真实交易，不修改 strategy action。",
+        ],
+    )
+    now = _now_iso()
+    ledger = [_execution_request_call_ledger(payload_safe=payload_safe, receipt=receipt, now=now)]
+    return task_service.update_task_status(
+        str(task.get("task_id") or ""),
+        status="success",
+        progress=1.0,
+        current_step=current_step,
+        output_packet_key=BOOTSTRAP_EXECUTION_REQUEST_PACKET_KEY,
         call_ledger=ledger,
     ) or task
