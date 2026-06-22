@@ -216,6 +216,7 @@ export default function CommandCenterHome() {
   const dataHealthCounts = dataHealth.counts as Record<string, unknown> | undefined;
   const desktopRuntime = desktopPreflight.runtime as Record<string, unknown> | undefined;
   const desktopCounts = desktopPreflight.counts as Record<string, unknown> | undefined;
+  const desktopLauncherContract = (desktopPreflight.desktop_launcher_contract as Record<string, unknown> | undefined) ?? {};
   const recoveryCounts = recovery.counts as Record<string, unknown> | undefined;
   const taskCatalogPolicy = taskCatalog.policy as Record<string, unknown> | undefined;
   const taskCatalogItems = taskCatalog.tasks as Array<Record<string, unknown>> | undefined;
@@ -334,6 +335,14 @@ export default function CommandCenterHome() {
     "首页 GET cache 只读；live_light 只允许创建后台 POST task，不在 React 渲染中直连 Tushare 或 DeepSeek";
   const dailyCommandResearchOnlyLabel = "今日摘要只组织投研证据；不买卖、不下单、不改交易策略";
   const dailyCommandStatusLabel = health.status === "ok" ? "只读入口可用" : "等待只读入口";
+  const dailyCommandConnectionState = error
+    ? "本地前后端未联通；请使用桌面快捷方式或本地启动器重新打开"
+    : health.status === "ok"
+      ? "本地前后端已联通"
+      : "正在确认本地连接";
+  const dailyCommandLauncherState = desktopLauncherContract.launcher_executable === true
+    ? "一键启动入口可用；启动器会等 FastAPI 和页面 ready"
+    : "一键启动入口待检查；可先使用本地启动器恢复";
 
   useEffect(() => {
     if (loading) return;
@@ -408,6 +417,8 @@ export default function CommandCenterHome() {
         <MetricGrid
           items={[
             { label: "下一步", value: dailyCommandNextClick },
+            { label: "本地联通", value: dailyCommandConnectionState, tone: error ? "warn" : health.status === "ok" ? "good" : "warn" },
+            { label: "一键启动", value: dailyCommandLauncherState, tone: desktopLauncherContract.launcher_executable === true ? "good" : "warn" },
             { label: "cache", value: dailyCommandCacheSourceLabel },
             { label: "Tushare", value: dailyCommandTushareSourceLabel },
             { label: "DeepSeek", value: dailyCommandDeepSeekSourceLabel },
@@ -423,6 +434,7 @@ export default function CommandCenterHome() {
             { label: "仅供研究", value: dailyCommandResearchOnlyLabel, tone: "good" }
           ]}
         />
+        <p className="risk-note">本地联通状态只读来自 FastAPI health 和 desktop preflight cache；不会启动服务、不会写配置、不会调用 provider/model。</p>
         <p className="risk-note">工程审计明细默认收起；完整 call ledger、release gate、runtime mode 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
       <details className="developer-audit-details">
