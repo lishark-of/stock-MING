@@ -95,6 +95,21 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("DeepSeek 解释治理审计", source)
         self.assertIn("最近任务回执", source)
         self.assertIn("Provider、model、receipt、runbook、QA blocker 和 LTG 细项默认收起", source)
+        self.assertIn("普通路径只保留查看缓存、手动刷新和轻量推演", source)
+        self.assertIn("模型解释 / 高级开关", source)
+        self.assertIn("DeepSeek governed executor 单独补", source)
+        self.assertLess(source.index("普通路径只保留查看缓存、手动刷新和轻量推演"), source.index("模型解释 / 高级开关"))
+        self.assertLess(source.index("模型解释 / 高级开关"), source.index("整理模型解释</button>"))
+        self.assertLess(source.index("模型解释 / 高级开关"), source.index("轻量推演完成后自动整理解释"))
+        ordinary_actions_start = source.rindex(
+            '<div className="actions">',
+            0,
+            source.index('<button onClick={refreshCache}>查看本地缓存</button>'),
+        )
+        ordinary_actions_end = source.index("</div>", ordinary_actions_start)
+        ordinary_actions_slice = source[ordinary_actions_start:ordinary_actions_end]
+        self.assertNotIn("整理模型解释", ordinary_actions_slice)
+        self.assertNotIn("轻量推演完成后自动整理解释", ordinary_actions_slice)
         self.assertLess(source.index("最近任务回执"), source.index("<TaskLaunchReceipt receipt={taskReceipt} />"))
         self.assertLess(source.index("最近任务回执"), source.index("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />"))
         self.assertLess(source.index("普通用户量化推演摘要"), source.index("最近任务回执"))

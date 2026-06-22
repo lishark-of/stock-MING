@@ -365,17 +365,24 @@ export default function FactorQuantHub() {
       <div className="actions">
         <button onClick={refreshCache}>查看本地缓存</button>
         <button onClick={() => launchTask("/api/factor-quant/refresh-data")}>手动刷新数据</button>
-        <label className="inline-toggle">
-          <input
-            type="checkbox"
-            checked={autoAfterTask}
-            onChange={(event) => setAutoAfterTask(event.target.checked)}
-          />
-          轻量推演完成后自动整理解释
-        </label>
         <button onClick={() => launchTask("/api/factor-quant/run-light", { auto_after_task: autoAfterTask })}>运行轻量推演</button>
-        <button onClick={() => launchTask("/api/factor-quant/deepseek-explain")}>整理模型解释</button>
       </div>
+      <p className="risk-note">普通路径只保留查看缓存、手动刷新和轻量推演；DeepSeek 解释入口下沉为高级开关，不阻塞 Tushare-first 和基础图谱。</p>
+      <details className="developer-audit-details">
+        <summary>模型解释 / 高级开关</summary>
+        <p className="risk-note">DeepSeek governed executor 单独补；这里的按钮只走受控任务，不在页面渲染中调用模型，也不覆盖价格、因子、持仓、操作区或交易策略。</p>
+        <div className="actions">
+          <label className="inline-toggle">
+            <input
+              type="checkbox"
+              checked={autoAfterTask}
+              onChange={(event) => setAutoAfterTask(event.target.checked)}
+            />
+            轻量推演完成后自动整理解释
+          </label>
+          <button onClick={() => launchTask("/api/factor-quant/deepseek-explain")}>整理模型解释</button>
+        </div>
+      </details>
       <details className="developer-audit-details">
         <summary>高级验收任务</summary>
         <div className="actions">
