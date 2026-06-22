@@ -20,6 +20,13 @@ class CallLedgerAuditReleaseGateSurfaceTests(unittest.TestCase):
         self.assertIn("ci_mirror_principle_guard", self.page)
         self.assertIn("ci_mirror_includes_migration_principle_docs_guard", self.page)
         self.assertIn("本地静态 push gate 合同，不代表 CI 状态", self.page)
+        self.assertIn("release 仍需远端 Actions 复核", self.page)
+        self.assertIn("local static gate", self.page)
+        self.assertIn("shape ready", self.page)
+        self.assertIn("remote_ci_review_ready", self.page)
+        self.assertIn("latest_remote_run_verified_green", self.page)
+        self.assertIn("ci_mirror_evidence_artifact_upload", self.page)
+        self.assertIn("remote_ci_review_required_for_release_gate_complete", self.page)
 
     def test_remote_ci_seed_stays_visible_as_unverified_non_evidence(self) -> None:
         self.assertIn("remote_ci_review_seed_contract", self.page)
@@ -38,6 +45,15 @@ class CallLedgerAuditReleaseGateSurfaceTests(unittest.TestCase):
         self.assertIn("seed_row_is_not_remote_ci_evidence", self.page)
         self.assertIn("P0 仍需匹配 HEAD 的远端 Actions run 或安全失败日志复核", self.page)
         self.assertIn("不能放行 release claim", self.page)
+
+    def test_ci_failure_triage_points_to_push_gate_artifact_without_claiming_green(self) -> None:
+        self.assertIn("CI failure email triage", self.page)
+        self.assertIn("push_gate_evidence_artifact_expected", self.page)
+        self.assertIn("push_gate_evidence_artifact_name", self.page)
+        self.assertIn("command-center-3-push-gate-evidence", self.page)
+        self.assertIn("下载 command-center-3-push-gate-evidence artifact", self.page)
+        self.assertIn("这仍不是远端 CI 绿灯", self.page)
+        self.assertIn("失败邮件的根因仍必须用 Actions 页面里的失败步骤名和日志片段确认", self.page)
 
 
 if __name__ == "__main__":

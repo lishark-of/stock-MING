@@ -130,10 +130,11 @@ export default function CallLedgerAudit() {
           { label: "missing ledger", value: counts.missing_call_ledger_count as number | undefined, tone: Number(counts.missing_call_ledger_count ?? 0) > 0 ? "warn" : "good" },
           { label: "model strategy purposes", value: counts.model_strategy_purpose_count as number | undefined },
           { label: "model cache外联", value: counts.model_strategy_cache_read_external_call_count as number | undefined, tone: Number(counts.model_strategy_cache_read_external_call_count ?? 0) > 0 ? "bad" : "good" },
-          { label: "release gate", value: releaseGateAudit.status as string | undefined, tone: releaseGateAudit.local_gate_ready === true ? "good" : "warn" },
-          { label: "local gate ready", value: counts.release_gate_local_ready, tone: counts.release_gate_local_ready === true ? "good" : "warn" },
+          { label: "release gate", value: releaseGateAudit.status as string | undefined, tone: releaseGateAudit.release_gate_complete === true ? "good" : "warn" },
+          { label: "local static gate", value: counts.release_gate_local_ready === true ? "shape ready" : "blocked", tone: releaseGateAudit.release_gate_complete === true ? "good" : "warn" },
           { label: "CI mirror", value: counts.release_gate_ci_mirror_ready, tone: counts.release_gate_ci_mirror_ready === true ? "good" : "warn" },
           { label: "CI原则守护", value: releaseGateAudit.ci_mirror_includes_migration_principle_docs_guard === true ? "yes" : "no", tone: releaseGateAudit.ci_mirror_includes_migration_principle_docs_guard === true ? "good" : "warn" },
+          { label: "CI artifact", value: releaseGateAudit.ci_mirror_includes_evidence_artifact_upload === true ? "ready" : "missing", tone: releaseGateAudit.ci_mirror_includes_evidence_artifact_upload === true ? "good" : "warn" },
           { label: "gate blockers", value: counts.release_gate_blocker_count as number | undefined, tone: Number(counts.release_gate_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "gate checks", value: counts.release_gate_check_count as number | undefined },
           { label: "workflow files", value: counts.release_gate_workflow_count as number | undefined },
@@ -238,15 +239,18 @@ export default function CallLedgerAudit() {
         <DataLineageTable rows={modelStrategyRows} />
       </PacketCard>
 
-      <PacketCard title="Release gate readiness" subtitle="release_gate_readiness_audit：本地静态 push gate 合同，不代表 CI 状态" status={String(releaseGateAudit.status ?? "missing")}>
+      <PacketCard title="Release gate readiness" subtitle="release_gate_readiness_audit：本地静态 push gate 合同，不代表 CI 状态；release 仍需远端 Actions 复核" status={String(releaseGateAudit.status ?? "missing")}>
         <p>scope: {String(releaseGateAudit.scope ?? "local_static_push_gate_contract_not_ci_status")}</p>
         <p>local_gate_ready: {String(releaseGateAudit.local_gate_ready ?? false)}</p>
         <p>release_gate_complete: {String(releaseGateAudit.release_gate_complete ?? false)}</p>
+        <p>remote_ci_review_ready: {String(releaseGateAudit.remote_ci_review_ready ?? false)}；latest_remote_run_verified_green: {String(releaseGateAudit.latest_remote_run_verified_green ?? false)}</p>
         <p>ci_mirror_ready: {String(releaseGateAudit.ci_mirror_ready ?? false)}</p>
         <p>ci_mirror_principle_guard: {String(releaseGateAudit.ci_mirror_includes_migration_principle_docs_guard ?? false)}</p>
+        <p>ci_mirror_evidence_artifact_upload: {String(releaseGateAudit.ci_mirror_includes_evidence_artifact_upload ?? false)}</p>
         <p>secret_keyword_review_contract_ready: {String(releaseGateAudit.secret_keyword_review_contract_exists === true && releaseGateAudit.secret_keyword_review_contract_step === true)}</p>
         <p>keyword_review_raw_lines_suppressed: {String(releaseGateAudit.keyword_review_raw_lines_suppressed ?? false)}</p>
         <p>ci_mirror_not_proven: {String(Array.isArray(releaseGateAudit.blockers) && (releaseGateAudit.blockers as unknown[]).includes("ci_mirror_not_proven"))}</p>
+        <p>remote_ci_review_required_for_release_gate_complete: {String(Array.isArray(releaseGateAudit.blockers) && (releaseGateAudit.blockers as unknown[]).includes("remote_ci_review_required_for_release_gate_complete"))}</p>
         <p>false_positive_allowlist_review_pending: {String(Array.isArray(releaseGateAudit.soft_blockers) && (releaseGateAudit.soft_blockers as unknown[]).includes("false_positive_allowlist_review_pending"))}</p>
         <p>PUSH_GATE_REPORT_PATH local report is optional evidence, not production completion proof.</p>
       </PacketCard>
@@ -315,7 +319,9 @@ export default function CallLedgerAudit() {
         <p>remote_logs_required_for_root_cause: {String(ciNotificationTriage.remote_logs_required_for_root_cause === true)}</p>
         <p>can_dismiss_failure_email_without_matching_head_and_logs: {String(ciNotificationTriage.can_dismiss_failure_email_without_matching_head_and_logs === true)}</p>
         <p>requires_failed_step_name: {String(ciNotificationTriage.requires_failed_step_name === true)}；requires_failed_log_excerpt: {String(ciNotificationTriage.requires_failed_log_excerpt === true)}</p>
+        <p>push_gate_evidence_artifact_expected: {String(ciNotificationTriage.push_gate_evidence_artifact_expected === true)}；artifact: {String(ciNotificationTriage.push_gate_evidence_artifact_name ?? "command-center-3-push-gate-evidence-${run_id}")}</p>
         <p>local_pass_is_not_ci_status: {String(ciNotificationTriage.local_pass_is_not_ci_status === true)}；old_email_may_be_stale: {String(ciNotificationTriage.old_email_may_be_stale === true)}</p>
+        <p>下一步：在匹配 HEAD 的 Actions run 下载 command-center-3-push-gate-evidence artifact，查看安全 log/report/receipt；这仍不是远端 CI 绿灯。</p>
         <p>该分流只读本地 workflow 和 push gate 合同；失败邮件的根因仍必须用 Actions 页面里的失败步骤名和日志片段确认。</p>
         <DataLineageTable rows={[ciNotificationTriage]} />
         <DataLineageTable rows={ciNotificationTriageRows} />
