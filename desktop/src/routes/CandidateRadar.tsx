@@ -525,8 +525,13 @@ export default function CandidateRadar() {
     ? "确认代码后点击生成 3.0 量化推演；按钮门控 Tushare-first POST task / worker 推进，DeepSeek 等 governed executor"
     : "先输入并确认股票代码，按钮启用后再点击生成 3.0 量化推演";
   const quantProjectionSubmitHint = quantProjectionDisplaySymbol
-    ? "点击确认后创建 Tushare-first POST task / worker；DeepSeek 默认 skipped，需 governed executor 完成后再单独补。"
+    ? "点击确认后提交 Tushare-first 后台链；服务端凭据缺失时只写本地阻断，DeepSeek 默认 skipped，需 governed executor 完成后再单独补。"
     : "先输入股票代码；仅输入不会创建 task，也不会调用 Tushare 或 DeepSeek。";
+  const quantProjectionConfirmChainState = taskReceipt?.ok
+    ? "确认任务已接收：先看 TaskStatusPanel，再通过 GET cache 回放 Tushare ledger、量化推演和次日图谱"
+    : quantProjectionCanSubmit
+      ? "点击确认会提交 Tushare-first 后台链；凭据可用才写 provider ledger，凭据缺失只写本地阻断；DeepSeek skipped"
+      : "等待有效股票代码；输入和搜索不会创建后台链";
   const quantProjectionSummaryGuidance = quantProjectionCanSubmit
     ? `摘要搜票已确认 ${quantProjectionSymbolValidation.normalized}；下一步点击“确认并生成 3.0 量化推演”，创建 Tushare-first 按钮门控 POST task，DeepSeek skipped`
     : searchSymbol.trim()
@@ -780,6 +785,7 @@ export default function CandidateRadar() {
               { label: "下一步", value: quantProjectionNextClick },
               { label: "输入标的", value: quantProjectionDisplaySymbol || "等待输入" },
               { label: "确认代码", value: quantProjectionConfirmedSymbol },
+              { label: "确认链路", value: quantProjectionConfirmChainState, tone: taskReceipt?.ok || quantProjectionCanSubmit ? "good" : "warn" },
               { label: "输入校验", value: quantProjectionInputValidation, tone: quantProjectionInputValidation.includes("阻断") ? "warn" : "good" },
               { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn" },
               { label: "Tushare ledger", value: quantProjectionProviderModelReplayState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
@@ -807,6 +813,7 @@ export default function CandidateRadar() {
             <a href="#candidate-pool" aria-label="return to candidate pool after quant projection">回到候选池</a>
           </div>
           <p className="risk-note">任务接收后先看最近任务编号和 TaskStatusPanel；成功后刷新本地缓存，再打开股票量化推演和次日图谱回放入口。</p>
+          <p className="risk-note">确认按钮只提交后台链路；服务端凭据可用才写入 Tushare call_ledger / cache / packet，凭据缺失只写本地阻断，GET cache 和 React render 不补调 provider。</p>
           <p>普通入口只保留“确认并生成”这一类用户按钮；工程补证入口已下沉到调用审计，DeepSeek 保持 skipped，不交易、不改 strategy action。</p>
           <p>最近任务只显示本地 FastAPI 返回的 task id 和安全步骤；结果成功后通过 GET cache 回放 packet / ledger，不在普通页面展开审计表。</p>
           <p className="risk-note">Tushare ledger 来自 cache / call_ledger 回放；DeepSeek 仍需 governed executor，普通页不展示 prompt/output。</p>
