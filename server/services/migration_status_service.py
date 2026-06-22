@@ -10,6 +10,8 @@ from server.services import packet_service, task_service
 TUSHARE_DEEPSEEK_LINKAGE_REVIEW_TASK_TYPE = "run_tushare_deepseek_linkage_review"
 TUSHARE_DEEPSEEK_LINKAGE_REVIEW_ROUTE = "POST /api/migration/tushare-deepseek-linkage-review"
 TUSHARE_DEEPSEEK_LINKAGE_REVIEW_PACKET_KEY = "command_center_3_migration_status"
+LEGACY_AUDIT_OBSERVATION_DRY_RUN_TASK_TYPE = "run_legacy_audit_observation_dry_run"
+LEGACY_AUDIT_OBSERVATION_DRY_RUN_ROUTE = "POST /api/legacy/audit-observation-dry-run"
 
 
 MIGRATION_PROGRESS_BASELINE = [
@@ -8083,6 +8085,98 @@ def _build_legacy_audit_first_round_intake_summary() -> tuple[
     return summary, rows
 
 
+def _latest_legacy_audit_observation_from_tasks() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    tasks = [
+        task
+        for task in task_service.list_task_statuses()
+        if task.get("task_type") == LEGACY_AUDIT_OBSERVATION_DRY_RUN_TASK_TYPE
+    ]
+    if not tasks:
+        return (
+            {
+                "schema_version": "command_center_legacy_audit_latest_observation_status.v1",
+                "status": "no_legacy_audit_observation_dry_run_task_found",
+                "lookup_source": "task_service.list_task_statuses",
+                "lookup_creates_task": False,
+                "route": LEGACY_AUDIT_OBSERVATION_DRY_RUN_ROUTE,
+                "task_type": LEGACY_AUDIT_OBSERVATION_DRY_RUN_TASK_TYPE,
+                "latest_task_found": False,
+                "task_id": "",
+                "task_status": "",
+                "current_step": "",
+                "workflow_group": "",
+                "proposed_status": "",
+                "direct_user_evidence_recorded": False,
+                "direct_evidence_ready_for_keep_review": False,
+                "keep_promotion_allowed_this_round": False,
+                "ordinary_entry_promotion_allowed_this_round": False,
+                "streamlit_fallback_retirement_allowed": False,
+                "production_evidence": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_open_streamlit": True,
+                "does_not_run_legacy_tools": True,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "contains_secret": False,
+                "row_count": 0,
+            },
+            [],
+        )
+
+    latest_task = tasks[0]
+    payload = latest_task.get("payload_safe") if isinstance(latest_task.get("payload_safe"), dict) else {}
+    receipt = (
+        payload.get("legacy_audit_observation_receipt")
+        if isinstance(payload.get("legacy_audit_observation_receipt"), dict)
+        else {}
+    )
+    rows = (
+        payload.get("legacy_audit_observation_rows")
+        if isinstance(payload.get("legacy_audit_observation_rows"), list)
+        else []
+    )
+    direct_recorded = receipt.get("direct_user_evidence_recorded") is True
+    return (
+        {
+            "schema_version": "command_center_legacy_audit_latest_observation_status.v1",
+            "status": "latest_legacy_audit_observation_visible_recorded"
+            if direct_recorded
+            else "latest_legacy_audit_observation_visible_blocked",
+            "lookup_source": "task_service.list_task_statuses",
+            "lookup_creates_task": False,
+            "route": LEGACY_AUDIT_OBSERVATION_DRY_RUN_ROUTE,
+            "task_type": LEGACY_AUDIT_OBSERVATION_DRY_RUN_TASK_TYPE,
+            "latest_task_found": True,
+            "task_id": latest_task.get("task_id"),
+            "task_status": latest_task.get("status"),
+            "current_step": latest_task.get("current_step"),
+            "workflow_group": receipt.get("workflow_group"),
+            "proposed_status": receipt.get("proposed_status"),
+            "receipt_status": receipt.get("status"),
+            "direct_user_evidence_recorded": direct_recorded,
+            "direct_evidence_ready_for_keep_review": False,
+            "keep_promotion_allowed_this_round": False,
+            "ordinary_entry_promotion_allowed_this_round": False,
+            "streamlit_fallback_retirement_allowed": False,
+            "production_evidence": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "does_not_open_streamlit": True,
+            "does_not_run_legacy_tools": True,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "contains_secret": False,
+            "row_count": len(rows),
+        },
+        rows,
+    )
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -8109,6 +8203,9 @@ def build_migration_status() -> dict[str, Any]:
     legacy_audit_first_round_intake, legacy_audit_first_round_intake_rows = (
         _build_legacy_audit_first_round_intake_summary()
     )
+    legacy_audit_latest_observation, legacy_audit_latest_observation_rows = (
+        _latest_legacy_audit_observation_from_tasks()
+    )
     return {
         "packet_key": "command_center_3_migration_status",
         "schema_version": "command_center_3_migration_status.v2",
@@ -8128,6 +8225,8 @@ def build_migration_status() -> dict[str, Any]:
         "latest_tushare_deepseek_linkage_review_rows": latest_tushare_deepseek_linkage_review_rows,
         "legacy_audit_first_round_intake": legacy_audit_first_round_intake,
         "legacy_audit_first_round_intake_rows": legacy_audit_first_round_intake_rows,
+        "legacy_audit_latest_observation": legacy_audit_latest_observation,
+        "legacy_audit_latest_observation_rows": legacy_audit_latest_observation_rows,
         "target_stack": list(TARGET_STACK),
         "principles": list(MIGRATION_PRINCIPLES),
         "baseline_policy": {
@@ -8156,9 +8255,19 @@ def build_migration_status() -> dict[str, Any]:
                 + len(long_term_goal_rows)
                 + len(ltg_stage_scope_observed_rows)
                 + len(tushare_deepseek_linkage_rows)
-                + len(tushare_deepseek_mode_layer_rows),
+                + len(tushare_deepseek_mode_layer_rows)
+                + len(legacy_audit_latest_observation_rows),
                 "legacy_audit_first_round_intake_row_count": len(
                     legacy_audit_first_round_intake_rows
+                ),
+                "legacy_audit_latest_observation_found": bool(
+                    legacy_audit_latest_observation.get("latest_task_found")
+                ),
+                "legacy_audit_latest_observation_row_count": len(
+                    legacy_audit_latest_observation_rows
+                ),
+                "legacy_audit_latest_observation_direct_user_evidence_recorded": (
+                    legacy_audit_latest_observation.get("direct_user_evidence_recorded") is True
                 ),
                 "ltg_stage_scope_observed_row_count": len(ltg_stage_scope_observed_rows),
                 "tushare_deepseek_linkage_row_count": len(tushare_deepseek_linkage_rows),
@@ -8180,11 +8289,23 @@ def build_migration_status() -> dict[str, Any]:
                 "does_not_modify_strategy_action": True,
             }
         ],
+        "legacy_audit_latest_observation_visible": (
+            legacy_audit_latest_observation.get("latest_task_found") is True
+        ),
+        "legacy_audit_latest_observation_status_text": legacy_audit_latest_observation.get(
+            "status"
+        ),
+        "legacy_audit_latest_observation_direct_user_evidence_recorded": (
+            legacy_audit_latest_observation.get("direct_user_evidence_recorded") is True
+        ),
+        "legacy_audit_latest_observation_is_not_keep_promotion": True,
+        "legacy_audit_latest_observation_is_not_streamlit_retirement": True,
         "warnings": [
             "GET /api/migration/status 只读展示用户提供的长期迁移基线；不会重新估算、外联或触发任务。",
             "LTG stage-scope observed rows 只读取本地 cache 或静态合同里的阶段清单；它们不是生产完成证据。",
             "14 个长期目标严格关闭数仍为 0/14；scaffold / preflight / mock / matrix / sanitizer / dry-run / local receipt 不能作为生产完成证据。",
             "Tushare / DeepSeek 联动按四层审查：cache/render 安静、POST task 门控、task 内真实 provider/model execution、production promotion ledger；真实执行与生产提升仍需后续显式验收。",
+            "legacy_audit_latest_observation 只读回放显式 observation dry-run；不会创建任务、升级 KEEP 或退场 Streamlit。",
             "进度表用于规划判断，不代表自动完成迁移；后续阶段仍需逐项实现和测试。",
         ],
     }
