@@ -242,9 +242,10 @@ export default function FactorQuantHub() {
   const ordinaryQuantCacheSourceLabel = empty ? "等待本地量化缓存" : "本地量化缓存可用";
   const ordinaryQuantTushareSourceLabel =
     Number(tushareProviderPromotionAudit.provider_evidence_row_count ?? 0) > 0 ? "Tushare 数据有本地记录" : "等待手动补充 Tushare 数据";
-  const ordinaryQuantDeepSeekSourceLabel = deepseek.called === true ? "DeepSeek 解释已有本地结果" : "DeepSeek 解释未生成或等待手动任务";
+  const ordinaryQuantDeepSeekSourceLabel =
+    deepseek.called === true ? "DeepSeek 解释已有本地结果；只解释不改数值或动作" : "DeepSeek 待 governed executor；普通页只读状态";
   const ordinaryQuantModelSourceLabel =
-    deepseekValidation.model_call_status && deepseekValidation.model_call_status !== "not_called" ? "模型状态已有本地记录" : "模型未调用或等待手动任务";
+    deepseekValidation.model_call_status && deepseekValidation.model_call_status !== "not_called" ? "模型状态已有本地记录" : "模型未调用或等待 governed executor";
   const ordinaryQuantRuntimeMode = String(bootstrapStatus.mode ?? packet.mode ?? "cache_only");
   const ordinaryQuantHasPendingEvidence =
     empty ||
