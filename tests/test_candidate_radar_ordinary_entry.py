@@ -18,6 +18,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
 
         for required_label in (
             'label: "下一步"',
+            'label: "主下一步"',
+            'label: "主下一步边界"',
             'label: "可选补证"',
             'label: "cache"',
             'label: "Tushare"',
@@ -38,6 +40,11 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('const ordinaryNextClick = Number(counts.candidate_count ?? 0)', self.page)
         self.assertIn('    ? "先查看本地候选摘要"', self.page)
         self.assertIn('    : "先点击运行本地快扫";', self.page)
+        self.assertIn("ordinaryPrimaryActionLabel", self.page)
+        self.assertIn("ordinaryPrimaryActionBoundary", self.page)
+        self.assertIn("查看本地候选池", self.page)
+        self.assertIn("主下一步只跳转本地候选池，不创建 task、不刷新 provider/model", self.page)
+        self.assertIn("主下一步只创建按钮门控本地快扫 POST task，不直连 Tushare/DeepSeek", self.page)
         self.assertIn("ordinaryOptionalNextClick", self.page)
         self.assertIn("需要更新时再运行本地快扫", self.page)
         self.assertIn("搜单票时输入代码后点击生成 3.0 量化推演", self.page)
@@ -49,6 +56,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("手动触发或关闭", self.page)
         self.assertIn("雷达摘要只读展示候选缓存", self.page)
         self.assertIn("manual/live_light 补证必须走 POST task / worker", self.page)
+        self.assertIn('aria-label="candidate radar primary next action"', self.page)
+        self.assertIn('href="#candidate-pool"', self.page)
+        self.assertIn('id="candidate-pool"', self.page)
         self.assertIn("候选不是买入指令；不真实交易、不下单、不改交易策略", self.page)
         self.assertIn("普通用户先看上方雷达摘要、候选池和搜票量化推演", self.page)
 
@@ -92,9 +102,14 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("searchSymbol.trim()", self.page)
         self.assertIn("quantProjectionSymbolValidation.valid", self.page)
         self.assertIn("quantProjectionConfirmedSymbol", self.page)
+        self.assertIn("quantProjectionSummaryGuidance", self.page)
         self.assertIn('label: "确认代码"', self.page)
         self.assertIn("未确认；输入框不会创建任务", self.page)
         self.assertIn("已确认输入：${quantProjectionSymbolValidation.normalized}", self.page)
+        self.assertIn("摘要搜票已确认 ${quantProjectionSymbolValidation.normalized}", self.page)
+        self.assertIn("下一步点击“确认并生成 3.0 量化推演”，创建 Tushare-first 按钮门控 POST task，DeepSeek skipped", self.page)
+        self.assertIn("摘要搜票暂未通过本地校验：${quantProjectionSymbolValidation.reason}；不会创建 task", self.page)
+        self.assertIn("摘要搜票等待输入代码；输入框只做本地校验，不创建 task", self.page)
         self.assertIn("请输入 6 位 A 股代码或 002008.SZ 这类后缀", self.page)
         self.assertIn("本地确认代码：${quantProjectionSymbolValidation.normalized}", self.page)
         self.assertIn("本地格式阻断：${quantProjectionSymbolValidation.reason}", self.page)
@@ -117,10 +132,13 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("DeepSeek 保持 skipped", self.page)
         self.assertIn("推演解释只整理已有证据；不覆盖价格、持仓、因子、操作区或交易策略", self.page)
 
-    def test_ordinary_quant_projection_submit_is_tushare_first_and_model_skipped(self):
+    def test_ordinary_quant_projection_submit_does_not_auto_chain_provider_model(self):
         submit_start = self.page.index("const launchQuantProjection = () =>")
         submit_end = self.page.index("const launchQuantProjectionAcceptanceDryRun = () =>", submit_start)
         submit_slice = self.page[submit_start:submit_end]
+        summary_start = self.page.index('title="普通用户雷达摘要"')
+        summary_end = self.page.index('title="下一票候选池"', summary_start)
+        summary_slice = self.page[summary_start:summary_end]
 
         self.assertIn("postCandidateRadarQuantProjection({", submit_slice)
         self.assertIn('scan_mode: "search_quant_projection"', submit_slice)
@@ -129,9 +147,24 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("include_deepseek: false", submit_slice)
         self.assertIn("user_approved: true", submit_slice)
         self.assertIn('requested_by: "candidate_radar_page"', submit_slice)
+        self.assertNotIn("run_provider_model_now", submit_slice)
         self.assertNotIn("operator_approved", submit_slice)
         self.assertNotIn("quant-projection-provider-model-acceptance", submit_slice)
 
+        self.assertIn("查看本地缓存", summary_slice)
+        self.assertIn("运行本地快扫", summary_slice)
+        self.assertIn("确认并生成 3.0 量化推演", summary_slice)
+        self.assertIn('href="#factor"', summary_slice)
+        self.assertIn("{quantProjectionSummaryGuidance}", summary_slice)
+        self.assertIn('aria-live="polite"', summary_slice)
+        self.assertIn('aria-label="candidate radar primary next action"', summary_slice)
+        self.assertIn('aria-label="candidate radar next user actions"', summary_slice)
+        self.assertLess(summary_slice.index('aria-label="candidate radar primary next action"'), summary_slice.index('aria-label="candidate radar next user actions"'))
+        self.assertLess(summary_slice.index('aria-label="candidate radar next user actions"'), summary_slice.index("{quantProjectionSummaryGuidance}"))
+        self.assertNotIn("launchQuantProjectionAcceptanceDryRun", summary_slice)
+        self.assertNotIn("launchQuantProjectionExecutionRequest", summary_slice)
+        self.assertNotIn("launchProviderParityDryRun", summary_slice)
+        self.assertNotIn("provider-model", summary_slice)
 
     def test_candidate_radar_page_does_not_embed_provider_or_trade_calls(self):
         forbidden_fragments = (

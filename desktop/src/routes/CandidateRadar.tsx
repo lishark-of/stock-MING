@@ -419,6 +419,12 @@ export default function CandidateRadar() {
   const ordinaryNextClick = Number(counts.candidate_count ?? 0)
     ? "先查看本地候选摘要"
     : "先点击运行本地快扫";
+  const ordinaryPrimaryActionLabel = Number(counts.candidate_count ?? 0)
+    ? "查看本地候选池"
+    : "运行本地快扫";
+  const ordinaryPrimaryActionBoundary = Number(counts.candidate_count ?? 0)
+    ? "主下一步只跳转本地候选池，不创建 task、不刷新 provider/model"
+    : "主下一步只创建按钮门控本地快扫 POST task，不直连 Tushare/DeepSeek";
   const ordinaryOptionalNextClick = Number(counts.candidate_count ?? 0)
     ? "需要更新时再运行本地快扫；搜单票时输入代码后点击生成 3.0 量化推演"
     : "也可以输入自选股票池后扫描；搜单票时走生成 3.0 量化推演";
@@ -487,6 +493,11 @@ export default function CandidateRadar() {
   const quantProjectionSubmitHint = quantProjectionDisplaySymbol
     ? "点击确认后创建 Tushare-first POST task / worker；DeepSeek 默认 skipped，需 governed executor 完成后再单独补。"
     : "先输入股票代码；仅输入不会创建 task，也不会调用 Tushare 或 DeepSeek。";
+  const quantProjectionSummaryGuidance = quantProjectionCanSubmit
+    ? `摘要搜票已确认 ${quantProjectionSymbolValidation.normalized}；下一步点击“确认并生成 3.0 量化推演”，创建 Tushare-first 按钮门控 POST task，DeepSeek skipped`
+    : searchSymbol.trim()
+      ? `摘要搜票暂未通过本地校验：${quantProjectionSymbolValidation.reason}；不会创建 task`
+      : "摘要搜票等待输入代码；输入框只做本地校验，不创建 task";
   const quantProjectionProviderApiSuccessCount = Number(searchQuantProviderModelAcceptance.provider_api_success_count ?? 0);
   const quantProjectionProviderApiSuccessLabel = Number.isFinite(quantProjectionProviderApiSuccessCount)
     ? String(quantProjectionProviderApiSuccessCount)
@@ -522,7 +533,7 @@ export default function CandidateRadar() {
     searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true ? "" : "真实数据和模型解释证据待补",
     searchQuantProjectionReceipt.production_quant_projection_complete === true ? "" : "完整推演验收待补",
     searchQuantProjectionActivation.local_activation_receipt_ready === true ? "" : "本地推演准备记录待补",
-    searchQuantProjectionAcceptanceDryRun.ready_for_user_approved_real_acceptance === true ? "" : "人工确认步骤待补",
+    searchQuantProjectionAcceptanceDryRun.ready_for_user_approved_real_acceptance === true ? "" : "execution-request 账本待补",
     searchQuantProjectionExecutionRequest.local_execution_request_ready === true ? "" : "执行准备记录待补"
   ].filter(Boolean).join(" / ") || "本地推演记录已显示；当前摘要未标记阻断";
   const quantProjectionBlockedState = searchQuantProjectionReceipt.symbol_valid === false
@@ -574,6 +585,8 @@ export default function CandidateRadar() {
         <MetricGrid
           items={[
             { label: "下一步", value: ordinaryNextClick },
+            { label: "主下一步", value: ordinaryPrimaryActionLabel },
+            { label: "主下一步边界", value: ordinaryPrimaryActionBoundary, tone: "good" },
             { label: "可选补证", value: ordinaryOptionalNextClick },
             { label: "cache", value: ordinaryCacheSourceLabel },
             { label: "Tushare", value: ordinaryTushareSourceLabel },
@@ -588,25 +601,49 @@ export default function CandidateRadar() {
             { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" }
           ]}
         />
+        <div className="actions" aria-label="candidate radar primary next action">
+          {Number(counts.candidate_count ?? 0) ? (
+            <a href="#candidate-pool" aria-label="open local candidate pool from radar summary">{ordinaryPrimaryActionLabel}</a>
+          ) : (
+            <button onClick={launchQuickScan}>{ordinaryPrimaryActionLabel}</button>
+          )}
+        </div>
+        <div className="actions" aria-label="candidate radar next user actions">
+          <button onClick={refreshCache}>查看本地缓存</button>
+          {Number(counts.candidate_count ?? 0) ? <button onClick={launchQuickScan}>运行本地快扫</button> : null}
+          <input
+            value={searchSymbol}
+            onChange={(event) => setSearchSymbol(event.target.value)}
+            placeholder="002008.SZ 或 002008"
+            aria-label="radar summary quant projection symbol"
+          />
+          <button disabled={!quantProjectionCanSubmit} onClick={launchQuantProjection}>确认并生成 3.0 量化推演</button>
+          <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
+        </div>
+        <p className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
+        <p className="risk-note">摘要按钮只读取本地 cache 或创建按钮门控 POST task；输入代码不会创建任务，也不会在 React 渲染中直连 Tushare、DeepSeek 或 GitHub。</p>
+        <p className="risk-note">生成任务完成后，去 <a href="#factor">股票量化推演</a> 查看本地缓存结果；该链接只切换页面，不额外刷新 provider/model。</p>
         <p className="risk-note">工程审计明细默认收起；完整 call ledger、release gate 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
 
       <div className="grid radar-result-cluster" data-radar-state={radarMotionState}>
-        <PacketCard title="下一票候选池" subtitle="只读展示本地候选缓存；页面打开不会自动全市场扫描" status={candidateRadarStatusLabel}>
-          <p>{String(cache.summary ?? "候选雷达本地缓存只读展示。")}</p>
-          <p>{String(cache.manual_required_text ?? "页面打开不会自动全市场扫描。")}</p>
-          <p>候选不是买入指令；必须经过证据链、触发条件、纪律和仓位预算复核。</p>
-          <StateClarityRail
-            label="候选池状态"
-            state={radarMotionState}
-            steps={[
-              { label: "本地缓存", state: cache.status === "ready" ? "done" : "waiting", detail: candidatePoolCacheDetail },
-              { label: "信号覆盖", state: Number(scanCoverage.missing_signal_group_count ?? 0) ? "blocked" : "done", detail: candidatePoolSignalDetail },
-              { label: "深研清单", state: deepScanPlan.status === "deep_scan_plan_ready" ? "done" : "waiting", detail: candidatePoolDeepResearchDetail },
-              { label: "交易边界", state: cache.does_not_execute_trades === false ? "blocked" : "done", detail: "安全" }
-            ]}
-          />
-        </PacketCard>
+        <div id="candidate-pool">
+          <PacketCard title="下一票候选池" subtitle="只读展示本地候选缓存；页面打开不会自动全市场扫描" status={candidateRadarStatusLabel}>
+            <p>{String(cache.summary ?? "候选雷达本地缓存只读展示。")}</p>
+            <p>{String(cache.manual_required_text ?? "页面打开不会自动全市场扫描。")}</p>
+            <p>候选不是买入指令；必须经过证据链、触发条件、纪律和仓位预算复核。</p>
+            <StateClarityRail
+              label="候选池状态"
+              state={radarMotionState}
+              steps={[
+                { label: "本地缓存", state: cache.status === "ready" ? "done" : "waiting", detail: candidatePoolCacheDetail },
+                { label: "信号覆盖", state: Number(scanCoverage.missing_signal_group_count ?? 0) ? "blocked" : "done", detail: candidatePoolSignalDetail },
+                { label: "深研清单", state: deepScanPlan.status === "deep_scan_plan_ready" ? "done" : "waiting", detail: candidatePoolDeepResearchDetail },
+                { label: "交易边界", state: cache.does_not_execute_trades === false ? "blocked" : "done", detail: "安全" }
+              ]}
+            />
+          </PacketCard>
+        </div>
 
         <PacketCard title="搜票量化推演" subtitle="输入代码并确认后创建 Tushare-first 按钮门控 POST task / worker；DeepSeek governed executor 单独补" status={String(searchQuantProjectionReceipt.status ?? "local_receipt")}>
           <div className="actions">
@@ -618,6 +655,7 @@ export default function CandidateRadar() {
             />
             <button disabled={!quantProjectionCanSubmit} onClick={launchQuantProjection}>确认并生成 3.0 量化推演</button>
             <button onClick={launchQuantProjectionProviderModelAcceptance} disabled={!searchQuantProjectionExecutionRequest.acceptance_scope_hash}>确认 Tushare-first 补证</button>
+            <a href="#factor" aria-label="open generated quant projection result">查看量化推演结果</a>
           </div>
           <p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionSubmitHint}</p>
@@ -647,7 +685,7 @@ export default function CandidateRadar() {
           <details className="developer-audit-details">
             <summary>搜票推演记录详情</summary>
             <p>标的: {String(searchQuantProjectionReceipt.symbol ?? "--")}；代码有效: {String(searchQuantProjectionReceipt.symbol_valid === true)}；可进入真实数据源/模型推演: {String(searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true)}</p>
-            <p>数据源执行已接入: {String(searchQuantProjectionReceipt.provider_execution_implemented === true)}；模型执行已接入: {String(searchQuantProjectionReceipt.model_execution_implemented === true)}；生产级推演完成: {String(searchQuantProjectionReceipt.production_quant_projection_complete === true)}</p>
+            <p>Tushare 记录可见: {String(searchQuantProjectionReceipt.provider_execution_implemented === true)}；DeepSeek 记录可见: {String(searchQuantProjectionReceipt.model_execution_implemented === true)}；生产级推演完成: {String(searchQuantProjectionReceipt.production_quant_projection_complete === true)}</p>
             <p>Tushare 已调用: {String(searchQuantProjectionReceipt.tushare_called === true)}；DeepSeek 已调用: {String(searchQuantProjectionReceipt.deepseek_called === true)}；候选不是买入指令: {String(searchQuantProjectionReceipt.candidate_is_not_buy_instruction !== false)}</p>
             <DataLineageTable rows={objectRow(searchQuantProjectionReceipt)} />
             <DataLineageTable rows={searchQuantProjectionRows} />
