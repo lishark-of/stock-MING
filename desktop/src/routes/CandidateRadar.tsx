@@ -4,6 +4,7 @@ import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
+import PageStateBanner from "../components/PageStateBanner";
 import StateClarityRail from "../components/StateClarityRail";
 import StatusBadge from "../components/StatusBadge";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
@@ -55,13 +56,21 @@ export default function CandidateRadar() {
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [customPoolText, setCustomPoolText] = useState("");
   const [searchSymbol, setSearchSymbol] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const refreshCache = () => {
-    void getCandidateRadarCache().then((res) => {
-      setCache(res.data);
-      setCacheEnvelopeLedger(res.call_ledger ?? []);
-      setCacheEnvelopeWarnings(res.warnings ?? []);
-    });
+    setLoading(true);
+    setError("");
+    void getCandidateRadarCache()
+      .then((res) => {
+        setCache(res.data);
+        setCacheEnvelopeLedger(res.call_ledger ?? []);
+        setCacheEnvelopeWarnings(res.warnings ?? []);
+        if (res.ok === false) setError(res.error ?? "candidate_radar_cache_not_ok");
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoading(false));
   };
   const refreshBootstrapStatus = () => {
     void getBootstrapStatus().then((res) => {
@@ -503,6 +512,7 @@ export default function CandidateRadar() {
     : "信号覆盖完整";
   const candidatePoolDeepResearchDetail =
     deepScanPlan.status === "deep_scan_plan_ready" ? "深研清单已准备" : "等待整理深研清单";
+  const empty = !loading && !error && !Object.keys(cache).length;
 
   return (
     <>
@@ -513,6 +523,14 @@ export default function CandidateRadar() {
         </div>
         <StatusBadge label={candidateRadarStatusLabel} tone={cache.status === "ready" ? "good" : "neutral"} />
       </div>
+
+      <PageStateBanner
+        loading={loading}
+        error={error}
+        empty={empty}
+        emptyTitle="暂无下一票雷达本地缓存"
+        emptyDetail="雷达页只读取本地候选缓存；不会在页面打开或 React 渲染中自动扫描全市场。"
+      />
 
       <PacketCard title="普通用户雷达摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={candidateRadarStatusLabel}>
         <MetricGrid
