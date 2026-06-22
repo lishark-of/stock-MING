@@ -473,6 +473,10 @@ export default function CandidateRadar() {
   const ordinaryCandidateExcludedCount = rows(cache.excluded_candidates).length || rows(radarPacket.excluded_candidates).length;
   const ordinaryCandidateGroupLabel =
     `Top ${ordinaryCandidateTopCount} / Watch ${ordinaryCandidateWatchCount} / Excluded ${ordinaryCandidateExcludedCount}`;
+  const ordinaryCandidateReviewOrder =
+    "先看 Top / Watch / Excluded 分组，再看候选来源、评分说明和缺少证据；不要从 provider 审计表开始";
+  const ordinaryCandidateGroupBoundary =
+    "Top 是优先复核，Watch 是观察，Excluded 是排除或等待；三者都不是买入、卖出或加仓指令";
   const ordinaryScanScopeLabel = [
     `模式：${String(cache.scan_mode ?? "cache_only")}`,
     `范围：${String(scanExecutionSummary.scan_family ?? localPoolAudit.input_source ?? "本地缓存")}`
@@ -665,6 +669,8 @@ export default function CandidateRadar() {
             { label: "主下一步", value: ordinaryPrimaryActionLabel },
             { label: "主下一步边界", value: ordinaryPrimaryActionBoundary, tone: "good" },
             { label: "候选分组", value: ordinaryCandidateGroupLabel },
+            { label: "候选解读", value: ordinaryCandidateReviewOrder },
+            { label: "分组边界", value: ordinaryCandidateGroupBoundary, tone: "good" },
             { label: "扫描范围", value: ordinaryScanScopeLabel },
             { label: "候选来源", value: ordinaryCandidateSourceLabel },
             { label: "评分说明", value: ordinaryScoringReasonLabel },
@@ -702,6 +708,7 @@ export default function CandidateRadar() {
           <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
         </div>
         <p className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
+        <p className="risk-note">候选池按 Top / Watch / Excluded 分组帮助复核优先级；分组结果不是买卖建议，也不会修改 strategy action。</p>
         <p className="risk-note">摘要按钮只读取本地 cache 或创建按钮门控 POST task；输入代码不会创建任务，也不会在 React 渲染中直连 Tushare、DeepSeek 或 GitHub。</p>
         <p className="risk-note">生成任务完成后，去 <a href="#factor">股票量化推演</a> 查看本地缓存结果；该链接只切换页面，不额外刷新外部数据或模型。</p>
         <p className="risk-note">工程审计明细默认收起；完整 call ledger、release gate 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
@@ -713,6 +720,7 @@ export default function CandidateRadar() {
             <p>{String(cache.summary ?? "候选雷达本地缓存只读展示。")}</p>
             <p>{String(cache.manual_required_text ?? "页面打开不会自动全市场扫描。")}</p>
             <p>候选分组：{ordinaryCandidateGroupLabel}；{ordinaryScanScopeLabel}；{ordinaryCandidateSourceLabel}。</p>
+            <p>{ordinaryCandidateGroupBoundary}</p>
             <p>候选不是买入指令；必须经过证据链、触发条件、纪律和仓位预算复核。</p>
             <StateClarityRail
               label="候选池状态"
