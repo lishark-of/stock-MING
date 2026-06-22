@@ -17,6 +17,8 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         provider_slice = source[provider_start:provider_end]
         execution_request_start = source.index("search_quant_projection_execution_request_receipt")
         execution_request_slice = source[execution_request_start:source.index("<DataLineageTable rows={objectRow(searchQuantProjectionExecutionRequest)}", execution_request_start)]
+        ordinary_quant_start = source.index('title="搜票量化推演"')
+        ordinary_quant_slice = source[ordinary_quant_start:source.index('<details className="developer-audit-details">', ordinary_quant_start)]
 
         self.assertIn("postCandidateRadarQuantProjectionProviderModelAcceptance", source)
         self.assertIn('scan_mode: "quant_projection_provider_model_acceptance"', provider_slice)
@@ -35,6 +37,13 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("不在 React render 里补调 provider", execution_request_slice)
         self.assertIn("<TaskLaunchReceipt receipt={taskReceipt} />", execution_request_slice)
         self.assertIn("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", execution_request_slice)
+        self.assertIn("quantProjectionTushareFirstState", ordinary_quant_slice)
+        self.assertIn("确认 Tushare-first 补证", ordinary_quant_slice)
+        self.assertIn("disabled={!searchQuantProjectionExecutionRequest.acceptance_scope_hash}", ordinary_quant_slice)
+        self.assertIn('label: "Tushare-first"', ordinary_quant_slice)
+        self.assertIn("DeepSeek 保持 skipped", ordinary_quant_slice)
+        self.assertIn("点击后只创建受控 POST task", ordinary_quant_slice)
+        self.assertIn("不交易、不改 strategy action", ordinary_quant_slice)
         self.assertNotIn("postCandidateRadarQuantProjectionProviderModelAcceptance", submit_slice)
         self.assertNotIn("operator_approved", submit_slice)
         self.assertNotIn("include_deepseek: false", submit_slice)

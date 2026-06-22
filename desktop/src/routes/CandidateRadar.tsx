@@ -511,6 +511,9 @@ export default function CandidateRadar() {
     : searchQuantProjectionReceipt.ready_for_real_provider_model_projection === true
       ? "可进入人工确认补证；仍不自动外联"
       : "真实数据/模型补证仍阻断在人工确认和 ledger 前";
+  const quantProjectionTushareFirstState = searchQuantProjectionExecutionRequest.acceptance_scope_hash
+    ? "可点击确认 Tushare-first 补证；只走 POST task，DeepSeek 保持 skipped"
+    : "先完成本地推演、联动 dry-run 和 execution request 后启用";
   const quantProjectionLastResult = [
     `当前标的：${quantProjectionDisplaySymbol || "--"}`,
     `本地记录：${String(searchQuantProjectionReceipt.status ?? "暂无")}`,
@@ -590,15 +593,18 @@ export default function CandidateRadar() {
               aria-label="search quant projection symbol"
             />
             <button disabled={!quantProjectionCanSubmit} onClick={launchQuantProjection}>生成 3.0 量化推演</button>
+            <button onClick={launchQuantProjectionProviderModelAcceptance} disabled={!searchQuantProjectionExecutionRequest.acceptance_scope_hash}>确认 Tushare-first 补证</button>
           </div>
           <p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionSubmitHint}</p>
+          <p className="risk-note" aria-live="polite">{quantProjectionTushareFirstState}</p>
           <MetricGrid
             items={[
               { label: "下一步", value: quantProjectionNextClick },
               { label: "输入标的", value: quantProjectionDisplaySymbol || "等待输入" },
               { label: "确认代码", value: quantProjectionConfirmedSymbol },
               { label: "输入校验", value: quantProjectionInputValidation, tone: quantProjectionInputValidation.includes("阻断") ? "warn" : "good" },
+              { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn" },
               { label: "数据来源状态", value: quantProjectionSourceState },
               { label: "任务边界", value: quantProjectionTaskBoundary },
               { label: "缺少证据", value: quantProjectionMissingEvidence, tone: quantProjectionMissingEvidence.includes("证据") || quantProjectionMissingEvidence.includes("验收") || quantProjectionMissingEvidence.includes("申请") ? "warn" : "good" },
@@ -607,6 +613,7 @@ export default function CandidateRadar() {
               { label: "仅供研究", value: "推演解释只整理已有证据；不覆盖价格、持仓、因子、操作区或交易策略", tone: "good" }
             ]}
           />
+          <p>普通入口的 Tushare-first 按钮只在 execution request 有 scope hash 后启用；点击后只创建受控 POST task，DeepSeek 保持 skipped，不交易、不改 strategy action。</p>
           <p>一键生成量化投研图谱 当前只保存本地记录：校验股票代码，列出 Tushare / Factor / Next Session / DeepSeek / ECharts 待补证据；真实补证只走后台任务血缘。</p>
           <details className="developer-audit-details">
             <summary>搜票推演记录详情</summary>
