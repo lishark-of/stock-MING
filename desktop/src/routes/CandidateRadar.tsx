@@ -368,7 +368,7 @@ export default function CandidateRadar() {
     Number(counts.degraded_mode_active_count ?? 0) ? "degraded" : "steady"
   ].join(" ");
   const ordinaryNextClick = Number(counts.candidate_count ?? 0)
-    ? "先查看本地候选摘要"
+    ? "先查看下一票候选池"
     : "先点击运行本地快扫";
   const ordinaryOptionalNextClick = Number(counts.candidate_count ?? 0)
     ? "需要更新时再运行本地快扫；搜单票时输入代码后点击生成 3.0 量化推演"
@@ -384,13 +384,12 @@ export default function CandidateRadar() {
   const ordinaryDeepSeekSourceLabel = bootstrapLiveLight.deepseek_on_open === true ? "轻量实时后台任务" : "手动触发或关闭";
   const ordinaryProviderGapLabel =
     Number(counts.provider_blocked_group_count ?? 0) > 0 ? "真实数据补证存在缺口" : "未标记真实数据补证缺口";
-  const ordinarySourceState = [
-    `本地缓存：${ordinaryCacheSourceLabel}`,
-    `Tushare 数据：${ordinaryTushareSourceLabel}`,
-    `DeepSeek 解释：${ordinaryDeepSeekSourceLabel}`,
-    `数据缺口：${ordinaryProviderGapLabel}`,
-    `运行模式：${candidateRadarRuntimeModeLabel}`
-  ].join(" / ");
+  const ordinaryPendingSourceLabel = Number(counts.candidate_radar_production_stage_scope_pending_count ?? 0)
+    ? `pending：${String(counts.candidate_radar_production_stage_scope_pending_count)}项证据待补；${ordinaryProviderGapLabel}`
+    : `pending：当前摘要未标记新增待补；${ordinaryProviderGapLabel}`;
+  const ordinaryDegradedSourceLabel = Number(counts.degraded_mode_active_count ?? 0)
+    ? `degraded：${String(counts.degraded_mode_active_count)}项降级`
+    : "degraded：未标记降级";
   const ordinaryMissingEvidence = [
     Number(counts.candidate_radar_production_stage_scope_pending_count ?? 0)
       ? `待确认的生产阶段证据：${String(counts.candidate_radar_production_stage_scope_pending_count)}项`
@@ -488,7 +487,12 @@ export default function CandidateRadar() {
           items={[
             { label: "下一步", value: ordinaryNextClick },
             { label: "可选补证", value: ordinaryOptionalNextClick },
-            { label: "数据来源", value: ordinarySourceState },
+            { label: "cache", value: ordinaryCacheSourceLabel },
+            { label: "Tushare", value: ordinaryTushareSourceLabel },
+            { label: "DeepSeek", value: ordinaryDeepSeekSourceLabel },
+            { label: "pending", value: ordinaryPendingSourceLabel, tone: ordinaryPendingSourceLabel.includes("待补") ? "warn" : "good" },
+            { label: "degraded", value: ordinaryDegradedSourceLabel, tone: ordinaryDegradedSourceLabel.includes("降级") && !ordinaryDegradedSourceLabel.includes("未标记") ? "warn" : "good" },
+            { label: "last_successful_cache/result", value: ordinaryLastCache },
             { label: "缺少证据", value: ordinaryMissingEvidence, tone: ordinaryMissingEvidence.includes("待补") || ordinaryMissingEvidence.includes("阻断") || ordinaryMissingEvidence.includes("验收") ? "warn" : "good" },
             { label: "阻断/降级", value: ordinaryBlockedState, tone: ordinaryBlockedState.includes("未标记") ? "good" : "warn" },
             { label: "最近可用缓存", value: ordinaryLastCache },

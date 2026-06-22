@@ -19,7 +19,12 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         for required_label in (
             'label: "下一步"',
             'label: "可选补证"',
-            'label: "数据来源"',
+            'label: "cache"',
+            'label: "Tushare"',
+            'label: "DeepSeek"',
+            'label: "pending"',
+            'label: "degraded"',
+            'label: "last_successful_cache/result"',
             'label: "缺少证据"',
             'label: "阻断/降级"',
             'label: "最近可用缓存"',
@@ -36,6 +41,12 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("ordinaryOptionalNextClick", self.page)
         self.assertIn("需要更新时再运行本地快扫", self.page)
         self.assertIn("搜单票时输入代码后点击生成 3.0 量化推演", self.page)
+        self.assertIn("ordinaryPendingSourceLabel", self.page)
+        self.assertIn("ordinaryDegradedSourceLabel", self.page)
+        self.assertIn("pending：", self.page)
+        self.assertIn("degraded：", self.page)
+        self.assertIn("本地候选缓存可用", self.page)
+        self.assertIn("手动触发或关闭", self.page)
         self.assertIn("雷达摘要只读展示候选缓存", self.page)
         self.assertIn("manual/live_light 补证必须走 POST task / worker", self.page)
         self.assertIn("候选不是买入指令；不真实交易、不下单、不改交易策略", self.page)
