@@ -395,7 +395,7 @@ export default function CandidateRadar() {
     Number(counts.degraded_mode_active_count ?? 0) ? "degraded" : "steady"
   ].join(" ");
   const ordinaryNextClick = Number(counts.candidate_count ?? 0)
-    ? "先查看下一票候选池"
+    ? "先查看本地候选摘要"
     : "先点击运行本地快扫";
   const ordinaryOptionalNextClick = Number(counts.candidate_count ?? 0)
     ? "需要更新时再运行本地快扫；搜单票时输入代码后点击生成 3.0 量化推演"
@@ -442,7 +442,7 @@ export default function CandidateRadar() {
   const quantProjectionSymbolValidation = normalizeAshareSymbolInput(searchSymbol);
   const quantProjectionCanSubmit = quantProjectionSymbolValidation.valid;
   const quantProjectionDisabledReason = quantProjectionCanSubmit
-    ? `按钮已启用：将创建 ${quantProjectionSymbolValidation.normalized} 的本地量化推演 task`
+    ? `按钮已启用：点击后只创建本地量化推演 task；已确认 ${quantProjectionSymbolValidation.normalized}`
     : searchSymbol.trim()
       ? `按钮不可用原因：${quantProjectionSymbolValidation.reason}；请输入 6 位 A 股代码或 002008.SZ 这类后缀`
       : "按钮不可用原因：先输入股票代码；输入本身不会创建 task";
