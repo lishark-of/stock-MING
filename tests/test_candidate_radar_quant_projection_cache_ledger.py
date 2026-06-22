@@ -164,6 +164,118 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertNotIn("TUSHARE_TOKEN", dumped)
         self.assertNotIn("DEEPSEEK_API_KEY", dumped)
 
+    def test_confirm_tushare_first_blocks_missing_credentials_without_provider_call(self):
+        self._with_meta_store()
+        self._with_env(TUSHARE_TOKEN=None, DEEPSEEK_API_KEY=None)
+        clear_task_statuses_for_tests(clear_persisted=True)
+        self._with_snapshot_cache(
+            {
+                "radar_packet": {"status": "ready", "summary": "candidate cache"},
+                "data_freshness": {"state": "fresh", "expected_trade_date": "2026-06-12"},
+            }
+        )
+
+        original_run_tushare = candidate_service.tushare_task_service.run_tushare_refresh_task
+        original_credential_presence = candidate_service._quant_acceptance_credential_presence_rows
+
+        def fail_if_provider_called(*_args, **_kwargs):
+            raise AssertionError("Tushare provider must not run when server credentials are missing")
+
+        def missing_tushare_credential_presence_rows(*, include_tushare, include_deepseek):
+            rows, summary = original_credential_presence(
+                include_tushare=include_tushare,
+                include_deepseek=include_deepseek,
+            )
+            rows = [dict(row) for row in rows]
+            missing_count = 0
+            present_count = 0
+            for row in rows:
+                if row["required"] and row["provider"] == "tushare":
+                    row["present"] = False
+                    row["status"] = "missing_no_value_read"
+                if row["required"] and row["present"]:
+                    present_count += 1
+                elif row["required"]:
+                    missing_count += 1
+            summary = dict(summary)
+            summary["status"] = (
+                "required_env_key_missing_no_values_read"
+                if missing_count
+                else "all_required_env_keys_present_no_values_read"
+            )
+            summary["present_provider_count"] = present_count
+            summary["missing_provider_count"] = missing_count
+            return rows, summary
+
+        candidate_service.tushare_task_service.run_tushare_refresh_task = fail_if_provider_called
+        candidate_service._quant_acceptance_credential_presence_rows = missing_tushare_credential_presence_rows
+        self.addCleanup(
+            setattr,
+            candidate_service.tushare_task_service,
+            "run_tushare_refresh_task",
+            original_run_tushare,
+        )
+        self.addCleanup(
+            setattr,
+            candidate_service,
+            "_quant_acceptance_credential_presence_rows",
+            original_credential_presence,
+        )
+
+        response = self.client.post(
+            "/api/candidate-radar/quant-projection",
+            json={
+                "symbol": "002008",
+                "include_tushare": True,
+                "include_deepseek": False,
+                "user_approved": True,
+                "token": "SHOULD_DROP",
+            },
+        ).json()
+
+        self.assertTrue(response["ok"])
+        task = response["data"]["task"]
+        self.assertEqual(task["status"], "success")
+        self.assertEqual(
+            task["current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_blocked_missing_credentials",
+        )
+        self.assertFalse(task["external_calls_triggered"])
+        self.assertFalse(task["tushare_called"])
+        self.assertFalse(task["deepseek_called"])
+
+        cache = self.client.get("/api/candidate-radar/cache").json()
+        self.assertTrue(cache["ok"])
+        packet = cache["data"]
+        dry_run = packet["search_quant_projection_acceptance_dry_run_receipt"]
+        execution_request = packet["search_quant_projection_execution_request_receipt"]
+        provider_receipt = packet["search_quant_provider_model_acceptance_receipt"]
+
+        self.assertEqual(
+            dry_run["status"],
+            "quant_projection_acceptance_dry_run_blocked_missing_credentials",
+        )
+        self.assertEqual(dry_run["credential_missing_provider_count"], 1)
+        self.assertFalse(dry_run["ready_for_user_approved_real_acceptance"])
+        self.assertEqual(
+            execution_request["status"],
+            "quant_projection_execution_request_blocked_dry_run_not_ready",
+        )
+        self.assertFalse(execution_request["local_execution_request_ready"])
+        self.assertFalse(provider_receipt.get("direct_evidence_verified"))
+        self.assertFalse(provider_receipt.get("tushare_call_ledger_evidence_done"))
+        self.assertEqual(int(provider_receipt.get("provider_api_call_count") or 0), 0)
+        self.assertFalse(packet["external_calls_triggered"])
+        self.assertFalse(packet["tushare_called"])
+        self.assertFalse(packet["deepseek_called"])
+        self.assertTrue(packet["does_not_execute_trades"])
+        self.assertTrue(packet["does_not_modify_strategy_action"])
+
+        dumped = json.dumps(cache, ensure_ascii=False)
+        self.assertNotIn("SHOULD_DROP", dumped)
+        self.assertNotIn("TUSHARE_TOKEN", dumped)
+        self.assertNotIn("DEEPSEEK_API_KEY", dumped)
+
 
 if __name__ == "__main__":
     unittest.main()

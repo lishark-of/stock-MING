@@ -1776,6 +1776,8 @@ def _candidate_radar_quant_projection_execution_request(
         and dry_run.get("symbol_valid") is True
         and dry_run.get("user_approved") is True
         and dry_run.get("local_dry_run_ready") is True
+        and dry_run.get("ready_for_user_approved_real_acceptance") is True
+        and int(dry_run.get("credential_missing_provider_count") or 0) == 0
     )
     selected_apis = [str(api) for api in _as_list(dry_run.get("selected_apis"))]
     include_tushare = dry_run.get("include_tushare") is True
@@ -14169,18 +14171,43 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
                         "requested_by": "candidate_radar_quant_projection_confirm_chain",
                     }
                 )
-                run_candidate_quant_projection_provider_model_acceptance_task(
-                    {
-                        "operator_approved": True,
-                        "acceptance_scope_hash": scope_hash,
-                        "include_deepseek": False,
-                        "requested_by": "candidate_radar_quant_projection_confirm_chain",
-                    }
+                latest_packet = read_candidate_radar_cache()
+                latest_dry_run = _as_dict(
+                    latest_packet.get("search_quant_projection_acceptance_dry_run_receipt")
                 )
-                final_step = "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped"
-                final_warning = (
-                    "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped"
+                latest_request = _as_dict(latest_packet.get("search_quant_projection_execution_request_receipt"))
+                request_ready = (
+                    latest_request.get("local_execution_request_ready") is True
+                    and latest_dry_run.get("ready_for_user_approved_real_acceptance") is True
+                    and int(latest_dry_run.get("credential_missing_provider_count") or 0) == 0
                 )
+                if request_ready:
+                    run_candidate_quant_projection_provider_model_acceptance_task(
+                        {
+                            "operator_approved": True,
+                            "acceptance_scope_hash": scope_hash,
+                            "include_deepseek": False,
+                            "requested_by": "candidate_radar_quant_projection_confirm_chain",
+                        }
+                    )
+                    latest_packet = read_candidate_radar_cache()
+                    latest_provider = _as_dict(latest_packet.get("search_quant_provider_model_acceptance_receipt"))
+                    if (
+                        latest_provider.get("tushare_call_ledger_evidence_done") is True
+                        and latest_provider.get("deepseek_skipped_by_request") is True
+                    ):
+                        final_step = "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped"
+                    else:
+                        final_step = (
+                            "candidate_radar_quant_projection_tushare_first_chain_blocked_provider_ledger_missing"
+                        )
+                    final_warning = final_step
+                elif latest_dry_run.get("credential_missing_provider_count"):
+                    final_step = "candidate_radar_quant_projection_tushare_first_chain_blocked_missing_credentials"
+                    final_warning = final_step
+                else:
+                    final_step = "candidate_radar_quant_projection_tushare_first_chain_blocked_execution_request"
+                    final_warning = final_step
     return task_service.update_task_status(
         task["task_id"],
         status="success",
