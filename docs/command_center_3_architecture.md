@@ -62,6 +62,8 @@ Streamlit `app.py` 保留，但定位调整为 legacy/admin/debug，不再作为
 python3 -m uvicorn server.main:app --reload --port 8710
 ```
 
+P0 普通使用者入口优先使用 `scripts/start_command_center_3.command` 作为本地一键启动器：它负责启动或复用 FastAPI 与 React/Vite，等待 `/health` 和 Vite 页面都就绪后才打开页面，并把日志写入 `.stock_ming_3/logs`。这只是前后端本地联通口径；它不设置 `live_light` 默认值，不启用 provider/model executor，不调用 Tushare、DeepSeek、GitHub 或交易路径，也不能作为 14 LTG strict closeout 或 production acceptance evidence。
+
 已提供：
 
 - `GET /health`

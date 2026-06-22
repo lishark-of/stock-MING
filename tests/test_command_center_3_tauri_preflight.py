@@ -64,11 +64,19 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("frontend_uses_fastapi_only=true", output)
         self.assertIn("tauri_package_build_required_for_production=true", output)
 
-    def test_command_center_3_launcher_is_manual_local_dev_only(self):
+    def test_command_center_3_launcher_is_local_one_click_and_safe(self):
         source = LAUNCHER.read_text(encoding="utf-8")
 
         self.assertTrue(LAUNCHER.exists())
         self.assertIn("Command Center 3.0 local launcher", source)
+        self.assertIn(
+            "P0: local one-click launcher starts/checks FastAPI and React/Vite before opening the page.",
+            source,
+        )
+        self.assertIn(
+            "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution.",
+            source,
+        )
         self.assertIn("scripts/dev_server.sh", source)
         self.assertIn("npm run dev", source)
         self.assertIn("VITE_API_BASE_URL", source)
@@ -84,6 +92,7 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn('exit 1', source)
         self.assertIn('open "$VITE_URL"', source)
         self.assertIn("no Tushare, DeepSeek, GitHub, or trading call", source)
+        self.assertIn("does not enable live_light/provider/model execution", source)
         self.assertNotIn('wait_for_url "FastAPI" "${API_BASE%/}/health" 40 || true', source)
         self.assertNotIn('wait_for_url "React/Vite" "$VITE_URL" 40 || true', source)
         self.assertNotIn("TUSHARE_TOKEN", source)
