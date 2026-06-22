@@ -612,9 +612,21 @@ export default function CandidateRadar() {
     (quantProjectionProviderLedgerReady
       ? "可解释结果：Tushare ledger 已回放；等待 Factor/Next/ECharts 本地图谱补齐"
       : "解释结果等待 Tushare-first 账本");
+  const quantProjectionOrdinaryResultSummary =
+    String(searchQuantProjectionInterpretation.ordinary_result_summary ?? "") ||
+    quantProjectionInterpretationState;
   const quantProjectionInterpretationNext =
     String(searchQuantProjectionInterpretation.next_action ?? "") ||
     "先点击确认并生成 3.0 量化推演；DeepSeek governed executor 单独补";
+  const quantProjectionOrdinaryResultNext =
+    String(searchQuantProjectionInterpretation.ordinary_result_next_step ?? "") ||
+    quantProjectionInterpretationNext;
+  const quantProjectionOrdinaryResultBoundary =
+    String(searchQuantProjectionInterpretation.ordinary_result_boundary ?? "") ||
+    "解释只基于本地 cache / ledger / packet；不调用 DeepSeek，不改 strategy action。";
+  const quantProjectionOrdinaryResultEvidence =
+    String(searchQuantProjectionInterpretation.ordinary_result_evidence ?? "") ||
+    "证据：等待 Tushare-first 账本；DeepSeek 未参与。";
   const quantProjectionInterpretationReplay =
     String(searchQuantProjectionInterpretation.result_replay_label ?? "") ||
     "成功后回放本地结果、ledger 和 packet；GET cache 只读展示";
@@ -803,6 +815,10 @@ export default function CandidateRadar() {
               { label: "provider 来源", value: quantProjectionProviderCallSource, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
               { label: "回放合同", value: quantProjectionSmallDataReadbackContract, tone: "good" },
               { label: "投研图谱联动", value: quantProjectionResearchMapState, tone: quantProjectionFactorNextReady ? "good" : "warn" },
+              { label: "可读结论", value: quantProjectionOrdinaryResultSummary, tone: quantProjectionInterpretationReady ? "good" : "warn" },
+              { label: "结论下一步", value: quantProjectionOrdinaryResultNext },
+              { label: "结论证据", value: quantProjectionOrdinaryResultEvidence },
+              { label: "结论边界", value: quantProjectionOrdinaryResultBoundary, tone: "good" },
               { label: "解释结果", value: quantProjectionInterpretationState, tone: quantProjectionInterpretationReady ? "good" : "warn" },
               { label: "解释下一步", value: quantProjectionInterpretationNext },
               { label: "图谱下一步", value: quantProjectionMapNextStep },

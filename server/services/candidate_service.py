@@ -14846,27 +14846,58 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
             else "量化推演和 Next Session 图谱已有本地回放，可只读查看。"
         )
         next_action = "查看量化推演摘要，再补 Factor/Next/ECharts 本地刷新证据；DeepSeek 单独等待 governed executor。"
+        ordinary_result_status = "ready_with_local_map" if factor_next_ready else "ready_pending_local_map"
+        ordinary_result_summary = (
+            f"可读结论：Tushare-first 账本已回放 {provider_success_count}/{provider_call_count} 个接口；"
+            "当前可以解释数据来源和缺口，量化推演/次日图谱仍按本地缓存只读回放。"
+        )
+        ordinary_result_next_step = (
+            "先查看量化推演和次日图谱回放；缺口只作为待补证据，不生成买卖动作。"
+            if factor_next_ready
+            else "先读 Tushare 账本和本地推演摘要，再补 Factor/Next/ECharts 本地刷新证据。"
+        )
     elif small_data.get("status") == "small_data_writeback_blocked_missing_credentials":
         status = "interpretation_blocked_missing_tushare_credentials"
         summary_label = "解释结果暂不可用：服务端 Tushare 凭据缺失，只有本地阻断记录，没有 provider 账本。"
         result_replay_label = "当前只能回放本地阻断原因；不会从 GET cache 或 React render 补调 provider。"
         next_action = "配置服务端凭据后重新确认；DeepSeek 仍保持 skipped。"
+        ordinary_result_status = "blocked_missing_credentials"
+        ordinary_result_summary = "可读结论：还没有真实 provider 账本；当前只能解释服务端凭据缺失这一阻断原因。"
+        ordinary_result_next_step = "配置服务端凭据后重新点击确认；页面打开、输入和 GET cache 仍不补调 provider。"
     elif quant_receipt:
         status = "interpretation_waiting_tushare_first_ledger"
         summary_label = "解释结果等待 Tushare-first 账本：已有本地搜票记录，但还不能解释真实数据来源。"
         result_replay_label = "当前只回放本地 receipt 和 pending 状态。"
         next_action = "点击确认按钮创建后台任务；仅输入代码不会创建任务或外联。"
+        ordinary_result_status = "waiting_tushare_first_ledger"
+        ordinary_result_summary = "可读结论：本地搜票记录已经写入，但还没有 Tushare-first 账本，暂不能解释真实数据。"
+        ordinary_result_next_step = "点击确认按钮提交后台任务；成功后再回放 cache / ledger / packet。"
     else:
         status = "interpretation_waiting_symbol_confirm"
         summary_label = "解释结果等待输入股票代码并确认。"
         result_replay_label = "暂无量化推演结果可回放。"
         next_action = "先输入 6 位 A 股代码，再点击确认并生成 3.0 量化推演。"
+        ordinary_result_status = "waiting_symbol_confirm"
+        ordinary_result_summary = "可读结论：等待输入股票代码并点击确认。"
+        ordinary_result_next_step = "先输入有效 A 股代码；输入本身不会创建任务或外联。"
+    ordinary_result_boundary = (
+        "解释只基于本地 cache / ledger / packet；不调用 DeepSeek，不覆盖价格、持仓、因子、operation_zones 或 strategy action。"
+    )
+    ordinary_result_evidence = (
+        f"证据：Tushare 接口 {provider_success_count}/{provider_call_count}；"
+        f"DeepSeek 未参与；图谱{'已回放' if factor_next_ready else '待本地刷新'}。"
+    )
     return {
         "schema_version": QUANT_PROJECTION_INTERPRETATION_SCHEMA_VERSION,
         "status": status,
         "summary_label": summary_label,
         "result_replay_label": result_replay_label,
         "next_action": next_action,
+        "ordinary_result_status": ordinary_result_status,
+        "ordinary_result_summary": ordinary_result_summary,
+        "ordinary_result_next_step": ordinary_result_next_step,
+        "ordinary_result_boundary": ordinary_result_boundary,
+        "ordinary_result_evidence": ordinary_result_evidence,
         "symbol": small_data.get("symbol") or quant_receipt.get("symbol") or "",
         "interpretation_ready": small_data_ready,
         "provider_api_success_count": provider_success_count,
