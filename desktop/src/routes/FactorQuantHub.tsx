@@ -280,6 +280,9 @@ export default function FactorQuantHub() {
     Number(deepseekProductionActivationReceipt.blocking_criterion_count ?? 0) > 0 ? "模型解释补证存在阻断" : "",
     bridge.does_not_modify_action === false ? "交易动作边界异常" : ""
   ].filter(Boolean).join(" / ") || "当前缓存未标记阻断或降级";
+  const ordinaryQuantDegradedSourceLabel = ordinaryQuantBlockedState.includes("未标记")
+    ? "degraded：未标记降级"
+    : `degraded：${ordinaryQuantBlockedState}`;
   const ordinaryQuantLastCache = String(
     packet.loaded_at ?? packet.updated_at ?? packet.generated_at ?? freshnessGate.latest_data_date ?? "暂无最近可用缓存"
   );
@@ -302,6 +305,12 @@ export default function FactorQuantHub() {
           items={[
             { label: "下一步", value: ordinaryQuantNextClick },
             { label: "运行模式", value: ordinaryQuantRuntimeModeLabel },
+            { label: "cache", value: ordinaryQuantCacheSourceLabel },
+            { label: "Tushare", value: ordinaryQuantTushareSourceLabel },
+            { label: "DeepSeek", value: ordinaryQuantDeepSeekSourceLabel },
+            { label: "pending", value: ordinaryQuantPendingStateLabel, tone: ordinaryQuantPendingStateLabel.includes("待补") || ordinaryQuantPendingStateLabel.includes("等待") ? "warn" : "good" },
+            { label: "degraded", value: ordinaryQuantDegradedSourceLabel, tone: ordinaryQuantDegradedSourceLabel.includes("未标记") ? "good" : "warn" },
+            { label: "last_successful_cache/result", value: ordinaryQuantLastCache },
             { label: "数据来源状态", value: ordinaryQuantSourceState },
             { label: "补证方式", value: ordinaryQuantEvidenceTaskState, tone: ordinaryQuantEvidenceTaskState.includes("等待") || ordinaryQuantEvidenceTaskState.includes("待补") || ordinaryQuantEvidenceTaskState.includes("未知") ? "warn" : "good" },
             { label: "缺少证据", value: ordinaryQuantMissingEvidence, tone: ordinaryQuantMissingEvidence.includes("待补") || ordinaryQuantMissingEvidence.includes("待确认") ? "warn" : "good" },

@@ -14,6 +14,12 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("下一步、来源、缺口、边界和最近可用缓存", source)
         self.assertIn('label: "下一步"', source)
         self.assertIn('label: "运行模式"', source)
+        self.assertIn('label: "cache"', source)
+        self.assertIn('label: "Tushare"', source)
+        self.assertIn('label: "DeepSeek"', source)
+        self.assertIn('label: "pending"', source)
+        self.assertIn('label: "degraded"', source)
+        self.assertIn('label: "last_successful_cache/result"', source)
         self.assertIn('label: "数据来源状态"', source)
         self.assertIn('label: "补证方式"', source)
         self.assertIn('label: "缺少证据"', source)
@@ -24,6 +30,10 @@ class FactorQuantHubOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(source.index("普通用户量化推演摘要"), source.index('launchTask("/api/factor-quant/run-light"'))
         self.assertLess(source.index("普通用户量化推演摘要"), source.index("高级验收任务"))
         self.assertLess(source.index("普通用户量化推演摘要"), source.index("开发 / 审计指标"))
+        self.assertLess(source.index('label: "cache"'), source.index("开发 / 审计指标"))
+        self.assertLess(source.index('label: "last_successful_cache/result"'), source.index("开发 / 审计指标"))
+        self.assertIn("ordinaryQuantDegradedSourceLabel", source)
+        self.assertIn("degraded：未标记降级", source)
 
     def test_stock_quant_projection_explains_evidence_task_mode(self):
         source = (ROOT / "src" / "routes" / "FactorQuantHub.tsx").read_text(encoding="utf-8")
