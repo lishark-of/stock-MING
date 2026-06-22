@@ -117,22 +117,34 @@ class MigrationStatusLegacyAuditObservationTests(unittest.TestCase):
         self.assertIn("legacyAuditAttachmentSourceRows", migration_source)
         self.assertIn("legacyAuditLatestObservation", migration_source)
         self.assertIn("legacyAuditLatestObservationRows", migration_source)
+        self.assertIn("legacyAuditObservationTargets", migration_source)
         self.assertIn("launchLegacyAuditObservationDryRun", migration_source)
         self.assertIn("postLegacyAuditObservationDryRun", migration_source)
         self.assertIn(
-            'legacyAuditObservationFocusWorkflow = "searched-symbol quant projection"',
+            'workflow_group: "searched-symbol quant projection"',
             migration_source,
         )
         self.assertIn(
-            'legacyAuditObservationNextClick = "记录搜票量化观察 dry-run"',
+            'next_click: "记录搜票量化观察 dry-run"',
+            migration_source,
+        )
+        self.assertIn('workflow_group: "factor/risk/provider health"', migration_source)
+        self.assertIn('next_click: "记录 factor/provider 大表观察 dry-run"', migration_source)
+        self.assertIn(
+            "factor/provider health detail should not dominate ordinary pages",
+            migration_source,
+        )
+        self.assertIn(
+            "provider detail goes to Settings / Developer / Audit",
             migration_source,
         )
         self.assertIn("只允许 redacted reviewer note；不贴 raw packet/raw log/token/key/未脱敏模型输出", migration_source)
         self.assertIn("只生成本地 observation dry-run；不打开 Streamlit、不调用 provider/model、不升级 KEEP 或 ordinary entry", migration_source)
         self.assertIn(
-            "<button onClick={launchLegacyAuditObservationDryRun}>{legacyAuditObservationNextClick}</button>",
+            "legacyAuditObservationTargets.map((target)",
             migration_source,
         )
+        self.assertIn("launchLegacyAuditObservationDryRun(target)", migration_source)
         self.assertIn("redacted_reviewer_note: migration-status-observation-dry-run", migration_source)
         self.assertIn("direct_evidence_observed_redesign_required", migration_source)
         self.assertIn("no_keep_promotion_this_round", migration_source)

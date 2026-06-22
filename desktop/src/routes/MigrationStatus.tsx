@@ -505,8 +505,30 @@ export default function MigrationStatus() {
     };
   });
   const ltgAcceptanceRunwayRows = packetAcceptanceRunwayRows.length ? packetAcceptanceRunwayRows : localAcceptanceRunwayRows;
-  const legacyAuditObservationFocusWorkflow = "searched-symbol quant projection";
-  const legacyAuditObservationNextClick = "记录搜票量化观察 dry-run";
+  const legacyAuditObservationTargets = [
+    {
+      key: "searched_symbol_quant_projection",
+      workflow_group: "searched-symbol quant projection",
+      next_click: "记录搜票量化观察 dry-run",
+      user_observation: "Reviewer observed that searched-symbol projection needs one clear next click instead of hunting through legacy tabs.",
+      legacy_ux_bug_or_patchwork: "Legacy tab/radio flow makes the next projection action hard to find; synchronous old path can feel blocking.",
+      data_lineage_observation: "Provider/cache/model/pending states need to be separated before the workflow enters an ordinary user path.",
+      replacement_user_path: "股票量化推演 / Stock Quant Projection -> 生成 3.0 量化推演",
+      frozen_legacy_path: "legacy searched-symbol synchronous projection path stays admin/debug fallback until redesigned"
+    },
+    {
+      key: "factor_risk_provider_health",
+      workflow_group: "factor/risk/provider health",
+      next_click: "记录 factor/provider 大表观察 dry-run",
+      user_observation: "Reviewer observed that factor/provider health detail should not dominate ordinary pages; users need factor/risk summary first.",
+      legacy_ux_bug_or_patchwork: "Legacy provider-health tables can bury ordinary signal, auto/TTL probing may look like page-open external calls, and small samples can look like production proof.",
+      data_lineage_observation: "Factor support/suppress, risk summary, provider/cache/pending, missing evidence, and last successful cache must be visible before provider-health details.",
+      replacement_user_path: "股票量化推演 / Stock Quant Projection and 今日作战台 / Daily Command Center summaries; provider detail goes to Settings / Developer / Audit",
+      frozen_legacy_path: "legacy provider-health table stays admin/debug fallback until redesigned"
+    }
+  ];
+  const legacyAuditObservationFocusWorkflow = legacyAuditObservationTargets.map((target) => target.workflow_group).join(" / ");
+  const legacyAuditObservationNextClick = "记录 Legacy UX 观察 dry-run";
   const legacyAuditObservationEvidenceRule = "只允许 redacted reviewer note；不贴 raw packet/raw log/token/key/未脱敏模型输出";
   const legacyAuditObservationBoundary =
     "只生成本地 observation dry-run；不打开 Streamlit、不调用 provider/model、不升级 KEEP 或 ordinary entry";
@@ -530,15 +552,15 @@ export default function MigrationStatus() {
       refreshMigrationStatus();
     });
   };
-  const launchLegacyAuditObservationDryRun = () => {
+  const launchLegacyAuditObservationDryRun = (target = legacyAuditObservationTargets[0]) => {
     setLegacyAuditObservationError("");
     void postLegacyAuditObservationDryRun({
-      workflow_group: legacyAuditObservationFocusWorkflow,
-      user_observation: "Reviewer observed that searched-symbol projection needs one clear next click instead of hunting through legacy tabs.",
-      legacy_ux_bug_or_patchwork: "Legacy tab/radio flow makes the next projection action hard to find; synchronous old path can feel blocking.",
-      data_lineage_observation: "Provider/cache/model/pending states need to be separated before the workflow enters an ordinary user path.",
-      replacement_user_path: "股票量化推演 / Stock Quant Projection -> 生成 3.0 量化推演",
-      frozen_legacy_path: "legacy searched-symbol synchronous projection path stays admin/debug fallback until redesigned",
+      workflow_group: target.workflow_group,
+      user_observation: target.user_observation,
+      legacy_ux_bug_or_patchwork: target.legacy_ux_bug_or_patchwork,
+      data_lineage_observation: target.data_lineage_observation,
+      replacement_user_path: target.replacement_user_path,
+      frozen_legacy_path: target.frozen_legacy_path,
       evidence_attachment: "redacted_reviewer_note: migration-status-observation-dry-run",
       evidence_attachment_type: "redacted_reviewer_note",
       requested_status: "direct_evidence_observed_redesign_required",
@@ -649,7 +671,11 @@ export default function MigrationStatus() {
           ]}
         />
         <div className="actions">
-          <button onClick={launchLegacyAuditObservationDryRun}>{legacyAuditObservationNextClick}</button>
+          {legacyAuditObservationTargets.map((target) => (
+            <button key={target.key} onClick={() => launchLegacyAuditObservationDryRun(target)}>
+              {target.next_click}
+            </button>
+          ))}
         </div>
         {legacyAuditObservationError && <p className="risk-note">{legacyAuditObservationError}</p>}
         <MetricGrid
@@ -671,6 +697,7 @@ export default function MigrationStatus() {
         <TaskStatusPanel taskId={legacyAuditObservationTaskId} onSuccess={refreshMigrationStatus} />
         <DataLineageTable rows={[legacyAuditLatestObservation]} />
         <DataLineageTable rows={legacyAuditLatestObservationRows} />
+        <DataLineageTable rows={legacyAuditObservationTargets} />
         <DataLineageTable rows={legacyAuditFirstRoundFocusRows} />
         <DataLineageTable rows={legacyAuditRequiredFieldRows} />
         <DataLineageTable rows={legacyAuditAttachmentSourceRows} />
