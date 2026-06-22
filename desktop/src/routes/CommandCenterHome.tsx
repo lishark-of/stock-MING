@@ -295,7 +295,7 @@ export default function CommandCenterHome() {
     `运行模式：${dailyCommandRuntimeModeLabel}`
   ].join(" / ");
   const dailyCommandBackgroundTaskState = (() => {
-    if (liveBootstrapAutoStatus === "not_checked") return "等待确认运行模式";
+    if (liveBootstrapAutoStatus === "not_checked") return "等待手动确认按钮";
     if (liveBootstrapAutoStatus === "disabled_not_live_light") return "cache_only/manual 不创建后台任务";
     if (liveBootstrapAutoStatus === "skipped_sources_disabled") return "来源关闭，未创建后台任务";
     if (liveBootstrapAutoStatus === "blocked_task_not_ready") return "后台任务未接入";
@@ -344,9 +344,7 @@ export default function CommandCenterHome() {
     ? "一键启动入口可用；启动器会等 FastAPI 和页面 ready"
     : "一键启动入口待检查；可先使用本地启动器恢复";
 
-  useEffect(() => {
-    if (loading) return;
-    if (!Object.keys(bootstrapStatus).length) return;
+  const launchLiveBootstrap = () => {
     const mode = String(bootstrapStatus.mode ?? "cache_only");
     if (mode !== "live_light") {
       setLiveBootstrapAutoStatus("disabled_not_live_light");
@@ -367,7 +365,7 @@ export default function CommandCenterHome() {
     }
     setLiveBootstrapAutoStatus("creating");
     void postBootstrapLiveStartup({
-      source: "command_center_home_auto",
+      source: "command_center_home_manual",
       requested_by: "local_user",
       current_target: positionSummary?.ticker,
     }).then((res) => {
@@ -381,7 +379,7 @@ export default function CommandCenterHome() {
       setLiveBootstrapAutoStatus("failed_safe");
       setError((current) => current || `bootstrap: ${err instanceof Error ? err.message : String(err)}`);
     });
-  }, [bootstrapStatus, liveBootstrapAutoStatus, liveBootstrapRunKey, liveBootstrapTaskId, liveLight.bootstrap_task_implemented, liveLight.sources_enabled, loading, positionSummary?.ticker]);
+  };
 
   return (
     <>
@@ -489,7 +487,10 @@ export default function CommandCenterHome() {
           />
         </PacketCard>
       <div className="grid">
-        <PacketCard title="live_light bootstrap" subtitle="cache 渲染完成后才会在 live_light 模式创建一次本地 POST task" status={liveBootstrapAutoStatus}>
+        <PacketCard title="live_light bootstrap" subtitle="手动确认后才会创建本地 POST task；页面打开不自动启动" status={liveBootstrapAutoStatus}>
+          <button onClick={launchLiveBootstrap} disabled={liveBootstrapAutoStatus === "creating"}>
+            确认 live_light 本地补证 task
+          </button>
           <p>runtime mode: {String(bootstrapStatus.mode ?? "cache_only")}</p>
           <p>auto status: {liveBootstrapAutoStatus}</p>
           <p>sources enabled: {String(liveLight.sources_enabled ?? false)}</p>
@@ -502,7 +503,7 @@ export default function CommandCenterHome() {
           <p>task_id: {String(liveBootstrapTaskId || liveBootstrapReceipt?.data?.task_id || "--")}</p>
           <p>stage rows / model ledger preview: {String(liveBootstrapStageRows.length)} / {String(liveBootstrapModelLedgerRows.length)}</p>
           <p>session dedupe key present: {String(Boolean(readLiveBootstrapSessionKey()))}</p>
-          <p>React 只在 live_light opt-in 后调用 FastAPI POST；不直接调用 Tushare、DeepSeek、GitHub、Python adapter 或真实交易接口。</p>
+          <p>React 只在用户手动确认且 live_light opt-in 后调用 FastAPI POST；页面打开、搜索输入和 render 不直接创建 task，也不调用 Tushare、DeepSeek、GitHub、Python adapter 或真实交易接口。</p>
           <TaskLaunchReceipt receipt={liveBootstrapReceipt} />
           {liveBootstrapTaskId ? <TaskStatusPanel taskId={liveBootstrapTaskId} /> : null}
           {bootstrapEnvelopeWarnings.length || liveBootstrapWarnings.length ? <p className="risk-note">{String([...bootstrapEnvelopeWarnings, ...liveBootstrapWarnings][0])}</p> : null}

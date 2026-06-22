@@ -77,7 +77,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
 
         self.assertIn("dailyCommandBackgroundTaskState", source)
         self.assertIn('label: "后台状态"', source)
-        self.assertIn("等待确认运行模式", source)
+        self.assertIn("等待手动确认按钮", source)
         self.assertIn("cache_only/manual 不创建后台任务", source)
         self.assertIn("来源关闭，未创建后台任务", source)
         self.assertIn("后台任务未接入", source)
@@ -85,6 +85,17 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("正在创建本地后台 task", source)
         self.assertIn("创建失败，已降级为只读", source)
         self.assertLess(source.index('label: "后台状态"'), source.index("<summary>开发 / 审计详情</summary>"))
+
+    def test_live_light_bootstrap_requires_manual_button_not_page_open_autostart(self):
+        source = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+
+        self.assertIn("const launchLiveBootstrap = () => {", source)
+        self.assertIn('source: "command_center_home_manual"', source)
+        self.assertIn("确认 live_light 本地补证 task", source)
+        self.assertIn("手动确认后才会创建本地 POST task；页面打开不自动启动", source)
+        self.assertIn("页面打开、搜索输入和 render 不直接创建 task", source)
+        self.assertNotIn('source: "command_center_home_auto"', source)
+        self.assertNotIn("cache 渲染完成后才会在 live_light 模式创建一次本地 POST task", source)
 
     def test_daily_command_page_does_not_embed_provider_model_or_trade_calls(self):
         source = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
