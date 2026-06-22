@@ -309,17 +309,13 @@ export default function CommandCenterHome() {
     `运行模式：${dailyCommandRuntimeModeLabel}`
   ].join(" / ");
   const dailyCommandBackgroundTaskState = (() => {
-    if (liveBootstrapAutoStatus === "not_checked") return "等待手动确认按钮";
-    if (liveBootstrapAutoStatus === "disabled_not_live_light") return "cache_only/manual 不创建后台任务";
-    if (liveBootstrapAutoStatus === "skipped_sources_disabled") return "来源关闭，未创建后台任务";
-    if (liveBootstrapAutoStatus === "blocked_task_not_ready") return "后台任务未接入";
-    if (liveBootstrapAutoStatus === "skipped_session_once") return "本会话已创建过，不重复";
-    if (liveBootstrapAutoStatus === "creating") return "正在创建本地后台 task";
-    if (liveBootstrapAutoStatus.includes("failed")) return "创建失败，已降级为只读";
-    return `本地后台 task 状态：${liveBootstrapAutoStatus}`;
+    if (liveBootstrapAutoStatus === "creating") return "正在准备本地补证；页面可继续查看缓存";
+    if (liveBootstrapAutoStatus.includes("failed")) return "补证未完成；已回到只读查看";
+    if (liveBootstrapTaskId) return "已有本地补证任务；进度在开发详情";
+    return "普通路径不自动补证；需要时在开发详情手动确认";
   })();
   const dailyCommandBackgroundTaskTone =
-    dailyCommandBackgroundTaskState.includes("失败") || dailyCommandBackgroundTaskState.includes("未接入") ? "warn" : "good";
+    dailyCommandBackgroundTaskState.includes("未完成") ? "warn" : "good";
   const dailyCommandMissingEvidence = [
     Number(dataHealthCounts?.provider_count ?? 0) ? "" : "数据健康 provider 汇总",
     Number(candidateCounts?.candidate_count ?? 0) ? "" : "下一票雷达缓存",
@@ -450,7 +446,7 @@ export default function CommandCenterHome() {
             { label: "degraded", value: dailyCommandDegradedSourceLabel, tone: dailyCommandDegradedSourceLabel.includes("未标记") ? "good" : "warn" },
             { label: "last_successful_cache/result", value: dailyCommandLastCache },
             { label: "数据来源", value: dailyCommandSourceState },
-            { label: "后台状态", value: dailyCommandBackgroundTaskState, tone: dailyCommandBackgroundTaskTone },
+            { label: "补证状态", value: dailyCommandBackgroundTaskState, tone: dailyCommandBackgroundTaskTone },
             { label: "缺少证据", value: dailyCommandMissingEvidence, tone: dailyCommandMissingEvidence.includes("缓存") || dailyCommandMissingEvidence.includes("验收") || dailyCommandMissingEvidence.includes("收口") ? "warn" : "good" },
             { label: "阻断/降级", value: dailyCommandBlockedState, tone: dailyCommandBlockedState.includes("未标记") ? "good" : "warn" },
             { label: "最近可用缓存", value: dailyCommandLastCache },
@@ -472,6 +468,7 @@ export default function CommandCenterHome() {
         <p className="risk-note">今日先按“最近缓存/数据健康 → 下一票雷达 → 股票量化推演”复核；缺数据就看 pending 和缺少证据，不把空结果当成无风险。</p>
         <p className="risk-note">如果本地联通异常，先去 <a href="#desktop">桌面壳预检</a> 查看本地快捷入口；这个跳转只切换页面，不启动 FastAPI/Vite/浏览器。</p>
         <p className="risk-note">这些入口链接只切换本地页面；不会创建 task、调用 Tushare/DeepSeek/GitHub、写 cache/config 或改变交易策略。</p>
+        <p className="risk-note">live_light 补证入口下沉在开发详情；普通路径只看本地缓存、雷达和量化入口。</p>
         <p className="risk-note">工程审计明细默认收起；完整 call ledger、release gate、runtime mode 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
       <details className="developer-audit-details">

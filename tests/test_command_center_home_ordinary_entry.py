@@ -124,19 +124,31 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(source.index("开发状态速览"), source.index('label: "FastAPI"'))
         self.assertLess(source.index("开发状态速览"), source.index('label: "runtime mode"'))
 
-    def test_daily_command_summary_shows_background_task_state_before_audit(self):
+    def test_daily_command_summary_uses_user_facing_backfill_state_before_audit(self):
         source = self.source
+        summary_start = source.index('title="今日作战台摘要"')
+        summary_end = source.index("<summary>开发 / 审计详情</summary>", summary_start)
+        summary = source[summary_start:summary_end]
+        audit = source[summary_end:]
 
         self.assertIn("dailyCommandBackgroundTaskState", source)
-        self.assertIn('label: "后台状态"', source)
-        self.assertIn("等待手动确认按钮", source)
-        self.assertIn("cache_only/manual 不创建后台任务", source)
-        self.assertIn("来源关闭，未创建后台任务", source)
-        self.assertIn("后台任务未接入", source)
-        self.assertIn("本会话已创建过，不重复", source)
-        self.assertIn("正在创建本地后台 task", source)
-        self.assertIn("创建失败，已降级为只读", source)
-        self.assertLess(source.index('label: "后台状态"'), source.index("<summary>开发 / 审计详情</summary>"))
+        self.assertIn('label: "补证状态"', summary)
+        self.assertNotIn('label: "后台状态"', source)
+        self.assertIn("普通路径不自动补证；需要时在开发详情手动确认", source)
+        self.assertIn("正在准备本地补证；页面可继续查看缓存", source)
+        self.assertIn("补证未完成；已回到只读查看", source)
+        self.assertIn("已有本地补证任务；进度在开发详情", source)
+        self.assertIn("live_light 补证入口下沉在开发详情；普通路径只看本地缓存、雷达和量化入口", summary)
+        self.assertNotIn("等待手动确认按钮", source)
+        self.assertNotIn("cache_only/manual 不创建后台任务", source)
+        self.assertNotIn("来源关闭，未创建后台任务", source)
+        self.assertNotIn("后台任务未接入", source)
+        self.assertNotIn("本会话已创建过，不重复", source)
+        self.assertNotIn("正在创建本地后台 task", source)
+        self.assertNotIn("创建失败，已降级为只读", source)
+        self.assertNotIn("liveBootstrapAutoStatus", summary)
+        self.assertIn("auto status: {liveBootstrapAutoStatus}", audit)
+        self.assertLess(source.index('label: "补证状态"'), source.index("<summary>开发 / 审计详情</summary>"))
 
     def test_live_light_bootstrap_requires_manual_button_not_page_open_autostart(self):
         source = self.source
