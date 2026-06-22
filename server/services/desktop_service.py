@@ -512,6 +512,8 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
     installer_source = _read_source_safe(COMMAND_CENTER_3_SHORTCUT_INSTALLER)
     required_markers = (
         "Command Center 3.0 local launcher",
+        "P0: local one-click launcher starts/checks FastAPI and React/Vite before opening the page.",
+        "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution.",
         "scripts/dev_server.sh",
         "npm run dev",
         "VITE_API_BASE_URL",
@@ -568,8 +570,8 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
     )
     return {
         "schema_version": "command_center_3_local_launcher_contract.v1",
-        "status": "local_launcher_ready_dev_only" if local_ready else "local_launcher_contract_blocked",
-        "scope": "manual_local_dev_launcher_not_production_package",
+        "status": "local_one_click_launcher_ready" if local_ready else "local_launcher_contract_blocked",
+        "scope": "local_one_click_frontend_backend_launcher_not_production_package",
         "ltg": "LTG-09",
         "launcher_path": _path_label(COMMAND_CENTER_3_LAUNCHER),
         "launcher_exists": COMMAND_CENTER_3_LAUNCHER.exists(),
@@ -621,7 +623,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
                 "does_not_modify_strategy_action": True,
             }
         ],
-        "note": "This contract exposes a manual local Command Center 3.0 dev launcher. It does not run the launcher from GET cache and is not Tauri production package evidence.",
+        "note": "This contract exposes the P0 local one-click Command Center 3.0 launcher. It does not run the launcher from GET cache, does not enable provider/model execution, and is not Tauri production package evidence.",
     }
 
 
@@ -4224,7 +4226,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "command_count": len(command_rows),
             "command_ready_count": sum(1 for row in command_rows if row["available"]),
             "desktop_launcher_row_count": desktop_launcher_contract["row_count"],
-            "desktop_launcher_ready": 1 if desktop_launcher_contract["status"] == "local_launcher_ready_dev_only" else 0,
+            "desktop_launcher_ready": 1 if desktop_launcher_contract["status"] == "local_one_click_launcher_ready" else 0,
             "packaged_runtime_qa_matrix_count": packaged_runtime_qa_contract["qa_matrix_count"],
             "packaged_runtime_pending_qa_count": packaged_runtime_qa_contract["pending_qa_count"],
             "tauri_release_manifest_row_count": tauri_release_manifest_contract["row_count"],
@@ -4248,7 +4250,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "fastapi_dev_server_started": False,
             "api_base_is_localhost": api_base_info["is_localhost"],
             "api_health_endpoint": api_base_info["expected_health_endpoint"],
-            "desktop_launcher_ready": desktop_launcher_contract["status"] == "local_launcher_ready_dev_only",
+            "desktop_launcher_ready": desktop_launcher_contract["status"] == "local_one_click_launcher_ready",
             "desktop_launcher_executable": desktop_launcher_contract["launcher_executable"],
             "desktop_launcher_path": desktop_launcher_contract["launcher_path"],
             "desktop_shortcut_installer_ready": desktop_launcher_contract["shortcut_installer_exists"]
@@ -4294,7 +4296,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "production_runtime_contract_is_path_only": True,
             "packaged_runtime_qa_contract_is_static": True,
             "desktop_launcher_contract_is_local": True,
-            "desktop_launcher_contract_is_manual_dev_only": True,
+            "desktop_launcher_contract_is_local_one_click": True,
             "desktop_launcher_contract_is_not_production_package": True,
             "desktop_launcher_contract_does_not_run_from_get_cache": True,
             "desktop_shortcut_installer_contract_is_local": True,
@@ -4340,8 +4342,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "warnings": [
             "GET /api/desktop/preflight-cache 只读检查本地 React/Tauri scaffold；不会运行 npm install、npm build、cargo 或 Tauri。",
             "Rust/Cargo 缺失不阻断 Vite 前端；只有 Tauri dev/build 需要 Rust 工具链。",
-            "Tauri 开发模式当前不自动拉起 FastAPI；请先运行 scripts/dev_server.sh，再启动 Vite 或 Tauri dev。",
-            "scripts/start_command_center_3.command 是手动双击入口：仅在用户运行时启动本地 FastAPI/Vite 并打开本地页面；GET preflight 不会运行它。",
+            "P0 本地一键启动器会启动或复用 FastAPI/Vite，等待前后端联通后才打开页面；GET preflight 不会运行它。",
+            "若不用一键启动器，Tauri 开发模式仍需人工启动 FastAPI/Vite；预检页只展示状态，不启动服务。",
             "桌面壳预检不读取 token/key，不调用 Tushare、DeepSeek、GitHub，不执行真实交易。",
         ],
     }

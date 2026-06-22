@@ -1949,9 +1949,9 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("frontend_must_use_fastapi_api_client", page)
         self.assertIn("backend_autostart_enabled", page)
         self.assertIn("api_base_must_be_localhost", page)
-        self.assertIn("开发启动顺序", page)
+        self.assertIn("备用开发启动顺序", page)
         self.assertIn("Command Center 3.0 本地快捷入口", page)
-        self.assertIn("manual_local_dev_launcher_not_production_package", page)
+        self.assertIn("local_one_click_frontend_backend_launcher_not_production_package", page)
         self.assertIn("scripts/install_command_center_3_desktop_shortcut.sh", page)
         self.assertIn("scripts/start_command_center_3.command", page)
         self.assertIn("stock-MING Command Center 3.command", page)
@@ -1963,7 +1963,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
             "cache_get_starts_launcher / cache_get_installs_shortcut / cache_get_starts_fastapi / cache_get_starts_vite",
             page,
         )
-        self.assertIn("local_launcher_ready_dev_only", page)
+        self.assertIn("local_one_click_launcher_ready", page)
         self.assertIn("FastAPI 地址合同", page)
         self.assertIn("scripts/dev_server.sh", page)
         self.assertIn("apiBaseInfo", page)

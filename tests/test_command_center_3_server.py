@@ -1573,8 +1573,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         launcher = desktop["desktop_launcher_contract"]
         launcher_rows = {row["criterion"]: row for row in desktop["desktop_launcher_rows"]}
         self.assertEqual(launcher["schema_version"], "command_center_3_local_launcher_contract.v1")
-        self.assertEqual(launcher["status"], "local_launcher_ready_dev_only")
-        self.assertEqual(launcher["scope"], "manual_local_dev_launcher_not_production_package")
+        self.assertEqual(launcher["status"], "local_one_click_launcher_ready")
+        self.assertEqual(launcher["scope"], "local_one_click_frontend_backend_launcher_not_production_package")
         self.assertEqual(launcher["launcher_path"], "scripts/start_command_center_3.command")
         self.assertEqual(
             launcher["shortcut_installer_path"],
@@ -1624,7 +1624,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "scripts/install_command_center_3_desktop_shortcut.sh",
         )
         self.assertTrue(desktop["policy"]["desktop_launcher_contract_is_local"])
-        self.assertTrue(desktop["policy"]["desktop_launcher_contract_is_manual_dev_only"])
+        self.assertTrue(desktop["policy"]["desktop_launcher_contract_is_local_one_click"])
         self.assertTrue(desktop["policy"]["desktop_launcher_contract_is_not_production_package"])
         self.assertTrue(desktop["policy"]["desktop_launcher_contract_does_not_run_from_get_cache"])
         self.assertTrue(desktop["policy"]["desktop_shortcut_installer_contract_is_local"])

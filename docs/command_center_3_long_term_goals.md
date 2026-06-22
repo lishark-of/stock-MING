@@ -1445,7 +1445,7 @@ Mature ECharts next-session operation map interactions
 - `scripts/tauri_desktop_contract.py` is a local regression guard only; it does not run Tauri dev/build, open a packaged app, prove signing/notarization, read config values, write logs, or complete production desktop acceptance.
 - `production_package_stage_scope_rows` is a local stage-scope manifest only; it does not prove Tauri dev runtime smoke, repeatable Tauri build, `.app`/DMG package QA, backend startup runtime behavior, packaged offline UX, config/log runtime path validation, signing/notarization, or production package completion.
 - `ltg_stage_scope_observed_rows` showing LTG-09 only proves the global migration status can observe the local static Tauri stage manifest. It does not prove packaged runtime QA or production desktop package completion.
-- `desktop_launcher_contract.status=local_launcher_ready_dev_only` means a manual local 3.0 entry exists. It does not prove Tauri production package, packaged runtime QA, sidecar startup, signing/notarization, provider/model acceptance, or Streamlit retirement.
+- `desktop_launcher_contract.status=local_one_click_launcher_ready` means a P0 local one-click 3.0 entry can start/check FastAPI and React/Vite before opening the page. It does not prove Tauri production package, packaged runtime QA, sidecar startup, signing/notarization, provider/model acceptance, `live_light` execution, or Streamlit retirement.
 
 ### Implementation Phases
 
