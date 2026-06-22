@@ -897,7 +897,7 @@ export default function CandidateRadar() {
           </details>
         </PacketCard>
 
-        <details className="developer-audit-details">
+        <details id="settings" className="developer-audit-details" aria-label="candidate radar settings audit details">
           <summary>运行模式 / provider-model 审计</summary>
           <PacketCard title="雷达运行模式分层" subtitle="GET /api/bootstrap/status；雷达页只读展示 cache_only / manual / live_light 边界" status={String(bootstrapStatus.status ?? "cache_only")}>
             <p>runtime mode: {String(bootstrapStatus.mode ?? "cache_only")}；live_light enabled: {String(bootstrapLiveLight.enabled === true)}</p>
@@ -994,7 +994,7 @@ export default function CandidateRadar() {
         </PacketCard>
       </div>
 
-      <details className="developer-audit-details">
+      <details id="audit" className="developer-audit-details" aria-label="candidate radar developer audit details">
         <summary>开发 / 审计指标</summary>
         <p>Provider、worker、receipt、browser QA、retained coverage 和 production blocker 明细默认收起；普通用户先看上方雷达摘要、候选池和搜票量化推演。</p>
         <MetricGrid
