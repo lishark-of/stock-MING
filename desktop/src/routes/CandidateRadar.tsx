@@ -624,6 +624,13 @@ export default function CandidateRadar() {
     : "最近任务：暂无；点击确认按钮后显示本地任务编号";
   const quantProjectionResultReplayState =
     "成功后回放本地结果、ledger 和 packet；GET cache 只读展示";
+  const quantProjectionReplayOrder = quantProjectionProviderLedgerReady
+    ? "回放顺序：先看 Tushare ledger，再看股票量化推演，最后看次日图谱；DeepSeek 只看 skipped/pending 状态"
+    : taskReceipt?.ok
+      ? "任务已接收：先等 TaskStatusPanel 完成，再刷新本地缓存查看量化推演和次日图谱"
+      : "回放顺序：确认生成后先看任务编号，再刷新本地缓存，最后查看量化推演和次日图谱";
+  const quantProjectionReplayBoundary =
+    "回放链接只切换本地页面或锚点；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache";
   const candidateRadarStatusLabel = cache.status === "ready" ? "候选缓存可用" : "等待候选缓存";
   const candidatePoolCacheDetail = cache.status === "ready" ? "本地缓存可用" : "等待本地缓存";
   const candidatePoolSignalDetail = Number(scanCoverage.missing_signal_group_count ?? 0)
@@ -754,9 +761,17 @@ export default function CandidateRadar() {
               { label: "最近可用结果", value: quantProjectionLastResult },
               { label: "最近任务", value: quantProjectionLatestTaskState, tone: taskReceipt?.ok === false ? "warn" : "good" },
               { label: "结果回放", value: quantProjectionInterpretationReplay || quantProjectionResultReplayState, tone: "good" },
+              { label: "回放顺序", value: quantProjectionReplayOrder, tone: taskReceipt?.ok || quantProjectionProviderLedgerReady ? "good" : "warn" },
+              { label: "回放边界", value: quantProjectionReplayBoundary, tone: "good" },
               { label: "仅供研究", value: "推演解释只整理已有证据；不覆盖价格、持仓、因子、操作区或交易策略", tone: "good" }
             ]}
           />
+          <div className="actions" aria-label="quant projection replay destinations">
+            <a href="#factor" aria-label="replay generated stock quant projection">回放股票量化推演</a>
+            <a href="#next" aria-label="replay generated next session map">回放次日图谱</a>
+            <a href="#candidate-pool" aria-label="return to candidate pool after quant projection">回到候选池</a>
+          </div>
+          <p className="risk-note">任务接收后先看最近任务编号和 TaskStatusPanel；成功后刷新本地缓存，再打开股票量化推演和次日图谱回放入口。</p>
           <p>普通入口只保留一个确认按钮；工程补证入口已下沉到调用审计，DeepSeek 保持 skipped，不交易、不改 strategy action。</p>
           <p>最近任务只显示本地 FastAPI 返回的 task id 和安全步骤；结果成功后通过 GET cache 回放 packet / ledger，不在普通页面展开审计表。</p>
           <p className="risk-note">Tushare ledger 来自 cache / call_ledger 回放；DeepSeek 仍需 governed executor，普通页不展示 prompt/output。</p>
