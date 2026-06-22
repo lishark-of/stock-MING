@@ -234,6 +234,11 @@ export default function FactorQuantHub() {
   const ordinaryQuantNextClick = empty
     ? "先从下一票雷达输入股票代码并生成 3.0 量化推演；本页查看本地缓存，不自动刷新外部数据或模型解释"
     : "先看支持/压制与次日图谱预览；换标的从下一票雷达输入代码并点生成 3.0 量化推演；需要更新时再手动刷新数据、运行轻量推演或整理模型解释";
+  const ordinaryQuantPrimaryActionLabel = empty ? "去下一票雷达生成推演" : "查看支持/压制";
+  const ordinaryQuantPrimaryActionHref = empty ? "#candidates" : "#factor-score";
+  const ordinaryQuantPrimaryActionBoundary = empty
+    ? "主下一步只切换到下一票雷达；输入代码和生成推演仍需按钮确认"
+    : "主下一步只跳转本地支持/压制摘要；不刷新 provider/model、不写 cache";
   const ordinaryQuantCacheSourceLabel = empty ? "等待本地量化缓存" : "本地量化缓存可用";
   const ordinaryQuantTushareSourceLabel =
     Number(tushareProviderPromotionAudit.provider_evidence_row_count ?? 0) > 0 ? "Tushare 数据有本地记录" : "等待手动补充 Tushare 数据";
@@ -309,6 +314,8 @@ export default function FactorQuantHub() {
         <MetricGrid
           items={[
             { label: "下一步", value: ordinaryQuantNextClick },
+            { label: "主下一步", value: ordinaryQuantPrimaryActionLabel },
+            { label: "主下一步边界", value: ordinaryQuantPrimaryActionBoundary, tone: "good" },
             { label: "运行模式", value: ordinaryQuantRuntimeModeLabel },
             { label: "cache", value: ordinaryQuantCacheSourceLabel },
             { label: "Tushare", value: ordinaryQuantTushareSourceLabel },
@@ -327,8 +334,18 @@ export default function FactorQuantHub() {
             { label: "仅供研究", value: "量化推演不是买卖指令；不真实交易、不下单、不改交易策略或操作区", tone: "good" }
           ]}
         />
+        <div className="actions" aria-label="stock quant projection primary next action">
+          <a href={ordinaryQuantPrimaryActionHref} aria-label="open stock quant primary next action">{ordinaryQuantPrimaryActionLabel}</a>
+        </div>
+        <div className="actions" aria-label="stock quant projection source actions">
+          <a href="#factor-score" aria-label="view factor support suppress summary">查看支持/压制</a>
+          <a href="#factor-next-session" aria-label="view next session bridge preview">查看次日图谱预览</a>
+          <a href="#factor-deepseek" aria-label="view model explanation status">查看模型解释状态</a>
+          <a href="#candidates">去下一票雷达生成推演</a>
+        </div>
         <p className="risk-note">没有标的时先去 <a href="#candidates">下一票雷达</a> 输入代码并点击生成 3.0 量化推演；这个链接只切换本地页面，不创建 task。</p>
         <p className="risk-note">来自下一票雷达的搜票结果在本页只回放 Factor cache、次日图谱预览和模型解释状态；本页链接不重新触发 Tushare-first 或 DeepSeek。</p>
+        <p className="risk-note">摘要里的查看链接只是本地锚点跳转，不创建 task、不调用 Tushare 或 DeepSeek、不写 cache，也不改变交易策略。</p>
         <p className="risk-note">工程审计明细默认收起；完整 factor/provider/model ledger 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
       <div className="actions">
@@ -358,8 +375,11 @@ export default function FactorQuantHub() {
       </details>
       <p className="risk-note">模型解释默认手动触发；勾选自动整理后，轻量推演完成可继续整理解释。</p>
       <p className="risk-note">多因子量化不是交易建议；不真实交易、不下单，不改价格、持仓、操作区或交易策略。</p>
-      <TaskLaunchReceipt receipt={taskReceipt} />
-      <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
+      <details className="developer-audit-details">
+        <summary>最近任务回执</summary>
+        <TaskLaunchReceipt receipt={taskReceipt} />
+        <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
+      </details>
       <details className="developer-audit-details">
         <summary>开发 / 审计指标</summary>
         <p>Provider、model、receipt、runbook、QA blocker 和 LTG 细项默认收起；普通用户先看上方量化推演摘要、评分图表和支持/压制。</p>
@@ -493,14 +513,16 @@ export default function FactorQuantHub() {
           ]}
         />
       </details>
-      <EChartPanel option={option} />
-      <ChartSafetyStrip
-        contract={scoreChartContract}
-        source={scoreChart.source_packet ?? "factor_quant_cache"}
-        extraItems={[
-          { label: "改因子分数", value: scoreChartContract.does_not_modify_factor_score === false ? "可能" : "不会" }
-        ]}
-      />
+      <section id="factor-score" aria-label="factor support suppress summary">
+        <EChartPanel option={option} />
+        <ChartSafetyStrip
+          contract={scoreChartContract}
+          source={scoreChart.source_packet ?? "factor_quant_cache"}
+          extraItems={[
+            { label: "改因子分数", value: scoreChartContract.does_not_modify_factor_score === false ? "可能" : "不会" }
+          ]}
+        />
+      </section>
       <details className="developer-audit-details">
         <summary>评分图表 lineage 审计</summary>
         <h3>评分图表数据合同</h3>
@@ -520,13 +542,21 @@ export default function FactorQuantHub() {
           <p>旧版量化缓存：{Boolean(linkedPackets.legacy_quant_packet) ? "已连接" : "未连接"}</p>
         </PacketCard>
       </div>
+      <section id="factor-next-session" aria-label="next session bridge preview">
+        <h3>次日图谱预览</h3>
+        <p>桥接状态：{String(bridge.status ?? bridge.bridge_status ?? "等待本地缓存")}</p>
+        <p>动作边界：{bridge.does_not_modify_action === false ? "边界异常：需要审计" : "只读条件预览，不修改交易动作"}</p>
+        <p>最近可用结果：{ordinaryQuantLastCache}</p>
+      </section>
       <PacketCard title="DeepSeek 解释" subtitle="按钮触发；只整理已有结构化结果，不覆盖数值">
+        <section id="factor-deepseek" aria-label="model explanation status">
         <p>解释状态：{Boolean(deepseek.called) ? "已有本地解释" : "未生成或等待手动任务"}</p>
         <p>触发方式：{String(deepseekGovernance.mode ?? "manual_only") === "disabled" ? "关闭" : String(deepseekGovernance.mode ?? "manual_only") === "manual_only" ? "手动按钮" : "按当前运行模式"}</p>
         <p>自动整理解释：{deepseekGovernance.auto_after_task === true ? "开启" : "关闭"}</p>
         <p>缓存读取：{deepseekGovernance.cache_reads_never_call_deepseek === false || deepseekGovernance.react_render_never_calls_deepseek === false ? "边界异常：缓存或页面渲染可能调用模型" : "只读本地缓存，不调用模型"}</p>
         <p>输出边界：{deepseek.parse_failed === true ? "解析失败，结果只留审计" : "只整理文字说明，不改数值或交易动作"}</p>
         <p>可整理内容：摘要、支持/压制、冲突、缺失数据、纪律提示</p>
+        </section>
       </PacketCard>
       <details className="developer-audit-details">
         <summary>DeepSeek 解释治理审计</summary>
@@ -632,6 +662,9 @@ export default function FactorQuantHub() {
       <h3>DeepSeek durable evidence rows</h3>
       <DataLineageTable rows={deepseekDurableEvidenceRows} />
       </details>
+      <details className="developer-audit-details">
+        <summary>工程审计详情</summary>
+        <p>因子库、Universe、Provider、Tushare、cache ledger 和原始 packet 默认收起；普通用户先看上方量化摘要、评分图表、支持/压制、本地上下文和 DeepSeek 解释状态。</p>
       <h3>因子库</h3>
       <DataLineageTable rows={toRows(factorLibrary.factors)} />
       <h3>运行值</h3>
@@ -804,6 +837,7 @@ export default function FactorQuantHub() {
       <h3>GET cache envelope warnings</h3>
       <DataLineageTable rows={toRows(cacheWarnings, "warning")} />
       <JsonDetails title="Factor Quant Hub packet" data={packet} />
+      </details>
     </PacketCard>
   );
 }
