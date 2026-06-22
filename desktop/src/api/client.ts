@@ -370,6 +370,13 @@ export function postCandidateRadarQuantProjectionExecutionRequest(payload: Recor
   });
 }
 
+export function postCandidateRadarQuantProjectionProviderModelAcceptance(payload: Record<string, unknown> = {}) {
+  return request<TaskCreationData>("/api/candidate-radar/quant-projection-provider-model-acceptance", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function postCandidateRadarProviderParityDryRun(payload: Record<string, unknown> = {}) {
   return request<TaskCreationData>("/api/candidate-radar/provider-parity-dry-run", {
     method: "POST",
