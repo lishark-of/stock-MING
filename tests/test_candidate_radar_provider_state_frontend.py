@@ -28,9 +28,15 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("quantProjectionSmallDataReplayState", self.page)
         self.assertIn("cache / ledger / packet 已回放", self.page)
         self.assertIn("packet=command_center_3_candidate_radar_cache", self.page)
+        self.assertIn("quantProjectionResearchMapState", self.page)
+        self.assertIn("quantProjectionMapNextStep", self.page)
+        self.assertIn("量化推演 / Next Session 图谱等待本地 cache 写入", self.page)
+        self.assertIn("查看量化推演结果，再看次日图谱预览", self.page)
         self.assertIn("DeepSeek 已跳过：等待 governed executor", self.page)
         self.assertIn('label: "Tushare ledger"', search_panel)
         self.assertIn('label: "cache / ledger / packet"', search_panel)
+        self.assertIn('label: "投研图谱联动"', search_panel)
+        self.assertIn('label: "图谱下一步"', search_panel)
         self.assertIn(
             "Tushare ledger 来自 cache / call_ledger 回放",
             search_panel,

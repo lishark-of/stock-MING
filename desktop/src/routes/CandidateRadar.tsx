@@ -536,6 +536,23 @@ export default function CandidateRadar() {
     : searchQuantProjectionReceipt.status
       ? `cache / ledger / packet 等待 Tushare-first 回放；本地记录=${String(searchQuantProjectionReceipt.status)}`
       : "cache / ledger / packet 等待确认按钮创建 task";
+  const quantProjectionFactorNextReady =
+    searchQuantProviderModelAcceptance.factor_refresh_executed === true ||
+    searchQuantProviderModelAcceptance.next_session_refresh_executed === true ||
+    searchQuantProviderModelAcceptance.echarts_payload_refreshed === true ||
+    searchQuantProjectionReceipt.factor_refresh_executed === true ||
+    searchQuantProjectionReceipt.next_session_refresh_executed === true ||
+    searchQuantProjectionReceipt.echarts_payload_refreshed === true;
+  const quantProjectionResearchMapState = quantProjectionProviderLedgerReady
+    ? quantProjectionFactorNextReady
+      ? "量化推演 / Next Session 图谱已有本地回放；DeepSeek skipped/pending，只解释不改 action"
+      : "Tushare 已回放；量化推演 / Next Session 图谱等待本地 cache 写入；DeepSeek skipped"
+    : searchQuantProjectionReceipt.status
+      ? "本地搜票记录已生成；等待 Tushare-first 后再联动量化推演 / Next Session 图谱"
+      : "等待确认按钮创建搜票任务后联动量化推演 / Next Session 图谱";
+  const quantProjectionMapNextStep = quantProjectionProviderLedgerReady
+    ? "查看量化推演结果，再看次日图谱预览；链接只读回放，不补调 provider/model"
+    : "先点击确认并生成 3.0 量化推演，再回放量化推演 / Next Session 图谱";
   const quantProjectionSourceState = [
     `本地缓存：${quantProjectionCacheSourceLabel}`,
     `Tushare 数据：${quantProjectionProviderSourceLabel}`,
@@ -682,6 +699,8 @@ export default function CandidateRadar() {
               { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn" },
               { label: "Tushare ledger", value: quantProjectionProviderModelReplayState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
               { label: "cache / ledger / packet", value: quantProjectionSmallDataReplayState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
+              { label: "投研图谱联动", value: quantProjectionResearchMapState, tone: quantProjectionFactorNextReady ? "good" : "warn" },
+              { label: "图谱下一步", value: quantProjectionMapNextStep },
               { label: "数据来源状态", value: quantProjectionSourceState },
               { label: "任务边界", value: quantProjectionTaskBoundary },
               { label: "缺少证据", value: quantProjectionMissingEvidence, tone: quantProjectionMissingEvidence.includes("证据") || quantProjectionMissingEvidence.includes("验收") || quantProjectionMissingEvidence.includes("申请") ? "warn" : "good" },
