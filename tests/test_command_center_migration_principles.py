@@ -501,7 +501,10 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
 
         self.assertIn("quantProjectionDisabledReason", text)
         self.assertIn("按钮不可用原因：先输入股票代码；输入本身不会创建 task", text)
-        self.assertIn("按钮已启用：点击后只创建本地量化推演 task", text)
+        self.assertIn("按钮已启用：确认后创建 Tushare-first 按钮门控 POST task；DeepSeek 保持 skipped", text)
+        self.assertIn("按钮门控 Tushare-first POST task / worker 推进，DeepSeek 等 governed executor", text)
+        self.assertIn("Tushare ledger 来自 cache / call_ledger 回放", text)
+        self.assertIn("DeepSeek 仍需 governed executor，普通页不展示 prompt/output", text)
         self.assertIn("disabled={!quantProjectionCanSubmit}", text)
         self.assertLess(text.index("quantProjectionDisabledReason"), text.index("生成 3.0 量化推演</button>"))
         self.assertLess(text.index("生成 3.0 量化推演</button>"), text.index("{quantProjectionDisabledReason}"))
