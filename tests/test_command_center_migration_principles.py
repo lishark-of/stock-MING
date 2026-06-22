@@ -526,9 +526,19 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("后台先拉 Tushare 单票小全量数据", text)
         self.assertNotIn("后端会先跑 Tushare trade_cal / daily / daily_basic / moneyflow", text)
         self.assertIn("disabled={!quantProjectionCanSubmit}", text)
+        self.assertIn("quantProjectionSubmitAriaLabel", text)
+        self.assertIn("title={quantProjectionDisabledReason}", text)
+        self.assertIn("aria-label={quantProjectionSubmitAriaLabel}", text)
         self.assertLess(text.index("quantProjectionDisabledReason"), text.index("生成 3.0 量化推演</button>"))
-        self.assertLess(text.index("生成 3.0 量化推演</button>"), text.index("{quantProjectionDisabledReason}"))
-        self.assertLess(text.index("{quantProjectionDisabledReason}"), text.index("{quantProjectionSubmitHint}"))
+        self.assertLess(text.index("title={quantProjectionDisabledReason}"), text.index("生成 3.0 量化推演</button>"))
+        self.assertLess(
+            text.index("生成 3.0 量化推演</button>"),
+            text.index('<p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>'),
+        )
+        self.assertLess(
+            text.index('<p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>'),
+            text.index("{quantProjectionSubmitHint}"),
+        )
 
     def test_stock_quant_projection_demotes_engineering_audit_from_ordinary_first_view(self):
         root = Path(__file__).resolve().parents[1]

@@ -499,6 +499,9 @@ export default function CandidateRadar() {
     : searchSymbol.trim()
       ? `按钮不可用原因：${quantProjectionSymbolValidation.reason}；请输入 6 位 A 股代码或 002008.SZ 这类后缀`
       : "按钮不可用原因：先输入股票代码；输入本身不会创建 task";
+  const quantProjectionSubmitAriaLabel = quantProjectionCanSubmit
+    ? `确认并生成 ${quantProjectionSymbolValidation.normalized} 的 3.0 量化推演`
+    : quantProjectionDisabledReason;
   const quantProjectionDisplaySymbol = quantProjectionSymbolValidation.normalized || String(searchQuantProjectionReceipt.symbol ?? "");
   const quantProjectionInputValidation = searchQuantProjectionReceipt.symbol_valid === false
     ? `代码格式阻断：${String(searchQuantProjectionReceipt.symbol_status ?? "invalid_symbol")}`
@@ -704,7 +707,12 @@ export default function CandidateRadar() {
             placeholder="002008.SZ 或 002008"
             aria-label="radar summary quant projection symbol"
           />
-          <button disabled={!quantProjectionCanSubmit} onClick={launchQuantProjection}>确认并生成 3.0 量化推演</button>
+          <button
+            disabled={!quantProjectionCanSubmit}
+            onClick={launchQuantProjection}
+            title={quantProjectionDisabledReason}
+            aria-label={quantProjectionSubmitAriaLabel}
+          >确认并生成 3.0 量化推演</button>
           <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
         </div>
         <p className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
@@ -743,7 +751,12 @@ export default function CandidateRadar() {
               placeholder="002008.SZ 或 002008"
               aria-label="search quant projection symbol"
             />
-            <button disabled={!quantProjectionCanSubmit} onClick={launchQuantProjection}>确认并生成 3.0 量化推演</button>
+            <button
+              disabled={!quantProjectionCanSubmit}
+              onClick={launchQuantProjection}
+              title={quantProjectionDisabledReason}
+              aria-label={quantProjectionSubmitAriaLabel}
+            >确认并生成 3.0 量化推演</button>
             <a href="#factor" aria-label="open generated quant projection result">查看量化推演结果</a>
           </div>
           <p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>
