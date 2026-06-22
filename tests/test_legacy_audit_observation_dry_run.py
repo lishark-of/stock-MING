@@ -150,6 +150,56 @@ class LegacyAuditObservationDryRunTests(unittest.TestCase):
         )
         self.assertNotIn("SHOULD_DROP", json.dumps(cache_packet, ensure_ascii=False))
 
+    def test_candidate_radar_observation_records_redesign_required_without_keep(self) -> None:
+        response = self.client.post(
+            "/api/legacy/audit-observation-dry-run",
+            json={
+                "workflow_group": "candidate radar",
+                "user_observation": (
+                    "Reviewer saw radar candidates need Top/Watch/Excluded, scan scope, "
+                    "and no-buy boundary before legacy fallback details."
+                ),
+                "legacy_ux_bug_or_patchwork": (
+                    "Legacy radar copy can blur quick-scan/full-pool/deep-scan boundaries "
+                    "and make candidates read like buy instructions."
+                ),
+                "data_lineage_observation": (
+                    "Last radar cache, candidate source, provider gap, browser/CI evidence, "
+                    "pending/degraded state, and no-buy boundary must be visible."
+                ),
+                "replacement_user_path": "下一票雷达 / Candidate Radar ordinary summary",
+                "frozen_legacy_path": "legacy fallback radar recommendation copy and unproven performance path",
+                "evidence_attachment": "redacted_reviewer_note: candidate-radar-ux-observation",
+                "evidence_attachment_type": "redacted_reviewer_note",
+                "requested_status": "direct_evidence_observed_redesign_required",
+                "keep_promotion_decision": "no_keep_promotion_this_round",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        task = self._task_from_response(response)
+        receipt = task["payload_safe"]["legacy_audit_observation_receipt"]
+        rows = {row["criterion"]: row for row in task["payload_safe"]["legacy_audit_observation_rows"]}
+
+        self.assertEqual(task["current_step"], "legacy_audit_observation_dry_run_recorded_no_keep_promotion")
+        self.assertEqual(receipt["workflow_group"], "candidate radar")
+        self.assertEqual(receipt["proposed_status"], "direct_evidence_observed_redesign_required")
+        self.assertTrue(receipt["direct_user_evidence_recorded"])
+        self.assertFalse(receipt["direct_evidence_ready_for_keep_review"])
+        self.assertFalse(receipt["keep_promotion_allowed_this_round"])
+        self.assertFalse(receipt["ordinary_entry_promotion_allowed_this_round"])
+        self.assertFalse(receipt["streamlit_fallback_retirement_allowed"])
+        self.assertFalse(receipt["production_evidence"])
+        self.assertFalse(receipt["external_calls_triggered"])
+        self.assertFalse(receipt["tushare_called"])
+        self.assertFalse(receipt["deepseek_called"])
+        self.assertFalse(receipt["github_called"])
+        self.assertTrue(receipt["does_not_open_streamlit"])
+        self.assertTrue(receipt["does_not_execute_trades"])
+        self.assertTrue(rows["workflow_group_in_first_round_scope"]["passed"])
+        self.assertTrue(rows["safe_evidence_attachment_source"]["passed"])
+        self.assertTrue(rows["no_keep_or_ordinary_promotion_this_round"]["passed"])
+
     def test_keep_request_is_blocked_even_with_complete_payload(self) -> None:
         response = self.client.post(
             "/api/legacy/audit-observation-dry-run",
