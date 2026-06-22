@@ -66,7 +66,7 @@ export default function DesktopShellPreflight() {
         <p>安全边界：GET preflight 和 React render 不启动服务、不外联、不启用 provider/model executor、不执行真实交易。</p>
         <p>DeepSeek governed executor required before real call: {String(oneClickStartupSummary.deepseek_governed_executor_required_before_real_call ?? true)}</p>
         <p>frontend_backend_connection_ready / blocker_count: {String(oneClickStartupSummary.frontend_backend_connection_ready ?? false)} / {String(oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count ?? 0)}</p>
-        <DataLineageTable rows={oneClickConnectionRows} />
+        <p>普通用户摘要不展开联通行表；工程联通明细在下方开发 / 审计详情。</p>
       </PacketCard>
 
       <MetricGrid
@@ -141,6 +141,10 @@ export default function DesktopShellPreflight() {
           <p>does_not_write_log_files: {String(policy.does_not_write_log_files ?? true)}</p>
         </PacketCard>
       </div>
+
+      <PacketCard title="开发 / 审计详情：P0 联通明细" subtitle="普通用户先看上方摘要；这里保留本地只读检查行" status="cache_only">
+        <DataLineageTable rows={oneClickConnectionRows} />
+      </PacketCard>
 
       <PacketCard title="备用开发启动顺序" subtitle="一键入口优先；预检页不执行命令" status="manual">
         <DataLineageTable rows={devLaunchPlan} />
