@@ -172,8 +172,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
     def test_tushare_first_handoff_matches_ordinary_submit_boundary(self):
         self.assertIn("Candidate Radar searched-symbol confirmation must be reported through the active checkpoint", self.handoff)
         self.assertIn("confirmed search may submit bounded Tushare provider work through POST task and call ledger", self.handoff)
-        self.assertIn("ordinary confirm action keeps DeepSeek skipped", self.handoff)
-        self.assertIn("provider-model acceptance remains a separate explicit POST task", self.handoff)
+        self.assertIn("ordinary confirm action may create the Tushare-first backend task chain", self.handoff)
+        self.assertIn("keeps DeepSeek skipped", self.handoff)
+        self.assertIn("does not require the old `run_provider_model_now` switch", self.handoff)
         self.assertIn("page open, search typing, React render, and GET cache stay silent", self.handoff)
         self.assertNotIn("DeepSeek is requested into the explanation ledger/governance path", self.handoff)
         self.assertNotIn("automatic v4/pro execution", self.handoff)

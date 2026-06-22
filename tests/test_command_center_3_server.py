@@ -37358,7 +37358,13 @@ class CommandCenter3FastAPITests(unittest.TestCase):
 
         response = self.client.post(
             "/api/candidate-radar/quant-projection",
-            json={"symbol": "002008", "include_tushare": True, "include_deepseek": True, "token": "SHOULD_DROP"},
+            json={
+                "symbol": "002008",
+                "include_tushare": True,
+                "include_deepseek": True,
+                "run_provider_model_now": True,
+                "token": "SHOULD_DROP",
+            },
         ).json()
 
         self.assertTrue(response["ok"])
@@ -38015,7 +38021,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertFalse(ltg13["tushare_called"])
         self.assertFalse(ltg13["deepseek_called"])
 
-    def test_candidate_radar_quant_projection_confirm_autostarts_tushare_first_with_deepseek_pending(self):
+    def test_candidate_radar_quant_projection_confirm_autostarts_tushare_first_with_deepseek_skipped(self):
         self._with_meta_store()
         self._with_bootstrap_env(
             TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE",
@@ -38076,9 +38082,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             json={
                 "symbol": "002008",
                 "include_tushare": True,
-                "include_deepseek": True,
+                "include_deepseek": False,
                 "user_approved": True,
-                "run_provider_model_now": True,
                 "token": "SHOULD_DROP",
             },
         ).json()
@@ -38086,7 +38091,10 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(response["ok"])
         task = response["data"]["task"]
         self.assertEqual(task["status"], "success")
-        self.assertEqual(task["current_step"], "candidate_radar_quant_projection_provider_chain_submitted")
+        self.assertEqual(
+            task["current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
+        )
         self.assertNotIn("SHOULD_DROP", json.dumps(response, ensure_ascii=False))
 
         cache = self.client.get("/api/candidate-radar/cache").json()
@@ -38096,7 +38104,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         provider_rows = {row["criterion"]: row for row in packet["search_quant_provider_model_acceptance_rows"]}
         self.assertEqual(
             provider_receipt["status"],
-            "search_quant_provider_model_acceptance_waiting_deepseek_output_acceptance",
+            "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped",
         )
         self.assertEqual(provider_receipt["selected_apis"], ["trade_cal", "daily", "daily_basic", "moneyflow"])
         self.assertTrue(provider_receipt["provider_execution_implemented"])
@@ -38104,8 +38112,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(provider_receipt["provider_api_success_count"], 4)
         self.assertFalse(provider_receipt["model_execution_implemented"])
         self.assertFalse(provider_receipt["deepseek_model_ledger_evidence_done"])
-        self.assertFalse(provider_receipt["direct_evidence_verified"])
-        self.assertFalse(provider_receipt["deepseek_skipped_by_request"])
+        self.assertTrue(provider_receipt["direct_evidence_verified"])
+        self.assertTrue(provider_receipt["deepseek_skipped_by_request"])
         self.assertFalse(provider_receipt["deepseek_called"])
         self.assertTrue(provider_receipt["external_calls_triggered_by_task"])
         self.assertTrue(provider_receipt["tushare_called_by_task"])
@@ -38115,7 +38123,7 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(provider_receipt["does_not_modify_strategy_action"])
         self.assertEqual(
             provider_rows["deepseek_model_ledger_policy"]["status"],
-            "pending_deepseek_model_ledger",
+            "passed_deepseek_skipped_by_request",
         )
         self.assertEqual(
             provider_rows["tushare_light_provider_call_ledger"]["status"],

@@ -14064,7 +14064,7 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
         current_step="candidate_radar_quant_projection_queued",
         warnings=[
             "搜票量化推演必须由输入代码后的 POST 确认触发；React render 和 GET cache 不会调用 Tushare、DeepSeek 或 GitHub。",
-            "带 user_approved/run_provider_model_now 的确认提交可继续创建后台 provider/model 补证链。",
+            "带 user_approved 且 include_tushare 的确认提交可创建 Tushare-first 后台补证链；DeepSeek 保持 skipped。",
             "量化推演是 research-only 补证路线，不生成买卖建议、不修改 strategy action、不执行真实交易。",
         ],
     )
@@ -14143,8 +14143,7 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
         final_warning = "candidate_radar_quant_projection_blocked_invalid_symbol_no_external_call"
     else:
         auto_chain_requested = (
-            _coerce_bool(payload_safe.get("run_provider_model_now"), False)
-            or _coerce_bool(payload_safe.get("user_approved"), False)
+            _coerce_bool(payload_safe.get("user_approved"), False)
             or _coerce_bool(payload_safe.get("operator_approved"), False)
         )
         if auto_chain_requested and payload_safe.get("include_tushare") is True:
@@ -14152,7 +14151,7 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
                 "scan_mode": QUANT_PROJECTION_SCAN_MODE,
                 "symbol": projection_receipt.get("symbol"),
                 "include_tushare": True,
-                "include_deepseek": payload_safe.get("include_deepseek") is True,
+                "include_deepseek": False,
                 "user_approved": True,
                 "selected_apis": list(QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS),
                 "requested_by": "candidate_radar_quant_projection_confirm_chain",
@@ -14174,13 +14173,13 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
                     {
                         "operator_approved": True,
                         "acceptance_scope_hash": scope_hash,
-                        "include_deepseek": payload_safe.get("include_deepseek") is True,
+                        "include_deepseek": False,
                         "requested_by": "candidate_radar_quant_projection_confirm_chain",
                     }
                 )
-                final_step = "candidate_radar_quant_projection_provider_chain_submitted"
+                final_step = "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped"
                 final_warning = (
-                    "candidate_radar_quant_projection_provider_chain_submitted_tushare_first_deepseek_pending"
+                    "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped"
                 )
     return task_service.update_task_status(
         task["task_id"],

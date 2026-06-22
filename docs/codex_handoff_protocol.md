@@ -4,7 +4,7 @@ Latest implementation checkpoint:
 
 - Candidate Radar searched-symbol confirmation must be reported through the active checkpoint, not promoted through an untracked local handoff note.
 - Preserve the Tushare-first button/task chain: confirmed search may submit bounded Tushare provider work through POST task and call ledger.
-- Preserve the DeepSeek boundary: the ordinary confirm action keeps DeepSeek skipped, provider-model acceptance remains a separate explicit POST task, and real model execution still needs a governed executor; do not call it production complete or automatic execution yet.
+- Preserve the DeepSeek boundary: the ordinary confirm action may create the Tushare-first backend task chain, but keeps DeepSeek skipped and does not require the old `run_provider_model_now` switch; real model execution still needs a governed executor and separate acceptance. Do not call it production complete or automatic model execution yet.
 
 This project uses a fixed handoff loop for ChatGPT-guided development:
 
