@@ -123,6 +123,19 @@ COMMAND_CENTER_RUNTIME_MODE_CONFIG_CONTRACT = {
     "default_mode": COMMAND_CENTER_DEFAULT_RUNTIME_MODE,
     "read_function": "get_command_center_runtime_mode_state()",
     "status_surface": "GET /api/bootstrap/status read-only operator context",
+    "evidence_factory_name": (
+        "Mode-layered live-light evidence factory / 运行模式分层的轻量实时投研证据工厂"
+    ),
+    "evidence_factory_rule": "runtime_vocabulary_safe_config_rows_and_post_task_boundary_only_not_execution",
+    "current_acceptance_scope": "runtime_mode_vocabulary_config_rows_and_contract_tests_only",
+    "current_acceptance_rule": "docs_config_contract_evidence_only_not_live_light_implementation",
+    "current_acceptance_excludes": (
+        "frontend_autostart_wiring",
+        "provider_model_executor",
+        "worker_dispatch",
+        "cache_write_promotion",
+        "production_acceptance",
+    ),
     "invalid_value_rule": "redact_invalid_value_and_fallback_to_cache_only",
     "frontend_visibility_rule": "read_only_mode_banner_no_frontend_edit_or_writeback",
     "fastapi_startup_rule": "no_provider_model_worker_trade_or_task_creation",
@@ -1268,6 +1281,9 @@ def get_command_center_runtime_mode_config_contract():
     contract = dict(COMMAND_CENTER_RUNTIME_MODE_CONFIG_CONTRACT)
     contract["allowed_modes"] = list(COMMAND_CENTER_RUNTIME_MODES)
     contract["policy_row_count"] = len(COMMAND_CENTER_RUNTIME_MODE_POLICIES)
+    contract["current_acceptance_excludes"] = list(
+        COMMAND_CENTER_RUNTIME_MODE_CONFIG_CONTRACT["current_acceptance_excludes"]
+    )
     return contract
 
 
