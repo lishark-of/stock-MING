@@ -4,6 +4,22 @@
 [`docs/command_center_3_long_term_goals.md`](command_center_3_long_term_goals.md)。
 本文件只描述现有模块到 3.0 API/UI 的迁移映射，不把 scaffold / preflight / mock / sanitizer 误写为 production complete。
 
+## Current Usable-Path Scope
+
+当前执行目标是 `Command Center 3.0 使用者可用化最短路径`，不是 `14 LTG strict closeout`。14 个 LTG 继续作为长期路线图和验收背板保留，但日常切片优先让普通用户能可靠打开 3.0、确认股票代码、看到 Tushare-first / cache / ledger / packet / pending 状态，并把工程审计噪音下沉。任何 P0-P5 进展都不能被报告为 14 个 LTG 全部完成，也不能绕过 Legacy Bug / UX Audit。
+
+| usable-path priority | current execution meaning | legacy-audit / evidence boundary | not allowed to claim |
+|---|---|---|---|
+| P0 一键启动和前后端自动联通 | 本地启动器和页面连接必须让普通用户能打开 3.0，并显示后端状态。 | 只证明本地入口和 cache/status 可达；远端 CI 未复核时仍是 `remote_ci_unknown`。 | 不能说 release ready、远端 CI green、Tauri production package complete 或 14 LTG strict closeout。 |
+| P1 输入股票代码后确认触发 Tushare-first 数据链 | 只有 confirmed symbol 的按钮/POST task 可以创建或复用搜票量化推演链路；typing/render/GET cache 继续静默。 | Tushare provider work 必须经过 task、scope/request、call_ledger 和服务端凭据边界；DeepSeek 默认 skipped。 | 不能把输入框、链接、local receipt 或未带 ledger 的结果说成真实 provider/model evidence。 |
+| P2 小数据写入 cache / ledger / packet | 成功或阻断都要能回放到本地 cache、ledger、packet，让普通页显示最后状态和下一步。 | 写回是本地可审计状态，不等于 provider-backed full validation、全市场覆盖或生产存储验收。 | 不能把 receipt、matrix、mock、sanitizer、local fallback 或 packet 可见性当 production evidence。 |
+| P3 候选雷达、量化推演、次日图谱显示可解释结果 | 普通页要解释候选、推演、图谱来自 cache/Tushare/DeepSeek/pending 哪一层，以及缺什么证据。 | 解释只能整理已有证据；DeepSeek 不是数据源，不能覆盖价格、因子、持仓、operation_zones 或 action。 | 不能把 radar candidate、factor score、operation zone 或模型文本变成买入/卖出指令。 |
+| P4 普通用户页面隐藏或下沉工程审计噪音 | Daily / Quant / Radar 先显示下一步、来源、缺口、边界、last result；合同表、receipt rows、runbooks 下沉到 Settings / Developer / Audit。 | 这是 UX 降噪和 Legacy Bug / UX Audit 分类执行，不是生产验收；保留直接决策所需的例外说明。 | 不能让工程表重新成为普通页默认主体，也不能把 docs/config wording 当普通入口 promotion evidence。 |
+| P5 DeepSeek governed executor 单独补 | DeepSeek governed executor 是独立后续目标，不阻塞 Tushare-first、Factor light、Next Session 基础图谱。 | 真实模型调用必须等待 model_ledger、sanitizer、redaction、safe fallback 和 promotion gate。 | 不能让 DeepSeek 作为数据源、覆盖数值/动作、泄露 token/key，或阻塞 Tushare 和基础图谱。 |
+| P6 回到 14 LTG direct evidence / strict closeout | 可用化路径稳定后，再回到每个 LTG 的 direct evidence、CI、browser/performance、provider/worker/storage/packaging 等严格验收。 | strict closeout 只能由当前 head 的强证据证明；本地 gate 和文档 checkpoint 只是部分证据。 | 不能从可用化阶段、旧 run、远端 CI unknown、local-only gate 或 handoff 文字直接关闭 LTG。 |
+
+每个 cycle 仍遵守一个主目标、一个支撑目标、最多五个文件和 checkpoint 收口。若本轮只是 docs/config/UX-audit 口径，checkpoint 必须说明它是 wording / audit evidence，不是 provider/model executor、完整 `live_light`、远端 CI 或 production acceptance。
+
 ## Legacy Bug / UX Audit Seed
 
 迁移图现在先执行“能力保留，不复制旧 Streamlit”的审计口径。下表是普通工作流的初始分类种子，来源于 `app.py` 的 legacy tabs、`server/services/legacy_service.py` 的 primary workflow route inventory，以及当前 React route 覆盖状态；它不是完成审计，也不是生产验收证据。后续任何旧模块进入普通用户路径前，都必须把该行补成直接 UX/bug evidence，并说明保留了什么能力、去掉了什么旧 UX 问题、没有迁移哪条历史 patchwork 路径。
