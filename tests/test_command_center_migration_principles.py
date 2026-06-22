@@ -519,6 +519,8 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("quantProjectionDisabledReason", text)
         self.assertIn("按钮不可用原因：先输入股票代码；输入本身不会创建 task", text)
         self.assertIn("按钮已启用：确认后创建 Tushare-first 按钮门控 POST task；DeepSeek 保持 skipped", text)
+        self.assertIn("输入股票代码只做本地校验；不会创建任务，也不会调用 Tushare 或 DeepSeek", text)
+        self.assertIn("点击确认才创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task；DeepSeek skipped，成功后通过 GET cache 回放", text)
         self.assertIn("按钮门控 Tushare-first POST task / worker 推进，DeepSeek 等 governed executor", text)
         self.assertIn("Tushare ledger 来自 cache / call_ledger 回放", text)
         self.assertIn("DeepSeek 仍需 governed executor，普通页不展示 prompt/output", text)
@@ -527,10 +529,11 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("后端会先跑 Tushare trade_cal / daily / daily_basic / moneyflow", text)
         self.assertIn("disabled={!quantProjectionCanSubmit}", text)
         self.assertIn("quantProjectionSubmitAriaLabel", text)
-        self.assertIn("title={quantProjectionDisabledReason}", text)
+        self.assertIn("quantProjectionSubmitButtonLabel", text)
+        self.assertIn("title={quantProjectionSubmitButtonLabel}", text)
         self.assertIn("aria-label={quantProjectionSubmitAriaLabel}", text)
         self.assertLess(text.index("quantProjectionDisabledReason"), text.index("生成 3.0 量化推演</button>"))
-        self.assertLess(text.index("title={quantProjectionDisabledReason}"), text.index("生成 3.0 量化推演</button>"))
+        self.assertLess(text.index("title={quantProjectionSubmitButtonLabel}"), text.index("生成 3.0 量化推演</button>"))
         self.assertLess(
             text.index("生成 3.0 量化推演</button>"),
             text.index('<p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>'),

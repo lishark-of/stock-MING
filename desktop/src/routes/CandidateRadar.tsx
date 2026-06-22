@@ -499,8 +499,12 @@ export default function CandidateRadar() {
     : searchSymbol.trim()
       ? `按钮不可用原因：${quantProjectionSymbolValidation.reason}；请输入 6 位 A 股代码或 002008.SZ 这类后缀`
       : "按钮不可用原因：先输入股票代码；输入本身不会创建 task";
+  const quantProjectionInputBoundaryLabel = "输入股票代码只做本地校验；不会创建任务，也不会调用 Tushare 或 DeepSeek";
+  const quantProjectionSubmitButtonLabel = quantProjectionCanSubmit
+    ? `点击确认才创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task；DeepSeek skipped，成功后通过 GET cache 回放`
+    : quantProjectionDisabledReason;
   const quantProjectionSubmitAriaLabel = quantProjectionCanSubmit
-    ? `确认并生成 ${quantProjectionSymbolValidation.normalized} 的 3.0 量化推演`
+    ? quantProjectionSubmitButtonLabel
     : quantProjectionDisabledReason;
   const quantProjectionDisplaySymbol = quantProjectionSymbolValidation.normalized || String(searchQuantProjectionReceipt.symbol ?? "");
   const quantProjectionInputValidation = searchQuantProjectionReceipt.symbol_valid === false
@@ -706,11 +710,12 @@ export default function CandidateRadar() {
             onChange={(event) => setSearchSymbol(event.target.value)}
             placeholder="002008.SZ 或 002008"
             aria-label="radar summary quant projection symbol"
+            title={quantProjectionInputBoundaryLabel}
           />
           <button
             disabled={!quantProjectionCanSubmit}
             onClick={launchQuantProjection}
-            title={quantProjectionDisabledReason}
+            title={quantProjectionSubmitButtonLabel}
             aria-label={quantProjectionSubmitAriaLabel}
           >确认并生成 3.0 量化推演</button>
           <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
@@ -750,11 +755,12 @@ export default function CandidateRadar() {
               onChange={(event) => setSearchSymbol(event.target.value)}
               placeholder="002008.SZ 或 002008"
               aria-label="search quant projection symbol"
+              title={quantProjectionInputBoundaryLabel}
             />
             <button
               disabled={!quantProjectionCanSubmit}
               onClick={launchQuantProjection}
-              title={quantProjectionDisabledReason}
+              title={quantProjectionSubmitButtonLabel}
               aria-label={quantProjectionSubmitAriaLabel}
             >确认并生成 3.0 量化推演</button>
             <a href="#factor" aria-label="open generated quant projection result">查看量化推演结果</a>
@@ -793,7 +799,7 @@ export default function CandidateRadar() {
             <a href="#candidate-pool" aria-label="return to candidate pool after quant projection">回到候选池</a>
           </div>
           <p className="risk-note">任务接收后先看最近任务编号和 TaskStatusPanel；成功后刷新本地缓存，再打开股票量化推演和次日图谱回放入口。</p>
-          <p>普通入口只保留一个确认按钮；工程补证入口已下沉到调用审计，DeepSeek 保持 skipped，不交易、不改 strategy action。</p>
+          <p>普通入口只保留“确认并生成”这一类用户按钮；工程补证入口已下沉到调用审计，DeepSeek 保持 skipped，不交易、不改 strategy action。</p>
           <p>最近任务只显示本地 FastAPI 返回的 task id 和安全步骤；结果成功后通过 GET cache 回放 packet / ledger，不在普通页面展开审计表。</p>
           <p className="risk-note">Tushare ledger 来自 cache / call_ledger 回放；DeepSeek 仍需 governed executor，普通页不展示 prompt/output。</p>
           <p>确认后创建 Tushare-first 按钮门控 POST task / worker；Tushare 小全量数据写入 call_ledger；DeepSeek 保持 skipped，待 governed executor / model_ledger 后再展示缓存，React render 不直接外联。</p>
