@@ -56,6 +56,7 @@ QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_ROUTE = (
     "POST /api/candidate-radar/quant-projection-provider-model-acceptance"
 )
 QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS = ("trade_cal", "daily", "daily_basic", "moneyflow")
+QUANT_PROJECTION_PROVIDER_LOOKBACK_DAYS = 180
 CANDIDATE_PROVIDER_PARITY_DRY_RUN_SCHEMA_VERSION = "candidate_radar_provider_parity_dry_run.v1"
 CANDIDATE_PROVIDER_PARITY_DRY_RUN_TASK_TYPE = "run_candidate_radar_provider_parity_dry_run"
 CANDIDATE_PROVIDER_PARITY_DRY_RUN_ROUTE = "POST /api/candidate-radar/provider-parity-dry-run"
@@ -1101,7 +1102,7 @@ def _build_quant_projection_receipt(
         "suffix_inferred": symbol_info.get("suffix_inferred"),
         "button_label": "生成 3.0 量化推演",
         "candidate_count": int(candidate_count),
-        "selected_light_apis": ["trade_cal_if_needed", "daily", "daily_basic", "moneyflow"],
+        "selected_light_apis": list(QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS),
         "allowed_next_step": "run_user_approved_live_light_provider_model_acceptance_then_refresh_projection"
         if symbol_valid
         else "enter_valid_a_share_symbol_then_retry_projection",
@@ -3017,11 +3018,11 @@ def _snapshot_with_quant_projection(
                 "ticker": symbol,
                 "name": _safe_text(payload_safe.get("name") or payload_safe.get("stock_name") or "", limit=80),
                 "score": None,
-                "status_label": "本地量化推演待补证",
+                "status_label": "待 execution-request 账本补证",
                 "action_state": "research_only",
                 "tone": "warn",
-                "evidence_chain_summary": "搜票量化推演本地回执；真实 Tushare / Factor / Next Session / DeepSeek 证据仍待显式任务补齐。",
-                "trigger_condition": "等待 provider-backed freshness 和因子证据",
+                "evidence_chain_summary": "搜票量化推演确认回执；确认按钮只作为 POST task gate，真实 Tushare/DeepSeek 补证必须经 execution-request 与 ledger 后回放缓存。",
+                "trigger_condition": "等待 execution-request、Tushare provider ledger、freshness、model ledger 和因子证据",
                 "invalidation_condition": "stale / expired / historical / missing evidence 不进入当前 evidence",
                 "source": "search_quant_projection_local_receipt",
                 "updated_at": _now_iso(),
@@ -3043,7 +3044,7 @@ def _snapshot_with_quant_projection(
         **existing_radar,
         "status": "ready" if candidate_rows else "blocked",
         "source": "搜票量化推演本地任务",
-        "summary": "已生成搜票量化推演本地回执；未调用外部源，真实证据仍需后续显式任务。",
+        "summary": "已生成搜票量化推演确认回执；若用户确认运行，后台先推进 Tushare 单票小全量账本，DeepSeek 解释进入后台验收等待。",
         "generated_at": _now_iso(),
         "total_count": len(candidate_rows),
         "top_candidates": candidate_rows,
@@ -14062,7 +14063,8 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
         payload=payload,
         current_step="candidate_radar_quant_projection_queued",
         warnings=[
-            "搜票量化推演当前只生成本地回执；不会调用 Tushare、DeepSeek 或 GitHub。",
+            "搜票量化推演必须由输入代码后的 POST 确认触发；React render 和 GET cache 不会调用 Tushare、DeepSeek 或 GitHub。",
+            "带 user_approved/run_provider_model_now 的确认提交可继续创建后台 provider/model 补证链。",
             "量化推演是 research-only 补证路线，不生成买卖建议、不修改 strategy action、不执行真实交易。",
         ],
     )
@@ -14139,6 +14141,47 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
     if projection_receipt.get("symbol_valid") is not True:
         final_step = "candidate_radar_quant_projection_blocked_invalid_symbol"
         final_warning = "candidate_radar_quant_projection_blocked_invalid_symbol_no_external_call"
+    else:
+        auto_chain_requested = (
+            _coerce_bool(payload_safe.get("run_provider_model_now"), False)
+            or _coerce_bool(payload_safe.get("user_approved"), False)
+            or _coerce_bool(payload_safe.get("operator_approved"), False)
+        )
+        if auto_chain_requested and payload_safe.get("include_tushare") is True:
+            chain_payload = {
+                "scan_mode": QUANT_PROJECTION_SCAN_MODE,
+                "symbol": projection_receipt.get("symbol"),
+                "include_tushare": True,
+                "include_deepseek": payload_safe.get("include_deepseek") is True,
+                "user_approved": True,
+                "selected_apis": list(QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS),
+                "requested_by": "candidate_radar_quant_projection_confirm_chain",
+            }
+            run_candidate_quant_projection_acceptance_dry_run_task(chain_payload)
+            latest_packet = read_candidate_radar_cache()
+            latest_dry_run = _as_dict(latest_packet.get("search_quant_projection_acceptance_dry_run_receipt"))
+            scope_hash = _safe_text(latest_dry_run.get("acceptance_scope_hash") or "", limit=128)
+            if scope_hash:
+                run_candidate_quant_projection_execution_request_task(
+                    {
+                        "scan_mode": "quant_projection_execution_request",
+                        "operator_approved": True,
+                        "acceptance_scope_hash": scope_hash,
+                        "requested_by": "candidate_radar_quant_projection_confirm_chain",
+                    }
+                )
+                run_candidate_quant_projection_provider_model_acceptance_task(
+                    {
+                        "operator_approved": True,
+                        "acceptance_scope_hash": scope_hash,
+                        "include_deepseek": payload_safe.get("include_deepseek") is True,
+                        "requested_by": "candidate_radar_quant_projection_confirm_chain",
+                    }
+                )
+                final_step = "candidate_radar_quant_projection_provider_chain_submitted"
+                final_warning = (
+                    "candidate_radar_quant_projection_provider_chain_submitted_tushare_first_deepseek_pending"
+                )
     return task_service.update_task_status(
         task["task_id"],
         status="success",
@@ -14492,11 +14535,11 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         ),
         _quant_projection_provider_model_acceptance_row(
             "deepseek_model_ledger_policy",
-            "passed_deepseek_skipped_by_request" if not include_deepseek else "blocked_deepseek_not_enabled_this_cycle",
+            "passed_deepseek_skipped_by_request" if not include_deepseek else "pending_deepseek_model_ledger",
             passed=not include_deepseek,
             production_blocker=include_deepseek,
-            evidence=f"include_deepseek={include_deepseek}; model_execution_implemented=false",
-            next_action="Run DeepSeek benchmark/model ledger in a separate explicitly approved cycle.",
+            evidence=f"include_deepseek={include_deepseek}; model_execution_implemented=false; output_acceptance=pending",
+            next_action="Run DeepSeek explanation through model ledger, sanitizer, and output acceptance before cache promotion.",
         ),
         _quant_projection_provider_model_acceptance_row(
             "tushare_light_provider_call_ledger",
@@ -14524,8 +14567,10 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         ),
     ]
     blocking_rows = [row for row in rows if row.get("production_blocker")]
-    if include_deepseek:
-        status = "search_quant_provider_model_acceptance_blocked_deepseek_not_enabled_this_cycle"
+    if include_deepseek and provider_evidence_done:
+        status = "search_quant_provider_model_acceptance_waiting_deepseek_output_acceptance"
+    elif include_deepseek:
+        status = "search_quant_provider_model_acceptance_blocked_deepseek_model_ledger_pending"
     elif not execution_request_ready:
         status = "search_quant_provider_model_acceptance_blocked_execution_request_required"
     elif not scope_hash_matches:
@@ -14534,10 +14579,13 @@ def _candidate_radar_quant_projection_provider_model_acceptance_receipt(
         status = "search_quant_provider_model_acceptance_blocked_provider_ledger_missing_or_failed"
     else:
         status = "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped"
+    scope = "button_gated_search_quant_provider_model_acceptance_tushare_light_deepseek_skipped"
+    if include_deepseek:
+        scope = "button_gated_search_quant_provider_model_acceptance_tushare_light_deepseek_pending"
     receipt = {
         "schema_version": QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_SCHEMA_VERSION,
         "status": status,
-        "scope": "button_gated_search_quant_provider_model_acceptance_tushare_light_deepseek_skipped",
+        "scope": scope,
         "mode": "button_gated_provider_model_acceptance",
         "ltg": "LTG-13/LTG-02/LTG-07",
         "route": QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_ROUTE,
@@ -14595,8 +14643,8 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
         payload=payload,
         current_step="candidate_radar_quant_projection_provider_model_acceptance_queued",
         warnings=[
-            "搜票量化推演 provider/model acceptance 是显式 POST 任务；本轮只允许 Tushare light provider ledger。",
-            "DeepSeek 默认跳过；该任务不刷新 Factor/Next/ECharts，不执行真实交易，不修改 strategy action。",
+            "搜票量化推演 provider/model acceptance 是显式 POST 任务；Tushare light provider ledger 先执行。",
+            "DeepSeek 解释必须等待 model ledger / sanitizer / output acceptance；该任务不执行真实交易，不修改 strategy action。",
         ],
     )
     if task.get("dedupe_reused_existing"):
@@ -14612,7 +14660,14 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
         if str(api) in QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS
     ] or list(QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS)
     today = _dt.date.today()
-    start_date = _safe_text(payload_safe.get("start_date") or (today - _dt.timedelta(days=14)).strftime("%Y%m%d"))
+    try:
+        lookback_days = int(payload_safe.get("lookback_days") or QUANT_PROJECTION_PROVIDER_LOOKBACK_DAYS)
+    except Exception:
+        lookback_days = QUANT_PROJECTION_PROVIDER_LOOKBACK_DAYS
+    lookback_days = max(14, min(365, lookback_days))
+    start_date = _safe_text(
+        payload_safe.get("start_date") or (today - _dt.timedelta(days=lookback_days)).strftime("%Y%m%d")
+    )
     end_date = _safe_text(payload_safe.get("end_date") or today.strftime("%Y%m%d"))
     provider_task: Mapping[str, Any] | None = None
     requested_scope_hash = _safe_text(
@@ -14620,7 +14675,12 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
         limit=128,
     )
     can_call_provider = bool(
-        not include_deepseek
+        _coerce_bool(
+            payload_safe.get("operator_approved") or payload_safe.get("user_approved") or payload_safe.get("approved"),
+            False,
+        )
+        and
+        quant_request.get("include_tushare") is True
         and quant_request.get("local_execution_request_ready") is True
         and requested_scope_hash
         and requested_scope_hash == _safe_text(quant_request.get("acceptance_scope_hash") or "", limit=128)
@@ -14699,7 +14759,10 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
     )
     packet_policy["search_quant_provider_model_acceptance_is_not_production_completion"] = True
     packet["policy"] = packet_policy
-    packet["call_ledger"] = [local_ledger]
+    provider_ledger = [
+        row for row in _as_list(receipt.get("provider_call_ledger")) if isinstance(row, dict)
+    ]
+    packet["call_ledger"] = [local_ledger] + provider_ledger
     packet["warnings"] = [
         "搜票量化推演 provider/model acceptance 已记录 Tushare light provider ledger；DeepSeek/Factor/Next/ECharts/production promotion 仍是后续证据。"
     ] + [
@@ -14722,11 +14785,9 @@ def run_candidate_quant_projection_provider_model_acceptance_task(payload: Any =
             warning="candidate_radar_quant_projection_provider_model_acceptance_storage_failed",
         ) or task
 
-    provider_ledger = [
-        row for row in _as_list(receipt.get("provider_call_ledger")) if isinstance(row, dict)
-    ]
     task_ledger = [local_ledger] + provider_ledger
-    final_status = "success" if receipt.get("direct_evidence_verified") is True else "failed"
+    provider_evidence_done = receipt.get("tushare_call_ledger_evidence_done") is True
+    final_status = "success" if provider_evidence_done or receipt.get("direct_evidence_verified") is True else "failed"
     return task_service.update_task_status(
         task["task_id"],
         status=final_status,
