@@ -627,6 +627,164 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
     }
 
 
+def _one_click_startup_summary(
+    api_base_info: dict[str, Any],
+    desktop_launcher_contract: dict[str, Any],
+) -> dict[str, Any]:
+    launcher_source = _read_source_safe(COMMAND_CENTER_3_LAUNCHER)
+    client_source = _read_source_safe(FRONTEND_API_CLIENT)
+    offline_notice_source = _read_source_safe(FRONTEND_BACKEND_OFFLINE_NOTICE)
+    node_modules_present = (DESKTOP_ROOT / "node_modules").exists()
+
+    def row(
+        criterion: str,
+        passed: bool,
+        evidence: str,
+        *,
+        user_visible: bool = True,
+        blocker: bool | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": "passed" if passed else "blocked",
+            "passed": bool(passed),
+            "user_visible": bool(user_visible),
+            "blocker": (not passed) if blocker is None else bool(blocker),
+            "evidence": evidence,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "loads_token_or_key": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    fastapi_wait_ready = 'if wait_for_url "FastAPI" "${API_BASE%/}/health" 40; then' in launcher_source
+    vite_wait_ready = 'if wait_for_url "React/Vite" "$VITE_URL" 40; then' in launcher_source
+    open_is_gated = (
+        'if [ "$FASTAPI_READY" != "1" ] || [ "$VITE_READY" != "1" ]; then' in launcher_source
+        and 'open "$VITE_URL"' in launcher_source
+    )
+    frontend_api_client_local = "http://127.0.0.1:8710" in client_source and bool(api_base_info.get("is_localhost"))
+    offline_notice_ready = (
+        FRONTEND_BACKEND_OFFLINE_NOTICE.exists()
+        and "BACKEND_OFFLINE_ERROR" in offline_notice_source
+        and "backend_offline_or_unreachable" in client_source
+    )
+    rows = [
+        row(
+            "local_one_click_launcher_ready",
+            desktop_launcher_contract.get("status") == "local_one_click_launcher_ready"
+            and desktop_launcher_contract.get("launcher_executable") is True,
+            f"{desktop_launcher_contract.get('launcher_path')} executable={desktop_launcher_contract.get('launcher_executable')}",
+        ),
+        row(
+            "frontend_dependencies_present",
+            node_modules_present,
+            "desktop/node_modules present; launcher will stop with a clear message if missing",
+        ),
+        row(
+            "fastapi_health_wait_before_open",
+            fastapi_wait_ready,
+            f"{_path_label(COMMAND_CENTER_3_LAUNCHER)} waits for {api_base_info.get('expected_health_endpoint')}",
+        ),
+        row(
+            "vite_wait_before_open",
+            vite_wait_ready,
+            f"{_path_label(COMMAND_CENTER_3_LAUNCHER)} waits for http://127.0.0.1:5173",
+        ),
+        row(
+            "browser_opens_only_after_frontend_backend_ready",
+            open_is_gated,
+            "launcher exits before opening the page when FastAPI or Vite is not ready",
+        ),
+        row(
+            "frontend_api_client_uses_local_fastapi",
+            frontend_api_client_local,
+            f"API base={api_base_info.get('api_base')}; frontend uses FastAPI client only",
+        ),
+        row(
+            "backend_offline_notice_available",
+            offline_notice_ready,
+            "frontend has a local backend-offline notice for unreachable FastAPI",
+            blocker=False,
+        ),
+        row(
+            "get_preflight_cache_does_not_start_services",
+            True,
+            "GET /api/desktop/preflight-cache only reports launcher state; user-run launcher starts services",
+        ),
+        row(
+            "provider_model_trading_boundary_preserved",
+            True,
+            "one-click startup links local FastAPI/Vite only; no Tushare, DeepSeek, GitHub, or trading call",
+        ),
+    ]
+    blockers = [item["criterion"] for item in rows if item["blocker"] and not item["passed"]]
+    ready = not blockers
+    return {
+        "schema_version": "command_center_3_one_click_startup_summary.v1",
+        "priority": "P0",
+        "status": "one_click_frontend_backend_ready" if ready else "one_click_frontend_backend_blocked",
+        "scope": "ordinary_user_local_startup_and_frontend_backend_connection",
+        "headline": "一键启动会启动或复用本地 FastAPI 与 React/Vite，并在两边联通后打开页面。",
+        "what_user_should_click_next": "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。",
+        "success_condition": "FastAPI /health 与 React/Vite 都 ready 后才打开 3.0 页面。",
+        "blocked_next_action": "若未打开页面，查看 .stock_ming_3/logs/command_center_3_fastapi.log 与 command_center_3_vite.log。",
+        "safe_fallback_path": "后端离线时页面显示本地离线提示；GET preflight 只读展示状态。",
+        "launcher_path": desktop_launcher_contract.get("launcher_path"),
+        "desktop_shortcut_target_name": desktop_launcher_contract.get("desktop_shortcut_target_name"),
+        "api_health_endpoint": api_base_info.get("expected_health_endpoint"),
+        "vite_url": desktop_launcher_contract.get("vite_url"),
+        "frontend_backend_connection_ready": ready,
+        "launcher_ready": desktop_launcher_contract.get("status") == "local_one_click_launcher_ready",
+        "launcher_executable": desktop_launcher_contract.get("launcher_executable") is True,
+        "frontend_dependencies_present": node_modules_present,
+        "fastapi_health_wait_before_open": fastapi_wait_ready,
+        "vite_wait_before_open": vite_wait_ready,
+        "browser_opens_only_after_frontend_backend_ready": open_is_gated,
+        "frontend_api_client_uses_local_fastapi": frontend_api_client_local,
+        "backend_offline_notice_available": offline_notice_ready,
+        "starts_fastapi_when_user_runs": desktop_launcher_contract.get("starts_fastapi_when_user_runs") is True,
+        "starts_vite_when_user_runs": desktop_launcher_contract.get("starts_vite_when_user_runs") is True,
+        "opens_local_browser_when_user_runs": desktop_launcher_contract.get("opens_local_browser_when_user_runs") is True,
+        "get_preflight_cache_starts_services": False,
+        "react_render_starts_services": False,
+        "search_typing_starts_services": False,
+        "production_package_complete": False,
+        "provider_model_execution_enabled": False,
+        "deepseek_governed_executor_required_before_real_call": True,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "loads_token_or_key": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "rows": rows,
+        "row_count": len(rows),
+        "blocker_count": len(blockers),
+        "blockers": blockers,
+        "call_ledger": [
+            {
+                "api": "local_one_click_startup_summary",
+                "source": f"{_path_label(COMMAND_CENTER_3_LAUNCHER)}; {_path_label(FRONTEND_API_CLIENT)}",
+                "row_count": len(rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_startup_summary_read",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+    }
+
+
 def _production_launch_plan(api_base: str) -> list[dict[str, Any]]:
     return [
         {
@@ -4125,6 +4283,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     api_base = os.getenv("VITE_API_BASE_URL") or "http://127.0.0.1:8710"
     api_base_info = _api_base_summary(api_base)
     desktop_launcher_contract = _desktop_launcher_contract(api_base)
+    one_click_startup_summary = _one_click_startup_summary(api_base_info, desktop_launcher_contract)
     production_runtime_contract = _production_runtime_contract(api_base_info, tauri_config)
     tauri_build_artifact = _tauri_build_artifact_summary()
     backend_offline_ux_contract = _backend_offline_ux_contract(api_base_info)
@@ -4198,6 +4357,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "loaded_at": _now_iso(),
         "api_base": api_base,
         "api_base_info": api_base_info,
+        "one_click_startup_summary": one_click_startup_summary,
+        "one_click_connection_rows": one_click_startup_summary["rows"],
         "desktop_launcher_contract": desktop_launcher_contract,
         "desktop_launcher_rows": desktop_launcher_contract["rows"],
         "dev_launch_plan": _dev_launch_plan(api_base),
@@ -4227,6 +4388,9 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "command_ready_count": sum(1 for row in command_rows if row["available"]),
             "desktop_launcher_row_count": desktop_launcher_contract["row_count"],
             "desktop_launcher_ready": 1 if desktop_launcher_contract["status"] == "local_one_click_launcher_ready" else 0,
+            "one_click_connection_row_count": one_click_startup_summary["row_count"],
+            "one_click_connection_blocker_count": one_click_startup_summary["blocker_count"],
+            "one_click_connection_ready": 1 if one_click_startup_summary["frontend_backend_connection_ready"] else 0,
             "packaged_runtime_qa_matrix_count": packaged_runtime_qa_contract["qa_matrix_count"],
             "packaged_runtime_pending_qa_count": packaged_runtime_qa_contract["pending_qa_count"],
             "tauri_release_manifest_row_count": tauri_release_manifest_contract["row_count"],
@@ -4249,6 +4413,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "vite_build_attempted": False,
             "fastapi_dev_server_started": False,
             "api_base_is_localhost": api_base_info["is_localhost"],
+            "one_click_frontend_backend_ready": one_click_startup_summary["frontend_backend_connection_ready"],
+            "one_click_startup_status": one_click_startup_summary["status"],
+            "one_click_startup_next_action": one_click_startup_summary["what_user_should_click_next"],
+            "one_click_startup_blocker_count": one_click_startup_summary["blocker_count"],
             "api_health_endpoint": api_base_info["expected_health_endpoint"],
             "desktop_launcher_ready": desktop_launcher_contract["status"] == "local_one_click_launcher_ready",
             "desktop_launcher_executable": desktop_launcher_contract["launcher_executable"],
@@ -4299,6 +4467,11 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "desktop_launcher_contract_is_local_one_click": True,
             "desktop_launcher_contract_is_not_production_package": True,
             "desktop_launcher_contract_does_not_run_from_get_cache": True,
+            "one_click_startup_summary_is_local": True,
+            "one_click_startup_summary_is_user_run_only": True,
+            "one_click_startup_summary_does_not_run_from_get_cache": True,
+            "one_click_startup_summary_is_not_production_package": True,
+            "one_click_startup_summary_does_not_enable_provider_model": True,
             "desktop_shortcut_installer_contract_is_local": True,
             "desktop_shortcut_installer_does_not_run_from_get_cache": True,
             "desktop_shortcut_installer_does_not_start_services": True,
@@ -4330,6 +4503,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             }
         ]
         + tauri_release_manifest_contract["call_ledger"]
+        + one_click_startup_summary["call_ledger"]
         + desktop_launcher_contract["call_ledger"]
         + production_package_readiness_receipt["call_ledger"],
         "external_calls_triggered": False,

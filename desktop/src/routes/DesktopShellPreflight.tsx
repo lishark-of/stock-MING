@@ -27,6 +27,7 @@ export default function DesktopShellPreflight() {
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const apiBaseInfo = (cache.api_base_info as Record<string, unknown> | undefined) ?? {};
+  const oneClickStartupSummary = (cache.one_click_startup_summary as Record<string, unknown> | undefined) ?? {};
   const desktopLauncherContract = (cache.desktop_launcher_contract as Record<string, unknown> | undefined) ?? {};
   const tauriBuildArtifact = (cache.tauri_build_artifact as Record<string, unknown> | undefined) ?? {};
   const productionReadiness = (cache.production_readiness as Record<string, unknown> | undefined) ?? {};
@@ -37,6 +38,7 @@ export default function DesktopShellPreflight() {
   const tauriReleaseManifestContract = (cache.tauri_release_manifest_contract as Record<string, unknown> | undefined) ?? {};
   const productionPackageReadinessReceipt = (cache.production_package_readiness_receipt as Record<string, unknown> | undefined) ?? {};
   const tauriPackageDurableEvidenceRecipe = (cache.tauri_package_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
+  const oneClickConnectionRows = rows(cache.one_click_connection_rows);
   const devLaunchPlan = rows(cache.dev_launch_plan);
   const desktopLauncherRows = rows(cache.desktop_launcher_rows);
   const productionLaunchPlan = rows(cache.production_launch_plan);
@@ -57,8 +59,22 @@ export default function DesktopShellPreflight() {
         <StatusBadge label={String(cache.status ?? "cache_missing")} tone={cache.status === "ready" ? "good" : "warn"} />
       </div>
 
+      <PacketCard title="P0 一键启动联通摘要" subtitle="普通用户先看这里：本地前端/后端是否可以一键联通" status={String(oneClickStartupSummary.status ?? "one_click_startup_summary_missing")}>
+        <p>下一步：{String(oneClickStartupSummary.what_user_should_click_next ?? "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。")}</p>
+        <p>成功条件：{String(oneClickStartupSummary.success_condition ?? "FastAPI /health 与 React/Vite 都 ready 后才打开 3.0 页面。")}</p>
+        <p>如果失败：{String(oneClickStartupSummary.blocked_next_action ?? "查看 .stock_ming_3/logs/command_center_3_fastapi.log 与 command_center_3_vite.log。")}</p>
+        <p>安全边界：GET preflight 和 React render 不启动服务、不外联、不启用 provider/model executor、不执行真实交易。</p>
+        <p>DeepSeek governed executor required before real call: {String(oneClickStartupSummary.deepseek_governed_executor_required_before_real_call ?? true)}</p>
+        <p>frontend_backend_connection_ready / blocker_count: {String(oneClickStartupSummary.frontend_backend_connection_ready ?? false)} / {String(oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count ?? 0)}</p>
+        <DataLineageTable rows={oneClickConnectionRows} />
+      </PacketCard>
+
       <MetricGrid
         items={[
+          { label: "P0 startup", value: oneClickStartupSummary.status as string | undefined, tone: oneClickStartupSummary.frontend_backend_connection_ready === true ? "good" : "warn" },
+          { label: "next click", value: oneClickStartupSummary.desktop_shortcut_target_name as string | undefined },
+          { label: "front/back link", value: oneClickStartupSummary.frontend_backend_connection_ready === true ? "ready" : "check", tone: oneClickStartupSummary.frontend_backend_connection_ready === true ? "good" : "warn" },
+          { label: "link blockers", value: oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count, tone: Number(oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "mode", value: cache.mode as string | undefined },
           { label: "API base", value: String(cache.api_base ?? "--") },
           { label: "API localhost", value: apiBaseInfo.is_localhost === true ? "yes" : "check", tone: apiBaseInfo.is_localhost === true ? "good" : "warn" },
