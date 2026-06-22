@@ -579,6 +579,15 @@ export default function CandidateRadar() {
       : searchQuantProjectionReceipt.status
         ? `cache / ledger / packet 等待 Tushare-first 回放；本地记录=${String(searchQuantProjectionReceipt.status)}`
         : "cache / ledger / packet 等待确认按钮创建 task");
+  const quantProjectionSmallDataWritebackSurfaces = Array.isArray(searchQuantProjectionSmallDataWriteback.writeback_surfaces)
+    ? searchQuantProjectionSmallDataWriteback.writeback_surfaces.join(" / ")
+    : "等待写入 cache / call_ledger / packet";
+  const quantProjectionSmallDataReadbackContract =
+    String(searchQuantProjectionSmallDataWriteback.readback_contract ?? "") ||
+    "GET cache replays stored packet only; React render does not call provider/model.";
+  const quantProjectionProviderCallSource =
+    String(searchQuantProjectionSmallDataWriteback.provider_call_source ?? "") ||
+    "pending_no_provider_call";
   const quantProjectionFactorNextReady =
     searchQuantProviderModelAcceptance.factor_refresh_executed === true ||
     searchQuantProviderModelAcceptance.next_session_refresh_executed === true ||
@@ -790,6 +799,9 @@ export default function CandidateRadar() {
               { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn" },
               { label: "Tushare ledger", value: quantProjectionProviderModelReplayState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
               { label: "cache / ledger / packet", value: quantProjectionSmallDataReplayState, tone: quantProjectionSmallDataReady ? "good" : "warn" },
+              { label: "小数据写入", value: quantProjectionSmallDataWritebackSurfaces, tone: quantProjectionSmallDataReady ? "good" : "warn" },
+              { label: "provider 来源", value: quantProjectionProviderCallSource, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
+              { label: "回放合同", value: quantProjectionSmallDataReadbackContract, tone: "good" },
               { label: "投研图谱联动", value: quantProjectionResearchMapState, tone: quantProjectionFactorNextReady ? "good" : "warn" },
               { label: "解释结果", value: quantProjectionInterpretationState, tone: quantProjectionInterpretationReady ? "good" : "warn" },
               { label: "解释下一步", value: quantProjectionInterpretationNext },

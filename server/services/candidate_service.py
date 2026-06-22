@@ -14697,6 +14697,15 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
     )
     cache_packet_written = bool(quant_receipt or dry_run or execution_request or provider_receipt)
     execution_request_ready = execution_request.get("local_execution_request_ready") is True
+    writeback_surfaces = ["cache", "call_ledger", "packet"] if cache_packet_written else []
+    if provider_external_call_observed:
+        provider_call_source = "post_task_call_ledger"
+    elif credential_missing_count:
+        provider_call_source = "not_called_missing_credentials_local_block"
+    elif provider_ledger_visible:
+        provider_call_source = "partial_post_task_call_ledger"
+    else:
+        provider_call_source = "pending_no_provider_call"
     if provider_ready:
         status = "small_data_writeback_ready_tushare_ledger_replayed"
         summary_label = (
@@ -14737,6 +14746,10 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "summary_label": summary_label,
         "next_action": next_action,
         "packet_key": PACKET_KEY,
+        "writeback_surfaces": writeback_surfaces,
+        "provider_call_source": provider_call_source,
+        "provider_call_observed_only_from_post_task": provider_external_call_observed,
+        "readback_contract": "GET cache replays stored packet only; React render does not call provider/model.",
         "symbol": (
             provider_receipt.get("symbol")
             or execution_request.get("symbol")
