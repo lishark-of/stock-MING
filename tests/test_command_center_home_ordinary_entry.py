@@ -6,16 +6,25 @@ ROOT = Path(__file__).resolve().parents[1] / "desktop"
 
 
 class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
+    def setUp(self):
+        self.source = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+
     def test_daily_command_center_summary_shows_user_decision_fields_first(self):
-        source = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        source = self.source
 
         self.assertIn("<h1>今日作战台</h1>", source)
         self.assertIn("先看下一步、数据来源、缺少证据和仅供研究边界", source)
         self.assertIn('title="今日作战台摘要"', source)
         self.assertIn("下一步、来源、缺口、边界和最近可用缓存", source)
         self.assertIn('label: "下一步"', source)
+        self.assertIn('label: "主下一步"', source)
+        self.assertIn('label: "主下一步边界"', source)
         self.assertIn('label: "本地联通"', source)
         self.assertIn('label: "一键启动"', source)
+        self.assertIn('label: "启动恢复"', source)
+        self.assertIn('label: "启动边界"', source)
+        self.assertIn('label: "股票量化推演"', source)
+        self.assertIn('label: "下一票雷达"', source)
         self.assertIn('label: "cache"', source)
         self.assertIn('label: "Tushare"', source)
         self.assertIn('label: "DeepSeek"', source)
@@ -34,13 +43,19 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(source.index('label: "一键启动"', source.index("今日作战台摘要")), source.index("开发 / 审计详情"))
         self.assertLess(source.index('label: "cache"', source.index("今日作战台摘要")), source.index("开发 / 审计详情"))
         self.assertLess(source.index('label: "last_successful_cache/result"', source.index("今日作战台摘要")), source.index("开发 / 审计详情"))
+        self.assertNotIn('{ label: "今日作战台"', source)
 
     def test_daily_command_center_source_and_boundary_are_visible(self):
-        source = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        source = self.source
 
         self.assertIn("dailyCommandSourceState", source)
         self.assertIn("dailyCommandConnectionState", source)
         self.assertIn("dailyCommandLauncherState", source)
+        self.assertIn("dailyCommandPrimaryActionLabel", source)
+        self.assertIn("dailyCommandPrimaryActionHref", source)
+        self.assertIn("dailyCommandPrimaryActionBoundary", source)
+        self.assertIn("主下一步只切换到下一票雷达；不创建 task、不刷新 provider/model", source)
+        self.assertIn("主下一步只查看本地数据健康；运行快扫仍需进入下一票雷达手动点击", source)
         self.assertIn("本地前后端未联通；请使用桌面快捷方式或本地启动器重新打开", source)
         self.assertIn("本地前后端已联通", source)
         self.assertIn("一键启动入口可用；启动器会等 FastAPI 和页面 ready", source)
@@ -60,8 +75,27 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("/api/bootstrap/provider-model-execution-request", source)
         self.assertNotIn("postBootstrapProviderModelExecutionRequest", source)
 
+    def test_daily_command_summary_links_are_local_navigation_only(self):
+        summary_start = self.source.index('title="今日作战台摘要"')
+        summary_end = self.source.index("<summary>开发 / 审计详情</summary>", summary_start)
+        summary = self.source[summary_start:summary_end]
+
+        self.assertIn('aria-label="daily command primary next action"', summary)
+        self.assertIn('aria-label="open daily command primary next action"', summary)
+        self.assertIn('aria-label="daily command next user actions"', summary)
+        self.assertIn('href="#candidates"', summary)
+        self.assertIn('href="#factor"', summary)
+        self.assertIn('href="#dataHealth"', summary)
+        self.assertIn('href="#desktop"', summary)
+        self.assertIn("这些入口链接只切换本地页面", summary)
+        self.assertIn("不会创建 task、调用 Tushare/DeepSeek/GitHub、写 cache/config 或改变交易策略", summary)
+        self.assertLess(summary.index('aria-label="daily command primary next action"'), summary.index('aria-label="daily command next user actions"'))
+        self.assertNotIn("onClick=", summary)
+        self.assertNotIn("launchLiveBootstrap", summary)
+        self.assertNotIn("postBootstrapLiveStartup", summary)
+
     def test_engineering_metrics_are_demoted_behind_details(self):
-        source = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        source = self.source
 
         self.assertIn('className="developer-audit-details"', source)
         self.assertIn("开发 / 审计详情", source)
@@ -73,7 +107,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(source.index("开发状态速览"), source.index('label: "runtime mode"'))
 
     def test_daily_command_summary_shows_background_task_state_before_audit(self):
-        source = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        source = self.source
 
         self.assertIn("dailyCommandBackgroundTaskState", source)
         self.assertIn('label: "后台状态"', source)
@@ -87,7 +121,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(source.index('label: "后台状态"'), source.index("<summary>开发 / 审计详情</summary>"))
 
     def test_live_light_bootstrap_requires_manual_button_not_page_open_autostart(self):
-        source = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        source = self.source
 
         self.assertIn("const launchLiveBootstrap = () => {", source)
         self.assertIn('source: "command_center_home_manual"', source)
@@ -98,7 +132,7 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("cache 渲染完成后才会在 live_light 模式创建一次本地 POST task", source)
 
     def test_daily_command_page_does_not_embed_provider_model_or_trade_calls(self):
-        source = (ROOT / "src" / "routes" / "CommandCenterHome.tsx").read_text(encoding="utf-8")
+        source = self.source
         forbidden_fragments = (
             "tushare.pro_api",
             "ts.pro_api",

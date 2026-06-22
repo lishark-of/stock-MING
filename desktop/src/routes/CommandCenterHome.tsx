@@ -277,9 +277,23 @@ export default function CommandCenterHome() {
   const dailyCommandNextClick = Number(candidateCounts?.candidate_count ?? 0)
     ? "先看下一票雷达；需要单票推演时输入代码并生成 3.0 量化推演"
     : "先确认数据健康和最近可用缓存，再运行候选雷达快扫";
+  const dailyCommandPrimaryActionLabel = Number(candidateCounts?.candidate_count ?? 0)
+    ? "查看下一票雷达"
+    : "查看数据健康";
+  const dailyCommandPrimaryActionHref = Number(candidateCounts?.candidate_count ?? 0)
+    ? "#candidates"
+    : "#dataHealth";
+  const dailyCommandPrimaryActionBoundary = Number(candidateCounts?.candidate_count ?? 0)
+    ? "主下一步只切换到下一票雷达；不创建 task、不刷新 provider/model"
+    : "主下一步只查看本地数据健康；运行快扫仍需进入下一票雷达手动点击";
   const dailyCommandCacheSourceLabel = snapshotAvailable ? "本地缓存可用" : "等待本地缓存";
   const dailyCommandTushareSourceLabel = liveLight.tushare_on_open === true ? "轻量实时后台任务" : "手动触发或关闭";
-  const dailyCommandDeepSeekSourceLabel = liveLight.deepseek_on_open === true ? "轻量实时后台任务" : "手动触发或关闭";
+  const liveBootstrapModelCalled = liveBootstrapTaskLedger.some((row) => row.deepseek_called === true);
+  const dailyCommandDeepSeekSourceLabel = liveBootstrapModelCalled
+    ? "模型调用 ledger 已记录"
+    : liveLight.deepseek_on_open === true
+      ? "待授权解释"
+      : "手动触发或关闭";
   const dailyCommandRuntimeModeLabel = (() => {
     const mode = String(bootstrapStatus.mode ?? "cache_only");
     if (mode === "cache_only") return "只读缓存模式";
@@ -404,28 +418,18 @@ export default function CommandCenterHome() {
         emptyTitle="暂无今日作战台本地缓存"
         emptyDetail="首页只读取本地只读缓存；不会自动刷新外部数据。若为空，请先确认本地服务已启动。"
       />
-      <MetricGrid
-        items={[
-          { label: "今日作战台", value: dailyCommandNextClick },
-          { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
-          { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
-          { label: "数据来源", value: dailyCommandSourceState },
-          { label: "后台状态", value: dailyCommandBackgroundTaskState, tone: dailyCommandBackgroundTaskTone },
-          { label: "缺少证据", value: dailyCommandMissingEvidence, tone: dailyCommandMissingEvidence.includes("缓存") || dailyCommandMissingEvidence.includes("验收") || dailyCommandMissingEvidence.includes("收口") ? "warn" : "good" },
-          { label: "阻断/降级", value: dailyCommandBlockedState, tone: dailyCommandBlockedState.includes("未标记") ? "good" : "warn" },
-          { label: "最近可用缓存", value: dailyCommandLastCache },
-          { label: "任务边界", value: dailyCommandTaskBoundary },
-          { label: "仅供研究", value: dailyCommandResearchOnlyLabel, tone: "good" }
-        ]}
-      />
       <PacketCard title="今日作战台摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={dailyCommandStatusLabel}>
         <MetricGrid
           items={[
             { label: "下一步", value: dailyCommandNextClick },
+            { label: "主下一步", value: dailyCommandPrimaryActionLabel },
+            { label: "主下一步边界", value: dailyCommandPrimaryActionBoundary, tone: "good" },
             { label: "本地联通", value: dailyCommandConnectionState, tone: error ? "warn" : health.status === "ok" ? "good" : "warn" },
             { label: "一键启动", value: dailyCommandLauncherState, tone: desktopLauncherContract.launcher_executable === true ? "good" : "warn" },
             { label: "启动恢复", value: dailyCommandStartupRecoveryLabel, tone: error || desktopLauncherContract.launcher_executable !== true ? "warn" : "good" },
             { label: "启动边界", value: dailyCommandStartupBoundary, tone: "good" },
+            { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
+            { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
             { label: "cache", value: dailyCommandCacheSourceLabel },
             { label: "Tushare", value: dailyCommandTushareSourceLabel },
             { label: "DeepSeek", value: dailyCommandDeepSeekSourceLabel },
@@ -442,7 +446,17 @@ export default function CommandCenterHome() {
           ]}
         />
         <p className="risk-note">本地联通状态只读来自 FastAPI health 和 desktop preflight cache；不会启动服务、不会写配置、不会调用 provider/model。</p>
+        <div className="actions" aria-label="daily command primary next action">
+          <a href={dailyCommandPrimaryActionHref} aria-label="open daily command primary next action">{dailyCommandPrimaryActionLabel}</a>
+        </div>
+        <div className="actions" aria-label="daily command next user actions">
+          <a href="#candidates" aria-label="open candidate radar from daily command">查看下一票雷达</a>
+          <a href="#factor" aria-label="open stock quant projection from daily command">查看股票量化推演</a>
+          <a href="#dataHealth" aria-label="open data health from daily command">查看数据健康</a>
+          <a href="#desktop" aria-label="open one click startup preflight from daily command">查看一键启动预检</a>
+        </div>
         <p className="risk-note">如果本地联通异常，先去 <a href="#desktop">桌面壳预检</a> 查看本地快捷入口；这个跳转只切换页面，不启动 FastAPI/Vite/浏览器。</p>
+        <p className="risk-note">这些入口链接只切换本地页面；不会创建 task、调用 Tushare/DeepSeek/GitHub、写 cache/config 或改变交易策略。</p>
         <p className="risk-note">工程审计明细默认收起；完整 call ledger、release gate、runtime mode 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
       </PacketCard>
       <details className="developer-audit-details">
@@ -505,6 +519,7 @@ export default function CommandCenterHome() {
           <p>auto status: {liveBootstrapAutoStatus}</p>
           <p>sources enabled: {String(liveLight.sources_enabled ?? false)}</p>
           <p>Tushare / DeepSeek on open: {String(liveLight.tushare_on_open ?? false)} / {String(liveLight.deepseek_on_open ?? false)}</p>
+          <p>DeepSeek model call: {liveBootstrapModelCalled ? "ledger 显示已执行" : "未执行；需要明确允许白名单摘要外发后才会调用"}</p>
           <p>task skeleton / provider execution: {String(liveLight.bootstrap_task_implemented ?? false)} / {String(liveLight.provider_execution_implemented ?? false)}</p>
           <p>provider linkage rows: {String(bootstrapProviderLinkageRows.length)}</p>
           <p>live_light activation receipt: {String(liveLightActivationReceipt.status ?? "--")}</p>
