@@ -5,6 +5,9 @@ import unittest
 
 SCRIPT = Path("scripts/check_tauri_env.sh")
 LAUNCHER = Path("scripts/start_command_center_3.command")
+DESKTOP_PREFLIGHT_PAGE = Path("desktop/src/routes/DesktopShellPreflight.tsx")
+HEALTH_PAGE = Path("desktop/src/routes/HealthStatus.tsx")
+HOME_PAGE = Path("desktop/src/routes/CommandCenterHome.tsx")
 
 
 class CommandCenter3TauriPreflightTests(unittest.TestCase):
@@ -127,6 +130,48 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertNotIn("TUSHARE_TOKEN", source)
         self.assertNotIn("DEEPSEEK_API_KEY", source)
         self.assertNotIn("GITHUB_TOKEN", source)
+
+    def test_p0_startup_diagnostics_are_consistent_across_launcher_and_ordinary_pages(self):
+        sources = {
+            "launcher": LAUNCHER.read_text(encoding="utf-8"),
+            "desktop_preflight": DESKTOP_PREFLIGHT_PAGE.read_text(encoding="utf-8"),
+            "health": HEALTH_PAGE.read_text(encoding="utf-8"),
+            "daily_command": HOME_PAGE.read_text(encoding="utf-8"),
+        }
+        shared_diagnostics = [
+            "FastAPI /health Command Center 3.0 JSON",
+            "bootstrap status runtime-mode packet",
+            "React/Vite Command Center 3.0 HTML",
+            "8710/5173 port occupancy guidance",
+        ]
+
+        for surface, source in sources.items():
+            with self.subTest(surface=surface):
+                if surface == "launcher":
+                    self.assertIn("FastAPI：${API_BASE%/}/health 未返回 Command Center 3.0 健康 JSON", source)
+                    self.assertIn("Bootstrap status：${API_BASE%/}/api/bootstrap/status 未返回 runtime-mode packet", source)
+                    self.assertIn("React/Vite：${VITE_URL} 未返回 Command Center 3.0 前端 HTML", source)
+                    self.assertIn("下一步：先关闭占用 8710/5173 的本地进程", source)
+                    self.assertIn("external_calls_on_startup", source)
+                else:
+                    for diagnostic in shared_diagnostics:
+                        self.assertIn(diagnostic, source)
+                    self.assertIn("diagnostic_surfaces", source)
+                    self.assertIn("success_condition", source)
+                    self.assertIn("blocked_next_action", source)
+                    self.assertIn("GET", source)
+                    if surface == "daily_command":
+                        summary_start = source.index('title="今日作战台摘要"')
+                        summary_end = source.index("<summary>开发 / 审计详情</summary>", summary_start)
+                        ordinary_summary = source[summary_start:summary_end]
+                        self.assertNotIn("postBootstrapLiveStartup", ordinary_summary)
+                        self.assertNotIn("launchLiveBootstrap", ordinary_summary)
+                    else:
+                        self.assertNotIn("postBootstrapLiveStartup", source)
+
+                self.assertNotIn("TUSHARE_TOKEN", source)
+                self.assertNotIn("DEEPSEEK_API_KEY", source)
+                self.assertNotIn("GITHUB_TOKEN", source)
 
 
 if __name__ == "__main__":
