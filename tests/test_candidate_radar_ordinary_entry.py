@@ -8,6 +8,9 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.page = (self.root / "desktop" / "src" / "routes" / "CandidateRadar.tsx").read_text(
             encoding="utf-8"
         )
+        self.handoff = (self.root / "docs" / "codex_handoff_protocol.md").read_text(
+            encoding="utf-8"
+        )
 
     def test_candidate_radar_has_ordinary_user_summary_before_audit_details(self):
         self.assertIn("<h1>下一票雷达</h1>", self.page)
@@ -165,6 +168,15 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("launchQuantProjectionExecutionRequest", summary_slice)
         self.assertNotIn("launchProviderParityDryRun", summary_slice)
         self.assertNotIn("provider-model", summary_slice)
+
+    def test_tushare_first_handoff_matches_ordinary_submit_boundary(self):
+        self.assertIn("Candidate Radar searched-symbol confirmation must be reported through the active checkpoint", self.handoff)
+        self.assertIn("confirmed search may submit bounded Tushare provider work through POST task and call ledger", self.handoff)
+        self.assertIn("ordinary confirm action keeps DeepSeek skipped", self.handoff)
+        self.assertIn("provider-model acceptance remains a separate explicit POST task", self.handoff)
+        self.assertIn("page open, search typing, React render, and GET cache stay silent", self.handoff)
+        self.assertNotIn("DeepSeek is requested into the explanation ledger/governance path", self.handoff)
+        self.assertNotIn("automatic v4/pro execution", self.handoff)
 
     def test_candidate_radar_page_does_not_embed_provider_or_trade_calls(self):
         forbidden_fragments = (
