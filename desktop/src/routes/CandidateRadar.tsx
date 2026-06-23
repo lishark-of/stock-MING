@@ -692,6 +692,36 @@ export default function CandidateRadar() {
       : "回放顺序：确认生成后先看任务编号，再刷新本地缓存，最后查看量化推演和次日图谱";
   const quantProjectionReplayBoundary =
     "回放链接只切换本地页面或锚点；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache";
+  const quantProjectionConfirmHandoffRows = [
+    {
+      步骤: "输入校验",
+      触发: "输入框本地校验",
+      后台: "不创建任务",
+      回放: quantProjectionInputValidation,
+      边界: "搜索输入、React render、GET cache 不外联"
+    },
+    {
+      步骤: "点击确认",
+      触发: "确认并生成按钮",
+      后台: "创建 Tushare-first POST task / worker",
+      回放: quantProjectionLatestTaskState,
+      边界: "只有用户确认后才进入后台链"
+    },
+    {
+      步骤: "Tushare 写入",
+      触发: "后台任务",
+      后台: "凭据可用才写 call_ledger / cache / packet",
+      回放: quantProjectionProviderModelReplayState,
+      边界: "凭据缺失只写本地阻断，不补调 DeepSeek"
+    },
+    {
+      步骤: "结果回放",
+      触发: "查看本地结果",
+      后台: "不再创建任务",
+      回放: "量化推演 / 次日图谱读取 cache / ledger / packet",
+      边界: "不交易、不改 strategy action"
+    }
+  ];
   const quantProjectionResultLocation =
     "结果位置：股票量化推演页查看缓存结果，次日图谱页复核图谱；两个入口都只读回放";
   const candidateRadarStatusLabel = cache.status === "ready" ? "候选缓存可用" : "等待候选缓存";
@@ -859,6 +889,10 @@ export default function CandidateRadar() {
               { label: "仅供研究", value: "推演解释只整理已有证据；不覆盖价格、持仓、因子、操作区或交易策略", tone: "good" }
             ]}
           />
+          <div aria-label="quant projection ordinary confirmation handoff">
+            <p className="risk-note">确认后链路回放：输入只校验；点击确认才创建 Tushare-first 后台任务；结果只从本地 cache / ledger / packet 回放。</p>
+            <DataLineageTable rows={quantProjectionConfirmHandoffRows} />
+          </div>
           {quantProjectionSmallDataRows.length ? (
             <DataLineageTable rows={quantProjectionSmallDataRows} />
           ) : null}
