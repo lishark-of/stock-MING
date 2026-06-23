@@ -1,4 +1,9 @@
-import { API_BASE_DISPLAY_URL, BACKEND_OFFLINE_ERROR } from "../api/client";
+import {
+  API_BASE_CANDIDATE_DISPLAY_URLS,
+  API_BASE_DISPLAY_URL,
+  BACKEND_OFFLINE_ERROR,
+  CONFIGURED_API_BASE_DISPLAY_URL,
+} from "../api/client";
 
 const COMMAND_CENTER_3_LAUNCHER_PATH = "scripts/start_command_center_3.command";
 const COMMAND_CENTER_3_DESKTOP_SHORTCUT = "stock-MING Command Center 3.command";
@@ -15,11 +20,15 @@ export default function BackendOfflineNotice({
   if (!error?.includes(BACKEND_OFFLINE_ERROR)) {
     return null;
   }
+  const attemptedApiBases = API_BASE_CANDIDATE_DISPLAY_URLS.length
+    ? API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ")
+    : apiBase;
 
   return (
     <div className="backend-offline-notice motion-surface" data-backend-offline="true" role="status">
       <strong>本地后端未连接</strong>
       <p>下一步：请双击桌面快捷方式 {COMMAND_CENTER_3_DESKTOP_SHORTCUT}，或运行 {COMMAND_CENTER_3_LAUNCHER_PATH} 重新打开 Command Center 3.0，然后刷新本页。</p>
+      <p>前端已自动尝试本机 FastAPI 地址：{attemptedApiBases}；配置地址显示为 {CONFIGURED_API_BASE_DISPLAY_URL}。</p>
       <p>启动器会等待 FastAPI 和页面都 ready 后才打开入口；当前画面只显示离线保护状态。</p>
       <p>如果刚运行启动器后仍离线，可能是旧的 React/Vite dev server 复用了不同后端地址；请关闭旧 dev server 后重新运行启动器，并查看 .stock_ming_3/logs/command_center_3_vite.log。</p>
       <div className="actions" aria-label="backend offline local recovery links">

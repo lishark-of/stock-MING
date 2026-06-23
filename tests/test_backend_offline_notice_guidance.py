@@ -15,6 +15,10 @@ class BackendOfflineNoticeGuidanceTests(unittest.TestCase):
         self.assertIn("下一步：请双击桌面快捷方式", notice)
         self.assertIn("{COMMAND_CENTER_3_DESKTOP_SHORTCUT}", notice)
         self.assertIn("{COMMAND_CENTER_3_LAUNCHER_PATH}", notice)
+        self.assertIn("API_BASE_CANDIDATE_DISPLAY_URLS", notice)
+        self.assertIn("CONFIGURED_API_BASE_DISPLAY_URL", notice)
+        self.assertIn("前端已自动尝试本机 FastAPI 地址", notice)
+        self.assertIn("配置地址显示为", notice)
         self.assertIn("启动器会等待 FastAPI 和页面都 ready 后才打开入口", notice)
         self.assertIn("当前画面只显示离线保护状态", notice)
         self.assertIn("刚运行启动器后仍离线", notice)
@@ -34,6 +38,26 @@ class BackendOfflineNoticeGuidanceTests(unittest.TestCase):
         self.assertNotIn("TUSHARE_TOKEN", notice)
         self.assertNotIn("DEEPSEEK_API_KEY", notice)
         self.assertNotIn("GITHUB_TOKEN", notice)
+
+    def test_api_client_falls_back_only_to_local_fastapi_base(self):
+        root = Path(__file__).resolve().parents[1]
+        client = (root / "desktop" / "src" / "api" / "client.ts").read_text(encoding="utf-8")
+
+        self.assertIn('const DEFAULT_LOCAL_API_BASE = "http://127.0.0.1:8710"', client)
+        self.assertIn("function isLocalApiBase", client)
+        self.assertIn('["127.0.0.1", "localhost", "::1", "[::1]"].includes(parsed.hostname)', client)
+        self.assertIn("function localApiBaseCandidates", client)
+        self.assertIn("const API_BASE_CANDIDATES = localApiBaseCandidates()", client)
+        self.assertIn("for (const apiBase of API_BASE_CANDIDATES)", client)
+        self.assertIn("fetch(`${apiBase}${path}`", client)
+        self.assertIn("attempted_api_bases: attemptedApiBases", client)
+        self.assertIn("frontend_backend_auto_link_attempted: true", client)
+        self.assertIn('frontend_backend_auto_link_scope: "local_fastapi_only"', client)
+        self.assertIn("page_render_external_calls: false", client)
+        self.assertIn("provider_or_model_calls: false", client)
+        self.assertIn("本地 FastAPI 后端暂未连接；已尝试本机地址", client)
+        self.assertIn("stock-MING Command Center 3.command", client)
+        self.assertNotIn("fetch(`${API_BASE}${path}`", client)
 
     def test_page_state_banner_hides_raw_backend_offline_error_from_ordinary_user(self):
         root = Path(__file__).resolve().parents[1]

@@ -73,8 +73,10 @@ export type StorageQueryParams = {
   end_date?: string;
 };
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8710";
+const DEFAULT_LOCAL_API_BASE = "http://127.0.0.1:8710";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? DEFAULT_LOCAL_API_BASE;
 export const API_BASE_URL = API_BASE;
+export const DEFAULT_LOCAL_API_BASE_URL = DEFAULT_LOCAL_API_BASE;
 export const BACKEND_OFFLINE_ERROR = "backend_offline_or_unreachable";
 const RESPONSE_PARSE_ERROR = "response_parse_failed";
 
@@ -91,7 +93,34 @@ function safeApiBaseDisplay(value: string): string {
   }
 }
 
-export const API_BASE_DISPLAY_URL = safeApiBaseDisplay(API_BASE);
+function isLocalApiBase(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return ["127.0.0.1", "localhost", "::1", "[::1]"].includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function sameApiBase(left: string, right: string): boolean {
+  return safeApiBaseDisplay(left) === safeApiBaseDisplay(right);
+}
+
+function localApiBaseCandidates(): string[] {
+  const candidates: string[] = [];
+  if (isLocalApiBase(API_BASE)) {
+    candidates.push(API_BASE);
+  }
+  if (!candidates.some((candidate) => sameApiBase(candidate, DEFAULT_LOCAL_API_BASE))) {
+    candidates.push(DEFAULT_LOCAL_API_BASE);
+  }
+  return candidates;
+}
+
+const API_BASE_CANDIDATES = localApiBaseCandidates();
+export const CONFIGURED_API_BASE_DISPLAY_URL = safeApiBaseDisplay(API_BASE);
+export const API_BASE_CANDIDATE_DISPLAY_URLS = API_BASE_CANDIDATES.map(safeApiBaseDisplay);
+export const API_BASE_DISPLAY_URL = API_BASE_CANDIDATE_DISPLAY_URLS[0] ?? safeApiBaseDisplay(DEFAULT_LOCAL_API_BASE);
 
 function errorToMessage(error: unknown): string | null {
   if (!error) return null;
@@ -112,8 +141,14 @@ function safeExceptionMessage(error: unknown): string {
   return String(error ?? "request failed").slice(0, 180);
 }
 
-function failedRequestEnvelope<T>(path: string, callStatus: string, error: unknown): ApiEnvelope<T> {
+function failedRequestEnvelope<T>(
+  path: string,
+  callStatus: string,
+  error: unknown,
+  triedApiBases: string[] = API_BASE_CANDIDATES
+): ApiEnvelope<T> {
   const safeMessage = safeExceptionMessage(error);
+  const attemptedApiBases = triedApiBases.map(safeApiBaseDisplay);
   return {
     ok: false,
     data: {} as T,
@@ -123,51 +158,71 @@ function failedRequestEnvelope<T>(path: string, callStatus: string, error: unkno
         api: "frontend_fastapi_request",
         endpoint: path,
         api_base: API_BASE_DISPLAY_URL,
+        configured_api_base: CONFIGURED_API_BASE_DISPLAY_URL,
+        attempted_api_bases: attemptedApiBases,
+        default_local_api_base: safeApiBaseDisplay(DEFAULT_LOCAL_API_BASE),
+        frontend_backend_auto_link_attempted: true,
+        frontend_backend_auto_link_scope: "local_fastapi_only",
         call_status: callStatus,
         error_message_safe: safeMessage,
         external: false,
         external_calls_triggered: false,
+        page_render_external_calls: false,
         tushare_called: false,
         deepseek_called: false,
         github_called: false,
+        provider_or_model_calls: false,
         does_not_execute_trades: true,
         does_not_modify_strategy_action: true,
       }
     ],
     warnings: [
-      "本地 FastAPI 后端暂未连接；请启动本地后端服务后刷新页面。",
+      `本地 FastAPI 后端暂未连接；已尝试本机地址：${attemptedApiBases.join(" / ")}。`,
+      "下一步：双击 stock-MING Command Center 3.command，或运行 scripts/start_command_center_3.command，然后刷新页面。",
       "此离线提示不会调用 Tushare、DeepSeek、GitHub，也不会执行真实交易。",
     ],
   };
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
-  try {
-    const res = await fetch(`${API_BASE}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...(init?.headers ?? {})
-      }
-    });
-    if (!res.ok) {
-      return { ok: false, data: {} as T, error: `HTTP ${res.status}`, call_ledger: [], warnings: [] };
-    }
+  let lastError: unknown = "local FastAPI backend unavailable";
+  let lastCallStatus = BACKEND_OFFLINE_ERROR;
+  for (const apiBase of API_BASE_CANDIDATES) {
     try {
-      const payload = await res.json();
-      return {
-        ...payload,
-        data: payload.data === null ? ({} as T) : payload.data,
-        error: errorToMessage(payload.error),
-        call_ledger: payload.call_ledger ?? [],
-        warnings: payload.warnings ?? [],
-      } as ApiEnvelope<T>;
+      const res = await fetch(`${apiBase}${path}`, {
+        ...init,
+        headers: {
+          "Content-Type": "application/json",
+          ...(init?.headers ?? {})
+        }
+      });
+      if (!res.ok) {
+        if (res.status === 404 && API_BASE_CANDIDATES.length > 1) {
+          lastError = `HTTP ${res.status} from ${safeApiBaseDisplay(apiBase)}`;
+          lastCallStatus = BACKEND_OFFLINE_ERROR;
+          continue;
+        }
+        return { ok: false, data: {} as T, error: `HTTP ${res.status}`, call_ledger: [], warnings: [] };
+      }
+      try {
+        const payload = await res.json();
+        return {
+          ...payload,
+          data: payload.data === null ? ({} as T) : payload.data,
+          error: errorToMessage(payload.error),
+          call_ledger: payload.call_ledger ?? [],
+          warnings: payload.warnings ?? [],
+        } as ApiEnvelope<T>;
+      } catch (error) {
+        lastError = error;
+        lastCallStatus = RESPONSE_PARSE_ERROR;
+      }
     } catch (error) {
-      return failedRequestEnvelope<T>(path, RESPONSE_PARSE_ERROR, error);
+      lastError = error;
+      lastCallStatus = BACKEND_OFFLINE_ERROR;
     }
-  } catch (error) {
-    return failedRequestEnvelope<T>(path, BACKEND_OFFLINE_ERROR, error);
   }
+  return failedRequestEnvelope<T>(path, lastCallStatus, lastError, API_BASE_CANDIDATES);
 }
 
 function queryString(params: Record<string, string | number | undefined | null> = {}): string {
