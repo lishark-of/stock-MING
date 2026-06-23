@@ -23,6 +23,15 @@ function displayText(value: unknown, fallback = "--") {
   return String(value);
 }
 
+function ordinaryResultSurfaceLabel(surface: unknown) {
+  const key = String(surface ?? "");
+  if (key === "data_source") return "数据来源";
+  if (key === "quant_projection") return "量化推演";
+  if (key === "next_session_map") return "次日图谱";
+  if (key === "research_only_boundary") return "安全边界";
+  return displayText(surface, "解释结果");
+}
+
 function quantProjectionSubmitFailureMessage(error?: string | null) {
   if (error?.includes("backend_offline_or_unreachable")) {
     return "本地 FastAPI 后端未连接；请先用一键启动器恢复连接。";
@@ -731,8 +740,14 @@ export default function CandidateRadar() {
   const quantProjectionInterpretationReplay =
     String(searchQuantProjectionInterpretation.result_replay_label ?? "") ||
     "成功后回放本地结果、ledger 和 packet；GET cache 只读展示";
-  const quantProjectionOrdinaryResultRows = rows(searchQuantProjectionInterpretation.ordinary_result_readback_rows).length
-    ? rows(searchQuantProjectionInterpretation.ordinary_result_readback_rows)
+  const quantProjectionOrdinaryResultReadbackRows = rows(searchQuantProjectionInterpretation.ordinary_result_readback_rows).map((row) => ({
+    回放项: ordinaryResultSurfaceLabel(row.surface),
+    当前状态: displayText(row.ordinary_label ?? row.status),
+    来源: displayText(row.readback_source, "cache / ledger / packet"),
+    边界: displayText(row.boundary, quantProjectionOrdinaryResultBoundary)
+  }));
+  const quantProjectionOrdinaryResultRows = quantProjectionOrdinaryResultReadbackRows.length
+    ? quantProjectionOrdinaryResultReadbackRows
     : [
         {
           回放项: "数据来源",
