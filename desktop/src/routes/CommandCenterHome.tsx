@@ -525,8 +525,16 @@ export default function CommandCenterHome() {
     : health.status === "ok"
       ? "本地前后端已联通"
       : "正在确认本地连接";
+  const dailyCommandFrontendBackendSelectedApiBase = String(
+    healthEnvelopeLedger.find(
+      (row) =>
+        row.api === "frontend_fastapi_request" &&
+        row.frontend_backend_auto_link_success === true &&
+        typeof row.api_base === "string"
+    )?.api_base ?? API_BASE_DISPLAY_URL
+  );
   const dailyCommandFrontendBackendAutoLinkLabel = health.status === "ok"
-    ? `已联通本地后端：${API_BASE_DISPLAY_URL}`
+    ? `已联通本地后端：${dailyCommandFrontendBackendSelectedApiBase}`
     : `自动尝试本地 FastAPI：${API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ")}`;
   const dailyCommandFrontendBackendAutoLinkBoundary =
     "前端 API client 只在本地 FastAPI 候选地址内自动联通；失败显示离线提示，不启动服务、不创建 task、不调用 provider/model、不读取 token/key";
@@ -534,7 +542,7 @@ export default function CommandCenterHome() {
     {
       联通项: "前端 API client",
       当前状态: health.status === "ok" ? "GET /health 已从本地后端回读" : "等待本地后端可达",
-      证据: `configured=${CONFIGURED_API_BASE_DISPLAY_URL}; selected=${API_BASE_DISPLAY_URL}; candidates=${API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ")}`,
+      证据: `configured=${CONFIGURED_API_BASE_DISPLAY_URL}; selected=${dailyCommandFrontendBackendSelectedApiBase}; candidates=${API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ")}`,
       下一步: health.status === "ok" ? "继续看 bootstrap runtime-mode packet" : "使用一键启动入口恢复本地 FastAPI / React 联通",
       边界: dailyCommandFrontendBackendAutoLinkBoundary
     },
