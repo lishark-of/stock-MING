@@ -170,6 +170,10 @@ export default function NextSessionMap() {
   const nextSessionReplayOrigin = chartSummary.is_exact_next_session_packet === true
     ? "来自精确 next-session cache；可从下一票雷达/量化推演回放到本页"
     : "来自 legacy/cache 投影或暂无精确 packet；只作降级预览";
+  const nextSessionReplayPath =
+    "回放路径：下一票雷达确认代码 -> 股票量化推演支持/压制 -> 次日图谱路径/参考线/操作区";
+  const nextSessionReplayDestinationBoundary =
+    "回放入口只切换本地页面锚点；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones";
   const nextSessionOperationZoneBoundary = "operation_zones 只表示条件区间和复核提示；不是买卖指令，不写交易动作，不改 strategy action";
   const scenarioRows = rowsFromArray(chartPayload?.scenario_series).map((row) => ({
     scenario_key: row.scenario_key ?? row.scenario_name,
@@ -211,15 +215,22 @@ export default function NextSessionMap() {
           { label: "最近可用缓存", value: nextSessionLastCache },
           { label: "查看顺序", value: nextSessionChartReviewOrder },
           { label: "回放来源", value: nextSessionReplayOrigin, tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn" },
+          { label: "回放路径", value: nextSessionReplayPath, tone: "good" },
+          { label: "回放入口边界", value: nextSessionReplayDestinationBoundary, tone: "good" },
           { label: "操作区边界", value: nextSessionOperationZoneBoundary, tone: "good" },
           { label: "任务边界", value: nextSessionTaskBoundary, tone: "good" },
           { label: "仅供研究", value: nextSessionResearchOnlyLabel }
         ]}
       />
+      <div className="actions" aria-label="next session replay handoff actions">
+        <a href="#candidates" aria-label="return to candidate radar confirmed symbol entry">回到下一票雷达</a>
+        <a href="#factor" aria-label="open stock quant projection replay">查看股票量化推演</a>
+      </div>
       <div className="actions">
         <button onClick={refreshCache} title={nextSessionCacheButtonLabel} aria-label={nextSessionCacheButtonLabel}>查看缓存</button>
         <button onClick={launchTask} title={nextSessionGenerateButtonLabel} aria-label={nextSessionGenerateButtonLabel}>生成任务</button>
       </div>
+      <p className="risk-note">{nextSessionReplayPath}；这些回放入口只做本地页面切换，不创建任务、不刷新 Tushare/DeepSeek。</p>
       <p className="risk-note">摘要里的查看缓存只读取本地 GET cache；生成任务只创建按钮门控 POST task，不调用 Tushare 或 DeepSeek，不写交易动作。</p>
       <p className="risk-note">普通用户先按“图表路径 -&gt; 参考线 -&gt; 操作区 -&gt; 缺少证据”复核；operation_zones 只是条件区间，不是买卖或下单指令。</p>
     </PacketCard>
