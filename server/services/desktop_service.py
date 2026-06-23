@@ -512,7 +512,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
     installer_source = _read_source_safe(COMMAND_CENTER_3_SHORTCUT_INSTALLER)
     required_markers = (
         "Command Center 3.0 local launcher",
-        "P0: local one-click launcher starts/checks FastAPI and React/Vite before opening the page.",
+        "P0: local one-click launcher starts/checks FastAPI, bootstrap status, desktop preflight cache, and React/Vite before opening the page.",
         "Link check: launcher verifies",
         "/api/desktop/preflight-cache before opening the page.",
         "Health check: /health must return stock-MING Command Center 3.0 JSON with external_calls_on_startup=false.",
@@ -560,7 +560,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "existing non-symlink target will not be overwritten",
         "desktop target already exists and is not a symlink",
         "Install verification: shortcut symlink points to the local launcher.",
-        "Double-click checklist: launcher checks FastAPI /health, bootstrap status, and React/Vite before opening the page.",
+        "Double-click checklist: launcher checks FastAPI /health, bootstrap status, desktop preflight cache, and React/Vite before opening the page.",
         "shortcut install does not start FastAPI/Vite, create tasks, enable live_light, or execute trading",
         "no Tushare, DeepSeek, GitHub, or trading call",
     )
@@ -618,8 +618,8 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         and "desktop target already exists and is not a symlink" in installer_source,
         "desktop_shortcut_installer_verifies_symlink_target": "Install verification: shortcut symlink points to the local launcher." in installer_source
         and "readlink \"$TARGET_PATH\"" in installer_source,
-        "desktop_shortcut_installer_prints_double_click_checklist": "Double-click checklist: launcher checks FastAPI /health, bootstrap status, and React/Vite before opening the page." in installer_source,
-        "desktop_shortcut_installer_safe_ordinary_label": "安全安装：不会覆盖同名普通文件；安装后验证 symlink 指向本地启动器；双击后才检查 FastAPI、bootstrap status 和 React/Vite。",
+        "desktop_shortcut_installer_prints_double_click_checklist": "Double-click checklist: launcher checks FastAPI /health, bootstrap status, desktop preflight cache, and React/Vite before opening the page." in installer_source,
+        "desktop_shortcut_installer_safe_ordinary_label": "安全安装：不会覆盖同名普通文件；安装后验证 symlink 指向本地启动器；双击后才检查 FastAPI、bootstrap status、desktop preflight cache 和 React/Vite。",
         "desktop_shortcut_installer_starts_services": False,
         "desktop_shortcut_installer_reads_credentials": False,
         "api_base": api_base,
@@ -1426,7 +1426,7 @@ def _p0_ordinary_reconnect_rows(
         ),
         row(
             "启动器没有自动打开页面",
-            "按启动器输出定位 FastAPI、bootstrap status 或 React/Vite 哪段失败。",
+            "按启动器输出定位 FastAPI、bootstrap status、desktop preflight cache 或 React/Vite 哪段失败。",
             ".stock_ming_3/logs",
             "日志和 8710/5173 端口指引能指出阻断段。",
             "只读诊断，不读取 token/key、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。",

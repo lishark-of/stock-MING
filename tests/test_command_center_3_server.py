@@ -1945,7 +1945,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(launcher["desktop_shortcut_installer_verifies_symlink_target"])
         self.assertTrue(launcher["desktop_shortcut_installer_prints_double_click_checklist"])
         self.assertIn("不会覆盖同名普通文件", launcher["desktop_shortcut_installer_safe_ordinary_label"])
-        self.assertIn("双击后才检查 FastAPI、bootstrap status 和 React/Vite", launcher["desktop_shortcut_installer_safe_ordinary_label"])
+        self.assertIn("双击后才检查 FastAPI、bootstrap status、desktop preflight cache 和 React/Vite", launcher["desktop_shortcut_installer_safe_ordinary_label"])
         self.assertFalse(launcher["desktop_shortcut_installer_starts_services"])
         self.assertFalse(launcher["desktop_shortcut_installer_reads_credentials"])
         self.assertTrue(launcher["uses_project_venv_first"])
@@ -1988,7 +1988,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertTrue(
             launcher_rows[
-                "shortcut_installer_marker:Double-click checklist: launcher checks FastAPI /health, bootstrap status, and React/Vite before opening the page."
+                "shortcut_installer_marker:Double-click checklist: launcher checks FastAPI /health, bootstrap status, desktop preflight cache, and React/Vite before opening the page."
             ]["passed"]
         )
         self.assertTrue(all(row["passed"] for row in launcher_rows.values()))

@@ -75,7 +75,7 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertTrue(LAUNCHER.exists())
         self.assertIn("Command Center 3.0 local launcher", source)
         self.assertIn(
-            "P0: local one-click launcher starts/checks FastAPI and React/Vite before opening the page.",
+            "P0: local one-click launcher starts/checks FastAPI, bootstrap status, desktop preflight cache, and React/Vite before opening the page.",
             source,
         )
         self.assertIn(
@@ -215,7 +215,7 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("STOCK_MING_DESKTOP_SHORTCUT_NAME", source)
         self.assertIn("Boundary: installer stopped before changing files", source)
         self.assertIn("Install verification: shortcut symlink points to the local launcher.", source)
-        self.assertIn("Double-click checklist: launcher checks FastAPI /health, bootstrap status, and React/Vite before opening the page.", source)
+        self.assertIn("Double-click checklist: launcher checks FastAPI /health, bootstrap status, desktop preflight cache, and React/Vite before opening the page.", source)
         self.assertIn("shortcut install does not start FastAPI/Vite, create tasks, enable live_light, or execute trading", source)
         self.assertNotIn("npm run dev", source)
         self.assertNotIn("scripts/dev_server.sh", source)
@@ -241,7 +241,7 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
             self.assertEqual(Path(os.readlink(target)), launcher)
             self.assertIn("Command Center 3.0 desktop shortcut installed.", result.stdout)
             self.assertIn("Install verification: shortcut symlink points to the local launcher.", result.stdout)
-            self.assertIn("Double-click checklist: launcher checks FastAPI /health, bootstrap status, and React/Vite before opening the page.", result.stdout)
+            self.assertIn("Double-click checklist: launcher checks FastAPI /health, bootstrap status, desktop preflight cache, and React/Vite before opening the page.", result.stdout)
             self.assertIn("Boundary: shortcut install does not start FastAPI/Vite", result.stdout)
 
     def test_command_center_3_shortcut_installer_does_not_overwrite_regular_file(self):

@@ -44,5 +44,5 @@ fi
 echo "Command Center 3.0 desktop shortcut installed."
 echo "Install verification: shortcut symlink points to the local launcher."
 echo "Double-click: ${TARGET_PATH}"
-echo "Double-click checklist: launcher checks FastAPI /health, bootstrap status, and React/Vite before opening the page."
+echo "Double-click checklist: launcher checks FastAPI /health, bootstrap status, desktop preflight cache, and React/Vite before opening the page."
 echo "Boundary: shortcut install does not start FastAPI/Vite, create tasks, enable live_light, or execute trading."
