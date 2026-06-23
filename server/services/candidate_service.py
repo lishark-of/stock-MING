@@ -15073,6 +15073,127 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "does_not_modify_strategy_action": True,
         },
     ]
+    chain_symbol = _safe_text(
+        provider_receipt.get("symbol")
+        or execution_request.get("symbol")
+        or dry_run.get("symbol")
+        or quant_receipt.get("symbol")
+        or "",
+        limit=32,
+    )
+    if provider_ready:
+        tushare_chain_state = f"Tushare-first ledger ready：{provider_api_success_count}/{provider_api_call_count} 个接口"
+        tushare_chain_next = "回放股票量化推演，再打开次日图谱复核本地结果。"
+    elif credential_missing_count:
+        tushare_chain_state = "服务端 Tushare 凭据缺失；本地阻断已写入。"
+        tushare_chain_next = "配置服务端凭据后重新点击确认；页面不会补调 provider。"
+    elif provider_ledger_visible:
+        tushare_chain_state = f"Tushare-first ledger 部分回放：{provider_api_success_count}/{provider_api_call_count} 个接口"
+        tushare_chain_next = "补齐 Tushare light ledger 后再看本地量化推演和次日图谱。"
+    elif execution_request_ready:
+        tushare_chain_state = "执行申请已 ready；等待按钮门控 provider task 回写 Tushare ledger。"
+        tushare_chain_next = "运行显式 Tushare-first provider task；DeepSeek 仍保持 skipped。"
+    elif latest_task_id:
+        tushare_chain_state = "确认任务已接收；等待 Tushare-first ledger 回写。"
+        tushare_chain_next = "先看 TaskStatusPanel，任务完成后刷新本地 cache。"
+    else:
+        tushare_chain_state = "等待确认按钮创建 Tushare-first task。"
+        tushare_chain_next = "输入有效代码后点击确认并生成。"
+    ordinary_tushare_first_chain_rows = [
+        {
+            "chain_step": "input_validation",
+            "步骤": "1. 输入代码",
+            "用户动作": "输入 6 位 A 股代码或带后缀代码。",
+            "当前状态": f"本地代码={chain_symbol}" if chain_symbol else "等待输入代码",
+            "证据": "search_quant_projection_receipt.symbol" if chain_symbol else "local_input_only",
+            "下一步": "点击确认并生成 3.0 量化推演" if chain_symbol else "先输入有效股票代码",
+            "边界": "输入和搜索不会创建 task，不调用 Tushare、DeepSeek 或 GitHub。",
+            "readback_source": "search_quant_projection_receipt",
+            "readback_external_calls_triggered": False,
+            "readback_creates_task": False,
+            "only_user_confirm_creates_task": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "chain_step": "confirm_button_post_task",
+            "步骤": "2. 点击确认",
+            "用户动作": "点击确认并生成 3.0 量化推演。",
+            "当前状态": f"task_id={latest_task_id}" if latest_task_id else "等待点击确认按钮",
+            "证据": "candidate_radar_cache_packet.task_id" if latest_task_id else "button_not_clicked",
+            "下一步": "看任务编号和 TaskStatusPanel" if latest_task_id else "等待按钮启用后点击确认",
+            "边界": "只有确认按钮可创建 Tushare-first POST task / worker；GET cache 和 React render 不创建 task。",
+            "readback_source": "candidate_radar_cache_packet",
+            "readback_external_calls_triggered": False,
+            "readback_creates_task": False,
+            "only_user_confirm_creates_task": True,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "chain_step": "tushare_first_ledger",
+            "步骤": "3. Tushare-first",
+            "用户动作": "等待后台任务写入 Tushare light call_ledger。",
+            "当前状态": tushare_chain_state,
+            "证据": (
+                f"provider_call_source={provider_call_source}; "
+                f"provider_api_success={provider_api_success_count}; "
+                f"provider_api_call_count={provider_api_call_count}"
+            ),
+            "下一步": tushare_chain_next,
+            "边界": "Tushare 只允许由按钮门控 POST task / worker 调用；DeepSeek skipped，不作为数据源。",
+            "readback_source": "search_quant_provider_model_acceptance_receipt.provider_call_ledger",
+            "readback_external_calls_triggered": False,
+            "readback_creates_task": False,
+            "only_user_confirm_creates_task": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "provider_task_tushare_ledger_ready": provider_ready,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "chain_step": "cache_ledger_packet_replay",
+            "步骤": "4. 回放结果",
+            "用户动作": "刷新本地 cache 后查看量化推演和次日图谱。",
+            "当前状态": summary_label,
+            "证据": f"writeback_surfaces={'/'.join(writeback_surfaces) if writeback_surfaces else 'waiting_confirm'}",
+            "下一步": next_action,
+            "边界": "结果只从 cache / ledger / packet 回放；不交易、不改 strategy action。",
+            "readback_source": "GET /api/candidate-radar/cache",
+            "readback_external_calls_triggered": False,
+            "readback_creates_task": False,
+            "only_user_confirm_creates_task": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+    ]
     provider_ledger_by_api = {str(row.get("api") or ""): row for row in provider_ledger}
     ordinary_provider_api_rows: list[dict[str, Any]] = []
     for api in QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS:
@@ -15141,6 +15262,11 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_confirmed_task_receipt_row_count": len(ordinary_confirmed_task_receipt_rows),
         "ordinary_confirmed_task_receipt_rows_are_cache_only": True,
         "ordinary_confirmed_task_receipt_rows_create_task": False,
+        "ordinary_tushare_first_chain_rows": ordinary_tushare_first_chain_rows,
+        "ordinary_tushare_first_chain_row_count": len(ordinary_tushare_first_chain_rows),
+        "ordinary_tushare_first_chain_rows_are_cache_only": True,
+        "ordinary_tushare_first_chain_rows_create_task": False,
+        "ordinary_tushare_first_chain_rows_call_provider_from_get": False,
         "ordinary_provider_api_rows": ordinary_provider_api_rows,
         "ordinary_provider_api_row_count": len(ordinary_provider_api_rows),
         "ordinary_provider_api_rows_are_cache_only": True,
@@ -15202,11 +15328,18 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     counts["search_quant_projection_small_data_writeback_provider_api_success_count"] = summary.get(
         "provider_api_success_count", 0
     )
+    counts["search_quant_projection_tushare_first_chain_row_count"] = summary.get(
+        "ordinary_tushare_first_chain_row_count", 0
+    )
     view["counts"] = counts
     policy = dict(_as_dict(view.get("policy")))
     policy["search_quant_projection_small_data_writeback_is_cache_replay"] = True
     policy["search_quant_projection_small_data_writeback_cache_get_external_calls"] = False
     policy["search_quant_projection_small_data_writeback_is_not_trade_signal"] = True
+    policy["search_quant_projection_tushare_first_chain_is_cache_replay"] = True
+    policy["search_quant_projection_tushare_first_chain_cache_get_external_calls"] = False
+    policy["search_quant_projection_tushare_first_chain_react_render_external_calls"] = False
+    policy["search_quant_projection_tushare_first_chain_rows_create_task"] = False
     view["policy"] = policy
     return view
 

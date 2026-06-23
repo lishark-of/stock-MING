@@ -945,7 +945,8 @@ export default function CandidateRadar() {
       边界: "Radar candidate 不是交易指令；真实交易路径继续隔离"
     }
   ];
-  const quantProjectionConfirmHandoffRows = [
+  const quantProjectionTushareFirstChainRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_tushare_first_chain_rows);
+  const quantProjectionConfirmHandoffRows = quantProjectionTushareFirstChainRows.length ? quantProjectionTushareFirstChainRows : [
     {
       步骤: "输入校验",
       触发: "输入框本地校验",
@@ -1160,7 +1161,7 @@ export default function CandidateRadar() {
             <DataLineageTable rows={quantProjectionOrdinaryEndToEndRows} />
           </div>
           <div aria-label="quant projection ordinary confirmation handoff">
-            <p className="risk-note">确认后链路回放：输入只校验；点击确认才创建 Tushare-first 后台任务；结果只从本地 cache / ledger / packet 回放。</p>
+            <p className="risk-note">确认后链路回放：优先读取服务端 ordinary_tushare_first_chain_rows；输入只校验，点击确认才创建 Tushare-first 后台任务，结果只从本地 cache / ledger / packet 回放。</p>
             <DataLineageTable rows={quantProjectionConfirmHandoffRows} />
           </div>
           <div aria-label="quant projection confirmed task receipt readback">

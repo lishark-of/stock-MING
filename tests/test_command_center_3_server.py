@@ -38473,6 +38473,38 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             any(row["readback_external_calls_triggered"] for row in small_data["ordinary_writeback_target_rows"])
         )
         self.assertFalse(any(row["contains_secret"] for row in small_data["ordinary_writeback_target_rows"]))
+        self.assertTrue(small_data["ordinary_tushare_first_chain_rows_are_cache_only"])
+        self.assertFalse(small_data["ordinary_tushare_first_chain_rows_create_task"])
+        self.assertFalse(small_data["ordinary_tushare_first_chain_rows_call_provider_from_get"])
+        self.assertEqual(small_data["ordinary_tushare_first_chain_row_count"], 4)
+        self.assertEqual(packet["counts"]["search_quant_projection_tushare_first_chain_row_count"], 4)
+        self.assertTrue(packet["policy"]["search_quant_projection_tushare_first_chain_is_cache_replay"])
+        self.assertFalse(packet["policy"]["search_quant_projection_tushare_first_chain_cache_get_external_calls"])
+        self.assertFalse(packet["policy"]["search_quant_projection_tushare_first_chain_react_render_external_calls"])
+        self.assertFalse(packet["policy"]["search_quant_projection_tushare_first_chain_rows_create_task"])
+        tushare_chain = {row["chain_step"]: row for row in small_data["ordinary_tushare_first_chain_rows"]}
+        self.assertEqual(
+            set(tushare_chain),
+            {"input_validation", "confirm_button_post_task", "tushare_first_ledger", "cache_ledger_packet_replay"},
+        )
+        self.assertIn("002008.SZ", tushare_chain["input_validation"]["当前状态"])
+        self.assertIn(task["task_id"], tushare_chain["confirm_button_post_task"]["当前状态"])
+        self.assertTrue(tushare_chain["confirm_button_post_task"]["only_user_confirm_creates_task"])
+        self.assertFalse(tushare_chain["confirm_button_post_task"]["readback_creates_task"])
+        self.assertIn("Tushare-first ledger ready", tushare_chain["tushare_first_ledger"]["当前状态"])
+        self.assertTrue(tushare_chain["tushare_first_ledger"]["provider_task_tushare_ledger_ready"])
+        self.assertIn("cache / ledger / packet", tushare_chain["cache_ledger_packet_replay"]["边界"])
+        self.assertTrue(
+            all(row["readback_external_calls_triggered"] is False for row in small_data["ordinary_tushare_first_chain_rows"])
+        )
+        self.assertTrue(
+            all(row["external_calls_triggered"] is False for row in small_data["ordinary_tushare_first_chain_rows"])
+        )
+        self.assertFalse(any(row["contains_secret"] for row in small_data["ordinary_tushare_first_chain_rows"]))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in small_data["ordinary_tushare_first_chain_rows"]))
+        self.assertTrue(
+            all(row["does_not_modify_strategy_action"] for row in small_data["ordinary_tushare_first_chain_rows"])
+        )
         self.assertTrue(small_data["ordinary_provider_api_rows_are_cache_only"])
         self.assertFalse(small_data["cache_get_external_calls"])
         self.assertFalse(small_data["react_render_external_calls"])
