@@ -969,6 +969,36 @@ export default function CandidateRadar() {
       边界: "不交易、不改 strategy action"
     }
   ];
+  const quantProjectionOrdinaryEndToEndRows = [
+    {
+      步骤: "1. 打开 3.0",
+      用户动作: "用一键启动器打开页面；若确认失败，先恢复本地 FastAPI 连接",
+      当前状态: quantProjectionSubmitError ? "本地连接需复核" : "页面已进入只读 cache 状态",
+      下一步: "查看本地缓存，或继续输入股票代码",
+      边界: "FastAPI 启动、页面打开、React render、GET cache 不调用 Tushare/DeepSeek/GitHub"
+    },
+    {
+      步骤: "2. 输入代码",
+      用户动作: "输入 002008.SZ 或 002008",
+      当前状态: quantProjectionInputValidation,
+      下一步: quantProjectionCanSubmit ? "点击确认并生成 3.0 量化推演" : "修正代码后再确认",
+      边界: quantProjectionInputBoundaryLabel
+    },
+    {
+      步骤: "3. 点击确认",
+      用户动作: "点击确认并生成 3.0 量化推演",
+      当前状态: quantProjectionConfirmChainState,
+      下一步: taskReceipt?.ok || quantProjectionPersistedTaskId ? "看任务编号和 TaskStatusPanel" : "等待按钮启用，或先恢复本地后端连接",
+      边界: "只有确认按钮创建 Tushare-first POST task / worker；DeepSeek skipped，不交易"
+    },
+    {
+      步骤: "4. 回放结果",
+      用户动作: "刷新本地缓存后查看量化推演和次日图谱",
+      当前状态: quantProjectionReplayDestinationState,
+      下一步: quantProjectionReplayDestinationNextStep,
+      边界: "结果只从 cache / ledger / packet 回放；链接不重新创建 task、不改 strategy action"
+    }
+  ];
   const quantProjectionResultLocation =
     "结果位置：股票量化推演页查看缓存结果，次日图谱页复核图谱；两个入口都只读回放";
   const candidateRadarStatusLabel = cache.status === "ready" ? "候选缓存可用" : "等待候选缓存";
@@ -1118,6 +1148,11 @@ export default function CandidateRadar() {
               { label: "安全边界", value: "不交易、不改 strategy action；DeepSeek 等 governed executor", tone: "good" }
             ]}
           />
+          <div aria-label="quant projection ordinary end to end path">
+            <h3>四步端到端路径</h3>
+            <p className="risk-note">先确认本地连接，再输入代码、点击确认、回放结果；只有点击确认会创建后台任务。</p>
+            <DataLineageTable rows={quantProjectionOrdinaryEndToEndRows} />
+          </div>
           <div aria-label="quant projection ordinary confirmation handoff">
             <p className="risk-note">确认后链路回放：输入只校验；点击确认才创建 Tushare-first 后台任务；结果只从本地 cache / ledger / packet 回放。</p>
             <DataLineageTable rows={quantProjectionConfirmHandoffRows} />
