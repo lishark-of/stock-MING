@@ -91,6 +91,20 @@ export default function HealthStatus() {
         items={[
           { label: "FastAPI", value: health.status as string | undefined, tone: health.status === "ok" ? "good" : "warn" },
           { label: "P0 front/back", value: p0ConnectionReady ? "ready" : "check", tone: p0ConnectionReady ? "good" : "warn" },
+          { label: "one-click launcher", value: desktopLauncherContract.launcher_executable === true ? "ready" : "check", tone: desktopLauncherContract.launcher_executable === true ? "good" : "warn" },
+          { label: "startup external calls", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" },
+          { label: "真实交易", value: health.real_trading_enabled === true ? "启用" : "禁用", tone: health.real_trading_enabled === true ? "bad" : "good" }
+        ]}
+      />
+
+      <details className="developer-audit-details" aria-label="health advanced status readback">
+        <summary>健康工程明细</summary>
+        <p className="risk-note">下面是工程审计和原始回放：只读展示 GET /health、GET /api/desktop/preflight-cache 与 migration baseline；不会启动服务、创建 task、调用 provider/model 或展示 token/key。</p>
+
+      <MetricGrid
+        items={[
+          { label: "FastAPI", value: health.status as string | undefined, tone: health.status === "ok" ? "good" : "warn" },
+          { label: "P0 front/back", value: p0ConnectionReady ? "ready" : "check", tone: p0ConnectionReady ? "good" : "warn" },
           { label: "P0 receipt", value: p0LocalConnectionReceipt.status as string | undefined, tone: p0LocalConnectionReceipt.connection_contract_ready === true ? "good" : "warn" },
           { label: "one-click launcher", value: desktopLauncherContract.launcher_executable === true ? "ready" : "check", tone: desktopLauncherContract.launcher_executable === true ? "good" : "warn" },
           { label: "startup external calls", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" },
@@ -137,6 +151,7 @@ export default function HealthStatus() {
         <JsonDetails title="health raw" data={health} />
         <JsonDetails title="migration raw" data={migration} />
       </PacketCard>
+      </details>
     </>
   );
 }
