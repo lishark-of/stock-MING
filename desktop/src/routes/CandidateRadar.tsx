@@ -646,6 +646,34 @@ export default function CandidateRadar() {
   const quantProjectionInterpretationReplay =
     String(searchQuantProjectionInterpretation.result_replay_label ?? "") ||
     "成功后回放本地结果、ledger 和 packet；GET cache 只读展示";
+  const quantProjectionOrdinaryResultRows = rows(searchQuantProjectionInterpretation.ordinary_result_readback_rows).length
+    ? rows(searchQuantProjectionInterpretation.ordinary_result_readback_rows)
+    : [
+        {
+          回放项: "数据来源",
+          当前状态: quantProjectionProviderModelReplayState,
+          来源: "cache / call_ledger / packet",
+          边界: "GET cache 只读回放已有账本；不补调 Tushare、DeepSeek 或 worker"
+        },
+        {
+          回放项: "量化推演",
+          当前状态: quantProjectionOrdinaryResultSummary,
+          来源: "search_quant_projection_interpretation_summary",
+          边界: quantProjectionOrdinaryResultBoundary
+        },
+        {
+          回放项: "次日图谱",
+          当前状态: quantProjectionInterpretationReplay,
+          来源: "Next Session cache / ECharts payload",
+          边界: "次日图谱只读回放本地 cache；缺口只作为待补证据，不创建交易动作"
+        },
+        {
+          回放项: "安全边界",
+          当前状态: "只解释来源、缺口和下一步；不覆盖价格、持仓、因子、operation_zones 或 strategy action",
+          来源: "local_safety_policy",
+          边界: "DeepSeek 未参与；候选雷达不是买入指令；真实交易路径隔离"
+        }
+      ];
   const quantProjectionSourceState = [
     `本地缓存：${quantProjectionCacheSourceLabel}`,
     `Tushare 数据：${quantProjectionProviderSourceLabel}`,
@@ -915,6 +943,11 @@ export default function CandidateRadar() {
           <div aria-label="quant projection ordinary confirmation handoff">
             <p className="risk-note">确认后链路回放：输入只校验；点击确认才创建 Tushare-first 后台任务；结果只从本地 cache / ledger / packet 回放。</p>
             <DataLineageTable rows={quantProjectionConfirmHandoffRows} />
+          </div>
+          <div aria-label="quant projection ordinary explainable result readback">
+            <h3>解释结果清单</h3>
+            <p className="risk-note">普通入口只回放数据来源、量化推演、次日图谱和安全边界；原始 receipt、prompt 或审计字段仍下沉在详情中。</p>
+            <DataLineageTable rows={quantProjectionOrdinaryResultRows} />
           </div>
           <div aria-label="quant projection task cache packet readback">
             <h3>任务回放清单</h3>

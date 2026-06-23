@@ -266,6 +266,30 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertIn("解释只基于本地 cache / ledger / packet", interpretation["ordinary_result_boundary"])
         self.assertIn("Tushare 接口 4/4", interpretation["ordinary_result_evidence"])
         self.assertIn("DeepSeek 未参与", interpretation["ordinary_result_evidence"])
+        self.assertEqual(interpretation["ordinary_result_readback_row_count"], 4)
+        self.assertTrue(interpretation["ordinary_result_readback_rows_are_cache_only"])
+        self.assertFalse(interpretation["ordinary_result_readback_rows_create_task"])
+        self.assertFalse(interpretation["ordinary_result_readback_rows_use_model_output"])
+        self.assertTrue(interpretation["ordinary_result_readback_rows_are_not_trade_signals"])
+        result_rows = {row["surface"]: row for row in interpretation["ordinary_result_readback_rows"]}
+        self.assertEqual(
+            set(result_rows),
+            {"data_source", "quant_projection", "next_session_map", "research_only_boundary"},
+        )
+        self.assertEqual(result_rows["data_source"]["status"], "tushare_first_ledger_ready")
+        self.assertIn("Tushare-first 账本已回放 4/4", result_rows["data_source"]["ordinary_label"])
+        self.assertEqual(result_rows["quant_projection"]["status"], "readable_summary")
+        self.assertEqual(result_rows["next_session_map"]["status"], "pending_local_cache_refresh")
+        self.assertIn("Next Session 图谱仍等待本地 cache 刷新", result_rows["next_session_map"]["ordinary_label"])
+        self.assertEqual(result_rows["research_only_boundary"]["status"], "research_only_safe")
+        for result_row in result_rows.values():
+            self.assertFalse(result_row["external_calls_triggered"])
+            self.assertFalse(result_row["uses_deepseek_output"])
+            self.assertFalse(result_row["model_output_used"])
+            self.assertFalse(result_row["contains_secret"])
+            self.assertTrue(result_row["does_not_execute_trades"])
+            self.assertTrue(result_row["does_not_modify_strategy_action"])
+            self.assertTrue(result_row["candidate_is_not_buy_instruction"])
         self.assertTrue(interpretation["interpretation_ready"])
         self.assertEqual(interpretation["provider_api_success_count"], 4)
         self.assertEqual(interpretation["next_session_map_state"], "pending_local_cache_refresh")
@@ -462,6 +486,29 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertIn("配置服务端凭据后重新点击确认", interpretation["ordinary_result_next_step"])
         self.assertIn("不调用 DeepSeek", interpretation["ordinary_result_boundary"])
         self.assertIn("DeepSeek 未参与", interpretation["ordinary_result_evidence"])
+        self.assertEqual(interpretation["ordinary_result_readback_row_count"], 4)
+        self.assertTrue(interpretation["ordinary_result_readback_rows_are_cache_only"])
+        self.assertFalse(interpretation["ordinary_result_readback_rows_create_task"])
+        self.assertFalse(interpretation["ordinary_result_readback_rows_use_model_output"])
+        self.assertTrue(interpretation["ordinary_result_readback_rows_are_not_trade_signals"])
+        result_rows = {row["surface"]: row for row in interpretation["ordinary_result_readback_rows"]}
+        self.assertEqual(
+            set(result_rows),
+            {"data_source", "quant_projection", "next_session_map", "research_only_boundary"},
+        )
+        self.assertEqual(result_rows["data_source"]["status"], "blocked_missing_credentials")
+        self.assertIn("服务端 Tushare 凭据缺失", result_rows["data_source"]["ordinary_label"])
+        self.assertEqual(result_rows["quant_projection"]["status"], "blocked_missing_credentials")
+        self.assertEqual(result_rows["next_session_map"]["status"], "pending_local_cache_refresh")
+        self.assertEqual(result_rows["research_only_boundary"]["status"], "research_only_safe")
+        for result_row in result_rows.values():
+            self.assertFalse(result_row["external_calls_triggered"])
+            self.assertFalse(result_row["uses_deepseek_output"])
+            self.assertFalse(result_row["model_output_used"])
+            self.assertFalse(result_row["contains_secret"])
+            self.assertTrue(result_row["does_not_execute_trades"])
+            self.assertTrue(result_row["does_not_modify_strategy_action"])
+            self.assertTrue(result_row["candidate_is_not_buy_instruction"])
         self.assertFalse(interpretation["interpretation_ready"])
         self.assertIn("Tushare-first provider ledger", interpretation["missing_evidence"])
         self.assertFalse(interpretation["uses_deepseek_output"])

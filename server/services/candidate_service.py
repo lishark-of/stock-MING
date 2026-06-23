@@ -15100,6 +15100,80 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         f"证据：Tushare 接口 {provider_success_count}/{provider_call_count}；"
         f"DeepSeek 未参与；图谱{'已回放' if factor_next_ready else '待本地刷新'}。"
     )
+    if small_data_ready:
+        data_source_status = "tushare_first_ledger_ready"
+        data_source_label = f"Tushare-first 账本已回放 {provider_success_count}/{provider_call_count} 个接口"
+    elif small_data.get("status") == "small_data_writeback_blocked_missing_credentials":
+        data_source_status = "blocked_missing_credentials"
+        data_source_label = "服务端 Tushare 凭据缺失；只回放本地阻断原因"
+    elif quant_receipt:
+        data_source_status = "waiting_tushare_first_ledger"
+        data_source_label = "已写入本地搜票记录；等待确认后的 Tushare-first 账本"
+    else:
+        data_source_status = "waiting_symbol_confirm"
+        data_source_label = "等待输入股票代码并点击确认"
+    ordinary_result_readback_rows = [
+        {
+            "surface": "data_source",
+            "status": data_source_status,
+            "ordinary_label": data_source_label,
+            "readback_source": "cache / call_ledger / packet",
+            "boundary": "GET cache 只读回放已有账本；不补调 Tushare、DeepSeek 或 worker",
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "surface": "quant_projection",
+            "status": "readable_summary" if small_data_ready else ordinary_result_status,
+            "ordinary_label": ordinary_result_summary,
+            "readback_source": "search_quant_projection_interpretation_summary",
+            "boundary": ordinary_result_boundary,
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "surface": "next_session_map",
+            "status": "local_map_ready" if factor_next_ready else "pending_local_cache_refresh",
+            "ordinary_label": result_replay_label,
+            "readback_source": "Next Session cache / ECharts payload",
+            "boundary": "次日图谱只读回放本地 cache；缺口只作为待补证据，不创建交易动作",
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "surface": "research_only_boundary",
+            "status": "research_only_safe",
+            "ordinary_label": "只解释来源、缺口和下一步；不覆盖价格、持仓、因子、operation_zones 或 strategy action",
+            "readback_source": "local_safety_policy",
+            "boundary": "DeepSeek 未参与；候选雷达不是买入指令；真实交易路径隔离",
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+    ]
     return {
         "schema_version": QUANT_PROJECTION_INTERPRETATION_SCHEMA_VERSION,
         "status": status,
@@ -15111,6 +15185,12 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "ordinary_result_next_step": ordinary_result_next_step,
         "ordinary_result_boundary": ordinary_result_boundary,
         "ordinary_result_evidence": ordinary_result_evidence,
+        "ordinary_result_readback_rows": ordinary_result_readback_rows,
+        "ordinary_result_readback_row_count": len(ordinary_result_readback_rows),
+        "ordinary_result_readback_rows_are_cache_only": True,
+        "ordinary_result_readback_rows_create_task": False,
+        "ordinary_result_readback_rows_use_model_output": False,
+        "ordinary_result_readback_rows_are_not_trade_signals": True,
         "symbol": small_data.get("symbol") or quant_receipt.get("symbol") or "",
         "interpretation_ready": small_data_ready,
         "provider_api_success_count": provider_success_count,
