@@ -2380,6 +2380,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("desktop_shortcut_installer_safe_ordinary_label", page)
         self.assertIn("不会覆盖同名普通文件", page)
         self.assertIn("安装后验证 symlink 指向本地启动器", page)
+        self.assertIn("双击后才检查 FastAPI、bootstrap status、desktop preflight cache 和 React/Vite", page)
         self.assertIn("桌面已有同名普通文件时安装器会停止，并提示换名或移走文件", page)
         self.assertIn("安装后确认快捷方式指向 scripts/start_command_center_3.command", page)
         self.assertIn("双击后启动器会先检查 FastAPI、Bootstrap status、Desktop preflight cache、React/Vite 四段 ready", page)

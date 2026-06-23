@@ -381,7 +381,7 @@ export default function DesktopShellPreflight() {
         </div>
         <div aria-label="p0 ordinary shortcut installer safety checklist">
           <h3>桌面快捷入口安装状态</h3>
-          <p className="risk-note">{String(desktopLauncherContract.desktop_shortcut_installer_safe_ordinary_label ?? "安全安装：不会覆盖同名普通文件；安装后验证 symlink 指向本地启动器；双击后才检查 FastAPI、bootstrap status 和 React/Vite。")}</p>
+          <p className="risk-note">{String(desktopLauncherContract.desktop_shortcut_installer_safe_ordinary_label ?? "安全安装：不会覆盖同名普通文件；安装后验证 symlink 指向本地启动器；双击后才检查 FastAPI、bootstrap status、desktop preflight cache 和 React/Vite。")}</p>
           <DataLineageTable rows={p0ShortcutInstallerRows} />
         </div>
         <div aria-label="p0 ordinary frontend backend connection checklist">
