@@ -4,6 +4,7 @@ import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
+import StateClarityRail from "../components/StateClarityRail";
 import StatusBadge from "../components/StatusBadge";
 
 function rows(value: unknown): Array<Record<string, unknown>> {
@@ -72,6 +73,34 @@ export default function ModelStrategy() {
       边界: "DeepSeek 不改 operation_zones；图谱不是买卖或下单指令"
     }
   ];
+  const governedExecutorRailState = [
+    governedExecutor.scope_ticket_ready === true || governedExecutor.provider_benchmark_scope_ticket_ready === true ? "scope_ticket_ready" : "scope_ticket_pending",
+    governedExecutor.sanitizer_ready === true && governedExecutor.redaction_review_ready === true ? "sanitizer_redaction_ready" : "sanitizer_redaction_pending",
+    governedExecutor.model_ledger_ready === true || governedExecutor.model_ledger_evidence_done === true ? "model_ledger_ready" : "model_ledger_pending",
+    governedExecutor.does_not_block_tushare_first_or_basic_maps === true ? "ordinary_paths_unblocked" : "ordinary_paths_check"
+  ].join(" ");
+  const governedExecutorRailSteps = [
+    {
+      label: "scope ticket",
+      state: governedExecutor.scope_ticket_ready === true || governedExecutor.provider_benchmark_scope_ticket_ready === true ? ("done" as const) : ("waiting" as const),
+      detail: String(governedExecutor.scope_ticket_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")
+    },
+    {
+      label: "sanitizer / redaction",
+      state: governedExecutor.sanitizer_ready === true && governedExecutor.redaction_review_ready === true ? ("done" as const) : ("active" as const),
+      detail: "真实调用前需要 sanitizer、redaction review 和 output acceptance"
+    },
+    {
+      label: "model ledger",
+      state: governedExecutor.model_ledger_ready === true || governedExecutor.model_ledger_evidence_done === true ? ("done" as const) : ("waiting" as const),
+      detail: String(governedExecutor.ordinary_required_before_real_call ?? "需要 model_ledger / cost accounting / output acceptance")
+    },
+    {
+      label: "普通路径非阻塞",
+      state: governedExecutor.does_not_block_tushare_first_or_basic_maps === true ? ("done" as const) : ("active" as const),
+      detail: "Tushare-first / Factor light / Next Session 可先走"
+    }
+  ];
 
   return (
     <>
@@ -112,6 +141,12 @@ export default function ModelStrategy() {
           <p>真实调用入口：{String(governedExecutor.execution_route ?? "POST /api/factor-quant/deepseek-explain")}；scope ticket：{String(governedExecutor.scope_ticket_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")}。</p>
           <p>必须先有 model_ledger、sanitizer、redaction review、cost accounting 和 output acceptance；本页 GET cache 与 React render 都不调用模型。</p>
           <p>DeepSeek 只解释已有证据，不覆盖价格、持仓、因子、operation zones 或 strategy action。</p>
+          <StateClarityRail
+            label="deepseek governed executor readiness status"
+            state={governedExecutorRailState}
+            steps={governedExecutorRailSteps}
+          />
+          <p className="risk-note">P5 准入状态：scope ticket / sanitizer-redaction / model ledger / 普通路径非阻塞；这条状态轨只读本地 cache，不调用 DeepSeek、不阻塞 Tushare-first 或基础图谱。</p>
           <div aria-label="deepseek governed executor nonblocking ordinary paths">
             <h3>不阻塞基础投研路径</h3>
             <p className="risk-note">DeepSeek governed executor 未完成前，普通用户仍可先看 Tushare-first、Factor light 和 Next Session 本地回放。</p>
