@@ -1605,6 +1605,13 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(one_click["ordinary_recovery_step_count"], 3)
         self.assertTrue(one_click["ordinary_recovery_steps_are_read_only"])
         self.assertFalse(one_click["ordinary_recovery_steps_create_task"])
+        self.assertTrue(one_click["success_handoff_visible"])
+        self.assertEqual(
+            one_click["success_handoff_label"],
+            "联通成功后打开下一票雷达，输入股票代码；只有确认按钮创建 Tushare-first POST task，DeepSeek 保持 governed/skipped。",
+        )
+        self.assertEqual(one_click["success_handoff_href"], "#candidates")
+        self.assertIn("页面切换和输入不外联", one_click["success_handoff_boundary"])
         self.assertEqual(desktop["p0_recovery_steps"], one_click["ordinary_recovery_steps"])
         recovery_titles = [row["title"] for row in one_click["ordinary_recovery_steps"]]
         self.assertEqual(
@@ -1667,8 +1674,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(desktop["runtime"]["one_click_startup_status"], "one_click_frontend_backend_ready")
         self.assertIn("stock-MING Command Center 3.command", desktop["runtime"]["one_click_startup_next_action"])
         self.assertIn("startup_failure_diagnostics_visible", one_click_rows)
+        self.assertIn("p0_success_handoff_to_p1_confirm_visible", one_click_rows)
         self.assertIn("Command Center 3.0 health JSON", one_click_rows["fastapi_health_wait_before_open"]["evidence"])
         self.assertIn("Command Center 3.0 index HTML", one_click_rows["vite_wait_before_open"]["evidence"])
+        self.assertIn("#candidates", one_click_rows["p0_success_handoff_to_p1_confirm_visible"]["evidence"])
+        self.assertIn("Tushare-first POST task", one_click_rows["p0_success_handoff_to_p1_confirm_visible"]["evidence"])
         self.assertTrue(desktop["policy"]["one_click_startup_summary_is_local"])
         self.assertTrue(desktop["policy"]["one_click_startup_summary_is_user_run_only"])
         self.assertTrue(desktop["policy"]["one_click_startup_summary_does_not_run_from_get_cache"])
@@ -1687,6 +1697,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(p0_receipt["success_condition"], one_click["success_condition"])
         self.assertEqual(p0_receipt["blocked_next_action"], one_click["blocked_next_action"])
         self.assertEqual(p0_receipt["diagnostic_surfaces"], one_click["diagnostic_surfaces"])
+        self.assertTrue(p0_receipt["success_handoff_visible"])
+        self.assertEqual(p0_receipt["success_handoff_label"], one_click["success_handoff_label"])
+        self.assertEqual(p0_receipt["success_handoff_href"], "#candidates")
+        self.assertEqual(p0_receipt["success_handoff_boundary"], one_click["success_handoff_boundary"])
         self.assertEqual(p0_receipt["ordinary_recovery_steps"], one_click["ordinary_recovery_steps"])
         self.assertEqual(p0_receipt["ordinary_recovery_step_count"], 3)
         self.assertTrue(p0_receipt["ordinary_recovery_steps_are_read_only"])

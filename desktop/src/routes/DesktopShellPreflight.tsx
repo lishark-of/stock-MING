@@ -213,6 +213,18 @@ export default function DesktopShellPreflight() {
       边界: "只连本地前后端；不调用 Tushare/DeepSeek/GitHub、不执行真实交易"
     }
   ];
+  const p0SuccessHandoffRows = [
+    {
+      状态: p0ConnectionReady ? "ready" : "check",
+      用户下一步: String(p0LocalConnectionReceipt.success_handoff_label ?? oneClickStartupSummary.success_handoff_label ?? "联通成功后打开下一票雷达，输入股票代码；只有确认按钮创建 Tushare-first POST task，DeepSeek 保持 governed/skipped。"),
+      入口: String(p0LocalConnectionReceipt.success_handoff_href ?? oneClickStartupSummary.success_handoff_href ?? "#candidates"),
+      证据: String(p0LocalConnectionReceipt.success_handoff_visible ?? oneClickStartupSummary.success_handoff_visible ?? false),
+      边界: String(p0LocalConnectionReceipt.success_handoff_boundary ?? oneClickStartupSummary.success_handoff_boundary ?? "启动器和预检页只暴露下一步；页面切换和输入不外联，确认按钮才进入 P1 task。"),
+      creates_task_from_readback: false,
+      provider_model_called_from_readback: false,
+      does_not_execute_trades: true
+    }
+  ];
   const p0RawBlockerCount = Number(oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count ?? 0);
   const p0BlockerCount = Number.isFinite(p0RawBlockerCount) ? p0RawBlockerCount : 0;
   const p0StartupReadyMetrics = [
@@ -286,6 +298,11 @@ export default function DesktopShellPreflight() {
           <a href="#health" aria-label="open health status readback after p0 preflight">查看系统健康</a>
         </div>
         <p className="risk-note">{p0OrdinaryPrimaryActionBoundary}</p>
+        <div aria-label="p0 success handoff to p1 confirm">
+          <h3>联通成功后的下一步</h3>
+          <p className="risk-note">这条行动清单与启动器成功日志对齐：三段 ready 后去下一票雷达，输入不外联，确认按钮才创建 Tushare-first 任务。</p>
+          <DataLineageTable rows={p0SuccessHandoffRows} />
+        </div>
         <div aria-label="p0 ordinary launcher mode choices">
           <h3>启动模式</h3>
           <p className="risk-note">普通双击用于日常打开；只检查和联通验收不弹窗用于安全诊断，不从页面启动服务或创建 task。</p>

@@ -529,6 +529,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "external_calls_on_startup",
         "可操作诊断",
         "下一步：先关闭占用 8710/5173 的本地进程",
+        "P0 success handoff: after readiness, open #candidates; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped.",
         "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution.",
         "scripts/dev_server.sh",
         "npm run dev",
@@ -736,6 +737,10 @@ def _one_click_startup_summary(
         in launcher_source
         and 'open "$APP_URL"' in launcher_source
     )
+    success_handoff_visible = (
+        "P0 success handoff: after readiness, open #candidates; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
+        in launcher_source
+    )
     frontend_api_client_local = "http://127.0.0.1:8710" in client_source and bool(api_base_info.get("is_localhost"))
     offline_notice_ready = (
         FRONTEND_BACKEND_OFFLINE_NOTICE.exists()
@@ -778,6 +783,11 @@ def _one_click_startup_summary(
             "browser_opens_only_after_frontend_backend_ready",
             open_is_gated,
             "launcher exits before opening the page when FastAPI or Vite is not ready",
+        ),
+        row(
+            "p0_success_handoff_to_p1_confirm_visible",
+            success_handoff_visible,
+            "launcher prints the next ordinary action after readiness: open #candidates, type silently, confirm to create the Tushare-first POST task, and keep DeepSeek governed/skipped",
         ),
         row(
             "frontend_api_client_uses_local_fastapi",
@@ -863,6 +873,10 @@ def _one_click_startup_summary(
             "8710/5173 port occupancy guidance",
         ],
         "safe_fallback_path": "后端离线时页面显示本地离线提示；GET preflight 只读展示状态。",
+        "success_handoff_visible": success_handoff_visible,
+        "success_handoff_label": "联通成功后打开下一票雷达，输入股票代码；只有确认按钮创建 Tushare-first POST task，DeepSeek 保持 governed/skipped。",
+        "success_handoff_href": "#candidates",
+        "success_handoff_boundary": "启动器和预检页只暴露下一步；页面切换和输入不外联，确认按钮才进入 P1 task。",
         "ordinary_recovery_steps": ordinary_recovery_steps,
         "ordinary_recovery_step_count": len(ordinary_recovery_steps),
         "ordinary_recovery_steps_are_read_only": True,
@@ -1013,6 +1027,10 @@ def _p0_local_connection_receipt(
         "success_condition": one_click_startup_summary.get("success_condition"),
         "blocked_next_action": one_click_startup_summary.get("blocked_next_action"),
         "diagnostic_surfaces": one_click_startup_summary.get("diagnostic_surfaces"),
+        "success_handoff_visible": one_click_startup_summary.get("success_handoff_visible") is True,
+        "success_handoff_label": one_click_startup_summary.get("success_handoff_label"),
+        "success_handoff_href": one_click_startup_summary.get("success_handoff_href"),
+        "success_handoff_boundary": one_click_startup_summary.get("success_handoff_boundary"),
         "ordinary_recovery_steps": one_click_startup_summary.get("ordinary_recovery_steps"),
         "ordinary_recovery_step_count": one_click_startup_summary.get("ordinary_recovery_step_count"),
         "ordinary_recovery_steps_are_read_only": True,
