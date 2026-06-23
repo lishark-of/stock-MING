@@ -347,6 +347,36 @@ export default function FactorQuantHub() {
       边界: "模型解释不覆盖价格、因子、持仓、操作区或 strategy action"
     }
   ];
+  const ordinaryFactorReviewRows = [
+    {
+      复核项: "支持",
+      当前数量: String(score.support_factors?.length ?? 0),
+      看什么: empty ? "等待本地量化推演结果" : "先看支持因子是否来自当前 cache，并和压制、冲突一起读",
+      下一步: "支持项多时仍要检查压制和缺失；不能直接当买入理由",
+      边界: "支持因子只作研究解释，不生成买入指令、不写 strategy action"
+    },
+    {
+      复核项: "压制",
+      当前数量: String(score.suppress_factors?.length ?? 0),
+      看什么: empty ? "等待本地量化推演结果" : "看哪些因素压制推演，以及是否来自数据缺口或真实风险",
+      下一步: "压制项明显时优先复核次日图谱和风险提示",
+      边界: "压制因子只提示复核方向，不生成卖出或减仓指令"
+    },
+    {
+      复核项: "冲突",
+      当前数量: String(score.conflict_factors?.length ?? 0),
+      看什么: empty ? "等待本地量化推演结果" : "看支持和压制是否互相抵消，避免只读单边结论",
+      下一步: "冲突存在时先回到证据来源和图谱路径，不急着推演动作",
+      边界: "冲突只表示证据分歧，不重排候选、不修改交易动作"
+    },
+    {
+      复核项: "缺失",
+      当前数量: String(score.missing_factors?.length ?? 0),
+      看什么: empty ? "等待本地量化推演结果" : "看哪些因子缺数据，避免把空值误读成中性或无风险",
+      下一步: "缺失项多时优先看 cache / ledger / packet 和待补证据",
+      边界: "缺失只提示后续补证，不从页面渲染补调 Tushare/DeepSeek"
+    }
+  ];
   const ordinaryQuantHandoffRows = [
     {
       交接段: "按钮确认",
@@ -470,6 +500,11 @@ export default function FactorQuantHub() {
           <h3>三段可解释结果</h3>
           <p className="risk-note">普通结果先按支持/压制、次日图谱预览、模型解释状态阅读；每段只回放本地 cache，不把解释变成交易动作。</p>
           <DataLineageTable rows={ordinaryQuantResultReplayRows} />
+        </div>
+        <div aria-label="stock quant ordinary factor review checklist">
+          <h3>因子复核清单</h3>
+          <p className="risk-note">按支持、压制、冲突、缺失四类复核；普通页只读本地 score cache，不重新排序、不补调 provider/model。</p>
+          <DataLineageTable rows={ordinaryFactorReviewRows} />
         </div>
         <div aria-label="stock quant ordinary deepseek governance">
           <h3>DeepSeek 单独治理状态</h3>
