@@ -126,6 +126,37 @@ export const CONFIGURED_API_BASE_DISPLAY_URL = safeApiBaseDisplay(API_BASE);
 export const API_BASE_CANDIDATE_DISPLAY_URLS = API_BASE_CANDIDATES.map(safeApiBaseDisplay);
 export const API_BASE_DISPLAY_URL = API_BASE_CANDIDATE_DISPLAY_URLS[0] ?? safeApiBaseDisplay(DEFAULT_LOCAL_API_BASE);
 
+function frontendBackendAutoLinkLedger(path: string, apiBase: string, triedApiBases: string[]): Record<string, unknown> {
+  const attemptedApiBases = triedApiBases.map(safeApiBaseDisplay);
+  return {
+    api: "frontend_fastapi_request",
+    endpoint: path,
+    api_base: safeApiBaseDisplay(apiBase),
+    configured_api_base: CONFIGURED_API_BASE_DISPLAY_URL,
+    attempted_api_bases: attemptedApiBases,
+    default_local_api_base: safeApiBaseDisplay(DEFAULT_LOCAL_API_BASE),
+    default_localhost_api_base: safeApiBaseDisplay(DEFAULT_LOCALHOST_API_BASE),
+    frontend_backend_auto_link_candidate_count: attemptedApiBases.length,
+    frontend_backend_auto_link_attempted: true,
+    frontend_backend_auto_link_success: true,
+    frontend_backend_auto_link_scope: "local_fastapi_only",
+    call_status: "frontend_backend_auto_link_success",
+    external: false,
+    external_calls_triggered: false,
+    page_render_external_calls: false,
+    tushare_called: false,
+    deepseek_called: false,
+    github_called: false,
+    provider_or_model_calls: false,
+    does_not_execute_trades: true,
+    does_not_modify_strategy_action: true,
+  };
+}
+
+function envelopeCallLedger(payload: Record<string, unknown>): Array<Record<string, unknown>> {
+  return Array.isArray(payload.call_ledger) ? payload.call_ledger as Array<Record<string, unknown>> : [];
+}
+
 function errorToMessage(error: unknown): string | null {
   if (!error) return null;
   if (typeof error === "string") return error;
@@ -193,7 +224,9 @@ function failedRequestEnvelope<T>(
 async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
   let lastError: unknown = "local FastAPI backend unavailable";
   let lastCallStatus = BACKEND_OFFLINE_ERROR;
+  const triedApiBases: string[] = [];
   for (const apiBase of API_BASE_CANDIDATES) {
+    triedApiBases.push(apiBase);
     try {
       const res = await fetch(`${apiBase}${path}`, {
         ...init,
@@ -216,7 +249,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope
           ...payload,
           data: payload.data === null ? ({} as T) : payload.data,
           error: errorToMessage(payload.error),
-          call_ledger: payload.call_ledger ?? [],
+          call_ledger: [
+            frontendBackendAutoLinkLedger(path, apiBase, triedApiBases),
+            ...envelopeCallLedger(payload),
+          ],
           warnings: payload.warnings ?? [],
         } as ApiEnvelope<T>;
       } catch (error) {
@@ -228,7 +264,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope
       lastCallStatus = BACKEND_OFFLINE_ERROR;
     }
   }
-  return failedRequestEnvelope<T>(path, lastCallStatus, lastError, API_BASE_CANDIDATES);
+  return failedRequestEnvelope<T>(path, lastCallStatus, lastError, triedApiBases.length ? triedApiBases : API_BASE_CANDIDATES);
 }
 
 function queryString(params: Record<string, string | number | undefined | null> = {}): string {
