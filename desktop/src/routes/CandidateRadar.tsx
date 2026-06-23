@@ -1611,6 +1611,11 @@ export default function CandidateRadar() {
           <p className="risk-note">DeepSeek 只作为 governed executor 单独补证；P1 Tushare-first、P2 小数据写入和 P3 基础图谱继续先走本地回放，不等待模型。</p>
           <DataLineageTable rows={quantProjectionDeepSeekGovernanceRows} />
         </div>
+        <div aria-label="candidate radar ordinary p5 governed executor readiness">
+          <h3>P5 governed executor readiness</h3>
+          <p className="risk-note">普通用户只看 P5 是否具备单独补证条件：model_ledger、sanitizer、fallback 和 promotion 边界；这张表只读回放，不创建 task、不调用模型。</p>
+          <DataLineageTable rows={quantProjectionDeepSeekReadinessRows} />
+        </div>
         <details className="developer-audit-details" aria-label="candidate radar ordinary p6 strict closeout handoff">
           <summary>P6 14 LTG strict closeout 交接</summary>
           <p className="risk-note">当前只是使用者可用化 checkpoint，不是 14 LTG 全部完成；后续必须回到 direct evidence、CI、browser/provider/worker/storage/package 等逐项严格验收。</p>
