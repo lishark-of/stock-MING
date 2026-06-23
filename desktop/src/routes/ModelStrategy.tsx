@@ -55,6 +55,26 @@ export default function ModelStrategy() {
   const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
   const governedExecutorStandaloneBoundary =
     "DeepSeek 补证是单独 P5 executor；不阻塞 P1 Tushare-first、P2 小数据写入或 P3 基础图谱，也不从本页触发真实模型调用。";
+  const governedExecutorOrdinaryChecklistRows = [
+    {
+      治理项: "执行门控",
+      当前状态: governedExecutor.scope_ticket_ready === true || governedExecutor.provider_benchmark_scope_ticket_ready === true ? "scope ticket ready" : "等待 scope ticket",
+      用户下一步: "先继续 Tushare-first / Factor light / Next Session；DeepSeek 单独补证",
+      边界: "真实模型调用只能走 POST task + model_ledger + sanitizer / redaction / output acceptance"
+    },
+    {
+      治理项: "输出范围",
+      当前状态: governedExecutor.sanitizer_ready === true && governedExecutor.redaction_review_ready === true ? "sanitizer / redaction ready" : "等待 sanitizer / redaction review",
+      用户下一步: "只看已有证据解释，不把模型当数据源",
+      边界: "DeepSeek 不覆盖价格、持仓、factor、operation_zones 或 strategy action"
+    },
+    {
+      治理项: "不阻塞基础路径",
+      当前状态: governedExecutor.does_not_block_tushare_first_or_basic_maps === true ? "Tushare-first / Factor light / Next Session 可先走" : "待确认非阻塞边界",
+      用户下一步: "继续确认按钮链路和本地 cache 回放",
+      边界: "DeepSeek pending 不阻塞 P1/P2/P3；本页 GET cache 不调用模型"
+    }
+  ];
   const governedExecutorNonblockingRows = [
     {
       普通路径: "Tushare-first 数据链",
@@ -153,6 +173,11 @@ export default function ModelStrategy() {
             steps={governedExecutorRailSteps}
           />
           <p className="risk-note">P5 准入状态：scope ticket / sanitizer-redaction / model ledger / 普通路径非阻塞；这条状态轨只读本地 cache，不调用 DeepSeek、不阻塞 Tushare-first 或基础图谱。</p>
+          <div aria-label="deepseek governed executor ordinary checklist">
+            <h3>P5 治理清单</h3>
+            <p className="risk-note">普通用户只看能不能安全补证、是否阻塞基础路径；执行路由、scope ticket 和 raw policy 仍在详情里。</p>
+            <DataLineageTable rows={governedExecutorOrdinaryChecklistRows} />
+          </div>
           <div aria-label="deepseek governed executor nonblocking ordinary paths">
             <h3>不阻塞基础投研路径</h3>
             <p className="risk-note">DeepSeek governed executor 未完成前，普通用户仍可先看 Tushare-first、Factor light 和 Next Session 本地回放。</p>
