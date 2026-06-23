@@ -135,6 +135,8 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("quantProjectionLatestTaskState", ordinary_quant_slice)
         self.assertIn("quantProjectionTaskReadbackState", ordinary_quant_slice)
         self.assertIn("quantProjectionResultReplayState", ordinary_quant_slice)
+        self.assertIn("quantProjectionReplayDestinationPacketRows", source)
+        self.assertIn("searchQuantProjectionSmallDataWriteback.ordinary_replay_destination_rows", source)
         self.assertIn("search_quant_provider_model_acceptance_receipt / call_ledger / packet", source)
         self.assertIn("最近任务只显示本地 FastAPI 返回的 task id 和安全步骤", ordinary_quant_slice)
         self.assertIn("最近任务会优先从本地 cache / packet 回放 task id 和安全 current_step", ordinary_quant_slice)

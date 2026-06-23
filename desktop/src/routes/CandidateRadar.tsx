@@ -937,7 +937,8 @@ export default function CandidateRadar() {
       : taskReceipt?.ok || quantProjectionPersistedTaskId
         ? "等待后台任务完成，刷新本地缓存后再使用两个入口"
         : "输入有效代码并点击确认；不要从链接期待自动补数";
-  const quantProjectionReplayDestinationRows = [
+  const quantProjectionReplayDestinationPacketRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_replay_destination_rows);
+  const quantProjectionReplayDestinationRows = quantProjectionReplayDestinationPacketRows.length ? quantProjectionReplayDestinationPacketRows : [
     {
       入口: "股票量化推演",
       当前状态: quantProjectionReplayDestinationState,

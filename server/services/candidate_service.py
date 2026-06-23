@@ -15181,6 +15181,82 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "candidate_is_not_buy_instruction": True,
         },
     ]
+    ordinary_replay_destination_rows = [
+        {
+            "destination": "stock_quant_projection",
+            "入口": "股票量化推演",
+            "当前状态": post_confirm_result_state,
+            "下一步": post_confirm_result_next,
+            "证据": summary_label,
+            "边界": "href #factor 只切换到本地量化推演入口；不发 POST task、不调 Tushare/DeepSeek。",
+            "readback_source": "search_quant_projection_small_data_writeback_summary",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "destination": "next_session_map",
+            "入口": "次日图谱",
+            "当前状态": (
+                "次日图谱入口可复核；若 Factor/Next/ECharts 未刷新则显示待补证据。"
+                if provider_ready
+                else post_confirm_result_state
+            ),
+            "下一步": (
+                "打开次日图谱复核本地 operation_zones 来源。"
+                if provider_ready
+                else post_confirm_result_next
+            ),
+            "证据": f"provider_call_source={provider_call_source}; provider_ready={provider_ready}",
+            "边界": "href #next 只切换到本地次日图谱入口；不生成交易动作、不覆盖 strategy action。",
+            "readback_source": "search_quant_projection_small_data_writeback_summary",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "destination": "candidate_pool",
+            "入口": "候选池",
+            "当前状态": "可随时返回候选池复核来源、分组和缺口。",
+            "下一步": "把推演结果当研究线索，不当买入指令。",
+            "证据": "candidate_radar_cache_packet",
+            "边界": "Radar candidate 不是交易指令；真实交易路径继续隔离。",
+            "readback_source": "GET /api/candidate-radar/cache",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+    ]
     chain_symbol = _safe_text(
         provider_receipt.get("symbol")
         or execution_request.get("symbol")
@@ -15482,6 +15558,11 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_post_confirm_action_rows_are_cache_only": True,
         "ordinary_post_confirm_action_rows_create_task": False,
         "ordinary_post_confirm_action_rows_are_not_trade_signals": True,
+        "ordinary_replay_destination_rows": ordinary_replay_destination_rows,
+        "ordinary_replay_destination_row_count": len(ordinary_replay_destination_rows),
+        "ordinary_replay_destination_rows_are_cache_only": True,
+        "ordinary_replay_destination_rows_create_task": False,
+        "ordinary_replay_destination_rows_are_not_trade_signals": True,
         "ordinary_confirmed_task_receipt_rows": ordinary_confirmed_task_receipt_rows,
         "ordinary_confirmed_task_receipt_row_count": len(ordinary_confirmed_task_receipt_rows),
         "ordinary_confirmed_task_receipt_rows_are_cache_only": True,
@@ -15558,6 +15639,9 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     counts["search_quant_projection_post_confirm_action_row_count"] = summary.get(
         "ordinary_post_confirm_action_row_count", 0
     )
+    counts["search_quant_projection_replay_destination_row_count"] = summary.get(
+        "ordinary_replay_destination_row_count", 0
+    )
     counts["search_quant_projection_small_data_writeback_action_row_count"] = summary.get(
         "ordinary_writeback_action_row_count", 0
     )
@@ -15573,6 +15657,9 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     policy["search_quant_projection_post_confirm_action_rows_are_cache_only"] = True
     policy["search_quant_projection_post_confirm_action_rows_create_task"] = False
     policy["search_quant_projection_post_confirm_action_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_replay_destination_rows_are_cache_only"] = True
+    policy["search_quant_projection_replay_destination_rows_create_task"] = False
+    policy["search_quant_projection_replay_destination_rows_are_not_trade_signals"] = True
     policy["search_quant_projection_small_data_writeback_action_rows_are_cache_only"] = True
     policy["search_quant_projection_small_data_writeback_action_rows_create_task"] = False
     policy["search_quant_projection_small_data_writeback_action_rows_are_not_trade_signals"] = True
