@@ -435,11 +435,15 @@ export default function NextSessionMap() {
         <p className="risk-note">先确认图谱是否可绘制，再读路径/参考线、操作区和缺口；这些行动只解释本地 cache，不生成交易动作。</p>
         <DataLineageTable rows={ordinaryInterpretationActionRows} />
       </div>
-      <div aria-label="next session ordinary deepseek governance">
-        <h3>DeepSeek 单独治理状态</h3>
-        <p className="risk-note">DeepSeek 解释单独补证；基础图谱先按本地 cache 回放，普通页不展示 prompt/output，也不让模型改写图谱或动作。</p>
-        <DataLineageTable rows={ordinaryDeepSeekGovernanceRows} />
-      </div>
+      <details className="developer-audit-details" aria-label="next session ordinary p5 governance details">
+        <summary>P5 DeepSeek 单独补证状态</summary>
+        <p className="risk-note">普通主线先复核 P3 图谱来源、路径、参考线和 operation_zones；DeepSeek governed executor 状态默认收起，只作为高级补证参考。</p>
+        <div aria-label="next session ordinary deepseek governance">
+          <h3>DeepSeek 单独治理状态</h3>
+          <p className="risk-note">DeepSeek 解释单独补证；基础图谱先按本地 cache 回放，普通页不展示 prompt/output，也不让模型改写图谱或动作。</p>
+          <DataLineageTable rows={ordinaryDeepSeekGovernanceRows} />
+        </div>
+      </details>
       <div aria-label="next session ordinary chart review checklist">
         <h3>图谱复核清单</h3>
         <p className="risk-note">按图表路径、参考线、操作区、缺少证据复核；优先读取服务端 ordinary_chart_review_rows，只读取本地 chart cache，不触发刷新或交易动作。</p>
