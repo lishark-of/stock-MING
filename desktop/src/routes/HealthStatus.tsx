@@ -80,6 +80,36 @@ export default function HealthStatus() {
       边界: "只读前端入口；不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
     }
   ];
+  const p0ToP1OrdinaryHandoffRows = [
+    {
+      步骤: "1. 确认本地联通",
+      用户动作: "先看 FastAPI、Bootstrap status、React/Vite 三段是否 ready。",
+      当前状态: p0ConnectionReady ? "ready：可以进入普通投研入口" : "check：先恢复本地一键入口",
+      下一步: p0ConnectionReady ? "打开下一票雷达，输入股票代码。" : "回到启动器诊断或桌面壳预检。",
+      边界: "只读 GET health / preflight cache；不启动服务、不创建 task。"
+    },
+    {
+      步骤: "2. 进入下一票雷达",
+      用户动作: "去下一票雷达的搜票量化推演卡片。",
+      当前状态: "只读导航提示",
+      下一步: "输入 6 位 A 股代码或带后缀代码。",
+      边界: "页面切换和输入不会调用 Tushare、DeepSeek 或 GitHub。"
+    },
+    {
+      步骤: "3. 点击确认并生成",
+      用户动作: "代码通过本地校验后点击确认按钮。",
+      当前状态: "确认按钮才是 P1 工作入口",
+      下一步: "看本地任务编号、TaskStatusPanel 和 cache 回放。",
+      边界: "只有确认按钮可创建 Tushare-first POST task / worker；DeepSeek skipped。"
+    },
+    {
+      步骤: "4. 回放本地结果",
+      用户动作: "任务完成后刷新本地 cache，再看股票量化推演和次日图谱。",
+      当前状态: "结果来自 cache / ledger / packet",
+      下一步: "按缺口和仅供研究边界复核。",
+      边界: "GET cache / React render 不补调外部数据源，不交易、不改 strategy action。"
+    }
+  ];
   const desktopPreflightWarnings = desktopPreflightEnvelopeWarnings.length ? desktopPreflightEnvelopeWarnings : ((desktopPreflight.warnings as Array<string> | undefined) ?? []);
 
   return (
@@ -107,6 +137,11 @@ export default function HealthStatus() {
           <h3>三段联通状态</h3>
           <p className="risk-note">这张表来自本地 preflight packet，只解释启动器的三段检查；不会从页面补跑探针或启动服务。</p>
           <DataLineageTable rows={p0OrdinaryConnectionRows} />
+        </div>
+        <div aria-label="health p0 to p1 ordinary handoff">
+          <h3>联通后搜票路径</h3>
+          <p className="risk-note">健康页只告诉普通用户下一步去哪；真正的 Tushare-first 工作仍要到下一票雷达点击确认按钮。</p>
+          <DataLineageTable rows={p0ToP1OrdinaryHandoffRows} />
         </div>
         <DataLineageTable rows={p0RecoverySteps} />
         <details className="developer-audit-details">
