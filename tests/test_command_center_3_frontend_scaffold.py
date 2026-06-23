@@ -3763,7 +3763,12 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertLess(page.index('title="普通用户雷达摘要"'), page.index("{quantProjectionResultLocation}"))
         self.assertLess(page.index("搜票量化推演"), page.index('aria-label="quant projection replay destinations"'))
         self.assertLess(page.index('aria-label="quant projection replay destinations"'), page.index("快速雷达扫描"))
-        self.assertIn("普通入口只保留“确认并生成”这一类用户按钮；工程补证入口已下沉到调用审计", page)
+        self.assertIn("普通入口保留“确认并生成”作为 P1 主按钮", page)
+        self.assertIn("点击后在本卡显示任务接收和状态", page)
+        self.assertIn("quantProjectionTaskVisible", page)
+        self.assertIn("run_candidate_radar_quant_projection", page)
+        self.assertIn("run_candidate_radar_quant_projection_provider_model_acceptance", page)
+        self.assertIn('aria-label="quant projection tushare-first task status"', page)
         self.assertNotIn("普通入口只保留一个确认按钮", page)
         self.assertIn('label: "仅供研究"', page)
         self.assertIn("当前标的：", page)
@@ -3927,8 +3932,16 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("本地快扫只重建缓存和标记覆盖缺口", page)
         self.assertIn("最近操作记录", page)
         self.assertLess(page.index("本地快扫只重建缓存和标记覆盖缺口"), page.index("最近操作记录"))
-        self.assertLess(page.index("最近操作记录"), page.index("<TaskLaunchReceipt receipt={taskReceipt} />"))
-        self.assertLess(page.index("最近操作记录"), page.index("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />"))
+        self.assertLess(page.index('aria-label="quant projection tushare-first task status"'), page.index("最近操作记录"))
+        self.assertLess(page.index('aria-label="quant projection tushare-first task status"'), page.index("快速雷达扫描"))
+        self.assertLess(
+            page.index("最近操作记录"),
+            page.index("<TaskLaunchReceipt receipt={taskReceipt} />", page.index("最近操作记录")),
+        )
+        self.assertLess(
+            page.index("最近操作记录"),
+            page.index("<TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />", page.index("最近操作记录")),
+        )
         self.assertLess(page.index("最近操作记录"), page.index("快速扫描覆盖详情"))
         self.assertIn("快速扫描覆盖详情", page)
         self.assertNotIn('title="快速雷达扫描" subtitle="POST /api/candidate-radar/scan-quick 只读取本地 snapshot/cache"', page)

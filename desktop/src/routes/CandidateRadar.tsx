@@ -535,6 +535,11 @@ export default function CandidateRadar() {
     : quantProjectionCanSubmit
       ? "点击确认会提交 Tushare-first 后台链；凭据可用才写 provider ledger，凭据缺失只写本地阻断；DeepSeek skipped"
       : "等待有效股票代码；输入和搜索不会创建后台链";
+  const quantProjectionTaskType = String(taskReceipt?.data?.task?.task_type ?? "");
+  const quantProjectionTaskVisible = [
+    "run_candidate_radar_quant_projection",
+    "run_candidate_radar_quant_projection_provider_model_acceptance"
+  ].includes(quantProjectionTaskType);
   const quantProjectionSummaryGuidance = quantProjectionCanSubmit
     ? `摘要搜票已确认 ${quantProjectionSymbolValidation.normalized}；下一步点击“确认并生成 3.0 量化推演”，创建 Tushare-first 按钮门控 POST task，DeepSeek skipped`
     : searchSymbol.trim()
@@ -858,10 +863,16 @@ export default function CandidateRadar() {
             <a href="#next" aria-label="replay generated next session map">回放次日图谱</a>
             <a href="#candidate-pool" aria-label="return to candidate pool after quant projection">回到候选池</a>
           </div>
+          {quantProjectionTaskVisible ? (
+            <div aria-label="quant projection tushare-first task status">
+              <TaskLaunchReceipt receipt={taskReceipt} />
+              <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
+            </div>
+          ) : null}
           <p className="risk-note">任务接收后立即回读本地 cache receipt，再看最近任务编号和 TaskStatusPanel；成功后刷新本地缓存，再打开股票量化推演和次日图谱回放入口。</p>
           <p className="risk-note">页面刷新后，最近任务会优先从本地 cache / packet 回放 task id 和安全 current_step；GET cache 不会因此补调 provider。</p>
           <p className="risk-note">确认按钮只提交后台链路；服务端凭据可用才写入 Tushare call_ledger / cache / packet，凭据缺失只写本地阻断，GET cache 和 React render 不补调 provider。</p>
-          <p>普通入口只保留“确认并生成”这一类用户按钮；工程补证入口已下沉到调用审计，DeepSeek 保持 skipped，不交易、不改 strategy action。</p>
+          <p>普通入口保留“确认并生成”作为 P1 主按钮；点击后在本卡显示任务接收和状态，DeepSeek 保持 skipped，不交易、不改 strategy action。</p>
           <p>最近任务只显示本地 FastAPI 返回的 task id 和安全步骤；结果成功后通过 GET cache 回放 packet / ledger，不在普通页面展开审计表。</p>
           <p className="risk-note">Tushare ledger 来自 cache / call_ledger 回放；DeepSeek 仍需 governed executor，普通页不展示 prompt/output。</p>
           <p>确认后创建 Tushare-first 按钮门控 POST task / worker；Tushare 小全量数据写入 call_ledger；DeepSeek 保持 skipped，待 governed executor / model_ledger 后再展示缓存，React render 不直接外联。</p>
