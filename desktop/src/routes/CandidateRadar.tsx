@@ -835,6 +835,13 @@ export default function CandidateRadar() {
     证据: displayText(row["证据"] ?? row.evidence, "search_quant_projection_interpretation_summary"),
     边界: displayText(row["边界"] ?? row.boundary, "DeepSeek governed executor 单独补；不作为数据源或交易动作")
   }));
+  const quantProjectionDeepSeekChecklistRows = rows(searchQuantProjectionInterpretation.ordinary_deepseek_governed_executor_checklist_rows).map((row) => ({
+    检查项: displayText(row["检查项"] ?? row.check_key),
+    当前状态: displayText(row["当前状态"] ?? row.status),
+    用户下一步: displayText(row["用户下一步"] ?? row.next_action),
+    证据: displayText(row["证据"] ?? row.evidence),
+    边界: displayText(row["边界"] ?? row.boundary, "不创建 task、不调用模型、不覆盖 action")
+  }));
   const quantProjectionDeepSeekGovernanceRows = quantProjectionModelGovernanceRows.length
     ? quantProjectionModelGovernanceRows
     : [
@@ -1498,6 +1505,13 @@ export default function CandidateRadar() {
               <h3>P5 DeepSeek 治理状态</h3>
               <p className="risk-note">优先读取服务端 ordinary_model_governance_rows：只看执行门控、输出范围和是否阻塞基础图谱；不会从治理状态创建 task 或调用模型。</p>
               <DataLineageTable rows={quantProjectionDeepSeekGovernanceRows} />
+              {quantProjectionDeepSeekChecklistRows.length ? (
+                <div aria-label="quant projection ordinary deepseek governed executor checklist">
+                  <h3>P5 governed executor 补证清单</h3>
+                  <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_checklist_rows：model_ledger、sanitizer/redaction、安全回退和不覆盖 action 都必须先满足；这张清单不创建 task、不调用模型。</p>
+                  <DataLineageTable rows={quantProjectionDeepSeekChecklistRows} />
+                </div>
+              ) : null}
             </div>
             <DataLineageTable rows={quantProjectionOrdinaryResultRows} />
           </div>
