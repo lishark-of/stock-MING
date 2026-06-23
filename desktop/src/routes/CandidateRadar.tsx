@@ -906,38 +906,11 @@ export default function CandidateRadar() {
           <p className="risk-note" aria-live="polite">{quantProjectionTushareFirstState}</p>
           <MetricGrid
             items={[
-              { label: "下一步", value: quantProjectionNextClick },
-              { label: "输入标的", value: quantProjectionDisplaySymbol || "等待输入" },
-              { label: "确认代码", value: quantProjectionConfirmedSymbol },
-              { label: "确认链路", value: quantProjectionConfirmChainState, tone: taskReceipt?.ok || quantProjectionCanSubmit ? "good" : "warn" },
-              { label: "输入校验", value: quantProjectionInputValidation, tone: quantProjectionInputValidation.includes("阻断") ? "warn" : "good" },
+              { label: "确认状态", value: quantProjectionConfirmChainState, tone: taskReceipt?.ok || quantProjectionCanSubmit ? "good" : "warn" },
               { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn" },
-              { label: "Tushare ledger", value: quantProjectionProviderModelReplayState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
-              { label: "cache / ledger / packet", value: quantProjectionSmallDataReplayState, tone: quantProjectionSmallDataReady ? "good" : "warn" },
-              { label: "小数据下一步", value: quantProjectionSmallDataNextStep, tone: quantProjectionSmallDataReady ? "good" : "warn" },
-              { label: "小数据写入", value: quantProjectionSmallDataWritebackSurfaces, tone: quantProjectionSmallDataReady ? "good" : "warn" },
-              { label: "provider 来源", value: quantProjectionProviderCallSource, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
-              { label: "回放合同", value: quantProjectionSmallDataReadbackContract, tone: "good" },
-              { label: "投研图谱联动", value: quantProjectionResearchMapState, tone: quantProjectionFactorNextReady ? "good" : "warn" },
               { label: "可读结论", value: quantProjectionOrdinaryResultSummary, tone: quantProjectionInterpretationReady ? "good" : "warn" },
-              { label: "结论下一步", value: quantProjectionOrdinaryResultNext },
-              { label: "结论证据", value: quantProjectionOrdinaryResultEvidence },
-              { label: "结论边界", value: quantProjectionOrdinaryResultBoundary, tone: "good" },
-              { label: "解释结果", value: quantProjectionInterpretationState, tone: quantProjectionInterpretationReady ? "good" : "warn" },
-              { label: "解释下一步", value: quantProjectionInterpretationNext },
-              { label: "图谱下一步", value: quantProjectionMapNextStep },
-              { label: "数据来源状态", value: quantProjectionSourceState },
-              { label: "任务边界", value: quantProjectionTaskBoundary },
-              { label: "任务回放", value: quantProjectionTaskReadbackState, tone: quantProjectionPersistedTaskId ? "good" : "warn" },
-              { label: "缺少证据", value: quantProjectionMissingEvidence, tone: quantProjectionMissingEvidence.includes("证据") || quantProjectionMissingEvidence.includes("验收") || quantProjectionMissingEvidence.includes("申请") ? "warn" : "good" },
-              { label: "阻断/降级", value: quantProjectionBlockedState, tone: quantProjectionBlockedState.includes("阻断") || quantProjectionBlockedState.includes("未通过") ? "warn" : "good" },
-              { label: "最近可用结果", value: quantProjectionLastResult },
-              { label: "最近任务", value: quantProjectionLatestTaskState, tone: taskReceipt?.ok === false ? "warn" : "good" },
-              { label: "结果位置", value: quantProjectionResultLocation, tone: "good" },
-              { label: "结果回放", value: quantProjectionInterpretationReplay || quantProjectionResultReplayState, tone: "good" },
-              { label: "回放顺序", value: quantProjectionReplayOrder, tone: taskReceipt?.ok || quantProjectionProviderLedgerReady ? "good" : "warn" },
-              { label: "回放边界", value: quantProjectionReplayBoundary, tone: "good" },
-              { label: "仅供研究", value: "推演解释只整理已有证据；不覆盖价格、持仓、因子、操作区或交易策略", tone: "good" }
+              { label: "下一步", value: quantProjectionOrdinaryResultNext },
+              { label: "安全边界", value: "不交易、不改 strategy action；DeepSeek 等 governed executor", tone: "good" }
             ]}
           />
           <div aria-label="quant projection ordinary confirmation handoff">
@@ -954,16 +927,54 @@ export default function CandidateRadar() {
             <p className="risk-note">任务编号和安全步骤优先从本地 cache / packet 回放；TaskStatusPanel 只轮询本地 FastAPI 任务状态。</p>
             <DataLineageTable rows={quantProjectionTaskCacheReadbackRows} />
           </div>
-          {quantProjectionSmallDataRows.length ? (
-            <DataLineageTable rows={quantProjectionSmallDataRows} />
-          ) : null}
-          {quantProjectionProviderApiRows.length ? (
-            <div aria-label="quant projection tushare light api replay">
-              <h3>Tushare light 接口回放</h3>
-              <p className="risk-note">这里逐项回放 trade_cal / daily / daily_basic / moneyflow 的本地 ledger 状态；表格只读，不补调数据源或模型。</p>
-              <DataLineageTable rows={quantProjectionProviderApiRows} />
-            </div>
-          ) : null}
+          <details className="developer-audit-details" aria-label="quant projection advanced status readback">
+            <summary>高级状态回放</summary>
+            <MetricGrid
+              items={[
+                { label: "下一步", value: quantProjectionNextClick },
+                { label: "输入标的", value: quantProjectionDisplaySymbol || "等待输入" },
+                { label: "确认代码", value: quantProjectionConfirmedSymbol },
+                { label: "确认链路", value: quantProjectionConfirmChainState, tone: taskReceipt?.ok || quantProjectionCanSubmit ? "good" : "warn" },
+                { label: "输入校验", value: quantProjectionInputValidation, tone: quantProjectionInputValidation.includes("阻断") ? "warn" : "good" },
+                { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn" },
+                { label: "Tushare ledger", value: quantProjectionProviderModelReplayState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
+                { label: "cache / ledger / packet", value: quantProjectionSmallDataReplayState, tone: quantProjectionSmallDataReady ? "good" : "warn" },
+                { label: "小数据下一步", value: quantProjectionSmallDataNextStep, tone: quantProjectionSmallDataReady ? "good" : "warn" },
+                { label: "小数据写入", value: quantProjectionSmallDataWritebackSurfaces, tone: quantProjectionSmallDataReady ? "good" : "warn" },
+                { label: "provider 来源", value: quantProjectionProviderCallSource, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
+                { label: "回放合同", value: quantProjectionSmallDataReadbackContract, tone: "good" },
+                { label: "投研图谱联动", value: quantProjectionResearchMapState, tone: quantProjectionFactorNextReady ? "good" : "warn" },
+                { label: "结论下一步", value: quantProjectionOrdinaryResultNext },
+                { label: "结论证据", value: quantProjectionOrdinaryResultEvidence },
+                { label: "结论边界", value: quantProjectionOrdinaryResultBoundary, tone: "good" },
+                { label: "解释结果", value: quantProjectionInterpretationState, tone: quantProjectionInterpretationReady ? "good" : "warn" },
+                { label: "解释下一步", value: quantProjectionInterpretationNext },
+                { label: "图谱下一步", value: quantProjectionMapNextStep },
+                { label: "数据来源状态", value: quantProjectionSourceState },
+                { label: "任务边界", value: quantProjectionTaskBoundary },
+                { label: "任务回放", value: quantProjectionTaskReadbackState, tone: quantProjectionPersistedTaskId ? "good" : "warn" },
+                { label: "缺少证据", value: quantProjectionMissingEvidence, tone: quantProjectionMissingEvidence.includes("证据") || quantProjectionMissingEvidence.includes("验收") || quantProjectionMissingEvidence.includes("申请") ? "warn" : "good" },
+                { label: "阻断/降级", value: quantProjectionBlockedState, tone: quantProjectionBlockedState.includes("阻断") || quantProjectionBlockedState.includes("未通过") ? "warn" : "good" },
+                { label: "最近可用结果", value: quantProjectionLastResult },
+                { label: "最近任务", value: quantProjectionLatestTaskState, tone: taskReceipt?.ok === false ? "warn" : "good" },
+                { label: "结果位置", value: quantProjectionResultLocation, tone: "good" },
+                { label: "结果回放", value: quantProjectionInterpretationReplay || quantProjectionResultReplayState, tone: "good" },
+                { label: "回放顺序", value: quantProjectionReplayOrder, tone: taskReceipt?.ok || quantProjectionProviderLedgerReady ? "good" : "warn" },
+                { label: "回放边界", value: quantProjectionReplayBoundary, tone: "good" },
+                { label: "仅供研究", value: "推演解释只整理已有证据；不覆盖价格、持仓、因子、操作区或交易策略", tone: "good" }
+              ]}
+            />
+            {quantProjectionSmallDataRows.length ? (
+              <DataLineageTable rows={quantProjectionSmallDataRows} />
+            ) : null}
+            {quantProjectionProviderApiRows.length ? (
+              <div aria-label="quant projection tushare light api replay">
+                <h3>Tushare light 接口回放</h3>
+                <p className="risk-note">这里逐项回放 trade_cal / daily / daily_basic / moneyflow 的本地 ledger 状态；表格只读，不补调数据源或模型。</p>
+                <DataLineageTable rows={quantProjectionProviderApiRows} />
+              </div>
+            ) : null}
+          </details>
           <div className="actions" aria-label="quant projection replay destinations">
             <a href="#factor" aria-label="replay generated stock quant projection">回放股票量化推演</a>
             <a href="#next" aria-label="replay generated next session map">回放次日图谱</a>
