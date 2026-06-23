@@ -185,6 +185,9 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(small_data["ordinary_readback_row_count"], 3)
         self.assertTrue(small_data["ordinary_readback_rows_are_cache_only"])
         self.assertFalse(small_data["ordinary_readback_rows_create_task"])
+        self.assertEqual(small_data["ordinary_task_readback_row_count"], 3)
+        self.assertTrue(small_data["ordinary_task_readback_rows_are_cache_only"])
+        self.assertFalse(small_data["ordinary_task_readback_rows_create_task"])
         self.assertEqual(small_data["ordinary_provider_api_row_count"], 4)
         self.assertTrue(small_data["ordinary_provider_api_rows_are_cache_only"])
         self.assertFalse(small_data["ordinary_provider_api_rows_create_task"])
@@ -203,6 +206,25 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             self.assertFalse(readback_row["contains_secret"])
             self.assertTrue(readback_row["does_not_execute_trades"])
             self.assertTrue(readback_row["does_not_modify_strategy_action"])
+        task_rows = {row["surface"]: row for row in small_data["ordinary_task_readback_rows"]}
+        self.assertEqual(set(task_rows), {"task_id", "current_step", "task_status_panel"})
+        self.assertEqual(task_rows["task_id"]["status"], "written")
+        self.assertIn(response["data"]["task_id"], task_rows["task_id"]["ordinary_label"])
+        self.assertIn(
+            "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
+            task_rows["current_step"]["ordinary_label"],
+        )
+        self.assertEqual(task_rows["task_status_panel"]["status"], "poll_ready")
+        for task_row in task_rows.values():
+            self.assertFalse(task_row["external_calls_triggered"])
+            self.assertFalse(task_row["tushare_called"])
+            self.assertFalse(task_row["deepseek_called"])
+            self.assertFalse(task_row["github_called"])
+            self.assertFalse(task_row["contains_secret"])
+            self.assertTrue(task_row["does_not_execute_trades"])
+            self.assertTrue(task_row["does_not_modify_strategy_action"])
+            self.assertTrue(task_row["does_not_execute_trades"])
+            self.assertTrue(task_row["does_not_modify_strategy_action"])
         api_rows = {row["api"]: row for row in small_data["ordinary_provider_api_rows"]}
         self.assertEqual(list(api_rows), expected_apis)
         for api, api_row in api_rows.items():
@@ -384,6 +406,9 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(small_data["ordinary_readback_row_count"], 3)
         self.assertTrue(small_data["ordinary_readback_rows_are_cache_only"])
         self.assertFalse(small_data["ordinary_readback_rows_create_task"])
+        self.assertEqual(small_data["ordinary_task_readback_row_count"], 3)
+        self.assertTrue(small_data["ordinary_task_readback_rows_are_cache_only"])
+        self.assertFalse(small_data["ordinary_task_readback_rows_create_task"])
         self.assertEqual(small_data["ordinary_provider_api_row_count"], 4)
         self.assertTrue(small_data["ordinary_provider_api_rows_are_cache_only"])
         self.assertFalse(small_data["ordinary_provider_api_rows_create_task"])
@@ -398,6 +423,21 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             self.assertFalse(readback_row["deepseek_called"])
             self.assertFalse(readback_row["github_called"])
             self.assertFalse(readback_row["contains_secret"])
+        task_rows = {row["surface"]: row for row in small_data["ordinary_task_readback_rows"]}
+        self.assertEqual(set(task_rows), {"task_id", "current_step", "task_status_panel"})
+        self.assertEqual(task_rows["task_id"]["status"], "written")
+        self.assertIn(task["task_id"], task_rows["task_id"]["ordinary_label"])
+        self.assertIn(
+            "candidate_radar_quant_projection_tushare_first_chain_blocked_missing_credentials",
+            task_rows["current_step"]["ordinary_label"],
+        )
+        self.assertEqual(task_rows["task_status_panel"]["status"], "poll_ready")
+        for task_row in task_rows.values():
+            self.assertFalse(task_row["external_calls_triggered"])
+            self.assertFalse(task_row["tushare_called"])
+            self.assertFalse(task_row["deepseek_called"])
+            self.assertFalse(task_row["github_called"])
+            self.assertFalse(task_row["contains_secret"])
         api_rows = {row["api"]: row for row in small_data["ordinary_provider_api_rows"]}
         self.assertEqual(set(api_rows), {"trade_cal", "daily", "daily_basic", "moneyflow"})
         for api, api_row in api_rows.items():

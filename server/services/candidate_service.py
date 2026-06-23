@@ -14826,6 +14826,77 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "does_not_modify_strategy_action": True,
         },
     ]
+    latest_task_id = _safe_text(
+        quant_receipt.get("latest_task_id")
+        or quant_receipt.get("task_id")
+        or packet.get("task_id")
+        or "",
+        limit=128,
+    )
+    latest_task_status = _safe_text(quant_receipt.get("latest_task_status") or "", limit=64)
+    latest_task_current_step = _safe_text(
+        quant_receipt.get("latest_task_current_step")
+        or quant_receipt.get("status")
+        or status
+        or "",
+        limit=160,
+    )
+    ordinary_task_readback_rows = [
+        {
+            "surface": "task_id",
+            "status": "written" if latest_task_id else "waiting_confirm",
+            "ordinary_label": (
+                f"任务编号已写入 cache / packet：{latest_task_id}"
+                if latest_task_id
+                else "等待确认按钮返回任务编号"
+            ),
+            "readback_source": "candidate_radar_cache_packet",
+            "boundary": "GET cache 只读回放 task id，不创建 task、不补调 provider/model",
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "surface": "current_step",
+            "status": latest_task_status or ("cache_replay" if latest_task_id else "waiting_confirm"),
+            "ordinary_label": (
+                f"安全步骤已回放：{latest_task_current_step}"
+                if latest_task_current_step
+                else "等待任务安全步骤"
+            ),
+            "readback_source": "search_quant_projection_receipt",
+            "boundary": "只展示 safe current_step；不展示 raw log、token/key 或 provider error",
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "surface": "task_status_panel",
+            "status": "poll_ready" if latest_task_id else "waiting_task_id",
+            "ordinary_label": (
+                "TaskStatusPanel 使用 task id 轮询本地 FastAPI 状态"
+                if latest_task_id
+                else "等待 task id 后再轮询本地状态"
+            ),
+            "readback_source": "local_task_status",
+            "boundary": "轮询本地任务状态，不调用 Tushare/DeepSeek/GitHub、不写交易动作",
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+    ]
     provider_ledger_by_api = {str(row.get("api") or ""): row for row in provider_ledger}
     ordinary_provider_api_rows: list[dict[str, Any]] = []
     for api in QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS:
@@ -14877,6 +14948,10 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_readback_row_count": len(ordinary_readback_rows),
         "ordinary_readback_rows_are_cache_only": True,
         "ordinary_readback_rows_create_task": False,
+        "ordinary_task_readback_rows": ordinary_task_readback_rows,
+        "ordinary_task_readback_row_count": len(ordinary_task_readback_rows),
+        "ordinary_task_readback_rows_are_cache_only": True,
+        "ordinary_task_readback_rows_create_task": False,
         "ordinary_provider_api_rows": ordinary_provider_api_rows,
         "ordinary_provider_api_row_count": len(ordinary_provider_api_rows),
         "ordinary_provider_api_rows_are_cache_only": True,

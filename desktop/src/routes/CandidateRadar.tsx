@@ -683,7 +683,29 @@ export default function CandidateRadar() {
     ? `最近任务：${String(taskReceipt.data?.task_id ?? taskReceipt.data?.task?.task_id ?? "--")} / ${taskReceipt.ok ? "已接收" : "创建失败"} / ${String(taskReceipt.data?.task?.current_step ?? taskReceipt.error ?? "等待状态轮询")}`
     : quantProjectionPersistedTaskId
       ? `最近任务：${quantProjectionPersistedTaskId} / cache 回放 / ${quantProjectionPersistedTaskStep || "等待状态"}`
-    : "最近任务：暂无；点击确认按钮后显示本地任务编号";
+      : "最近任务：暂无；点击确认按钮后显示本地任务编号";
+  const quantProjectionTaskCacheReadbackRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_task_readback_rows).length
+    ? rows(searchQuantProjectionSmallDataWriteback.ordinary_task_readback_rows)
+    : [
+        {
+          回放项: "task_id",
+          当前状态: quantProjectionPersistedTaskId || "等待确认任务",
+          来源: "candidate_radar_cache_packet",
+          边界: "GET cache 只读回放 task id，不创建 task、不补调 provider/model"
+        },
+        {
+          回放项: "current_step",
+          当前状态: quantProjectionPersistedTaskStep || "等待任务安全步骤",
+          来源: "search_quant_projection_receipt",
+          边界: "只展示 safe current_step；不展示 raw log、token/key 或 provider error"
+        },
+        {
+          回放项: "TaskStatusPanel",
+          当前状态: (quantProjectionPersistedTaskId || taskId) ? "可轮询本地任务状态" : "等待 task id",
+          来源: "local_task_status",
+          边界: "轮询本地任务状态，不调用 Tushare/DeepSeek/GitHub、不写交易动作"
+        }
+      ];
   const quantProjectionResultReplayState =
     "成功后回放本地结果、ledger 和 packet；GET cache 只读展示";
   const quantProjectionReplayOrder = quantProjectionProviderLedgerReady
@@ -893,6 +915,11 @@ export default function CandidateRadar() {
           <div aria-label="quant projection ordinary confirmation handoff">
             <p className="risk-note">确认后链路回放：输入只校验；点击确认才创建 Tushare-first 后台任务；结果只从本地 cache / ledger / packet 回放。</p>
             <DataLineageTable rows={quantProjectionConfirmHandoffRows} />
+          </div>
+          <div aria-label="quant projection task cache packet readback">
+            <h3>任务回放清单</h3>
+            <p className="risk-note">任务编号和安全步骤优先从本地 cache / packet 回放；TaskStatusPanel 只轮询本地 FastAPI 任务状态。</p>
+            <DataLineageTable rows={quantProjectionTaskCacheReadbackRows} />
           </div>
           {quantProjectionSmallDataRows.length ? (
             <DataLineageTable rows={quantProjectionSmallDataRows} />
