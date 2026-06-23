@@ -1030,6 +1030,8 @@ export default function CandidateRadar() {
     : taskReceipt?.ok
       ? "任务已接收：先等 TaskStatusPanel 完成，再刷新本地缓存查看量化推演和次日图谱"
       : "回放顺序：确认生成后先看任务编号，再刷新本地缓存，最后查看量化推演和次日图谱";
+  const quantProjectionPostConfirmWaitLabel =
+    "确认后等待顺序：先看 task id，再看 TaskStatusPanel，等待 success 后刷新 cache，最后回放 #factor/#next";
   const quantProjectionReplayBoundary =
     "回放链接只切换本地页面或锚点；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache";
   const quantProjectionReplayDestinationState = quantProjectionSubmitError
@@ -1245,6 +1247,7 @@ export default function CandidateRadar() {
             { label: "最近可用缓存", value: ordinaryLastCache },
             { label: "P1 Tushare-first", value: quantProjectionTushareFirstState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
             { label: "P1 回放顺序", value: quantProjectionReplayOrder, tone: taskReceipt?.ok || quantProjectionProviderLedgerReady ? "good" : "warn" },
+            { label: "P1 确认后等待", value: quantProjectionPostConfirmWaitLabel, tone: taskReceipt?.ok || quantProjectionPersistedTaskId || quantProjectionProviderLedgerReady ? "good" : "warn" },
             { label: "任务边界", value: ordinaryTaskBoundary },
             { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" }
           ]}
