@@ -38621,6 +38621,27 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(small_data["ordinary_readback_rows_are_cache_only"])
         self.assertTrue(small_data["ordinary_writeback_target_rows_are_cache_only"])
         self.assertFalse(small_data["ordinary_writeback_target_rows_create_task"])
+        self.assertEqual(
+            packet["counts"]["search_quant_projection_confirmed_task_receipt_row_count"],
+            small_data["ordinary_confirmed_task_receipt_row_count"],
+        )
+        self.assertEqual(
+            packet["counts"]["search_quant_projection_task_readback_row_count"],
+            small_data["ordinary_task_readback_row_count"],
+        )
+        self.assertEqual(
+            packet["counts"]["search_quant_projection_provider_api_row_count"],
+            small_data["ordinary_provider_api_row_count"],
+        )
+        self.assertTrue(packet["policy"]["search_quant_projection_confirmed_task_receipt_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_confirmed_task_receipt_rows_create_task"])
+        self.assertTrue(packet["policy"]["search_quant_projection_confirmed_task_receipt_rows_are_not_trade_signals"])
+        self.assertTrue(packet["policy"]["search_quant_projection_task_readback_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_task_readback_rows_create_task"])
+        self.assertTrue(packet["policy"]["search_quant_projection_task_readback_rows_are_not_trade_signals"])
+        self.assertTrue(packet["policy"]["search_quant_projection_provider_api_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_provider_api_rows_create_task"])
+        self.assertTrue(packet["policy"]["search_quant_projection_provider_api_rows_are_not_trade_signals"])
         self.assertEqual(small_data["ordinary_writeback_target_row_count"], 3)
         writeback_targets = {row["target"]: row for row in small_data["ordinary_writeback_target_rows"]}
         self.assertEqual(set(writeback_targets), {"cache", "call_ledger", "packet"})

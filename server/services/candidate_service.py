@@ -15735,8 +15735,17 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     counts["search_quant_projection_post_confirm_action_row_count"] = summary.get(
         "ordinary_post_confirm_action_row_count", 0
     )
+    counts["search_quant_projection_confirmed_task_receipt_row_count"] = summary.get(
+        "ordinary_confirmed_task_receipt_row_count", 0
+    )
+    counts["search_quant_projection_task_readback_row_count"] = summary.get(
+        "ordinary_task_readback_row_count", 0
+    )
     counts["search_quant_projection_replay_destination_row_count"] = summary.get(
         "ordinary_replay_destination_row_count", 0
+    )
+    counts["search_quant_projection_provider_api_row_count"] = summary.get(
+        "ordinary_provider_api_row_count", 0
     )
     counts["search_quant_projection_small_data_writeback_action_row_count"] = summary.get(
         "ordinary_writeback_action_row_count", 0
@@ -15756,9 +15765,18 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     policy["search_quant_projection_post_confirm_action_rows_are_cache_only"] = True
     policy["search_quant_projection_post_confirm_action_rows_create_task"] = False
     policy["search_quant_projection_post_confirm_action_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_confirmed_task_receipt_rows_are_cache_only"] = True
+    policy["search_quant_projection_confirmed_task_receipt_rows_create_task"] = False
+    policy["search_quant_projection_confirmed_task_receipt_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_task_readback_rows_are_cache_only"] = True
+    policy["search_quant_projection_task_readback_rows_create_task"] = False
+    policy["search_quant_projection_task_readback_rows_are_not_trade_signals"] = True
     policy["search_quant_projection_replay_destination_rows_are_cache_only"] = True
     policy["search_quant_projection_replay_destination_rows_create_task"] = False
     policy["search_quant_projection_replay_destination_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_provider_api_rows_are_cache_only"] = True
+    policy["search_quant_projection_provider_api_rows_create_task"] = False
+    policy["search_quant_projection_provider_api_rows_are_not_trade_signals"] = True
     policy["search_quant_projection_small_data_writeback_action_rows_are_cache_only"] = True
     policy["search_quant_projection_small_data_writeback_action_rows_create_task"] = False
     policy["search_quant_projection_small_data_writeback_action_rows_are_not_trade_signals"] = True
