@@ -638,6 +638,37 @@ export default function CandidateRadar() {
     String(searchQuantProjectionSmallDataWriteback.ordinary_readback_next_step ?? "") ||
     String(searchQuantProjectionSmallDataWriteback.next_action ?? "") ||
     "确认任务完成后回放本地 cache / ledger / packet。";
+  const quantProjectionSmallDataWritebackStatus = quantProjectionSmallDataReady
+    ? "小数据写入位置可回放：cache、call_ledger、packet 已有本地读回；普通入口只显示位置和状态。"
+    : taskReceipt?.ok || searchQuantProjectionReceipt.latest_task_id || searchQuantProjectionReceipt.task_id || cache.task_id
+      ? "小数据写入等待后台完成：先看任务状态，成功后刷新本地 cache 回放 cache、call_ledger、packet。"
+      : "小数据写入等待确认按钮：输入或搜索不会写 cache、call_ledger、packet。";
+  const quantProjectionSmallDataWritebackRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_target_rows).length
+    ? rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_target_rows)
+    : [
+        {
+          写入位置: "cache",
+          当前状态: quantProjectionSmallDataReady ? "本地 cache 可回放" : "等待确认任务完成后写入",
+          用户看法: quantProjectionSmallDataReady ? quantProjectionSmallDataStageLabel : "刷新页面只读 cache，不会自动补数",
+          边界: "GET cache 只读；不会从 React render 补调 provider/model"
+        },
+        {
+          写入位置: "call_ledger",
+          当前状态: quantProjectionProviderLedgerReady
+            ? `Tushare provider ledger 可回放：${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel} 个接口`
+            : "等待 POST task 写 provider ledger 或本地阻断",
+          用户看法: "只看是否已有 ledger 或阻断原因；接口级明细下沉到高级状态",
+          边界: "call_ledger 只由后台任务产生；普通页面不展示 token/key、raw log 或 provider error"
+        },
+        {
+          写入位置: "packet",
+          当前状态: searchQuantProjectionReceipt.status
+            ? `packet 已有本地记录：${String(searchQuantProjectionReceipt.status)}`
+            : "等待 task receipt 写入 packet",
+          用户看法: "packet 用来回放 task id、安全步骤、结果位置和下一步",
+          边界: "packet 不包含凭据、不生成交易动作、不覆盖 strategy action"
+        }
+      ];
   const quantProjectionProviderCallSource =
     String(searchQuantProjectionSmallDataWriteback.provider_call_source ?? "") ||
     "pending_no_provider_call";
@@ -998,6 +1029,11 @@ export default function CandidateRadar() {
           <div aria-label="quant projection ordinary confirmation handoff">
             <p className="risk-note">确认后链路回放：输入只校验；点击确认才创建 Tushare-first 后台任务；结果只从本地 cache / ledger / packet 回放。</p>
             <DataLineageTable rows={quantProjectionConfirmHandoffRows} />
+          </div>
+          <div aria-label="quant projection ordinary small data writeback targets">
+            <h3>小数据写入位置</h3>
+            <p className="risk-note">{quantProjectionSmallDataWritebackStatus}</p>
+            <DataLineageTable rows={quantProjectionSmallDataWritebackRows} />
           </div>
           <div aria-label="quant projection ordinary explainable result readback">
             <h3>解释结果清单</h3>
