@@ -1318,6 +1318,90 @@ def _p0_to_p1_ordinary_handoff_rows(one_click_startup_summary: dict[str, Any]) -
     ]
 
 
+def _p0_ordinary_reconnect_rows(
+    one_click_startup_summary: dict[str, Any],
+    p0_to_p1_ordinary_handoff_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    connection_ready = one_click_startup_summary.get("frontend_backend_connection_ready") is True
+
+    def row(
+        state: str,
+        user_next_step: str,
+        entry: str,
+        success_signal: str,
+        boundary: str,
+        *,
+        may_create_task_after_confirm: bool = False,
+        source_step_index: int | None = None,
+    ) -> dict[str, Any]:
+        source_step = (
+            p0_to_p1_ordinary_handoff_rows[source_step_index]["步骤"]
+            if source_step_index is not None
+            else "p0_local_recovery"
+        )
+        return {
+            "用户状态": state,
+            "当前状态": "ready" if connection_ready else "check",
+            "用户下一步": user_next_step,
+            "入口": entry,
+            "通过信号": success_signal,
+            "边界": boundary,
+            "source_handoff_step": source_step,
+            "ordinary_user_visible": True,
+            "cache_only_readback": True,
+            "get_cache_starts_services": False,
+            "react_render_starts_services": False,
+            "search_typing_external_calls": False,
+            "creates_task_from_readback": False,
+            "may_create_task_after_confirm": may_create_task_after_confirm,
+            "provider_model_called_from_readback": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "loads_token_or_key": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "strict_closeout_evidence": False,
+            "release_ready_evidence": False,
+        }
+
+    return [
+        row(
+            "页面未打开或本地后端离线",
+            "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。",
+            str(one_click_startup_summary.get("what_user_should_click_next") or "scripts/start_command_center_3.command"),
+            "启动器看到 FastAPI /health、bootstrap status、React/Vite 三段 ready 后才打开页面。",
+            "这是本地恢复指引；GET cache 和 React render 不启动 FastAPI/Vite、不创建 task。",
+        ),
+        row(
+            "启动器没有自动打开页面",
+            "按启动器输出定位 FastAPI、bootstrap status 或 React/Vite 哪段失败。",
+            ".stock_ming_3/logs",
+            "日志和 8710/5173 端口指引能指出阻断段。",
+            "只读诊断，不读取 token/key、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。",
+        ),
+        row(
+            "三段联通变绿",
+            "打开下一票雷达，输入股票代码。",
+            "#candidates",
+            "P0 联通 ready 后才进入普通投研入口。",
+            "页面切换和输入代码不外联；确认按钮之前不创建 POST task。",
+            source_step_index=1,
+        ),
+        row(
+            "准备生成基础投研结果",
+            "点击确认按钮创建 Tushare-first P1 task；DeepSeek 仍保持 governed/skipped。",
+            "下一票雷达确认按钮",
+            "TaskStatusPanel 显示本地任务编号，结果回放来自 cache / ledger / packet。",
+            "只有确认按钮可进入 P1 task；本清单不是 14 LTG strict closeout 或 release ready 证据。",
+            may_create_task_after_confirm=True,
+            source_step_index=2,
+        ),
+    ]
+
+
 def _p0_ordinary_quick_action_rows(
     one_click_startup_summary: dict[str, Any],
     p0_to_p1_ordinary_handoff_rows: list[dict[str, Any]],
@@ -4895,6 +4979,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     p0_failure_diagnostic_rows = _p0_failure_diagnostic_rows(one_click_startup_summary)
     p0_post_startup_readback_rows = _p0_post_startup_readback_rows(one_click_startup_summary)
     p0_to_p1_ordinary_handoff_rows = _p0_to_p1_ordinary_handoff_rows(one_click_startup_summary)
+    p0_ordinary_reconnect_rows = _p0_ordinary_reconnect_rows(
+        one_click_startup_summary,
+        p0_to_p1_ordinary_handoff_rows,
+    )
     p0_ordinary_quick_action_rows = _p0_ordinary_quick_action_rows(
         one_click_startup_summary,
         p0_to_p1_ordinary_handoff_rows,
@@ -4982,6 +5070,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "p0_failure_diagnostic_rows": p0_failure_diagnostic_rows,
         "p0_post_startup_readback_rows": p0_post_startup_readback_rows,
         "p0_to_p1_ordinary_handoff_rows": p0_to_p1_ordinary_handoff_rows,
+        "p0_ordinary_reconnect_rows": p0_ordinary_reconnect_rows,
         "p0_ordinary_quick_action_rows": p0_ordinary_quick_action_rows,
         "desktop_launcher_contract": desktop_launcher_contract,
         "desktop_launcher_rows": desktop_launcher_contract["rows"],
@@ -5023,6 +5112,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_failure_diagnostic_row_count": len(p0_failure_diagnostic_rows),
             "p0_post_startup_readback_row_count": len(p0_post_startup_readback_rows),
             "p0_to_p1_ordinary_handoff_row_count": len(p0_to_p1_ordinary_handoff_rows),
+            "p0_ordinary_reconnect_row_count": len(p0_ordinary_reconnect_rows),
+            "p0_ordinary_reconnect_visible_count": sum(
+                1 for row in p0_ordinary_reconnect_rows if row["ordinary_user_visible"]
+            ),
             "p0_ordinary_quick_action_row_count": len(p0_ordinary_quick_action_rows),
             "p0_ordinary_quick_action_visible_count": sum(
                 1 for row in p0_ordinary_quick_action_rows if row["ordinary_user_visible"]
@@ -5063,6 +5156,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
                 1 for row in p0_post_startup_readback_rows if row["当前状态"] == "ready"
             ),
             "p0_to_p1_next_user_action": p0_to_p1_ordinary_handoff_rows[0]["下一步"],
+            "p0_ordinary_reconnect_next": p0_ordinary_reconnect_rows[0]["用户下一步"],
+            "p0_ordinary_reconnect_entry": p0_ordinary_reconnect_rows[0]["入口"],
             "p0_ordinary_quick_action_next": p0_ordinary_quick_action_rows[0]["用户下一步"],
             "p0_current_runtime_live_connection_verified": p0_local_connection_receipt[
                 "current_runtime_live_connection_verified"
@@ -5140,6 +5235,12 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_to_p1_ordinary_handoff_rows_are_cache_only": True,
             "p0_to_p1_ordinary_handoff_rows_do_not_create_task": True,
             "p0_to_p1_ordinary_handoff_rows_do_not_call_provider_model": True,
+            "p0_ordinary_reconnect_rows_are_cache_only": True,
+            "p0_ordinary_reconnect_rows_do_not_start_services": True,
+            "p0_ordinary_reconnect_rows_do_not_create_task_from_readback": True,
+            "p0_ordinary_reconnect_rows_do_not_call_provider_model": True,
+            "p0_ordinary_reconnect_rows_are_not_strict_closeout": True,
+            "p0_ordinary_reconnect_rows_are_not_release_ready": True,
             "p0_ordinary_quick_action_rows_are_cache_only": True,
             "p0_ordinary_quick_action_rows_do_not_create_task": True,
             "p0_ordinary_quick_action_rows_do_not_call_provider_model": True,
@@ -5224,6 +5325,19 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
                 "row_count": len(p0_to_p1_ordinary_handoff_rows),
                 "local_fetched_at": _now_iso(),
                 "call_status": "local_p0_to_p1_handoff_rows_read",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+            {
+                "api": "local_p0_ordinary_reconnect_rows",
+                "source": "one_click_startup_summary and p0_to_p1_ordinary_handoff_rows",
+                "row_count": len(p0_ordinary_reconnect_rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_p0_reconnect_rows_read",
                 "external": False,
                 "tushare_called": False,
                 "deepseek_called": False,

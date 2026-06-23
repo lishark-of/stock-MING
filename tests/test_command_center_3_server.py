@@ -1596,6 +1596,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         p0_failure_rows = desktop["p0_failure_diagnostic_rows"]
         p0_post_startup_rows = desktop["p0_post_startup_readback_rows"]
         p0_to_p1_rows = desktop["p0_to_p1_ordinary_handoff_rows"]
+        p0_reconnect_rows = desktop["p0_ordinary_reconnect_rows"]
         p0_quick_action_rows = desktop["p0_ordinary_quick_action_rows"]
         self.assertEqual(one_click["schema_version"], "command_center_3_one_click_startup_summary.v1")
         self.assertEqual(one_click["priority"], "P0")
@@ -1846,6 +1847,42 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertTrue(handoff_row["does_not_execute_trades"])
             self.assertTrue(handoff_row["does_not_modify_strategy_action"])
         self.assertEqual(
+            [row["用户状态"] for row in p0_reconnect_rows],
+            ["页面未打开或本地后端离线", "启动器没有自动打开页面", "三段联通变绿", "准备生成基础投研结果"],
+        )
+        self.assertEqual(desktop["counts"]["p0_ordinary_reconnect_row_count"], 4)
+        self.assertEqual(desktop["counts"]["p0_ordinary_reconnect_visible_count"], 4)
+        self.assertIn("stock-MING Command Center 3.command", desktop["runtime"]["p0_ordinary_reconnect_next"])
+        self.assertIn("scripts/start_command_center_3.command", desktop["runtime"]["p0_ordinary_reconnect_entry"])
+        self.assertEqual(p0_reconnect_rows[2]["入口"], "#candidates")
+        self.assertIn("确认按钮之前不创建 POST task", p0_reconnect_rows[2]["边界"])
+        self.assertTrue(p0_reconnect_rows[3]["may_create_task_after_confirm"])
+        self.assertIn("不是 14 LTG strict closeout", p0_reconnect_rows[3]["边界"])
+        self.assertTrue(desktop["policy"]["p0_ordinary_reconnect_rows_are_cache_only"])
+        self.assertTrue(desktop["policy"]["p0_ordinary_reconnect_rows_do_not_start_services"])
+        self.assertTrue(desktop["policy"]["p0_ordinary_reconnect_rows_do_not_create_task_from_readback"])
+        self.assertTrue(desktop["policy"]["p0_ordinary_reconnect_rows_do_not_call_provider_model"])
+        self.assertTrue(desktop["policy"]["p0_ordinary_reconnect_rows_are_not_strict_closeout"])
+        self.assertTrue(desktop["policy"]["p0_ordinary_reconnect_rows_are_not_release_ready"])
+        for reconnect_row in p0_reconnect_rows:
+            self.assertTrue(reconnect_row["ordinary_user_visible"])
+            self.assertTrue(reconnect_row["cache_only_readback"])
+            self.assertFalse(reconnect_row["get_cache_starts_services"])
+            self.assertFalse(reconnect_row["react_render_starts_services"])
+            self.assertFalse(reconnect_row["search_typing_external_calls"])
+            self.assertFalse(reconnect_row["creates_task_from_readback"])
+            self.assertFalse(reconnect_row["provider_model_called_from_readback"])
+            self.assertFalse(reconnect_row["external_calls_triggered"])
+            self.assertFalse(reconnect_row["tushare_called"])
+            self.assertFalse(reconnect_row["deepseek_called"])
+            self.assertFalse(reconnect_row["github_called"])
+            self.assertFalse(reconnect_row["loads_token_or_key"])
+            self.assertFalse(reconnect_row["contains_secret"])
+            self.assertTrue(reconnect_row["does_not_execute_trades"])
+            self.assertTrue(reconnect_row["does_not_modify_strategy_action"])
+            self.assertFalse(reconnect_row["strict_closeout_evidence"])
+            self.assertFalse(reconnect_row["release_ready_evidence"])
+        self.assertEqual(
             [row["快速行动"] for row in p0_quick_action_rows],
             ["1. 本地联通变绿", "2. 打开下一票雷达", "3. 确认并生成", "4. 回放本地结果"],
         )
@@ -1875,6 +1912,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("local_p0_failure_diagnostic_rows", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_post_startup_readback_rows", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_to_p1_ordinary_handoff_rows", {row["api"] for row in desktop["call_ledger"]})
+        self.assertIn("local_p0_ordinary_reconnect_rows", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_ordinary_quick_action_rows", {row["api"] for row in desktop["call_ledger"]})
         launcher = desktop["desktop_launcher_contract"]
         launcher_rows = {row["criterion"]: row for row in desktop["desktop_launcher_rows"]}

@@ -109,6 +109,50 @@ export default function DesktopShellPreflight() {
           边界: "GET cache / React render 不补调外部数据源，不交易、不改 strategy action。"
         }
       ];
+  const p0OrdinaryReconnectRows = rows(cache.p0_ordinary_reconnect_rows).length
+    ? rows(cache.p0_ordinary_reconnect_rows)
+    : [
+        {
+          用户状态: "页面未打开或本地后端离线",
+          当前状态: p0ConnectionReady ? "ready" : "check",
+          用户下一步: "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。",
+          入口: "scripts/start_command_center_3.command",
+          通过信号: "启动器看到 FastAPI /health、bootstrap status、React/Vite 三段 ready 后才打开页面。",
+          边界: "这是本地恢复指引；GET cache 和 React render 不启动 FastAPI/Vite、不创建 task。",
+          strict_closeout_evidence: false,
+          release_ready_evidence: false
+        },
+        {
+          用户状态: "启动器没有自动打开页面",
+          当前状态: p0ConnectionReady ? "ready" : "check",
+          用户下一步: "按启动器输出定位 FastAPI、bootstrap status 或 React/Vite 哪段失败。",
+          入口: ".stock_ming_3/logs",
+          通过信号: "日志和 8710/5173 端口指引能指出阻断段。",
+          边界: "只读诊断，不读取 token/key、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。",
+          strict_closeout_evidence: false,
+          release_ready_evidence: false
+        },
+        {
+          用户状态: "三段联通变绿",
+          当前状态: p0ConnectionReady ? "ready" : "check",
+          用户下一步: "打开下一票雷达，输入股票代码。",
+          入口: "#candidates",
+          通过信号: "P0 联通 ready 后才进入普通投研入口。",
+          边界: "页面切换和输入代码不外联；确认按钮之前不创建 POST task。",
+          strict_closeout_evidence: false,
+          release_ready_evidence: false
+        },
+        {
+          用户状态: "准备生成基础投研结果",
+          当前状态: p0ConnectionReady ? "ready" : "check",
+          用户下一步: "点击确认按钮创建 Tushare-first P1 task；DeepSeek 仍保持 governed/skipped。",
+          入口: "下一票雷达确认按钮",
+          通过信号: "TaskStatusPanel 显示本地任务编号，结果回放来自 cache / ledger / packet。",
+          边界: "只有确认按钮可进入 P1 task；本清单不是 14 LTG strict closeout 或 release ready 证据。",
+          strict_closeout_evidence: false,
+          release_ready_evidence: false
+        }
+      ];
   const p0OrdinaryConnectionRows = rows(cache.p0_ordinary_connection_rows).length
     ? rows(cache.p0_ordinary_connection_rows)
     : [
@@ -298,6 +342,11 @@ export default function DesktopShellPreflight() {
           <a href="#health" aria-label="open health status readback after p0 preflight">查看系统健康</a>
         </div>
         <p className="risk-note">{p0OrdinaryPrimaryActionBoundary}</p>
+        <div aria-label="p0 ordinary reconnect to research checklist">
+          <h3>P0 恢复到投研路径</h3>
+          <p className="risk-note">优先读取 p0_ordinary_reconnect_rows：离线先恢复本地三段联通，联通后去下一票雷达；确认按钮之前不创建 task，这不是 14 LTG strict closeout 或 release ready 证据。</p>
+          <DataLineageTable rows={p0OrdinaryReconnectRows} />
+        </div>
         <div aria-label="p0 success handoff to p1 confirm">
           <h3>联通成功后的下一步</h3>
           <p className="risk-note">这条行动清单与启动器成功日志对齐：三段 ready 后去下一票雷达，输入不外联，确认按钮才创建 Tushare-first 任务。</p>
