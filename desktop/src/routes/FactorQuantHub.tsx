@@ -8,6 +8,7 @@ import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
 import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
+import StateClarityRail from "../components/StateClarityRail";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 
@@ -328,6 +329,33 @@ export default function FactorQuantHub() {
     deepseek.called === true
       ? "已有本地模型解释缓存；仍只解释不改数值或动作"
       : "等待 governed executor；不阻塞 Tushare-first、支持/压制和次日图谱";
+  const ordinaryQuantResultRailState = [
+    empty ? "waiting_radar_confirm" : "factor_cache_visible",
+    bridge.status || bridge.bridge_status ? "next_preview_visible" : "next_preview_waiting",
+    deepseek.called === true ? "deepseek_cache_visible" : "deepseek_governed_pending"
+  ].join(" ");
+  const ordinaryQuantResultRailSteps = [
+    {
+      label: "雷达确认",
+      state: empty ? ("waiting" as const) : ("done" as const),
+      detail: empty ? "回下一票雷达输入代码并点击确认" : ordinaryQuantRadarHandoffState
+    },
+    {
+      label: "Factor cache",
+      state: empty ? ("waiting" as const) : ("done" as const),
+      detail: ordinaryQuantCacheSourceLabel
+    },
+    {
+      label: "次日图谱",
+      state: empty ? ("waiting" as const) : (bridge.status || bridge.bridge_status) ? ("done" as const) : ("active" as const),
+      detail: String(bridge.status ?? bridge.bridge_status ?? "等待本地 bridge cache")
+    },
+    {
+      label: "DeepSeek 状态",
+      state: deepseek.called === true ? ("done" as const) : empty ? ("waiting" as const) : ("active" as const),
+      detail: ordinaryDeepSeekGovernedExecutorState
+    }
+  ];
   const ordinaryQuantResultReplayRows = [
     {
       结果段: "支持/压制",
@@ -506,6 +534,12 @@ export default function FactorQuantHub() {
             { label: "仅供研究", value: "量化推演不是买卖指令；不真实交易、不下单、不改交易策略或操作区", tone: "good" }
           ]}
         />
+        <StateClarityRail
+          label="stock quant ordinary result replay status"
+          state={ordinaryQuantResultRailState}
+          steps={ordinaryQuantResultRailSteps}
+        />
+        <p className="risk-note">普通结果状态：雷达确认 / Factor cache / 次日图谱 / DeepSeek 状态；这条状态轨只读本地 cache，不创建 task、不补调 Tushare 或 DeepSeek。</p>
         <div aria-label="stock quant ordinary cache ledger packet handoff">
           <h3>cache / ledger / packet 交接清单</h3>
           <p className="risk-note">确认按钮之后的轻量结果按 cache、ledger、packet、次日图谱预览回放；普通页只看交接状态，完整审计留在下方。</p>
