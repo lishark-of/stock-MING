@@ -1282,7 +1282,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
                 "path": route_dir / "CommandCenterHome.tsx",
                 "entry": "今日作战台摘要",
                 "boundary_symbol": "dailyCommandTaskBoundary",
-                "boundary_text": "首页 GET cache 只读；live_light 只允许创建后台 POST task",
+                "boundary_text": "首页 GET cache 只读；live_light 手动补证只允许创建后台 POST task",
                 "developer_anchor": "开发 / 审计详情",
             },
             {
@@ -1420,7 +1420,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("dailyCommandLastCache", home_source)
         self.assertIn("dailyCommandTaskBoundary", home_source)
         self.assertIn("dailyCommandResearchOnlyLabel", home_source)
-        self.assertIn("首页 GET cache 只读；live_light 只允许创建后台 POST task，不在 React 渲染中直连 Tushare 或 DeepSeek", home_source)
+        self.assertIn("首页 GET cache 只读；live_light 手动补证只允许创建后台 POST task，不在 React 渲染中直连 Tushare 或 DeepSeek", home_source)
         self.assertIn("数据健康 provider 汇总", home_source)
         self.assertIn("下一票雷达缓存", home_source)
         self.assertIn("Next Session 缓存", home_source)
@@ -1548,7 +1548,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertLess(home_source.index("开发 / 审计详情"), home_source.index('{ label: "FastAPI"'))
         self.assertLess(home_source.index("开发 / 审计详情"), home_source.index('{ label: "runtime mode"'))
         self.assertLess(home_source.index("开发 / 审计详情"), home_source.index('{ label: "外部启动调用"'))
-        self.assertLess(home_source.index("开发 / 审计详情"), home_source.index("live_light bootstrap"))
+        self.assertLess(home_source.index("开发 / 审计详情"), home_source.index('<PacketCard title="live_light 手动补证"'))
         self.assertLess(home_source.index("开发 / 审计详情"), home_source.index("Packet Registry"))
         self.assertLess(home_source.index("开发 / 审计详情"), home_source.index("Command Center 3.0 迁移基线"))
         self.assertLess(home_source.index("开发 / 审计详情"), home_source.index("调用审计 cache"))

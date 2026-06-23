@@ -37,7 +37,7 @@ export default function CommandCenterHome() {
   const [bootstrapEnvelopeWarnings, setBootstrapEnvelopeWarnings] = useState<Array<string>>([]);
   const [liveBootstrapReceipt, setLiveBootstrapReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [liveBootstrapTaskId, setLiveBootstrapTaskId] = useState("");
-  const [liveBootstrapAutoStatus, setLiveBootstrapAutoStatus] = useState("not_checked");
+  const [liveBootstrapManualStatus, setLiveBootstrapManualStatus] = useState("not_checked");
   const [packets, setPackets] = useState<Record<string, unknown>>({});
   const [packetEnvelopeLedger, setPacketEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [market, setMarket] = useState<Record<string, unknown>>({});
@@ -356,8 +356,8 @@ export default function CommandCenterHome() {
     `运行模式：${dailyCommandRuntimeModeLabel}`
   ].join(" / ");
   const dailyCommandBackgroundTaskState = (() => {
-    if (liveBootstrapAutoStatus === "creating") return "正在准备本地补证；页面可继续查看缓存";
-    if (liveBootstrapAutoStatus.includes("failed")) return "补证未完成；已回到只读查看";
+    if (liveBootstrapManualStatus === "creating") return "手动补证任务提交中；页面可继续查看缓存";
+    if (liveBootstrapManualStatus.includes("failed")) return "手动补证未完成；已回到只读查看";
     if (liveBootstrapTaskId) return "已有本地补证任务；进度在开发详情";
     return "普通路径不自动补证；需要时在开发详情手动确认";
   })();
@@ -389,7 +389,7 @@ export default function CommandCenterHome() {
     packets.loaded_at ?? market.loaded_at ?? factor.loaded_at ?? next.loaded_at ?? dataHealth.loaded_at ?? "暂无最近可用缓存"
   );
   const dailyCommandTaskBoundary =
-    "首页 GET cache 只读；live_light 只允许创建后台 POST task，不在 React 渲染中直连 Tushare 或 DeepSeek";
+    "首页 GET cache 只读；live_light 手动补证只允许创建后台 POST task，不在 React 渲染中直连 Tushare 或 DeepSeek";
   const dailyCommandResearchOnlyLabel = "今日摘要只组织投研证据；不买卖、不下单、不改交易策略";
   const dailyCommandStatusLabel = health.status === "ok" ? "只读入口可用" : "等待只读入口";
   const dailyCommandConnectionState = error
@@ -493,23 +493,23 @@ export default function CommandCenterHome() {
   const launchLiveBootstrap = () => {
     const mode = String(bootstrapStatus.mode ?? "cache_only");
     if (mode !== "live_light") {
-      setLiveBootstrapAutoStatus("disabled_not_live_light");
+      setLiveBootstrapManualStatus("disabled_not_live_light");
       return;
     }
     if (liveLight.sources_enabled !== true) {
-      setLiveBootstrapAutoStatus("skipped_sources_disabled");
+      setLiveBootstrapManualStatus("skipped_sources_disabled");
       return;
     }
     if (liveLight.bootstrap_task_implemented !== true) {
-      setLiveBootstrapAutoStatus("blocked_task_not_ready");
+      setLiveBootstrapManualStatus("blocked_task_not_ready");
       return;
     }
-    if (liveBootstrapTaskId || liveBootstrapAutoStatus === "creating") return;
+    if (liveBootstrapTaskId || liveBootstrapManualStatus === "creating") return;
     if (readLiveBootstrapSessionKey() === liveBootstrapRunKey) {
-      setLiveBootstrapAutoStatus("skipped_session_once");
+      setLiveBootstrapManualStatus("skipped_session_once");
       return;
     }
-    setLiveBootstrapAutoStatus("creating");
+    setLiveBootstrapManualStatus("creating");
     void postBootstrapLiveStartup({
       source: "command_center_home_manual",
       requested_by: "local_user",
@@ -519,10 +519,10 @@ export default function CommandCenterHome() {
       setLiveBootstrapTaskId(String(res.data?.task_id ?? ""));
       const taskStep = String(res.data?.task?.current_step ?? (res.ok ? "created" : "failed"));
       if (res.ok) writeLiveBootstrapSessionKey(liveBootstrapRunKey);
-      setLiveBootstrapAutoStatus(taskStep);
+      setLiveBootstrapManualStatus(taskStep);
       if (!res.ok) setError((current) => current || `bootstrap: ${res.error ?? "request_not_ok"}`);
     }).catch((err) => {
-      setLiveBootstrapAutoStatus("failed_safe");
+      setLiveBootstrapManualStatus("failed_safe");
       setError((current) => current || `bootstrap: ${err instanceof Error ? err.message : String(err)}`);
     });
   };
@@ -631,7 +631,7 @@ export default function CommandCenterHome() {
               { label: "FastAPI", value: String(health.status ?? "unknown"), tone: health.status === "ok" ? "good" : "warn" },
               { label: "runtime mode", value: String(bootstrapStatus.mode ?? "cache_only"), tone: bootstrapStatus.mode === "live_light" ? "warn" : "good" },
               { label: "外部启动调用", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" },
-              { label: "live bootstrap", value: liveBootstrapAutoStatus, tone: liveBootstrapAutoStatus.includes("failed") ? "bad" : liveBootstrapAutoStatus.includes("disabled") || liveBootstrapAutoStatus.includes("skipped") ? "good" : "warn" },
+              { label: "manual bootstrap", value: liveBootstrapManualStatus, tone: liveBootstrapManualStatus.includes("failed") ? "bad" : liveBootstrapManualStatus.includes("disabled") || liveBootstrapManualStatus.includes("skipped") ? "good" : "warn" },
               { label: "provider linkage", value: bootstrapProviderLinkageRows.length },
               { label: "activation rows", value: liveLightActivationRows.length },
               { label: "acceptance phases", value: liveLightAcceptanceRows.length },
@@ -674,12 +674,12 @@ export default function CommandCenterHome() {
           />
         </PacketCard>
       <div className="grid">
-        <PacketCard title="live_light bootstrap" subtitle="手动确认后才会创建本地 POST task；页面打开不自动启动" status={liveBootstrapAutoStatus}>
-          <button onClick={launchLiveBootstrap} disabled={liveBootstrapAutoStatus === "creating"}>
+        <PacketCard title="live_light 手动补证" subtitle="手动确认后才会创建本地 POST task；页面打开不自动启动" status={liveBootstrapManualStatus}>
+          <button onClick={launchLiveBootstrap} disabled={liveBootstrapManualStatus === "creating"}>
             确认 live_light 本地补证 task
           </button>
           <p>runtime mode: {String(bootstrapStatus.mode ?? "cache_only")}</p>
-          <p>auto status: {liveBootstrapAutoStatus}</p>
+          <p>manual status: {liveBootstrapManualStatus}</p>
           <p>sources enabled: {String(liveLight.sources_enabled ?? false)}</p>
           <p>Tushare / DeepSeek on open: {String(liveLight.tushare_on_open ?? false)} / {String(liveLight.deepseek_on_open ?? false)}</p>
           <p>DeepSeek model call: {liveBootstrapModelCalled ? "ledger 显示已执行" : "未执行；需要明确允许白名单摘要外发后才会调用"}</p>
