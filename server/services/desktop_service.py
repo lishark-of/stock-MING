@@ -595,6 +595,14 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         }
         for marker in required_installer_markers
     ]
+    check_only_block_index = source.find('if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then')
+    log_dir_create_index = source.find('mkdir -p "$LOG_DIR"')
+    check_only_exits_before_log_dir = (
+        check_only_block_index >= 0
+        and log_dir_create_index >= 0
+        and check_only_block_index < log_dir_create_index
+        and "exit 0" in source[check_only_block_index:log_dir_create_index]
+    )
     local_ready = (
         COMMAND_CENTER_3_LAUNCHER.exists()
         and COMMAND_CENTER_3_SHORTCUT_INSTALLER.exists()
@@ -636,6 +644,8 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "check_only_mode_starts_services": False,
         "check_only_mode_probes_urls": False,
         "check_only_mode_opens_browser": False,
+        "check_only_mode_creates_log_dir": not check_only_exits_before_log_dir,
+        "check_only_mode_writes_logs": False,
         "skip_open_mode_supported": "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN" in source
         and "Skip-open mode: FastAPI, bootstrap status, desktop preflight cache, and React/Vite are ready" in source,
         "skip_open_waits_for_frontend_backend_ready": "wait_for_command_center_health" in source
@@ -5261,6 +5271,12 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "desktop_launcher_contract_is_local_one_click": True,
             "desktop_launcher_contract_is_not_production_package": True,
             "desktop_launcher_contract_does_not_run_from_get_cache": True,
+            "desktop_launcher_check_only_does_not_create_log_dir": (
+                desktop_launcher_contract["check_only_mode_creates_log_dir"] is False
+            ),
+            "desktop_launcher_check_only_does_not_write_logs": (
+                desktop_launcher_contract["check_only_mode_writes_logs"] is False
+            ),
             "one_click_startup_summary_is_local": True,
             "one_click_startup_summary_is_user_run_only": True,
             "one_click_startup_summary_does_not_run_from_get_cache": True,

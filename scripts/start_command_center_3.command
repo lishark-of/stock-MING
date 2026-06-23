@@ -278,7 +278,6 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
-mkdir -p "$LOG_DIR"
 cd "$PROJECT_ROOT"
 
 echo "Command Center 3.0 local launcher"
@@ -309,6 +308,8 @@ if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then
   echo "Check-only next action: unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher to start or reuse local FastAPI/Vite, wait for all four readiness checks, then open ${APP_URL}."
   exit 0
 fi
+
+mkdir -p "$LOG_DIR"
 
 if command_center_health_ready "${API_BASE%/}/health"; then
   echo "FastAPI already running."

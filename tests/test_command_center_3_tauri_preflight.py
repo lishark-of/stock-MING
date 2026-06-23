@@ -122,6 +122,10 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("probing URLs, writing logs, opening a browser, creating tasks", source)
         self.assertIn("unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher", source)
         self.assertIn("wait for all four readiness checks", source)
+        self.assertLess(
+            source.index('if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then'),
+            source.index('mkdir -p "$LOG_DIR"'),
+        )
         self.assertIn("COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN", source)
         self.assertIn("Browser open:", source)
         self.assertIn('if [ "$LAUNCHER_SKIP_OPEN" = "1" ]; then', source)
