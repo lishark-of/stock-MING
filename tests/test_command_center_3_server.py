@@ -37527,6 +37527,18 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(receipt["scan_mode"], "search_quant_projection")
         self.assertEqual(receipt["symbol"], "002008.SZ")
         self.assertTrue(receipt["symbol_valid"])
+        self.assertEqual(receipt["task_id"], task["task_id"])
+        self.assertEqual(receipt["latest_task_id"], task["task_id"])
+        self.assertEqual(receipt["latest_task_status"], "success")
+        self.assertEqual(receipt["latest_task_current_step"], "candidate_radar_quant_projection_ready")
+        self.assertTrue(receipt["task_status_visible_in_cache"])
+        self.assertEqual(receipt["task_readback_source"], "candidate_radar_cache_packet")
+        self.assertFalse(receipt["task_readback_cache_get_external_calls"])
+        self.assertFalse(receipt["task_readback_react_render_external_calls"])
+        self.assertTrue(packet["counts"]["search_quant_projection_task_readback_visible"])
+        self.assertTrue(packet["policy"]["search_quant_projection_task_readback_is_cache_replay"])
+        self.assertFalse(packet["policy"]["search_quant_projection_task_readback_cache_get_external_calls"])
+        self.assertFalse(packet["policy"]["search_quant_projection_task_readback_react_render_external_calls"])
         self.assertTrue(receipt["suffix_inferred"])
         self.assertFalse(receipt["ready_for_real_provider_model_projection"])
         self.assertFalse(receipt["provider_execution_implemented"])
@@ -38225,7 +38237,16 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(cache["ok"])
         packet = cache["data"]
         provider_receipt = packet["search_quant_provider_model_acceptance_receipt"]
+        quant_receipt = packet["search_quant_projection_receipt"]
         provider_rows = {row["criterion"]: row for row in packet["search_quant_provider_model_acceptance_rows"]}
+        self.assertEqual(quant_receipt["latest_task_id"], task["task_id"])
+        self.assertEqual(
+            quant_receipt["latest_task_current_step"],
+            "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
+        )
+        self.assertTrue(quant_receipt["task_status_visible_in_cache"])
+        self.assertEqual(quant_receipt["task_readback_source"], "candidate_radar_cache_packet")
+        self.assertFalse(quant_receipt["task_readback_cache_get_external_calls"])
         self.assertEqual(
             provider_receipt["status"],
             "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped",

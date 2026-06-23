@@ -14220,6 +14220,19 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
                 else:
                     final_step = "candidate_radar_quant_projection_tushare_first_chain_blocked_execution_request"
                     final_warning = final_step
+    try:
+        latest_packet = _read_persisted_packet() or packet
+        latest_packet = _attach_search_quant_projection_task_readback(
+            latest_packet,
+            task_id=str(task["task_id"]),
+            current_step=final_step,
+        )
+        latest_packet = _attach_search_quant_projection_small_data_writeback_summary(latest_packet)
+        latest_packet = _attach_search_quant_projection_interpretation_summary(latest_packet)
+        SQLiteMetaStore(SQLITE_META_PATH).write_packet(PACKET_KEY, latest_packet)
+    except Exception:
+        ledger["task_readback_write_failed"] = True
+        ledger["error_message_safe"] = "candidate_radar_quant_projection_task_readback_write_failed"
     return task_service.update_task_status(
         task["task_id"],
         status="success",
@@ -14941,6 +14954,42 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     policy["search_quant_projection_interpretation_is_cache_replay"] = True
     policy["search_quant_projection_interpretation_does_not_call_model"] = True
     policy["search_quant_projection_interpretation_is_not_trade_signal"] = True
+    view["policy"] = policy
+    return view
+
+
+def _attach_search_quant_projection_task_readback(
+    packet: Mapping[str, Any],
+    *,
+    task_id: str,
+    current_step: str,
+    task_status: str = "success",
+) -> dict[str, Any]:
+    view = dict(packet)
+    receipt = dict(_as_dict(view.get("search_quant_projection_receipt")))
+    if not receipt:
+        return view
+    receipt.update(
+        {
+            "task_id": task_id,
+            "latest_task_id": task_id,
+            "latest_task_status": task_status,
+            "latest_task_current_step": current_step,
+            "task_status_visible_in_cache": True,
+            "task_readback_source": "candidate_radar_cache_packet",
+            "task_readback_cache_get_external_calls": False,
+            "task_readback_react_render_external_calls": False,
+        }
+    )
+    view["task_id"] = task_id
+    view["search_quant_projection_receipt"] = receipt
+    counts = dict(_as_dict(view.get("counts")))
+    counts["search_quant_projection_task_readback_visible"] = True
+    view["counts"] = counts
+    policy = dict(_as_dict(view.get("policy")))
+    policy["search_quant_projection_task_readback_is_cache_replay"] = True
+    policy["search_quant_projection_task_readback_cache_get_external_calls"] = False
+    policy["search_quant_projection_task_readback_react_render_external_calls"] = False
     view["policy"] = policy
     return view
 
