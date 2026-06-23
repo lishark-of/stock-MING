@@ -52,6 +52,26 @@ export default function ModelStrategy() {
   const cacheCallLedger = cacheEnvelopeLedger.length ? cacheEnvelopeLedger : payloadCallLedger;
   const cacheWarnings = cacheEnvelopeWarnings.length ? cacheEnvelopeWarnings : ((cache.warnings as Array<string> | undefined) ?? []);
   const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
+  const governedExecutorNonblockingRows = [
+    {
+      普通路径: "Tushare-first 数据链",
+      当前状态: governedExecutor.ordinary_safe_to_ignore_for_basic_maps === true ? "可先走：DeepSeek pending 不阻塞确认按钮后的 Tushare-first" : "待确认非阻塞边界",
+      用户动作: "继续看下一票雷达确认任务、Tushare call_ledger 和 cache 回放",
+      边界: "DeepSeek 不作为数据源；缺 model_ledger 不阻断 Tushare-first POST task"
+    },
+    {
+      普通路径: "Factor light 量化推演",
+      当前状态: governedExecutor.ordinary_safe_to_ignore_for_basic_maps === true ? "可先读：支持/压制来自本地 Factor cache" : "待确认非阻塞边界",
+      用户动作: "先按支持/压制、冲突和缺失项复核本地结果",
+      边界: "DeepSeek 不覆盖价格、因子、持仓或 strategy action"
+    },
+    {
+      普通路径: "Next Session 基础图谱",
+      当前状态: governedExecutor.ordinary_safe_to_ignore_for_basic_maps === true ? "可先读：图谱路径、参考线和操作区不等模型" : "待确认非阻塞边界",
+      用户动作: "继续看次日图谱本地 cache、路径和 operation_zones",
+      边界: "DeepSeek 不改 operation_zones；图谱不是买卖或下单指令"
+    }
+  ];
 
   return (
     <>
@@ -92,6 +112,11 @@ export default function ModelStrategy() {
           <p>真实调用入口：{String(governedExecutor.execution_route ?? "POST /api/factor-quant/deepseek-explain")}；scope ticket：{String(governedExecutor.scope_ticket_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")}。</p>
           <p>必须先有 model_ledger、sanitizer、redaction review、cost accounting 和 output acceptance；本页 GET cache 与 React render 都不调用模型。</p>
           <p>DeepSeek 只解释已有证据，不覆盖价格、持仓、因子、operation zones 或 strategy action。</p>
+          <div aria-label="deepseek governed executor nonblocking ordinary paths">
+            <h3>不阻塞基础投研路径</h3>
+            <p className="risk-note">DeepSeek governed executor 未完成前，普通用户仍可先看 Tushare-first、Factor light 和 Next Session 本地回放。</p>
+            <DataLineageTable rows={governedExecutorNonblockingRows} />
+          </div>
         </PacketCard>
 
         <PacketCard title="模型策略边界" subtitle="GET /api/model-strategy/cache 只读；不触发模型调用" status="cache_only">
