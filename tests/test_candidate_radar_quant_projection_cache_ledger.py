@@ -123,10 +123,31 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         ).json()
 
         self.assertTrue(response["ok"])
+        task = response["data"]["task"]
         self.assertEqual(
-            response["data"]["task"]["current_step"],
+            task["current_step"],
             "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
         )
+        confirm_contract = task["payload_safe"]["ordinary_confirm_chain_contract"]
+        self.assertEqual(
+            confirm_contract["schema_version"],
+            "candidate_radar_search_quant_projection_confirm_chain.v1",
+        )
+        self.assertEqual(confirm_contract["trigger"], "confirmed_symbol_button_post_task")
+        self.assertEqual(confirm_contract["route"], "POST /api/candidate-radar/quant-projection")
+        self.assertTrue(confirm_contract["user_confirmed"])
+        self.assertTrue(confirm_contract["tushare_first_chain_requested"])
+        self.assertTrue(confirm_contract["include_tushare_requested"])
+        self.assertFalse(confirm_contract["include_deepseek_requested"])
+        self.assertTrue(confirm_contract["deepseek_governed_executor_required"])
+        self.assertFalse(confirm_contract["deepseek_called_from_confirm_chain"])
+        self.assertFalse(confirm_contract["search_input_creates_task"])
+        self.assertTrue(confirm_contract["confirm_button_creates_task"])
+        self.assertFalse(confirm_contract["cache_get_external_calls"])
+        self.assertFalse(confirm_contract["react_render_external_calls"])
+        self.assertTrue(confirm_contract["does_not_execute_trades"])
+        self.assertTrue(confirm_contract["does_not_modify_strategy_action"])
+        self.assertFalse(confirm_contract["production_quant_projection_complete"])
 
         cache = self.client.get("/api/candidate-radar/cache").json()
         self.assertTrue(cache["ok"])

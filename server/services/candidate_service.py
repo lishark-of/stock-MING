@@ -55,6 +55,9 @@ QUANT_PROJECTION_SMALL_DATA_WRITEBACK_SCHEMA_VERSION = (
 QUANT_PROJECTION_INTERPRETATION_SCHEMA_VERSION = (
     "candidate_radar_search_quant_projection_interpretation.v1"
 )
+QUANT_PROJECTION_CONFIRM_CHAIN_SCHEMA_VERSION = (
+    "candidate_radar_search_quant_projection_confirm_chain.v1"
+)
 QUANT_PROJECTION_PROVIDER_MODEL_ACCEPTANCE_TASK_TYPE = (
     "run_candidate_radar_quant_projection_provider_model_acceptance"
 )
@@ -1363,6 +1366,47 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
     if text in {"0", "false", "no", "off", "disabled", "blocked"}:
         return False
     return bool(default)
+
+
+def _quant_projection_confirm_chain_contract(payload: Mapping[str, Any]) -> dict[str, Any]:
+    include_tushare = _coerce_bool(payload.get("include_tushare"), True)
+    include_deepseek = _coerce_bool(payload.get("include_deepseek"), False)
+    user_confirmed = _coerce_bool(payload.get("user_approved"), False) or _coerce_bool(
+        payload.get("operator_approved"),
+        False,
+    )
+    return {
+        "schema_version": QUANT_PROJECTION_CONFIRM_CHAIN_SCHEMA_VERSION,
+        "trigger": "confirmed_symbol_button_post_task",
+        "route": "POST /api/candidate-radar/quant-projection",
+        "task_type": "run_candidate_radar_quant_projection",
+        "user_confirmed": user_confirmed,
+        "include_tushare_requested": include_tushare,
+        "include_deepseek_requested": include_deepseek,
+        "tushare_first_chain_requested": user_confirmed and include_tushare,
+        "deepseek_governed_executor_required": True,
+        "deepseek_called_from_confirm_chain": False,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "search_input_creates_task": False,
+        "confirm_button_creates_task": True,
+        "readback_next_step": "TaskStatusPanel -> GET /api/candidate-radar/cache -> cache/call_ledger/packet replay",
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+        "production_quant_projection_complete": False,
+    }
+
+
+def _quant_projection_task_payload(payload: Any) -> Any:
+    if not isinstance(payload, Mapping):
+        return payload
+    task_payload = dict(payload)
+    task_payload.setdefault(
+        "ordinary_confirm_chain_contract",
+        _quant_projection_confirm_chain_contract(task_payload),
+    )
+    return task_payload
 
 
 def _selected_quant_acceptance_apis(payload_safe: Mapping[str, Any], *, include_tushare: bool) -> tuple[list[str], list[str]]:
@@ -14069,10 +14113,11 @@ def run_candidate_quick_scan_task(payload: Any = None) -> dict[str, Any]:
 
 
 def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
+    task_payload = _quant_projection_task_payload(payload)
     task = task_service.create_task_record(
         "run_candidate_radar_quant_projection",
         output_packet_key=PACKET_KEY,
-        payload=payload,
+        payload=task_payload,
         current_step="candidate_radar_quant_projection_queued",
         warnings=[
             "搜票量化推演必须由输入代码后的 POST 确认触发；React render 和 GET cache 不会调用 Tushare、DeepSeek 或 GitHub。",
@@ -14107,6 +14152,7 @@ def run_candidate_quant_projection_task(payload: Any = None) -> dict[str, Any]:
         "provider_execution_implemented": False,
         "model_execution_implemented": False,
         "production_quant_projection_complete": False,
+        "ordinary_confirm_chain_contract": payload_safe.get("ordinary_confirm_chain_contract") or {},
     }
     packet = _build_candidate_radar_packet(
         projection_snapshot,
