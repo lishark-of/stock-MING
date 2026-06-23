@@ -30,6 +30,12 @@ export default function BackendOfflineNotice({
     "启动器会等待 FastAPI 和页面都 ready 后才打开入口；等启动器显示 FastAPI / bootstrap status / desktop preflight cache / React/Vite 四段 ready 后，再刷新本页。",
     "恢复联通后：先看系统健康是否变绿，再去下一票雷达输入代码；点击“确认并生成 3.0 量化推演”创建 Tushare-first 按钮门控任务。只有点击确认按钮才创建 Tushare-first 任务。"
   ];
+  const ordinaryRecoveryGateSteps = [
+    "未 ready：停在离线保护，不直接进入雷达、量化推演或次日图谱。",
+    "四段 ready：刷新本页或系统健康页，确认本地前后端已联通。",
+    "联通后：进入下一票雷达；输入代码只做本地校验，确认按钮才进入 P1 Tushare-first task。",
+    "结果回放：任务完成后再看 cache / ledger / packet；DeepSeek 仍等 governed executor。"
+  ];
 
   return (
     <div className="backend-offline-notice motion-surface" data-backend-offline="true" role="status">
@@ -40,10 +46,16 @@ export default function BackendOfflineNotice({
           <li key={step}>{step}</li>
         ))}
       </ol>
+      <strong>P0 恢复闸门</strong>
+      <ol aria-label="backend offline p0 recovery gate checklist">
+        {ordinaryRecoveryGateSteps.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
       <div className="actions" aria-label="backend offline local recovery links">
         <a href="#desktop" aria-label="open one click startup preflight">打开一键启动预检</a>
         <a href="#health" aria-label="open system health after local backend recovery">查看系统健康</a>
-        <a href="#candidates" aria-label="open candidate radar after backend recovery">恢复后去下一票雷达</a>
+        <a href="#candidates" aria-label="open candidate radar after backend recovery">联通变绿后去下一票雷达</a>
         <a href="#recovery" aria-label="open local recovery center">查看恢复中心</a>
       </div>
       <p>这些入口只切换本地页面；不会启动 FastAPI/Vite、不会创建 task、不会调用外部数据源或模型。</p>
