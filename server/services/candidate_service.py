@@ -15006,6 +15006,81 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "candidate_is_not_buy_instruction": True,
         },
     ]
+    ordinary_writeback_integrity_rows = [
+        {
+            "integrity_key": "cache_written",
+            "检查项": "cache 回放",
+            "当前状态": "ready：本地 cache 已写入" if cache_packet_written else "waiting：等待确认按钮写入 cache",
+            "是否齐备": "ready" if cache_packet_written else "waiting_confirm",
+            "用户下一步": "刷新本地 cache 只读回放" if cache_packet_written else "先输入代码并点击确认按钮",
+            "证据": f"packet={PACKET_KEY}; source=GET /api/candidate-radar/cache",
+            "边界": "GET cache 只读回放；不创建 task、不补调 provider/model。",
+            "readback_source": "GET /api/candidate-radar/cache",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "integrity_key": "call_ledger_written",
+            "检查项": "call_ledger 回放",
+            "当前状态": call_ledger_surface_status,
+            "是否齐备": (
+                "ready"
+                if provider_ready
+                else "blocked_local_ledger_replayed"
+                if credential_missing_count
+                else "partial"
+                if provider_ledger_visible
+                else "waiting_confirm"
+            ),
+            "用户下一步": call_ledger_surface_next,
+            "证据": f"provider_call_source={provider_call_source}; provider_ready={provider_ready}",
+            "边界": "call_ledger 只由确认按钮后的 POST task / worker 产生；GET cache 和 React render 不调用 Tushare。",
+            "readback_source": "search_quant_provider_model_acceptance_receipt.provider_call_ledger",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "integrity_key": "packet_written",
+            "检查项": "packet 回放",
+            "当前状态": f"ready：{PACKET_KEY} 已写入" if cache_packet_written else "waiting：等待写入 candidate radar packet",
+            "是否齐备": "ready" if cache_packet_written else "waiting_confirm",
+            "用户下一步": "按 task id、安全步骤、结果位置继续回放" if cache_packet_written else "先等待确认任务写入 packet",
+            "证据": f"schema={QUANT_PROJECTION_SMALL_DATA_WRITEBACK_SCHEMA_VERSION}; surfaces=cache/call_ledger/packet",
+            "边界": "packet 不含凭据、raw log 或交易动作；不覆盖 strategy action。",
+            "readback_source": "command_center_3_candidate_radar_cache",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+    ]
     latest_task_id = _safe_text(
         quant_receipt.get("latest_task_id")
         or quant_receipt.get("task_id")
@@ -15745,6 +15820,11 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_writeback_surface_summary_rows_are_cache_only": True,
         "ordinary_writeback_surface_summary_rows_create_task": False,
         "ordinary_writeback_surface_summary_rows_are_not_trade_signals": True,
+        "ordinary_writeback_integrity_rows": ordinary_writeback_integrity_rows,
+        "ordinary_writeback_integrity_row_count": len(ordinary_writeback_integrity_rows),
+        "ordinary_writeback_integrity_rows_are_cache_only": True,
+        "ordinary_writeback_integrity_rows_create_task": False,
+        "ordinary_writeback_integrity_rows_are_not_trade_signals": True,
         "ordinary_writeback_action_rows": ordinary_writeback_action_rows,
         "ordinary_writeback_action_row_count": len(ordinary_writeback_action_rows),
         "ordinary_writeback_action_rows_are_cache_only": True,
@@ -15867,6 +15947,9 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     counts["search_quant_projection_writeback_surface_summary_row_count"] = summary.get(
         "ordinary_writeback_surface_summary_row_count", 0
     )
+    counts["search_quant_projection_writeback_integrity_row_count"] = summary.get(
+        "ordinary_writeback_integrity_row_count", 0
+    )
     view["counts"] = counts
     policy = dict(_as_dict(view.get("policy")))
     policy["search_quant_projection_small_data_writeback_is_cache_replay"] = True
@@ -15901,6 +15984,9 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     policy["search_quant_projection_writeback_surface_summary_rows_are_cache_only"] = True
     policy["search_quant_projection_writeback_surface_summary_rows_create_task"] = False
     policy["search_quant_projection_writeback_surface_summary_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_writeback_integrity_rows_are_cache_only"] = True
+    policy["search_quant_projection_writeback_integrity_rows_create_task"] = False
+    policy["search_quant_projection_writeback_integrity_rows_are_not_trade_signals"] = True
     view["policy"] = policy
     return view
 

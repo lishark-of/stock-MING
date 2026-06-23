@@ -740,6 +740,42 @@ export default function CandidateRadar() {
   const quantProjectionProviderCallSource =
     String(searchQuantProjectionSmallDataWriteback.provider_call_source ?? "") ||
     "pending_no_provider_call";
+  const quantProjectionWritebackIntegrityPacketRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_integrity_rows).map((row) => ({
+    检查项: displayText(row["检查项"] ?? row.integrity_key),
+    当前状态: displayText(row["当前状态"] ?? row.status),
+    是否齐备: displayText(row["是否齐备"] ?? row.integrity_state),
+    用户下一步: displayText(row["用户下一步"] ?? row.next_action, quantProjectionSmallDataNextStep),
+    证据: displayText(row["证据"] ?? row.evidence),
+    边界: displayText(row["边界"] ?? row.boundary, quantProjectionSmallDataReadbackContract)
+  }));
+  const quantProjectionWritebackIntegrityRows = quantProjectionWritebackIntegrityPacketRows.length
+    ? quantProjectionWritebackIntegrityPacketRows
+    : [
+        {
+          检查项: "cache 回放",
+          当前状态: quantProjectionSmallDataReady || searchQuantProjectionReceipt.status ? "ready：本地 cache 可回放" : "waiting：等待确认按钮写入 cache",
+          是否齐备: quantProjectionSmallDataReady || searchQuantProjectionReceipt.status ? "ready" : "waiting_confirm",
+          用户下一步: quantProjectionSmallDataNextStep,
+          证据: "GET /api/candidate-radar/cache",
+          边界: "GET cache 只读回放；不创建 task、不补调 provider/model"
+        },
+        {
+          检查项: "call_ledger 回放",
+          当前状态: quantProjectionProviderLedgerReady ? `ready：Tushare ${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel}` : "waiting：等待确认任务或本地阻断 ledger",
+          是否齐备: quantProjectionProviderLedgerReady ? "ready" : "waiting_confirm",
+          用户下一步: quantProjectionProviderLedgerReady ? "回放量化推演和次日图谱" : "先看任务状态；凭据缺失时按阻断提示处理",
+          证据: `provider_call_source=${quantProjectionProviderCallSource}`,
+          边界: "call_ledger 只由 POST task / worker 产生；React render 不调用 Tushare"
+        },
+        {
+          检查项: "packet 回放",
+          当前状态: searchQuantProjectionReceipt.status ? "ready：candidate radar packet 有本地记录" : "waiting：等待 task 写入 packet",
+          是否齐备: searchQuantProjectionReceipt.status ? "ready" : "waiting_confirm",
+          用户下一步: "按 task id、安全步骤、结果位置继续回放",
+          证据: "command_center_3_candidate_radar_cache",
+          边界: "packet 不含凭据、raw log 或交易动作；不覆盖 strategy action"
+        }
+      ];
   const quantProjectionFactorNextReady =
     searchQuantProviderModelAcceptance.factor_refresh_executed === true ||
     searchQuantProviderModelAcceptance.next_session_refresh_executed === true ||
@@ -1502,6 +1538,11 @@ export default function CandidateRadar() {
           <div aria-label="quant projection ordinary small data writeback targets">
             <h3>小数据写入位置</h3>
             <p className="risk-note">{quantProjectionSmallDataWritebackStatus}</p>
+            <div aria-label="quant projection ordinary p2 writeback integrity">
+              <h3>P2 三面完整性检查</h3>
+              <p className="risk-note">优先读取服务端 ordinary_writeback_integrity_rows：普通用户只看 cache、call_ledger、packet 三面是否齐备；这张表只读回放，不创建 task。</p>
+              <DataLineageTable rows={quantProjectionWritebackIntegrityRows} />
+            </div>
             <div aria-label="quant projection ordinary writeback surface summary">
               <h3>P2 写入面速读</h3>
               <p className="risk-note">优先读取服务端 ordinary_writeback_surface_summary_rows：普通入口只看 cache、call_ledger、packet 三个写入面是否可回放；GET cache 不创建 task。</p>
