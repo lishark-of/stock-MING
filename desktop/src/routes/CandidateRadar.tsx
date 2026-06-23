@@ -678,6 +678,13 @@ export default function CandidateRadar() {
     String(searchQuantProjectionSmallDataWriteback.ordinary_readback_next_step ?? "") ||
     String(searchQuantProjectionSmallDataWriteback.next_action ?? "") ||
     "确认任务完成后回放本地 cache / ledger / packet。";
+  const quantProjectionSmallDataActionRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_action_rows).map((row) => ({
+    行动: displayText(row["行动"] ?? row.action_key),
+    当前状态: displayText(row["当前状态"] ?? row.status),
+    用户下一步: displayText(row["用户下一步"] ?? row.next_action, quantProjectionSmallDataNextStep),
+    入口: displayText(row["入口"] ?? row.entry),
+    边界: displayText(row["边界"] ?? row.boundary, quantProjectionSmallDataReadbackContract)
+  }));
   const quantProjectionSmallDataWritebackStatus = quantProjectionSmallDataReady
     ? "小数据写入位置可回放：cache、call_ledger、packet 已有本地读回；普通入口只显示位置和状态。"
     : taskReceipt?.ok || searchQuantProjectionReceipt.latest_task_id || searchQuantProjectionReceipt.task_id || cache.task_id
@@ -1179,6 +1186,13 @@ export default function CandidateRadar() {
           <div aria-label="quant projection ordinary small data writeback targets">
             <h3>小数据写入位置</h3>
             <p className="risk-note">{quantProjectionSmallDataWritebackStatus}</p>
+            {quantProjectionSmallDataActionRows.length ? (
+              <div aria-label="quant projection ordinary small data writeback actions">
+                <h3>小数据行动清单</h3>
+                <p className="risk-note">优先读取服务端 ordinary_writeback_action_rows：看任务、看 ledger、刷新 cache、回放结果；不会从回放行创建 task。</p>
+                <DataLineageTable rows={quantProjectionSmallDataActionRows} />
+              </div>
+            ) : null}
             <DataLineageTable rows={quantProjectionSmallDataWritebackRows} />
           </div>
           <div aria-label="quant projection ordinary explainable result readback">

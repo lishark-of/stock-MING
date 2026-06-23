@@ -194,6 +194,13 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(small_data["ordinary_provider_api_row_count"], 4)
         self.assertTrue(small_data["ordinary_provider_api_rows_are_cache_only"])
         self.assertFalse(small_data["ordinary_provider_api_rows_create_task"])
+        self.assertEqual(small_data["ordinary_writeback_action_row_count"], 4)
+        self.assertTrue(small_data["ordinary_writeback_action_rows_are_cache_only"])
+        self.assertFalse(small_data["ordinary_writeback_action_rows_create_task"])
+        self.assertTrue(small_data["ordinary_writeback_action_rows_are_not_trade_signals"])
+        self.assertEqual(packet["counts"]["search_quant_projection_small_data_writeback_action_row_count"], 4)
+        self.assertTrue(packet["policy"]["search_quant_projection_small_data_writeback_action_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_small_data_writeback_action_rows_create_task"])
         readback_rows = {row["surface"]: row for row in small_data["ordinary_readback_rows"]}
         self.assertEqual(set(readback_rows), {"cache", "call_ledger", "packet"})
         self.assertEqual(readback_rows["cache"]["status"], "written")
@@ -228,6 +235,26 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             self.assertTrue(task_row["does_not_modify_strategy_action"])
             self.assertTrue(task_row["does_not_execute_trades"])
             self.assertTrue(task_row["does_not_modify_strategy_action"])
+        writeback_action_rows = {row["action_key"]: row for row in small_data["ordinary_writeback_action_rows"]}
+        self.assertEqual(
+            set(writeback_action_rows),
+            {"check_writeback_status", "review_task_status", "review_call_ledger", "refresh_cache_replay"},
+        )
+        self.assertIn("Tushare ledger 已回放", writeback_action_rows["review_call_ledger"]["当前状态"])
+        self.assertIn("股票量化推演", writeback_action_rows["refresh_cache_replay"]["入口"])
+        self.assertIn("不会创建 task", writeback_action_rows["check_writeback_status"]["边界"])
+        self.assertIn("接口级明细下沉到高级状态", writeback_action_rows["review_call_ledger"]["入口"])
+        for action_row in writeback_action_rows.values():
+            self.assertTrue(action_row["cache_only_readback"])
+            self.assertFalse(action_row["creates_task_from_readback"])
+            self.assertFalse(action_row["external_calls_triggered"])
+            self.assertFalse(action_row["tushare_called"])
+            self.assertFalse(action_row["deepseek_called"])
+            self.assertFalse(action_row["github_called"])
+            self.assertFalse(action_row["contains_secret"])
+            self.assertTrue(action_row["does_not_execute_trades"])
+            self.assertTrue(action_row["does_not_modify_strategy_action"])
+            self.assertTrue(action_row["candidate_is_not_buy_instruction"])
         receipt_rows = {row["receipt_item"]: row for row in small_data["ordinary_confirmed_task_receipt_rows"]}
         self.assertEqual(set(receipt_rows), {"task_id", "tushare_first_chain", "safe_current_step", "result_destinations"})
         self.assertIn(response["data"]["task_id"], receipt_rows["task_id"]["ordinary_label"])
@@ -489,6 +516,9 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(small_data["ordinary_provider_api_row_count"], 4)
         self.assertTrue(small_data["ordinary_provider_api_rows_are_cache_only"])
         self.assertFalse(small_data["ordinary_provider_api_rows_create_task"])
+        self.assertEqual(small_data["ordinary_writeback_action_row_count"], 4)
+        self.assertTrue(small_data["ordinary_writeback_action_rows_are_cache_only"])
+        self.assertFalse(small_data["ordinary_writeback_action_rows_create_task"])
         readback_rows = {row["surface"]: row for row in small_data["ordinary_readback_rows"]}
         self.assertEqual(readback_rows["cache"]["status"], "written")
         self.assertEqual(readback_rows["call_ledger"]["status"], "not_called_missing_credentials_local_block")
@@ -515,6 +545,18 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             self.assertFalse(task_row["deepseek_called"])
             self.assertFalse(task_row["github_called"])
             self.assertFalse(task_row["contains_secret"])
+        writeback_action_rows = {row["action_key"]: row for row in small_data["ordinary_writeback_action_rows"]}
+        self.assertIn("缺少服务端 Tushare 凭据", writeback_action_rows["review_call_ledger"]["当前状态"])
+        self.assertIn("配置服务端凭据后重新点击确认", writeback_action_rows["review_call_ledger"]["用户下一步"])
+        self.assertIn("本地阻断", writeback_action_rows["check_writeback_status"]["当前状态"])
+        for action_row in writeback_action_rows.values():
+            self.assertTrue(action_row["cache_only_readback"])
+            self.assertFalse(action_row["creates_task_from_readback"])
+            self.assertFalse(action_row["external_calls_triggered"])
+            self.assertFalse(action_row["tushare_called"])
+            self.assertFalse(action_row["deepseek_called"])
+            self.assertFalse(action_row["github_called"])
+            self.assertFalse(action_row["contains_secret"])
         api_rows = {row["api"]: row for row in small_data["ordinary_provider_api_rows"]}
         self.assertEqual(set(api_rows), {"trade_cal", "daily", "daily_basic", "moneyflow"})
         for api, api_row in api_rows.items():
