@@ -304,6 +304,43 @@ export default function CommandCenterHome() {
           边界: "不把缺口、候选或解释结果当买卖指令。"
         }
       ];
+  const candidateQuantModelGovernanceRows = (candidateQuantInterpretation.ordinary_model_governance_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const dailyCommandDeepSeekGovernanceState = String(
+    candidateQuantInterpretation.deepseek_governed_executor_status ?? "governed_executor_pending_not_requested"
+  );
+  const dailyCommandDeepSeekGovernanceBoundary =
+    "DeepSeek governed executor 单独补；首页只读显示治理状态，不调用模型、不展示 prompt/output、不覆盖价格、持仓、因子、operation_zones 或 strategy action。";
+  const dailyCommandDeepSeekGovernanceRows = candidateQuantModelGovernanceRows.length
+    ? candidateQuantModelGovernanceRows.map((row) => ({
+        治理项: String(row["治理项"] ?? row.governance_item ?? "DeepSeek 治理"),
+        当前状态: String(row["当前状态"] ?? "等待 governed executor"),
+        用户下一步: String(row["用户下一步"] ?? "先使用 Tushare-first 和基础图谱；DeepSeek 单独补"),
+        证据: String(row["证据"] ?? row.readback_source ?? "search_quant_projection_interpretation_summary"),
+        边界: String(row["边界"] ?? dailyCommandDeepSeekGovernanceBoundary)
+      }))
+    : [
+        {
+          治理项: "执行门控",
+          当前状态: "DeepSeek 等 governed executor；未完成前不真实调用模型",
+          用户下一步: "先看 Tushare-first、小数据写入和基础图谱",
+          证据: "ordinary_model_governance_rows pending",
+          边界: "GET cache 和 React render 不调用 DeepSeek；DeepSeek 不作为数据源。"
+        },
+        {
+          治理项: "输出范围",
+          当前状态: "只允许解释数据来源、证据缺口和下一步",
+          用户下一步: "即使后续补 model_ledger，也只展示安全摘要",
+          证据: "local_model_governance_policy",
+          边界: "DeepSeek 输出不覆盖价格、持仓、factor、operation_zones 或 strategy action。"
+        },
+        {
+          治理项: "不阻塞基础图谱",
+          当前状态: "DeepSeek pending/skipped 不阻塞 Tushare-first 和本地结果回放",
+          用户下一步: "先使用基础图谱；DeepSeek 作为单独补证",
+          证据: "cache / call_ledger / packet",
+          边界: "DeepSeek pending/skipped 不阻断 Tushare ledger、cache packet 或本地结果回放。"
+        }
+      ];
   const riskCounts = risk.counts as Record<string, unknown> | undefined;
   const liveLight = (bootstrapStatus.live_light as Record<string, unknown> | undefined) ?? {};
   const bootstrapProviderLinkageRows = (bootstrapStatus.provider_linkage_rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -612,6 +649,8 @@ export default function CommandCenterHome() {
             { label: "P3 可读结论", value: dailyCommandExplainableResultLabel, tone: candidateQuantInterpretation.interpretation_ready === true ? "good" : "warn" },
             { label: "P3 下一步", value: dailyCommandExplainableResultNext },
             { label: "P3 边界", value: dailyCommandExplainableResultBoundary, tone: "good" },
+            { label: "P5 DeepSeek", value: dailyCommandDeepSeekGovernanceState, tone: candidateQuantInterpretation.deepseek_model_ledger_ready === true ? "warn" : "good" },
+            { label: "P5 边界", value: dailyCommandDeepSeekGovernanceBoundary, tone: "good" },
             { label: "cache", value: dailyCommandCacheSourceLabel },
             { label: "Tushare", value: dailyCommandTushareSourceLabel },
             { label: "DeepSeek", value: dailyCommandDeepSeekSourceLabel },
@@ -642,6 +681,11 @@ export default function CommandCenterHome() {
           <h3>P3 可解释结果速读</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows：普通入口只看可读结论、回放来源和待补证据；不会从首页创建 task、调用 DeepSeek 或展开 raw packet。</p>
           <DataLineageTable rows={dailyCommandExplainableResultRows} />
+        </div>
+        <div aria-label="daily command p5 deepseek governance quick read">
+          <h3>P5 DeepSeek 单独治理</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_model_governance_rows：DeepSeek 只作为 governed executor 单独补证；pending/skipped 不阻塞 Tushare-first、小数据写入或基础图谱。</p>
+          <DataLineageTable rows={dailyCommandDeepSeekGovernanceRows} />
         </div>
         <div aria-label="daily command p0 startup recovery steps">
           <h3>一键启动恢复步骤</h3>
