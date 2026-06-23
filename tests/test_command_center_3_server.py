@@ -582,6 +582,42 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("tushare_token", strategy_dump)
         self.assertNotIn("bearer ", strategy_dump)
 
+    def test_desktop_preflight_exposes_p0_auto_link_contract_without_secret_leak(self):
+        original_api_base = os.environ.get("VITE_API_BASE_URL")
+        os.environ["VITE_API_BASE_URL"] = "http://user:SHOULD_DROP@127.0.0.1:8710?token=SHOULD_DROP#secret"
+        try:
+            desktop = desktop_service.read_desktop_shell_preflight_cache()
+        finally:
+            if original_api_base is None:
+                os.environ.pop("VITE_API_BASE_URL", None)
+            else:
+                os.environ["VITE_API_BASE_URL"] = original_api_base
+
+        auto_link = desktop["frontend_backend_auto_link_contract"]
+        self.assertEqual(auto_link["schema_version"], "command_center_3_frontend_backend_auto_link_contract.v1")
+        self.assertEqual(auto_link["status"], "frontend_backend_auto_link_contract_ready")
+        self.assertEqual(auto_link["candidate_display_urls"], ["http://127.0.0.1:8710", "http://localhost:8710"])
+        self.assertEqual(auto_link["candidate_count"], 2)
+        self.assertFalse(auto_link["current_runtime_probe_executed_by_get_cache"])
+        self.assertFalse(auto_link["get_cache_starts_services"])
+        self.assertFalse(auto_link["react_render_starts_services"])
+        self.assertFalse(auto_link["post_task_created"])
+        self.assertFalse(auto_link["external_calls_triggered"])
+        self.assertFalse(auto_link["tushare_called"])
+        self.assertFalse(auto_link["deepseek_called"])
+        self.assertFalse(auto_link["github_called"])
+        self.assertTrue(auto_link["does_not_execute_trades"])
+        self.assertTrue(auto_link["does_not_modify_strategy_action"])
+        self.assertEqual(desktop["api_base"], "http://127.0.0.1:8710")
+        self.assertEqual(desktop["api_base_info"]["api_base_candidate_display_urls"], auto_link["candidate_display_urls"])
+        self.assertEqual(desktop["counts"]["frontend_backend_auto_link_candidate_count"], 2)
+        self.assertEqual(desktop["runtime"]["frontend_backend_auto_link_status"], "frontend_backend_auto_link_contract_ready")
+        desktop_dump = json.dumps(desktop, ensure_ascii=False)
+        self.assertNotIn("SHOULD_DROP", desktop_dump)
+        self.assertNotIn("user:", desktop_dump)
+        self.assertNotIn("?token=", desktop_dump)
+        self.assertNotIn("#secret", desktop_dump)
+
     def test_cache_builders_do_not_call_external_sources(self):
         self._with_meta_store()
         self._with_release_gate_receipt_path()

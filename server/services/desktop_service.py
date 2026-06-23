@@ -6,6 +6,7 @@ import os
 import shutil
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from storage.sqlite_meta import SQLiteMetaStore
 
@@ -13,6 +14,8 @@ from .task_service import create_task_record, update_task_status
 
 PACKET_KEY = "command_center_3_desktop_shell_preflight_cache"
 SCHEMA_VERSION = "desktop_shell_preflight_cache.v1"
+DEFAULT_LOCAL_API_BASE = "http://127.0.0.1:8710"
+DEFAULT_LOCALHOST_API_BASE = "http://localhost:8710"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_META_PATH = PROJECT_ROOT / ".stock_ming_3" / "meta.sqlite"
 DESKTOP_ROOT = PROJECT_ROOT / "desktop"
@@ -437,17 +440,156 @@ def _tauri_config_summary() -> dict[str, Any]:
     }
 
 
+def _safe_url_display(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    def fallback_display() -> str:
+        display = raw.split("?", 1)[0].split("#", 1)[0]
+        if "://" in display and "@" in display:
+            scheme, rest = display.split("://", 1)
+            display = f"{scheme}://{rest.split('@', 1)[1]}"
+        return display[:180]
+
+    try:
+        parsed = urlsplit(raw)
+        if not parsed.scheme or not parsed.netloc:
+            return fallback_display()
+        host = parsed.hostname or ""
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        netloc = host
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
+        return urlunsplit((parsed.scheme, netloc, parsed.path, "", "")).rstrip("/")
+    except Exception:
+        return fallback_display()
+
+
+def _is_local_api_base(value: str) -> bool:
+    try:
+        return (urlsplit(str(value or "")).hostname or "") in {"127.0.0.1", "localhost", "::1"}
+    except Exception:
+        return False
+
+
+def _same_safe_url(left: str, right: str) -> bool:
+    return _safe_url_display(left) == _safe_url_display(right)
+
+
+def _local_api_base_candidates(api_base: str) -> list[str]:
+    candidates: list[str] = []
+    if _is_local_api_base(api_base):
+        candidates.append(_safe_url_display(api_base))
+    for fallback in (DEFAULT_LOCAL_API_BASE, DEFAULT_LOCALHOST_API_BASE):
+        if not any(_same_safe_url(candidate, fallback) for candidate in candidates):
+            candidates.append(_safe_url_display(fallback))
+    return candidates
+
+
 def _api_base_summary(api_base: str) -> dict[str, Any]:
     normalized = str(api_base or "").strip()
-    is_local = normalized.startswith("http://127.0.0.1") or normalized.startswith("http://localhost")
+    safe_display = _safe_url_display(normalized)
+    is_local = _is_local_api_base(normalized)
+    candidates = _local_api_base_candidates(normalized)
     return {
-        "api_base": normalized,
+        "api_base": safe_display,
         "is_localhost": is_local,
-        "expected_health_endpoint": f"{normalized.rstrip('/')}/health" if normalized else "",
+        "expected_health_endpoint": f"{safe_display.rstrip('/')}/health" if safe_display else "",
         "configured_by": "VITE_API_BASE_URL" if os.getenv("VITE_API_BASE_URL") else "default_localhost_8710",
+        "configured_api_base_display": safe_display,
+        "default_local_api_base": DEFAULT_LOCAL_API_BASE,
+        "default_localhost_api_base": DEFAULT_LOCALHOST_API_BASE,
+        "api_base_candidate_display_urls": candidates,
+        "api_base_candidate_count": len(candidates),
+        "nonlocal_configured_api_base_ignored_by_frontend": bool(normalized and not is_local),
+        "display_strips_query_hash_username_password": True,
         "frontend_uses_fastapi_only": True,
         "contains_secret": False,
         "does_not_autostart_backend": True,
+    }
+
+
+def _frontend_backend_auto_link_contract(api_base_info: dict[str, Any], client_source: str) -> dict[str, Any]:
+    candidates = list(api_base_info.get("api_base_candidate_display_urls") or [])
+    rows = [
+        {
+            "检查项": "候选地址顺序",
+            "当前状态": "ready" if candidates else "check",
+            "用户看法": "前端会先试配置的本机 API base，再回退到 127.0.0.1:8710 和 localhost:8710。",
+            "证据": " / ".join(candidates),
+            "边界": "只尝试本机 FastAPI；不连接外部域名、不创建 task。",
+        },
+        {
+            "检查项": "本地 fallback 循环",
+            "当前状态": "ready"
+            if "for (const apiBase of API_BASE_CANDIDATES)" in client_source
+            and "failedRequestEnvelope" in client_source
+            else "check",
+            "用户看法": "如果一个本机地址失败，前端继续尝试下一个本机地址并给出离线恢复提示。",
+            "证据": "desktop/src/api/client.ts localApiBaseCandidates",
+            "边界": "React render 只发 GET cache/health 请求；不会启动服务或调用 provider/model。",
+        },
+        {
+            "检查项": "离线下一步",
+            "当前状态": "ready" if "frontend_backend_auto_link_next_action" in client_source else "check",
+            "用户看法": "后端未联通时，提示双击本地启动器或运行 check-only 命令。",
+            "证据": "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command",
+            "边界": "提示本身不执行命令、不写 cache、不创建 POST task。",
+        },
+    ]
+    for row in rows:
+        row.update(
+            {
+                "ordinary_user_visible": True,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "loads_token_or_key": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
+    ready = all(row["当前状态"] == "ready" for row in rows)
+    return {
+        "schema_version": "command_center_3_frontend_backend_auto_link_contract.v1",
+        "priority": "P0",
+        "status": "frontend_backend_auto_link_contract_ready" if ready else "frontend_backend_auto_link_contract_check",
+        "scope": "ordinary_user_local_fastapi_auto_link_readback",
+        "configured_api_base_display": api_base_info.get("configured_api_base_display"),
+        "candidate_display_urls": candidates,
+        "candidate_count": len(candidates),
+        "offline_next_action": "双击 stock-MING Command Center 3.command；或运行 COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command 做安全诊断。",
+        "current_runtime_probe_executed_by_get_cache": False,
+        "get_cache_starts_services": False,
+        "react_render_starts_services": False,
+        "post_task_created": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "loads_token_or_key": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "rows": rows,
+        "row_count": len(rows),
+        "call_ledger": [
+            {
+                "api": "local_frontend_backend_auto_link_contract",
+                "source": "desktop/src/api/client.ts local API base candidates",
+                "row_count": len(rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_auto_link_contract_read",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
     }
 
 
@@ -5224,8 +5366,11 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     scaffold_ready = file_ready_count == required_file_count and bool(package_summary.get("has_vite")) and bool(package_summary.get("has_tauri_cli"))
     vite_dev_ready = scaffold_ready and node_ready
     tauri_dev_ready = vite_dev_ready and rust_ready
-    api_base = os.getenv("VITE_API_BASE_URL") or "http://127.0.0.1:8710"
+    client_source = _read_source_safe(FRONTEND_API_CLIENT)
+    api_base = os.getenv("VITE_API_BASE_URL") or DEFAULT_LOCAL_API_BASE
     api_base_info = _api_base_summary(api_base)
+    api_base = str(api_base_info.get("api_base") or DEFAULT_LOCAL_API_BASE)
+    frontend_backend_auto_link_contract = _frontend_backend_auto_link_contract(api_base_info, client_source)
     desktop_launcher_contract = _desktop_launcher_contract(api_base)
     one_click_startup_summary = _one_click_startup_summary(api_base_info, desktop_launcher_contract)
     p0_local_connection_receipt = _p0_local_connection_receipt(one_click_startup_summary, desktop_launcher_contract)
@@ -5319,6 +5464,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "loaded_at": _now_iso(),
         "api_base": api_base,
         "api_base_info": api_base_info,
+        "frontend_backend_auto_link_contract": frontend_backend_auto_link_contract,
+        "frontend_backend_auto_link_rows": frontend_backend_auto_link_contract["rows"],
         "one_click_startup_summary": one_click_startup_summary,
         "one_click_connection_rows": one_click_startup_summary["rows"],
         "p0_recovery_steps": one_click_startup_summary["ordinary_recovery_steps"],
@@ -5383,6 +5530,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_ordinary_quick_action_visible_count": sum(
                 1 for row in p0_ordinary_quick_action_rows if row["ordinary_user_visible"]
             ),
+            "frontend_backend_auto_link_candidate_count": frontend_backend_auto_link_contract["candidate_count"],
+            "frontend_backend_auto_link_row_count": frontend_backend_auto_link_contract["row_count"],
             "packaged_runtime_qa_matrix_count": packaged_runtime_qa_contract["qa_matrix_count"],
             "packaged_runtime_pending_qa_count": packaged_runtime_qa_contract["pending_qa_count"],
             "tauri_release_manifest_row_count": tauri_release_manifest_contract["row_count"],
@@ -5405,6 +5554,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "vite_build_attempted": False,
             "fastapi_dev_server_started": False,
             "api_base_is_localhost": api_base_info["is_localhost"],
+            "frontend_backend_auto_link_status": frontend_backend_auto_link_contract["status"],
+            "frontend_backend_auto_link_candidate_count": frontend_backend_auto_link_contract["candidate_count"],
             "one_click_frontend_backend_ready": one_click_startup_summary["frontend_backend_connection_ready"],
             "one_click_startup_status": one_click_startup_summary["status"],
             "one_click_startup_next_action": one_click_startup_summary["what_user_should_click_next"],

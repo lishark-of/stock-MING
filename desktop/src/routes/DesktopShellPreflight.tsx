@@ -30,6 +30,7 @@ export default function DesktopShellPreflight() {
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const apiBaseInfo = (cache.api_base_info as Record<string, unknown> | undefined) ?? {};
+  const frontendBackendAutoLinkContract = (cache.frontend_backend_auto_link_contract as Record<string, unknown> | undefined) ?? {};
   const oneClickStartupSummary = (cache.one_click_startup_summary as Record<string, unknown> | undefined) ?? {};
   const p0LocalConnectionReceipt = (cache.p0_local_connection_receipt as Record<string, unknown> | undefined) ?? {};
   const desktopLauncherContract = (cache.desktop_launcher_contract as Record<string, unknown> | undefined) ?? {};
@@ -43,6 +44,7 @@ export default function DesktopShellPreflight() {
   const productionPackageReadinessReceipt = (cache.production_package_readiness_receipt as Record<string, unknown> | undefined) ?? {};
   const tauriPackageDurableEvidenceRecipe = (cache.tauri_package_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
   const oneClickConnectionRows = rows(cache.one_click_connection_rows);
+  const frontendBackendAutoLinkRows = rows(cache.frontend_backend_auto_link_rows);
   const p0LocalConnectionRows = rows(cache.p0_local_connection_rows);
   const p0ConnectionReady = oneClickStartupSummary.frontend_backend_connection_ready === true;
   const p0RecoverySteps = rows(cache.p0_recovery_steps).length
@@ -318,6 +320,11 @@ export default function DesktopShellPreflight() {
       label: "普通下一步",
       value: p0ConnectionReady ? "去下一票雷达" : "先修复联通",
       tone: p0ConnectionReady ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "API fallback",
+      value: `${String(frontendBackendAutoLinkContract.candidate_count ?? apiBaseInfo.api_base_candidate_count ?? 0)} 本机候选`,
+      tone: Number(frontendBackendAutoLinkContract.candidate_count ?? apiBaseInfo.api_base_candidate_count ?? 0) > 0 ? ("good" as const) : ("warn" as const)
     }
   ];
   const p0OrdinaryPrimaryActionHref = p0ConnectionReady ? "#candidates" : "#desktop";
@@ -383,6 +390,13 @@ export default function DesktopShellPreflight() {
           <h3>桌面快捷入口安装状态</h3>
           <p className="risk-note">{String(desktopLauncherContract.desktop_shortcut_installer_safe_ordinary_label ?? "安全安装：不会覆盖同名普通文件；安装后验证 symlink 指向本地启动器；双击后才检查 FastAPI、bootstrap status、desktop preflight cache 和 React/Vite。")}</p>
           <DataLineageTable rows={p0ShortcutInstallerRows} />
+        </div>
+        <div aria-label="p0 frontend backend auto link fallback">
+          <h3>本地 API 自动联通</h3>
+          <p className="risk-note">前端只尝试本机 FastAPI 候选地址；失败时提示一键启动器或 check-only 诊断，本页不启动服务、不创建 task。</p>
+          <p>候选地址：{Array.isArray(frontendBackendAutoLinkContract.candidate_display_urls) ? frontendBackendAutoLinkContract.candidate_display_urls.join(" / ") : String(apiBaseInfo.api_base_candidate_display_urls ?? "http://127.0.0.1:8710 / http://localhost:8710")}</p>
+          <p>离线下一步：{String(frontendBackendAutoLinkContract.offline_next_action ?? "双击 stock-MING Command Center 3.command；或运行 COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command 做安全诊断。")}</p>
+          <DataLineageTable rows={frontendBackendAutoLinkRows} />
         </div>
         <div aria-label="p0 ordinary frontend backend connection checklist">
           <h3>前后端联通状态</h3>
