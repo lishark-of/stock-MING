@@ -1122,7 +1122,14 @@ export default function CandidateRadar() {
       边界: "只切换 #factor/#next 锚点，不重新创建 task、不改 strategy action"
     }
   ];
-  const quantProjectionOrdinaryConfirmOutcomeRows = [
+  const quantProjectionConfirmReplayStageRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_confirm_replay_stage_rows).map((row) => ({
+    速读项: displayText(row["速读项"] ?? row.stage_key),
+    当前状态: displayText(row["当前状态"] ?? row.status),
+    用户下一步: displayText(row["用户下一步"] ?? row.next_step),
+    证据: displayText(row["证据"] ?? row.evidence),
+    边界: displayText(row["边界"] ?? row.boundary, "GET cache 只读回放；不创建 task、不补调 provider/model")
+  }));
+  const quantProjectionOrdinaryConfirmOutcomeRows = quantProjectionConfirmReplayStageRows.length ? quantProjectionConfirmReplayStageRows : [
     {
       速读项: "P1/P2 当前阶段",
       当前状态: quantProjectionConfirmReplayStage,

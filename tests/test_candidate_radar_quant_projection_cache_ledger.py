@@ -192,6 +192,11 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(small_data["ordinary_post_confirm_action_rows_are_cache_only"])
         self.assertFalse(small_data["ordinary_post_confirm_action_rows_create_task"])
         self.assertTrue(small_data["ordinary_post_confirm_action_rows_are_not_trade_signals"])
+        self.assertEqual(small_data["ordinary_confirm_replay_stage_row_count"], 4)
+        self.assertTrue(small_data["ordinary_confirm_replay_stage_rows_are_cache_only"])
+        self.assertFalse(small_data["ordinary_confirm_replay_stage_rows_create_task"])
+        self.assertFalse(small_data["ordinary_confirm_replay_stage_rows_use_model_output"])
+        self.assertTrue(small_data["ordinary_confirm_replay_stage_rows_are_not_trade_signals"])
         self.assertEqual(small_data["ordinary_confirmed_task_receipt_row_count"], 4)
         self.assertTrue(small_data["ordinary_confirmed_task_receipt_rows_are_cache_only"])
         self.assertFalse(small_data["ordinary_confirmed_task_receipt_rows_create_task"])
@@ -204,11 +209,16 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(small_data["ordinary_writeback_action_rows_are_not_trade_signals"])
         self.assertEqual(packet["counts"]["search_quant_projection_small_data_writeback_action_row_count"], 4)
         self.assertEqual(packet["counts"]["search_quant_projection_post_confirm_action_row_count"], 4)
+        self.assertEqual(packet["counts"]["search_quant_projection_confirm_replay_stage_row_count"], 4)
         self.assertTrue(packet["policy"]["search_quant_projection_small_data_writeback_action_rows_are_cache_only"])
         self.assertFalse(packet["policy"]["search_quant_projection_small_data_writeback_action_rows_create_task"])
         self.assertTrue(packet["policy"]["search_quant_projection_post_confirm_action_rows_are_cache_only"])
         self.assertFalse(packet["policy"]["search_quant_projection_post_confirm_action_rows_create_task"])
         self.assertTrue(packet["policy"]["search_quant_projection_post_confirm_action_rows_are_not_trade_signals"])
+        self.assertTrue(packet["policy"]["search_quant_projection_confirm_replay_stage_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_confirm_replay_stage_rows_create_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_confirm_replay_stage_rows_use_model_output"])
+        self.assertTrue(packet["policy"]["search_quant_projection_confirm_replay_stage_rows_are_not_trade_signals"])
         readback_rows = {row["surface"]: row for row in small_data["ordinary_readback_rows"]}
         self.assertEqual(set(readback_rows), {"cache", "call_ledger", "packet"})
         self.assertEqual(readback_rows["cache"]["status"], "written")
@@ -260,6 +270,26 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             self.assertTrue(action_row["does_not_execute_trades"])
             self.assertTrue(action_row["does_not_modify_strategy_action"])
             self.assertTrue(action_row["candidate_is_not_buy_instruction"])
+        stage_rows = {row["stage_key"]: row for row in small_data["ordinary_confirm_replay_stage_rows"]}
+        self.assertEqual(
+            set(stage_rows),
+            {"current_confirm_replay_stage", "task_acceptance", "cache_ledger_packet_replay", "result_replay"},
+        )
+        self.assertIn("P2 ready", stage_rows["current_confirm_replay_stage"]["当前状态"])
+        self.assertIn("Tushare 4/4", stage_rows["cache_ledger_packet_replay"]["当前状态"])
+        self.assertIn("DeepSeek governed executor 单独补", stage_rows["result_replay"]["当前状态"])
+        for stage_row in stage_rows.values():
+            self.assertTrue(stage_row["cache_only_readback"])
+            self.assertFalse(stage_row["creates_task_from_readback"])
+            self.assertFalse(stage_row["uses_model_output"])
+            self.assertFalse(stage_row["external_calls_triggered"])
+            self.assertFalse(stage_row["tushare_called"])
+            self.assertFalse(stage_row["deepseek_called"])
+            self.assertFalse(stage_row["github_called"])
+            self.assertFalse(stage_row["contains_secret"])
+            self.assertTrue(stage_row["does_not_execute_trades"])
+            self.assertTrue(stage_row["does_not_modify_strategy_action"])
+            self.assertTrue(stage_row["candidate_is_not_buy_instruction"])
         writeback_action_rows = {row["action_key"]: row for row in small_data["ordinary_writeback_action_rows"]}
         self.assertEqual(
             set(writeback_action_rows),
@@ -574,6 +604,10 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(small_data["ordinary_post_confirm_action_row_count"], 4)
         self.assertTrue(small_data["ordinary_post_confirm_action_rows_are_cache_only"])
         self.assertFalse(small_data["ordinary_post_confirm_action_rows_create_task"])
+        self.assertEqual(small_data["ordinary_confirm_replay_stage_row_count"], 4)
+        self.assertTrue(small_data["ordinary_confirm_replay_stage_rows_are_cache_only"])
+        self.assertFalse(small_data["ordinary_confirm_replay_stage_rows_create_task"])
+        self.assertFalse(small_data["ordinary_confirm_replay_stage_rows_use_model_output"])
         self.assertEqual(small_data["ordinary_provider_api_row_count"], 4)
         self.assertTrue(small_data["ordinary_provider_api_rows_are_cache_only"])
         self.assertFalse(small_data["ordinary_provider_api_rows_create_task"])
@@ -619,6 +653,19 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             self.assertFalse(action_row["deepseek_called"])
             self.assertFalse(action_row["github_called"])
             self.assertFalse(action_row["contains_secret"])
+        stage_rows = {row["stage_key"]: row for row in small_data["ordinary_confirm_replay_stage_rows"]}
+        self.assertIn("P2 blocked", stage_rows["current_confirm_replay_stage"]["当前状态"])
+        self.assertIn("缺少服务端 Tushare 凭据", stage_rows["current_confirm_replay_stage"]["当前状态"])
+        self.assertIn("local_block_replayed_missing_tushare_credentials", stage_rows["current_confirm_replay_stage"]["证据"])
+        for stage_row in stage_rows.values():
+            self.assertTrue(stage_row["cache_only_readback"])
+            self.assertFalse(stage_row["creates_task_from_readback"])
+            self.assertFalse(stage_row["uses_model_output"])
+            self.assertFalse(stage_row["external_calls_triggered"])
+            self.assertFalse(stage_row["tushare_called"])
+            self.assertFalse(stage_row["deepseek_called"])
+            self.assertFalse(stage_row["github_called"])
+            self.assertFalse(stage_row["contains_secret"])
         writeback_action_rows = {row["action_key"]: row for row in small_data["ordinary_writeback_action_rows"]}
         self.assertIn("缺少服务端 Tushare 凭据", writeback_action_rows["review_call_ledger"]["当前状态"])
         self.assertIn("配置服务端凭据后重新点击确认", writeback_action_rows["review_call_ledger"]["用户下一步"])
