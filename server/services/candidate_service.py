@@ -14864,6 +14864,93 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         or "",
         limit=160,
     )
+    quant_receipt_ledger = [
+        row for row in _as_list(quant_receipt.get("call_ledger")) if isinstance(row, dict)
+    ]
+    quant_request_params = (
+        _as_dict(quant_receipt_ledger[0].get("request_params_safe")) if quant_receipt_ledger else {}
+    )
+    confirmed_include_tushare = (
+        quant_request_params.get("include_tushare") is True
+        or dry_run.get("include_tushare") is True
+        or execution_request.get("include_tushare") is True
+        or provider_receipt.get("include_tushare") is True
+    )
+    confirmed_include_deepseek = (
+        quant_request_params.get("include_deepseek") is True
+        or dry_run.get("include_deepseek") is True
+        or execution_request.get("include_deepseek") is True
+        or provider_receipt.get("include_deepseek") is True
+    )
+    ordinary_confirmed_task_receipt_rows = [
+        {
+            "receipt_item": "task_id",
+            "status": "written" if latest_task_id else "waiting_confirm",
+            "ordinary_label": (
+                f"本次确认 task id 已写入 cache / packet：{latest_task_id}"
+                if latest_task_id
+                else "等待点击确认按钮后写入 task id"
+            ),
+            "readback_source": "candidate_radar_cache_packet",
+            "boundary": "task id 来自按钮门控 POST 或 cache packet 回放；GET cache 不创建任务",
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "receipt_item": "tushare_first_chain",
+            "status": "tushare_first_confirmed" if latest_task_id and confirmed_include_tushare else "waiting_confirm",
+            "ordinary_label": (
+                f"include_tushare={str(confirmed_include_tushare).lower()} / "
+                f"include_deepseek={str(confirmed_include_deepseek).lower()}"
+            ),
+            "readback_source": "search_quant_projection_receipt.call_ledger.request_params_safe",
+            "boundary": "只有 POST task / worker 可调用 Tushare；React render、搜索输入、GET cache 不外联",
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "receipt_item": "safe_current_step",
+            "status": latest_task_status or ("cache_replay" if latest_task_id else "waiting_confirm"),
+            "ordinary_label": (
+                f"安全步骤已写入：{latest_task_current_step}"
+                if latest_task_current_step
+                else "等待本地任务安全步骤"
+            ),
+            "readback_source": "search_quant_projection_receipt",
+            "boundary": "只展示 safe current_step；不展示 raw log、token/key 或 provider error",
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "receipt_item": "result_destinations",
+            "status": "local_replay_destinations_visible" if latest_task_id else "waiting_confirm",
+            "ordinary_label": "股票量化推演 / 次日图谱 / 候选池只读回放",
+            "readback_source": "local_navigation_and_cache_replay",
+            "boundary": "DeepSeek 等 governed executor；不真实交易、不改 strategy action",
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+    ]
     ordinary_task_readback_rows = [
         {
             "surface": "task_id",
@@ -14980,6 +15067,10 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_task_readback_row_count": len(ordinary_task_readback_rows),
         "ordinary_task_readback_rows_are_cache_only": True,
         "ordinary_task_readback_rows_create_task": False,
+        "ordinary_confirmed_task_receipt_rows": ordinary_confirmed_task_receipt_rows,
+        "ordinary_confirmed_task_receipt_row_count": len(ordinary_confirmed_task_receipt_rows),
+        "ordinary_confirmed_task_receipt_rows_are_cache_only": True,
+        "ordinary_confirmed_task_receipt_rows_create_task": False,
         "ordinary_provider_api_rows": ordinary_provider_api_rows,
         "ordinary_provider_api_row_count": len(ordinary_provider_api_rows),
         "ordinary_provider_api_rows_are_cache_only": True,

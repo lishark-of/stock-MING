@@ -188,6 +188,9 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(small_data["ordinary_task_readback_row_count"], 3)
         self.assertTrue(small_data["ordinary_task_readback_rows_are_cache_only"])
         self.assertFalse(small_data["ordinary_task_readback_rows_create_task"])
+        self.assertEqual(small_data["ordinary_confirmed_task_receipt_row_count"], 4)
+        self.assertTrue(small_data["ordinary_confirmed_task_receipt_rows_are_cache_only"])
+        self.assertFalse(small_data["ordinary_confirmed_task_receipt_rows_create_task"])
         self.assertEqual(small_data["ordinary_provider_api_row_count"], 4)
         self.assertTrue(small_data["ordinary_provider_api_rows_are_cache_only"])
         self.assertFalse(small_data["ordinary_provider_api_rows_create_task"])
@@ -225,6 +228,24 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             self.assertTrue(task_row["does_not_modify_strategy_action"])
             self.assertTrue(task_row["does_not_execute_trades"])
             self.assertTrue(task_row["does_not_modify_strategy_action"])
+        receipt_rows = {row["receipt_item"]: row for row in small_data["ordinary_confirmed_task_receipt_rows"]}
+        self.assertEqual(set(receipt_rows), {"task_id", "tushare_first_chain", "safe_current_step", "result_destinations"})
+        self.assertIn(response["data"]["task_id"], receipt_rows["task_id"]["ordinary_label"])
+        self.assertEqual(receipt_rows["tushare_first_chain"]["status"], "tushare_first_confirmed")
+        self.assertIn("include_tushare=true / include_deepseek=false", receipt_rows["tushare_first_chain"]["ordinary_label"])
+        self.assertIn(
+            "candidate_radar_quant_projection_tushare_first_chain_submitted_deepseek_skipped",
+            receipt_rows["safe_current_step"]["ordinary_label"],
+        )
+        self.assertEqual(receipt_rows["result_destinations"]["status"], "local_replay_destinations_visible")
+        for receipt_row in receipt_rows.values():
+            self.assertFalse(receipt_row["external_calls_triggered"])
+            self.assertFalse(receipt_row["tushare_called"])
+            self.assertFalse(receipt_row["deepseek_called"])
+            self.assertFalse(receipt_row["github_called"])
+            self.assertFalse(receipt_row["contains_secret"])
+            self.assertTrue(receipt_row["does_not_execute_trades"])
+            self.assertTrue(receipt_row["does_not_modify_strategy_action"])
         api_rows = {row["api"]: row for row in small_data["ordinary_provider_api_rows"]}
         self.assertEqual(list(api_rows), expected_apis)
         for api, api_row in api_rows.items():

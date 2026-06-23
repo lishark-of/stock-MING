@@ -32,6 +32,15 @@ function ordinaryResultSurfaceLabel(surface: unknown) {
   return displayText(surface, "解释结果");
 }
 
+function confirmedTaskReceiptLabel(item: unknown) {
+  const key = String(item ?? "");
+  if (key === "task_id") return "task_id";
+  if (key === "tushare_first_chain") return "Tushare-first 链路";
+  if (key === "safe_current_step") return "安全步骤";
+  if (key === "result_destinations") return "结果去向";
+  return displayText(item, "确认回执");
+}
+
 function quantProjectionSubmitFailureMessage(error?: string | null) {
   if (error?.includes("backend_offline_or_unreachable")) {
     return "本地 FastAPI 后端未连接；请先用一键启动器恢复连接。";
@@ -827,7 +836,15 @@ export default function CandidateRadar() {
   const quantProjectionAcceptedTaskId = String(taskReceipt?.data?.task_id ?? quantProjectionAcceptedTask?.task_id ?? quantProjectionPersistedTaskId ?? "");
   const quantProjectionAcceptedTaskStep = String(quantProjectionAcceptedTask?.current_step ?? quantProjectionPersistedTaskStep ?? "");
   const quantProjectionAcceptedTaskStatus = String(quantProjectionAcceptedTask?.status ?? (quantProjectionAcceptedTaskId ? "cache_replay" : "waiting_confirm"));
-  const quantProjectionConfirmedTaskReceiptRows = [
+  const quantProjectionPersistedConfirmedTaskReceiptRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_confirmed_task_receipt_rows).map((row) => ({
+    回执项: confirmedTaskReceiptLabel(row.receipt_item),
+    当前状态: displayText(row.ordinary_label ?? row.status),
+    用户看法: displayText(row.readback_source, "cache / packet 回放"),
+    边界: displayText(row.boundary, "GET cache 只读回放；不创建任务、不补调数据源或模型")
+  }));
+  const quantProjectionConfirmedTaskReceiptRows = quantProjectionPersistedConfirmedTaskReceiptRows.length
+    ? quantProjectionPersistedConfirmedTaskReceiptRows
+    : [
     {
       回执项: "task_id",
       当前状态: quantProjectionAcceptedTaskId || "等待点击确认按钮",
