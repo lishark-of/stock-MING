@@ -18,6 +18,11 @@ function objectRow(value: unknown): Array<Record<string, unknown>> {
   return value && typeof value === "object" && !Array.isArray(value) ? [value as Record<string, unknown>] : [];
 }
 
+function displayText(value: unknown, fallback = "--") {
+  if (value === undefined || value === null || value === "") return fallback;
+  return String(value);
+}
+
 function quantProjectionSubmitFailureMessage(error?: string | null) {
   if (error?.includes("backend_offline_or_unreachable")) {
     return "本地 FastAPI 后端未连接；请先用一键启动器恢复连接。";
@@ -644,8 +649,19 @@ export default function CandidateRadar() {
     : taskReceipt?.ok || searchQuantProjectionReceipt.latest_task_id || searchQuantProjectionReceipt.task_id || cache.task_id
       ? "小数据写入等待后台完成：先看任务状态，成功后刷新本地 cache 回放 cache、call_ledger、packet。"
       : "小数据写入等待确认按钮：输入或搜索不会写 cache、call_ledger、packet。";
-  const quantProjectionSmallDataWritebackRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_target_rows).length
-    ? rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_target_rows)
+  const quantProjectionSmallDataOrdinaryReadbackRows = quantProjectionSmallDataRows.map((row) => ({
+    写入位置: displayText(row.surface),
+    当前状态: displayText(row.ordinary_label ?? row.status),
+    证据: displayText(row.evidence, quantProjectionSmallDataStageLabel),
+    来源: displayText(row.readback_source, "GET /api/candidate-radar/cache"),
+    边界: row.readback_external_calls_triggered === false
+      ? "GET cache 只读回放；React render 不补调 provider/model"
+      : "等待本地 packet 确认只读边界"
+  }));
+  const quantProjectionSmallDataWritebackRows = quantProjectionSmallDataOrdinaryReadbackRows.length
+    ? quantProjectionSmallDataOrdinaryReadbackRows
+    : rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_target_rows).length
+      ? rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_target_rows)
     : [
         {
           写入位置: "cache",
