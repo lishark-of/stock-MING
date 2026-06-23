@@ -112,6 +112,12 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("API status ready=${API_STATUS_READY}", source)
         self.assertIn("FastAPI log: ${FASTAPI_LOG}", source)
         self.assertIn("React/Vite log: ${VITE_LOG}", source)
+        self.assertIn("print_post_startup_readback_checklist", source)
+        self.assertIn("启动后复核清单", source)
+        self.assertIn("FastAPI health：${API_BASE%/}/health 已返回 Command Center 3.0 JSON", source)
+        self.assertIn("Bootstrap status：${API_BASE%/}/api/bootstrap/status 已返回 runtime-mode packet", source)
+        self.assertIn("React/Vite 前端：${VITE_URL} 已返回 Command Center 3.0 HTML", source)
+        self.assertIn("启动后复核只读本地 GET 结果；不创建 task", source)
         self.assertIn("可操作诊断", source)
         self.assertIn("FastAPI：${API_BASE%/}/health 未返回 Command Center 3.0 健康 JSON", source)
         self.assertIn("Bootstrap status：${API_BASE%/}/api/bootstrap/status 未返回 runtime-mode packet", source)
@@ -172,6 +178,30 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
                 self.assertNotIn("TUSHARE_TOKEN", source)
                 self.assertNotIn("DEEPSEEK_API_KEY", source)
                 self.assertNotIn("GITHUB_TOKEN", source)
+
+    def test_p0_post_startup_readback_checklist_is_visible_and_read_only(self):
+        launcher = LAUNCHER.read_text(encoding="utf-8")
+        page = DESKTOP_PREFLIGHT_PAGE.read_text(encoding="utf-8")
+
+        self.assertIn("启动后复核清单", launcher)
+        self.assertIn("启动后复核清单", page)
+        self.assertIn("p0PostStartupReadbackRows", page)
+        self.assertIn("p0_post_startup_readback_rows", page)
+        self.assertIn('aria-label="p0 post startup readback checklist"', page)
+        self.assertIn("这张清单与启动器成功日志对齐", page)
+        self.assertIn("页面只回读本地 GET 结果，不补跑启动器、不创建 task", page)
+        self.assertIn('复核项: "FastAPI health"', page)
+        self.assertIn('复核项: "Bootstrap status"', page)
+        self.assertIn('复核项: "React/Vite 前端"', page)
+        self.assertIn("GET /health 返回 Command Center 3.0 JSON，且 external_calls_on_startup=false", page)
+        self.assertIn("GET /api/bootstrap/status 返回 runtime-mode packet", page)
+        self.assertIn("Vite 返回 Command Center 3.0 HTML", page)
+        self.assertIn("只读健康检查，不启动服务、不创建 task", page)
+        self.assertIn("只读运行模式，不写配置、不启用 live_light", page)
+        self.assertIn("只读前端入口，不调用 Tushare/DeepSeek/GitHub、不执行真实交易", page)
+        self.assertLess(page.index("启动后复核清单"), page.index("<summary>开发 / 审计详情</summary>"))
+        self.assertLess(page.index("启动后复核清单"), page.index("开发 / 审计详情：P0 联通明细"))
+        self.assertNotIn("postBootstrapLiveStartup", page)
 
 
 if __name__ == "__main__":

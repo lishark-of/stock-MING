@@ -51,6 +51,31 @@ export default function DesktopShellPreflight() {
         { step: "2", title: "按启动器诊断定位失败段", action: "先看 FastAPI、bootstrap status、React/Vite 哪一段没有 ready。" },
         { step: "3", title: "刷新健康页确认联通", action: "确认 P0 front/back、P0 receipt 和 one-click launcher 都为 ready。" }
       ];
+  const p0PostStartupReadbackRows = rows(cache.p0_post_startup_readback_rows).length
+    ? rows(cache.p0_post_startup_readback_rows)
+    : [
+        {
+          复核项: "FastAPI health",
+          页面看法: "系统健康和今日作战台显示本地前后端已联通",
+          通过条件: "GET /health 返回 Command Center 3.0 JSON，且 external_calls_on_startup=false",
+          失败下一步: "回启动器日志看 FastAPI 诊断，再检查 8710 是否被占用",
+          边界: "只读健康检查，不启动服务、不创建 task"
+        },
+        {
+          复核项: "Bootstrap status",
+          页面看法: "今日作战台显示运行模式和启动边界",
+          通过条件: "GET /api/bootstrap/status 返回 runtime-mode packet",
+          失败下一步: "回启动器日志看 bootstrap status 诊断",
+          边界: "只读运行模式，不写配置、不启用 live_light"
+        },
+        {
+          复核项: "React/Vite 前端",
+          页面看法: "浏览器打开 Command Center 3.0 今日作战台",
+          通过条件: "Vite 返回 Command Center 3.0 HTML，且页面入口可点击到预检、健康、雷达和量化推演",
+          失败下一步: "回启动器日志看 React/Vite 诊断，再检查 5173 是否被占用",
+          边界: "只读前端入口，不调用 Tushare/DeepSeek/GitHub、不执行真实交易"
+        }
+      ];
   const devLaunchPlan = rows(cache.dev_launch_plan);
   const desktopLauncherRows = rows(cache.desktop_launcher_rows);
   const productionLaunchPlan = rows(cache.production_launch_plan);
@@ -83,6 +108,11 @@ export default function DesktopShellPreflight() {
         <p>P0 本地联通收据：{String(p0LocalConnectionReceipt.status ?? "p0_local_connection_receipt_loading")}；实时探针：{String(p0LocalConnectionReceipt.current_runtime_probe_executed_by_get_cache ?? false)}</p>
         <p>{String(p0LocalConnectionReceipt.ordinary_label ?? "本地一键入口会先确认 FastAPI、bootstrap status 和 React/Vite 都就绪，再打开页面。")}</p>
         <DataLineageTable rows={p0RecoverySteps} />
+        <div aria-label="p0 post startup readback checklist">
+          <h3>启动后复核清单</h3>
+          <p className="risk-note">这张清单与启动器成功日志对齐；页面只回读本地 GET 结果，不补跑启动器、不创建 task。</p>
+          <DataLineageTable rows={p0PostStartupReadbackRows} />
+        </div>
         <p>普通用户摘要不展开联通行表；工程联通明细在下方开发 / 审计详情。</p>
       </PacketCard>
 

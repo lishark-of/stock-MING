@@ -182,6 +182,14 @@ print_startup_diagnostics() {
   echo "下一步：先关闭占用 8710/5173 的本地进程，或查看上面的 FastAPI / React/Vite 日志。"
 }
 
+print_post_startup_readback_checklist() {
+  echo "启动后复核清单："
+  echo "  1. FastAPI health：${API_BASE%/}/health 已返回 Command Center 3.0 JSON，且 external_calls_on_startup=false。"
+  echo "  2. Bootstrap status：${API_BASE%/}/api/bootstrap/status 已返回 runtime-mode packet，只读显示 cache_only/manual/live_light/live_full。"
+  echo "  3. React/Vite 前端：${VITE_URL} 已返回 Command Center 3.0 HTML；页面打开后先看今日作战台的一键启动预检。"
+  echo "边界：启动后复核只读本地 GET 结果；不创建 task、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
+}
+
 PYTHON_BIN="$(resolve_python)" || {
   echo "Command Center 3.0 启动失败：未找到项目 .venv Python。"
   echo "请先创建 .venv，或显式设置 STOCK_MING_PYTHON=/path/to/python。"
@@ -276,4 +284,5 @@ else
   echo "请在浏览器打开：${VITE_URL}"
 fi
 
+print_post_startup_readback_checklist
 echo "Command Center 3.0 入口已启动。关闭本窗口不会停止已在后台运行的本地 dev server。"
