@@ -1514,6 +1514,88 @@ def _p0_ordinary_reconnect_rows(
     ]
 
 
+def _p0_launcher_check_only_rows(
+    one_click_startup_summary: dict[str, Any],
+    desktop_launcher_contract: dict[str, Any],
+) -> list[dict[str, Any]]:
+    def row(
+        check_item: str,
+        status: str,
+        user_action: str,
+        readback: str,
+        boundary: str,
+    ) -> dict[str, Any]:
+        return {
+            "自检项": check_item,
+            "当前状态": status,
+            "用户动作": user_action,
+            "回读内容": readback,
+            "边界": boundary,
+            "ordinary_user_visible": True,
+            "cache_only_readback": True,
+            "get_cache_starts_services": False,
+            "react_render_starts_services": False,
+            "check_only_starts_services": False,
+            "check_only_probes_urls": False,
+            "check_only_writes_logs": False,
+            "check_only_opens_browser": False,
+            "creates_task_from_readback": False,
+            "provider_model_called_from_readback": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "loads_token_or_key": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "strict_closeout_evidence": False,
+            "release_ready_evidence": False,
+        }
+
+    check_only_ready = (
+        desktop_launcher_contract.get("check_only_mode_supported") is True
+        and desktop_launcher_contract.get("check_only_mode_starts_services") is False
+        and desktop_launcher_contract.get("check_only_mode_probes_urls") is False
+        and desktop_launcher_contract.get("check_only_mode_writes_logs") is False
+        and desktop_launcher_contract.get("check_only_mode_opens_browser") is False
+    )
+    preflight_readback_ready = (
+        one_click_startup_summary.get("get_preflight_cache_starts_services") is False
+        and desktop_launcher_contract.get("cache_get_starts_launcher") is False
+        and desktop_launcher_contract.get("cache_get_starts_fastapi") is False
+        and desktop_launcher_contract.get("cache_get_starts_vite") is False
+    )
+    react_readback_ready = (
+        one_click_startup_summary.get("react_render_starts_services") is False
+        and one_click_startup_summary.get("search_typing_starts_services") is False
+        and one_click_startup_summary.get("provider_model_execution_enabled") is False
+    )
+    return [
+        row(
+            "1. check-only 配置自检",
+            "ready" if check_only_ready else "check",
+            "运行 COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command。",
+            "只打印本机 API/Vite/open route、skip-open 和浏览器打开策略。",
+            "check-only 不启动 FastAPI/Vite、不探测 URL、不写日志、不打开浏览器、不创建 task。",
+        ),
+        row(
+            "2. desktop preflight cache 回读",
+            "ready" if preflight_readback_ready else "check",
+            "在首页或桌面壳预检读取 GET /api/desktop/preflight-cache。",
+            "回放一键启动 packet、四段联通条件和恢复步骤。",
+            "GET preflight 只读；不运行 launcher、不安装 shortcut、不启动服务、不调用 provider/model。",
+        ),
+        row(
+            "3. React 普通入口展示",
+            "ready" if react_readback_ready else "check",
+            "打开今日作战台查看只读自检、恢复步骤和 P0 到 P1 快速行动。",
+            "只展示本地 packet 行；输入股票代码前后都不自动外联。",
+            "React render/search typing 不创建 POST task；只有确认按钮可进入 Tushare-first P1 task。",
+        ),
+    ]
+
+
 def _p0_ordinary_quick_action_rows(
     one_click_startup_summary: dict[str, Any],
     p0_to_p1_ordinary_handoff_rows: list[dict[str, Any]],
@@ -5095,6 +5177,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         one_click_startup_summary,
         p0_to_p1_ordinary_handoff_rows,
     )
+    p0_launcher_check_only_rows = _p0_launcher_check_only_rows(
+        one_click_startup_summary,
+        desktop_launcher_contract,
+    )
     p0_ordinary_quick_action_rows = _p0_ordinary_quick_action_rows(
         one_click_startup_summary,
         p0_to_p1_ordinary_handoff_rows,
@@ -5183,6 +5269,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "p0_post_startup_readback_rows": p0_post_startup_readback_rows,
         "p0_to_p1_ordinary_handoff_rows": p0_to_p1_ordinary_handoff_rows,
         "p0_ordinary_reconnect_rows": p0_ordinary_reconnect_rows,
+        "p0_launcher_check_only_rows": p0_launcher_check_only_rows,
         "p0_ordinary_quick_action_rows": p0_ordinary_quick_action_rows,
         "desktop_launcher_contract": desktop_launcher_contract,
         "desktop_launcher_rows": desktop_launcher_contract["rows"],
@@ -5228,6 +5315,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_ordinary_reconnect_visible_count": sum(
                 1 for row in p0_ordinary_reconnect_rows if row["ordinary_user_visible"]
             ),
+            "p0_launcher_check_only_row_count": len(p0_launcher_check_only_rows),
+            "p0_launcher_check_only_visible_count": sum(
+                1 for row in p0_launcher_check_only_rows if row["ordinary_user_visible"]
+            ),
             "p0_ordinary_quick_action_row_count": len(p0_ordinary_quick_action_rows),
             "p0_ordinary_quick_action_visible_count": sum(
                 1 for row in p0_ordinary_quick_action_rows if row["ordinary_user_visible"]
@@ -5270,6 +5361,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_to_p1_next_user_action": p0_to_p1_ordinary_handoff_rows[0]["下一步"],
             "p0_ordinary_reconnect_next": p0_ordinary_reconnect_rows[0]["用户下一步"],
             "p0_ordinary_reconnect_entry": p0_ordinary_reconnect_rows[0]["入口"],
+            "p0_launcher_check_only_next": p0_launcher_check_only_rows[0]["用户动作"],
             "p0_ordinary_quick_action_next": p0_ordinary_quick_action_rows[0]["用户下一步"],
             "p0_current_runtime_live_connection_verified": p0_local_connection_receipt[
                 "current_runtime_live_connection_verified"
@@ -5359,6 +5451,14 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_ordinary_reconnect_rows_do_not_call_provider_model": True,
             "p0_ordinary_reconnect_rows_are_not_strict_closeout": True,
             "p0_ordinary_reconnect_rows_are_not_release_ready": True,
+            "p0_launcher_check_only_rows_are_cache_only": True,
+            "p0_launcher_check_only_rows_do_not_start_services": True,
+            "p0_launcher_check_only_rows_do_not_probe_urls": True,
+            "p0_launcher_check_only_rows_do_not_create_task": True,
+            "p0_launcher_check_only_rows_do_not_call_provider_model": True,
+            "p0_launcher_check_only_rows_do_not_open_browser_or_write_logs": True,
+            "p0_launcher_check_only_rows_are_not_strict_closeout": True,
+            "p0_launcher_check_only_rows_are_not_release_ready": True,
             "p0_ordinary_quick_action_rows_are_cache_only": True,
             "p0_ordinary_quick_action_rows_do_not_create_task": True,
             "p0_ordinary_quick_action_rows_do_not_call_provider_model": True,
@@ -5456,6 +5556,19 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
                 "row_count": len(p0_ordinary_reconnect_rows),
                 "local_fetched_at": _now_iso(),
                 "call_status": "local_p0_reconnect_rows_read",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+            {
+                "api": "local_p0_launcher_check_only_rows",
+                "source": "one_click_startup_summary and desktop_launcher_contract",
+                "row_count": len(p0_launcher_check_only_rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_p0_launcher_check_only_rows_read",
                 "external": False,
                 "tushare_called": False,
                 "deepseek_called": False,

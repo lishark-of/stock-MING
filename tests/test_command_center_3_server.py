@@ -1646,6 +1646,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         p0_post_startup_rows = desktop["p0_post_startup_readback_rows"]
         p0_to_p1_rows = desktop["p0_to_p1_ordinary_handoff_rows"]
         p0_reconnect_rows = desktop["p0_ordinary_reconnect_rows"]
+        p0_check_only_rows = desktop["p0_launcher_check_only_rows"]
         p0_quick_action_rows = desktop["p0_ordinary_quick_action_rows"]
         self.assertEqual(one_click["schema_version"], "command_center_3_one_click_startup_summary.v1")
         self.assertEqual(one_click["priority"], "P0")
@@ -1945,6 +1946,45 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(reconnect_row["strict_closeout_evidence"])
             self.assertFalse(reconnect_row["release_ready_evidence"])
         self.assertEqual(
+            [row["自检项"] for row in p0_check_only_rows],
+            ["1. check-only 配置自检", "2. desktop preflight cache 回读", "3. React 普通入口展示"],
+        )
+        self.assertEqual(desktop["counts"]["p0_launcher_check_only_row_count"], 3)
+        self.assertEqual(desktop["counts"]["p0_launcher_check_only_visible_count"], 3)
+        self.assertIn("COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1", desktop["runtime"]["p0_launcher_check_only_next"])
+        self.assertTrue(desktop["policy"]["p0_launcher_check_only_rows_are_cache_only"])
+        self.assertTrue(desktop["policy"]["p0_launcher_check_only_rows_do_not_start_services"])
+        self.assertTrue(desktop["policy"]["p0_launcher_check_only_rows_do_not_probe_urls"])
+        self.assertTrue(desktop["policy"]["p0_launcher_check_only_rows_do_not_create_task"])
+        self.assertTrue(desktop["policy"]["p0_launcher_check_only_rows_do_not_call_provider_model"])
+        self.assertTrue(desktop["policy"]["p0_launcher_check_only_rows_do_not_open_browser_or_write_logs"])
+        self.assertTrue(desktop["policy"]["p0_launcher_check_only_rows_are_not_strict_closeout"])
+        self.assertTrue(desktop["policy"]["p0_launcher_check_only_rows_are_not_release_ready"])
+        self.assertIn("不启动 FastAPI/Vite、不探测 URL、不写日志", p0_check_only_rows[0]["边界"])
+        self.assertIn("GET preflight 只读", p0_check_only_rows[1]["边界"])
+        self.assertIn("React render/search typing 不创建 POST task", p0_check_only_rows[2]["边界"])
+        for check_only_row in p0_check_only_rows:
+            self.assertTrue(check_only_row["ordinary_user_visible"])
+            self.assertTrue(check_only_row["cache_only_readback"])
+            self.assertFalse(check_only_row["get_cache_starts_services"])
+            self.assertFalse(check_only_row["react_render_starts_services"])
+            self.assertFalse(check_only_row["check_only_starts_services"])
+            self.assertFalse(check_only_row["check_only_probes_urls"])
+            self.assertFalse(check_only_row["check_only_writes_logs"])
+            self.assertFalse(check_only_row["check_only_opens_browser"])
+            self.assertFalse(check_only_row["creates_task_from_readback"])
+            self.assertFalse(check_only_row["provider_model_called_from_readback"])
+            self.assertFalse(check_only_row["external_calls_triggered"])
+            self.assertFalse(check_only_row["tushare_called"])
+            self.assertFalse(check_only_row["deepseek_called"])
+            self.assertFalse(check_only_row["github_called"])
+            self.assertFalse(check_only_row["loads_token_or_key"])
+            self.assertFalse(check_only_row["contains_secret"])
+            self.assertTrue(check_only_row["does_not_execute_trades"])
+            self.assertTrue(check_only_row["does_not_modify_strategy_action"])
+            self.assertFalse(check_only_row["strict_closeout_evidence"])
+            self.assertFalse(check_only_row["release_ready_evidence"])
+        self.assertEqual(
             [row["快速行动"] for row in p0_quick_action_rows],
             ["1. 本地联通变绿", "2. 打开下一票雷达", "3. 确认并生成", "4. 回放本地结果"],
         )
@@ -1975,6 +2015,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("local_p0_post_startup_readback_rows", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_to_p1_ordinary_handoff_rows", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_ordinary_reconnect_rows", {row["api"] for row in desktop["call_ledger"]})
+        self.assertIn("local_p0_launcher_check_only_rows", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_ordinary_quick_action_rows", {row["api"] for row in desktop["call_ledger"]})
         launcher = desktop["desktop_launcher_contract"]
         launcher_rows = {row["criterion"]: row for row in desktop["desktop_launcher_rows"]}

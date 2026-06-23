@@ -249,6 +249,7 @@ export default function CommandCenterHome() {
     }
   ];
   const p0OrdinaryQuickActionRows = (desktopPreflight.p0_ordinary_quick_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const p0LauncherCheckOnlyRows = (desktopPreflight.p0_launcher_check_only_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const desktopLauncherContract = (desktopPreflight.desktop_launcher_contract as Record<string, unknown> | undefined) ?? {};
   const recoveryCounts = recovery.counts as Record<string, unknown> | undefined;
   const taskCatalogPolicy = taskCatalog.policy as Record<string, unknown> | undefined;
@@ -430,6 +431,9 @@ export default function CommandCenterHome() {
   const dailyCommandNeedsStartupRecovery = Boolean(error) || (!loading && String(health.status ?? "") !== "ok");
   const dailyCommandP0QuickAction = String(
     desktopRuntime?.p0_ordinary_quick_action_next ?? p0OrdinaryQuickActionRows[0]?.["用户下一步"] ?? ""
+  );
+  const dailyCommandP0CheckOnlyNext = String(
+    desktopRuntime?.p0_launcher_check_only_next ?? p0LauncherCheckOnlyRows[0]?.["用户动作"] ?? "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command"
   );
   const dailyCommandNextClick = dailyCommandNeedsStartupRecovery
     ? "先查看一键启动预检，恢复本地 FastAPI / React 联通"
@@ -764,6 +768,7 @@ export default function CommandCenterHome() {
             { label: "恢复回读", value: dailyCommandStartupReadbackLabel, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
             { label: "回读顺序", value: dailyCommandStartupReadbackOrder, tone: "good" },
             { label: "回读边界", value: dailyCommandStartupReadbackBoundary, tone: "good" },
+            { label: "只读自检", value: dailyCommandP0CheckOnlyNext, tone: p0LauncherCheckOnlyRows.length ? "good" : "warn" },
             { label: "自动联通", value: dailyCommandFrontendBackendAutoLinkLabel, tone: health.status === "ok" ? "good" : "warn" },
             { label: "自动联通边界", value: dailyCommandFrontendBackendAutoLinkBoundary, tone: "good" },
             { label: "联通后行动", value: dailyCommandP0QuickAction || "等待 P0 quick action rows", tone: dailyCommandP0QuickAction ? "good" : "warn" },
@@ -805,6 +810,11 @@ export default function CommandCenterHome() {
           <h3>本地联通四段回读</h3>
           <p className="risk-note">先看 FastAPI、bootstrap runtime-mode packet、desktop preflight cache、React/Vite 前端四段是否变绿；这张表只读本地 GET 结果，不启动服务。</p>
           <DataLineageTable rows={dailyCommandStartupReadbackRows} />
+        </div>
+        <div aria-label="daily command p0 launcher check-only readback">
+          <h3>一键启动只读自检</h3>
+          <p className="risk-note">优先读取 desktop preflight 的 p0_launcher_check_only_rows：check-only 只打印配置，不启动 FastAPI/Vite、不探测 URL、不打开浏览器、不创建 task。</p>
+          <DataLineageTable rows={p0LauncherCheckOnlyRows} />
         </div>
         <div aria-label="daily command p0 frontend backend auto link readback">
           <h3>P0 前后端自动联通回读</h3>
