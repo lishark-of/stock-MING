@@ -95,6 +95,32 @@ export default function ModelStrategy() {
       边界: "DeepSeek 不改 operation_zones；图谱不是买卖或下单指令"
     }
   ];
+  const governedExecutorOrdinaryQuickReadRows = [
+    {
+      速读项: "现在先做",
+      当前状态: "继续 P1 Tushare-first、P2 cache/ledger/packet 回放、P3 基础图谱。",
+      用户下一步: "不用等待模型；先看确认任务、支持/压制和次日图谱。",
+      边界: "这些入口只读本地 cache 或按钮任务状态，不从本页调用 DeepSeek。"
+    },
+    {
+      速读项: "DeepSeek 等什么",
+      当前状态: String(governedExecutor.ordinary_required_before_real_call ?? "等待 model_ledger / sanitizer / redaction review / cost accounting / output acceptance"),
+      用户下一步: "把模型补证当单独验收，不拿 pending 状态阻断基础投研。",
+      边界: "缺 model_ledger 不能当真实模型证据，也不能升级 production evidence。"
+    },
+    {
+      速读项: "不会碰什么",
+      当前状态: "不覆盖价格、持仓、因子、operation_zones 或 strategy action。",
+      用户下一步: "模型解释只看已有证据的解释状态，不替代数据源。",
+      边界: "DeepSeek 文本不是买卖指令，不生成交易动作。"
+    },
+    {
+      速读项: "何时再补",
+      当前状态: governedExecutor.model_ledger_ready === true || governedExecutor.model_ledger_evidence_done === true ? "model_ledger 已就绪，可进入后续治理验收" : "model_ledger pending；继续本地回放",
+      用户下一步: "等 governed executor 完成后，再单独跑受控模型补证。",
+      边界: "真实调用只能走受控 POST task / executor，不从 GET cache 或 React render 触发。"
+    }
+  ];
   const governedExecutorRailState = [
     governedExecutor.scope_ticket_ready === true || governedExecutor.provider_benchmark_scope_ticket_ready === true ? "scope_ticket_ready" : "scope_ticket_pending",
     governedExecutor.sanitizer_ready === true && governedExecutor.redaction_review_ready === true ? "sanitizer_redaction_ready" : "sanitizer_redaction_pending",
@@ -161,10 +187,6 @@ export default function ModelStrategy() {
               { label: "边界", value: String(governedExecutor.ordinary_nonblocking_boundary ?? "DeepSeek 只解释已有证据，不作为数据源、不生成买卖动作。"), tone: "good" }
             ]}
           />
-          <details className="developer-audit-details">
-            <summary>P5 执行路由详情</summary>
-            <p>真实调用入口：{String(governedExecutor.execution_route ?? "POST /api/factor-quant/deepseek-explain")}；scope ticket：{String(governedExecutor.scope_ticket_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")}。</p>
-          </details>
           <p>必须先有 model_ledger、sanitizer、redaction review、cost accounting 和 output acceptance；本页 GET cache 与 React render 都不调用模型。</p>
           <p>DeepSeek 只解释已有证据，不覆盖价格、持仓、因子、operation zones 或 strategy action。</p>
           <StateClarityRail
@@ -173,6 +195,11 @@ export default function ModelStrategy() {
             steps={governedExecutorRailSteps}
           />
           <p className="risk-note">P5 准入状态：scope ticket / sanitizer-redaction / model ledger / 普通路径非阻塞；这条状态轨只读本地 cache，不调用 DeepSeek、不阻塞 Tushare-first 或基础图谱。</p>
+          <div aria-label="deepseek governed executor ordinary quick read">
+            <h3>P5 普通用户速读</h3>
+            <p className="risk-note">先看现在能做什么、DeepSeek 还等什么、不会改哪些数据；这张表不展开执行路由、raw policy 或模型输出。</p>
+            <DataLineageTable rows={governedExecutorOrdinaryQuickReadRows} />
+          </div>
           <div aria-label="deepseek governed executor ordinary checklist">
             <h3>P5 治理清单</h3>
             <p className="risk-note">普通用户只看能不能安全补证、是否阻塞基础路径；执行路由、scope ticket 和 raw policy 仍在详情里。</p>
@@ -183,6 +210,10 @@ export default function ModelStrategy() {
             <p className="risk-note">DeepSeek governed executor 未完成前，普通用户仍可先看 Tushare-first、Factor light 和 Next Session 本地回放。</p>
             <DataLineageTable rows={governedExecutorNonblockingRows} />
           </div>
+          <details className="developer-audit-details">
+            <summary>P5 执行路由详情</summary>
+            <p>真实调用入口：{String(governedExecutor.execution_route ?? "POST /api/factor-quant/deepseek-explain")}；scope ticket：{String(governedExecutor.scope_ticket_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")}。</p>
+          </details>
         </PacketCard>
 
         <PacketCard title="模型策略边界" subtitle="GET /api/model-strategy/cache 只读；不触发模型调用" status="cache_only">
