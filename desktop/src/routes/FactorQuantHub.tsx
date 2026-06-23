@@ -310,6 +310,10 @@ export default function FactorQuantHub() {
     "结果位置：本页看支持/压制与模型解释状态，次日图谱预览复核路径，下一票雷达回到代码确认入口；三个位置都只读回放";
   const ordinaryQuantRouteHandoffBoundary =
     "回放入口只切换本地页面/锚点；不创建 task、不调用 Tushare 或 DeepSeek、不写 cache、不改交易策略";
+  const ordinaryQuantFullNextSessionHandoff =
+    "完整次日图谱入口：从量化推演摘要打开 #next，复核路径、参考线和操作区；只做本地页面切换";
+  const ordinaryQuantFullNextSessionBoundary =
+    "打开完整次日图谱不创建 task、不刷新 Tushare/DeepSeek、不写 cache、不改 operation_zones 或 strategy action";
   const ordinaryQuantReviewOrder = empty
     ? "先回下一票雷达输入代码并确认生成；本页只等本地结果回放"
     : "先看支持/压制，再看次日图谱预览，最后看模型解释状态；不要从工程审计表开始";
@@ -484,6 +488,8 @@ export default function FactorQuantHub() {
             { label: "回放位置", value: ordinaryQuantReplayLocation, tone: "good" },
             { label: "结果位置", value: ordinaryQuantResultLocation, tone: "good" },
             { label: "回放入口边界", value: ordinaryQuantRouteHandoffBoundary, tone: "good" },
+            { label: "完整图谱入口", value: ordinaryQuantFullNextSessionHandoff, tone: "good" },
+            { label: "完整图谱边界", value: ordinaryQuantFullNextSessionBoundary, tone: "good" },
             { label: "查看顺序", value: ordinaryQuantReviewOrder },
             { label: "结果组成", value: ordinaryQuantResultComposition },
             { label: "数据来源状态", value: ordinaryQuantSourceState },
@@ -526,6 +532,7 @@ export default function FactorQuantHub() {
         <div className="actions" aria-label="stock quant projection source actions">
           <a href="#factor-score" aria-label="view factor support suppress summary">查看支持/压制</a>
           <a href="#factor-next-session" aria-label="view next session bridge preview">查看次日图谱预览</a>
+          <a href="#next" aria-label="open full next session map from stock quant replay">打开完整次日图谱</a>
           <a href="#factor-deepseek" aria-label="view model explanation status">查看模型解释状态</a>
           <a href="#candidates" aria-label="return to candidate radar symbol confirmation without creating a task">去下一票雷达生成推演</a>
         </div>
@@ -533,6 +540,7 @@ export default function FactorQuantHub() {
         <p className="risk-note">本页不接收股票代码输入；换标的必须回下一票雷达确认按钮，避免把查看缓存误当成重新推演。</p>
         <p className="risk-note">来自下一票雷达的搜票结果在本页只回放 Factor cache、次日图谱预览和模型解释状态；本页链接不重新触发 Tushare-first 或 DeepSeek。</p>
         <p className="risk-note">{ordinaryQuantResultLocation}</p>
+        <p className="risk-note">{ordinaryQuantFullNextSessionBoundary}。</p>
         <p className="risk-note">生成后先按“支持/压制 → 次日图谱预览 → 模型解释状态”复核；缺数据就看 pending/缺少证据，不把空结果当成无风险。</p>
         <p className="risk-note">{ordinaryQuantRouteHandoffBoundary}。</p>
         <p className="risk-note">工程审计明细默认收起；完整 factor/provider/model ledger 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
