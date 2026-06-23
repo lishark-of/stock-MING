@@ -940,7 +940,8 @@ export default function CommandCenterHome() {
           <p>manual status: {liveBootstrapManualStatus}</p>
           <p>sources enabled: {String(liveLight.sources_enabled ?? false)}</p>
           <p>Tushare / DeepSeek configured source switches: {String(liveLight.tushare_on_open ?? false)} / {String(liveLight.deepseek_on_open ?? false)}</p>
-          <p>DeepSeek model call: {liveBootstrapModelCalled ? "ledger 显示已执行" : "未执行；需要明确允许白名单摘要外发后才会调用"}</p>
+          <p>live_light 后台审计：轻量实时后台任务只允许手动确认后的 POST task。</p>
+          <p>DeepSeek model call: {liveBootstrapModelCalled ? "模型调用 ledger 已记录；ledger 显示已执行" : "待授权解释；未执行；需要明确允许白名单摘要外发后才会调用"}</p>
           <p>task skeleton / provider execution: {String(liveLight.bootstrap_task_implemented ?? false)} / {String(liveLight.provider_execution_implemented ?? false)}</p>
           <p>provider linkage rows: {String(bootstrapProviderLinkageRows.length)}</p>
           <p>live_light activation receipt: {String(liveLightActivationReceipt.status ?? "--")}</p>

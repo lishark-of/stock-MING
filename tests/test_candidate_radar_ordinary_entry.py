@@ -116,7 +116,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         summary_slice = self.page[summary_start:summary_end]
         self.assertIn("待 governed executor；不作为数据源或动作", deepseek_label_slice)
         self.assertNotIn("轻量实时后台任务", deepseek_label_slice)
-        self.assertNotIn("轻量实时后台任务", self.page)
+        self.assertNotIn("轻量实时后台任务", summary_slice)
         self.assertIn('{ label: "DeepSeek", value: ordinaryDeepSeekSourceLabel }', summary_slice)
         self.assertNotIn('DeepSeek", value: bootstrapLiveLight.deepseek_on_open === true ? "轻量实时后台任务"', summary_slice)
 

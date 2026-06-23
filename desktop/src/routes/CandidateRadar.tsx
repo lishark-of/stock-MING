@@ -1840,6 +1840,7 @@ export default function CandidateRadar() {
             <p>provider/model creates task / calls now: {String(bootstrapRuntimeOperatorSummary.provider_model_enablement_creates_provider_model_task ?? false)} / {String(bootstrapRuntimeOperatorSummary.provider_model_enablement_calls_provider_model_now ?? false)}</p>
             <p>provider/model release switch production evidence: {String(bootstrapRuntimeOperatorSummary.provider_model_enablement_summary_is_production_evidence ?? false)}</p>
             <p>activation receipt: {String(bootstrapActivationReceipt.status ?? "--")}；雷达页不会直接调用 Tushare、DeepSeek、GitHub，也不会从 render 启动 full-pool 或 deep-scan。</p>
+            <p>live_light 后台审计：轻量实时后台任务只允许确认按钮创建 POST task；普通摘要不展示工程任务噪音。</p>
             <DataLineageTable rows={bootstrapProviderModelEnablementRows} />
             <DataLineageTable rows={bootstrapModeRows} />
             <DataLineageTable rows={bootstrapConfigRows} />

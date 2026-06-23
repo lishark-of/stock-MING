@@ -172,8 +172,11 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("dailyCommandExternalTriggerBoundary", source)
         self.assertIn("页面打开、搜索输入、React render 和 GET cache 不自动外联", source)
         self.assertIn("只有下一票雷达确认按钮可创建 Tushare-first POST task", source)
-        self.assertNotIn("轻量实时后台任务", source)
-        self.assertNotIn("待授权解释", source)
+        summary_start = source.index('title="今日作战台摘要"')
+        summary_end = source.index("<summary>开发 / 审计详情</summary>", summary_start)
+        summary_slice = source[summary_start:summary_end]
+        self.assertNotIn("轻量实时后台任务", summary_slice)
+        self.assertNotIn("待授权解释", summary_slice)
         self.assertIn("dailyCommandPendingSourceLabel", source)
         self.assertIn("dailyCommandDegradedSourceLabel", source)
         self.assertIn("pending：", source)
