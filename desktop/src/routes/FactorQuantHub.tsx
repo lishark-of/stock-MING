@@ -311,6 +311,29 @@ export default function FactorQuantHub() {
   ].join(" / ");
   const ordinaryQuantResultBoundary =
     "结果只用于研究复核；支持/压制、次日图谱和模型解释都不能直接变成买卖指令";
+  const ordinaryQuantResultReplayRows = [
+    {
+      结果段: "支持/压制",
+      可读结论: empty ? "等待下一票雷达生成本地量化推演" : `支持 ${String(score.support_factors?.length ?? 0)} / 压制 ${String(score.suppress_factors?.length ?? 0)} / 冲突 ${String(score.conflict_factors?.length ?? 0)} / 缺失 ${String(score.missing_factors?.length ?? 0)}`,
+      证据: ordinaryQuantCacheSourceLabel,
+      下一步: "先看因子方向和缺失项，再决定是否需要手动刷新或回到雷达换标的",
+      边界: "只读 Factor cache，不创建 task、不调用 Tushare/DeepSeek"
+    },
+    {
+      结果段: "次日图谱预览",
+      可读结论: `图谱状态：${String(bridge.status ?? bridge.bridge_status ?? "等待本地缓存")}`,
+      证据: "Next Session preview / bridge cache",
+      下一步: "再打开次日图谱复核路径、参考线和操作区",
+      边界: "预览不改 operation_zones，不写交易动作"
+    },
+    {
+      结果段: "模型解释状态",
+      可读结论: ordinaryQuantDeepSeekSourceLabel,
+      证据: ordinaryQuantModelSourceLabel,
+      下一步: "DeepSeek governed executor 完成前只看 skipped/pending 状态",
+      边界: "模型解释不覆盖价格、因子、持仓、操作区或 strategy action"
+    }
+  ];
   const ordinaryQuantRuntimeModeLabel = `运行模式：${runtimeModeLabel(ordinaryQuantRuntimeMode)}`;
   const ordinaryQuantTaskBoundary =
     "本页 GET cache 只读；手动刷新、轻量推演、模型整理或 live_light 补证都必须走 POST task，不在 React 渲染中直连 Tushare 或 DeepSeek";
@@ -357,6 +380,11 @@ export default function FactorQuantHub() {
             { label: "仅供研究", value: "量化推演不是买卖指令；不真实交易、不下单、不改交易策略或操作区", tone: "good" }
           ]}
         />
+        <div aria-label="stock quant ordinary explainable result replay">
+          <h3>三段可解释结果</h3>
+          <p className="risk-note">普通结果先按支持/压制、次日图谱预览、模型解释状态阅读；每段只回放本地 cache，不把解释变成交易动作。</p>
+          <DataLineageTable rows={ordinaryQuantResultReplayRows} />
+        </div>
         <div className="actions" aria-label="stock quant projection primary next action">
           <a href={ordinaryQuantPrimaryActionHref} aria-label="open stock quant primary next action">{ordinaryQuantPrimaryActionLabel}</a>
         </div>
