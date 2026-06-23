@@ -123,6 +123,12 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(summary_start, ordinary_audit_shortcuts_index)
         self.assertLess(ordinary_audit_shortcuts_index, self.page.index('id="settings" className="developer-audit-details"'))
         self.assertLess(ordinary_audit_shortcuts_index, self.page.index('id="audit" className="developer-audit-details"'))
+        self.assertIn('<details className="developer-audit-details" aria-label="candidate radar ordinary p5 governance details">', self.page)
+        self.assertIn("<summary>P5 DeepSeek 单独补证状态</summary>", self.page)
+        self.assertIn("普通主线先停在 P1 确认、P2 三面回放和 P3 结果速读；DeepSeek governed executor 状态默认收起，只作为高级补证参考。", self.page)
+        self.assertLess(self.page.index('aria-label="candidate radar ordinary p3 result handoff index"'), self.page.index('aria-label="candidate radar ordinary p5 governance details"'))
+        self.assertLess(self.page.index('aria-label="candidate radar ordinary p5 governance details"'), self.page.index('aria-label="candidate radar ordinary p6 strict closeout handoff"'))
+        self.assertLess(self.page.index('aria-label="candidate radar ordinary p5 governance details"'), self.page.index('aria-label="candidate radar primary next action"'))
         self.assertNotIn(
             '工程审计明细默认收起；完整 call ledger、release gate 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。',
             self.page,

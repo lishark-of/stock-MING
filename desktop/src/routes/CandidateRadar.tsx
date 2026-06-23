@@ -1606,16 +1606,20 @@ export default function CandidateRadar() {
           <p className="risk-note">普通用户按这张索引回放可读结论、量化推演、次日图谱和候选池；它只读取服务端 ordinary_result_handoff_rows，不创建 task、不补调模型。</p>
           <DataLineageTable rows={quantProjectionOrdinaryResultHandoffRows} />
         </div>
-        <div aria-label="candidate radar ordinary p5 deepseek standalone governance">
-          <h3>P5 DeepSeek 单独治理速读</h3>
-          <p className="risk-note">DeepSeek 只作为 governed executor 单独补证；P1 Tushare-first、P2 小数据写入和 P3 基础图谱继续先走本地回放，不等待模型。</p>
-          <DataLineageTable rows={quantProjectionDeepSeekGovernanceRows} />
-        </div>
-        <div aria-label="candidate radar ordinary p5 governed executor readiness">
-          <h3>P5 governed executor readiness</h3>
-          <p className="risk-note">普通用户只看 P5 是否具备单独补证条件：model_ledger、sanitizer、fallback 和 promotion 边界；这张表只读回放，不创建 task、不调用模型。</p>
-          <DataLineageTable rows={quantProjectionDeepSeekReadinessRows} />
-        </div>
+        <details className="developer-audit-details" aria-label="candidate radar ordinary p5 governance details">
+          <summary>P5 DeepSeek 单独补证状态</summary>
+          <p className="risk-note">普通主线先停在 P1 确认、P2 三面回放和 P3 结果速读；DeepSeek governed executor 状态默认收起，只作为高级补证参考。</p>
+          <div aria-label="candidate radar ordinary p5 deepseek standalone governance">
+            <h3>P5 DeepSeek 单独治理速读</h3>
+            <p className="risk-note">DeepSeek 只作为 governed executor 单独补证；P1 Tushare-first、P2 小数据写入和 P3 基础图谱继续先走本地回放，不等待模型。</p>
+            <DataLineageTable rows={quantProjectionDeepSeekGovernanceRows} />
+          </div>
+          <div aria-label="candidate radar ordinary p5 governed executor readiness">
+            <h3>P5 governed executor readiness</h3>
+            <p className="risk-note">普通用户只看 P5 是否具备单独补证条件：model_ledger、sanitizer、fallback 和 promotion 边界；这张表只读回放，不创建 task、不调用模型。</p>
+            <DataLineageTable rows={quantProjectionDeepSeekReadinessRows} />
+          </div>
+        </details>
         <details className="developer-audit-details" aria-label="candidate radar ordinary p6 strict closeout handoff">
           <summary>P6 14 LTG strict closeout 交接</summary>
           <p className="risk-note">当前只是使用者可用化 checkpoint，不是 14 LTG 全部完成；后续必须回到 direct evidence、CI、browser/provider/worker/storage/package 等逐项严格验收。</p>
