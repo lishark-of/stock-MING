@@ -1606,10 +1606,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("scripts/start_command_center_3.command", one_click["what_user_should_click_next"])
         self.assertEqual(
             one_click["success_condition"],
-            "FastAPI /health 必须返回 Command Center 3.0 健康 JSON，/api/bootstrap/status 必须返回 runtime-mode packet，React/Vite 必须返回 Command Center 3.0 前端 HTML 后才打开页面。",
+            "FastAPI /health 必须返回 Command Center 3.0 健康 JSON，/api/bootstrap/status 必须返回 runtime-mode packet，/api/desktop/preflight-cache 必须返回一键启动 packet，React/Vite 必须返回 Command Center 3.0 前端 HTML 后才打开页面。",
         )
         self.assertIn("可操作诊断", one_click["blocked_next_action"])
-        self.assertIn("FastAPI、bootstrap status、React/Vite", one_click["blocked_next_action"])
+        self.assertIn("FastAPI、bootstrap status、desktop preflight cache、React/Vite", one_click["blocked_next_action"])
         self.assertIn("8710/5173", one_click["blocked_next_action"])
         self.assertIn(".stock_ming_3/logs/command_center_3_fastapi.log", one_click["blocked_next_action"])
         self.assertEqual(
@@ -1617,6 +1617,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             [
                 "FastAPI /health Command Center 3.0 JSON",
                 "bootstrap status runtime-mode packet",
+                "desktop preflight cache one-click packet",
                 "React/Vite Command Center 3.0 HTML",
                 "8710/5173 port occupancy guidance",
             ],
@@ -1655,6 +1656,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(one_click["fastapi_health_identity_validated_before_open"])
         self.assertTrue(one_click["fastapi_status_api_wait_before_open"])
         self.assertTrue(one_click["fastapi_bootstrap_status_json_validated_before_open"])
+        self.assertTrue(one_click["desktop_preflight_cache_wait_before_open"])
+        self.assertTrue(one_click["desktop_preflight_cache_json_validated_before_open"])
         self.assertTrue(one_click["vite_wait_before_open"])
         self.assertTrue(one_click["vite_frontend_identity_validated_before_open"])
         self.assertTrue(one_click["startup_failure_diagnostics_visible"])
@@ -1695,6 +1698,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("startup_failure_diagnostics_visible", one_click_rows)
         self.assertIn("p0_success_handoff_to_p1_confirm_visible", one_click_rows)
         self.assertIn("Command Center 3.0 health JSON", one_click_rows["fastapi_health_wait_before_open"]["evidence"])
+        self.assertIn("desktop_preflight_cache_wait_before_open", one_click_rows)
+        self.assertIn("command_center_3_desktop_shell_preflight_cache", one_click_rows["desktop_preflight_cache_wait_before_open"]["evidence"])
         self.assertIn("Command Center 3.0 index HTML", one_click_rows["vite_wait_before_open"]["evidence"])
         self.assertIn("#candidates", one_click_rows["p0_success_handoff_to_p1_confirm_visible"]["evidence"])
         self.assertIn("Tushare-first POST task", one_click_rows["p0_success_handoff_to_p1_confirm_visible"]["evidence"])
@@ -1711,7 +1716,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(p0_receipt["priority"], "P0")
         self.assertEqual(p0_receipt["status"], "p0_local_connection_receipt_ready")
         self.assertEqual(p0_receipt["scope"], "user_run_launcher_frontend_backend_connection_receipt")
-        self.assertIn("FastAPI、bootstrap status 和 React/Vite", p0_receipt["ordinary_label"])
+        self.assertIn("FastAPI、bootstrap status、desktop preflight cache 和 React/Vite", p0_receipt["ordinary_label"])
         self.assertIn("stock-MING Command Center 3.command", p0_receipt["what_user_clicks"])
         self.assertEqual(p0_receipt["success_condition"], one_click["success_condition"])
         self.assertEqual(p0_receipt["blocked_next_action"], one_click["blocked_next_action"])
@@ -1754,19 +1759,20 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(desktop["policy"]["p0_local_connection_receipt_does_not_probe_runtime_from_get_cache"])
         self.assertTrue(desktop["policy"]["p0_local_connection_receipt_is_not_production_package"])
         self.assertTrue(desktop["policy"]["p0_local_connection_receipt_does_not_enable_provider_model"])
-        self.assertIn("browser_open_is_gated_by_all_three_checks", p0_rows)
+        self.assertIn("desktop_preflight_cache_gate_before_page_open", p0_rows)
+        self.assertIn("browser_open_is_gated_by_all_four_checks", p0_rows)
         self.assertIn("provider_model_and_trade_boundary_preserved", p0_rows)
         self.assertTrue(all(row["passed"] for row in p0_rows.values()))
         self.assertFalse(p0_rows["get_cache_and_react_render_remain_read_only"]["external_calls_triggered"])
         self.assertTrue(p0_rows["provider_model_and_trade_boundary_preserved"]["does_not_execute_trades"])
         self.assertEqual(
             [row["环节"] for row in p0_ordinary_rows],
-            ["FastAPI", "Bootstrap status", "React/Vite"],
+            ["FastAPI", "Bootstrap status", "Desktop preflight cache", "React/Vite"],
         )
-        self.assertEqual([row["当前状态"] for row in p0_ordinary_rows], ["ready", "ready", "ready"])
-        self.assertEqual(desktop["counts"]["p0_ordinary_connection_row_count"], 3)
-        self.assertEqual(desktop["counts"]["p0_ordinary_connection_ready_count"], 3)
-        self.assertEqual(desktop["runtime"]["p0_ordinary_connection_ready_count"], 3)
+        self.assertEqual([row["当前状态"] for row in p0_ordinary_rows], ["ready", "ready", "ready", "ready"])
+        self.assertEqual(desktop["counts"]["p0_ordinary_connection_row_count"], 4)
+        self.assertEqual(desktop["counts"]["p0_ordinary_connection_ready_count"], 4)
+        self.assertEqual(desktop["runtime"]["p0_ordinary_connection_ready_count"], 4)
         self.assertTrue(desktop["policy"]["p0_ordinary_connection_rows_are_cache_only"])
         self.assertTrue(desktop["policy"]["p0_ordinary_connection_rows_do_not_probe_runtime"])
         self.assertTrue(desktop["policy"]["p0_ordinary_connection_rows_do_not_create_task"])
@@ -1781,22 +1787,24 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertTrue(ordinary_row["does_not_modify_strategy_action"])
         self.assertIn("只读健康检查", p0_ordinary_rows[0]["边界"])
         self.assertIn("不写配置、不启用 live_light", p0_ordinary_rows[1]["边界"])
-        self.assertIn("不调用 Tushare/DeepSeek/GitHub", p0_ordinary_rows[2]["边界"])
+        self.assertIn("不运行 launcher、不探测当前运行时", p0_ordinary_rows[2]["边界"])
+        self.assertIn("不调用 Tushare/DeepSeek/GitHub", p0_ordinary_rows[3]["边界"])
         self.assertEqual(
             [row["失败段"] for row in p0_failure_rows],
-            ["FastAPI /health", "Bootstrap status", "React/Vite HTML", "端口和日志指引"],
+            ["FastAPI /health", "Bootstrap status", "Desktop preflight cache", "React/Vite HTML", "端口和日志指引"],
         )
-        self.assertEqual([row["当前状态"] for row in p0_failure_rows], ["ready", "ready", "ready", "ready"])
-        self.assertEqual(desktop["counts"]["p0_failure_diagnostic_row_count"], 4)
-        self.assertEqual(desktop["runtime"]["p0_failure_diagnostic_ready_count"], 4)
+        self.assertEqual([row["当前状态"] for row in p0_failure_rows], ["ready", "ready", "ready", "ready", "ready"])
+        self.assertEqual(desktop["counts"]["p0_failure_diagnostic_row_count"], 5)
+        self.assertEqual(desktop["runtime"]["p0_failure_diagnostic_ready_count"], 5)
         self.assertTrue(desktop["policy"]["p0_failure_diagnostic_rows_are_cache_only"])
         self.assertTrue(desktop["policy"]["p0_failure_diagnostic_rows_do_not_probe_runtime"])
         self.assertTrue(desktop["policy"]["p0_failure_diagnostic_rows_do_not_create_task"])
         self.assertTrue(desktop["policy"]["p0_failure_diagnostic_rows_do_not_call_provider_model"])
         self.assertIn("command_center_3_fastapi.log", p0_failure_rows[0]["日志/端口"])
         self.assertIn("/api/bootstrap/status", p0_failure_rows[1]["日志/端口"])
-        self.assertIn("command_center_3_vite.log", p0_failure_rows[2]["日志/端口"])
-        self.assertIn("不启动服务、不创建 POST task、不外联", p0_failure_rows[3]["边界"])
+        self.assertIn("/api/desktop/preflight-cache", p0_failure_rows[2]["日志/端口"])
+        self.assertIn("command_center_3_vite.log", p0_failure_rows[3]["日志/端口"])
+        self.assertIn("不启动服务、不创建 POST task、不外联", p0_failure_rows[4]["边界"])
         for diagnostic_row in p0_failure_rows:
             self.assertTrue(diagnostic_row["ordinary_user_visible"])
             self.assertTrue(diagnostic_row["cache_only_readback"])
@@ -1807,10 +1815,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(diagnostic_row["loads_token_or_key"])
             self.assertTrue(diagnostic_row["does_not_execute_trades"])
             self.assertTrue(diagnostic_row["does_not_modify_strategy_action"])
-        self.assertEqual([row["复核项"] for row in p0_post_startup_rows], ["FastAPI health", "Bootstrap status", "React/Vite 前端"])
-        self.assertEqual([row["当前状态"] for row in p0_post_startup_rows], ["ready", "ready", "ready"])
-        self.assertEqual(desktop["counts"]["p0_post_startup_readback_row_count"], 3)
-        self.assertEqual(desktop["runtime"]["p0_post_startup_readback_ready_count"], 3)
+        self.assertEqual([row["复核项"] for row in p0_post_startup_rows], ["FastAPI health", "Bootstrap status", "Desktop preflight cache", "React/Vite 前端"])
+        self.assertEqual([row["当前状态"] for row in p0_post_startup_rows], ["ready", "ready", "ready", "ready"])
+        self.assertEqual(desktop["counts"]["p0_post_startup_readback_row_count"], 4)
+        self.assertEqual(desktop["runtime"]["p0_post_startup_readback_ready_count"], 4)
         self.assertTrue(desktop["policy"]["p0_post_startup_readback_rows_are_cache_only"])
         self.assertTrue(desktop["policy"]["p0_post_startup_readback_rows_do_not_probe_runtime"])
         self.assertTrue(desktop["policy"]["p0_post_startup_readback_rows_do_not_create_task"])
@@ -1848,7 +1856,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertTrue(handoff_row["does_not_modify_strategy_action"])
         self.assertEqual(
             [row["用户状态"] for row in p0_reconnect_rows],
-            ["页面未打开或本地后端离线", "启动器没有自动打开页面", "三段联通变绿", "准备生成基础投研结果"],
+            ["页面未打开或本地后端离线", "启动器没有自动打开页面", "四段联通变绿", "准备生成基础投研结果"],
         )
         self.assertEqual(desktop["counts"]["p0_ordinary_reconnect_row_count"], 4)
         self.assertEqual(desktop["counts"]["p0_ordinary_reconnect_visible_count"], 4)

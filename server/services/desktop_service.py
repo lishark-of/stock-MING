@@ -514,17 +514,21 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "Command Center 3.0 local launcher",
         "P0: local one-click launcher starts/checks FastAPI and React/Vite before opening the page.",
         "Link check: launcher verifies",
-        "/api/bootstrap/status before opening the page.",
+        "/api/desktop/preflight-cache before opening the page.",
         "Health check: /health must return stock-MING Command Center 3.0 JSON with external_calls_on_startup=false.",
         "Bootstrap check: /api/bootstrap/status must return command_center_3_bootstrap_runtime_mode_packet JSON before the page opens.",
+        "Desktop preflight check: /api/desktop/preflight-cache must return command_center_3_desktop_shell_preflight_cache JSON before the page opens.",
         "Frontend check: Vite must serve stock-MING Command Center 3.0 index HTML before the page opens.",
         "command_center_health_ready",
         "wait_for_command_center_health",
         "bootstrap_status_ready",
         "wait_for_bootstrap_status",
+        "desktop_preflight_cache_ready",
+        "wait_for_desktop_preflight_cache",
         "vite_command_center_ready",
         "wait_for_vite_command_center",
         "command_center_3_bootstrap_runtime_mode_packet",
+        "command_center_3_desktop_shell_preflight_cache",
         "stock-MING Command Center 3.0",
         "external_calls_on_startup",
         "可操作诊断",
@@ -542,7 +546,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "Check-only mode: resolved launcher configuration without starting FastAPI",
         "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN",
         "Browser open:",
-        "Skip-open mode: FastAPI, bootstrap status, and React/Vite are ready",
+        "Skip-open mode: FastAPI, bootstrap status, desktop preflight cache, and React/Vite are ready",
         "STOCK_MING_FASTAPI_RELOAD=0",
         "no Tushare, DeepSeek, GitHub, or trading call",
     )
@@ -633,9 +637,10 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "check_only_mode_probes_urls": False,
         "check_only_mode_opens_browser": False,
         "skip_open_mode_supported": "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN" in source
-        and "Skip-open mode: FastAPI, bootstrap status, and React/Vite are ready" in source,
+        and "Skip-open mode: FastAPI, bootstrap status, desktop preflight cache, and React/Vite are ready" in source,
         "skip_open_waits_for_frontend_backend_ready": "wait_for_command_center_health" in source
         and "wait_for_bootstrap_status" in source
+        and "wait_for_desktop_preflight_cache" in source
         and "wait_for_vite_command_center" in source,
         "skip_open_mode_opens_browser": False,
         "writes_ignored_local_logs_when_user_runs": ".stock_ming_3/logs" in source,
@@ -719,6 +724,13 @@ def _one_click_startup_summary(
         and "command_center_3_bootstrap_runtime_mode_packet" in launcher_source
         and "command_center_bootstrap_runtime_mode.v1" in launcher_source
     )
+    desktop_preflight_wait_ready = (
+        'if wait_for_desktop_preflight_cache "${API_BASE%/}/api/desktop/preflight-cache" 40; then'
+        in launcher_source
+        and "desktop_preflight_cache_ready" in launcher_source
+        and "command_center_3_desktop_shell_preflight_cache" in launcher_source
+        and "desktop_shell_preflight_cache.v1" in launcher_source
+    )
     vite_identity_ready = (
         'if wait_for_vite_command_center "$VITE_URL" 40; then' in launcher_source
         and "vite_command_center_ready" in launcher_source
@@ -729,11 +741,12 @@ def _one_click_startup_summary(
         "print_startup_diagnostics" in launcher_source
         and "FastAPI：${API_BASE%/}/health 未返回 Command Center 3.0 健康 JSON" in launcher_source
         and "Bootstrap status：${API_BASE%/}/api/bootstrap/status 未返回 runtime-mode packet" in launcher_source
+        and "Desktop preflight cache：${API_BASE%/}/api/desktop/preflight-cache 未返回一键启动 packet" in launcher_source
         and "React/Vite：${VITE_URL} 未返回 Command Center 3.0 前端 HTML" in launcher_source
         and "下一步：先关闭占用 8710/5173 的本地进程" in launcher_source
     )
     open_is_gated = (
-        'if [ "$FASTAPI_READY" != "1" ] || [ "$API_STATUS_READY" != "1" ] || [ "$VITE_READY" != "1" ]; then'
+        'if [ "$FASTAPI_READY" != "1" ] || [ "$API_STATUS_READY" != "1" ] || [ "$DESKTOP_PREFLIGHT_READY" != "1" ] || [ "$VITE_READY" != "1" ]; then'
         in launcher_source
         and 'open "$APP_URL"' in launcher_source
     )
@@ -770,6 +783,11 @@ def _one_click_startup_summary(
             f"{_path_label(COMMAND_CENTER_3_LAUNCHER)} validates {api_base_info.get('api_base')}/api/bootstrap/status as command_center_3_bootstrap_runtime_mode_packet JSON",
         ),
         row(
+            "desktop_preflight_cache_wait_before_open",
+            desktop_preflight_wait_ready,
+            f"{_path_label(COMMAND_CENTER_3_LAUNCHER)} validates {api_base_info.get('api_base')}/api/desktop/preflight-cache as command_center_3_desktop_shell_preflight_cache JSON",
+        ),
+        row(
             "vite_wait_before_open",
             vite_identity_ready,
             f"{_path_label(COMMAND_CENTER_3_LAUNCHER)} waits for http://127.0.0.1:5173 to serve stock-MING Command Center 3.0 index HTML",
@@ -777,12 +795,12 @@ def _one_click_startup_summary(
         row(
             "startup_failure_diagnostics_visible",
             startup_diagnostics_visible,
-            "launcher prints separate FastAPI, bootstrap status, and React/Vite diagnostics with 8710/5173 recovery guidance",
+            "launcher prints separate FastAPI, bootstrap status, desktop preflight cache, and React/Vite diagnostics with 8710/5173 recovery guidance",
         ),
         row(
             "browser_opens_only_after_frontend_backend_ready",
             open_is_gated,
-            "launcher exits before opening the page when FastAPI or Vite is not ready",
+            "launcher exits before opening the page when FastAPI health, bootstrap status, desktop preflight cache, or Vite identity is not ready",
         ),
         row(
             "p0_success_handoff_to_p1_confirm_visible",
@@ -817,7 +835,7 @@ def _one_click_startup_summary(
             "title": "打开本地一键入口",
             "when": "页面未打开、健康页显示 check，或本地后端离线",
             "action": "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。",
-            "checks": "启动器会依次等待 FastAPI /health、/api/bootstrap/status 和 React/Vite HTML。",
+            "checks": "启动器会依次等待 FastAPI /health、/api/bootstrap/status、/api/desktop/preflight-cache 和 React/Vite HTML。",
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -830,7 +848,7 @@ def _one_click_startup_summary(
             "step": "2",
             "title": "按启动器诊断定位失败段",
             "when": "启动器没有自动打开页面",
-            "action": "先看 FastAPI、bootstrap status、React/Vite 哪一段没有 ready。",
+            "action": "先看 FastAPI、bootstrap status、desktop preflight cache、React/Vite 哪一段没有 ready。",
             "checks": "对应检查 8710/5173 端口占用和 .stock_ming_3/logs 下的 fastapi/vite 日志。",
             "external_calls_triggered": False,
             "tushare_called": False,
@@ -843,7 +861,7 @@ def _one_click_startup_summary(
         {
             "step": "3",
             "title": "刷新健康页确认联通",
-            "when": "启动器显示三个检查都 ready 后",
+            "when": "启动器显示四个检查都 ready 后",
             "action": "回到系统健康页，确认 P0 front/back、P0 receipt 和 one-click launcher 都为 ready。",
             "checks": "本页只读 GET /health 与 GET /api/desktop/preflight-cache，不创建 task。",
             "external_calls_triggered": False,
@@ -864,11 +882,12 @@ def _one_click_startup_summary(
         "scope": "ordinary_user_local_startup_and_frontend_backend_connection",
         "headline": "一键启动会启动或复用本地 FastAPI 与 React/Vite，并在后端状态 API 与页面都联通后打开页面。",
         "what_user_should_click_next": "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。",
-        "success_condition": "FastAPI /health 必须返回 Command Center 3.0 健康 JSON，/api/bootstrap/status 必须返回 runtime-mode packet，React/Vite 必须返回 Command Center 3.0 前端 HTML 后才打开页面。",
-        "blocked_next_action": "若未打开页面，先看启动器的可操作诊断：FastAPI、bootstrap status、React/Vite 哪段失败；再检查 8710/5173 是否被占用，或查看 .stock_ming_3/logs/command_center_3_fastapi.log 与 command_center_3_vite.log。",
+        "success_condition": "FastAPI /health 必须返回 Command Center 3.0 健康 JSON，/api/bootstrap/status 必须返回 runtime-mode packet，/api/desktop/preflight-cache 必须返回一键启动 packet，React/Vite 必须返回 Command Center 3.0 前端 HTML 后才打开页面。",
+        "blocked_next_action": "若未打开页面，先看启动器的可操作诊断：FastAPI、bootstrap status、desktop preflight cache、React/Vite 哪段失败；再检查 8710/5173 是否被占用，或查看 .stock_ming_3/logs/command_center_3_fastapi.log 与 command_center_3_vite.log。",
         "diagnostic_surfaces": [
             "FastAPI /health Command Center 3.0 JSON",
             "bootstrap status runtime-mode packet",
+            "desktop preflight cache one-click packet",
             "React/Vite Command Center 3.0 HTML",
             "8710/5173 port occupancy guidance",
         ],
@@ -893,6 +912,8 @@ def _one_click_startup_summary(
         "fastapi_health_identity_validated_before_open": health_identity_ready,
         "fastapi_status_api_wait_before_open": api_status_wait_ready,
         "fastapi_bootstrap_status_json_validated_before_open": api_status_wait_ready,
+        "desktop_preflight_cache_wait_before_open": desktop_preflight_wait_ready,
+        "desktop_preflight_cache_json_validated_before_open": desktop_preflight_wait_ready,
         "vite_wait_before_open": vite_identity_ready,
         "vite_frontend_identity_validated_before_open": vite_identity_ready,
         "startup_failure_diagnostics_visible": startup_diagnostics_visible,
@@ -984,14 +1005,19 @@ def _p0_local_connection_receipt(
             "GET /api/bootstrap/status returns command_center_3_bootstrap_runtime_mode_packet before opening the page",
         ),
         row(
+            "desktop_preflight_cache_gate_before_page_open",
+            one_click_startup_summary.get("desktop_preflight_cache_json_validated_before_open") is True,
+            "GET /api/desktop/preflight-cache returns command_center_3_desktop_shell_preflight_cache before opening the page",
+        ),
+        row(
             "vite_frontend_gate_before_page_open",
             one_click_startup_summary.get("vite_frontend_identity_validated_before_open") is True,
             str(one_click_startup_summary.get("vite_url") or ""),
         ),
         row(
-            "browser_open_is_gated_by_all_three_checks",
+            "browser_open_is_gated_by_all_four_checks",
             one_click_startup_summary.get("browser_opens_only_after_frontend_backend_ready") is True,
-            "launcher exits before opening the page when FastAPI health, bootstrap status, or Vite identity is not ready",
+            "launcher exits before opening the page when FastAPI health, bootstrap status, desktop preflight cache, or Vite identity is not ready",
         ),
         row(
             "ordinary_recovery_guidance_visible",
@@ -1022,7 +1048,7 @@ def _p0_local_connection_receipt(
         "priority": "P0",
         "status": "p0_local_connection_receipt_ready" if ready else "p0_local_connection_receipt_blocked",
         "scope": "user_run_launcher_frontend_backend_connection_receipt",
-        "ordinary_label": "本地一键入口会先确认 FastAPI、bootstrap status 和 React/Vite 都就绪，再打开页面。",
+        "ordinary_label": "本地一键入口会先确认 FastAPI、bootstrap status、desktop preflight cache 和 React/Vite 都就绪，再打开页面。",
         "what_user_clicks": one_click_startup_summary.get("what_user_should_click_next"),
         "success_condition": one_click_startup_summary.get("success_condition"),
         "blocked_next_action": one_click_startup_summary.get("blocked_next_action"),
@@ -1121,6 +1147,14 @@ def _p0_ordinary_connection_rows(one_click_startup_summary: dict[str, Any]) -> l
             "只读运行模式；不写配置、不启用 live_light。",
         ),
         row(
+            "Desktop preflight cache",
+            one_click_startup_summary.get("desktop_preflight_cache_json_validated_before_open") is True,
+            "如果未 ready，回启动器确认 desktop preflight cache 段是否返回一键启动 packet。",
+            "本地 /api/desktop/preflight-cache 返回 command_center_3_desktop_shell_preflight_cache。",
+            "查看 FastAPI 日志，确认桌面预检 packet 可读；这一步不启动服务、不创建 task。",
+            "只读一键启动 packet；不运行 launcher、不探测当前运行时。",
+        ),
+        row(
             "React/Vite",
             one_click_startup_summary.get("vite_frontend_identity_validated_before_open") is True,
             "如果未 ready，检查 5173 是否被占用并查看 command_center_3_vite.log。",
@@ -1176,6 +1210,14 @@ def _p0_failure_diagnostic_rows(one_click_startup_summary: dict[str, Any]) -> li
             "只读运行模式诊断；不写配置、不启用 live_light、不调用 provider/model。",
         ),
         row(
+            "Desktop preflight cache",
+            one_click_startup_summary.get("desktop_preflight_cache_json_validated_before_open") is True,
+            "启动器必须看到 /api/desktop/preflight-cache 返回 command_center_3_desktop_shell_preflight_cache。",
+            "如果这里 check，后端 health 已可用但桌面预检 packet 未就绪，继续看 FastAPI 日志中的 desktop preflight 段。",
+            ".stock_ming_3/logs/command_center_3_fastapi.log / /api/desktop/preflight-cache",
+            "只读预检诊断；不运行 launcher、不启动服务、不创建 task。",
+        ),
+        row(
             "React/Vite HTML",
             one_click_startup_summary.get("vite_frontend_identity_validated_before_open") is True,
             "启动器必须看到 Vite 返回 Command Center 3.0 前端 HTML。",
@@ -1186,7 +1228,7 @@ def _p0_failure_diagnostic_rows(one_click_startup_summary: dict[str, Any]) -> li
         row(
             "端口和日志指引",
             one_click_startup_summary.get("startup_failure_diagnostics_visible") is True,
-            "启动器失败时必须打印 FastAPI、Bootstrap status、React/Vite 和 8710/5173 指引。",
+            "启动器失败时必须打印 FastAPI、Bootstrap status、Desktop preflight cache、React/Vite 和 8710/5173 指引。",
             "按启动器输出关闭占用进程，或重新运行 scripts/start_command_center_3.command。",
             "8710 / 5173 / .stock_ming_3/logs",
             "这只是失败定位清单；不启动服务、不创建 POST task、不外联。",
@@ -1239,6 +1281,13 @@ def _p0_post_startup_readback_rows(one_click_startup_summary: dict[str, Any]) ->
             "只读运行模式，不写配置、不启用 live_light。",
         ),
         row(
+            "Desktop preflight cache",
+            "普通入口和系统健康显示同一条 P0 一键启动 packet。",
+            "GET /api/desktop/preflight-cache 返回一键启动 packet，且 external_calls_triggered=false。",
+            "回启动器日志看 desktop preflight cache 诊断。",
+            "只读预检回放，不启动服务、不创建 task。",
+        ),
+        row(
             "React/Vite 前端",
             "浏览器打开 Command Center 3.0 今日作战台。",
             "Vite 返回 Command Center 3.0 HTML，且页面入口可点击到预检、健康、雷达和量化推演。",
@@ -1253,7 +1302,7 @@ def _p0_to_p1_ordinary_handoff_rows(one_click_startup_summary: dict[str, Any]) -
     return [
         {
             "步骤": "1. 确认本地联通",
-            "用户动作": "先看 FastAPI、Bootstrap status、React/Vite 三段是否 ready。",
+            "用户动作": "先看 FastAPI、Bootstrap status、Desktop preflight cache、React/Vite 四段是否 ready。",
             "当前状态": "ready：可以进入普通投研入口" if connection_ready else "check：先恢复本地一键入口",
             "下一步": "打开下一票雷达，输入股票代码。" if connection_ready else "回到启动器诊断或桌面壳预检。",
             "边界": "只读 GET health / preflight cache；不启动服务、不创建 task。",
@@ -1372,7 +1421,7 @@ def _p0_ordinary_reconnect_rows(
             "页面未打开或本地后端离线",
             "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。",
             str(one_click_startup_summary.get("what_user_should_click_next") or "scripts/start_command_center_3.command"),
-            "启动器看到 FastAPI /health、bootstrap status、React/Vite 三段 ready 后才打开页面。",
+            "启动器看到 FastAPI /health、bootstrap status、desktop preflight cache、React/Vite 四段 ready 后才打开页面。",
             "这是本地恢复指引；GET cache 和 React render 不启动 FastAPI/Vite、不创建 task。",
         ),
         row(
@@ -1383,7 +1432,7 @@ def _p0_ordinary_reconnect_rows(
             "只读诊断，不读取 token/key、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。",
         ),
         row(
-            "三段联通变绿",
+            "四段联通变绿",
             "打开下一票雷达，输入股票代码。",
             "#candidates",
             "P0 联通 ready 后才进入普通投研入口。",

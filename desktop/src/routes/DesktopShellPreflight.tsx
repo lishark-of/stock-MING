@@ -49,7 +49,7 @@ export default function DesktopShellPreflight() {
     ? rows(cache.p0_recovery_steps)
     : [
         { step: "1", title: "打开本地一键入口", action: "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。" },
-        { step: "2", title: "按启动器诊断定位失败段", action: "先看 FastAPI、bootstrap status、React/Vite 哪一段没有 ready。" },
+        { step: "2", title: "按启动器诊断定位失败段", action: "先看 FastAPI、bootstrap status、desktop preflight cache、React/Vite 哪一段没有 ready。" },
         { step: "3", title: "刷新健康页确认联通", action: "确认 P0 front/back、P0 receipt 和 one-click launcher 都为 ready。" }
       ];
   const p0PostStartupReadbackRows = rows(cache.p0_post_startup_readback_rows).length
@@ -70,6 +70,13 @@ export default function DesktopShellPreflight() {
           边界: "只读运行模式，不写配置、不启用 live_light"
         },
         {
+          复核项: "Desktop preflight cache",
+          页面看法: "普通入口和系统健康显示同一条 P0 一键启动 packet",
+          通过条件: "GET /api/desktop/preflight-cache 返回一键启动 packet，且 external_calls_triggered=false",
+          失败下一步: "回启动器日志看 desktop preflight cache 诊断",
+          边界: "只读预检回放，不启动服务、不创建 task"
+        },
+        {
           复核项: "React/Vite 前端",
           页面看法: "浏览器打开 Command Center 3.0 今日作战台",
           通过条件: "Vite 返回 Command Center 3.0 HTML，且页面入口可点击到预检、健康、雷达和量化推演",
@@ -82,7 +89,7 @@ export default function DesktopShellPreflight() {
     : [
         {
           步骤: "1. 确认本地联通",
-          用户动作: "先看 FastAPI、Bootstrap status、React/Vite 三段是否 ready。",
+          用户动作: "先看 FastAPI、Bootstrap status、Desktop preflight cache、React/Vite 四段是否 ready。",
           当前状态: oneClickStartupSummary.frontend_backend_connection_ready === true ? "ready：可以进入普通投研入口" : "check：先恢复本地一键入口",
           下一步: oneClickStartupSummary.frontend_backend_connection_ready === true ? "打开下一票雷达，输入股票代码。" : "回到启动器诊断或桌面壳预检。",
           边界: "只读 GET health / preflight cache；不启动服务、不创建 task。"
@@ -117,7 +124,7 @@ export default function DesktopShellPreflight() {
           当前状态: p0ConnectionReady ? "ready" : "check",
           用户下一步: "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。",
           入口: "scripts/start_command_center_3.command",
-          通过信号: "启动器看到 FastAPI /health、bootstrap status、React/Vite 三段 ready 后才打开页面。",
+          通过信号: "启动器看到 FastAPI /health、bootstrap status、desktop preflight cache、React/Vite 四段 ready 后才打开页面。",
           边界: "这是本地恢复指引；GET cache 和 React render 不启动 FastAPI/Vite、不创建 task。",
           strict_closeout_evidence: false,
           release_ready_evidence: false
@@ -125,7 +132,7 @@ export default function DesktopShellPreflight() {
         {
           用户状态: "启动器没有自动打开页面",
           当前状态: p0ConnectionReady ? "ready" : "check",
-          用户下一步: "按启动器输出定位 FastAPI、bootstrap status 或 React/Vite 哪段失败。",
+          用户下一步: "按启动器输出定位 FastAPI、bootstrap status、desktop preflight cache 或 React/Vite 哪段失败。",
           入口: ".stock_ming_3/logs",
           通过信号: "日志和 8710/5173 端口指引能指出阻断段。",
           边界: "只读诊断，不读取 token/key、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。",
@@ -133,7 +140,7 @@ export default function DesktopShellPreflight() {
           release_ready_evidence: false
         },
         {
-          用户状态: "三段联通变绿",
+          用户状态: "四段联通变绿",
           当前状态: p0ConnectionReady ? "ready" : "check",
           用户下一步: "打开下一票雷达，输入股票代码。",
           入口: "#candidates",
@@ -171,6 +178,13 @@ export default function DesktopShellPreflight() {
           边界: "只读运行模式，不写配置、不启用 live_light"
         },
         {
+          环节: "Desktop preflight cache",
+          当前状态: oneClickStartupSummary.frontend_backend_connection_ready === true ? "ready" : "check",
+          用户下一步: "如果未 ready，回启动器确认 desktop preflight cache 段是否返回一键启动 packet",
+          通过条件: "本地 /api/desktop/preflight-cache 返回 command_center_3_desktop_shell_preflight_cache",
+          边界: "只读一键启动 packet；不运行 launcher、不探测当前运行时"
+        },
+        {
           环节: "React/Vite",
           当前状态: oneClickStartupSummary.frontend_backend_connection_ready === true ? "ready" : "check",
           用户下一步: "如果未 ready，检查 5173 是否被占用并查看 command_center_3_vite.log",
@@ -198,6 +212,14 @@ export default function DesktopShellPreflight() {
           边界: "只读运行模式诊断；不写配置、不启用 live_light、不调用 provider/model。"
         },
         {
+          失败段: "Desktop preflight cache",
+          当前状态: p0ConnectionReady ? "ready" : "check",
+          怎么判断: "启动器必须看到 /api/desktop/preflight-cache 返回 command_center_3_desktop_shell_preflight_cache。",
+          用户动作: "如果这里 check，后端 health 已可用但桌面预检 packet 未就绪，继续看 FastAPI 日志中的 desktop preflight 段。",
+          "日志/端口": ".stock_ming_3/logs/command_center_3_fastapi.log / /api/desktop/preflight-cache",
+          边界: "只读预检诊断；不运行 launcher、不启动服务、不创建 task。"
+        },
+        {
           失败段: "React/Vite HTML",
           当前状态: p0ConnectionReady ? "ready" : "check",
           怎么判断: "启动器必须看到 Vite 返回 Command Center 3.0 前端 HTML。",
@@ -208,7 +230,7 @@ export default function DesktopShellPreflight() {
         {
           失败段: "端口和日志指引",
           当前状态: "ready",
-          怎么判断: "启动器失败时必须打印 FastAPI、Bootstrap status、React/Vite 和 8710/5173 指引。",
+          怎么判断: "启动器失败时必须打印 FastAPI、Bootstrap status、Desktop preflight cache、React/Vite 和 8710/5173 指引。",
           用户动作: "按启动器输出关闭占用进程，或重新运行 scripts/start_command_center_3.command。",
           "日志/端口": "8710 / 5173 / .stock_ming_3/logs",
           边界: "这只是失败定位清单；不启动服务、不创建 POST task、不外联。"
@@ -230,7 +252,7 @@ export default function DesktopShellPreflight() {
     {
       检查项: "双击前说明",
       当前状态: desktopLauncherContract.desktop_shortcut_installer_prints_double_click_checklist === true ? "ready" : "check",
-      用户看法: "双击后启动器会先检查 FastAPI、Bootstrap status、React/Vite 三段 ready",
+      用户看法: "双击后启动器会先检查 FastAPI、Bootstrap status、Desktop preflight cache、React/Vite 四段 ready",
       边界: "安装器本身不启用 live_light、不执行真实交易"
     }
   ];
@@ -238,7 +260,7 @@ export default function DesktopShellPreflight() {
     {
       启动方式: "普通双击",
       用户动作: "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command",
-      看到什么: "三段 ready 后自动打开普通首页 #home",
+      看到什么: "四段 ready 后自动打开普通首页 #home",
       适合场景: "日常打开 Command Center 3.0",
       边界: "只启动或复用本地 FastAPI/Vite；不启用 live_light/provider/model"
     },
@@ -252,7 +274,7 @@ export default function DesktopShellPreflight() {
     {
       启动方式: "联通验收不弹窗",
       用户动作: "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1 scripts/start_command_center_3.command",
-      看到什么: "等待 FastAPI、Bootstrap status、React/Vite ready 后打印手动打开地址",
+      看到什么: "等待 FastAPI、Bootstrap status、Desktop preflight cache、React/Vite ready 后打印手动打开地址",
       适合场景: "验证前后端联通，但不自动弹浏览器窗口",
       边界: "只连本地前后端；不调用 Tushare/DeepSeek/GitHub、不执行真实交易"
     }
@@ -330,13 +352,13 @@ export default function DesktopShellPreflight() {
           <MetricGrid items={p0StartupReadyMetrics} />
         </div>
         <p>下一步：{String(oneClickStartupSummary.what_user_should_click_next ?? "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。")}</p>
-        <p>成功条件：{String(oneClickStartupSummary.success_condition ?? "FastAPI /health 必须返回 Command Center 3.0 健康 JSON，/api/bootstrap/status 必须返回 runtime-mode packet，React/Vite 必须返回 Command Center 3.0 前端 HTML 后才打开页面。")}</p>
-        <p>如果失败：{String(oneClickStartupSummary.blocked_next_action ?? "先看启动器的可操作诊断：FastAPI、bootstrap status、React/Vite 哪段失败；再检查 8710/5173 是否被占用，或查看 .stock_ming_3/logs/command_center_3_fastapi.log 与 command_center_3_vite.log。")}</p>
-        <p>诊断分段：{Array.isArray(oneClickStartupSummary.diagnostic_surfaces) ? oneClickStartupSummary.diagnostic_surfaces.join(" / ") : "FastAPI /health Command Center 3.0 JSON / bootstrap status runtime-mode packet / React/Vite Command Center 3.0 HTML / 8710/5173 port occupancy guidance"}</p>
+        <p>成功条件：{String(oneClickStartupSummary.success_condition ?? "FastAPI /health 必须返回 Command Center 3.0 健康 JSON，/api/bootstrap/status 必须返回 runtime-mode packet，/api/desktop/preflight-cache 必须返回一键启动 packet，React/Vite 必须返回 Command Center 3.0 前端 HTML 后才打开页面。")}</p>
+        <p>如果失败：{String(oneClickStartupSummary.blocked_next_action ?? "先看启动器的可操作诊断：FastAPI、bootstrap status、desktop preflight cache、React/Vite 哪段失败；再检查 8710/5173 是否被占用，或查看 .stock_ming_3/logs/command_center_3_fastapi.log 与 command_center_3_vite.log。")}</p>
+        <p>诊断分段：{Array.isArray(oneClickStartupSummary.diagnostic_surfaces) ? oneClickStartupSummary.diagnostic_surfaces.join(" / ") : "FastAPI /health Command Center 3.0 JSON / bootstrap status runtime-mode packet / desktop preflight cache one-click packet / React/Vite Command Center 3.0 HTML / 8710/5173 port occupancy guidance"}</p>
         <p>安全边界：GET preflight 和 React render 不启动服务、不外联、不启用 provider/model executor、不执行真实交易。</p>
         <p>当前联通：{p0ConnectionReady ? "ready" : "check"}；需要处理：{p0BlockerCount === 0 ? "无" : `${p0BlockerCount} 项，按失败诊断处理`}。</p>
         <p>P0 本地联通收据：{String(p0LocalConnectionReceipt.status ?? "p0_local_connection_receipt_loading")}；本页只回读本地状态，不主动探测当前运行时。</p>
-        <p>{String(p0LocalConnectionReceipt.ordinary_label ?? "本地一键入口会先确认 FastAPI、bootstrap status 和 React/Vite 都就绪，再打开页面。")}</p>
+        <p>{String(p0LocalConnectionReceipt.ordinary_label ?? "本地一键入口会先确认 FastAPI、bootstrap status、desktop preflight cache 和 React/Vite 都就绪，再打开页面。")}</p>
         <div className="actions" aria-label="p0 ordinary primary action">
           <a href={p0OrdinaryPrimaryActionHref} aria-label="open p0 ordinary primary action">{p0OrdinaryPrimaryActionLabel}</a>
           <a href="#health" aria-label="open health status readback after p0 preflight">查看系统健康</a>
@@ -344,12 +366,12 @@ export default function DesktopShellPreflight() {
         <p className="risk-note">{p0OrdinaryPrimaryActionBoundary}</p>
         <div aria-label="p0 ordinary reconnect to research checklist">
           <h3>P0 恢复到投研路径</h3>
-          <p className="risk-note">优先读取 p0_ordinary_reconnect_rows：离线先恢复本地三段联通，联通后去下一票雷达；确认按钮之前不创建 task，这不是 14 LTG strict closeout 或 release ready 证据。</p>
+          <p className="risk-note">优先读取 p0_ordinary_reconnect_rows：离线先恢复本地四段联通，联通后去下一票雷达；确认按钮之前不创建 task，这不是 14 LTG strict closeout 或 release ready 证据。</p>
           <DataLineageTable rows={p0OrdinaryReconnectRows} />
         </div>
         <div aria-label="p0 success handoff to p1 confirm">
           <h3>联通成功后的下一步</h3>
-          <p className="risk-note">这条行动清单与启动器成功日志对齐：三段 ready 后去下一票雷达，输入不外联，确认按钮才创建 Tushare-first 任务。</p>
+          <p className="risk-note">这条行动清单与启动器成功日志对齐：四段 ready 后去下一票雷达，输入不外联，确认按钮才创建 Tushare-first 任务。</p>
           <DataLineageTable rows={p0SuccessHandoffRows} />
         </div>
         <div aria-label="p0 ordinary launcher mode choices">
@@ -364,7 +386,7 @@ export default function DesktopShellPreflight() {
         </div>
         <div aria-label="p0 ordinary frontend backend connection checklist">
           <h3>前后端联通状态</h3>
-          <p className="risk-note">普通用户先看 FastAPI、Bootstrap status、React/Vite 三段是否 ready；工程行表仍在开发 / 审计详情。</p>
+          <p className="risk-note">普通用户先看 FastAPI、Bootstrap status、Desktop preflight cache、React/Vite 四段是否 ready；工程行表仍在开发 / 审计详情。</p>
           <DataLineageTable rows={p0OrdinaryConnectionRows} />
         </div>
         <div aria-label="p0 ordinary startup failure diagnostics">
@@ -383,7 +405,7 @@ export default function DesktopShellPreflight() {
           <p className="risk-note">预检页只说明下一步；真正的 Tushare-first 工作仍要到下一票雷达点击确认按钮。</p>
           <DataLineageTable rows={p0ToP1OrdinaryHandoffRows} />
         </div>
-        <p>普通用户只看三段联通状态；完整工程行表在下方开发 / 审计详情。</p>
+        <p>普通用户只看四段联通状态；完整工程行表在下方开发 / 审计详情。</p>
       </PacketCard>
 
       <p className="risk-note">工程联通明细、Tauri/package QA、lineage 和 raw payload 已下沉到下方开发 / 审计详情；普通用户先按上面的下一步和联通状态处理。</p>

@@ -342,7 +342,7 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("p0_failure_diagnostic_rows", page)
         self.assertIn('aria-label="p0 ordinary frontend backend connection checklist"', page)
         self.assertIn("前后端联通状态", page)
-        self.assertIn("普通用户先看 FastAPI、Bootstrap status、React/Vite 三段是否 ready", page)
+        self.assertIn("普通用户先看 FastAPI、Bootstrap status、Desktop preflight cache、React/Vite 四段是否 ready", page)
         self.assertIn("工程行表仍在开发 / 审计详情", page)
         self.assertIn('环节: "FastAPI"', page)
         self.assertIn('环节: "Bootstrap status"', page)
