@@ -17,6 +17,8 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         provider_slice = source[provider_start:provider_end]
         execution_request_start = source.index("search_quant_projection_execution_request_receipt")
         execution_request_slice = source[execution_request_start:source.index("<DataLineageTable rows={objectRow(searchQuantProjectionExecutionRequest)}", execution_request_start)]
+        radar_summary_start = source.index('title="普通用户雷达摘要"')
+        radar_summary_slice = source[radar_summary_start:source.index('title="下一票候选池"', radar_summary_start)]
         ordinary_quant_start = source.index('title="搜票量化推演"')
         ordinary_quant_slice = source[ordinary_quant_start:source.index('<details className="developer-audit-details">', ordinary_quant_start)]
 
@@ -49,6 +51,8 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("title={quantProjectionInputBoundaryLabel}", ordinary_quant_slice)
         self.assertIn("title={quantProjectionSubmitButtonLabel}", ordinary_quant_slice)
         self.assertIn("aria-label={quantProjectionSubmitAriaLabel}", ordinary_quant_slice)
+        self.assertIn("disabled={!quantProjectionCanLaunch}", radar_summary_slice)
+        self.assertIn('{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}', radar_summary_slice)
         self.assertIn("disabled={!quantProjectionCanLaunch}", ordinary_quant_slice)
         self.assertIn('{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}', ordinary_quant_slice)
         self.assertIn("点击确认才创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task；DeepSeek skipped，成功后通过 GET cache 回放", source)

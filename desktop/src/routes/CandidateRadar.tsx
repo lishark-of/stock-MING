@@ -864,11 +864,11 @@ export default function CandidateRadar() {
             title={quantProjectionInputBoundaryLabel}
           />
           <button
-            disabled={!quantProjectionCanSubmit}
+            disabled={!quantProjectionCanLaunch}
             onClick={launchQuantProjection}
             title={quantProjectionSubmitButtonLabel}
             aria-label={quantProjectionSubmitAriaLabel}
-          >确认并生成 3.0 量化推演</button>
+          >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
           <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
         </div>
         <p className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>

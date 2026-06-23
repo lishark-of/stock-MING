@@ -284,6 +284,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("查看本地缓存", summary_slice)
         self.assertIn("运行本地快扫", summary_slice)
         self.assertIn("确认并生成 3.0 量化推演", summary_slice)
+        self.assertIn("disabled={!quantProjectionCanLaunch}", summary_slice)
+        self.assertIn('{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}', summary_slice)
         self.assertIn('href="#factor"', summary_slice)
         self.assertIn("{quantProjectionSummaryGuidance}", summary_slice)
         self.assertIn('aria-live="polite"', summary_slice)
