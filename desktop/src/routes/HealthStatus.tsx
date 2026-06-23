@@ -7,6 +7,10 @@ import MetricGrid from "../components/MetricGrid";
 import PacketCard from "../components/PacketCard";
 import StatusBadge from "../components/StatusBadge";
 
+function rows(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
+}
+
 export default function HealthStatus() {
   const [health, setHealth] = useState<Record<string, unknown>>({});
   const [healthEnvelopeLedger, setHealthEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
@@ -52,12 +56,12 @@ export default function HealthStatus() {
   const desktopLauncherContract = (desktopPreflight.desktop_launcher_contract as Record<string, unknown> | undefined) ?? {};
   const oneClickConnectionRows = (desktopPreflight.one_click_connection_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const p0ConnectionReady = oneClickStartupSummary.frontend_backend_connection_ready === true;
-  const p0RecoverySteps = (desktopPreflight.p0_recovery_steps as Array<Record<string, unknown>> | undefined) ?? [
+  const p0RecoverySteps = rows(desktopPreflight.p0_recovery_steps).length ? rows(desktopPreflight.p0_recovery_steps) : [
     { step: "1", title: "打开本地一键入口", action: "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。" },
     { step: "2", title: "按启动器诊断定位失败段", action: "先看 FastAPI、bootstrap status、React/Vite 哪一段没有 ready。" },
     { step: "3", title: "刷新健康页确认联通", action: "确认 P0 front/back、P0 receipt 和 one-click launcher 都为 ready。" }
   ];
-  const p0OrdinaryConnectionRows = (desktopPreflight.p0_ordinary_connection_rows as Array<Record<string, unknown>> | undefined) ?? [
+  const p0OrdinaryConnectionRows = rows(desktopPreflight.p0_ordinary_connection_rows).length ? rows(desktopPreflight.p0_ordinary_connection_rows) : [
     {
       环节: "FastAPI",
       当前状态: p0ConnectionReady ? "ready" : "check",
@@ -80,7 +84,33 @@ export default function HealthStatus() {
       边界: "只读前端入口；不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
     }
   ];
-  const p0ToP1OrdinaryHandoffRows = [
+  const p0PostStartupReadbackRows = rows(desktopPreflight.p0_post_startup_readback_rows).length ? rows(desktopPreflight.p0_post_startup_readback_rows) : [
+    {
+      复核项: "FastAPI health",
+      当前状态: p0ConnectionReady ? "ready" : "check",
+      页面看法: "系统健康和今日作战台显示本地前后端已联通。",
+      通过条件: "GET /health 返回 Command Center 3.0 JSON，且 external_calls_on_startup=false。",
+      失败下一步: "回启动器日志看 FastAPI 诊断，再检查 8710 是否被占用。",
+      边界: "只读健康检查，不启动服务、不创建 task。"
+    },
+    {
+      复核项: "Bootstrap status",
+      当前状态: p0ConnectionReady ? "ready" : "check",
+      页面看法: "普通入口显示运行模式和启动边界。",
+      通过条件: "GET /api/bootstrap/status 返回 runtime-mode packet。",
+      失败下一步: "回启动器日志看 bootstrap status 诊断。",
+      边界: "只读运行模式，不写配置、不启用 live_light。"
+    },
+    {
+      复核项: "React/Vite 前端",
+      当前状态: p0ConnectionReady ? "ready" : "check",
+      页面看法: "浏览器打开 Command Center 3.0 今日作战台。",
+      通过条件: "Vite 返回 Command Center 3.0 HTML，且页面入口可点击到预检、健康、雷达和量化推演。",
+      失败下一步: "回启动器日志看 React/Vite 诊断，再检查 5173 是否被占用。",
+      边界: "只读前端入口，不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
+    }
+  ];
+  const p0ToP1OrdinaryHandoffRows = rows(desktopPreflight.p0_to_p1_ordinary_handoff_rows).length ? rows(desktopPreflight.p0_to_p1_ordinary_handoff_rows) : [
     {
       步骤: "1. 确认本地联通",
       用户动作: "先看 FastAPI、Bootstrap status、React/Vite 三段是否 ready。",
@@ -137,6 +167,11 @@ export default function HealthStatus() {
           <h3>三段联通状态</h3>
           <p className="risk-note">这张表来自本地 preflight packet，只解释启动器的三段检查；不会从页面补跑探针或启动服务。</p>
           <DataLineageTable rows={p0OrdinaryConnectionRows} />
+        </div>
+        <div aria-label="health p0 post startup readback checklist">
+          <h3>启动后复核清单</h3>
+          <p className="risk-note">这张清单来自 desktop preflight packet；系统健康页只回读本地 GET 结果，不补跑启动器、不创建 task。</p>
+          <DataLineageTable rows={p0PostStartupReadbackRows} />
         </div>
         <div aria-label="health p0 to p1 ordinary handoff">
           <h3>联通后搜票路径</h3>

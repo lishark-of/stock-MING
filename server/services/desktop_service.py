@@ -1113,6 +1113,130 @@ def _p0_ordinary_connection_rows(one_click_startup_summary: dict[str, Any]) -> l
     ]
 
 
+def _p0_post_startup_readback_rows(one_click_startup_summary: dict[str, Any]) -> list[dict[str, Any]]:
+    ready = one_click_startup_summary.get("frontend_backend_connection_ready") is True
+    status = "ready" if ready else "check"
+
+    def row(
+        item: str,
+        page_view: str,
+        success_condition: str,
+        failed_next_action: str,
+        boundary: str,
+    ) -> dict[str, Any]:
+        return {
+            "复核项": item,
+            "当前状态": status,
+            "页面看法": page_view,
+            "通过条件": success_condition,
+            "失败下一步": failed_next_action,
+            "边界": boundary,
+            "ordinary_user_visible": True,
+            "cache_only_readback": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "loads_token_or_key": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    return [
+        row(
+            "FastAPI health",
+            "系统健康和今日作战台显示本地前后端已联通。",
+            "GET /health 返回 Command Center 3.0 JSON，且 external_calls_on_startup=false。",
+            "回启动器日志看 FastAPI 诊断，再检查 8710 是否被占用。",
+            "只读健康检查，不启动服务、不创建 task。",
+        ),
+        row(
+            "Bootstrap status",
+            "普通入口显示运行模式和启动边界。",
+            "GET /api/bootstrap/status 返回 runtime-mode packet。",
+            "回启动器日志看 bootstrap status 诊断。",
+            "只读运行模式，不写配置、不启用 live_light。",
+        ),
+        row(
+            "React/Vite 前端",
+            "浏览器打开 Command Center 3.0 今日作战台。",
+            "Vite 返回 Command Center 3.0 HTML，且页面入口可点击到预检、健康、雷达和量化推演。",
+            "回启动器日志看 React/Vite 诊断，再检查 5173 是否被占用。",
+            "只读前端入口，不调用 Tushare/DeepSeek/GitHub、不执行真实交易。",
+        ),
+    ]
+
+
+def _p0_to_p1_ordinary_handoff_rows(one_click_startup_summary: dict[str, Any]) -> list[dict[str, Any]]:
+    connection_ready = one_click_startup_summary.get("frontend_backend_connection_ready") is True
+    return [
+        {
+            "步骤": "1. 确认本地联通",
+            "用户动作": "先看 FastAPI、Bootstrap status、React/Vite 三段是否 ready。",
+            "当前状态": "ready：可以进入普通投研入口" if connection_ready else "check：先恢复本地一键入口",
+            "下一步": "打开下一票雷达，输入股票代码。" if connection_ready else "回到启动器诊断或桌面壳预检。",
+            "边界": "只读 GET health / preflight cache；不启动服务、不创建 task。",
+            "ordinary_user_visible": True,
+            "cache_only_readback": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "loads_token_or_key": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "步骤": "2. 进入下一票雷达",
+            "用户动作": "去下一票雷达的搜票量化推演卡片。",
+            "当前状态": "只读导航提示",
+            "下一步": "输入 6 位 A 股代码或带后缀代码。",
+            "边界": "页面切换和输入不会调用 Tushare、DeepSeek 或 GitHub。",
+            "ordinary_user_visible": True,
+            "cache_only_readback": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "loads_token_or_key": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "步骤": "3. 点击确认并生成",
+            "用户动作": "代码通过本地校验后点击确认按钮。",
+            "当前状态": "确认按钮才是 P1 工作入口",
+            "下一步": "看本地任务编号、TaskStatusPanel 和 cache 回放。",
+            "边界": "只有确认按钮可创建 Tushare-first POST task / worker；DeepSeek skipped。",
+            "ordinary_user_visible": True,
+            "cache_only_readback": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "loads_token_or_key": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "步骤": "4. 回放本地结果",
+            "用户动作": "任务完成后刷新本地 cache，再看股票量化推演和次日图谱。",
+            "当前状态": "结果来自 cache / ledger / packet",
+            "下一步": "按缺口和仅供研究边界复核。",
+            "边界": "GET cache / React render 不补调外部数据源，不交易、不改 strategy action。",
+            "ordinary_user_visible": True,
+            "cache_only_readback": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "loads_token_or_key": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+    ]
+
+
 def _production_launch_plan(api_base: str) -> list[dict[str, Any]]:
     return [
         {
@@ -4614,6 +4738,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     one_click_startup_summary = _one_click_startup_summary(api_base_info, desktop_launcher_contract)
     p0_local_connection_receipt = _p0_local_connection_receipt(one_click_startup_summary, desktop_launcher_contract)
     p0_ordinary_connection_rows = _p0_ordinary_connection_rows(one_click_startup_summary)
+    p0_post_startup_readback_rows = _p0_post_startup_readback_rows(one_click_startup_summary)
+    p0_to_p1_ordinary_handoff_rows = _p0_to_p1_ordinary_handoff_rows(one_click_startup_summary)
     p0_ordinary_connection_ready_count = sum(1 for row in p0_ordinary_connection_rows if row["当前状态"] == "ready")
     production_runtime_contract = _production_runtime_contract(api_base_info, tauri_config)
     tauri_build_artifact = _tauri_build_artifact_summary()
@@ -4694,6 +4820,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "p0_local_connection_receipt": p0_local_connection_receipt,
         "p0_local_connection_rows": p0_local_connection_receipt["rows"],
         "p0_ordinary_connection_rows": p0_ordinary_connection_rows,
+        "p0_post_startup_readback_rows": p0_post_startup_readback_rows,
+        "p0_to_p1_ordinary_handoff_rows": p0_to_p1_ordinary_handoff_rows,
         "desktop_launcher_contract": desktop_launcher_contract,
         "desktop_launcher_rows": desktop_launcher_contract["rows"],
         "dev_launch_plan": _dev_launch_plan(api_base),
@@ -4731,6 +4859,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_local_connection_ready": 1 if p0_local_connection_receipt["connection_contract_ready"] else 0,
             "p0_ordinary_connection_row_count": len(p0_ordinary_connection_rows),
             "p0_ordinary_connection_ready_count": p0_ordinary_connection_ready_count,
+            "p0_post_startup_readback_row_count": len(p0_post_startup_readback_rows),
+            "p0_to_p1_ordinary_handoff_row_count": len(p0_to_p1_ordinary_handoff_rows),
             "packaged_runtime_qa_matrix_count": packaged_runtime_qa_contract["qa_matrix_count"],
             "packaged_runtime_pending_qa_count": packaged_runtime_qa_contract["pending_qa_count"],
             "tauri_release_manifest_row_count": tauri_release_manifest_contract["row_count"],
@@ -4760,6 +4890,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_local_connection_status": p0_local_connection_receipt["status"],
             "p0_local_connection_ready": p0_local_connection_receipt["connection_contract_ready"],
             "p0_ordinary_connection_ready_count": p0_ordinary_connection_ready_count,
+            "p0_post_startup_readback_ready_count": sum(
+                1 for row in p0_post_startup_readback_rows if row["当前状态"] == "ready"
+            ),
+            "p0_to_p1_next_user_action": p0_to_p1_ordinary_handoff_rows[0]["下一步"],
             "p0_current_runtime_live_connection_verified": p0_local_connection_receipt[
                 "current_runtime_live_connection_verified"
             ],
@@ -4826,6 +4960,12 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_ordinary_connection_rows_are_cache_only": True,
             "p0_ordinary_connection_rows_do_not_probe_runtime": True,
             "p0_ordinary_connection_rows_do_not_create_task": True,
+            "p0_post_startup_readback_rows_are_cache_only": True,
+            "p0_post_startup_readback_rows_do_not_probe_runtime": True,
+            "p0_post_startup_readback_rows_do_not_create_task": True,
+            "p0_to_p1_ordinary_handoff_rows_are_cache_only": True,
+            "p0_to_p1_ordinary_handoff_rows_do_not_create_task": True,
+            "p0_to_p1_ordinary_handoff_rows_do_not_call_provider_model": True,
             "desktop_shortcut_installer_contract_is_local": True,
             "desktop_shortcut_installer_does_not_run_from_get_cache": True,
             "desktop_shortcut_installer_does_not_start_services": True,
@@ -4873,6 +5013,34 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
                 "does_not_execute_trades": True,
                 "does_not_modify_strategy_action": True,
             }
+        ]
+        + [
+            {
+                "api": "local_p0_post_startup_readback_rows",
+                "source": "one_click_startup_summary",
+                "row_count": len(p0_post_startup_readback_rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_post_startup_readback_rows_read",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+            {
+                "api": "local_p0_to_p1_ordinary_handoff_rows",
+                "source": "one_click_startup_summary",
+                "row_count": len(p0_to_p1_ordinary_handoff_rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_p0_to_p1_handoff_rows_read",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
         ]
         + desktop_launcher_contract["call_ledger"]
         + production_package_readiness_receipt["call_ledger"],

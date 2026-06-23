@@ -1575,6 +1575,8 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         p0_receipt = desktop["p0_local_connection_receipt"]
         p0_rows = {row["criterion"]: row for row in desktop["p0_local_connection_rows"]}
         p0_ordinary_rows = desktop["p0_ordinary_connection_rows"]
+        p0_post_startup_rows = desktop["p0_post_startup_readback_rows"]
+        p0_to_p1_rows = desktop["p0_to_p1_ordinary_handoff_rows"]
         self.assertEqual(one_click["schema_version"], "command_center_3_one_click_startup_summary.v1")
         self.assertEqual(one_click["priority"], "P0")
         self.assertEqual(one_click["status"], "one_click_frontend_backend_ready")
@@ -1745,9 +1747,50 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("只读健康检查", p0_ordinary_rows[0]["边界"])
         self.assertIn("不写配置、不启用 live_light", p0_ordinary_rows[1]["边界"])
         self.assertIn("不调用 Tushare/DeepSeek/GitHub", p0_ordinary_rows[2]["边界"])
+        self.assertEqual([row["复核项"] for row in p0_post_startup_rows], ["FastAPI health", "Bootstrap status", "React/Vite 前端"])
+        self.assertEqual([row["当前状态"] for row in p0_post_startup_rows], ["ready", "ready", "ready"])
+        self.assertEqual(desktop["counts"]["p0_post_startup_readback_row_count"], 3)
+        self.assertEqual(desktop["runtime"]["p0_post_startup_readback_ready_count"], 3)
+        self.assertTrue(desktop["policy"]["p0_post_startup_readback_rows_are_cache_only"])
+        self.assertTrue(desktop["policy"]["p0_post_startup_readback_rows_do_not_probe_runtime"])
+        self.assertTrue(desktop["policy"]["p0_post_startup_readback_rows_do_not_create_task"])
+        for readback_row in p0_post_startup_rows:
+            self.assertTrue(readback_row["ordinary_user_visible"])
+            self.assertTrue(readback_row["cache_only_readback"])
+            self.assertFalse(readback_row["external_calls_triggered"])
+            self.assertFalse(readback_row["tushare_called"])
+            self.assertFalse(readback_row["deepseek_called"])
+            self.assertFalse(readback_row["github_called"])
+            self.assertFalse(readback_row["loads_token_or_key"])
+            self.assertTrue(readback_row["does_not_execute_trades"])
+            self.assertTrue(readback_row["does_not_modify_strategy_action"])
+        self.assertEqual(
+            [row["步骤"] for row in p0_to_p1_rows],
+            ["1. 确认本地联通", "2. 进入下一票雷达", "3. 点击确认并生成", "4. 回放本地结果"],
+        )
+        self.assertIn("下一票雷达", p0_to_p1_rows[1]["用户动作"])
+        self.assertIn("Tushare-first POST task", p0_to_p1_rows[2]["边界"])
+        self.assertIn("cache / ledger / packet", p0_to_p1_rows[3]["当前状态"])
+        self.assertEqual(desktop["counts"]["p0_to_p1_ordinary_handoff_row_count"], 4)
+        self.assertIn("下一票雷达", desktop["runtime"]["p0_to_p1_next_user_action"])
+        self.assertTrue(desktop["policy"]["p0_to_p1_ordinary_handoff_rows_are_cache_only"])
+        self.assertTrue(desktop["policy"]["p0_to_p1_ordinary_handoff_rows_do_not_create_task"])
+        self.assertTrue(desktop["policy"]["p0_to_p1_ordinary_handoff_rows_do_not_call_provider_model"])
+        for handoff_row in p0_to_p1_rows:
+            self.assertTrue(handoff_row["ordinary_user_visible"])
+            self.assertTrue(handoff_row["cache_only_readback"])
+            self.assertFalse(handoff_row["external_calls_triggered"])
+            self.assertFalse(handoff_row["tushare_called"])
+            self.assertFalse(handoff_row["deepseek_called"])
+            self.assertFalse(handoff_row["github_called"])
+            self.assertFalse(handoff_row["loads_token_or_key"])
+            self.assertTrue(handoff_row["does_not_execute_trades"])
+            self.assertTrue(handoff_row["does_not_modify_strategy_action"])
         self.assertIn("local_one_click_startup_summary", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_frontend_backend_connection_receipt", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_ordinary_connection_rows", {row["api"] for row in desktop["call_ledger"]})
+        self.assertIn("local_p0_post_startup_readback_rows", {row["api"] for row in desktop["call_ledger"]})
+        self.assertIn("local_p0_to_p1_ordinary_handoff_rows", {row["api"] for row in desktop["call_ledger"]})
         launcher = desktop["desktop_launcher_contract"]
         launcher_rows = {row["criterion"]: row for row in desktop["desktop_launcher_rows"]}
         self.assertEqual(launcher["schema_version"], "command_center_3_local_launcher_contract.v1")
