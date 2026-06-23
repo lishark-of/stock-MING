@@ -1833,6 +1833,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(desktop["policy"]["p0_ordinary_connection_rows_do_not_create_task"])
         for ordinary_row in p0_ordinary_rows:
             self.assertTrue(ordinary_row["ordinary_user_visible"])
+            self.assertTrue(ordinary_row["cache_only_readback"])
+            self.assertFalse(ordinary_row["get_cache_starts_services"])
+            self.assertFalse(ordinary_row["react_render_starts_services"])
+            self.assertFalse(ordinary_row["creates_task_from_readback"])
+            self.assertFalse(ordinary_row["provider_model_called_from_readback"])
             self.assertFalse(ordinary_row["external_calls_triggered"])
             self.assertFalse(ordinary_row["tushare_called"])
             self.assertFalse(ordinary_row["deepseek_called"])
@@ -1840,6 +1845,27 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(ordinary_row["loads_token_or_key"])
             self.assertTrue(ordinary_row["does_not_execute_trades"])
             self.assertTrue(ordinary_row["does_not_modify_strategy_action"])
+        self.assertEqual(
+            [row["启动器输出锚点"] for row in p0_ordinary_rows],
+            [
+                "FastAPI：${API_HEALTH_DISPLAY} 已返回 / 未返回 Command Center 3.0 健康 JSON",
+                "Bootstrap status：${BOOTSTRAP_STATUS_DISPLAY} 已返回 / 未返回 runtime-mode packet",
+                "Desktop preflight cache：${DESKTOP_PREFLIGHT_DISPLAY} 已返回 / 未返回一键启动 packet",
+                "React/Vite 前端：${VITE_URL_DISPLAY} 已返回 / 未返回 Command Center 3.0 前端 HTML",
+            ],
+        )
+        self.assertIn("系统健康页 / 今日作战台", p0_ordinary_rows[0]["页面回读位置"])
+        self.assertIn("运行模式和启动边界", p0_ordinary_rows[1]["页面回读位置"])
+        self.assertIn("P0 一键启动 packet", p0_ordinary_rows[2]["页面回读位置"])
+        self.assertIn("今日作战台摘要", p0_ordinary_rows[3]["页面回读位置"])
+        self.assertIn("8710", p0_ordinary_rows[0]["日志/端口"])
+        self.assertIn("/api/bootstrap/status", p0_ordinary_rows[1]["日志/端口"])
+        self.assertIn("/api/desktop/preflight-cache", p0_ordinary_rows[2]["日志/端口"])
+        self.assertIn("5173", p0_ordinary_rows[3]["日志/端口"])
+        self.assertIn("external_calls_on_startup=false", p0_ordinary_rows[0]["可执行检查"])
+        self.assertIn("command_center_3_bootstrap_runtime_mode_packet", p0_ordinary_rows[1]["可执行检查"])
+        self.assertIn("command_center_3_desktop_shell_preflight_cache", p0_ordinary_rows[2]["可执行检查"])
+        self.assertIn("stock-MING Command Center 3.0", p0_ordinary_rows[3]["可执行检查"])
         self.assertIn("只读健康检查", p0_ordinary_rows[0]["边界"])
         self.assertIn("不写配置、不启用 live_light", p0_ordinary_rows[1]["边界"])
         self.assertIn("不运行 launcher、不探测当前运行时", p0_ordinary_rows[2]["边界"])
