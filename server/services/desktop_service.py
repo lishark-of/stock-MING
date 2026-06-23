@@ -561,7 +561,7 @@ def _frontend_backend_auto_link_contract(api_base_info: dict[str, Any], client_s
         "configured_api_base_display": api_base_info.get("configured_api_base_display"),
         "candidate_display_urls": candidates,
         "candidate_count": len(candidates),
-        "offline_next_action": "双击 stock-MING Command Center 3.command；或运行 COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command 做安全诊断。",
+        "offline_next_action": "双击 stock-MING Command Center 3.command；或运行 COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1 scripts/start_command_center_3.command 做安全诊断。",
         "current_runtime_probe_executed_by_get_cache": False,
         "get_cache_starts_services": False,
         "react_render_starts_services": False,
@@ -685,7 +685,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "STOCK_MING_ALLOW_SYSTEM_PYTHON",
         "desktop/node_modules",
         ".stock_ming_3/logs",
-        "open \"$APP_URL\"",
+        "open \"$APP_OPEN_URL\"",
         "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY",
         "Check-only mode: resolved launcher configuration without starting FastAPI",
         "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN",
@@ -707,6 +707,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
     required_check_only_markers = (
         "Command Center 3.0 check-only launcher",
         "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1",
+        "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1",
         "start_command_center_3.command",
         "does not start FastAPI/Vite",
         "probe URLs",
@@ -826,6 +827,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "check_only_launcher_exists": COMMAND_CENTER_3_CHECK_ONLY_LAUNCHER.exists(),
         "check_only_launcher_executable": os.access(COMMAND_CENTER_3_CHECK_ONLY_LAUNCHER, os.X_OK),
         "check_only_launcher_wraps_safe_mode": "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1" in check_only_source
+        and "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1" in check_only_source
         and "start_command_center_3.command" in check_only_source,
         "check_only_launcher_starts_services": False,
         "check_only_launcher_probes_urls": False,
@@ -854,7 +856,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "starts_fastapi_when_user_runs": "scripts/dev_server.sh" in source,
         "one_click_fastapi_reload_disabled": "STOCK_MING_FASTAPI_RELOAD=0" in source,
         "starts_vite_when_user_runs": "npm run dev" in source,
-        "opens_local_browser_when_user_runs": 'open "$APP_URL"' in source,
+        "opens_local_browser_when_user_runs": 'open "$APP_OPEN_URL"' in source,
         "check_only_mode_supported": "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY" in source
         and "Check-only mode: resolved launcher configuration without starting FastAPI" in source,
         "check_only_mode_starts_services": False,
@@ -982,7 +984,7 @@ def _one_click_startup_summary(
     open_is_gated = (
         'if [ "$FASTAPI_READY" != "1" ] || [ "$API_STATUS_READY" != "1" ] || [ "$DESKTOP_PREFLIGHT_READY" != "1" ] || [ "$VITE_READY" != "1" ]; then'
         in launcher_source
-        and 'open "$APP_URL"' in launcher_source
+        and 'open "$APP_OPEN_URL"' in launcher_source
     )
     success_handoff_visible = (
         "P0 success handoff: after readiness, open #candidates; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
@@ -1805,8 +1807,8 @@ def _p0_launcher_check_only_rows(
         row(
             "1. check-only 配置自检",
             "ready" if check_only_ready else "check",
-            "运行 scripts/check_command_center_3.command；它会设置 COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 并调用本地启动器。",
-            "只打印本机 API/Vite/open route、skip-open 和浏览器打开策略；不会进入启动流程。",
+            "运行 scripts/check_command_center_3.command；它会设置 COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 和 COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1 并调用本地启动器。",
+            "只打印本机 API/Vite/open route、skip-open 和 Browser open: skipped；不会进入启动流程。",
             "check-only 不启动 FastAPI/Vite、不探测 URL、不写日志、不打开浏览器、不创建 task。",
         ),
         row(
