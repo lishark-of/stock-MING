@@ -348,7 +348,8 @@ fi
 
 API_BASE_DISPLAY="$(safe_display_url "$API_BASE")"
 VITE_URL_DISPLAY="$(safe_display_url "$VITE_URL")"
-APP_URL_DISPLAY="$(safe_display_open_url "$APP_URL")"
+APP_OPEN_URL="$(safe_display_open_url "$APP_URL")"
+APP_URL_DISPLAY="$APP_OPEN_URL"
 API_HEALTH_DISPLAY="$(safe_display_url "${API_BASE%/}/health")"
 BOOTSTRAP_STATUS_DISPLAY="$(safe_display_url "${API_BASE%/}/api/bootstrap/status")"
 DESKTOP_PREFLIGHT_DISPLAY="$(safe_display_url "${API_BASE%/}/api/desktop/preflight-cache")"
@@ -404,7 +405,7 @@ echo "Open target: ordinary Command Center home route (#home), so startup does n
 echo "P0 success handoff: after readiness, open #candidates; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
 echo "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution."
 echo "Safety: this launcher does not set live_light defaults and makes no Tushare, DeepSeek, GitHub, or trading call."
-echo "URL safety: displayed launcher URLs are sanitized; simple local open routes like #home may be shown, while query/userinfo and non-local API/frontend/open URLs are blocked before any probe."
+echo "URL safety: displayed and opened launcher URLs are sanitized; simple local open routes like #home may be shown, while query/userinfo are stripped and non-local API/frontend/open URLs are blocked before any probe."
 echo "Acceptance: runtime_mode_config_current_acceptance_* markers are status/checkpoint drift guards, not launcher config or live_light enablement."
 
 if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then
@@ -471,7 +472,7 @@ if [ "$LAUNCHER_SKIP_OPEN" = "1" ]; then
   echo "Skip-open mode: FastAPI, bootstrap status, desktop preflight cache, and React/Vite are ready; browser was not opened automatically."
   echo "请在浏览器打开：${APP_URL_DISPLAY}"
 elif command -v open >/dev/null 2>&1; then
-  open "$APP_URL"
+  open "$APP_OPEN_URL"
 else
   echo "请在浏览器打开：${APP_URL_DISPLAY}"
 fi

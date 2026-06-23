@@ -15947,8 +15947,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         launcher = launcher_path.read_text(encoding="utf-8")
 
         self.assertIn("safe_display_url", launcher)
+        self.assertIn("safe_display_open_url", launcher)
+        self.assertIn('APP_OPEN_URL="$(safe_display_open_url "$APP_URL")', launcher)
+        self.assertIn('APP_URL_DISPLAY="$APP_OPEN_URL"', launcher)
         self.assertIn("url_is_local", launcher)
         self.assertIn('if ! url_is_local "$API_BASE"; then', launcher)
+        self.assertIn('open "$APP_OPEN_URL"', launcher)
+        self.assertNotIn('open "$APP_URL"', launcher)
+        self.assertIn("displayed and opened launcher URLs are sanitized", launcher)
+        self.assertIn("query/userinfo are stripped", launcher)
         self.assertLess(
             launcher.index('if ! url_is_local "$API_BASE"; then'),
             launcher.index('if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then'),
@@ -16011,6 +16018,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("FastAPI: http://127.0.0.1:8710/api", local_output)
         self.assertIn("React/Vite: http://localhost:5173", local_output)
         self.assertIn("Open route: http://localhost:5173/", local_output)
+        self.assertIn("open_route=http://localhost:5173/", local_output)
         self.assertIn("Check-only mode", local_output)
         self.assertNotIn("SHOULD_DROP", local_output)
         self.assertNotIn("user:", local_output)
