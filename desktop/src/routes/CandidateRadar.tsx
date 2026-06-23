@@ -1591,6 +1591,11 @@ export default function CandidateRadar() {
           <p className="risk-note">普通用户再看这张完整性表：cache、call_ledger、packet 是否齐备；它优先读取服务端 ordinary_writeback_integrity_rows，只做本地回放。</p>
           <DataLineageTable rows={quantProjectionWritebackIntegrityRows} />
         </div>
+        <div aria-label="candidate radar ordinary p2 post confirm cache handoff">
+          <h3>P2 确认后缓存回放交接</h3>
+          <p className="risk-note">点击确认后先看 task id 和 TaskStatusPanel；success 后刷新本地 cache，再读 cache、call_ledger、packet 三面。</p>
+          <DataLineageTable rows={quantProjectionPostConfirmActionRows} />
+        </div>
         <div aria-label="candidate radar ordinary p3 explainable result quick read">
           <h3>P3 可解释结果速读</h3>
           <p className="risk-note">普通用户确认后直接看这张 P3 表：可读结论、回放来源和待补证据都来自本地 cache / ledger / packet；不会从速读表创建 task 或调用模型。</p>
