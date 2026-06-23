@@ -6,6 +6,7 @@ import MetricGrid from "../components/MetricGrid";
 import NextSessionChart from "../components/NextSessionChart";
 import PageStateBanner from "../components/PageStateBanner";
 import PacketCard from "../components/PacketCard";
+import StateClarityRail from "../components/StateClarityRail";
 import TaskLaunchReceipt from "../components/TaskLaunchReceipt";
 import TaskStatusPanel from "../components/TaskStatusPanel";
 
@@ -327,6 +328,34 @@ export default function NextSessionMap() {
     { boundary: "uses_real_daily_close", value: String(chartPayload?.uses_real_daily_close === true), note: "未验证真实 close 时必须展示风险提示。" }
   ];
   const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
+  const nextSessionOrdinaryReplayRailState = [
+    chartSummary.has_drawable_data === true ? "chart_cache_visible" : "chart_cache_waiting",
+    chartSummary.is_exact_next_session_packet === true ? "exact_packet_visible" : "legacy_projection_or_missing",
+    Number(chartSummary.operation_zone_count ?? 0) > 0 ? "operation_zones_visible" : "operation_zones_waiting",
+    chartPayload?.deepseek_status === "success" ? "deepseek_cache_visible" : "deepseek_governed_pending"
+  ].join(" ");
+  const nextSessionOrdinaryReplayRailSteps = [
+    {
+      label: "雷达/量化回放",
+      state: chartSummary.has_drawable_data === true ? ("done" as const) : empty ? ("waiting" as const) : ("active" as const),
+      detail: nextSessionReplayOrigin
+    },
+    {
+      label: "图表路径",
+      state: chartSummary.has_drawable_data === true ? ("done" as const) : ("waiting" as const),
+      detail: nextSessionLastResultLabel
+    },
+    {
+      label: "操作区",
+      state: Number(chartSummary.operation_zone_count ?? 0) > 0 ? ("done" as const) : chartSummary.has_drawable_data === true ? ("active" as const) : ("waiting" as const),
+      detail: nextSessionOperationZoneBoundary
+    },
+    {
+      label: "DeepSeek 状态",
+      state: chartPayload?.deepseek_status === "success" ? ("done" as const) : chartSummary.has_drawable_data === true ? ("active" as const) : ("waiting" as const),
+      detail: nextSessionDeepSeekSourceLabel
+    }
+  ];
 
   return (
     <>
@@ -358,6 +387,12 @@ export default function NextSessionMap() {
           { label: "仅供研究", value: nextSessionResearchOnlyLabel }
         ]}
       />
+      <StateClarityRail
+        label="next session ordinary replay status"
+        state={nextSessionOrdinaryReplayRailState}
+        steps={nextSessionOrdinaryReplayRailSteps}
+      />
+      <p className="risk-note">普通图谱状态：雷达/量化回放 / 图表路径 / 操作区 / DeepSeek 状态；这条状态轨只读本地 next-session cache，不创建 task、不补调 Tushare 或 DeepSeek。</p>
       <h3>三段结果回放</h3>
       <p className="risk-note">三段结果回放优先读取服务端 ordinary_result_replay_rows；旧 packet 缺字段时才使用前端 fallback，且两者都只读 cache。</p>
       <DataLineageTable rows={ordinaryResultReplayRows} />
