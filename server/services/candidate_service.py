@@ -15073,6 +15073,114 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "does_not_modify_strategy_action": True,
         },
     ]
+    if provider_ready:
+        post_confirm_result_state = "结果入口可回放：读取本地 cache / ledger / packet，不额外刷新外部数据或模型。"
+        post_confirm_result_next = "先回放股票量化推演，再打开次日图谱复核图谱。"
+    elif credential_missing_count:
+        post_confirm_result_state = "结果入口显示本地阻断：缺少服务端 Tushare 凭据，没有 provider 账本。"
+        post_confirm_result_next = "配置服务端凭据后重新点击确认；不要从 GET cache 或链接期待自动补数。"
+    elif latest_task_id:
+        post_confirm_result_state = "结果入口等待缓存：先看 TaskStatusPanel，任务完成并刷新 cache 后再回放。"
+        post_confirm_result_next = "等待后台任务完成，刷新本地 cache 后再使用量化推演和次日图谱入口。"
+    else:
+        post_confirm_result_state = "结果入口待确认：当前只是本地导航；不会创建 task 或刷新 provider/model。"
+        post_confirm_result_next = "输入有效代码并点击确认；不要从链接期待自动补数。"
+    ordinary_post_confirm_action_rows = [
+        {
+            "action_key": "check_task_id",
+            "行动": "1. 看任务编号",
+            "当前状态": f"task_id={latest_task_id}" if latest_task_id else "等待点击确认按钮",
+            "用户下一步": (
+                "确认 task id 后看 TaskStatusPanel"
+                if latest_task_id
+                else "输入有效代码并点击确认"
+            ),
+            "入口": "确认任务接收回执",
+            "证据": "candidate_radar_cache_packet.task_id" if latest_task_id else "button_not_clicked",
+            "边界": "task id 只来自按钮门控 POST 或 cache packet；输入、搜索、GET cache 不创建 task。",
+            "readback_source": "GET /api/candidate-radar/cache",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "action_key": "poll_task_status",
+            "行动": "2. 看任务进度",
+            "当前状态": "TaskStatusPanel 可轮询本地 FastAPI" if latest_task_id else "等待本地 task id",
+            "用户下一步": (
+                "等待 success 或 blocked 后刷新本地 cache"
+                if latest_task_id
+                else "先点击确认按钮创建本地 task"
+            ),
+            "入口": "TaskStatusPanel",
+            "证据": "local_task_status" if latest_task_id else "button_not_clicked",
+            "边界": "TaskStatusPanel 只轮询本地任务状态；不调用 Tushare/DeepSeek/GitHub、不写交易动作。",
+            "readback_source": "local_task_status",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "action_key": "refresh_cache",
+            "行动": "3. 刷新本地 cache",
+            "当前状态": "cache / ledger / packet 可回放" if cache_packet_written else "等待任务完成后刷新",
+            "用户下一步": ordinary_readback_next_step,
+            "入口": "小数据写入位置",
+            "证据": summary_label,
+            "边界": "GET cache 只读回放，不补调 provider/model、不泄露 token/key。",
+            "readback_source": "GET /api/candidate-radar/cache",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "action_key": "replay_results",
+            "行动": "4. 回放结果",
+            "当前状态": post_confirm_result_state,
+            "用户下一步": post_confirm_result_next,
+            "入口": "股票量化推演 / 次日图谱",
+            "证据": f"provider_call_source={provider_call_source}; provider_ready={provider_ready}",
+            "边界": "只切换 #factor/#next 锚点，不重新创建 task、不改 strategy action。",
+            "readback_source": "local_navigation_and_cache_replay",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+    ]
     chain_symbol = _safe_text(
         provider_receipt.get("symbol")
         or execution_request.get("symbol")
@@ -15369,6 +15477,11 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_task_readback_row_count": len(ordinary_task_readback_rows),
         "ordinary_task_readback_rows_are_cache_only": True,
         "ordinary_task_readback_rows_create_task": False,
+        "ordinary_post_confirm_action_rows": ordinary_post_confirm_action_rows,
+        "ordinary_post_confirm_action_row_count": len(ordinary_post_confirm_action_rows),
+        "ordinary_post_confirm_action_rows_are_cache_only": True,
+        "ordinary_post_confirm_action_rows_create_task": False,
+        "ordinary_post_confirm_action_rows_are_not_trade_signals": True,
         "ordinary_confirmed_task_receipt_rows": ordinary_confirmed_task_receipt_rows,
         "ordinary_confirmed_task_receipt_row_count": len(ordinary_confirmed_task_receipt_rows),
         "ordinary_confirmed_task_receipt_rows_are_cache_only": True,
@@ -15442,6 +15555,9 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     counts["search_quant_projection_tushare_first_chain_row_count"] = summary.get(
         "ordinary_tushare_first_chain_row_count", 0
     )
+    counts["search_quant_projection_post_confirm_action_row_count"] = summary.get(
+        "ordinary_post_confirm_action_row_count", 0
+    )
     counts["search_quant_projection_small_data_writeback_action_row_count"] = summary.get(
         "ordinary_writeback_action_row_count", 0
     )
@@ -15454,6 +15570,9 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     policy["search_quant_projection_tushare_first_chain_cache_get_external_calls"] = False
     policy["search_quant_projection_tushare_first_chain_react_render_external_calls"] = False
     policy["search_quant_projection_tushare_first_chain_rows_create_task"] = False
+    policy["search_quant_projection_post_confirm_action_rows_are_cache_only"] = True
+    policy["search_quant_projection_post_confirm_action_rows_create_task"] = False
+    policy["search_quant_projection_post_confirm_action_rows_are_not_trade_signals"] = True
     policy["search_quant_projection_small_data_writeback_action_rows_are_cache_only"] = True
     policy["search_quant_projection_small_data_writeback_action_rows_create_task"] = False
     policy["search_quant_projection_small_data_writeback_action_rows_are_not_trade_signals"] = True

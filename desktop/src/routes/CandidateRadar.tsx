@@ -959,7 +959,8 @@ export default function CandidateRadar() {
       边界: "Radar candidate 不是交易指令；真实交易路径继续隔离"
     }
   ];
-  const quantProjectionPostConfirmActionRows = [
+  const quantProjectionPostConfirmPacketRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_post_confirm_action_rows);
+  const quantProjectionPostConfirmActionRows = quantProjectionPostConfirmPacketRows.length ? quantProjectionPostConfirmPacketRows : [
     {
       行动: "1. 看任务编号",
       当前状态: quantProjectionAcceptedTaskId || quantProjectionPersistedTaskId || "等待点击确认按钮",
