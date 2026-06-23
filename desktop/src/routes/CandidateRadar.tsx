@@ -959,6 +959,38 @@ export default function CandidateRadar() {
       边界: "Radar candidate 不是交易指令；真实交易路径继续隔离"
     }
   ];
+  const quantProjectionPostConfirmActionRows = [
+    {
+      行动: "1. 看任务编号",
+      当前状态: quantProjectionAcceptedTaskId || quantProjectionPersistedTaskId || "等待点击确认按钮",
+      用户下一步: taskReceipt?.ok || quantProjectionPersistedTaskId
+        ? "确认 task id 后看 TaskStatusPanel"
+        : quantProjectionSubmitError
+          ? "先恢复本地后端连接，再重新点击确认"
+          : "输入有效代码并点击确认",
+      边界: "task id 只来自按钮门控 POST 或 cache packet；输入、搜索、GET cache 不创建 task"
+    },
+    {
+      行动: "2. 看任务进度",
+      当前状态: (taskId || quantProjectionAcceptedTaskId || quantProjectionPersistedTaskId)
+        ? "TaskStatusPanel 可轮询本地 FastAPI"
+        : "等待本地 task id",
+      用户下一步: "等待 success 后刷新本地 cache",
+      边界: "TaskStatusPanel 只轮询本地任务状态；不调用 Tushare/DeepSeek/GitHub、不写交易动作"
+    },
+    {
+      行动: "3. 刷新本地 cache",
+      当前状态: quantProjectionSmallDataReady ? "cache / ledger / packet 可回放" : "等待任务完成后刷新",
+      用户下一步: "刷新后看小数据写入位置和结果入口",
+      边界: "GET cache 只读回放，不补调 provider/model、不泄露 token/key"
+    },
+    {
+      行动: "4. 回放结果",
+      当前状态: quantProjectionReplayDestinationState,
+      用户下一步: quantProjectionReplayDestinationNextStep,
+      边界: "只切换 #factor/#next 锚点，不重新创建 task、不改 strategy action"
+    }
+  ];
   const quantProjectionTushareFirstChainRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_tushare_first_chain_rows);
   const quantProjectionConfirmHandoffRows = quantProjectionTushareFirstChainRows.length ? quantProjectionTushareFirstChainRows : [
     {
@@ -1182,6 +1214,11 @@ export default function CandidateRadar() {
             <h3>确认任务接收回执</h3>
             <p className="risk-note">点击确认后先看这张回执：它只回放本地 POST task 是否接收、Tushare-first / DeepSeek skipped 参数和安全步骤，不补调数据源或模型。</p>
             <DataLineageTable rows={quantProjectionConfirmedTaskReceiptRows} />
+          </div>
+          <div aria-label="quant projection post confirm user actions">
+            <h3>确认后看什么</h3>
+            <p className="risk-note">点击确认后先看任务编号和 TaskStatusPanel，再刷新本地 cache，最后回放量化推演和次日图谱；这些行动不会创建第二个 provider/model 任务。</p>
+            <DataLineageTable rows={quantProjectionPostConfirmActionRows} />
           </div>
           <div aria-label="quant projection ordinary small data writeback targets">
             <h3>小数据写入位置</h3>
