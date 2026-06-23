@@ -419,6 +419,26 @@ export default function CommandCenterHome() {
       边界: "首页只展示预检结果，不启动 FastAPI/Vite/浏览器"
     }
   ];
+  const dailyCommandAuditDemotionRows = [
+    {
+      审计入口: "普通摘要",
+      可见内容: "下一步、本地联通、结果位置、缺数据口径和仅供研究边界",
+      用户动作: "先按最近缓存、数据健康、下一票雷达和股票量化推演复核",
+      边界: "不展示 raw packet、call_ledger、runbook、LTG 表或 provider/model 明细"
+    },
+    {
+      审计入口: "开发详情",
+      可见内容: "call ledger、release gate、runtime mode、storage、task catalog 和配置状态",
+      用户动作: "只有排障、验收或补证时展开",
+      边界: "默认折叠，不压过 P0 联通、P1 搜票确认、P2/P3 结果回放"
+    },
+    {
+      审计入口: "补证按钮",
+      可见内容: "手动补证状态、任务状态面板和任务回执",
+      用户动作: "需要时手动确认按钮门控 POST task",
+      边界: "页面打开、React render 和 GET cache 不创建 task、不调用 Tushare/DeepSeek/GitHub"
+    }
+  ];
   const dailyCommandReviewOrder = error
     ? "先看一键启动预检恢复本地联通，再回今日作战台"
     : "先确认最近缓存和数据健康，再看下一票雷达，最后看股票量化推演结果";
@@ -552,6 +572,11 @@ export default function CommandCenterHome() {
       <details className="developer-audit-details">
         <summary>开发 / 审计详情</summary>
         <p>详细验收记录、开发表格和排障明细默认收起；普通用户先看上方今日作战台摘要。</p>
+        <div aria-label="daily command engineering audit demotion rules">
+          <h3>审计入口下沉规则</h3>
+          <p className="risk-note">普通用户先看摘要和三入口；只有排障、验收或补证时展开开发详情。</p>
+          <DataLineageTable rows={dailyCommandAuditDemotionRows} />
+        </div>
         <PacketCard title="开发状态速览" subtitle="工程指标默认收进开发详情，不压过三入口" status="audit">
           <MetricGrid
             items={[
