@@ -851,11 +851,38 @@ export default function CandidateRadar() {
     : quantProjectionPersistedTaskId
       ? `最近任务：${quantProjectionPersistedTaskId} / cache 回放 / ${quantProjectionPersistedTaskStep || "等待状态"}`
       : "最近任务：暂无；点击确认按钮后显示本地任务编号";
+  const quantProjectionOrdinaryTaskRailState = [
+    quantProjectionCanSubmit || quantProjectionDisplaySymbol ? "input_ready" : "input_waiting",
+    quantProjectionSubmitError ? "task_failed" : quantProjectionSubmitting ? "submitting" : taskReceipt?.ok || quantProjectionPersistedTaskId ? "task_visible" : "task_waiting",
+    quantProjectionSmallDataReady ? "cache_replay_ready" : "cache_replay_waiting"
+  ].join(" ");
   const quantProjectionAcceptedTask = taskReceipt?.data?.task;
   const quantProjectionAcceptedPayload = (quantProjectionAcceptedTask?.payload_safe as Record<string, unknown> | undefined) ?? {};
   const quantProjectionAcceptedTaskId = String(taskReceipt?.data?.task_id ?? quantProjectionAcceptedTask?.task_id ?? quantProjectionPersistedTaskId ?? "");
   const quantProjectionAcceptedTaskStep = String(quantProjectionAcceptedTask?.current_step ?? quantProjectionPersistedTaskStep ?? "");
   const quantProjectionAcceptedTaskStatus = String(quantProjectionAcceptedTask?.status ?? (quantProjectionAcceptedTaskId ? "cache_replay" : "waiting_confirm"));
+  const quantProjectionOrdinaryTaskRailSteps = [
+    {
+      label: "输入代码",
+      state: quantProjectionCanSubmit || quantProjectionDisplaySymbol ? ("done" as const) : searchSymbol.trim() ? ("blocked" as const) : ("waiting" as const),
+      detail: quantProjectionInputValidation
+    },
+    {
+      label: "任务接收",
+      state: quantProjectionSubmitError ? ("blocked" as const) : quantProjectionSubmitting ? ("active" as const) : (taskReceipt?.ok || quantProjectionAcceptedTaskId) ? ("done" as const) : ("waiting" as const),
+      detail: quantProjectionLatestTaskState
+    },
+    {
+      label: "任务轮询",
+      state: quantProjectionSubmitError ? ("blocked" as const) : quantProjectionSmallDataReady ? ("done" as const) : (taskId || quantProjectionAcceptedTaskId || quantProjectionPersistedTaskId) ? ("active" as const) : ("waiting" as const),
+      detail: (taskId || quantProjectionAcceptedTaskId || quantProjectionPersistedTaskId) ? "TaskStatusPanel 只轮询本地 FastAPI" : "等待本地 task id"
+    },
+    {
+      label: "cache 回放",
+      state: quantProjectionSmallDataReady ? ("done" as const) : (taskReceipt?.ok || quantProjectionPersistedTaskId) ? ("active" as const) : ("waiting" as const),
+      detail: quantProjectionSmallDataStageLabel
+    }
+  ];
   const quantProjectionPersistedConfirmedTaskReceiptRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_confirmed_task_receipt_rows).map((row) => ({
     回执项: confirmedTaskReceiptLabel(row.receipt_item),
     当前状态: displayText(row.ordinary_label ?? row.status),
@@ -1193,6 +1220,12 @@ export default function CandidateRadar() {
           {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
           <p className="risk-note" aria-live="polite">{quantProjectionSubmitHint}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionTushareFirstState}</p>
+          <StateClarityRail
+            label="quant projection ordinary task status"
+            state={quantProjectionOrdinaryTaskRailState}
+            steps={quantProjectionOrdinaryTaskRailSteps}
+          />
+          <p className="risk-note">普通确认状态：等待输入 / 任务接收 / 任务轮询 / cache 回放；这条状态轨只读本地 task receipt 和 cache，不补调 Tushare、DeepSeek 或 GitHub。</p>
           <MetricGrid
             items={[
               { label: "确认状态", value: quantProjectionConfirmChainState, tone: taskReceipt?.ok || (quantProjectionCanLaunch && !quantProjectionSubmitError) ? "good" : "warn" },
