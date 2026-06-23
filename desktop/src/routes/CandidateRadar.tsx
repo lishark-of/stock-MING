@@ -1243,6 +1243,8 @@ export default function CandidateRadar() {
             { label: "缺少证据", value: ordinaryMissingEvidence, tone: ordinaryMissingEvidence.includes("待补") || ordinaryMissingEvidence.includes("阻断") || ordinaryMissingEvidence.includes("验收") ? "warn" : "good" },
             { label: "阻断/降级", value: ordinaryBlockedState, tone: ordinaryBlockedState.includes("未标记") ? "good" : "warn" },
             { label: "最近可用缓存", value: ordinaryLastCache },
+            { label: "P1 Tushare-first", value: quantProjectionTushareFirstState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
+            { label: "P1 回放顺序", value: quantProjectionReplayOrder, tone: taskReceipt?.ok || quantProjectionProviderLedgerReady ? "good" : "warn" },
             { label: "任务边界", value: ordinaryTaskBoundary },
             { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" }
           ]}
@@ -1281,6 +1283,11 @@ export default function CandidateRadar() {
           <h3>P1 确认结果速读</h3>
           <p className="risk-note">点击确认后先看这里：任务是否接收、task id 是否可见、cache / ledger / packet 是否可回放；这张速读表不创建第二个任务。</p>
           <DataLineageTable rows={quantProjectionOrdinaryConfirmOutcomeRows} />
+        </div>
+        <div aria-label="candidate radar p1 tushare first chain quick read">
+          <h3>P1 Tushare-first 链路速读</h3>
+          <p className="risk-note">优先读取服务端 ordinary_tushare_first_chain_rows：输入只做本地校验，确认按钮才创建 Tushare-first POST task，回放只读 cache / ledger / packet。</p>
+          <DataLineageTable rows={quantProjectionConfirmHandoffRows} />
         </div>
         <p className="risk-note">{ordinaryRadarResultLocation}</p>
         <p className="risk-note">候选池按 Top / Watch / Excluded 分组帮助复核优先级；分组结果不是买卖建议，也不会修改 strategy action。</p>
