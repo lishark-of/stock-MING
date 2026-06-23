@@ -88,6 +88,11 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
         "does_not_override_operation_zones": True,
         "does_not_modify_strategy_action": True,
         "ordinary_status_label": "DeepSeek 等 governed executor；Tushare-first 和基础图谱可先走。",
+        "ordinary_next_allowed_action": "先继续 Tushare-first、Factor light 和 Next Session 本地回放；DeepSeek 真实解释等 governed executor 单独验收。",
+        "ordinary_required_before_real_call": "需要 model_ledger / sanitizer / redaction review / cost accounting / output acceptance 全部就绪。",
+        "ordinary_nonblocking_boundary": "DeepSeek 状态只解释已有证据，不作为数据源、不替代价格/持仓/因子/operation_zones，也不生成买卖动作。",
+        "ordinary_safe_to_ignore_for_basic_maps": True,
+        "ordinary_blocking_state": "pending_model_ledger_not_blocking_tushare_or_basic_maps",
     }
 
     packet = {

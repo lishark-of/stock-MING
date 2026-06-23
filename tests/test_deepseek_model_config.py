@@ -2306,6 +2306,11 @@ class DeepSeekModelConfigTests(unittest.TestCase):
         self.assertFalse(governed["deepseek_called"])
         self.assertFalse(governed["contains_secret"])
         self.assertTrue(governed["does_not_modify_strategy_action"])
+        self.assertIn("Tushare-first、Factor light 和 Next Session 本地回放", governed["ordinary_next_allowed_action"])
+        self.assertIn("model_ledger / sanitizer / redaction review", governed["ordinary_required_before_real_call"])
+        self.assertIn("不作为数据源", governed["ordinary_nonblocking_boundary"])
+        self.assertTrue(governed["ordinary_safe_to_ignore_for_basic_maps"])
+        self.assertEqual(governed["ordinary_blocking_state"], "pending_model_ledger_not_blocking_tushare_or_basic_maps")
         self.assertTrue(packet["policy"]["governed_executor_required_for_real_deepseek"])
         self.assertTrue(packet["policy"]["deepseek_does_not_block_tushare_or_basic_maps"])
 

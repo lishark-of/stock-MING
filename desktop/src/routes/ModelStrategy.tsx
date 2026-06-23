@@ -80,6 +80,15 @@ export default function ModelStrategy() {
       <div className="grid">
         <PacketCard title="普通用户 DeepSeek 状态" subtitle="P5 governed executor；真实模型调用单独补，不阻塞 Tushare-first 和基础图谱" status={String(governedExecutor.status ?? "pending")}>
           <p>{String(governedExecutor.ordinary_status_label ?? "DeepSeek 等 governed executor；Tushare-first 和基础图谱可先走。")}</p>
+          <MetricGrid
+            items={[
+              { label: "下一步", value: String(governedExecutor.ordinary_next_allowed_action ?? "先继续 Tushare-first、Factor light 和 Next Session 本地回放；DeepSeek 单独验收。") },
+              { label: "必备治理", value: String(governedExecutor.ordinary_required_before_real_call ?? "需要 model_ledger / sanitizer / redaction review / cost accounting / output acceptance 全部就绪。"), tone: "warn" },
+              { label: "非阻塞", value: governedExecutor.ordinary_safe_to_ignore_for_basic_maps === true ? "Tushare-first / Factor light / Next Session 可先走" : "待确认", tone: governedExecutor.ordinary_safe_to_ignore_for_basic_maps === true ? "good" : "warn" },
+              { label: "阻断状态", value: String(governedExecutor.ordinary_blocking_state ?? "pending_model_ledger_not_blocking_tushare_or_basic_maps"), tone: "warn" },
+              { label: "边界", value: String(governedExecutor.ordinary_nonblocking_boundary ?? "DeepSeek 只解释已有证据，不作为数据源、不生成买卖动作。"), tone: "good" }
+            ]}
+          />
           <p>真实调用入口：{String(governedExecutor.execution_route ?? "POST /api/factor-quant/deepseek-explain")}；scope ticket：{String(governedExecutor.scope_ticket_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")}。</p>
           <p>必须先有 model_ledger、sanitizer、redaction review、cost accounting 和 output acceptance；本页 GET cache 与 React render 都不调用模型。</p>
           <p>DeepSeek 只解释已有证据，不覆盖价格、持仓、因子、operation zones 或 strategy action。</p>
