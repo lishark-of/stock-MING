@@ -1597,6 +1597,23 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "8710/5173 port occupancy guidance",
             ],
         )
+        self.assertEqual(one_click["ordinary_recovery_step_count"], 3)
+        self.assertTrue(one_click["ordinary_recovery_steps_are_read_only"])
+        self.assertFalse(one_click["ordinary_recovery_steps_create_task"])
+        self.assertEqual(desktop["p0_recovery_steps"], one_click["ordinary_recovery_steps"])
+        recovery_titles = [row["title"] for row in one_click["ordinary_recovery_steps"]]
+        self.assertEqual(
+            recovery_titles,
+            ["打开本地一键入口", "按启动器诊断定位失败段", "刷新健康页确认联通"],
+        )
+        for recovery_step in one_click["ordinary_recovery_steps"]:
+            self.assertFalse(recovery_step["external_calls_triggered"])
+            self.assertFalse(recovery_step["tushare_called"])
+            self.assertFalse(recovery_step["deepseek_called"])
+            self.assertFalse(recovery_step["github_called"])
+            self.assertFalse(recovery_step["loads_token_or_key"])
+            self.assertTrue(recovery_step["does_not_execute_trades"])
+            self.assertTrue(recovery_step["does_not_modify_strategy_action"])
         self.assertEqual(one_click["api_health_endpoint"], "http://127.0.0.1:8710/health")
         self.assertEqual(one_click["vite_url"], "http://127.0.0.1:5173")
         self.assertTrue(one_click["frontend_backend_connection_ready"])
@@ -1657,6 +1674,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(p0_receipt["success_condition"], one_click["success_condition"])
         self.assertEqual(p0_receipt["blocked_next_action"], one_click["blocked_next_action"])
         self.assertEqual(p0_receipt["diagnostic_surfaces"], one_click["diagnostic_surfaces"])
+        self.assertEqual(p0_receipt["ordinary_recovery_steps"], one_click["ordinary_recovery_steps"])
+        self.assertEqual(p0_receipt["ordinary_recovery_step_count"], 3)
+        self.assertTrue(p0_receipt["ordinary_recovery_steps_are_read_only"])
+        self.assertFalse(p0_receipt["ordinary_recovery_steps_create_task"])
         self.assertTrue(p0_receipt["connection_contract_ready"])
         self.assertFalse(p0_receipt["current_runtime_live_connection_verified"])
         self.assertFalse(p0_receipt["current_runtime_probe_executed_by_get_cache"])
