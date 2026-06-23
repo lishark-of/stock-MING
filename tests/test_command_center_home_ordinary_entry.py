@@ -199,12 +199,21 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('href="#factor"', summary)
         self.assertIn('href="#dataHealth"', summary)
         self.assertIn('href="#desktop"', summary)
-        self.assertIn("这些入口链接只切换本地页面", summary)
+        self.assertIn('title="切换到下一票雷达模块；输入代码后仍需确认按钮"', summary)
+        self.assertIn('title="切换到股票量化推演模块；只回放缓存结果，不创建 task"', summary)
+        self.assertIn('title="切换到数据健康模块；只读 cache，不刷新外部数据源"', summary)
+        self.assertIn('title="切换到桌面壳预检模块；只读恢复指引，不启动服务"', summary)
+        self.assertIn("这些入口链接只切换本地页面（本地模块路由）", summary)
         self.assertIn("不会创建 task、调用 Tushare/DeepSeek/GitHub、写 cache/config 或改变交易策略", summary)
         self.assertLess(summary.index('aria-label="daily command primary next action"'), summary.index('aria-label="daily command next user actions"'))
         self.assertNotIn("onClick=", summary)
         self.assertNotIn("launchLiveBootstrap", summary)
         self.assertNotIn("postBootstrapLiveStartup", summary)
+
+        app_source = (ROOT / "src" / "App.tsx").read_text(encoding="utf-8")
+        for route_key in ('"candidates"', '"factor"', '"dataHealth"', '"desktop"'):
+            self.assertIn(route_key, app_source)
+        self.assertIn("normalizeRouteKey(window.location.hash)", app_source)
 
     def test_engineering_metrics_are_demoted_behind_details(self):
         source = self.source
