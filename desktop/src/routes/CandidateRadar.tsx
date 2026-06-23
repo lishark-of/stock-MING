@@ -1553,6 +1553,11 @@ export default function CandidateRadar() {
           <p className="risk-note">普通用户确认后直接看这张 P3 表：可读结论、回放来源和待补证据都来自本地 cache / ledger / packet；不会从速读表创建 task 或调用模型。</p>
           <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
         </div>
+        <div aria-label="candidate radar ordinary p5 deepseek standalone governance">
+          <h3>P5 DeepSeek 单独治理速读</h3>
+          <p className="risk-note">DeepSeek 只作为 governed executor 单独补证；P1 Tushare-first、P2 小数据写入和 P3 基础图谱继续先走本地回放，不等待模型。</p>
+          <DataLineageTable rows={quantProjectionDeepSeekGovernanceRows} />
+        </div>
         <div className="actions" aria-label="candidate radar primary next action">
           {Number(counts.candidate_count ?? 0) ? (
             <a href="#candidate-pool" aria-label="open local candidate pool from radar summary">{ordinaryPrimaryActionLabel}</a>
