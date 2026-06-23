@@ -159,6 +159,9 @@ export default function NextSessionMap() {
     chartSummary.has_drawable_data === true ? `情景=${String(chartSummary.scenario_series_count ?? 0)} / 参考线=${String(chartSummary.reference_line_count ?? 0)} / 操作区=${String(chartSummary.operation_zone_count ?? 0)}` : "",
     latestCloseAnchor.price ? `latest close=${String(latestCloseAnchor.price)}` : ""
   ].filter(Boolean).join("；") || "暂无最近可用缓存";
+  const nextSessionLastResultLabel = chartSummary.has_drawable_data === true
+    ? `最近结果：${String(chartSummary.scenario_series_count ?? 0)} 条路径、${String(chartSummary.reference_line_count ?? 0)} 条参考线、${String(chartSummary.operation_zone_count ?? 0)} 个操作区；${latestCloseAnchor.price ? `最新收盘 ${String(latestCloseAnchor.price)}` : "等待最新收盘锚点"}`
+    : "暂无最近结果；先查看缓存状态或手动生成任务。";
   const nextSessionTaskBoundary = "GET cache 只读；生成或审查都必须走按钮门控 POST task；React 渲染不直连 Tushare 或 DeepSeek，不改 operation_zones";
   const nextSessionResearchOnlyLabel = "次日图谱只解释缓存场景；不是买卖指令，不真实交易、不下单、不改 strategy action";
   const nextSessionChartReviewOrder = chartSummary.has_drawable_data === true
@@ -213,7 +216,7 @@ export default function NextSessionMap() {
         ? `情景路径 ${String(chartSummary.scenario_series_count ?? 0)} 条；先看基准、乐观和压力路径的方向`
         : "暂无可绘制路径；先看缓存状态或点击生成任务",
       证据: nextSessionLastCache,
-      边界: "只读 scenario_series；不重算价格、不调用 provider/model"
+      边界: "只读取图表路径；不重算价格、不调用数据源或模型"
     },
     {
       复核项: "参考线",
@@ -258,7 +261,7 @@ export default function NextSessionMap() {
 
   return (
     <>
-    <PacketCard title="普通用户次日图谱摘要" subtitle="下一步、来源、缺口、边界和最近可用缓存" status={nextSessionStatusLabel}>
+    <PacketCard title="普通用户次日图谱摘要" subtitle="下一步、来源、缺口、边界和最近结果" status={nextSessionStatusLabel}>
       <PageStateBanner
         loading={loading}
         error={error}
@@ -275,7 +278,7 @@ export default function NextSessionMap() {
           { label: "pending", value: nextSessionPendingSourceLabel, tone: Number(productionStageScope.pending_stage_count ?? 0) > 0 ? "warn" : "good" },
           { label: "degraded", value: nextSessionDegradedSourceLabel, tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn" },
           { label: "缺少证据", value: nextSessionMissingEvidence, tone: nextSessionMissingEvidence === "当前摘要未标记缺口" ? "good" : "warn" },
-          { label: "最近可用缓存", value: nextSessionLastCache },
+          { label: "最近结果", value: nextSessionLastResultLabel },
           { label: "查看顺序", value: nextSessionChartReviewOrder },
           { label: "回放来源", value: nextSessionReplayOrigin, tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn" },
           { label: "回放路径", value: nextSessionReplayPath, tone: "good" },
