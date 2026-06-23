@@ -182,6 +182,12 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("Tushare 小全量数据写入 call_ledger", self.page)
         self.assertIn("待 governed executor / model_ledger 后再展示缓存", self.page)
         self.assertIn("DeepSeek 保持 skipped", self.page)
+        self.assertIn("ordinary_readback_summary", self.page)
+        self.assertIn("ordinary_readback_next_step", self.page)
+        self.assertIn("ordinary_readback_boundary", self.page)
+        self.assertIn("ordinary_readback_surfaces_label", self.page)
+        self.assertIn('label: "小数据下一步"', self.page)
+        self.assertIn("小数据回放只读取本地 cache / ledger / packet", self.page)
         self.assertIn("推演解释只整理已有证据；不覆盖价格、持仓、因子、操作区或交易策略", self.page)
 
     def test_ordinary_quant_projection_submit_does_not_auto_chain_provider_model(self):

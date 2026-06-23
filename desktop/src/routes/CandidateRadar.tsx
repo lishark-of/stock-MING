@@ -573,6 +573,7 @@ export default function CandidateRadar() {
   const quantProjectionSmallDataReady =
     searchQuantProjectionSmallDataWriteback.small_data_writeback_ready === true || quantProjectionProviderLedgerReady;
   const quantProjectionSmallDataReplayState =
+    String(searchQuantProjectionSmallDataWriteback.ordinary_readback_summary ?? "") ||
     String(searchQuantProjectionSmallDataWriteback.summary_label ?? "") ||
     (quantProjectionProviderLedgerReady
       ? `cache / ledger / packet 已回放：Tushare ${quantProjectionProviderApiSuccessLabel}/${quantProjectionProviderApiTotalLabel} 个接口；packet=command_center_3_candidate_radar_cache`
@@ -580,11 +581,16 @@ export default function CandidateRadar() {
         ? `cache / ledger / packet 等待 Tushare-first 回放；本地记录=${String(searchQuantProjectionReceipt.status)}`
         : "cache / ledger / packet 等待确认按钮创建 task");
   const quantProjectionSmallDataWritebackSurfaces = Array.isArray(searchQuantProjectionSmallDataWriteback.writeback_surfaces)
-    ? searchQuantProjectionSmallDataWriteback.writeback_surfaces.join(" / ")
+    ? String(searchQuantProjectionSmallDataWriteback.ordinary_readback_surfaces_label ?? searchQuantProjectionSmallDataWriteback.writeback_surfaces.join(" / "))
     : "等待写入 cache / call_ledger / packet";
   const quantProjectionSmallDataReadbackContract =
+    String(searchQuantProjectionSmallDataWriteback.ordinary_readback_boundary ?? "") ||
     String(searchQuantProjectionSmallDataWriteback.readback_contract ?? "") ||
-    "GET cache replays stored packet only; React render does not call provider/model.";
+    "小数据回放只读取本地 cache / ledger / packet；GET cache 和 React render 不补调 provider/model，不生成交易动作。";
+  const quantProjectionSmallDataNextStep =
+    String(searchQuantProjectionSmallDataWriteback.ordinary_readback_next_step ?? "") ||
+    String(searchQuantProjectionSmallDataWriteback.next_action ?? "") ||
+    "确认任务完成后回放本地 cache / ledger / packet。";
   const quantProjectionProviderCallSource =
     String(searchQuantProjectionSmallDataWriteback.provider_call_source ?? "") ||
     "pending_no_provider_call";
@@ -818,6 +824,7 @@ export default function CandidateRadar() {
               { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn" },
               { label: "Tushare ledger", value: quantProjectionProviderModelReplayState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
               { label: "cache / ledger / packet", value: quantProjectionSmallDataReplayState, tone: quantProjectionSmallDataReady ? "good" : "warn" },
+              { label: "小数据下一步", value: quantProjectionSmallDataNextStep, tone: quantProjectionSmallDataReady ? "good" : "warn" },
               { label: "小数据写入", value: quantProjectionSmallDataWritebackSurfaces, tone: quantProjectionSmallDataReady ? "good" : "warn" },
               { label: "provider 来源", value: quantProjectionProviderCallSource, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
               { label: "回放合同", value: quantProjectionSmallDataReadbackContract, tone: "good" },

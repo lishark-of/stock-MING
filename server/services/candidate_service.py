@@ -14726,10 +14726,19 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             f"个接口；packet={PACKET_KEY}"
         )
         next_action = "查看量化推演和次日图谱只读回放；Factor/Next/ECharts 仍需后续本地刷新证据。"
+        ordinary_readback_status = "ready_tushare_ledger_replayed"
+        ordinary_readback_summary = (
+            f"小数据已写入 cache / ledger / packet：Tushare {provider_api_success_count}/{provider_api_call_count} "
+            "个接口可回放，DeepSeek 未参与。"
+        )
+        ordinary_readback_next_step = "先看本地量化推演和次日图谱回放；Factor/Next/ECharts 缺口只作为待补证据。"
     elif credential_missing_count:
         status = "small_data_writeback_blocked_missing_credentials"
         summary_label = "cache / ledger / packet 已写入本地阻断：缺少服务端 Tushare 凭据；未调用 provider。"
         next_action = "配置服务端凭据后重新点击确认；页面渲染和 GET cache 仍不外联。"
+        ordinary_readback_status = "blocked_missing_credentials"
+        ordinary_readback_summary = "小数据已写入本地阻断：缺少服务端 Tushare 凭据，没有 provider 账本可回放。"
+        ordinary_readback_next_step = "配置服务端凭据后重新点击确认；GET cache 和 React render 仍保持只读。"
     elif provider_ledger_visible:
         status = "small_data_writeback_partial_provider_ledger"
         summary_label = (
@@ -14737,6 +14746,11 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             f"{provider_api_success_count}/{provider_api_call_count} 个接口；仍需补齐。"
         )
         next_action = "补齐 Tushare light ledger 后再联动 Factor/Next/ECharts；DeepSeek 仍保持 skipped。"
+        ordinary_readback_status = "partial_tushare_ledger_replayed"
+        ordinary_readback_summary = (
+            f"小数据已回放部分 Tushare 账本：{provider_api_success_count}/{provider_api_call_count} 个接口；仍需补齐。"
+        )
+        ordinary_readback_next_step = "补齐 Tushare light ledger 后再看本地量化推演和次日图谱回放。"
     elif execution_request:
         status = (
             "small_data_writeback_waiting_provider_ledger"
@@ -14745,19 +14759,33 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         )
         summary_label = "cache / ledger / packet 已写入本地申请；等待 Tushare-first provider ledger 回放。"
         next_action = "执行请求 ready 后才允许按钮门控 provider task；DeepSeek 仍保持 skipped。"
+        ordinary_readback_status = "waiting_tushare_first_ledger"
+        ordinary_readback_summary = "小数据已写入本地申请；等待 Tushare-first provider ledger 回放。"
+        ordinary_readback_next_step = "执行请求 ready 后再运行按钮门控 provider task；DeepSeek 仍保持 skipped。"
     elif quant_receipt:
         status = "small_data_writeback_local_receipt_ready_provider_pending"
         summary_label = "cache / ledger / packet 已写入本地搜票记录；等待确认链路补齐 Tushare-first ledger。"
         next_action = "点击确认按钮创建后台任务；仅输入代码不会创建任务或外联。"
+        ordinary_readback_status = "local_receipt_ready_provider_pending"
+        ordinary_readback_summary = "小数据已写入本地搜票记录；等待确认链路补齐 Tushare-first ledger。"
+        ordinary_readback_next_step = "点击确认按钮创建后台任务；仅输入代码不会创建 task 或外联。"
     else:
         status = "small_data_writeback_waiting_confirm"
         summary_label = "cache / ledger / packet 等待输入代码并点击确认。"
         next_action = "先输入 6 位 A 股代码，再点击确认并生成 3.0 量化推演。"
+        ordinary_readback_status = "waiting_symbol_confirm"
+        ordinary_readback_summary = "小数据等待输入代码并点击确认。"
+        ordinary_readback_next_step = "先输入 6 位 A 股代码，再点击确认并生成 3.0 量化推演。"
     return {
         "schema_version": QUANT_PROJECTION_SMALL_DATA_WRITEBACK_SCHEMA_VERSION,
         "status": status,
         "summary_label": summary_label,
         "next_action": next_action,
+        "ordinary_readback_status": ordinary_readback_status,
+        "ordinary_readback_summary": ordinary_readback_summary,
+        "ordinary_readback_next_step": ordinary_readback_next_step,
+        "ordinary_readback_boundary": "小数据回放只读取本地 cache / ledger / packet；GET cache 和 React render 不补调 provider/model，不生成交易动作。",
+        "ordinary_readback_surfaces_label": "cache / call_ledger / packet",
         "packet_key": PACKET_KEY,
         "writeback_surfaces": writeback_surfaces,
         "provider_call_source": provider_call_source,
