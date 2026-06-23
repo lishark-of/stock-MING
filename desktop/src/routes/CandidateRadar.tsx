@@ -1550,6 +1550,7 @@ export default function CandidateRadar() {
             aria-label={quantProjectionSubmitAriaLabel}
           >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
           <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
+          <a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>
         </div>
         <p className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
         {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}

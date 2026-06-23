@@ -4113,14 +4113,21 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertNotIn("输入代码后生成本地量化推演回执；不调用 Tushare/DeepSeek", page)
         self.assertNotIn("POST /api/candidate-radar/quant-projection；本地回执，不调用 Tushare/DeepSeek", page)
         self.assertIn('aria-label="open stock quant projection result"', page)
+        self.assertIn('aria-label="open next session map from candidate radar p1 replay"', page)
         self.assertIn('aria-label="open generated quant projection result"', page)
         self.assertIn('<a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>', page)
+        self.assertIn('<a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>', page)
         self.assertIn('<a href="#factor" aria-label="open generated quant projection result">查看量化推演结果</a>', page)
         self.assertLess(
             page.index('aria-label="candidate radar next user actions"', summary_start),
             page.index('aria-label="open stock quant projection result"', summary_start),
         )
+        self.assertLess(
+            page.index('aria-label="open stock quant projection result"', summary_start),
+            page.index('aria-label="open next session map from candidate radar p1 replay"', summary_start),
+        )
         self.assertLess(page.index('aria-label="open stock quant projection result"', summary_start), candidate_pool_start)
+        self.assertLess(page.index('aria-label="open next session map from candidate radar p1 replay"', summary_start), candidate_pool_start)
         self.assertLess(quant_projection_start, page.index('aria-label="open generated quant projection result"', quant_projection_start))
         self.assertLess(page.index('aria-label="open generated quant projection result"', quant_projection_start), quick_scan_start)
         self.assertIn("生成任务完成后，去", page)

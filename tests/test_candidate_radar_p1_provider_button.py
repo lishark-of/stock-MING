@@ -106,6 +106,13 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("aria-label={quantProjectionSubmitAriaLabel}", ordinary_quant_slice)
         self.assertIn("disabled={quantProjectionSubmitDisabled}", radar_summary_slice)
         self.assertIn('{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}', radar_summary_slice)
+        self.assertIn('<a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>', radar_summary_slice)
+        self.assertIn('<a href="#next" title={quantProjectionReplayBoundary} aria-label="open next session map from candidate radar p1 replay">查看次日图谱</a>', radar_summary_slice)
+        self.assertLess(
+            radar_summary_slice.index('aria-label="open stock quant projection result"'),
+            radar_summary_slice.index('aria-label="open next session map from candidate radar p1 replay"'),
+        )
+        self.assertIn("回放链接只切换本地页面或锚点；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache", source)
         self.assertIn("disabled={quantProjectionSubmitDisabled}", ordinary_quant_slice)
         self.assertIn('{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}', ordinary_quant_slice)
         self.assertIn("点击确认才创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task；DeepSeek skipped，成功后通过 GET cache 回放", source)
