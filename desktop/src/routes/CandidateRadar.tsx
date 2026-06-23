@@ -1543,6 +1543,11 @@ export default function CandidateRadar() {
           <p className="risk-note">普通用户确认后看这张表：cache、call_ledger、packet 三面是否可回放；它只读取本地 cache，不创建 task、不补调 Tushare/DeepSeek。</p>
           <DataLineageTable rows={quantProjectionWritebackSurfaceRows} />
         </div>
+        <div aria-label="candidate radar ordinary p2 writeback integrity">
+          <h3>P2 三面完整性检查</h3>
+          <p className="risk-note">普通用户再看这张完整性表：cache、call_ledger、packet 是否齐备；它优先读取服务端 ordinary_writeback_integrity_rows，只做本地回放。</p>
+          <DataLineageTable rows={quantProjectionWritebackIntegrityRows} />
+        </div>
         <div className="actions" aria-label="candidate radar primary next action">
           {Number(counts.candidate_count ?? 0) ? (
             <a href="#candidate-pool" aria-label="open local candidate pool from radar summary">{ordinaryPrimaryActionLabel}</a>
