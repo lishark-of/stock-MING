@@ -15889,6 +15889,13 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         f"DeepSeek 未参与；图谱{'已回放' if factor_next_ready else '待本地刷新'}。"
     )
     missing_evidence_label = " / ".join(missing_evidence) if missing_evidence else "基础图谱已有本地回放"
+    latest_task_id = str(
+        small_data.get("latest_task_id")
+        or quant_receipt.get("latest_task_id")
+        or quant_receipt.get("task_id")
+        or packet.get("task_id")
+        or ""
+    )
     if small_data_ready:
         data_source_status = "tushare_first_ledger_ready"
         data_source_label = f"Tushare-first 账本已回放 {provider_success_count}/{provider_call_count} 个接口"
@@ -15901,6 +15908,96 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
     else:
         data_source_status = "waiting_symbol_confirm"
         data_source_label = "等待输入股票代码并点击确认"
+    ordinary_result_handoff_rows = [
+        {
+            "handoff_key": "readable_conclusion",
+            "入口": "P3 结果速读",
+            "href": "#candidates",
+            "当前状态": ordinary_result_summary,
+            "用户下一步": ordinary_result_next_step,
+            "来源任务": latest_task_id or "waiting_confirm_task",
+            "证据": ordinary_result_evidence,
+            "边界": ordinary_result_boundary,
+            "readback_source": "search_quant_projection_interpretation_summary",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "handoff_key": "replay_quant_projection",
+            "入口": "股票量化推演",
+            "href": "#factor",
+            "当前状态": "Tushare-first 来源可回放" if small_data_ready else ordinary_result_status,
+            "用户下一步": "打开股票量化推演，只读查看本地结果" if small_data_ready else "先完成确认按钮链路",
+            "来源任务": latest_task_id or "waiting_confirm_task",
+            "证据": "cache / call_ledger / packet",
+            "边界": "链接只切换到本地量化推演入口；不发 POST task、不调 Tushare/DeepSeek。",
+            "readback_source": "cache / call_ledger / packet",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "handoff_key": "replay_next_session_map",
+            "入口": "次日图谱",
+            "href": "#next",
+            "当前状态": "本地图谱可回放" if factor_next_ready else "pending_local_cache_refresh",
+            "用户下一步": (
+                "打开次日图谱复核本地 operation_zones 来源"
+                if factor_next_ready
+                else "等待 Factor/Next/ECharts 本地 cache 刷新后再打开"
+            ),
+            "来源任务": latest_task_id or "waiting_confirm_task",
+            "证据": "Next Session cache / ECharts payload" if factor_next_ready else "Factor/Next/ECharts local cache replay pending",
+            "边界": "href #next 只切换到本地次日图谱入口；不生成交易动作、不覆盖 strategy action。",
+            "readback_source": "Next Session cache / ECharts payload",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "handoff_key": "return_candidate_pool",
+            "入口": "候选池",
+            "href": "#candidate-pool",
+            "当前状态": "本地候选池可回看",
+            "用户下一步": "回到候选池复核分组和缺口；候选不是买入指令。",
+            "来源任务": latest_task_id or "candidate_cache",
+            "证据": "command_center_3_candidate_radar_cache",
+            "边界": "只回看本地候选缓存；不启动全池扫描、不下单、不改 strategy action。",
+            "readback_source": "GET /api/candidate-radar/cache",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+    ]
     ordinary_result_quick_read_rows = [
         {
             "quick_read_item": "conclusion",
@@ -16178,6 +16275,12 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "ordinary_result_next_step": ordinary_result_next_step,
         "ordinary_result_boundary": ordinary_result_boundary,
         "ordinary_result_evidence": ordinary_result_evidence,
+        "ordinary_result_handoff_rows": ordinary_result_handoff_rows,
+        "ordinary_result_handoff_row_count": len(ordinary_result_handoff_rows),
+        "ordinary_result_handoff_rows_are_cache_only": True,
+        "ordinary_result_handoff_rows_create_task": False,
+        "ordinary_result_handoff_rows_use_model_output": False,
+        "ordinary_result_handoff_rows_are_not_trade_signals": True,
         "ordinary_result_quick_read_rows": ordinary_result_quick_read_rows,
         "ordinary_result_quick_read_row_count": len(ordinary_result_quick_read_rows),
         "ordinary_result_quick_read_rows_are_cache_only": True,
@@ -16248,6 +16351,9 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     counts["search_quant_projection_interpretation_quick_read_row_count"] = summary.get(
         "ordinary_result_quick_read_row_count", 0
     )
+    counts["search_quant_projection_interpretation_handoff_row_count"] = summary.get(
+        "ordinary_result_handoff_row_count", 0
+    )
     counts["search_quant_projection_model_governance_row_count"] = summary.get(
         "ordinary_model_governance_row_count", 0
     )
@@ -16262,6 +16368,10 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     policy["search_quant_projection_interpretation_quick_read_rows_are_cache_only"] = True
     policy["search_quant_projection_interpretation_quick_read_rows_use_model_output"] = False
     policy["search_quant_projection_interpretation_quick_read_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_interpretation_handoff_rows_create_task"] = False
+    policy["search_quant_projection_interpretation_handoff_rows_are_cache_only"] = True
+    policy["search_quant_projection_interpretation_handoff_rows_use_model_output"] = False
+    policy["search_quant_projection_interpretation_handoff_rows_are_not_trade_signals"] = True
     policy["search_quant_projection_model_governance_rows_are_cache_only"] = True
     policy["search_quant_projection_model_governance_rows_create_task"] = False
     policy["search_quant_projection_model_governance_rows_call_model"] = False

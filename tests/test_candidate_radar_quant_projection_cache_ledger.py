@@ -344,6 +344,16 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(interpretation["ordinary_result_readback_rows_create_task"])
         self.assertFalse(interpretation["ordinary_result_readback_rows_use_model_output"])
         self.assertTrue(interpretation["ordinary_result_readback_rows_are_not_trade_signals"])
+        self.assertEqual(interpretation["ordinary_result_handoff_row_count"], 4)
+        self.assertTrue(interpretation["ordinary_result_handoff_rows_are_cache_only"])
+        self.assertFalse(interpretation["ordinary_result_handoff_rows_create_task"])
+        self.assertFalse(interpretation["ordinary_result_handoff_rows_use_model_output"])
+        self.assertTrue(interpretation["ordinary_result_handoff_rows_are_not_trade_signals"])
+        self.assertEqual(packet["counts"]["search_quant_projection_interpretation_handoff_row_count"], 4)
+        self.assertTrue(packet["policy"]["search_quant_projection_interpretation_handoff_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_interpretation_handoff_rows_create_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_interpretation_handoff_rows_use_model_output"])
+        self.assertTrue(packet["policy"]["search_quant_projection_interpretation_handoff_rows_are_not_trade_signals"])
         self.assertEqual(interpretation["ordinary_result_action_row_count"], 4)
         self.assertTrue(interpretation["ordinary_result_action_rows_are_cache_only"])
         self.assertFalse(interpretation["ordinary_result_action_rows_create_task"])
@@ -371,6 +381,29 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             self.assertTrue(result_row["does_not_execute_trades"])
             self.assertTrue(result_row["does_not_modify_strategy_action"])
             self.assertTrue(result_row["candidate_is_not_buy_instruction"])
+        handoff_rows = {row["handoff_key"]: row for row in interpretation["ordinary_result_handoff_rows"]}
+        self.assertEqual(
+            set(handoff_rows),
+            {"readable_conclusion", "replay_quant_projection", "replay_next_session_map", "return_candidate_pool"},
+        )
+        self.assertIn(response["data"]["task_id"], handoff_rows["readable_conclusion"]["来源任务"])
+        self.assertEqual(handoff_rows["replay_quant_projection"]["href"], "#factor")
+        self.assertEqual(handoff_rows["replay_next_session_map"]["href"], "#next")
+        self.assertEqual(handoff_rows["return_candidate_pool"]["href"], "#candidate-pool")
+        self.assertIn("pending_local_cache_refresh", handoff_rows["replay_next_session_map"]["当前状态"])
+        self.assertIn("不发 POST task", handoff_rows["replay_quant_projection"]["边界"])
+        self.assertIn("不生成交易动作", handoff_rows["replay_next_session_map"]["边界"])
+        self.assertIn("候选不是买入指令", handoff_rows["return_candidate_pool"]["用户下一步"])
+        for handoff_row in handoff_rows.values():
+            self.assertTrue(handoff_row["cache_only_readback"])
+            self.assertFalse(handoff_row["creates_task_from_readback"])
+            self.assertFalse(handoff_row["external_calls_triggered"])
+            self.assertFalse(handoff_row["uses_deepseek_output"])
+            self.assertFalse(handoff_row["model_output_used"])
+            self.assertFalse(handoff_row["contains_secret"])
+            self.assertTrue(handoff_row["does_not_execute_trades"])
+            self.assertTrue(handoff_row["does_not_modify_strategy_action"])
+            self.assertTrue(handoff_row["candidate_is_not_buy_instruction"])
         action_rows = {row["action_key"]: row for row in interpretation["ordinary_result_action_rows"]}
         self.assertEqual(
             set(action_rows),

@@ -795,6 +795,14 @@ export default function CandidateRadar() {
     证据: displayText(row["证据"] ?? row.evidence, quantProjectionOrdinaryResultEvidence),
     边界: displayText(row["边界"] ?? row.boundary, quantProjectionOrdinaryResultBoundary)
   }));
+  const quantProjectionOrdinaryResultHandoffRows = rows(searchQuantProjectionInterpretation.ordinary_result_handoff_rows).map((row) => ({
+    入口: displayText(row["入口"] ?? row.entry ?? row.handoff_key),
+    当前状态: displayText(row["当前状态"] ?? row.status),
+    用户下一步: displayText(row["用户下一步"] ?? row.next_action, quantProjectionOrdinaryResultNext),
+    来源任务: displayText(row["来源任务"] ?? row.source_task_id, "waiting_confirm_task"),
+    证据: displayText(row["证据"] ?? row.evidence, quantProjectionOrdinaryResultEvidence),
+    边界: displayText(row["边界"] ?? row.boundary, quantProjectionOrdinaryResultBoundary)
+  }));
   const quantProjectionOrdinaryResultQuickRows = quantProjectionOrdinaryResultQuickReadRows.length
     ? quantProjectionOrdinaryResultQuickReadRows
     : [
@@ -1446,6 +1454,13 @@ export default function CandidateRadar() {
             <div aria-label="quant projection ordinary explainable result quick read">
               <h3>P3 结果速读</h3>
               <p className="risk-note">优先读取服务端 ordinary_result_quick_read_rows：先看可读结论、回放来源和待补证据；不会从结果速读创建 task 或调用模型。</p>
+              {quantProjectionOrdinaryResultHandoffRows.length ? (
+                <div aria-label="quant projection ordinary result handoff index">
+                  <h3>P3 结果入口索引</h3>
+                  <p className="risk-note">优先读取服务端 ordinary_result_handoff_rows：把可读结论、量化推演、次日图谱和候选池绑定到同一个本地来源任务；链接只切换入口，不创建 task。</p>
+                  <DataLineageTable rows={quantProjectionOrdinaryResultHandoffRows} />
+                </div>
+              ) : null}
               <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
             </div>
             <div aria-label="quant projection ordinary deepseek governance status">
