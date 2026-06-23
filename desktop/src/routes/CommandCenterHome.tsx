@@ -384,6 +384,15 @@ export default function CommandCenterHome() {
   const dailyCommandStartupDiagnosticSurfaces = Array.isArray(oneClickStartupSummary.diagnostic_surfaces)
     ? oneClickStartupSummary.diagnostic_surfaces.join(" / ")
     : "FastAPI /health Command Center 3.0 JSON / bootstrap status runtime-mode packet / React/Vite Command Center 3.0 HTML / 8710/5173 port occupancy guidance";
+  const dailyCommandStartupReadbackLabel = error
+    ? "重启后刷新本页；FastAPI、bootstrap、React/Vite 变绿才继续投研"
+    : health.status === "ok"
+      ? "联通已由 GET /health 回读；可继续看缓存和投研入口"
+      : "正在等待 GET /health 和 desktop preflight cache 回读";
+  const dailyCommandStartupReadbackOrder =
+    "恢复回读顺序：FastAPI /health -> bootstrap status -> React/Vite 前端 -> 今日作战台摘要";
+  const dailyCommandStartupReadbackBoundary =
+    "恢复回读只读取 GET /health、GET /api/bootstrap/status、GET /api/desktop/preflight-cache；不启动服务、不创建 task、不外联";
   const dailyCommandReviewOrder = error
     ? "先看一键启动预检恢复本地联通，再回今日作战台"
     : "先确认最近缓存和数据健康，再看下一票雷达，最后看股票量化推演结果";
@@ -465,6 +474,9 @@ export default function CommandCenterHome() {
             { label: "启动成功条件", value: dailyCommandStartupSuccessCondition, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
             { label: "启动诊断", value: dailyCommandStartupDiagnosticSurfaces, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
             { label: "启动失败处理", value: dailyCommandStartupFailureAction, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
+            { label: "恢复回读", value: dailyCommandStartupReadbackLabel, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
+            { label: "回读顺序", value: dailyCommandStartupReadbackOrder, tone: "good" },
+            { label: "回读边界", value: dailyCommandStartupReadbackBoundary, tone: "good" },
             { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
             { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
             { label: "今日查看顺序", value: dailyCommandReviewOrder, tone: error ? "warn" : "good" },
@@ -488,6 +500,7 @@ export default function CommandCenterHome() {
         />
         <p className="risk-note">本地联通状态只读来自 FastAPI health 和 desktop preflight cache；不会启动服务、不会写配置、不会调用 provider/model。</p>
         <p className="risk-note">启动诊断来自 desktop preflight cache：FastAPI /health、bootstrap status 和 React/Vite 前端 HTML 分段检查；首页只展示，不执行。</p>
+        <p className="risk-note">恢复回读只看本地 GET health/bootstrap/preflight 结果；如果没有变绿，继续回一键启动预检，不进入投研入口。</p>
         <p className="risk-note">主下一步会在联通异常时优先打开桌面壳预检；这个链接只读本地 health/preflight cache，不启动服务。</p>
         <div className="actions" aria-label="daily command primary next action">
           <a href={dailyCommandPrimaryActionHref} aria-label="open daily command primary next action">{dailyCommandPrimaryActionLabel}</a>
