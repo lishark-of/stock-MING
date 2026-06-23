@@ -1171,8 +1171,19 @@ def _build_usable_path_current_checkpoint_rows(
         },
         "P1": {
             "ordinary_user_meaning": "输入股票代码后，由确认按钮触发 Tushare-first 数据链。",
-            "current_next_action": "保留 button-gated POST task 合同，再接入最小 Tushare-first workflow。",
-            "current_evidence_scope": "button-gated execution request only until real provider evidence is explicitly run",
+            "current_next_action": "稳住已接通的 button-gated POST task，再把真实 provider 验收拆成显式确认步骤。",
+            "current_evidence_scope": (
+                "button-gated POST task wired; fake-provider ledger proves cache/call_ledger/packet "
+                "writeback; real Tushare production acceptance still pending"
+            ),
+            "post_task_route": "POST /api/candidate-radar/quant-projection",
+            "current_test_evidence": (
+                "tests/test_candidate_radar_quant_projection_cache_ledger.py::"
+                "CandidateRadarQuantProjectionCacheLedgerTests."
+                "test_confirm_tushare_first_writes_provider_ledger_to_cache_envelope"
+            ),
+            "provider_execution_claim": "fake_provider_test_only_not_production_acceptance",
+            "external_call_gate": "user_confirmed_post_task_only",
         },
         "P2": {
             "ordinary_user_meaning": "小数据能落到 cache、ledger、packet，刷新后仍可解释来源。",
@@ -1200,20 +1211,31 @@ def _build_usable_path_current_checkpoint_rows(
         phase = str(handoff_row.get("phase") or "")
         if phase not in current_checkpoint_scope:
             continue
+        checkpoint_scope = current_checkpoint_scope[phase]
         rows.append(
             {
                 "phase": phase,
                 "usable_checkpoint": handoff_row.get("usable_checkpoint"),
-                "ordinary_user_meaning": current_checkpoint_scope[phase]["ordinary_user_meaning"],
-                "current_next_action": current_checkpoint_scope[phase]["current_next_action"],
-                "current_evidence_scope": current_checkpoint_scope[phase]["current_evidence_scope"],
+                "ordinary_user_meaning": checkpoint_scope["ordinary_user_meaning"],
+                "current_next_action": checkpoint_scope["current_next_action"],
+                "current_evidence_scope": checkpoint_scope["current_evidence_scope"],
+                "post_task_route": checkpoint_scope.get("post_task_route", ""),
+                "current_test_evidence": checkpoint_scope.get("current_test_evidence", ""),
+                "provider_execution_claim": checkpoint_scope.get(
+                    "provider_execution_claim",
+                    "local_checkpoint_not_provider_execution_evidence",
+                ),
+                "external_call_gate": checkpoint_scope.get("external_call_gate", "readback_only"),
                 "strict_closeout": handoff_row.get("strict_closeout"),
                 "strict_closeout_remaining_count": handoff_row.get("strict_closeout_remaining_count"),
                 "can_close_ltg_from_current_checkpoint": False,
                 "cache_only_readback": True,
+                "search_input_creates_task": False,
+                "confirm_button_can_create_task": phase == "P1",
                 "creates_task_from_get": False,
                 "creates_task_from_render": False,
                 "external_calls_triggered": False,
+                "provider_execution_implemented": False,
                 "tushare_called": False,
                 "deepseek_called": False,
                 "github_called": False,

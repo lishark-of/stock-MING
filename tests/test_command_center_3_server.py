@@ -614,15 +614,35 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(set(current_checkpoint_rows), {"P0", "P1", "P2", "P3", "P4", "P5"})
         self.assertIn("一键启动", current_checkpoint_rows["P0"]["usable_checkpoint"])
         self.assertIn("确认按钮", current_checkpoint_rows["P1"]["ordinary_user_meaning"])
-        self.assertIn("button-gated", current_checkpoint_rows["P1"]["current_evidence_scope"])
+        p1_checkpoint = current_checkpoint_rows["P1"]
+        self.assertIn("button-gated", p1_checkpoint["current_evidence_scope"])
+        self.assertIn("fake-provider ledger", p1_checkpoint["current_evidence_scope"])
+        self.assertEqual(p1_checkpoint["post_task_route"], "POST /api/candidate-radar/quant-projection")
+        self.assertEqual(p1_checkpoint["external_call_gate"], "user_confirmed_post_task_only")
+        self.assertFalse(p1_checkpoint["search_input_creates_task"])
+        self.assertTrue(p1_checkpoint["confirm_button_can_create_task"])
+        self.assertEqual(
+            p1_checkpoint["provider_execution_claim"],
+            "fake_provider_test_only_not_production_acceptance",
+        )
+        self.assertIn(
+            "test_confirm_tushare_first_writes_provider_ledger_to_cache_envelope",
+            p1_checkpoint["current_test_evidence"],
+        )
         self.assertIn("DeepSeek is not a data source", current_checkpoint_rows["P5"]["current_evidence_scope"])
         self.assertFalse(
             any(row["can_close_ltg_from_current_checkpoint"] for row in current_checkpoint_rows.values())
         )
         self.assertTrue(all(row["cache_only_readback"] for row in current_checkpoint_rows.values()))
+        self.assertFalse(any(row["search_input_creates_task"] for row in current_checkpoint_rows.values()))
+        self.assertEqual(
+            {phase: row["confirm_button_can_create_task"] for phase, row in current_checkpoint_rows.items()},
+            {"P0": False, "P1": True, "P2": False, "P3": False, "P4": False, "P5": False},
+        )
         self.assertFalse(any(row["creates_task_from_get"] for row in current_checkpoint_rows.values()))
         self.assertFalse(any(row["creates_task_from_render"] for row in current_checkpoint_rows.values()))
         self.assertFalse(any(row["external_calls_triggered"] for row in current_checkpoint_rows.values()))
+        self.assertFalse(any(row["provider_execution_implemented"] for row in current_checkpoint_rows.values()))
         self.assertFalse(any(row["tushare_called"] for row in current_checkpoint_rows.values()))
         self.assertFalse(any(row["deepseek_called"] for row in current_checkpoint_rows.values()))
         self.assertFalse(any(row["github_called"] for row in current_checkpoint_rows.values()))
