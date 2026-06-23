@@ -1575,6 +1575,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         p0_receipt = desktop["p0_local_connection_receipt"]
         p0_rows = {row["criterion"]: row for row in desktop["p0_local_connection_rows"]}
         p0_ordinary_rows = desktop["p0_ordinary_connection_rows"]
+        p0_failure_rows = desktop["p0_failure_diagnostic_rows"]
         p0_post_startup_rows = desktop["p0_post_startup_readback_rows"]
         p0_to_p1_rows = desktop["p0_to_p1_ordinary_handoff_rows"]
         p0_quick_action_rows = desktop["p0_ordinary_quick_action_rows"]
@@ -1748,6 +1749,31 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("只读健康检查", p0_ordinary_rows[0]["边界"])
         self.assertIn("不写配置、不启用 live_light", p0_ordinary_rows[1]["边界"])
         self.assertIn("不调用 Tushare/DeepSeek/GitHub", p0_ordinary_rows[2]["边界"])
+        self.assertEqual(
+            [row["失败段"] for row in p0_failure_rows],
+            ["FastAPI /health", "Bootstrap status", "React/Vite HTML", "端口和日志指引"],
+        )
+        self.assertEqual([row["当前状态"] for row in p0_failure_rows], ["ready", "ready", "ready", "ready"])
+        self.assertEqual(desktop["counts"]["p0_failure_diagnostic_row_count"], 4)
+        self.assertEqual(desktop["runtime"]["p0_failure_diagnostic_ready_count"], 4)
+        self.assertTrue(desktop["policy"]["p0_failure_diagnostic_rows_are_cache_only"])
+        self.assertTrue(desktop["policy"]["p0_failure_diagnostic_rows_do_not_probe_runtime"])
+        self.assertTrue(desktop["policy"]["p0_failure_diagnostic_rows_do_not_create_task"])
+        self.assertTrue(desktop["policy"]["p0_failure_diagnostic_rows_do_not_call_provider_model"])
+        self.assertIn("command_center_3_fastapi.log", p0_failure_rows[0]["日志/端口"])
+        self.assertIn("/api/bootstrap/status", p0_failure_rows[1]["日志/端口"])
+        self.assertIn("command_center_3_vite.log", p0_failure_rows[2]["日志/端口"])
+        self.assertIn("不启动服务、不创建 POST task、不外联", p0_failure_rows[3]["边界"])
+        for diagnostic_row in p0_failure_rows:
+            self.assertTrue(diagnostic_row["ordinary_user_visible"])
+            self.assertTrue(diagnostic_row["cache_only_readback"])
+            self.assertFalse(diagnostic_row["external_calls_triggered"])
+            self.assertFalse(diagnostic_row["tushare_called"])
+            self.assertFalse(diagnostic_row["deepseek_called"])
+            self.assertFalse(diagnostic_row["github_called"])
+            self.assertFalse(diagnostic_row["loads_token_or_key"])
+            self.assertTrue(diagnostic_row["does_not_execute_trades"])
+            self.assertTrue(diagnostic_row["does_not_modify_strategy_action"])
         self.assertEqual([row["复核项"] for row in p0_post_startup_rows], ["FastAPI health", "Bootstrap status", "React/Vite 前端"])
         self.assertEqual([row["当前状态"] for row in p0_post_startup_rows], ["ready", "ready", "ready"])
         self.assertEqual(desktop["counts"]["p0_post_startup_readback_row_count"], 3)
@@ -1814,6 +1840,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn("local_one_click_startup_summary", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_frontend_backend_connection_receipt", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_ordinary_connection_rows", {row["api"] for row in desktop["call_ledger"]})
+        self.assertIn("local_p0_failure_diagnostic_rows", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_post_startup_readback_rows", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_to_p1_ordinary_handoff_rows", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_ordinary_quick_action_rows", {row["api"] for row in desktop["call_ledger"]})

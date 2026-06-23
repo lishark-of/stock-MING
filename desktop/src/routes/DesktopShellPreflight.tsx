@@ -44,6 +44,7 @@ export default function DesktopShellPreflight() {
   const tauriPackageDurableEvidenceRecipe = (cache.tauri_package_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
   const oneClickConnectionRows = rows(cache.one_click_connection_rows);
   const p0LocalConnectionRows = rows(cache.p0_local_connection_rows);
+  const p0ConnectionReady = oneClickStartupSummary.frontend_backend_connection_ready === true;
   const p0RecoverySteps = rows(cache.p0_recovery_steps).length
     ? rows(cache.p0_recovery_steps)
     : [
@@ -133,6 +134,42 @@ export default function DesktopShellPreflight() {
           边界: "只读前端入口，不调用 Tushare/DeepSeek/GitHub、不执行真实交易"
         }
       ];
+  const p0FailureDiagnosticRows = rows(cache.p0_failure_diagnostic_rows).length
+    ? rows(cache.p0_failure_diagnostic_rows)
+    : [
+        {
+          失败段: "FastAPI /health",
+          当前状态: p0ConnectionReady ? "ready" : "check",
+          怎么判断: "启动器必须看到 Command Center 3.0 health JSON，且 external_calls_on_startup=false。",
+          用户动作: "如果这里 check，先看 FastAPI 日志，再检查 8710 是否被占用。",
+          "日志/端口": ".stock_ming_3/logs/command_center_3_fastapi.log / 8710",
+          边界: "只读诊断；GET preflight 和 React render 不启动 FastAPI、不创建 task。"
+        },
+        {
+          失败段: "Bootstrap status",
+          当前状态: p0ConnectionReady ? "ready" : "check",
+          怎么判断: "启动器必须看到 /api/bootstrap/status 返回 command_center_3_bootstrap_runtime_mode_packet。",
+          用户动作: "如果这里 check，说明后端已到 health 但 runtime-mode packet 未就绪，继续看 FastAPI 日志中的 bootstrap status 段。",
+          "日志/端口": ".stock_ming_3/logs/command_center_3_fastapi.log / /api/bootstrap/status",
+          边界: "只读运行模式诊断；不写配置、不启用 live_light、不调用 provider/model。"
+        },
+        {
+          失败段: "React/Vite HTML",
+          当前状态: p0ConnectionReady ? "ready" : "check",
+          怎么判断: "启动器必须看到 Vite 返回 Command Center 3.0 前端 HTML。",
+          用户动作: "如果这里 check，先看 Vite 日志，再检查 5173 是否被旧 dev server 占用。",
+          "日志/端口": ".stock_ming_3/logs/command_center_3_vite.log / 5173",
+          边界: "只读前端入口诊断；不调用 Tushare、DeepSeek、GitHub、不执行真实交易。"
+        },
+        {
+          失败段: "端口和日志指引",
+          当前状态: "ready",
+          怎么判断: "启动器失败时必须打印 FastAPI、Bootstrap status、React/Vite 和 8710/5173 指引。",
+          用户动作: "按启动器输出关闭占用进程，或重新运行 scripts/start_command_center_3.command。",
+          "日志/端口": "8710 / 5173 / .stock_ming_3/logs",
+          边界: "这只是失败定位清单；不启动服务、不创建 POST task、不外联。"
+        }
+      ];
   const p0ShortcutInstallerRows = [
     {
       检查项: "不会覆盖同名文件",
@@ -176,7 +213,6 @@ export default function DesktopShellPreflight() {
       边界: "只连本地前后端；不调用 Tushare/DeepSeek/GitHub、不执行真实交易"
     }
   ];
-  const p0ConnectionReady = oneClickStartupSummary.frontend_backend_connection_ready === true;
   const p0RawBlockerCount = Number(oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count ?? 0);
   const p0BlockerCount = Number.isFinite(p0RawBlockerCount) ? p0RawBlockerCount : 0;
   const p0StartupReadyMetrics = [
@@ -249,6 +285,11 @@ export default function DesktopShellPreflight() {
           <h3>前后端联通状态</h3>
           <p className="risk-note">普通用户先看 FastAPI、Bootstrap status、React/Vite 三段是否 ready；工程行表仍在开发 / 审计详情。</p>
           <DataLineageTable rows={p0OrdinaryConnectionRows} />
+        </div>
+        <div aria-label="p0 ordinary startup failure diagnostics">
+          <h3>启动失败定位</h3>
+          <p className="risk-note">如果页面没有自动打开，按失败段看对应日志和端口；这张表只读本地 cache，不补跑启动器、不创建 task。</p>
+          <DataLineageTable rows={p0FailureDiagnosticRows} />
         </div>
         <DataLineageTable rows={p0RecoverySteps} />
         <div aria-label="p0 post startup readback checklist">

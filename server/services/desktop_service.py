@@ -1113,6 +1113,69 @@ def _p0_ordinary_connection_rows(one_click_startup_summary: dict[str, Any]) -> l
     ]
 
 
+def _p0_failure_diagnostic_rows(one_click_startup_summary: dict[str, Any]) -> list[dict[str, Any]]:
+    def row(
+        segment: str,
+        ready: bool,
+        how_to_read: str,
+        user_action: str,
+        log_or_port: str,
+        boundary: str,
+    ) -> dict[str, Any]:
+        return {
+            "失败段": segment,
+            "当前状态": "ready" if ready else "check",
+            "怎么判断": how_to_read,
+            "用户动作": user_action,
+            "日志/端口": log_or_port,
+            "边界": boundary,
+            "ordinary_user_visible": True,
+            "cache_only_readback": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "loads_token_or_key": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    return [
+        row(
+            "FastAPI /health",
+            one_click_startup_summary.get("fastapi_health_identity_validated_before_open") is True,
+            "启动器必须看到 Command Center 3.0 health JSON，且 external_calls_on_startup=false。",
+            "如果这里 check，先看 FastAPI 日志，再检查 8710 是否被占用。",
+            ".stock_ming_3/logs/command_center_3_fastapi.log / 8710",
+            "只读诊断；GET preflight 和 React render 不启动 FastAPI、不创建 task。",
+        ),
+        row(
+            "Bootstrap status",
+            one_click_startup_summary.get("fastapi_bootstrap_status_json_validated_before_open") is True,
+            "启动器必须看到 /api/bootstrap/status 返回 command_center_3_bootstrap_runtime_mode_packet。",
+            "如果这里 check，说明后端已到 health 但 runtime-mode packet 未就绪，继续看 FastAPI 日志中的 bootstrap status 段。",
+            ".stock_ming_3/logs/command_center_3_fastapi.log / /api/bootstrap/status",
+            "只读运行模式诊断；不写配置、不启用 live_light、不调用 provider/model。",
+        ),
+        row(
+            "React/Vite HTML",
+            one_click_startup_summary.get("vite_frontend_identity_validated_before_open") is True,
+            "启动器必须看到 Vite 返回 Command Center 3.0 前端 HTML。",
+            "如果这里 check，先看 Vite 日志，再检查 5173 是否被旧 dev server 占用。",
+            ".stock_ming_3/logs/command_center_3_vite.log / 5173",
+            "只读前端入口诊断；不调用 Tushare、DeepSeek、GitHub、不执行真实交易。",
+        ),
+        row(
+            "端口和日志指引",
+            one_click_startup_summary.get("startup_failure_diagnostics_visible") is True,
+            "启动器失败时必须打印 FastAPI、Bootstrap status、React/Vite 和 8710/5173 指引。",
+            "按启动器输出关闭占用进程，或重新运行 scripts/start_command_center_3.command。",
+            "8710 / 5173 / .stock_ming_3/logs",
+            "这只是失败定位清单；不启动服务、不创建 POST task、不外联。",
+        ),
+    ]
+
+
 def _p0_post_startup_readback_rows(one_click_startup_summary: dict[str, Any]) -> list[dict[str, Any]]:
     ready = one_click_startup_summary.get("frontend_backend_connection_ready") is True
     status = "ready" if ready else "check"
@@ -4811,6 +4874,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     one_click_startup_summary = _one_click_startup_summary(api_base_info, desktop_launcher_contract)
     p0_local_connection_receipt = _p0_local_connection_receipt(one_click_startup_summary, desktop_launcher_contract)
     p0_ordinary_connection_rows = _p0_ordinary_connection_rows(one_click_startup_summary)
+    p0_failure_diagnostic_rows = _p0_failure_diagnostic_rows(one_click_startup_summary)
     p0_post_startup_readback_rows = _p0_post_startup_readback_rows(one_click_startup_summary)
     p0_to_p1_ordinary_handoff_rows = _p0_to_p1_ordinary_handoff_rows(one_click_startup_summary)
     p0_ordinary_quick_action_rows = _p0_ordinary_quick_action_rows(
@@ -4897,6 +4961,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "p0_local_connection_receipt": p0_local_connection_receipt,
         "p0_local_connection_rows": p0_local_connection_receipt["rows"],
         "p0_ordinary_connection_rows": p0_ordinary_connection_rows,
+        "p0_failure_diagnostic_rows": p0_failure_diagnostic_rows,
         "p0_post_startup_readback_rows": p0_post_startup_readback_rows,
         "p0_to_p1_ordinary_handoff_rows": p0_to_p1_ordinary_handoff_rows,
         "p0_ordinary_quick_action_rows": p0_ordinary_quick_action_rows,
@@ -4937,6 +5002,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_local_connection_ready": 1 if p0_local_connection_receipt["connection_contract_ready"] else 0,
             "p0_ordinary_connection_row_count": len(p0_ordinary_connection_rows),
             "p0_ordinary_connection_ready_count": p0_ordinary_connection_ready_count,
+            "p0_failure_diagnostic_row_count": len(p0_failure_diagnostic_rows),
             "p0_post_startup_readback_row_count": len(p0_post_startup_readback_rows),
             "p0_to_p1_ordinary_handoff_row_count": len(p0_to_p1_ordinary_handoff_rows),
             "p0_ordinary_quick_action_row_count": len(p0_ordinary_quick_action_rows),
@@ -4972,6 +5038,9 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_local_connection_status": p0_local_connection_receipt["status"],
             "p0_local_connection_ready": p0_local_connection_receipt["connection_contract_ready"],
             "p0_ordinary_connection_ready_count": p0_ordinary_connection_ready_count,
+            "p0_failure_diagnostic_ready_count": sum(
+                1 for row in p0_failure_diagnostic_rows if row["当前状态"] == "ready"
+            ),
             "p0_post_startup_readback_ready_count": sum(
                 1 for row in p0_post_startup_readback_rows if row["当前状态"] == "ready"
             ),
@@ -5043,6 +5112,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_ordinary_connection_rows_are_cache_only": True,
             "p0_ordinary_connection_rows_do_not_probe_runtime": True,
             "p0_ordinary_connection_rows_do_not_create_task": True,
+            "p0_failure_diagnostic_rows_are_cache_only": True,
+            "p0_failure_diagnostic_rows_do_not_probe_runtime": True,
+            "p0_failure_diagnostic_rows_do_not_create_task": True,
+            "p0_failure_diagnostic_rows_do_not_call_provider_model": True,
             "p0_post_startup_readback_rows_are_cache_only": True,
             "p0_post_startup_readback_rows_do_not_probe_runtime": True,
             "p0_post_startup_readback_rows_do_not_create_task": True,
@@ -5107,6 +5180,19 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
                 "row_count": len(p0_post_startup_readback_rows),
                 "local_fetched_at": _now_iso(),
                 "call_status": "local_post_startup_readback_rows_read",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+            {
+                "api": "local_p0_failure_diagnostic_rows",
+                "source": "one_click_startup_summary",
+                "row_count": len(p0_failure_diagnostic_rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_failure_diagnostic_rows_read",
                 "external": False,
                 "tushare_called": False,
                 "deepseek_called": False,

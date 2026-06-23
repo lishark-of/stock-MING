@@ -84,6 +84,40 @@ export default function HealthStatus() {
       边界: "只读前端入口；不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
     }
   ];
+  const p0FailureDiagnosticRows = rows(desktopPreflight.p0_failure_diagnostic_rows).length ? rows(desktopPreflight.p0_failure_diagnostic_rows) : [
+    {
+      失败段: "FastAPI /health",
+      当前状态: p0ConnectionReady ? "ready" : "check",
+      怎么判断: "启动器必须看到 Command Center 3.0 health JSON，且 external_calls_on_startup=false。",
+      用户动作: "如果这里 check，先看 FastAPI 日志，再检查 8710 是否被占用。",
+      "日志/端口": ".stock_ming_3/logs/command_center_3_fastapi.log / 8710",
+      边界: "只读诊断；GET preflight 和 React render 不启动 FastAPI、不创建 task。"
+    },
+    {
+      失败段: "Bootstrap status",
+      当前状态: p0ConnectionReady ? "ready" : "check",
+      怎么判断: "启动器必须看到 /api/bootstrap/status 返回 command_center_3_bootstrap_runtime_mode_packet。",
+      用户动作: "如果这里 check，说明后端已到 health 但 runtime-mode packet 未就绪，继续看 FastAPI 日志中的 bootstrap status 段。",
+      "日志/端口": ".stock_ming_3/logs/command_center_3_fastapi.log / /api/bootstrap/status",
+      边界: "只读运行模式诊断；不写配置、不启用 live_light、不调用 provider/model。"
+    },
+    {
+      失败段: "React/Vite HTML",
+      当前状态: p0ConnectionReady ? "ready" : "check",
+      怎么判断: "启动器必须看到 Vite 返回 Command Center 3.0 前端 HTML。",
+      用户动作: "如果这里 check，先看 Vite 日志，再检查 5173 是否被旧 dev server 占用。",
+      "日志/端口": ".stock_ming_3/logs/command_center_3_vite.log / 5173",
+      边界: "只读前端入口诊断；不调用 Tushare、DeepSeek、GitHub、不执行真实交易。"
+    },
+    {
+      失败段: "端口和日志指引",
+      当前状态: "ready",
+      怎么判断: "启动器失败时必须打印 FastAPI、Bootstrap status、React/Vite 和 8710/5173 指引。",
+      用户动作: "按启动器输出关闭占用进程，或重新运行 scripts/start_command_center_3.command。",
+      "日志/端口": "8710 / 5173 / .stock_ming_3/logs",
+      边界: "这只是失败定位清单；不启动服务、不创建 POST task、不外联。"
+    }
+  ];
   const p0PostStartupReadbackRows = rows(desktopPreflight.p0_post_startup_readback_rows).length ? rows(desktopPreflight.p0_post_startup_readback_rows) : [
     {
       复核项: "FastAPI health",
@@ -167,6 +201,11 @@ export default function HealthStatus() {
           <h3>三段联通状态</h3>
           <p className="risk-note">这张表来自本地 preflight packet，只解释启动器的三段检查；不会从页面补跑探针或启动服务。</p>
           <DataLineageTable rows={p0OrdinaryConnectionRows} />
+        </div>
+        <div aria-label="health p0 startup failure diagnostics">
+          <h3>启动失败定位</h3>
+          <p className="risk-note">如果一键入口没有打开页面，按失败段看对应日志和端口；健康页只读展示，不补跑启动器、不创建 task。</p>
+          <DataLineageTable rows={p0FailureDiagnosticRows} />
         </div>
         <div aria-label="health p0 post startup readback checklist">
           <h3>启动后复核清单</h3>
