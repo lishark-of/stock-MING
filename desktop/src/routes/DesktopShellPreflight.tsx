@@ -28,6 +28,7 @@ export default function DesktopShellPreflight() {
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const apiBaseInfo = (cache.api_base_info as Record<string, unknown> | undefined) ?? {};
   const oneClickStartupSummary = (cache.one_click_startup_summary as Record<string, unknown> | undefined) ?? {};
+  const p0LocalConnectionReceipt = (cache.p0_local_connection_receipt as Record<string, unknown> | undefined) ?? {};
   const desktopLauncherContract = (cache.desktop_launcher_contract as Record<string, unknown> | undefined) ?? {};
   const tauriBuildArtifact = (cache.tauri_build_artifact as Record<string, unknown> | undefined) ?? {};
   const productionReadiness = (cache.production_readiness as Record<string, unknown> | undefined) ?? {};
@@ -39,6 +40,7 @@ export default function DesktopShellPreflight() {
   const productionPackageReadinessReceipt = (cache.production_package_readiness_receipt as Record<string, unknown> | undefined) ?? {};
   const tauriPackageDurableEvidenceRecipe = (cache.tauri_package_durable_evidence_recipe as Record<string, unknown> | undefined) ?? {};
   const oneClickConnectionRows = rows(cache.one_click_connection_rows);
+  const p0LocalConnectionRows = rows(cache.p0_local_connection_rows);
   const devLaunchPlan = rows(cache.dev_launch_plan);
   const desktopLauncherRows = rows(cache.desktop_launcher_rows);
   const productionLaunchPlan = rows(cache.production_launch_plan);
@@ -67,12 +69,15 @@ export default function DesktopShellPreflight() {
         <p>安全边界：GET preflight 和 React render 不启动服务、不外联、不启用 provider/model executor、不执行真实交易。</p>
         <p>DeepSeek governed executor required before real call: {String(oneClickStartupSummary.deepseek_governed_executor_required_before_real_call ?? true)}</p>
         <p>frontend_backend_connection_ready / blocker_count: {String(oneClickStartupSummary.frontend_backend_connection_ready ?? false)} / {String(oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count ?? 0)}</p>
+        <p>P0 本地联通收据：{String(p0LocalConnectionReceipt.status ?? "p0_local_connection_receipt_loading")}；实时探针：{String(p0LocalConnectionReceipt.current_runtime_probe_executed_by_get_cache ?? false)}</p>
+        <p>{String(p0LocalConnectionReceipt.ordinary_label ?? "本地一键入口会先确认 FastAPI、bootstrap status 和 React/Vite 都就绪，再打开页面。")}</p>
         <p>普通用户摘要不展开联通行表；工程联通明细在下方开发 / 审计详情。</p>
       </PacketCard>
 
       <MetricGrid
         items={[
           { label: "P0 startup", value: oneClickStartupSummary.status as string | undefined, tone: oneClickStartupSummary.frontend_backend_connection_ready === true ? "good" : "warn" },
+          { label: "P0 receipt", value: p0LocalConnectionReceipt.status as string | undefined, tone: p0LocalConnectionReceipt.connection_contract_ready === true ? "good" : "warn" },
           { label: "next click", value: oneClickStartupSummary.desktop_shortcut_target_name as string | undefined },
           { label: "front/back link", value: oneClickStartupSummary.frontend_backend_connection_ready === true ? "ready" : "check", tone: oneClickStartupSummary.frontend_backend_connection_ready === true ? "good" : "warn" },
           { label: "link blockers", value: oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count, tone: Number(oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count ?? 0) > 0 ? "warn" : "good" },
@@ -144,6 +149,7 @@ export default function DesktopShellPreflight() {
       </div>
 
       <PacketCard title="开发 / 审计详情：P0 联通明细" subtitle="普通用户先看上方摘要；这里保留本地只读检查行" status="cache_only">
+        <DataLineageTable rows={p0LocalConnectionRows} />
         <DataLineageTable rows={oneClickConnectionRows} />
       </PacketCard>
 

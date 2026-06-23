@@ -847,6 +847,129 @@ def _one_click_startup_summary(
     }
 
 
+def _p0_local_connection_receipt(
+    one_click_startup_summary: dict[str, Any],
+    desktop_launcher_contract: dict[str, Any],
+) -> dict[str, Any]:
+    def row(criterion: str, passed: bool, evidence: str) -> dict[str, Any]:
+        return {
+            "criterion": criterion,
+            "status": "passed" if passed else "blocked",
+            "passed": bool(passed),
+            "ordinary_user_visible": True,
+            "evidence": evidence,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "loads_token_or_key": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    rows = [
+        row(
+            "user_run_launcher_entry_visible",
+            bool(one_click_startup_summary.get("what_user_should_click_next"))
+            and bool(desktop_launcher_contract.get("launcher_executable")),
+            str(one_click_startup_summary.get("what_user_should_click_next") or ""),
+        ),
+        row(
+            "fastapi_health_gate_before_page_open",
+            one_click_startup_summary.get("fastapi_health_identity_validated_before_open") is True,
+            str(one_click_startup_summary.get("api_health_endpoint") or ""),
+        ),
+        row(
+            "bootstrap_status_gate_before_page_open",
+            one_click_startup_summary.get("fastapi_bootstrap_status_json_validated_before_open") is True,
+            "GET /api/bootstrap/status returns command_center_3_bootstrap_runtime_mode_packet before opening the page",
+        ),
+        row(
+            "vite_frontend_gate_before_page_open",
+            one_click_startup_summary.get("vite_frontend_identity_validated_before_open") is True,
+            str(one_click_startup_summary.get("vite_url") or ""),
+        ),
+        row(
+            "browser_open_is_gated_by_all_three_checks",
+            one_click_startup_summary.get("browser_opens_only_after_frontend_backend_ready") is True,
+            "launcher exits before opening the page when FastAPI health, bootstrap status, or Vite identity is not ready",
+        ),
+        row(
+            "ordinary_recovery_guidance_visible",
+            bool(one_click_startup_summary.get("blocked_next_action"))
+            and bool(one_click_startup_summary.get("diagnostic_surfaces")),
+            str(one_click_startup_summary.get("blocked_next_action") or ""),
+        ),
+        row(
+            "get_cache_and_react_render_remain_read_only",
+            one_click_startup_summary.get("get_preflight_cache_starts_services") is False
+            and one_click_startup_summary.get("react_render_starts_services") is False,
+            "GET /api/desktop/preflight-cache and React render only display this receipt; the launcher runs only when the user opens it",
+        ),
+        row(
+            "provider_model_and_trade_boundary_preserved",
+            one_click_startup_summary.get("external_calls_triggered") is False
+            and one_click_startup_summary.get("tushare_called") is False
+            and one_click_startup_summary.get("deepseek_called") is False
+            and one_click_startup_summary.get("github_called") is False
+            and one_click_startup_summary.get("does_not_execute_trades") is True,
+            "P0 startup links local FastAPI/Vite only; provider/model execution and real trading stay gated elsewhere",
+        ),
+    ]
+    blockers = [item["criterion"] for item in rows if not item["passed"]]
+    ready = not blockers
+    return {
+        "schema_version": "command_center_3_p0_local_connection_receipt.v1",
+        "priority": "P0",
+        "status": "p0_local_connection_receipt_ready" if ready else "p0_local_connection_receipt_blocked",
+        "scope": "user_run_launcher_frontend_backend_connection_receipt",
+        "ordinary_label": "本地一键入口会先确认 FastAPI、bootstrap status 和 React/Vite 都就绪，再打开页面。",
+        "what_user_clicks": one_click_startup_summary.get("what_user_should_click_next"),
+        "success_condition": one_click_startup_summary.get("success_condition"),
+        "blocked_next_action": one_click_startup_summary.get("blocked_next_action"),
+        "diagnostic_surfaces": one_click_startup_summary.get("diagnostic_surfaces"),
+        "connection_contract_ready": ready,
+        "current_runtime_live_connection_verified": False,
+        "current_runtime_probe_executed_by_get_cache": False,
+        "frontend_backend_connection_ready_when_user_runs_launcher": ready,
+        "launcher_user_run_only": True,
+        "get_cache_starts_services": False,
+        "react_render_starts_services": False,
+        "search_typing_starts_services": False,
+        "post_task_created": False,
+        "provider_model_execution_enabled": False,
+        "production_package_complete": False,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "loads_token_or_key": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "rows": rows,
+        "row_count": len(rows),
+        "blocker_count": len(blockers),
+        "blockers": blockers,
+        "call_ledger": [
+            {
+                "api": "local_p0_frontend_backend_connection_receipt",
+                "source": "one_click_startup_summary and desktop_launcher_contract",
+                "row_count": len(rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_connection_receipt_read",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ],
+        "note": "This is a local P0 startup receipt. It does not probe the live runtime from GET cache and does not enable live_light/provider/model/trading execution.",
+    }
+
+
 def _production_launch_plan(api_base: str) -> list[dict[str, Any]]:
     return [
         {
@@ -4346,6 +4469,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     api_base_info = _api_base_summary(api_base)
     desktop_launcher_contract = _desktop_launcher_contract(api_base)
     one_click_startup_summary = _one_click_startup_summary(api_base_info, desktop_launcher_contract)
+    p0_local_connection_receipt = _p0_local_connection_receipt(one_click_startup_summary, desktop_launcher_contract)
     production_runtime_contract = _production_runtime_contract(api_base_info, tauri_config)
     tauri_build_artifact = _tauri_build_artifact_summary()
     backend_offline_ux_contract = _backend_offline_ux_contract(api_base_info)
@@ -4421,6 +4545,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "api_base_info": api_base_info,
         "one_click_startup_summary": one_click_startup_summary,
         "one_click_connection_rows": one_click_startup_summary["rows"],
+        "p0_local_connection_receipt": p0_local_connection_receipt,
+        "p0_local_connection_rows": p0_local_connection_receipt["rows"],
         "desktop_launcher_contract": desktop_launcher_contract,
         "desktop_launcher_rows": desktop_launcher_contract["rows"],
         "dev_launch_plan": _dev_launch_plan(api_base),
@@ -4453,6 +4579,9 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "one_click_connection_row_count": one_click_startup_summary["row_count"],
             "one_click_connection_blocker_count": one_click_startup_summary["blocker_count"],
             "one_click_connection_ready": 1 if one_click_startup_summary["frontend_backend_connection_ready"] else 0,
+            "p0_local_connection_row_count": p0_local_connection_receipt["row_count"],
+            "p0_local_connection_blocker_count": p0_local_connection_receipt["blocker_count"],
+            "p0_local_connection_ready": 1 if p0_local_connection_receipt["connection_contract_ready"] else 0,
             "packaged_runtime_qa_matrix_count": packaged_runtime_qa_contract["qa_matrix_count"],
             "packaged_runtime_pending_qa_count": packaged_runtime_qa_contract["pending_qa_count"],
             "tauri_release_manifest_row_count": tauri_release_manifest_contract["row_count"],
@@ -4479,6 +4608,11 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "one_click_startup_status": one_click_startup_summary["status"],
             "one_click_startup_next_action": one_click_startup_summary["what_user_should_click_next"],
             "one_click_startup_blocker_count": one_click_startup_summary["blocker_count"],
+            "p0_local_connection_status": p0_local_connection_receipt["status"],
+            "p0_local_connection_ready": p0_local_connection_receipt["connection_contract_ready"],
+            "p0_current_runtime_live_connection_verified": p0_local_connection_receipt[
+                "current_runtime_live_connection_verified"
+            ],
             "api_health_endpoint": api_base_info["expected_health_endpoint"],
             "desktop_launcher_ready": desktop_launcher_contract["status"] == "local_one_click_launcher_ready",
             "desktop_launcher_executable": desktop_launcher_contract["launcher_executable"],
@@ -4534,6 +4668,11 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "one_click_startup_summary_does_not_run_from_get_cache": True,
             "one_click_startup_summary_is_not_production_package": True,
             "one_click_startup_summary_does_not_enable_provider_model": True,
+            "p0_local_connection_receipt_is_local": True,
+            "p0_local_connection_receipt_is_user_run_only": True,
+            "p0_local_connection_receipt_does_not_probe_runtime_from_get_cache": True,
+            "p0_local_connection_receipt_is_not_production_package": True,
+            "p0_local_connection_receipt_does_not_enable_provider_model": True,
             "desktop_shortcut_installer_contract_is_local": True,
             "desktop_shortcut_installer_does_not_run_from_get_cache": True,
             "desktop_shortcut_installer_does_not_start_services": True,
@@ -4566,6 +4705,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         ]
         + tauri_release_manifest_contract["call_ledger"]
         + one_click_startup_summary["call_ledger"]
+        + p0_local_connection_receipt["call_ledger"]
         + desktop_launcher_contract["call_ledger"]
         + production_package_readiness_receipt["call_ledger"],
         "external_calls_triggered": False,

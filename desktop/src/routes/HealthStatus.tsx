@@ -43,6 +43,7 @@ export default function HealthStatus() {
   const migrationPolicy = migration.api_policy as Record<string, unknown> | undefined;
   const healthWarnings = healthEnvelopeWarnings.length ? healthEnvelopeWarnings : ((health.warnings as Array<string> | undefined) ?? []);
   const oneClickStartupSummary = (desktopPreflight.one_click_startup_summary as Record<string, unknown> | undefined) ?? {};
+  const p0LocalConnectionReceipt = (desktopPreflight.p0_local_connection_receipt as Record<string, unknown> | undefined) ?? {};
   const desktopLauncherContract = (desktopPreflight.desktop_launcher_contract as Record<string, unknown> | undefined) ?? {};
   const oneClickConnectionRows = (desktopPreflight.one_click_connection_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const desktopPreflightWarnings = desktopPreflightEnvelopeWarnings.length ? desktopPreflightEnvelopeWarnings : ((desktopPreflight.warnings as Array<string> | undefined) ?? []);
@@ -62,6 +63,8 @@ export default function HealthStatus() {
         <p>成功条件：{String(oneClickStartupSummary.success_condition ?? "FastAPI /health 必须返回 Command Center 3.0 健康 JSON，/api/bootstrap/status 必须返回 runtime-mode packet，React/Vite 必须返回 Command Center 3.0 前端 HTML 后才打开页面。")}</p>
         <p>失败处理：{String(oneClickStartupSummary.blocked_next_action ?? "先看启动器的可操作诊断：FastAPI、bootstrap status、React/Vite 哪段失败；再检查 8710/5173 是否被占用，或进入桌面壳预检。")}</p>
         <p>诊断分段：{Array.isArray(oneClickStartupSummary.diagnostic_surfaces) ? oneClickStartupSummary.diagnostic_surfaces.join(" / ") : "FastAPI /health Command Center 3.0 JSON / bootstrap status runtime-mode packet / React/Vite Command Center 3.0 HTML / 8710/5173 port occupancy guidance"}</p>
+        <p>P0 本地联通收据：{String(p0LocalConnectionReceipt.ordinary_label ?? "本地一键入口会先确认 FastAPI、bootstrap status 和 React/Vite 都就绪，再打开页面。")}</p>
+        <p>当前 GET 是否做实时探针：{String(p0LocalConnectionReceipt.current_runtime_probe_executed_by_get_cache ?? false)}；实时联通是否已由本页验证：{String(p0LocalConnectionReceipt.current_runtime_live_connection_verified ?? false)}</p>
         <p>只读边界：本卡只读取 GET /health 与 GET /api/desktop/preflight-cache；不会启动 FastAPI/Vite、不会创建 task、不会调用 Tushare/DeepSeek/GitHub 或交易路径。</p>
         <DataLineageTable rows={oneClickConnectionRows} />
       </PacketCard>
@@ -70,6 +73,7 @@ export default function HealthStatus() {
         items={[
           { label: "FastAPI", value: health.status as string | undefined, tone: health.status === "ok" ? "good" : "warn" },
           { label: "P0 front/back", value: p0ConnectionReady ? "ready" : "check", tone: p0ConnectionReady ? "good" : "warn" },
+          { label: "P0 receipt", value: p0LocalConnectionReceipt.status as string | undefined, tone: p0LocalConnectionReceipt.connection_contract_ready === true ? "good" : "warn" },
           { label: "one-click launcher", value: desktopLauncherContract.launcher_executable === true ? "ready" : "check", tone: desktopLauncherContract.launcher_executable === true ? "good" : "warn" },
           { label: "startup external calls", value: health.external_calls_on_startup === true ? "存在" : "无", tone: health.external_calls_on_startup === true ? "bad" : "good" },
           { label: "Tushare", value: health.tushare_called === true ? "已调用" : "未调用", tone: health.tushare_called === true ? "bad" : "good" },
