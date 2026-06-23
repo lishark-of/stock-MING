@@ -243,6 +243,32 @@ export default function NextSessionMap() {
       边界: "缺口只提示后续按钮门控补证；GET cache 和 React render 不补调 provider/model。"
     }
   ];
+  const ordinaryDeepSeekGovernanceRows = [
+    {
+      治理段: "数据源边界",
+      当前状态: "次日图谱只读取 chart cache、reference_lines 和 operation_zones",
+      用户下一步: "先按图谱路径、参考线和操作区复核基础结果",
+      边界: "DeepSeek 不作为数据源，不覆盖图谱路径、价格、参考线或 operation_zones。"
+    },
+    {
+      治理段: "模型状态",
+      当前状态: nextSessionDeepSeekSourceLabel,
+      用户下一步: "governed executor 完成前只看 skipped/pending/ready 状态",
+      边界: "普通页不展示 prompt/output，不从页面渲染调用模型。"
+    },
+    {
+      治理段: "阻塞关系",
+      当前状态: "P5 DeepSeek 不阻塞 Tushare-first、Factor cache 或次日基础图谱",
+      用户下一步: "基础图谱先行；模型解释作为后续单独补证",
+      边界: "模型缺口不能把空图谱解释成无风险，也不能生成 strategy action。"
+    },
+    {
+      治理段: "真实调用门槛",
+      当前状态: "等待 governed executor、model_ledger、结构化输出和成本证据",
+      用户下一步: "未来只在受控按钮任务或 executor 中补模型证据",
+      边界: "GET cache、React render 和普通链接都不调用 DeepSeek。"
+    }
+  ];
   const ordinaryChartReviewRows = [
     {
       复核项: "图表路径",
@@ -329,6 +355,11 @@ export default function NextSessionMap() {
         <h3>解释性行动清单</h3>
         <p className="risk-note">先确认图谱是否可绘制，再读路径/参考线、操作区和缺口；这些行动只解释本地 cache，不生成交易动作。</p>
         <DataLineageTable rows={ordinaryInterpretationActionRows} />
+      </div>
+      <div aria-label="next session ordinary deepseek governance">
+        <h3>DeepSeek 单独治理状态</h3>
+        <p className="risk-note">DeepSeek 解释单独补证；基础图谱先按本地 cache 回放，普通页不展示 prompt/output，也不让模型改写图谱或动作。</p>
+        <DataLineageTable rows={ordinaryDeepSeekGovernanceRows} />
       </div>
       <div aria-label="next session ordinary chart review checklist">
         <h3>图谱复核清单</h3>
