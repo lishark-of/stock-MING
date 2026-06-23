@@ -216,6 +216,32 @@ export default function NextSessionMap() {
   const ordinaryResultReplayRows = packetOrdinaryResultReplayRows.length
     ? packetOrdinaryResultReplayRows
     : fallbackOrdinaryResultReplayRows;
+  const nextSessionResultHandoffRows = [
+    {
+      交接段: "1. 来源",
+      当前状态: nextSessionReplayOrigin,
+      用户下一步: "先确认这张图谱来自下一票雷达 / 股票量化推演后的本地回放。",
+      边界: "只读本地 next-session cache；不会从页面打开或普通链接创建任务。"
+    },
+    {
+      交接段: "2. 结论",
+      当前状态: nextSessionLastResultLabel,
+      用户下一步: chartSummary.has_drawable_data === true ? "先读图表路径和参考线，再看操作区。" : "先查看缓存状态或手动生成按钮任务。",
+      边界: nextSessionResearchOnlyLabel
+    },
+    {
+      交接段: "3. 缺口",
+      当前状态: nextSessionMissingEvidence,
+      用户下一步: "缺口回到下一票雷达或股票量化推演补证；不要把空图谱解释成无风险。",
+      边界: "缺口只提示下一步；GET cache 和 React render 不补调 Tushare、DeepSeek 或 GitHub。"
+    },
+    {
+      交接段: "4. 操作区",
+      当前状态: nextSessionOperationZoneBoundary,
+      用户下一步: "把 operation_zones 当条件区间和复核提示，继续人工判断。",
+      边界: "operation_zones 不是买卖指令，不下单，不写 strategy action。"
+    }
+  ];
   const ordinaryInterpretationActionRows = [
     {
       行动: "1. 确认图谱状态",
@@ -396,6 +422,11 @@ export default function NextSessionMap() {
         steps={nextSessionOrdinaryReplayRailSteps}
       />
       <p className="risk-note">普通图谱状态：雷达/量化回放 / 图表路径 / 操作区 / DeepSeek 状态；这条状态轨只读本地 next-session cache，不创建 task、不补调 Tushare 或 DeepSeek。</p>
+      <div aria-label="next session p3 result handoff quick read">
+        <h3>P3 结果交接速读</h3>
+        <p className="risk-note">先看来源、结论、缺口和操作区边界；这张表只做本地结果交接，不展开 QA、promotion 或 raw packet 审计。</p>
+        <DataLineageTable rows={nextSessionResultHandoffRows} />
+      </div>
       <h3>三段结果回放</h3>
       <p className="risk-note">三段结果回放优先读取服务端 ordinary_result_replay_rows；旧 packet 缺字段时才使用前端 fallback，且两者都只读 cache。</p>
       <DataLineageTable rows={ordinaryResultReplayRows} />
