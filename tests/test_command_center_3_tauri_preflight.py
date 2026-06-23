@@ -89,7 +89,10 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("desktop/node_modules", source)
         self.assertIn(".stock_ming_3/logs", source)
         self.assertIn('APP_URL="${COMMAND_CENTER_3_APP_URL:-${VITE_URL%/}/#home}"', source)
-        self.assertIn("Open route: ${APP_URL}", source)
+        self.assertIn("safe_display_open_url", source)
+        self.assertIn('APP_URL_DISPLAY="$(safe_display_open_url "$APP_URL")"', source)
+        self.assertIn("Open route: ${APP_URL_DISPLAY}", source)
+        self.assertIn("simple local open routes like #home may be shown", source)
         self.assertIn("Open target: ordinary Command Center home route (#home)", source)
         self.assertIn("startup does not land on developer/audit details from localStorage", source)
         self.assertIn("FASTAPI_READY=0", source)
@@ -129,7 +132,7 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN", source)
         self.assertIn("Browser open:", source)
         self.assertIn('if [ "$LAUNCHER_SKIP_OPEN" = "1" ]; then', source)
-        self.assertIn("skip-open 已启用，请手动打开普通首页 ${APP_URL}", source)
+        self.assertIn("skip-open 已启用，请手动打开普通首页 ${APP_URL_DISPLAY}", source)
         self.assertIn("Skip-open mode: FastAPI, bootstrap status, desktop preflight cache, and React/Vite are ready", source)
         self.assertIn("browser was not opened automatically", source)
         self.assertIn('wait_for_command_center_health "FastAPI" "${API_BASE%/}/health" 40', source)
@@ -145,24 +148,24 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("React/Vite log: ${VITE_LOG}", source)
         self.assertIn("print_post_startup_readback_checklist", source)
         self.assertIn("启动后复核清单", source)
-        self.assertIn("FastAPI health：${API_BASE%/}/health 已返回 Command Center 3.0 JSON", source)
-        self.assertIn("Bootstrap status：${API_BASE%/}/api/bootstrap/status 已返回 runtime-mode packet", source)
-        self.assertIn("Desktop preflight cache：${API_BASE%/}/api/desktop/preflight-cache 已返回一键启动 packet", source)
-        self.assertIn("React/Vite 前端：${VITE_URL} 已返回 Command Center 3.0 HTML；页面会打开普通首页 ${APP_URL}", source)
-        self.assertIn("联通后下一步：打开 ${VITE_URL%/}/#candidates，输入股票代码", source)
+        self.assertIn("FastAPI health：${API_HEALTH_DISPLAY} 已返回 Command Center 3.0 JSON", source)
+        self.assertIn("Bootstrap status：${BOOTSTRAP_STATUS_DISPLAY} 已返回 runtime-mode packet", source)
+        self.assertIn("Desktop preflight cache：${DESKTOP_PREFLIGHT_DISPLAY} 已返回一键启动 packet", source)
+        self.assertIn("React/Vite 前端：${VITE_URL_DISPLAY} 已返回 Command Center 3.0 HTML；页面会打开普通首页 ${APP_URL_DISPLAY}", source)
+        self.assertIn("联通后下一步：打开下一票雷达（#candidates），输入股票代码", source)
         self.assertIn("只有确认按钮会创建 Tushare-first POST task", source)
         self.assertIn("DeepSeek 仍保持 governed/pending", source)
         self.assertIn("启动后复核只读本地 GET 结果；不创建 task", source)
         self.assertIn("可操作诊断", source)
-        self.assertIn("FastAPI：${API_BASE%/}/health 未返回 Command Center 3.0 健康 JSON", source)
-        self.assertIn("Bootstrap status：${API_BASE%/}/api/bootstrap/status 未返回 runtime-mode packet", source)
-        self.assertIn("Desktop preflight cache：${API_BASE%/}/api/desktop/preflight-cache 未返回一键启动 packet", source)
-        self.assertIn("React/Vite：${VITE_URL} 未返回 Command Center 3.0 前端 HTML", source)
+        self.assertIn("FastAPI：${API_HEALTH_DISPLAY} 未返回 Command Center 3.0 健康 JSON", source)
+        self.assertIn("Bootstrap status：${BOOTSTRAP_STATUS_DISPLAY} 未返回 runtime-mode packet", source)
+        self.assertIn("Desktop preflight cache：${DESKTOP_PREFLIGHT_DISPLAY} 未返回一键启动 packet", source)
+        self.assertIn("React/Vite：${VITE_URL_DISPLAY} 未返回 Command Center 3.0 前端 HTML", source)
         self.assertIn("下一步：先关闭占用 8710/5173 的本地进程", source)
         self.assertIn("本地入口不会在前后端未联通或 Vite 端口不是 Command Center 3.0 页面时自动打开页面", source)
         self.assertIn('exit 1', source)
         self.assertIn('open "$APP_URL"', source)
-        self.assertIn("请在浏览器打开：${APP_URL}", source)
+        self.assertIn("请在浏览器打开：${APP_URL_DISPLAY}", source)
         self.assertNotIn('open "$VITE_URL"', source)
         self.assertIn("no Tushare, DeepSeek, GitHub, or trading call", source)
         self.assertIn("does not enable live_light/provider/model execution", source)
@@ -210,6 +213,28 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertNotIn("Starting FastAPI...", output)
         self.assertNotIn("Starting React/Vite...", output)
         self.assertNotIn("Command Center 3.0 入口已启动", output)
+
+    def test_command_center_3_launcher_check_only_redacts_open_url_query(self):
+        env = {
+            **os.environ,
+            "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY": "1",
+            "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN": "1",
+            "COMMAND_CENTER_3_APP_URL": "http://127.0.0.1:5173/?raw_payload=SHOULD_NOT_SHOW#home",
+        }
+        result = subprocess.run(
+            ["bash", str(LAUNCHER)],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=10,
+        )
+        output = result.stdout
+
+        self.assertIn("Open route: http://127.0.0.1:5173/#home", output)
+        self.assertIn("open_route=http://127.0.0.1:5173/#home", output)
+        self.assertNotIn("SHOULD_NOT_SHOW", output)
+        self.assertNotIn("raw_payload", output)
 
     def test_command_center_3_shortcut_installer_is_safe_and_verifiable(self):
         source = Path("scripts/install_command_center_3_desktop_shortcut.sh").read_text(encoding="utf-8")
@@ -285,10 +310,10 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         for surface, source in sources.items():
             with self.subTest(surface=surface):
                 if surface == "launcher":
-                    self.assertIn("FastAPI：${API_BASE%/}/health 未返回 Command Center 3.0 健康 JSON", source)
-                    self.assertIn("Bootstrap status：${API_BASE%/}/api/bootstrap/status 未返回 runtime-mode packet", source)
-                    self.assertIn("Desktop preflight cache：${API_BASE%/}/api/desktop/preflight-cache 未返回一键启动 packet", source)
-                    self.assertIn("React/Vite：${VITE_URL} 未返回 Command Center 3.0 前端 HTML", source)
+                    self.assertIn("FastAPI：${API_HEALTH_DISPLAY} 未返回 Command Center 3.0 健康 JSON", source)
+                    self.assertIn("Bootstrap status：${BOOTSTRAP_STATUS_DISPLAY} 未返回 runtime-mode packet", source)
+                    self.assertIn("Desktop preflight cache：${DESKTOP_PREFLIGHT_DISPLAY} 未返回一键启动 packet", source)
+                    self.assertIn("React/Vite：${VITE_URL_DISPLAY} 未返回 Command Center 3.0 前端 HTML", source)
                     self.assertIn("下一步：先关闭占用 8710/5173 的本地进程", source)
                     self.assertIn("external_calls_on_startup", source)
                 else:
@@ -318,7 +343,7 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         home = HOME_PAGE.read_text(encoding="utf-8")
 
         self.assertIn("启动后复核清单", launcher)
-        self.assertIn("Desktop preflight cache：${API_BASE%/}/api/desktop/preflight-cache 已返回一键启动 packet", launcher)
+        self.assertIn("Desktop preflight cache：${DESKTOP_PREFLIGHT_DISPLAY} 已返回一键启动 packet", launcher)
         self.assertIn("启动后复核清单", page)
         self.assertIn("p0StartupReadyMetrics", page)
         self.assertIn('aria-label="p0 ordinary one click readiness"', page)

@@ -56,6 +56,35 @@ print(safe[:180])
 PY
 }
 
+safe_display_open_url() {
+  local url="$1"
+  "$PYTHON_BIN" - "$url" <<'PY'
+import re
+import sys
+from urllib.parse import urlsplit, urlunsplit
+
+raw = sys.argv[1]
+fallback = raw.split("?", 1)[0]
+try:
+    parsed = urlsplit(raw)
+    host = parsed.hostname or ""
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    if parsed.scheme and host:
+        safe_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+        netloc = f"{safe_host}:{port}" if port else safe_host
+        fragment = parsed.fragment if re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,40}", parsed.fragment or "") else ""
+        safe = urlunsplit((parsed.scheme, netloc, parsed.path, "", fragment))
+    else:
+        safe = fallback
+except Exception:
+    safe = fallback
+print(safe[:180])
+PY
+}
+
 url_is_local() {
   local url="$1"
   "$PYTHON_BIN" - "$url" <<'PY' >/dev/null 2>&1
@@ -319,7 +348,7 @@ fi
 
 API_BASE_DISPLAY="$(safe_display_url "$API_BASE")"
 VITE_URL_DISPLAY="$(safe_display_url "$VITE_URL")"
-APP_URL_DISPLAY="$(safe_display_url "$APP_URL")"
+APP_URL_DISPLAY="$(safe_display_open_url "$APP_URL")"
 API_HEALTH_DISPLAY="$(safe_display_url "${API_BASE%/}/health")"
 BOOTSTRAP_STATUS_DISPLAY="$(safe_display_url "${API_BASE%/}/api/bootstrap/status")"
 DESKTOP_PREFLIGHT_DISPLAY="$(safe_display_url "${API_BASE%/}/api/desktop/preflight-cache")"
@@ -375,7 +404,7 @@ echo "Open target: ordinary Command Center home route (#home), so startup does n
 echo "P0 success handoff: after readiness, open #candidates; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
 echo "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution."
 echo "Safety: this launcher does not set live_light defaults and makes no Tushare, DeepSeek, GitHub, or trading call."
-echo "URL safety: displayed launcher URLs are sanitized and non-local API/frontend/open URLs are blocked before any probe."
+echo "URL safety: displayed launcher URLs are sanitized; simple local open routes like #home may be shown, while query/userinfo and non-local API/frontend/open URLs are blocked before any probe."
 echo "Acceptance: runtime_mode_config_current_acceptance_* markers are status/checkpoint drift guards, not launcher config or live_light enablement."
 
 if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then
