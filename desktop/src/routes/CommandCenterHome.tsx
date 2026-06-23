@@ -454,12 +454,14 @@ export default function CommandCenterHome() {
     ? "主下一步只切换到下一票雷达；不创建 task、不刷新 provider/model"
     : "主下一步只查看本地数据健康；运行快扫仍需进入下一票雷达手动点击";
   const dailyCommandCacheSourceLabel = snapshotAvailable ? "本地缓存可用" : "等待本地缓存";
-  const dailyCommandTushareSourceLabel = liveLight.tushare_on_open === true ? "轻量实时后台任务" : "手动触发或关闭";
+  const dailyCommandTushareSourceLabel = liveLight.tushare_on_open === true
+    ? "live_light 已配置；仍需确认按钮触发 Tushare-first task"
+    : "手动触发或关闭";
   const liveBootstrapModelCalled = liveBootstrapTaskLedger.some((row) => row.deepseek_called === true);
   const dailyCommandDeepSeekSourceLabel = liveBootstrapModelCalled
-    ? "模型调用 ledger 已记录"
+    ? "model_ledger 已记录；只读回放安全摘要"
     : liveLight.deepseek_on_open === true
-      ? "待授权解释"
+      ? "待 governed executor；不随页面打开调用"
       : "手动触发或关闭";
   const dailyCommandRuntimeModeLabel = (() => {
     const mode = String(bootstrapStatus.mode ?? "cache_only");
@@ -510,6 +512,8 @@ export default function CommandCenterHome() {
   );
   const dailyCommandTaskBoundary =
     "首页 GET cache 只读；live_light 手动补证只允许创建后台 POST task，不在 React 渲染中直连 Tushare 或 DeepSeek";
+  const dailyCommandExternalTriggerBoundary =
+    "页面打开、搜索输入、React render 和 GET cache 不自动外联；只有下一票雷达确认按钮可创建 Tushare-first POST task，DeepSeek 等 governed executor。";
   const dailyCommandResearchOnlyLabel = "今日摘要只组织投研证据；不买卖、不下单、不改交易策略";
   const dailyCommandStatusLabel = health.status === "ok" ? "只读入口可用" : "等待只读入口";
   const dailyCommandConnectionState = error
@@ -778,6 +782,7 @@ export default function CommandCenterHome() {
             { label: "cache", value: dailyCommandCacheSourceLabel },
             { label: "Tushare", value: dailyCommandTushareSourceLabel },
             { label: "DeepSeek", value: dailyCommandDeepSeekSourceLabel },
+            { label: "外联触发边界", value: dailyCommandExternalTriggerBoundary, tone: "good" },
             { label: "pending", value: dailyCommandPendingSourceLabel, tone: dailyCommandPendingSourceLabel.includes("待补") || dailyCommandPendingSourceLabel.includes("验收") || dailyCommandPendingSourceLabel.includes("缓存") ? "warn" : "good" },
             { label: "degraded", value: dailyCommandDegradedSourceLabel, tone: dailyCommandDegradedSourceLabel.includes("未标记") ? "good" : "warn" },
             { label: "last_successful_cache/result", value: dailyCommandLastCache },
@@ -845,6 +850,7 @@ export default function CommandCenterHome() {
           <a href="#desktop" aria-label="open one click startup preflight from daily command">查看一键启动预检</a>
         </div>
         <p className="risk-note">今日先按“最近缓存/数据健康 → 下一票雷达 → 股票量化推演”复核；缺数据就看 pending 和缺少证据，不把空结果当成无风险。</p>
+        <p className="risk-note">{dailyCommandExternalTriggerBoundary}</p>
         <p className="risk-note">{dailyCommandResultLocation}</p>
         <p className="risk-note">如果本地联通异常，先去 <a href="#desktop">桌面壳预检</a> 查看本地快捷入口；这个跳转只切换页面，不启动 FastAPI/Vite/浏览器。</p>
         <p className="risk-note">这些入口链接只切换本地页面；不会创建 task、调用 Tushare/DeepSeek/GitHub、写 cache/config 或改变交易策略。</p>
@@ -915,7 +921,7 @@ export default function CommandCenterHome() {
           <p>runtime mode: {String(bootstrapStatus.mode ?? "cache_only")}</p>
           <p>manual status: {liveBootstrapManualStatus}</p>
           <p>sources enabled: {String(liveLight.sources_enabled ?? false)}</p>
-          <p>Tushare / DeepSeek on open: {String(liveLight.tushare_on_open ?? false)} / {String(liveLight.deepseek_on_open ?? false)}</p>
+          <p>Tushare / DeepSeek configured source switches: {String(liveLight.tushare_on_open ?? false)} / {String(liveLight.deepseek_on_open ?? false)}</p>
           <p>DeepSeek model call: {liveBootstrapModelCalled ? "ledger 显示已执行" : "未执行；需要明确允许白名单摘要外发后才会调用"}</p>
           <p>task skeleton / provider execution: {String(liveLight.bootstrap_task_implemented ?? false)} / {String(liveLight.provider_execution_implemented ?? false)}</p>
           <p>provider linkage rows: {String(bootstrapProviderLinkageRows.length)}</p>
