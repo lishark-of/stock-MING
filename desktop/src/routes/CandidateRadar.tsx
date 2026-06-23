@@ -935,6 +935,14 @@ export default function CandidateRadar() {
   const quantProjectionAcceptedTaskId = String(taskReceipt?.data?.task_id ?? quantProjectionAcceptedTask?.task_id ?? quantProjectionPersistedTaskId ?? "");
   const quantProjectionAcceptedTaskStep = String(quantProjectionAcceptedTask?.current_step ?? quantProjectionPersistedTaskStep ?? "");
   const quantProjectionAcceptedTaskStatus = String(quantProjectionAcceptedTask?.status ?? (quantProjectionAcceptedTaskId ? "cache_replay" : "waiting_confirm"));
+  const quantProjectionTaskPanelVisible = quantProjectionTaskVisible || Boolean(quantProjectionPersistedTaskId);
+  const quantProjectionTaskPanelTaskId = quantProjectionTaskVisible && taskId ? taskId : quantProjectionPersistedTaskId;
+  const quantProjectionResumeTaskRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_task_readback_rows).map((row) => ({
+    回放项: displayText(row.surface),
+    当前状态: displayText(row.ordinary_label ?? row.status),
+    来源: displayText(row.readback_source, "candidate_radar_cache_packet"),
+    边界: displayText(row.boundary, "GET cache 只读回放；TaskStatusPanel 只轮询本地 FastAPI")
+  }));
   const quantProjectionOrdinaryTaskRailSteps = [
     {
       label: "输入代码",
@@ -1357,6 +1365,11 @@ export default function CandidateRadar() {
             <p className="risk-note">点击确认后先看这张回执：它只回放本地 POST task 是否接收、Tushare-first / DeepSeek skipped 参数和安全步骤，不补调数据源或模型。</p>
             <DataLineageTable rows={quantProjectionConfirmedTaskReceiptRows} />
           </div>
+          <div aria-label="quant projection persisted task resume">
+            <h3>刷新后继续任务</h3>
+            <p className="risk-note">页面刷新后优先用 quantProjectionPersistedTaskId 恢复最近确认任务；TaskStatusPanel 只轮询本地 FastAPI，不创建新 task、不补调 Tushare/DeepSeek。</p>
+            <DataLineageTable rows={quantProjectionResumeTaskRows.length ? quantProjectionResumeTaskRows : quantProjectionTaskCacheReadbackRows} />
+          </div>
           <div aria-label="quant projection post confirm user actions">
             <h3>确认后看什么</h3>
             <p className="risk-note">点击确认后先看任务编号和 TaskStatusPanel，再刷新本地 cache，最后回放量化推演和次日图谱；这些行动不会创建第二个 provider/model 任务。</p>
@@ -1464,10 +1477,10 @@ export default function CandidateRadar() {
               </div>
             ) : null}
           </details>
-          {quantProjectionTaskVisible ? (
+          {quantProjectionTaskPanelVisible ? (
             <div aria-label="quant projection tushare-first task status">
               <TaskLaunchReceipt receipt={taskReceipt} />
-              <TaskStatusPanel taskId={taskId} onSuccess={refreshCache} />
+              <TaskStatusPanel taskId={quantProjectionTaskPanelTaskId} onSuccess={refreshCache} />
             </div>
           ) : null}
           <p className="risk-note">任务接收后立即回读本地 cache receipt，再看最近任务编号和 TaskStatusPanel；成功后刷新本地缓存，再打开股票量化推演和次日图谱回放入口。</p>
