@@ -1081,6 +1081,85 @@ def _build_long_term_goal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _build_usable_path_strict_closeout_handoff_rows(
+    long_term_goal_summary: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    remaining_count = int(long_term_goal_summary.get("strict_closeout_remaining_count") or 14)
+    closeout_state = str(long_term_goal_summary.get("strict_closeout") or "0/14")
+    handoff_rows = [
+        {
+            "phase": "P0",
+            "usable_checkpoint": "一键启动和前后端自动联通",
+            "strict_closeout_handoff": "回到 LTG-11 fresh local gate、matching remote CI review 和 push decision。",
+            "required_direct_evidence": "fresh local gate for current head + reviewed remote CI status or safe failure excerpt",
+            "next_ltg_focus": "LTG-11",
+        },
+        {
+            "phase": "P1",
+            "usable_checkpoint": "确认按钮触发 Tushare-first 数据链",
+            "strict_closeout_handoff": "回到 LTG-01/LTG-02 provider-backed trade_cal 和 staged Tushare sample acceptance。",
+            "required_direct_evidence": "scope-bound execution request + safe Tushare call_ledger + provider replay evidence",
+            "next_ltg_focus": "LTG-01 / LTG-02",
+        },
+        {
+            "phase": "P2",
+            "usable_checkpoint": "小数据写入 cache / ledger / packet",
+            "strict_closeout_handoff": "回到 storage、worker、provider promotion 的 durable evidence，而不是只看 packet 可见性。",
+            "required_direct_evidence": "durable SQLite/storage visibility + provider/worker/storage execution proof where applicable",
+            "next_ltg_focus": "LTG-02 / LTG-05 / LTG-06 / LTG-13",
+        },
+        {
+            "phase": "P3",
+            "usable_checkpoint": "普通入口显示可解释结果",
+            "strict_closeout_handoff": "回到 Factor / Next Session / Candidate Radar direct evidence、browser QA 和 no-feature-loss proof。",
+            "required_direct_evidence": "provider-backed factor/radar evidence + ECharts browser/performance evidence + safe result replay",
+            "next_ltg_focus": "LTG-03 / LTG-04 / LTG-08 / LTG-13",
+        },
+        {
+            "phase": "P4",
+            "usable_checkpoint": "工程审计噪音下沉",
+            "strict_closeout_handoff": "回到 Legacy Bug / UX Audit direct observation 和 Streamlit fallback retirement evidence。",
+            "required_direct_evidence": "safe screenshot/reviewer note/log summary + replacement ordinary path + frozen legacy path",
+            "next_ltg_focus": "LTG-10 / LTG-13",
+        },
+        {
+            "phase": "P5",
+            "usable_checkpoint": "DeepSeek governed executor 单独补",
+            "strict_closeout_handoff": "回到 LTG-07 model_ledger、redaction、retry/repair、cost 和 durable evidence promotion。",
+            "required_direct_evidence": "model_ledger/hash evidence + sanitizer/redaction review + bounded retry/repair benchmark",
+            "next_ltg_focus": "LTG-07",
+        },
+        {
+            "phase": "P6",
+            "usable_checkpoint": "回到 14 LTG direct evidence / strict closeout",
+            "strict_closeout_handoff": "逐项使用 ltg_next_acceptance_action_rows 和 future_handoff_preview_rows 推进，不能从可用化 checkpoint 直接关闭。",
+            "required_direct_evidence": "current-head direct evidence per LTG, durable receipts, CI/browser/provider/worker/storage/package proof as applicable",
+            "next_ltg_focus": "all_14_ltg",
+        },
+    ]
+    for row in handoff_rows:
+        row.update(
+            {
+                "status": "usable_path_checkpoint_visible_not_strict_closeout",
+                "strict_closeout": closeout_state,
+                "strict_closeout_remaining_count": remaining_count,
+                "can_close_ltg_from_handoff": False,
+                "cache_only_readback": True,
+                "creates_task_from_get": False,
+                "creates_task_from_render": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "evidence_boundary": "usable_path_handoff_is_not_14_ltg_strict_closeout",
+            }
+        )
+    return handoff_rows
+
+
 def _build_ltg_acceptance_runway_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     runway_rows: list[dict[str, Any]] = []
     for row in rows:
@@ -8191,6 +8270,9 @@ def build_migration_status() -> dict[str, Any]:
     long_term_goal_summary = _build_long_term_goal_summary(long_term_goal_rows)
     ltg_acceptance_runway_rows = _build_ltg_acceptance_runway_rows(long_term_goal_rows)
     ltg_next_acceptance_action_rows = _build_ltg_next_acceptance_action_rows(long_term_goal_rows)
+    usable_path_strict_closeout_handoff_rows = _build_usable_path_strict_closeout_handoff_rows(
+        long_term_goal_summary
+    )
     tushare_deepseek_linkage_rows = _build_tushare_deepseek_linkage_rows()
     tushare_deepseek_mode_layer_rows = _build_tushare_deepseek_mode_layer_rows()
     tushare_deepseek_linkage_review = _build_tushare_deepseek_linkage_review(
@@ -8217,6 +8299,8 @@ def build_migration_status() -> dict[str, Any]:
         "long_term_goal_rows": long_term_goal_rows,
         "ltg_acceptance_runway_rows": ltg_acceptance_runway_rows,
         "ltg_next_acceptance_action_rows": ltg_next_acceptance_action_rows,
+        "usable_path_strict_closeout_handoff_rows": usable_path_strict_closeout_handoff_rows,
+        "usable_path_strict_closeout_handoff_row_count": len(usable_path_strict_closeout_handoff_rows),
         "ltg_stage_scope_observed_rows": ltg_stage_scope_observed_rows,
         "tushare_deepseek_linkage_review": tushare_deepseek_linkage_review,
         "tushare_deepseek_linkage_rows": tushare_deepseek_linkage_rows,
@@ -8253,6 +8337,9 @@ def build_migration_status() -> dict[str, Any]:
                 "source_type": "user_provided_long_term_reference_baseline",
                 "row_count": len(MIGRATION_PROGRESS_BASELINE)
                 + len(long_term_goal_rows)
+                + len(ltg_acceptance_runway_rows)
+                + len(ltg_next_acceptance_action_rows)
+                + len(usable_path_strict_closeout_handoff_rows)
                 + len(ltg_stage_scope_observed_rows)
                 + len(tushare_deepseek_linkage_rows)
                 + len(tushare_deepseek_mode_layer_rows)
@@ -8270,6 +8357,9 @@ def build_migration_status() -> dict[str, Any]:
                     legacy_audit_latest_observation.get("direct_user_evidence_recorded") is True
                 ),
                 "ltg_stage_scope_observed_row_count": len(ltg_stage_scope_observed_rows),
+                "usable_path_strict_closeout_handoff_row_count": len(
+                    usable_path_strict_closeout_handoff_rows
+                ),
                 "tushare_deepseek_linkage_row_count": len(tushare_deepseek_linkage_rows),
                 "tushare_deepseek_mode_layer_row_count": len(tushare_deepseek_mode_layer_rows),
                 "latest_tushare_deepseek_linkage_review_found": bool(

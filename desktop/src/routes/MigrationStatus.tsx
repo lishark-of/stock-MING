@@ -347,6 +347,7 @@ export default function MigrationStatus() {
   const linkageReviewRows = postLinkageReviewRows.length ? postLinkageReviewRows : latestLinkageReviewRows;
   const principles = Array.isArray(packet.principles) ? packet.principles : [];
   const packetAcceptanceRunwayRows = (packet.ltg_acceptance_runway_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const usablePathStrictCloseoutHandoffRows = (packet.usable_path_strict_closeout_handoff_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const ltgNextAcceptanceActionRows = (packet.ltg_next_acceptance_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const ltgNextAcceptanceReceiptRows = ltgNextAcceptanceActionRows.map((row) => ({
     queue_id: row.queue_id,
@@ -652,6 +653,7 @@ export default function MigrationStatus() {
           { label: "goals closed", value: Number(longTermGoalSummary.strict_closeout_done_count ?? 0) },
           { label: "goals total", value: Number(longTermGoalSummary.strict_closeout_total_count ?? 14) },
           { label: "goals remaining", value: Number(longTermGoalSummary.strict_closeout_remaining_count ?? 14), tone: Number(longTermGoalSummary.strict_closeout_remaining_count ?? 14) ? "warn" : "good" },
+          { label: "P6 handoff rows", value: usablePathStrictCloseoutHandoffRows.length, tone: usablePathStrictCloseoutHandoffRows.length ? "good" : "warn" },
           { label: "mostly stable guardrails", value: Number(longTermBucketCounts.mostly_stable_guardrail ?? 0) },
           { label: "real validation required", value: Number(longTermBucketCounts.real_validation_required ?? 0) },
           { label: "productionization required", value: Number(longTermBucketCounts.productionization_required ?? 0) },
@@ -659,6 +661,11 @@ export default function MigrationStatus() {
           { label: "later polish", value: Number(longTermBucketCounts.later_polish_goal ?? 0) }
         ]}
       />
+      <div aria-label="usable path strict closeout handoff">
+        <h3>P6 可用化到 14 LTG strict closeout 交接</h3>
+        <p className="risk-note">这张表把 P0-P5 可用化 checkpoint 对应回 14 LTG 的 direct evidence 下一步；它只读本地状态，不创建 task、不调用外部服务，也不能关闭任何 LTG。</p>
+        <DataLineageTable rows={usablePathStrictCloseoutHandoffRows} />
+      </div>
       <h3>14 LTG acceptance runway</h3>
       <p className="risk-note">这张表把每个长期目标的优先级、下一步验收动作和 observed pending 数集中到一处；它只读已有 roadmap/cache 合同，不创建任务、不调用外部服务，也不能关闭目标。</p>
       <DataLineageTable rows={ltgAcceptanceRunwayRows} />

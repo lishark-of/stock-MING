@@ -606,6 +606,24 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["ltg_acceptance_runway_rows"]), 14)
         self.assertEqual(len(migration["ltg_next_acceptance_action_rows"]), 14)
+        self.assertEqual(migration["usable_path_strict_closeout_handoff_row_count"], 7)
+        self.assertEqual(len(migration["usable_path_strict_closeout_handoff_rows"]), 7)
+        handoff_rows = {row["phase"]: row for row in migration["usable_path_strict_closeout_handoff_rows"]}
+        self.assertEqual(set(handoff_rows), {"P0", "P1", "P2", "P3", "P4", "P5", "P6"})
+        self.assertEqual(handoff_rows["P6"]["strict_closeout"], "0/14")
+        self.assertEqual(handoff_rows["P6"]["strict_closeout_remaining_count"], 14)
+        self.assertIn("不能从可用化 checkpoint 直接关闭", handoff_rows["P6"]["strict_closeout_handoff"])
+        self.assertFalse(any(row["can_close_ltg_from_handoff"] for row in handoff_rows.values()))
+        self.assertTrue(all(row["cache_only_readback"] for row in handoff_rows.values()))
+        self.assertFalse(any(row["creates_task_from_get"] for row in handoff_rows.values()))
+        self.assertFalse(any(row["creates_task_from_render"] for row in handoff_rows.values()))
+        self.assertFalse(any(row["external_calls_triggered"] for row in handoff_rows.values()))
+        self.assertFalse(any(row["tushare_called"] for row in handoff_rows.values()))
+        self.assertFalse(any(row["deepseek_called"] for row in handoff_rows.values()))
+        self.assertFalse(any(row["github_called"] for row in handoff_rows.values()))
+        self.assertFalse(any(row["contains_secret"] for row in handoff_rows.values()))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in handoff_rows.values()))
+        self.assertTrue(all(row["does_not_modify_strategy_action"] for row in handoff_rows.values()))
         runway_rows = {row["id"]: row for row in migration["ltg_acceptance_runway_rows"]}
         action_rows = {row["queue_id"]: row for row in migration["ltg_next_acceptance_action_rows"]}
         self.assertIn("P1", runway_rows["LTG-01"]["priority"])
@@ -32646,6 +32664,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_acceptance_runway_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_next_acceptance_action_rows"]), 14)
+        self.assertEqual(migration["data"]["usable_path_strict_closeout_handoff_row_count"], 7)
+        self.assertEqual(len(migration["data"]["usable_path_strict_closeout_handoff_rows"]), 7)
         self.assertEqual(len(migration["data"]["ltg_stage_scope_observed_rows"]), 14)
         runway_rows = {row["id"]: row for row in migration["data"]["ltg_acceptance_runway_rows"]}
         action_rows = {row["queue_id"]: row for row in migration["data"]["ltg_next_acceptance_action_rows"]}
