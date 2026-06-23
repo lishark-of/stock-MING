@@ -178,10 +178,13 @@ export default function NextSessionMap() {
   const nextSessionReplayDestinationBoundary =
     "回放入口只切换本地页面锚点；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones";
   const nextSessionOperationZoneBoundary = "operation_zones 只表示条件区间和复核提示；不是买卖指令，不写交易动作，不改 strategy action";
-  const ordinaryResultReplayStatus = chartSummary.has_drawable_data === true
-    ? "ready_cache_replay"
-    : "waiting_for_cache_or_manual_task";
-  const ordinaryResultReplayRows = [
+  const packetOrdinaryResultReplayRows = rowsFromArray(packet.ordinary_result_replay_rows);
+  const packetOrdinaryChartReviewRows = rowsFromArray(packet.ordinary_chart_review_rows);
+  const ordinaryResultReplayStatus = String(
+    packet.ordinary_result_replay_status ??
+      (chartSummary.has_drawable_data === true ? "ready_cache_replay" : "waiting_for_cache_or_manual_task")
+  );
+  const fallbackOrdinaryResultReplayRows = [
     {
       step: "1",
       surface: "下一票雷达",
@@ -209,6 +212,9 @@ export default function NextSessionMap() {
       boundary: nextSessionOperationZoneBoundary
     }
   ];
+  const ordinaryResultReplayRows = packetOrdinaryResultReplayRows.length
+    ? packetOrdinaryResultReplayRows
+    : fallbackOrdinaryResultReplayRows;
   const ordinaryInterpretationActionRows = [
     {
       行动: "1. 确认图谱状态",
@@ -269,7 +275,7 @@ export default function NextSessionMap() {
       边界: "GET cache、React render 和普通链接都不调用 DeepSeek。"
     }
   ];
-  const ordinaryChartReviewRows = [
+  const fallbackOrdinaryChartReviewRows = [
     {
       复核项: "图表路径",
       看什么: chartSummary.has_drawable_data === true
@@ -301,6 +307,9 @@ export default function NextSessionMap() {
       边界: "缺口只提示后续补证，不把空结果解释成无风险"
     }
   ];
+  const ordinaryChartReviewRows = packetOrdinaryChartReviewRows.length
+    ? packetOrdinaryChartReviewRows
+    : fallbackOrdinaryChartReviewRows;
   const scenarioRows = rowsFromArray(chartPayload?.scenario_series).map((row) => ({
     scenario_key: row.scenario_key ?? row.scenario_name,
     scenario_name: row.scenario_name,
@@ -350,6 +359,7 @@ export default function NextSessionMap() {
         ]}
       />
       <h3>三段结果回放</h3>
+      <p className="risk-note">三段结果回放优先读取服务端 ordinary_result_replay_rows；旧 packet 缺字段时才使用前端 fallback，且两者都只读 cache。</p>
       <DataLineageTable rows={ordinaryResultReplayRows} />
       <div aria-label="next session ordinary interpretation actions">
         <h3>解释性行动清单</h3>
@@ -363,7 +373,7 @@ export default function NextSessionMap() {
       </div>
       <div aria-label="next session ordinary chart review checklist">
         <h3>图谱复核清单</h3>
-        <p className="risk-note">按图表路径、参考线、操作区、缺少证据复核；这些行只读取本地 chart cache，不触发刷新或交易动作。</p>
+        <p className="risk-note">按图表路径、参考线、操作区、缺少证据复核；优先读取服务端 ordinary_chart_review_rows，只读取本地 chart cache，不触发刷新或交易动作。</p>
         <DataLineageTable rows={ordinaryChartReviewRows} />
       </div>
       <div className="actions" aria-label="next session replay handoff actions">

@@ -2667,6 +2667,133 @@ def _next_session_production_stage_scope_manifest(packet: Mapping[str, Any], now
     return manifest
 
 
+def _next_session_ordinary_result_replay(packet: Mapping[str, Any]) -> dict[str, Any]:
+    chart_payload = _as_dict(packet.get("chart_payload"))
+    chart_summary = _as_dict(packet.get("chart_summary")) or _as_dict(chart_payload.get("chart_summary"))
+    latest_close_anchor = _as_dict(chart_payload.get("latest_close_anchor"))
+    has_drawable_data = chart_summary.get("has_drawable_data") is True
+    uses_real_daily_close = chart_summary.get("uses_real_daily_close") is True
+    exact_packet = chart_summary.get("is_exact_next_session_packet") is True
+    scenario_count = int(chart_summary.get("scenario_series_count") or 0)
+    reference_count = int(chart_summary.get("reference_line_count") or 0)
+    operation_zone_count = int(chart_summary.get("operation_zone_count") or 0)
+    latest_close = latest_close_anchor.get("price")
+    last_cache = "；".join(
+        item
+        for item in [
+            str(packet.get("cache_source") or "cache source unknown"),
+            f"情景={scenario_count} / 参考线={reference_count} / 操作区={operation_zone_count}" if has_drawable_data else "",
+            f"latest close={latest_close}" if latest_close else "",
+        ]
+        if item
+    ) or "暂无最近可用缓存"
+    result_status = "ready_cache_replay" if has_drawable_data else "waiting_for_cache_or_manual_task"
+    result_rows = [
+        {
+            "step": "1",
+            "surface": "下一票雷达",
+            "readable_result": "可从已确认标的继续复核" if has_drawable_data else "先回到雷达输入代码并点击确认",
+            "evidence": "候选池和搜票确认按钮在 #candidates；本页不扫描、不搜票。",
+            "next_step": "需要新标的时回到下一票雷达确认代码。",
+            "boundary": "输入和页面打开不外联；只有确认按钮可创建 Tushare-first 后台 task。",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "contains_secret": False,
+            **_local_ledger_boundary(),
+        },
+        {
+            "step": "2",
+            "surface": "股票量化推演",
+            "readable_result": "上游 Tushare daily close 已在本地缓存参与图谱" if uses_real_daily_close else "等待上游 Tushare ledger 或本地阻断回放",
+            "evidence": "真实 daily close 已在本地缓存" if uses_real_daily_close else "待 Tushare/cache 补证",
+            "next_step": "先看支持/压制摘要，再回到次日图谱复核路径和操作区。",
+            "boundary": "本页只读 cache，不补调 Tushare 或 DeepSeek；DeepSeek governed executor 单独补。",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "contains_secret": False,
+            **_local_ledger_boundary(),
+        },
+        {
+            "step": "3",
+            "surface": "次日图谱",
+            "readable_result": (
+                f"情景={scenario_count} / 参考线={reference_count} / 操作区={operation_zone_count}"
+                if has_drawable_data
+                else "暂无可绘制图谱；可手动生成本地任务。"
+            ),
+            "evidence": last_cache,
+            "next_step": (
+                "先看图表路径、参考线和操作区，再看缺少证据；工程审计在开发详情"
+                if has_drawable_data
+                else "先点击生成任务或查看缓存状态；有图表后再按路径、参考线、操作区复核"
+            ),
+            "boundary": "operation_zones 只表示条件区间和复核提示；不是买卖指令，不写交易动作，不改 strategy action",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "contains_secret": False,
+            **_local_ledger_boundary(),
+        },
+    ]
+    chart_review_rows = [
+        {
+            "复核项": "图表路径",
+            "看什么": f"情景路径 {scenario_count} 条；先看基准、乐观和压力路径的方向" if has_drawable_data else "暂无可绘制路径；先看缓存状态或点击生成任务",
+            "证据": last_cache,
+            "边界": "只读取图表路径；不重算价格、不调用数据源或模型",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "contains_secret": False,
+            **_local_ledger_boundary(),
+        },
+        {
+            "复核项": "参考线",
+            "看什么": f"参考线 {reference_count} 条；用于定位压力、支撑和最新收盘锚点" if has_drawable_data else "等待 reference_lines 写入本地 cache",
+            "证据": f"latest close={latest_close}" if latest_close else "等待 latest close anchor",
+            "边界": "参考线只作研究复核，不生成买卖动作",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "contains_secret": False,
+            **_local_ledger_boundary(),
+        },
+        {
+            "复核项": "操作区",
+            "看什么": f"操作区 {operation_zone_count} 个；只看条件区间、触发条件和风险提示" if has_drawable_data else "等待 operation_zones cache",
+            "证据": "operation_zones 只表示条件区间和复核提示；不是买卖指令，不写交易动作，不改 strategy action",
+            "边界": "不改 operation_zones、不下单、不写 strategy action",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "contains_secret": False,
+            **_local_ledger_boundary(),
+        },
+        {
+            "复核项": "缺少证据",
+            "看什么": "当前摘要未标记缺口" if exact_packet and has_drawable_data else "真实 close、精确 packet 或生产替代证据仍待补齐",
+            "证据": "replacement / browser QA / retained signal / real close evidence",
+            "边界": "缺口只提示后续补证，不把空结果解释成无风险",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "contains_secret": False,
+            **_local_ledger_boundary(),
+        },
+    ]
+    return {
+        "schema_version": "next_session_ordinary_result_replay.v1",
+        "status": result_status,
+        "source": "GET /api/next-session/cache",
+        "row_count": len(result_rows),
+        "chart_review_row_count": len(chart_review_rows),
+        "rows_are_cache_only": True,
+        "rows_create_task": False,
+        "rows_call_provider_or_model": False,
+        "rows_are_not_trade_signals": True,
+        "contains_secret": False,
+        "production_evidence": False,
+        "result_rows": result_rows,
+        "chart_review_rows": chart_review_rows,
+        **_local_ledger_boundary(),
+    }
+
+
 def read_next_session_cache() -> dict[str, Any]:
     packet = dict(packet_service.build_next_session_cache())
     activation_receipt, activation_rows = _next_session_replacement_activation_receipt(packet)
@@ -2763,6 +2890,11 @@ def read_next_session_cache() -> dict[str, Any]:
     ]
     packet["next_session_production_stage_scope_pending_count"] = production_stage_scope["pending_stage_count"]
     packet["next_session_production_stage_scope_blocker_count"] = production_stage_scope["production_blocker_count"]
+    ordinary_result_replay = _next_session_ordinary_result_replay(packet)
+    packet["ordinary_result_replay_summary"] = ordinary_result_replay
+    packet["ordinary_result_replay_status"] = ordinary_result_replay["status"]
+    packet["ordinary_result_replay_rows"] = ordinary_result_replay["result_rows"]
+    packet["ordinary_chart_review_rows"] = ordinary_result_replay["chart_review_rows"]
     counts = _as_dict(packet.get("counts"))
     counts.update(
         {
@@ -2784,6 +2916,8 @@ def read_next_session_cache() -> dict[str, Any]:
             "next_session_production_promotion_review_blocking_count": promotion_review[
                 "blocking_review_count"
             ],
+            "next_session_ordinary_result_replay_row_count": ordinary_result_replay["row_count"],
+            "next_session_ordinary_chart_review_row_count": ordinary_result_replay["chart_review_row_count"],
         }
     )
     packet["counts"] = counts
@@ -2800,6 +2934,10 @@ def read_next_session_cache() -> dict[str, Any]:
             "next_session_production_promotion_review_is_button_gated": True,
             "next_session_production_promotion_review_is_not_production_completion": True,
             "next_session_production_promotion_review_calls_no_provider_model_or_github": True,
+            "next_session_ordinary_result_replay_rows_are_cache_only": True,
+            "next_session_ordinary_result_replay_rows_create_task": False,
+            "next_session_ordinary_result_replay_rows_call_provider_or_model": False,
+            "next_session_ordinary_result_replay_rows_are_not_trade_signals": True,
         }
     )
     packet["policy"] = policy
