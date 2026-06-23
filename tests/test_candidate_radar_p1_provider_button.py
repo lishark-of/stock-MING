@@ -143,6 +143,12 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("可解释结果行动", ordinary_quant_slice)
         self.assertIn("rows={quantProjectionOrdinaryResultActionRows}", ordinary_quant_slice)
         self.assertIn("读可读结论、回放量化推演、打开次日图谱", ordinary_quant_slice)
+        self.assertIn(
+            '<details className="developer-audit-details" aria-label="quant projection task cache packet readback">',
+            ordinary_quant_slice,
+        )
+        self.assertIn("<summary>任务 / cache packet 回放详情</summary>", ordinary_quant_slice)
+        self.assertIn("普通入口只保留任务状态轨和结果速读", ordinary_quant_slice)
         self.assertIn('label: "解释结果"', ordinary_quant_slice)
         self.assertIn('label: "解释下一步"', ordinary_quant_slice)
         self.assertNotIn("确认 Tushare-first 补证", ordinary_quant_slice)

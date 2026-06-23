@@ -1371,12 +1371,14 @@ export default function CandidateRadar() {
             <p className="risk-note">{quantProjectionReplayDestinationState}</p>
             <DataLineageTable rows={quantProjectionReplayDestinationRows} />
           </div>
-          <div aria-label="quant projection task cache packet readback">
+          <details className="developer-audit-details" aria-label="quant projection task cache packet readback">
+            <summary>任务 / cache packet 回放详情</summary>
             <h3>任务回放清单</h3>
+            <p className="risk-note">普通入口只保留任务状态轨和结果速读；task id、safe current_step、cache packet 明细默认收起。</p>
             <p className="risk-note">任务编号和安全步骤优先从本地 cache / packet 回放；TaskStatusPanel 只轮询本地 FastAPI 任务状态。</p>
             <p className="risk-note">{quantProjectionSmallDataProvenance}</p>
             <DataLineageTable rows={quantProjectionTaskCacheReadbackRows} />
-          </div>
+          </details>
           <details className="developer-audit-details" aria-label="quant projection advanced status readback">
             <summary>高级状态回放</summary>
             <MetricGrid

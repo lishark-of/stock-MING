@@ -303,8 +303,16 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("接口级明细下沉到高级状态", self.page)
         self.assertIn("普通页面不展示 token/key、raw log 或 provider error", self.page)
         self.assertIn("packet 不包含凭据、不生成交易动作、不覆盖 strategy action", self.page)
-        self.assertIn('aria-label="quant projection task cache packet readback"', self.page)
+        self.assertIn(
+            '<details className="developer-audit-details" aria-label="quant projection task cache packet readback">',
+            self.page,
+        )
+        self.assertIn("<summary>任务 / cache packet 回放详情</summary>", self.page)
         self.assertIn("任务回放清单", self.page)
+        self.assertIn(
+            "普通入口只保留任务状态轨和结果速读；task id、safe current_step、cache packet 明细默认收起。",
+            self.page,
+        )
         self.assertIn("任务编号和安全步骤优先从本地 cache / packet 回放", self.page)
         self.assertIn("TaskStatusPanel 只轮询本地 FastAPI 任务状态", self.page)
         self.assertIn('回放项: "task_id"', self.page)
