@@ -562,6 +562,7 @@ def _queue_for_task_type(task_type: str) -> str:
         "refresh_tushare_facts",
         "refresh_factor_data",
         "command_center_live_bootstrap",
+        "run_candidate_radar_quant_projection",
         "run_candidate_radar_quant_projection_provider_model_acceptance",
         "run_candidate_radar_provider_parity_acceptance",
     }:
