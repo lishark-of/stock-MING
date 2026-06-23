@@ -310,9 +310,9 @@ export default function FactorQuantHub() {
   const ordinaryQuantResultLocation =
     "结果位置：本页看支持/压制与模型解释状态，次日图谱预览复核路径，下一票雷达回到代码确认入口；三个位置都只读回放";
   const ordinaryQuantRouteHandoffBoundary =
-    "回放入口只切换本地页面/锚点；不创建 task、不调用 Tushare 或 DeepSeek、不写 cache、不改交易策略";
+    "回放入口只切换本地页面/锚点（#next/#candidates 是本地模块路由，#factor-* 是页内锚点）；不创建 task、不调用 Tushare 或 DeepSeek、不写 cache、不改交易策略";
   const ordinaryQuantFullNextSessionHandoff =
-    "完整次日图谱入口：从量化推演摘要打开 #next，复核路径、参考线和操作区；只做本地页面切换";
+    "完整次日图谱入口：从量化推演摘要打开 #next 本地模块路由，复核路径、参考线和操作区；只做本地页面切换";
   const ordinaryQuantFullNextSessionBoundary =
     "打开完整次日图谱不创建 task、不刷新 Tushare/DeepSeek、不写 cache、不改 operation_zones 或 strategy action";
   const ordinaryQuantReviewOrder = empty
@@ -564,11 +564,11 @@ export default function FactorQuantHub() {
           <a href={ordinaryQuantPrimaryActionHref} aria-label="open stock quant primary next action">{ordinaryQuantPrimaryActionLabel}</a>
         </div>
         <div className="actions" aria-label="stock quant projection source actions">
-          <a href="#factor-score" aria-label="view factor support suppress summary">查看支持/压制</a>
-          <a href="#factor-next-session" aria-label="view next session bridge preview">查看次日图谱预览</a>
-          <a href="#next" aria-label="open full next session map from stock quant replay">打开完整次日图谱</a>
-          <a href="#factor-deepseek" aria-label="view model explanation status">查看模型解释状态</a>
-          <a href="#candidates" aria-label="return to candidate radar symbol confirmation without creating a task">去下一票雷达生成推演</a>
+          <a href="#factor-score" title="跳到本页支持/压制摘要；只读 Factor cache" aria-label="view factor support suppress summary">查看支持/压制</a>
+          <a href="#factor-next-session" title="跳到本页次日图谱预览；不刷新 provider/model" aria-label="view next session bridge preview">查看次日图谱预览</a>
+          <a href="#next" title="切换到完整次日图谱模块；只读本地 next-session cache" aria-label="open full next session map from stock quant replay">打开完整次日图谱</a>
+          <a href="#factor-deepseek" title="跳到本页模型解释状态；DeepSeek 仍等 governed executor" aria-label="view model explanation status">查看模型解释状态</a>
+          <a href="#candidates" title="切换到下一票雷达模块；换标的仍需输入代码并确认" aria-label="return to candidate radar symbol confirmation without creating a task">去下一票雷达生成推演</a>
         </div>
         <p className="risk-note">没有标的时先去 <a href="#candidates">下一票雷达</a> 输入代码并点击生成 3.0 量化推演；这个链接只切换本地页面，不创建 task。</p>
         <p className="risk-note">本页不接收股票代码输入；换标的必须回下一票雷达确认按钮，避免把查看缓存误当成重新推演。</p>
