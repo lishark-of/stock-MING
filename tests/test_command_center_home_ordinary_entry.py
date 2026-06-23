@@ -36,12 +36,23 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("p0LauncherCheckOnlyRows", source)
         self.assertIn("p0OrdinaryQuickActionRows", source)
         self.assertIn("dailyCommandP0QuickAction", source)
+        self.assertIn("dailyCommandUsablePathStageRailSteps", source)
         self.assertIn('aria-label="daily command local connection readback"', source)
+        self.assertIn('aria-label="daily command usable path stage rail"', source)
         self.assertIn('aria-label="daily command p0 launcher check-only readback"', source)
         self.assertIn('aria-label="daily command p0 quick action handoff"', source)
         self.assertIn("本地联通四段回读", source)
         self.assertIn("一键启动只读自检", source)
         self.assertIn("P0 到 P1 快速行动", source)
+        self.assertIn('label: "P0 本地联通"', source)
+        self.assertIn('label: "P1 确认按钮"', source)
+        self.assertIn('label: "P2 小数据"', source)
+        self.assertIn('label: "P3 可解释结果"', source)
+        self.assertIn('label: "P4 审计下沉"', source)
+        self.assertIn('label: "P5 DeepSeek"', source)
+        self.assertIn('detail: "Tushare-first"', source)
+        self.assertIn('"cache/ledger/packet"', source)
+        self.assertIn('detail: "governed"', source)
         self.assertIn("先看 FastAPI、bootstrap runtime-mode packet、desktop preflight cache、React/Vite 前端四段是否变绿", source)
         self.assertIn("优先读取 desktop preflight 的 p0_launcher_check_only_rows", source)
         self.assertIn("check-only 只打印配置，不启动 FastAPI/Vite、不探测 URL、不打开浏览器、不创建 task", source)
@@ -251,6 +262,26 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertLess(source.index("今日作战台摘要"), source.index("审计入口下沉规则"))
         self.assertLess(source.index("开发状态速览"), source.index('label: "FastAPI"'))
         self.assertLess(source.index("开发状态速览"), source.index('label: "runtime mode"'))
+
+    def test_usable_path_stage_rail_is_read_only_and_before_audit_details(self):
+        source = self.source
+        summary_start = source.index('title="今日作战台摘要"')
+        summary_end = source.index("<summary>开发 / 审计详情</summary>", summary_start)
+        summary = source[summary_start:summary_end]
+        rail_start = summary.index('<div className="state-clarity-rail" aria-label="daily command usable path stage rail">')
+        table_start = summary.index("<DataLineageTable rows={dailyCommandUsableShortestPathRows}")
+        rail = summary[rail_start:table_start]
+
+        self.assertIn("dailyCommandUsablePathStageRailSteps.map", rail)
+        self.assertIn('className="state-clarity-rail"', rail)
+        self.assertIn('className="state-clarity-step"', rail)
+        self.assertIn("data-step-state={step.state}", rail)
+        self.assertIn("{step.label}", rail)
+        self.assertIn("{step.detail}", rail)
+        self.assertLess(summary.index('aria-label="daily command usable path stage rail"'), table_start)
+        self.assertNotIn("onClick=", rail)
+        self.assertNotIn("postBootstrapLiveStartup", rail)
+        self.assertNotIn("postTask", rail)
 
     def test_daily_command_summary_uses_user_facing_backfill_state_before_audit(self):
         source = self.source

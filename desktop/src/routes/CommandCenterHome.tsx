@@ -621,6 +621,44 @@ export default function CommandCenterHome() {
       边界: "governed executor 完成前不真实调用 DeepSeek；之后也不能覆盖价格、持仓、factor、operation_zones 或 strategy action"
     }
   ];
+  const dailyCommandUsablePathStageRailSteps = [
+    {
+      key: "p0",
+      label: "P0 本地联通",
+      state: dailyCommandP0LocalReadinessReady ? "done" : "blocked",
+      detail: dailyCommandP0LocalReadinessReady ? "ready" : "check"
+    },
+    {
+      key: "p1",
+      label: "P1 确认按钮",
+      state: dailyCommandP0LocalReadinessReady ? "active" : "blocked",
+      detail: "Tushare-first"
+    },
+    {
+      key: "p2",
+      label: "P2 小数据",
+      state: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "done" : "active",
+      detail: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "cache/ledger/packet" : "waiting"
+    },
+    {
+      key: "p3",
+      label: "P3 可解释结果",
+      state: candidateQuantInterpretation.interpretation_ready === true ? "done" : "active",
+      detail: candidateQuantInterpretation.interpretation_ready === true ? "readable" : "pending"
+    },
+    {
+      key: "p4",
+      label: "P4 审计下沉",
+      state: "done",
+      detail: "quiet"
+    },
+    {
+      key: "p5",
+      label: "P5 DeepSeek",
+      state: "active",
+      detail: "governed"
+    }
+  ];
   const dailyCommandConnectivityPriority = dailyCommandNeedsStartupRecovery
     ? "先恢复本地联通；缓存和投研入口等 health/preflight 变绿后再看"
     : "本地联通可用；按最近缓存、数据健康、下一票雷达、股票量化推演复核";
@@ -829,6 +867,14 @@ export default function CommandCenterHome() {
         <div aria-label="daily command usable shortest path">
           <h3>使用者可用化最短路径</h3>
           <p className="risk-note">当前执行目标是 Command Center 3.0 使用者可用化最短路径，不是 14 LTG strict closeout 完成声明；DeepSeek governed executor 单独补，不阻塞 Tushare-first 和基础图谱。</p>
+          <div className="state-clarity-rail" aria-label="daily command usable path stage rail">
+            {dailyCommandUsablePathStageRailSteps.map((step) => (
+              <div className="state-clarity-step" data-step-state={step.state} key={step.key}>
+                <span>{step.label}</span>
+                <small>{step.detail}</small>
+              </div>
+            ))}
+          </div>
           <DataLineageTable rows={dailyCommandUsableShortestPathRows} />
         </div>
         <div aria-label="daily command local connection readback">
