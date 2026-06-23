@@ -1280,7 +1280,45 @@ export default function CandidateRadar() {
       边界: "不交易、不改 strategy action"
     }
   ];
-  const quantProjectionP1ConfirmGateRows = [
+  const quantProjectionServerConfirmButtonReadinessRows = rows(
+    searchQuantProjectionSmallDataWriteback.ordinary_confirm_button_readiness_rows
+  ).map((row) => {
+    const readinessKey = String(row.readiness_key ?? "");
+    const localStatus =
+      readinessKey === "input_local_validation"
+        ? quantProjectionInputValidation
+        : readinessKey === "confirm_button_post_task_ready"
+          ? quantProjectionDisabledReason
+          : readinessKey === "task_receipt_readback"
+            ? quantProjectionConfirmChainState
+            : readinessKey === "cache_replay_after_success"
+              ? quantProjectionReplayDestinationState
+              : "";
+    const localNextStep =
+      readinessKey === "input_local_validation"
+        ? quantProjectionCanSubmit
+          ? "代码已通过本地校验，可以看确认按钮"
+          : "修正为 6 位 A 股代码或带 .SZ/.SH/.BJ 后缀"
+        : readinessKey === "confirm_button_post_task_ready"
+          ? quantProjectionCanLaunch
+            ? "点击一次确认并生成 3.0 量化推演"
+            : "等待按钮启用，或先恢复本地 FastAPI 连接"
+          : readinessKey === "task_receipt_readback"
+            ? taskReceipt?.ok || quantProjectionPersistedTaskId
+              ? "看 task id 和 TaskStatusPanel"
+              : "确认后等待本地 task id；失败先回 P0 联通恢复"
+            : readinessKey === "cache_replay_after_success"
+              ? quantProjectionReplayDestinationNextStep
+              : "";
+    return {
+      门控项: displayText(row["门控项"] ?? row.readiness_key),
+      当前状态: displayText(localStatus || (row["当前状态"] ?? row.status)),
+      用户下一步: displayText(localNextStep || (row["用户下一步"] ?? row.next_action)),
+      允许动作: displayText(row["允许动作"] ?? row.allowed_action),
+      边界: displayText(row["边界"] ?? row.boundary)
+    };
+  });
+  const quantProjectionP1ConfirmGateFallbackRows = [
     {
       门控项: "1. 输入代码",
       当前状态: quantProjectionInputValidation,
@@ -1310,6 +1348,9 @@ export default function CandidateRadar() {
       边界: "cache / ledger / packet 回放不创建第二个 task，不覆盖 strategy action"
     }
   ];
+  const quantProjectionP1ConfirmGateRows = quantProjectionServerConfirmButtonReadinessRows.length
+    ? quantProjectionServerConfirmButtonReadinessRows
+    : quantProjectionP1ConfirmGateFallbackRows;
   const quantProjectionConfirmTriggerPacketRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_confirm_trigger_boundary_rows).map((row) => ({
     触发点: displayText(row["触发点"] ?? row.trigger_key),
     当前状态: displayText(row["当前状态"] ?? row.status),
@@ -1551,7 +1592,7 @@ export default function CandidateRadar() {
             <p className="risk-note">普通主视图先保留状态轨、可读结论和回放入口；确认门控、task receipt、cache / ledger / packet 写入面默认收起，不影响确认按钮动作。</p>
           <div aria-label="quant projection p1 confirm gate checklist">
             <h3>P1 确认门控清单</h3>
-            <p className="risk-note">先看代码是否通过本地校验，再点击一次确认按钮；提交后看 task id 和 TaskStatusPanel，失败先回 P0 联通恢复。这张表只读页面状态，不创建 task。</p>
+            <p className="risk-note">优先读取服务端 ordinary_confirm_button_readiness_rows；先看代码是否通过本地校验，再点击一次确认按钮；提交后看 task id 和 TaskStatusPanel，失败先回 P0 联通恢复。这张表只读页面状态，不创建 task。</p>
             <DataLineageTable rows={quantProjectionP1ConfirmGateRows} />
           </div>
           <MetricGrid

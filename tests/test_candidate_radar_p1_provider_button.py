@@ -62,9 +62,21 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertNotIn("确认任务接收回执", ordinary_quant_top_slice)
         self.assertIn('aria-label="quant projection p1 confirm gate checklist"', ordinary_quant_slice)
         self.assertIn("P1 确认门控清单", ordinary_quant_slice)
+        self.assertIn("ordinary_confirm_button_readiness_rows", source)
+        self.assertIn("quantProjectionServerConfirmButtonReadinessRows", source)
+        self.assertIn("quantProjectionP1ConfirmGateFallbackRows", source)
+        self.assertIn(
+            "const quantProjectionP1ConfirmGateRows = quantProjectionServerConfirmButtonReadinessRows.length",
+            source,
+        )
+        self.assertIn("优先读取服务端 ordinary_confirm_button_readiness_rows", ordinary_quant_slice)
         self.assertIn("先看代码是否通过本地校验，再点击一次确认按钮", ordinary_quant_slice)
         self.assertIn("失败先回 P0 联通恢复", ordinary_quant_slice)
         self.assertIn("这张表只读页面状态，不创建 task", ordinary_quant_slice)
+        self.assertIn('readinessKey === "input_local_validation"', source)
+        self.assertIn('readinessKey === "confirm_button_post_task_ready"', source)
+        self.assertIn('readinessKey === "task_receipt_readback"', source)
+        self.assertIn('readinessKey === "cache_replay_after_success"', source)
         self.assertIn('门控项: "1. 输入代码"', source)
         self.assertIn('门控项: "2. 确认按钮"', source)
         self.assertIn('门控项: "3. 任务接收"', source)

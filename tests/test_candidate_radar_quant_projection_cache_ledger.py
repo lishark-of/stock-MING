@@ -197,6 +197,11 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(small_data["ordinary_confirm_trigger_boundary_rows_create_task"])
         self.assertFalse(small_data["ordinary_confirm_trigger_boundary_rows_call_provider_from_readback"])
         self.assertTrue(small_data["ordinary_confirm_trigger_boundary_rows_are_not_trade_signals"])
+        self.assertEqual(small_data["ordinary_confirm_button_readiness_row_count"], 4)
+        self.assertTrue(small_data["ordinary_confirm_button_readiness_rows_are_cache_only"])
+        self.assertFalse(small_data["ordinary_confirm_button_readiness_rows_create_task"])
+        self.assertFalse(small_data["ordinary_confirm_button_readiness_rows_call_provider_from_readback"])
+        self.assertTrue(small_data["ordinary_confirm_button_readiness_rows_are_not_trade_signals"])
         self.assertEqual(small_data["ordinary_confirm_replay_stage_row_count"], 4)
         self.assertTrue(small_data["ordinary_confirm_replay_stage_rows_are_cache_only"])
         self.assertFalse(small_data["ordinary_confirm_replay_stage_rows_create_task"])
@@ -220,6 +225,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertEqual(packet["counts"]["search_quant_projection_writeback_integrity_row_count"], 3)
         self.assertEqual(packet["counts"]["search_quant_projection_post_confirm_action_row_count"], 4)
         self.assertEqual(packet["counts"]["search_quant_projection_confirm_trigger_boundary_row_count"], 4)
+        self.assertEqual(packet["counts"]["search_quant_projection_confirm_button_readiness_row_count"], 4)
         self.assertEqual(packet["counts"]["search_quant_projection_confirm_replay_stage_row_count"], 4)
         self.assertTrue(packet["policy"]["search_quant_projection_small_data_writeback_action_rows_are_cache_only"])
         self.assertFalse(packet["policy"]["search_quant_projection_small_data_writeback_action_rows_create_task"])
@@ -233,6 +239,10 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(packet["policy"]["search_quant_projection_confirm_trigger_boundary_rows_create_task"])
         self.assertFalse(packet["policy"]["search_quant_projection_confirm_trigger_boundary_rows_call_provider_from_readback"])
         self.assertTrue(packet["policy"]["search_quant_projection_confirm_trigger_boundary_rows_are_not_trade_signals"])
+        self.assertTrue(packet["policy"]["search_quant_projection_confirm_button_readiness_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_confirm_button_readiness_rows_create_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_confirm_button_readiness_rows_call_provider_from_readback"])
+        self.assertTrue(packet["policy"]["search_quant_projection_confirm_button_readiness_rows_are_not_trade_signals"])
         self.assertTrue(packet["policy"]["search_quant_projection_confirm_replay_stage_rows_are_cache_only"])
         self.assertFalse(packet["policy"]["search_quant_projection_confirm_replay_stage_rows_create_task"])
         self.assertFalse(packet["policy"]["search_quant_projection_confirm_replay_stage_rows_use_model_output"])
@@ -316,6 +326,42 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             self.assertTrue(trigger_row["does_not_execute_trades"])
             self.assertTrue(trigger_row["does_not_modify_strategy_action"])
             self.assertTrue(trigger_row["candidate_is_not_buy_instruction"])
+        readiness_rows = {
+            row["readiness_key"]: row
+            for row in small_data["ordinary_confirm_button_readiness_rows"]
+        }
+        self.assertEqual(
+            set(readiness_rows),
+            {
+                "input_local_validation",
+                "confirm_button_post_task_ready",
+                "task_receipt_readback",
+                "cache_replay_after_success",
+            },
+        )
+        self.assertIn("输入框和搜索输入只做本地校验", readiness_rows["input_local_validation"]["边界"])
+        self.assertEqual(
+            readiness_rows["confirm_button_post_task_ready"]["允许动作"],
+            "按钮门控 POST /api/candidate-radar/quant-projection",
+        )
+        self.assertTrue(readiness_rows["confirm_button_post_task_ready"]["may_create_task_after_confirm"])
+        self.assertTrue(readiness_rows["confirm_button_post_task_ready"]["post_task_may_call_tushare"])
+        self.assertIn(response["data"]["task_id"], readiness_rows["task_receipt_readback"]["当前状态"])
+        self.assertIn("只读回放", readiness_rows["cache_replay_after_success"]["允许动作"])
+        for readiness_row in readiness_rows.values():
+            self.assertTrue(readiness_row["cache_only_readback"])
+            self.assertFalse(readiness_row["creates_task_from_readback"])
+            self.assertFalse(readiness_row["search_input_external_calls"])
+            self.assertFalse(readiness_row["react_render_external_calls"])
+            self.assertFalse(readiness_row["get_cache_external_calls"])
+            self.assertFalse(readiness_row["external_calls_triggered"])
+            self.assertFalse(readiness_row["tushare_called"])
+            self.assertFalse(readiness_row["deepseek_called"])
+            self.assertFalse(readiness_row["github_called"])
+            self.assertFalse(readiness_row["contains_secret"])
+            self.assertTrue(readiness_row["does_not_execute_trades"])
+            self.assertTrue(readiness_row["does_not_modify_strategy_action"])
+            self.assertTrue(readiness_row["candidate_is_not_buy_instruction"])
         stage_rows = {row["stage_key"]: row for row in small_data["ordinary_confirm_replay_stage_rows"]}
         self.assertEqual(
             set(stage_rows),

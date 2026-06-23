@@ -15214,6 +15214,83 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "candidate_is_not_buy_instruction": True,
         },
     ]
+    confirm_button_readiness_guard = {
+        "readback_source": "search_quant_projection_small_data_writeback_summary",
+        "cache_only_readback": True,
+        "creates_task_from_readback": False,
+        "readback_external_calls_triggered": False,
+        "search_input_external_calls": False,
+        "react_render_external_calls": False,
+        "get_cache_external_calls": False,
+        "may_create_task_after_confirm": False,
+        "post_task_may_call_tushare": False,
+        "provider_task_call_source": provider_call_source,
+        "provider_task_external_call_observed": provider_external_call_observed,
+        "external_calls_triggered": False,
+        "tushare_called": False,
+        "deepseek_called": False,
+        "github_called": False,
+        "contains_secret": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "candidate_is_not_buy_instruction": True,
+    }
+    ordinary_confirm_button_readiness_rows = [
+        {
+            **confirm_button_readiness_guard,
+            "readiness_key": "input_local_validation",
+            "门控项": "1. 输入代码",
+            "当前状态": "已有本地搜票记录" if quant_receipt else "等待输入代码",
+            "用户下一步": (
+                "确认代码无误后看确认按钮"
+                if quant_receipt
+                else "输入 6 位 A 股代码或带 .SZ/.SH/.BJ 后缀"
+            ),
+            "允许动作": "本地格式校验",
+            "边界": "输入框和搜索输入只做本地校验；不创建 task、不调用 Tushare/DeepSeek/GitHub。",
+        },
+        {
+            **confirm_button_readiness_guard,
+            "readiness_key": "confirm_button_post_task_ready",
+            "门控项": "2. 确认按钮",
+            "当前状态": (
+                f"已收到 task id={latest_task_id}；避免重复提交"
+                if latest_task_id
+                else "等待有效股票代码后启用确认按钮"
+            ),
+            "用户下一步": (
+                "先看 task id 和 TaskStatusPanel"
+                if latest_task_id
+                else "点击一次确认并生成 3.0 量化推演"
+            ),
+            "允许动作": "按钮门控 POST /api/candidate-radar/quant-projection",
+            "边界": "只有确认按钮可创建 Tushare-first POST task；DeepSeek skipped，不交易。",
+            "may_create_task_after_confirm": True,
+            "post_task_may_call_tushare": True,
+        },
+        {
+            **confirm_button_readiness_guard,
+            "readiness_key": "task_receipt_readback",
+            "门控项": "3. 任务接收",
+            "当前状态": f"task_id={latest_task_id}" if latest_task_id else "等待确认按钮返回 task id",
+            "用户下一步": (
+                "看 TaskStatusPanel"
+                if latest_task_id
+                else "确认后等待本地 FastAPI 返回 task id；失败先回 P0 联通恢复"
+            ),
+            "允许动作": "TaskStatusPanel 本地轮询",
+            "边界": "TaskStatusPanel 只轮询本地 FastAPI；不补调 provider/model，不写交易动作。",
+        },
+        {
+            **confirm_button_readiness_guard,
+            "readiness_key": "cache_replay_after_success",
+            "门控项": "4. 回放结果",
+            "当前状态": summary_label,
+            "用户下一步": ordinary_readback_next_step,
+            "允许动作": "刷新 GET cache 后只读回放",
+            "边界": "cache / ledger / packet 回放不创建第二个 task，不覆盖 strategy action。",
+        },
+    ]
     if provider_ready:
         confirm_replay_stage_status = "P2 ready：cache / ledger / packet 已进入本地回放。"
         confirm_replay_stage_next = "先回放股票量化推演，再打开次日图谱复核本地结果。"
@@ -15951,6 +16028,12 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_post_confirm_action_rows_are_cache_only": True,
         "ordinary_post_confirm_action_rows_create_task": False,
         "ordinary_post_confirm_action_rows_are_not_trade_signals": True,
+        "ordinary_confirm_button_readiness_rows": ordinary_confirm_button_readiness_rows,
+        "ordinary_confirm_button_readiness_row_count": len(ordinary_confirm_button_readiness_rows),
+        "ordinary_confirm_button_readiness_rows_are_cache_only": True,
+        "ordinary_confirm_button_readiness_rows_create_task": False,
+        "ordinary_confirm_button_readiness_rows_call_provider_from_readback": False,
+        "ordinary_confirm_button_readiness_rows_are_not_trade_signals": True,
         "ordinary_confirm_trigger_boundary_rows": ordinary_confirm_trigger_boundary_rows,
         "ordinary_confirm_trigger_boundary_row_count": len(ordinary_confirm_trigger_boundary_rows),
         "ordinary_confirm_trigger_boundary_rows_are_cache_only": True,
@@ -16047,6 +16130,9 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     counts["search_quant_projection_confirm_trigger_boundary_row_count"] = summary.get(
         "ordinary_confirm_trigger_boundary_row_count", 0
     )
+    counts["search_quant_projection_confirm_button_readiness_row_count"] = summary.get(
+        "ordinary_confirm_button_readiness_row_count", 0
+    )
     counts["search_quant_projection_confirm_replay_stage_row_count"] = summary.get(
         "ordinary_confirm_replay_stage_row_count", 0
     )
@@ -16087,6 +16173,10 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     policy["search_quant_projection_confirm_trigger_boundary_rows_create_task"] = False
     policy["search_quant_projection_confirm_trigger_boundary_rows_call_provider_from_readback"] = False
     policy["search_quant_projection_confirm_trigger_boundary_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_confirm_button_readiness_rows_are_cache_only"] = True
+    policy["search_quant_projection_confirm_button_readiness_rows_create_task"] = False
+    policy["search_quant_projection_confirm_button_readiness_rows_call_provider_from_readback"] = False
+    policy["search_quant_projection_confirm_button_readiness_rows_are_not_trade_signals"] = True
     policy["search_quant_projection_confirm_replay_stage_rows_are_cache_only"] = True
     policy["search_quant_projection_confirm_replay_stage_rows_create_task"] = False
     policy["search_quant_projection_confirm_replay_stage_rows_use_model_output"] = False
