@@ -578,11 +578,18 @@ export default function CandidateRadar() {
     }
   ];
   const quantProjectionSymbolValidation = normalizeAshareSymbolInput(searchSymbol);
-  const quantProjectionCanSubmit = quantProjectionSymbolValidation.valid;
+  const quantProjectionSymbolReady = quantProjectionSymbolValidation.valid;
+  const quantProjectionP0Ready =
+    !loading &&
+    !error &&
+    bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet";
+  const quantProjectionCanSubmit = quantProjectionSymbolReady && quantProjectionP0Ready;
   const quantProjectionSubmitDisabled = !quantProjectionCanSubmit || quantProjectionSubmitting;
   const quantProjectionCanLaunch = !quantProjectionSubmitDisabled;
   const quantProjectionDisabledReason = quantProjectionSubmitting
     ? "任务提交中：正在创建 Tushare-first POST task；请等待本地任务编号回写，避免重复提交。"
+    : !quantProjectionP0Ready
+    ? "按钮不可用原因：P0 前后端联通未通过；先让 FastAPI、bootstrap status 和 candidate cache 变绿。"
     : quantProjectionCanSubmit
     ? `按钮已启用：确认后创建 Tushare-first 按钮门控 POST task；DeepSeek 保持 skipped；已确认 ${quantProjectionSymbolValidation.normalized}`
     : searchSymbol.trim()
