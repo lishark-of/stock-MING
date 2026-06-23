@@ -43,6 +43,7 @@ FRONTEND_BACKEND_OFFLINE_NOTICE = DESKTOP_ROOT / "src" / "components" / "Backend
 FRONTEND_STYLES = DESKTOP_ROOT / "src" / "styles.css"
 ROOT_GITIGNORE = PROJECT_ROOT / ".gitignore"
 COMMAND_CENTER_3_LAUNCHER = PROJECT_ROOT / "scripts" / "start_command_center_3.command"
+COMMAND_CENTER_3_CHECK_ONLY_LAUNCHER = PROJECT_ROOT / "scripts" / "check_command_center_3.command"
 COMMAND_CENTER_3_SHORTCUT_INSTALLER = PROJECT_ROOT / "scripts" / "install_command_center_3_desktop_shortcut.sh"
 TAURI_PACKAGE_DURABLE_EVIDENCE_SCHEMA_VERSION = "tauri_package_durable_evidence_recipe.v1"
 TAURI_PACKAGE_DURABLE_EVIDENCE_KEYS = (
@@ -651,6 +652,7 @@ def _dev_launch_plan(api_base: str) -> list[dict[str, Any]]:
 
 def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
     source = _read_source_safe(COMMAND_CENTER_3_LAUNCHER)
+    check_only_source = _read_source_safe(COMMAND_CENTER_3_CHECK_ONLY_LAUNCHER)
     installer_source = _read_source_safe(COMMAND_CENTER_3_SHORTCUT_INSTALLER)
     required_markers = (
         "Command Center 3.0 local launcher",
@@ -702,6 +704,17 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "STOCK_MING_FASTAPI_RELOAD=0",
         "no Tushare, DeepSeek, GitHub, or trading call",
     )
+    required_check_only_markers = (
+        "Command Center 3.0 check-only launcher",
+        "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1",
+        "start_command_center_3.command",
+        "does not start FastAPI/Vite",
+        "probe URLs",
+        "open a browser",
+        "create tasks",
+        "call providers/models",
+        "touch trading paths",
+    )
     required_installer_markers = (
         "Command Center 3.0 desktop shortcut installer",
         "start_command_center_3.command",
@@ -731,6 +744,21 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
             "does_not_modify_strategy_action": True,
         }
         for marker in required_markers
+    ] + [
+        {
+            "criterion": f"check_only_launcher_marker:{marker}",
+            "status": "passed" if marker in check_only_source else "blocked",
+            "passed": marker in check_only_source,
+            "evidence": _path_label(COMMAND_CENTER_3_CHECK_ONLY_LAUNCHER),
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "loads_token_or_key": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+        for marker in required_check_only_markers
     ] + [
         {
             "criterion": f"shortcut_installer_marker:{marker}",
@@ -782,6 +810,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
     )
     local_ready = (
         COMMAND_CENTER_3_LAUNCHER.exists()
+        and COMMAND_CENTER_3_CHECK_ONLY_LAUNCHER.exists()
         and COMMAND_CENTER_3_SHORTCUT_INSTALLER.exists()
         and all(row["passed"] for row in marker_rows)
     )
@@ -793,6 +822,16 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "launcher_path": _path_label(COMMAND_CENTER_3_LAUNCHER),
         "launcher_exists": COMMAND_CENTER_3_LAUNCHER.exists(),
         "launcher_executable": os.access(COMMAND_CENTER_3_LAUNCHER, os.X_OK),
+        "check_only_launcher_path": _path_label(COMMAND_CENTER_3_CHECK_ONLY_LAUNCHER),
+        "check_only_launcher_exists": COMMAND_CENTER_3_CHECK_ONLY_LAUNCHER.exists(),
+        "check_only_launcher_executable": os.access(COMMAND_CENTER_3_CHECK_ONLY_LAUNCHER, os.X_OK),
+        "check_only_launcher_wraps_safe_mode": "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1" in check_only_source
+        and "start_command_center_3.command" in check_only_source,
+        "check_only_launcher_starts_services": False,
+        "check_only_launcher_probes_urls": False,
+        "check_only_launcher_opens_browser": False,
+        "check_only_launcher_creates_task": False,
+        "check_only_launcher_calls_provider_model": False,
         "shortcut_installer_path": _path_label(COMMAND_CENTER_3_SHORTCUT_INSTALLER),
         "shortcut_installer_exists": COMMAND_CENTER_3_SHORTCUT_INSTALLER.exists(),
         "shortcut_installer_executable": os.access(COMMAND_CENTER_3_SHORTCUT_INSTALLER, os.X_OK),
@@ -1766,8 +1805,8 @@ def _p0_launcher_check_only_rows(
         row(
             "1. check-only 配置自检",
             "ready" if check_only_ready else "check",
-            "运行 COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command。",
-            "只打印本机 API/Vite/open route、skip-open 和浏览器打开策略。",
+            "运行 scripts/check_command_center_3.command；它会设置 COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 并调用本地启动器。",
+            "只打印本机 API/Vite/open route、skip-open 和浏览器打开策略；不会进入启动流程。",
             "check-only 不启动 FastAPI/Vite、不探测 URL、不写日志、不打开浏览器、不创建 task。",
         ),
         row(

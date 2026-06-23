@@ -2038,6 +2038,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         )
         self.assertEqual(desktop["counts"]["p0_launcher_check_only_row_count"], 3)
         self.assertEqual(desktop["counts"]["p0_launcher_check_only_visible_count"], 3)
+        self.assertIn("scripts/check_command_center_3.command", desktop["runtime"]["p0_launcher_check_only_next"])
         self.assertIn("COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1", desktop["runtime"]["p0_launcher_check_only_next"])
         self.assertTrue(desktop["policy"]["p0_launcher_check_only_rows_are_cache_only"])
         self.assertTrue(desktop["policy"]["p0_launcher_check_only_rows_do_not_start_services"])
@@ -2120,6 +2121,15 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             "scripts/install_command_center_3_desktop_shortcut.sh",
         )
         self.assertTrue(launcher["launcher_exists"])
+        self.assertEqual(launcher["check_only_launcher_path"], "scripts/check_command_center_3.command")
+        self.assertTrue(launcher["check_only_launcher_exists"])
+        self.assertTrue(launcher["check_only_launcher_executable"])
+        self.assertTrue(launcher["check_only_launcher_wraps_safe_mode"])
+        self.assertFalse(launcher["check_only_launcher_starts_services"])
+        self.assertFalse(launcher["check_only_launcher_probes_urls"])
+        self.assertFalse(launcher["check_only_launcher_opens_browser"])
+        self.assertFalse(launcher["check_only_launcher_creates_task"])
+        self.assertFalse(launcher["check_only_launcher_calls_provider_model"])
         self.assertTrue(launcher["shortcut_installer_exists"])
         self.assertTrue(launcher["shortcut_installer_executable"])
         self.assertTrue(launcher["desktop_shortcut_installer_creates_symlink"])
@@ -2182,6 +2192,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(launcher_rows["launcher_marker:safe_display_url"]["passed"])
         self.assertTrue(launcher_rows["launcher_marker:url_is_local"]["passed"])
         self.assertTrue(launcher_rows["launcher_marker:不打印 query/hash/username/password"]["passed"])
+        self.assertTrue(launcher_rows["check_only_launcher_marker:Command Center 3.0 check-only launcher"]["passed"])
+        self.assertTrue(launcher_rows["check_only_launcher_marker:COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1"]["passed"])
+        self.assertTrue(launcher_rows["check_only_launcher_marker:does not start FastAPI/Vite"]["passed"])
         self.assertTrue(all(row["passed"] for row in launcher_rows.values()))
         self.assertEqual(launcher["call_ledger"][0]["api"], "local_command_center_3_launcher_contract")
         self.assertIn("local_command_center_3_launcher_contract", {row["api"] for row in desktop["call_ledger"]})
@@ -16087,6 +16100,30 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertNotIn("#secret", local_output)
         self.assertNotIn("Starting FastAPI", local_output)
         self.assertNotIn("Starting React/Vite", local_output)
+
+        check_only_wrapper_path = Path("scripts/check_command_center_3.command")
+        self.assertTrue(check_only_wrapper_path.exists())
+        self.assertTrue(os.access(check_only_wrapper_path, os.X_OK))
+        wrapper_result = subprocess.run(
+            ["bash", str(check_only_wrapper_path)],
+            cwd=Path.cwd(),
+            env=local_env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        wrapper_output = f"{wrapper_result.stdout}\n{wrapper_result.stderr}"
+
+        self.assertEqual(wrapper_result.returncode, 0, wrapper_output)
+        self.assertIn("Command Center 3.0 check-only launcher", wrapper_output)
+        self.assertIn("Check-only mode", wrapper_output)
+        self.assertIn("does not start FastAPI/Vite", wrapper_output)
+        self.assertNotIn("SHOULD_DROP", wrapper_output)
+        self.assertNotIn("user:", wrapper_output)
+        self.assertNotIn("?token=", wrapper_output)
+        self.assertNotIn("#secret", wrapper_output)
+        self.assertNotIn("Starting FastAPI", wrapper_output)
+        self.assertNotIn("Starting React/Vite", wrapper_output)
 
     def test_worker_script_prefers_project_python(self):
         path = Path("scripts/run_worker.sh")
