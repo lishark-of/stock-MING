@@ -998,6 +998,26 @@ export default function CandidateRadar() {
   const quantProjectionAcceptedTaskStatus = String(quantProjectionAcceptedTask?.status ?? (quantProjectionAcceptedTaskId ? "cache_replay" : "waiting_confirm"));
   const quantProjectionTaskPanelVisible = quantProjectionTaskVisible || Boolean(quantProjectionPersistedTaskId);
   const quantProjectionTaskPanelTaskId = quantProjectionTaskVisible && taskId ? taskId : quantProjectionPersistedTaskId;
+  const quantProjectionSubmitRecoveryRows = [
+    {
+      场景: "后端离线或请求失败",
+      当前状态: quantProjectionSubmitError ? quantProjectionSubmitErrorLabel : "未触发失败",
+      用户下一步: quantProjectionSubmitError ? "先回 P0 一键启动联通恢复，再重新点击一次确认按钮" : "保持当前输入；确认按钮只在有效代码后可用",
+      边界: "失败提示不自动重试、不创建第二个 task、不调用 Tushare/DeepSeek"
+    },
+    {
+      场景: "服务端凭据缺失",
+      当前状态: quantProjectionProviderLedgerReady ? "Tushare ledger 已回放" : "可能只写本地阻断或等待 provider ledger",
+      用户下一步: quantProjectionProviderLedgerReady ? "继续回放量化推演和次日图谱" : "查看 TaskStatusPanel 与 cache 回放中的阻断原因",
+      边界: "普通页不显示凭据值；凭据缺失不触发 DeepSeek，也不生成交易动作"
+    },
+    {
+      场景: "任务已接收但结果未回放",
+      当前状态: taskReceipt?.ok || quantProjectionPersistedTaskId ? "等待 TaskStatusPanel success 与 cache 刷新" : "等待确认按钮创建 task id",
+      用户下一步: taskReceipt?.ok || quantProjectionPersistedTaskId ? "等任务成功后刷新本地 cache，再看 #factor / #next" : "先确认代码并点击按钮",
+      边界: "回放链接只读本地 cache / ledger / packet；不会补调 provider/model"
+    }
+  ];
   const quantProjectionResumeTaskRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_task_readback_rows).map((row) => ({
     回放项: displayText(row.surface),
     当前状态: displayText(row.ordinary_label ?? row.status),
@@ -1554,6 +1574,11 @@ export default function CandidateRadar() {
         </div>
         <p className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
         {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
+        <div aria-label="quant projection submit recovery quick read">
+          <h3>P1 确认失败恢复</h3>
+          <p className="risk-note">确认按钮失败、服务端凭据缺失或任务已接收但未回放时，先看这张表；它只读页面状态和 cache，不自动重试、不创建第二个 task。</p>
+          <DataLineageTable rows={quantProjectionSubmitRecoveryRows} />
+        </div>
         <div aria-label="quant projection ordinary confirm outcome quick read">
           <h3>P1 确认结果速读</h3>
           <p className="risk-note">点击确认后先看这里：任务是否接收、task id 是否可见、cache / ledger / packet 是否可回放；这张速读表不创建第二个任务。</p>
