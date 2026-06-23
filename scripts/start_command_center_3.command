@@ -29,6 +29,48 @@ resolve_python() {
   return 1
 }
 
+safe_display_url() {
+  local url="$1"
+  "$PYTHON_BIN" - "$url" <<'PY'
+import sys
+from urllib.parse import urlsplit, urlunsplit
+
+raw = sys.argv[1]
+fallback = raw.split("?", 1)[0].split("#", 1)[0]
+try:
+    parsed = urlsplit(raw)
+    host = parsed.hostname or ""
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    if parsed.scheme and host:
+        safe_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+        netloc = f"{safe_host}:{port}" if port else safe_host
+        safe = urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
+    else:
+        safe = fallback
+except Exception:
+    safe = fallback
+print(safe[:180])
+PY
+}
+
+url_is_local() {
+  local url="$1"
+  "$PYTHON_BIN" - "$url" <<'PY' >/dev/null 2>&1
+import sys
+from urllib.parse import urlsplit
+
+try:
+    parsed = urlsplit(sys.argv[1])
+except Exception:
+    sys.exit(1)
+host = (parsed.hostname or "").lower()
+sys.exit(0 if host in {"127.0.0.1", "localhost", "::1"} else 1)
+PY
+}
+
 url_ready() {
   local url="$1"
   "$PYTHON_BIN" - "$url" <<'PY' >/dev/null 2>&1
@@ -162,95 +204,103 @@ PY
 wait_for_command_center_health() {
   local url="$2"
   local attempts="${3:-30}"
+  local display_url
+  display_url="$(safe_display_url "$url")"
   local index=1
   while [ "$index" -le "$attempts" ]; do
     if command_center_health_ready "$url"; then
-      echo "FastAPI Command Center 3.0 health JSON ready: ${url}"
+      echo "FastAPI Command Center 3.0 health JSON ready: ${display_url}"
       return 0
     fi
     sleep 1
     index=$((index + 1))
   done
-  echo "FastAPI Command Center 3.0 health JSON still warming up or wrong service on port: ${url}"
+  echo "FastAPI Command Center 3.0 health JSON still warming up or wrong service on port: ${display_url}"
   return 1
 }
 
 wait_for_vite_command_center() {
   local url="$1"
   local attempts="${2:-30}"
+  local display_url
+  display_url="$(safe_display_url "$url")"
   local index=1
   while [ "$index" -le "$attempts" ]; do
     if vite_command_center_ready "$url"; then
-      echo "React/Vite Command Center 3.0 app ready: ${url}"
+      echo "React/Vite Command Center 3.0 app ready: ${display_url}"
       return 0
     fi
     sleep 1
     index=$((index + 1))
   done
-  echo "React/Vite Command Center 3.0 app still warming up or wrong app on port: ${url}"
+  echo "React/Vite Command Center 3.0 app still warming up or wrong app on port: ${display_url}"
   return 1
 }
 
 wait_for_bootstrap_status() {
   local url="$1"
   local attempts="${2:-30}"
+  local display_url
+  display_url="$(safe_display_url "$url")"
   local index=1
   while [ "$index" -le "$attempts" ]; do
     if bootstrap_status_ready "$url"; then
-      echo "FastAPI bootstrap status JSON ready: ${url}"
+      echo "FastAPI bootstrap status JSON ready: ${display_url}"
       return 0
     fi
     sleep 1
     index=$((index + 1))
   done
-  echo "FastAPI bootstrap status JSON still warming up: ${url}"
+  echo "FastAPI bootstrap status JSON still warming up: ${display_url}"
   return 1
 }
 
 wait_for_desktop_preflight_cache() {
   local url="$1"
   local attempts="${2:-30}"
+  local display_url
+  display_url="$(safe_display_url "$url")"
   local index=1
   while [ "$index" -le "$attempts" ]; do
     if desktop_preflight_cache_ready "$url"; then
-      echo "FastAPI desktop preflight cache JSON ready: ${url}"
+      echo "FastAPI desktop preflight cache JSON ready: ${display_url}"
       return 0
     fi
     sleep 1
     index=$((index + 1))
   done
-  echo "FastAPI desktop preflight cache JSON still warming up: ${url}"
+  echo "FastAPI desktop preflight cache JSON still warming up: ${display_url}"
   return 1
 }
 
 print_startup_diagnostics() {
   echo "可操作诊断："
   if [ "$FASTAPI_READY" != "1" ]; then
-    echo "  - FastAPI：${API_BASE%/}/health 未返回 Command Center 3.0 健康 JSON；可能后端未启动、8710 被占用，或 Python 依赖缺失。"
+    echo "  - FastAPI：${API_HEALTH_DISPLAY} 未返回 Command Center 3.0 健康 JSON；可能后端未启动、8710 被占用，或 Python 依赖缺失。"
   fi
   if [ "$API_STATUS_READY" != "1" ]; then
-    echo "  - Bootstrap status：${API_BASE%/}/api/bootstrap/status 未返回 runtime-mode packet；可能后端不是 3.0，或启动时加载失败。"
+    echo "  - Bootstrap status：${BOOTSTRAP_STATUS_DISPLAY} 未返回 runtime-mode packet；可能后端不是 3.0，或启动时加载失败。"
   fi
   if [ "$DESKTOP_PREFLIGHT_READY" != "1" ]; then
-    echo "  - Desktop preflight cache：${API_BASE%/}/api/desktop/preflight-cache 未返回一键启动 packet；可能后端预检 cache 尚未就绪。"
+    echo "  - Desktop preflight cache：${DESKTOP_PREFLIGHT_DISPLAY} 未返回一键启动 packet；可能后端预检 cache 尚未就绪。"
   fi
   if [ "$VITE_READY" != "1" ]; then
-    echo "  - React/Vite：${VITE_URL} 未返回 Command Center 3.0 前端 HTML；可能 5173 被占用，或 npm run dev 启动失败。"
+    echo "  - React/Vite：${VITE_URL_DISPLAY} 未返回 Command Center 3.0 前端 HTML；可能 5173 被占用，或 npm run dev 启动失败。"
   fi
   echo "下一步：先关闭占用 8710/5173 的本地进程，或查看上面的 FastAPI / React/Vite 日志。"
 }
 
 print_post_startup_readback_checklist() {
   echo "启动后复核清单："
-  echo "  1. FastAPI health：${API_BASE%/}/health 已返回 Command Center 3.0 JSON，且 external_calls_on_startup=false。"
-  echo "  2. Bootstrap status：${API_BASE%/}/api/bootstrap/status 已返回 runtime-mode packet，只读显示 cache_only/manual/live_light/live_full。"
-  echo "  3. Desktop preflight cache：${API_BASE%/}/api/desktop/preflight-cache 已返回一键启动 packet，普通首页和健康页可回读同一条 P0 本地证据。"
+  echo "  1. FastAPI health：${API_HEALTH_DISPLAY} 已返回 Command Center 3.0 JSON，且 external_calls_on_startup=false。"
+  echo "  2. Bootstrap status：${BOOTSTRAP_STATUS_DISPLAY} 已返回 runtime-mode packet，只读显示 cache_only/manual/live_light/live_full。"
+  echo "  3. Desktop preflight cache：${DESKTOP_PREFLIGHT_DISPLAY} 已返回一键启动 packet，普通首页和健康页可回读同一条 P0 本地证据。"
   if [ "${LAUNCHER_SKIP_OPEN:-0}" = "1" ]; then
-    echo "  4. React/Vite 前端：${VITE_URL} 已返回 Command Center 3.0 HTML；skip-open 已启用，请手动打开普通首页 ${APP_URL}。"
+    echo "  4. React/Vite 前端：${VITE_URL_DISPLAY} 已返回 Command Center 3.0 HTML；skip-open 已启用，请手动打开普通首页 ${APP_URL_DISPLAY}。"
   else
-    echo "  4. React/Vite 前端：${VITE_URL} 已返回 Command Center 3.0 HTML；页面会打开普通首页 ${APP_URL}，先看今日作战台的一键启动预检。"
+    echo "  4. React/Vite 前端：${VITE_URL_DISPLAY} 已返回 Command Center 3.0 HTML；页面会打开普通首页 ${APP_URL_DISPLAY}，先看今日作战台的一键启动预检。"
   fi
-  echo "  5. 联通后下一步：打开 ${VITE_URL%/}/#candidates，输入股票代码；只有确认按钮会创建 Tushare-first POST task，DeepSeek 仍保持 governed/pending。"
+  echo "  5. 联通后下一步：打开下一票雷达（#candidates），输入股票代码；只有确认按钮会创建 Tushare-first POST task，DeepSeek 仍保持 governed/pending。"
   echo "  6. P0 success handoff: after readiness, open #candidates; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
   echo "边界：启动后复核只读本地 GET 结果；不创建 task、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
 }
@@ -264,6 +314,31 @@ PYTHON_BIN="$(resolve_python)" || {
 
 if [ ! -x "$PYTHON_BIN" ]; then
   echo "Command Center 3.0 启动失败：Python 不可执行：${PYTHON_BIN}"
+  exit 1
+fi
+
+API_BASE_DISPLAY="$(safe_display_url "$API_BASE")"
+VITE_URL_DISPLAY="$(safe_display_url "$VITE_URL")"
+APP_URL_DISPLAY="$(safe_display_url "$APP_URL")"
+API_HEALTH_DISPLAY="$(safe_display_url "${API_BASE%/}/health")"
+BOOTSTRAP_STATUS_DISPLAY="$(safe_display_url "${API_BASE%/}/api/bootstrap/status")"
+DESKTOP_PREFLIGHT_DISPLAY="$(safe_display_url "${API_BASE%/}/api/desktop/preflight-cache")"
+
+if ! url_is_local "$API_BASE"; then
+  echo "Command Center 3.0 启动失败：FastAPI API base 必须是本机地址：${API_BASE_DISPLAY}"
+  echo "边界：一键启动器不会探测非本机 API base，不打印 query/hash/username/password，不调用外部服务。"
+  exit 1
+fi
+
+if ! url_is_local "$VITE_URL"; then
+  echo "Command Center 3.0 启动失败：React/Vite URL 必须是本机地址：${VITE_URL_DISPLAY}"
+  echo "边界：一键启动器不会打开非本机前端 URL，不打印 query/hash/username/password，不调用外部服务。"
+  exit 1
+fi
+
+if ! url_is_local "$APP_URL"; then
+  echo "Command Center 3.0 启动失败：打开页面 URL 必须是本机地址：${APP_URL_DISPLAY}"
+  echo "边界：一键启动器不会打开非本机页面 URL，不打印 query/hash/username/password，不调用外部服务。"
   exit 1
 fi
 
@@ -283,15 +358,15 @@ cd "$PROJECT_ROOT"
 echo "Command Center 3.0 local launcher"
 echo "Project: ${PROJECT_ROOT}"
 echo "Python: ${PYTHON_BIN}"
-echo "FastAPI: ${API_BASE}"
-echo "React/Vite: ${VITE_URL}"
-echo "Open route: ${APP_URL}"
+echo "FastAPI: ${API_BASE_DISPLAY}"
+echo "React/Vite: ${VITE_URL_DISPLAY}"
+echo "Open route: ${APP_URL_DISPLAY}"
 echo "Logs: ${LOG_DIR}"
 echo "Check only: ${LAUNCHER_CHECK_ONLY}"
 echo "Browser open: $([ "$LAUNCHER_SKIP_OPEN" = "1" ] && printf "skipped" || printf "enabled")"
 echo "P0: local one-click launcher starts/checks FastAPI, bootstrap status, desktop preflight cache, and React/Vite before opening the page."
 echo "Mode: server config controls runtime mode; cache_only remains the safe default unless explicitly configured."
-echo "Link check: launcher verifies ${API_BASE%/}/health, ${API_BASE%/}/api/bootstrap/status, and ${API_BASE%/}/api/desktop/preflight-cache before opening the page."
+echo "Link check: launcher verifies ${API_HEALTH_DISPLAY}, ${BOOTSTRAP_STATUS_DISPLAY}, and ${DESKTOP_PREFLIGHT_DISPLAY} before opening the page."
 echo "Health check: /health must return stock-MING Command Center 3.0 JSON with external_calls_on_startup=false."
 echo "Bootstrap check: /api/bootstrap/status must return command_center_3_bootstrap_runtime_mode_packet JSON before the page opens."
 echo "Desktop preflight check: /api/desktop/preflight-cache must return command_center_3_desktop_shell_preflight_cache JSON before the page opens."
@@ -300,12 +375,13 @@ echo "Open target: ordinary Command Center home route (#home), so startup does n
 echo "P0 success handoff: after readiness, open #candidates; typing stays silent; confirm button creates Tushare-first POST task; DeepSeek remains governed/skipped."
 echo "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution."
 echo "Safety: this launcher does not set live_light defaults and makes no Tushare, DeepSeek, GitHub, or trading call."
+echo "URL safety: displayed launcher URLs are sanitized and non-local API/frontend/open URLs are blocked before any probe."
 echo "Acceptance: runtime_mode_config_current_acceptance_* markers are status/checkpoint drift guards, not launcher config or live_light enablement."
 
 if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then
   echo "Check-only mode: resolved launcher configuration without starting FastAPI, starting React/Vite, probing URLs, writing logs, opening a browser, creating tasks, calling providers/models, or touching trading paths."
-  echo "Check-only endpoints: health=${API_BASE%/}/health; bootstrap=${API_BASE%/}/api/bootstrap/status; desktop_preflight=${API_BASE%/}/api/desktop/preflight-cache; frontend=${VITE_URL}; open_route=${APP_URL}"
-  echo "Check-only next action: unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher to start or reuse local FastAPI/Vite, wait for all four readiness checks, then open ${APP_URL}."
+  echo "Check-only endpoints: health=${API_HEALTH_DISPLAY}; bootstrap=${BOOTSTRAP_STATUS_DISPLAY}; desktop_preflight=${DESKTOP_PREFLIGHT_DISPLAY}; frontend=${VITE_URL_DISPLAY}; open_route=${APP_URL_DISPLAY}"
+  echo "Check-only next action: unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher to start or reuse local FastAPI/Vite, wait for all four readiness checks, then open ${APP_URL_DISPLAY}."
   exit 0
 fi
 
@@ -364,11 +440,11 @@ fi
 
 if [ "$LAUNCHER_SKIP_OPEN" = "1" ]; then
   echo "Skip-open mode: FastAPI, bootstrap status, desktop preflight cache, and React/Vite are ready; browser was not opened automatically."
-  echo "请在浏览器打开：${APP_URL}"
+  echo "请在浏览器打开：${APP_URL_DISPLAY}"
 elif command -v open >/dev/null 2>&1; then
   open "$APP_URL"
 else
-  echo "请在浏览器打开：${APP_URL}"
+  echo "请在浏览器打开：${APP_URL_DISPLAY}"
 fi
 
 print_post_startup_readback_checklist

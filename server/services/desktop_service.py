@@ -514,7 +514,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "Command Center 3.0 local launcher",
         "P0: local one-click launcher starts/checks FastAPI, bootstrap status, desktop preflight cache, and React/Vite before opening the page.",
         "Link check: launcher verifies",
-        "/api/desktop/preflight-cache before opening the page.",
+        "Desktop preflight check: /api/desktop/preflight-cache",
         "Health check: /health must return stock-MING Command Center 3.0 JSON with external_calls_on_startup=false.",
         "Bootstrap check: /api/bootstrap/status must return command_center_3_bootstrap_runtime_mode_packet JSON before the page opens.",
         "Desktop preflight check: /api/desktop/preflight-cache must return command_center_3_desktop_shell_preflight_cache JSON before the page opens.",
@@ -547,6 +547,16 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN",
         "Browser open:",
         "Skip-open mode: FastAPI, bootstrap status, desktop preflight cache, and React/Vite are ready",
+        "safe_display_url",
+        "url_is_local",
+        "API_BASE_DISPLAY",
+        "VITE_URL_DISPLAY",
+        "APP_URL_DISPLAY",
+        "FastAPI API base 必须是本机地址",
+        "React/Vite URL 必须是本机地址",
+        "打开页面 URL 必须是本机地址",
+        "不打印 query/hash/username/password",
+        "URL safety: displayed launcher URLs are sanitized and non-local API/frontend/open URLs are blocked before any probe.",
         "STOCK_MING_FASTAPI_RELOAD=0",
         "no Tushare, DeepSeek, GitHub, or trading call",
     )
@@ -603,6 +613,31 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         and check_only_block_index < log_dir_create_index
         and "exit 0" in source[check_only_block_index:log_dir_create_index]
     )
+    launcher_display_urls_sanitized = all(
+        marker in source
+        for marker in (
+            "safe_display_url",
+            "API_BASE_DISPLAY",
+            "VITE_URL_DISPLAY",
+            "APP_URL_DISPLAY",
+            "API_HEALTH_DISPLAY",
+            "BOOTSTRAP_STATUS_DISPLAY",
+            "DESKTOP_PREFLIGHT_DISPLAY",
+            "不打印 query/hash/username/password",
+        )
+    )
+    launcher_blocks_nonlocal_urls_before_probe = all(
+        marker in source
+        for marker in (
+            "url_is_local",
+            "FastAPI API base 必须是本机地址",
+            "React/Vite URL 必须是本机地址",
+            "打开页面 URL 必须是本机地址",
+            "不会探测非本机 API base",
+            "不会打开非本机前端 URL",
+            "不会打开非本机页面 URL",
+        )
+    )
     local_ready = (
         COMMAND_CENTER_3_LAUNCHER.exists()
         and COMMAND_CENTER_3_SHORTCUT_INSTALLER.exists()
@@ -653,6 +688,10 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         and "wait_for_desktop_preflight_cache" in source
         and "wait_for_vite_command_center" in source,
         "skip_open_mode_opens_browser": False,
+        "launcher_display_urls_sanitized": launcher_display_urls_sanitized,
+        "launcher_blocks_nonlocal_urls_before_probe": launcher_blocks_nonlocal_urls_before_probe,
+        "launcher_diagnostic_urls_contain_secret": False,
+        "launcher_prints_raw_query_hash_username_password": False,
         "writes_ignored_local_logs_when_user_runs": ".stock_ming_3/logs" in source,
         "cache_get_starts_launcher": False,
         "cache_get_installs_shortcut": False,
@@ -749,11 +788,15 @@ def _one_click_startup_summary(
     )
     startup_diagnostics_visible = (
         "print_startup_diagnostics" in launcher_source
-        and "FastAPI：${API_BASE%/}/health 未返回 Command Center 3.0 健康 JSON" in launcher_source
-        and "Bootstrap status：${API_BASE%/}/api/bootstrap/status 未返回 runtime-mode packet" in launcher_source
-        and "Desktop preflight cache：${API_BASE%/}/api/desktop/preflight-cache 未返回一键启动 packet" in launcher_source
-        and "React/Vite：${VITE_URL} 未返回 Command Center 3.0 前端 HTML" in launcher_source
+        and "FastAPI：${API_HEALTH_DISPLAY} 未返回 Command Center 3.0 健康 JSON" in launcher_source
+        and "Bootstrap status：${BOOTSTRAP_STATUS_DISPLAY} 未返回 runtime-mode packet" in launcher_source
+        and "Desktop preflight cache：${DESKTOP_PREFLIGHT_DISPLAY} 未返回一键启动 packet" in launcher_source
+        and "React/Vite：${VITE_URL_DISPLAY} 未返回 Command Center 3.0 前端 HTML" in launcher_source
         and "下一步：先关闭占用 8710/5173 的本地进程" in launcher_source
+    )
+    startup_diagnostic_urls_sanitized = (
+        desktop_launcher_contract.get("launcher_display_urls_sanitized") is True
+        and desktop_launcher_contract.get("launcher_blocks_nonlocal_urls_before_probe") is True
     )
     open_is_gated = (
         'if [ "$FASTAPI_READY" != "1" ] || [ "$API_STATUS_READY" != "1" ] || [ "$DESKTOP_PREFLIGHT_READY" != "1" ] || [ "$VITE_READY" != "1" ]; then'
@@ -806,6 +849,11 @@ def _one_click_startup_summary(
             "startup_failure_diagnostics_visible",
             startup_diagnostics_visible,
             "launcher prints separate FastAPI, bootstrap status, desktop preflight cache, and React/Vite diagnostics with 8710/5173 recovery guidance",
+        ),
+        row(
+            "startup_diagnostic_urls_sanitized",
+            startup_diagnostic_urls_sanitized,
+            "launcher displays safe local URLs and blocks non-local API/frontend/open URLs before any readiness probe",
         ),
         row(
             "browser_opens_only_after_frontend_backend_ready",
@@ -927,6 +975,11 @@ def _one_click_startup_summary(
         "vite_wait_before_open": vite_identity_ready,
         "vite_frontend_identity_validated_before_open": vite_identity_ready,
         "startup_failure_diagnostics_visible": startup_diagnostics_visible,
+        "startup_diagnostic_urls_sanitized": startup_diagnostic_urls_sanitized,
+        "launcher_display_urls_sanitized": desktop_launcher_contract.get("launcher_display_urls_sanitized") is True,
+        "launcher_blocks_nonlocal_urls_before_probe": desktop_launcher_contract.get("launcher_blocks_nonlocal_urls_before_probe")
+        is True,
+        "launcher_diagnostic_urls_contain_secret": False,
         "browser_opens_only_after_frontend_backend_ready": open_is_gated,
         "frontend_api_client_uses_local_fastapi": frontend_api_client_local,
         "backend_offline_notice_available": offline_notice_ready,

@@ -1710,6 +1710,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(one_click["vite_wait_before_open"])
         self.assertTrue(one_click["vite_frontend_identity_validated_before_open"])
         self.assertTrue(one_click["startup_failure_diagnostics_visible"])
+        self.assertTrue(one_click["startup_diagnostic_urls_sanitized"])
+        self.assertTrue(one_click["launcher_display_urls_sanitized"])
+        self.assertTrue(one_click["launcher_blocks_nonlocal_urls_before_probe"])
+        self.assertFalse(one_click["launcher_diagnostic_urls_contain_secret"])
         self.assertTrue(one_click["browser_opens_only_after_frontend_backend_ready"])
         self.assertTrue(one_click["frontend_api_client_uses_local_fastapi"])
         self.assertTrue(one_click["backend_offline_notice_available"])
@@ -1758,6 +1762,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(desktop["policy"]["one_click_startup_summary_is_not_production_package"])
         self.assertTrue(desktop["policy"]["one_click_startup_summary_does_not_enable_provider_model"])
         self.assertTrue(all(row["passed"] for row in one_click_rows.values()))
+        self.assertTrue(one_click_rows["startup_diagnostic_urls_sanitized"]["passed"])
         self.assertIn("command_center_3_bootstrap_runtime_mode_packet", one_click_rows["fastapi_status_api_wait_before_open"]["evidence"])
         self.assertFalse(one_click_rows["get_preflight_cache_does_not_start_services"]["external_calls_triggered"])
         self.assertTrue(one_click_rows["provider_model_trading_boundary_preserved"]["does_not_execute_trades"])
@@ -2013,6 +2018,10 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(launcher["skip_open_mode_supported"])
         self.assertTrue(launcher["skip_open_waits_for_frontend_backend_ready"])
         self.assertFalse(launcher["skip_open_mode_opens_browser"])
+        self.assertTrue(launcher["launcher_display_urls_sanitized"])
+        self.assertTrue(launcher["launcher_blocks_nonlocal_urls_before_probe"])
+        self.assertFalse(launcher["launcher_diagnostic_urls_contain_secret"])
+        self.assertFalse(launcher["launcher_prints_raw_query_hash_username_password"])
         self.assertTrue(launcher["writes_ignored_local_logs_when_user_runs"])
         self.assertFalse(launcher["cache_get_starts_launcher"])
         self.assertFalse(launcher["cache_get_installs_shortcut"])
@@ -2042,6 +2051,9 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
                 "shortcut_installer_marker:Double-click checklist: launcher checks FastAPI /health, bootstrap status, desktop preflight cache, and React/Vite before opening the page."
             ]["passed"]
         )
+        self.assertTrue(launcher_rows["launcher_marker:safe_display_url"]["passed"])
+        self.assertTrue(launcher_rows["launcher_marker:url_is_local"]["passed"])
+        self.assertTrue(launcher_rows["launcher_marker:不打印 query/hash/username/password"]["passed"])
         self.assertTrue(all(row["passed"] for row in launcher_rows.values()))
         self.assertEqual(launcher["call_ledger"][0]["api"], "local_command_center_3_launcher_contract")
         self.assertIn("local_command_center_3_launcher_contract", {row["api"] for row in desktop["call_ledger"]})
@@ -15862,6 +15874,83 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertIn('"$PYTHON_BIN" -m uvicorn server.main:app --host 127.0.0.1 --port 8710', script)
         launcher = Path("scripts/start_command_center_3.command").read_text(encoding="utf-8")
         self.assertIn('STOCK_MING_FASTAPI_RELOAD=0 PYTHON_BIN="$PYTHON_BIN" nohup "${PROJECT_ROOT}/scripts/dev_server.sh"', launcher)
+
+    def test_one_click_launcher_rejects_nonlocal_urls_without_leaking_secrets(self):
+        launcher_path = Path("scripts/start_command_center_3.command")
+        launcher = launcher_path.read_text(encoding="utf-8")
+
+        self.assertIn("safe_display_url", launcher)
+        self.assertIn("url_is_local", launcher)
+        self.assertIn('if ! url_is_local "$API_BASE"; then', launcher)
+        self.assertLess(
+            launcher.index('if ! url_is_local "$API_BASE"; then'),
+            launcher.index('if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then'),
+        )
+        self.assertLess(
+            launcher.index('if ! url_is_local "$API_BASE"; then'),
+            launcher.index('mkdir -p "$LOG_DIR"'),
+        )
+
+        env = os.environ.copy()
+        env.update(
+            {
+                "STOCK_MING_PYTHON": sys.executable,
+                "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY": "1",
+                "VITE_API_BASE_URL": "https://user:SHOULD_DROP@example.com:9443/api?token=SHOULD_DROP#secret",
+            }
+        )
+        result = subprocess.run(
+            ["bash", str(launcher_path)],
+            cwd=Path.cwd(),
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        combined = f"{result.stdout}\n{result.stderr}"
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("FastAPI API base 必须是本机地址：https://example.com:9443/api", combined)
+        self.assertIn("不会探测非本机 API base", combined)
+        self.assertIn("不打印 query/hash/username/password", combined)
+        self.assertNotIn("SHOULD_DROP", combined)
+        self.assertNotIn("user:", combined)
+        self.assertNotIn("?token=", combined)
+        self.assertNotIn("#secret", combined)
+        self.assertNotIn("Starting FastAPI", combined)
+        self.assertNotIn("Starting React/Vite", combined)
+
+        local_env = os.environ.copy()
+        local_env.update(
+            {
+                "STOCK_MING_PYTHON": sys.executable,
+                "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY": "1",
+                "VITE_API_BASE_URL": "http://user:SHOULD_DROP@127.0.0.1:8710/api?token=SHOULD_DROP#secret",
+                "COMMAND_CENTER_3_VITE_URL": "http://user:SHOULD_DROP@localhost:5173?token=SHOULD_DROP#secret",
+                "COMMAND_CENTER_3_APP_URL": "http://user:SHOULD_DROP@localhost:5173/#home?token=SHOULD_DROP#secret",
+            }
+        )
+        local_result = subprocess.run(
+            ["bash", str(launcher_path)],
+            cwd=Path.cwd(),
+            env=local_env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        local_output = f"{local_result.stdout}\n{local_result.stderr}"
+
+        self.assertEqual(local_result.returncode, 0, local_output)
+        self.assertIn("FastAPI: http://127.0.0.1:8710/api", local_output)
+        self.assertIn("React/Vite: http://localhost:5173", local_output)
+        self.assertIn("Open route: http://localhost:5173/", local_output)
+        self.assertIn("Check-only mode", local_output)
+        self.assertNotIn("SHOULD_DROP", local_output)
+        self.assertNotIn("user:", local_output)
+        self.assertNotIn("?token=", local_output)
+        self.assertNotIn("#secret", local_output)
+        self.assertNotIn("Starting FastAPI", local_output)
+        self.assertNotIn("Starting React/Vite", local_output)
 
     def test_worker_script_prefers_project_python(self):
         path = Path("scripts/run_worker.sh")
