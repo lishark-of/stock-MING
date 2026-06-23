@@ -11,11 +11,13 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
 
     def test_search_panel_replays_cached_tushare_state_without_model_claim(self):
         search_panel_start = self.page.index('title="搜票量化推演"')
-        search_panel_end = self.page.index(
-            '<details className="developer-audit-details">',
+        search_panel_end = self.page.index('title="快速雷达扫描"', search_panel_start)
+        search_panel = self.page[search_panel_start:search_panel_end]
+        p1_p2_details_start = self.page.index(
+            '<details className="developer-audit-details" aria-label="quant projection ordinary p1 p2 engineering details">',
             search_panel_start,
         )
-        search_panel = self.page[search_panel_start:search_panel_end]
+        search_panel_top = self.page[search_panel_start:p1_p2_details_start]
 
         self.assertIn("searchQuantProviderModelAcceptance", self.page)
         self.assertIn("search_quant_provider_model_acceptance_receipt", self.page)
@@ -74,6 +76,15 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("普通入口保留“确认并生成”作为 P1 主按钮", search_panel)
         self.assertIn("点击后在本卡显示任务接收和状态", search_panel)
         self.assertIn("title={quantProjectionSubmitButtonLabel}", search_panel)
+        self.assertIn(
+            'aria-label="quant projection ordinary p1 p2 engineering details"',
+            search_panel,
+        )
+        self.assertIn("<summary>P1/P2 任务与写入详情</summary>", search_panel)
+        self.assertIn("普通主视图先保留状态轨、可读结论和回放入口", search_panel)
+        self.assertNotIn('aria-label="quant projection p1 confirm gate checklist"', search_panel_top)
+        self.assertNotIn('aria-label="quant projection ordinary p2 writeback integrity"', search_panel_top)
+        self.assertNotIn("确认任务接收回执", search_panel_top)
         self.assertIn("quantProjectionTaskVisible", self.page)
         self.assertIn("quantProjectionPersistedTaskId", self.page)
         self.assertIn("quantProjectionTaskPanelTaskId", self.page)
@@ -88,10 +99,10 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         self.assertIn("普通页只看回放状态", self.page)
         self.assertIn("不额外刷新外部数据或模型", self.page)
         self.assertNotIn("确认 Tushare-first 补证", search_panel)
-        self.assertNotIn("生成 provider/model execution request", search_panel)
-        self.assertNotIn("scope/hash", search_panel)
-        self.assertNotIn("execution-request", search_panel)
-        self.assertNotIn("provider/model", search_panel)
+        self.assertNotIn("生成 provider/model execution request", search_panel_top)
+        self.assertNotIn("scope/hash", search_panel_top)
+        self.assertNotIn("execution-request", search_panel_top)
+        self.assertNotIn("provider/model", search_panel_top)
         self.assertIn("确认 Tushare-first 补证", self.page)
         self.assertIn(
             "Tushare ledger 来自 cache / call_ledger 回放",
@@ -108,10 +119,7 @@ class CandidateRadarProviderStateFrontendTests(unittest.TestCase):
         )
         submit_slice = self.page[submit_start:submit_end]
         search_panel_start = self.page.index('title="搜票量化推演"')
-        search_panel_end = self.page.index(
-            '<details className="developer-audit-details">',
-            search_panel_start,
-        )
+        search_panel_end = self.page.index('title="快速雷达扫描"', search_panel_start)
         search_panel = self.page[search_panel_start:search_panel_end]
 
         self.assertIn("include_tushare: true", submit_slice)

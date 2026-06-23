@@ -1495,6 +1495,9 @@ export default function CandidateRadar() {
             steps={quantProjectionOrdinaryTaskRailSteps}
           />
           <p className="risk-note">普通确认状态：等待输入 / 任务接收 / 任务轮询 / cache 回放；这条状态轨只读本地 task receipt 和 cache，不补调 Tushare、DeepSeek 或 GitHub。</p>
+          <details className="developer-audit-details" aria-label="quant projection ordinary p1 p2 engineering details">
+            <summary>P1/P2 任务与写入详情</summary>
+            <p className="risk-note">普通主视图先保留状态轨、可读结论和回放入口；确认门控、task receipt、cache / ledger / packet 写入面默认收起，不影响确认按钮动作。</p>
           <div aria-label="quant projection p1 confirm gate checklist">
             <h3>P1 确认门控清单</h3>
             <p className="risk-note">先看代码是否通过本地校验，再点击一次确认按钮；提交后看 task id 和 TaskStatusPanel，失败先回 P0 联通恢复。这张表只读页面状态，不创建 task。</p>
@@ -1557,6 +1560,7 @@ export default function CandidateRadar() {
             ) : null}
             <DataLineageTable rows={quantProjectionSmallDataWritebackRows} />
           </div>
+          </details>
           <div aria-label="quant projection ordinary explainable result readback">
             <h3>解释结果清单</h3>
             <p className="risk-note">普通入口只回放数据来源、量化推演、次日图谱和安全边界；原始 receipt、prompt 或审计字段仍下沉在详情中。</p>
@@ -1577,8 +1581,8 @@ export default function CandidateRadar() {
               ) : null}
               <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
             </div>
-            <div aria-label="quant projection ordinary deepseek governance status">
-              <h3>P5 DeepSeek 治理状态</h3>
+            <details className="developer-audit-details" aria-label="quant projection ordinary deepseek governance status">
+              <summary>P5 DeepSeek 治理状态</summary>
               <p className="risk-note">优先读取服务端 ordinary_model_governance_rows：只看执行门控、输出范围和是否阻塞基础图谱；不会从治理状态创建 task 或调用模型。</p>
               <DataLineageTable rows={quantProjectionDeepSeekGovernanceRows} />
               {quantProjectionDeepSeekChecklistRows.length ? (
@@ -1588,7 +1592,7 @@ export default function CandidateRadar() {
                   <DataLineageTable rows={quantProjectionDeepSeekChecklistRows} />
                 </div>
               ) : null}
-            </div>
+            </details>
             <DataLineageTable rows={quantProjectionOrdinaryResultRows} />
           </div>
           <div aria-label="quant projection ordinary explainable result actions">

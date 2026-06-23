@@ -20,7 +20,13 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         radar_summary_start = source.index('title="普通用户雷达摘要"')
         radar_summary_slice = source[radar_summary_start:source.index('title="下一票候选池"', radar_summary_start)]
         ordinary_quant_start = source.index('title="搜票量化推演"')
-        ordinary_quant_slice = source[ordinary_quant_start:source.index('<details className="developer-audit-details">', ordinary_quant_start)]
+        ordinary_quant_end = source.index('title="快速雷达扫描"', ordinary_quant_start)
+        ordinary_quant_slice = source[ordinary_quant_start:ordinary_quant_end]
+        p1_p2_details_start = source.index(
+            '<details className="developer-audit-details" aria-label="quant projection ordinary p1 p2 engineering details">',
+            ordinary_quant_start,
+        )
+        ordinary_quant_top_slice = source[ordinary_quant_start:p1_p2_details_start]
 
         self.assertIn("postCandidateRadarQuantProjectionProviderModelAcceptance", source)
         self.assertIn('scan_mode: "quant_projection_provider_model_acceptance"', provider_slice)
@@ -45,6 +51,15 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("quantProjectionSubmitErrorLabel", ordinary_quant_slice)
         self.assertIn("quantProjectionSubmitFailureMessage", source)
         self.assertIn("quantProjectionP1ConfirmGateRows", source)
+        self.assertIn(
+            'aria-label="quant projection ordinary p1 p2 engineering details"',
+            ordinary_quant_slice,
+        )
+        self.assertIn("<summary>P1/P2 任务与写入详情</summary>", ordinary_quant_slice)
+        self.assertIn("普通主视图先保留状态轨、可读结论和回放入口", ordinary_quant_slice)
+        self.assertNotIn('aria-label="quant projection p1 confirm gate checklist"', ordinary_quant_top_slice)
+        self.assertNotIn('aria-label="quant projection ordinary p2 writeback integrity"', ordinary_quant_top_slice)
+        self.assertNotIn("确认任务接收回执", ordinary_quant_top_slice)
         self.assertIn('aria-label="quant projection p1 confirm gate checklist"', ordinary_quant_slice)
         self.assertIn("P1 确认门控清单", ordinary_quant_slice)
         self.assertIn("先看代码是否通过本地校验，再点击一次确认按钮", ordinary_quant_slice)
@@ -175,7 +190,7 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertIn("不会从结果速读创建 task 或调用模型", ordinary_quant_slice)
         self.assertIn("rows={quantProjectionOrdinaryResultQuickRows}", ordinary_quant_slice)
         self.assertIn('aria-label="quant projection ordinary deepseek governance status"', ordinary_quant_slice)
-        self.assertIn("P5 DeepSeek 治理状态", ordinary_quant_slice)
+        self.assertIn('<summary>P5 DeepSeek 治理状态</summary>', ordinary_quant_slice)
         self.assertIn("优先读取服务端 ordinary_model_governance_rows", ordinary_quant_slice)
         self.assertIn("不会从治理状态创建 task 或调用模型", ordinary_quant_slice)
         self.assertIn("rows={quantProjectionDeepSeekGovernanceRows}", ordinary_quant_slice)
