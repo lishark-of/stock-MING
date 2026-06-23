@@ -174,34 +174,39 @@ export default function ModelStrategy() {
         </PacketCard>
       </div>
 
-      <PacketCard title="用途到模型映射" subtitle="model_rows；只展示模型名和配置键名，不展示凭据" status="models">
-        <DataLineageTable rows={modelRows} />
-      </PacketCard>
+      <details className="developer-audit-details">
+        <summary>模型策略开发 / 审计详情</summary>
+        <p>普通用户先看上方 DeepSeek 状态、模型策略边界和用途分组；模型映射、安全摘要、policy、call_ledger、warnings 和 raw payload 默认收起。</p>
 
-      <PacketCard title="模型策略安全摘要" subtitle="每个 purpose 都必须声明不硬编码模型名、不含凭据、cache read 不外联" status="model_safety">
-        <p>安全摘要来自 GET /api/model-strategy/cache 的 model_rows；只读、不调用 DeepSeek。</p>
-        <DataLineageTable rows={modelSafetyRows} />
-      </PacketCard>
+        <PacketCard title="用途到模型映射" subtitle="model_rows；只展示模型名和配置键名，不展示凭据" status="models">
+          <DataLineageTable rows={modelRows} />
+        </PacketCard>
 
-      <PacketCard title="安全策略" subtitle="cache API 永不外联；DeepSeek 只能按钮门控" status="policy">
-        <DataLineageTable rows={[policy]} />
-      </PacketCard>
+        <PacketCard title="模型策略安全摘要" subtitle="每个 purpose 都必须声明不硬编码模型名、不含凭据、cache read 不外联" status="model_safety">
+          <p>安全摘要来自 GET /api/model-strategy/cache 的 model_rows；只读、不调用 DeepSeek。</p>
+          <DataLineageTable rows={modelSafetyRows} />
+        </PacketCard>
 
-      <PacketCard title="调用血缘" subtitle="local_deepseek_model_strategy_cache；不外联" status="lineage">
-        <DataLineageTable rows={payloadCallLedger} />
-      </PacketCard>
+        <PacketCard title="安全策略" subtitle="cache API 永不外联；DeepSeek 只能按钮门控" status="policy">
+          <DataLineageTable rows={[policy]} />
+        </PacketCard>
 
-      <PacketCard title="GET model strategy envelope call_ledger" subtitle="GET /api/model-strategy/cache 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
-        <DataLineageTable rows={cacheCallLedger} />
-      </PacketCard>
+        <PacketCard title="调用血缘" subtitle="local_deepseek_model_strategy_cache；不外联" status="lineage">
+          <DataLineageTable rows={payloadCallLedger} />
+        </PacketCard>
 
-      <PacketCard title="GET model strategy envelope warnings" subtitle="顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
-        <DataLineageTable rows={warningRows} />
-      </PacketCard>
+        <PacketCard title="GET model strategy envelope call_ledger" subtitle="GET /api/model-strategy/cache 顶层响应血缘；前端优先读取 res.call_ledger" status="lineage">
+          <DataLineageTable rows={cacheCallLedger} />
+        </PacketCard>
 
-      <PacketCard title="原始 model strategy payload" subtitle="调试用 JSON；不含凭据" status="safe">
-        <JsonDetails title="model strategy raw" data={cache} />
-      </PacketCard>
+        <PacketCard title="GET model strategy envelope warnings" subtitle="顶层响应提示；不包含 token/key/错误堆栈" status="warnings">
+          <DataLineageTable rows={warningRows} />
+        </PacketCard>
+
+        <PacketCard title="原始 model strategy payload" subtitle="调试用 JSON；不含凭据" status="safe">
+          <JsonDetails title="model strategy raw" data={cache} />
+        </PacketCard>
+      </details>
     </>
   );
 }
