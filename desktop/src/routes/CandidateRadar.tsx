@@ -487,7 +487,7 @@ export default function CandidateRadar() {
     live_full: "深度实时投研预留"
   }[String(bootstrapStatus.mode ?? "cache_only")] ?? "未知运行模式";
   const ordinaryCacheSourceLabel = cache.status === "ready" ? "本地候选缓存可用" : "等待本地候选缓存";
-  const ordinaryTushareSourceLabel = bootstrapLiveLight.tushare_on_open === true ? "轻量实时后台任务" : "手动触发或关闭";
+  const ordinaryTushareSourceLabel = bootstrapLiveLight.tushare_on_open === true ? "live_light 已配置；仍需确认按钮触发 Tushare-first task" : "手动触发或关闭";
   const ordinaryDeepSeekSourceLabel =
     bootstrapLiveLight.deepseek_on_open === true ? "待 governed executor；不作为数据源或动作" : "手动触发或关闭";
   const ordinaryProviderGapLabel =
@@ -1310,6 +1310,43 @@ export default function CandidateRadar() {
       边界: "cache / ledger / packet 回放不创建第二个 task，不覆盖 strategy action"
     }
   ];
+  const quantProjectionConfirmTriggerPacketRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_confirm_trigger_boundary_rows).map((row) => ({
+    触发点: displayText(row["触发点"] ?? row.trigger_key),
+    当前状态: displayText(row["当前状态"] ?? row.status),
+    允许动作: displayText(row["允许动作"] ?? row.allowed_action),
+    证据: displayText(row["证据"] ?? row.evidence),
+    边界: displayText(row["边界"] ?? row.boundary, "输入/GET/render 只读；确认按钮才创建 POST task")
+  }));
+  const quantProjectionConfirmTriggerBoundaryRows = quantProjectionConfirmTriggerPacketRows.length ? quantProjectionConfirmTriggerPacketRows : [
+    {
+      触发点: "1. 输入股票代码",
+      当前状态: quantProjectionInputValidation,
+      允许动作: "本地格式校验",
+      证据: "normalizeAshareSymbolInput",
+      边界: "输入框只做本地校验；不创建 task、不调用 Tushare/DeepSeek/GitHub"
+    },
+    {
+      触发点: "2. 确认按钮",
+      当前状态: quantProjectionConfirmChainState,
+      允许动作: "POST /api/candidate-radar/quant-projection",
+      证据: quantProjectionAcceptedTaskId || quantProjectionPersistedTaskId || "button_not_clicked",
+      边界: "只有确认按钮可创建 Tushare-first POST task；DeepSeek skipped，不交易"
+    },
+    {
+      触发点: "3. Tushare-first task ledger",
+      当前状态: quantProjectionProviderModelReplayState,
+      允许动作: "后台任务写 call_ledger / cache / packet",
+      证据: `provider_call_source=${quantProjectionProviderCallSource}`,
+      边界: "Tushare 只允许在按钮门控 POST task / worker 内调用；GET cache 和 React render 不补调 provider"
+    },
+    {
+      触发点: "4. GET cache 回放",
+      当前状态: quantProjectionSmallDataStageLabel,
+      允许动作: "只读回放 cache / ledger / packet",
+      证据: "GET /api/candidate-radar/cache",
+      边界: "GET cache、React render、结果链接只回放本地结果；不创建第二个 task、不调用 provider/model、不改 strategy action"
+    }
+  ];
   const quantProjectionOrdinaryEndToEndRows = [
     {
       步骤: "1. 打开 3.0",
@@ -1504,6 +1541,11 @@ export default function CandidateRadar() {
             steps={quantProjectionOrdinaryTaskRailSteps}
           />
           <p className="risk-note">普通确认状态：等待输入 / 任务接收 / 任务轮询 / cache 回放；这条状态轨只读本地 task receipt 和 cache，不补调 Tushare、DeepSeek 或 GitHub。</p>
+          <div aria-label="quant projection ordinary confirm trigger boundary">
+            <h3>P1 触发边界</h3>
+            <p className="risk-note">优先读取服务端 ordinary_confirm_trigger_boundary_rows：输入只校验，确认按钮才创建 Tushare-first POST task，GET cache 和 React render 只回放本地结果。</p>
+            <DataLineageTable rows={quantProjectionConfirmTriggerBoundaryRows} />
+          </div>
           <details className="developer-audit-details" aria-label="quant projection ordinary p1 p2 engineering details">
             <summary>P1/P2 任务与写入详情</summary>
             <p className="risk-note">普通主视图先保留状态轨、可读结论和回放入口；确认门控、task receipt、cache / ledger / packet 写入面默认收起，不影响确认按钮动作。</p>

@@ -15114,6 +15114,106 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         or execution_request.get("include_deepseek") is True
         or provider_receipt.get("include_deepseek") is True
     )
+    ordinary_confirm_trigger_boundary_rows = [
+        {
+            "trigger_key": "search_input_local_validation",
+            "触发点": "1. 输入股票代码",
+            "当前状态": "已接收本地输入" if quant_receipt else "等待输入代码",
+            "允许动作": "本地格式校验",
+            "证据": "normalizeAshareSymbolInput / search_quant_projection_receipt",
+            "边界": "输入框只做本地校验；不创建 task、不调用 Tushare/DeepSeek/GitHub。",
+            "readback_source": "React local state / GET /api/candidate-radar/cache",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "may_create_task_after_confirm": False,
+            "post_task_may_call_tushare": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "trigger_key": "confirm_button_post_task",
+            "触发点": "2. 确认按钮",
+            "当前状态": f"task_id={latest_task_id}" if latest_task_id else "等待点击确认按钮",
+            "允许动作": "POST /api/candidate-radar/quant-projection",
+            "证据": "candidate_radar_cache_packet.task_id" if latest_task_id else "button_not_clicked",
+            "边界": "只有确认按钮可创建 Tushare-first POST task；DeepSeek skipped，不交易。",
+            "readback_source": "candidate_radar_cache_packet",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "may_create_task_after_confirm": True,
+            "post_task_may_call_tushare": True,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "trigger_key": "post_task_provider_ledger",
+            "触发点": "3. Tushare-first task ledger",
+            "当前状态": (
+                f"POST task ledger 已回放：Tushare {provider_api_success_count}/{provider_api_call_count}"
+                if provider_ready
+                else "本地阻断已写入：缺服务端 Tushare 凭据"
+                if credential_missing_count
+                else "等待按钮门控 POST task 写入 provider ledger"
+            ),
+            "允许动作": "后台任务写 call_ledger / cache / packet",
+            "证据": f"provider_call_source={provider_call_source}; provider_ready={provider_ready}",
+            "边界": "Tushare 只允许在按钮门控 POST task / worker 内调用；GET cache 和 React render 不补调 provider。",
+            "readback_source": "search_quant_provider_model_acceptance_receipt.provider_call_ledger",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "may_create_task_after_confirm": False,
+            "post_task_may_call_tushare": True,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "trigger_key": "get_cache_result_replay",
+            "触发点": "4. GET cache 回放",
+            "当前状态": summary_label,
+            "允许动作": "只读回放 cache / ledger / packet",
+            "证据": f"writeback_surfaces={'/'.join(writeback_surfaces) if writeback_surfaces else 'waiting_confirm'}",
+            "边界": "GET cache、React render、结果链接只回放本地结果；不创建第二个 task、不调用 provider/model、不改 strategy action。",
+            "readback_source": "GET /api/candidate-radar/cache",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "may_create_task_after_confirm": False,
+            "post_task_may_call_tushare": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+    ]
     if provider_ready:
         confirm_replay_stage_status = "P2 ready：cache / ledger / packet 已进入本地回放。"
         confirm_replay_stage_next = "先回放股票量化推演，再打开次日图谱复核本地结果。"
@@ -15839,6 +15939,12 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_post_confirm_action_rows_are_cache_only": True,
         "ordinary_post_confirm_action_rows_create_task": False,
         "ordinary_post_confirm_action_rows_are_not_trade_signals": True,
+        "ordinary_confirm_trigger_boundary_rows": ordinary_confirm_trigger_boundary_rows,
+        "ordinary_confirm_trigger_boundary_row_count": len(ordinary_confirm_trigger_boundary_rows),
+        "ordinary_confirm_trigger_boundary_rows_are_cache_only": True,
+        "ordinary_confirm_trigger_boundary_rows_create_task": False,
+        "ordinary_confirm_trigger_boundary_rows_call_provider_from_readback": False,
+        "ordinary_confirm_trigger_boundary_rows_are_not_trade_signals": True,
         "ordinary_confirm_replay_stage_rows": ordinary_confirm_replay_stage_rows,
         "ordinary_confirm_replay_stage_row_count": len(ordinary_confirm_replay_stage_rows),
         "ordinary_confirm_replay_stage_rows_are_cache_only": True,
@@ -15926,6 +16032,9 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     counts["search_quant_projection_post_confirm_action_row_count"] = summary.get(
         "ordinary_post_confirm_action_row_count", 0
     )
+    counts["search_quant_projection_confirm_trigger_boundary_row_count"] = summary.get(
+        "ordinary_confirm_trigger_boundary_row_count", 0
+    )
     counts["search_quant_projection_confirm_replay_stage_row_count"] = summary.get(
         "ordinary_confirm_replay_stage_row_count", 0
     )
@@ -15962,6 +16071,10 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     policy["search_quant_projection_post_confirm_action_rows_are_cache_only"] = True
     policy["search_quant_projection_post_confirm_action_rows_create_task"] = False
     policy["search_quant_projection_post_confirm_action_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_confirm_trigger_boundary_rows_are_cache_only"] = True
+    policy["search_quant_projection_confirm_trigger_boundary_rows_create_task"] = False
+    policy["search_quant_projection_confirm_trigger_boundary_rows_call_provider_from_readback"] = False
+    policy["search_quant_projection_confirm_trigger_boundary_rows_are_not_trade_signals"] = True
     policy["search_quant_projection_confirm_replay_stage_rows_are_cache_only"] = True
     policy["search_quant_projection_confirm_replay_stage_rows_create_task"] = False
     policy["search_quant_projection_confirm_replay_stage_rows_use_model_output"] = False
