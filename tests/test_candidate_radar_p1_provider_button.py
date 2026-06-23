@@ -79,6 +79,8 @@ class CandidateRadarP1ProviderButtonTests(unittest.TestCase):
         self.assertNotIn("operator_approved", submit_slice)
         self.assertIn("include_deepseek: false", submit_slice)
         self.assertIn("user_approved: true", submit_slice)
+        self.assertIn("refreshCache();", submit_slice)
+        self.assertIn("任务接收后立即回读本地 cache receipt", ordinary_quant_slice)
         self.assertNotIn("fetch(", source)
         self.assertNotIn("TUSHARE_TOKEN", source)
         self.assertNotIn("DEEPSEEK_API_KEY", source)

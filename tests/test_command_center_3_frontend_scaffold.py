@@ -3730,7 +3730,7 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn("回放股票量化推演", page)
         self.assertIn("回放次日图谱", page)
         self.assertIn("回到候选池", page)
-        self.assertIn("任务接收后先看最近任务编号和 TaskStatusPanel；成功后刷新本地缓存，再打开股票量化推演和次日图谱回放入口。", page)
+        self.assertIn("任务接收后立即回读本地 cache receipt，再看最近任务编号和 TaskStatusPanel；成功后刷新本地缓存，再打开股票量化推演和次日图谱回放入口。", page)
         self.assertLess(page.index('title="普通用户雷达摘要"'), page.index("{quantProjectionResultLocation}"))
         self.assertLess(page.index("搜票量化推演"), page.index('aria-label="quant projection replay destinations"'))
         self.assertLess(page.index('aria-label="quant projection replay destinations"'), page.index("快速雷达扫描"))

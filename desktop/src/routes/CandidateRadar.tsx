@@ -94,7 +94,10 @@ export default function CandidateRadar() {
       requested_by: "candidate_radar_page"
     }).then((res) => {
       setTaskReceipt(res);
-      if (res.ok) setTaskId(res.data.task_id);
+      if (res.ok) {
+        setTaskId(res.data.task_id);
+        refreshCache();
+      }
     });
   const launchQuantProjectionAcceptanceDryRun = () =>
     void postCandidateRadarQuantProjectionAcceptanceDryRun({
@@ -855,7 +858,7 @@ export default function CandidateRadar() {
             <a href="#next" aria-label="replay generated next session map">回放次日图谱</a>
             <a href="#candidate-pool" aria-label="return to candidate pool after quant projection">回到候选池</a>
           </div>
-          <p className="risk-note">任务接收后先看最近任务编号和 TaskStatusPanel；成功后刷新本地缓存，再打开股票量化推演和次日图谱回放入口。</p>
+          <p className="risk-note">任务接收后立即回读本地 cache receipt，再看最近任务编号和 TaskStatusPanel；成功后刷新本地缓存，再打开股票量化推演和次日图谱回放入口。</p>
           <p className="risk-note">页面刷新后，最近任务会优先从本地 cache / packet 回放 task id 和安全 current_step；GET cache 不会因此补调 provider。</p>
           <p className="risk-note">确认按钮只提交后台链路；服务端凭据可用才写入 Tushare call_ledger / cache / packet，凭据缺失只写本地阻断，GET cache 和 React render 不补调 provider。</p>
           <p>普通入口只保留“确认并生成”这一类用户按钮；工程补证入口已下沉到调用审计，DeepSeek 保持 skipped，不交易、不改 strategy action。</p>
