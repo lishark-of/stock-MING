@@ -276,6 +276,13 @@ export default function FactorQuantHub() {
     `模型状态：${ordinaryQuantModelSourceLabel}`,
     `Pending 状态：${ordinaryQuantPendingStateLabel}`
   ].join(" / ");
+  const ordinaryQuantDataLedgerRows = toRows(dataLedger.ledger_rows);
+  const ordinaryQuantLedgerSourceLabel =
+    cacheCallLedger.length || ordinaryQuantDataLedgerRows.length ? "ledger 回放可用" : "等待本地 ledger 回放";
+  const ordinaryQuantPacketSourceLabel =
+    Object.keys(packet).length ? "packet 回放可用" : "等待本地 packet";
+  const ordinaryQuantHandoffLocation =
+    "交接清单：下一票雷达确认按钮 → Tushare-first task → Factor cache / call_ledger / packet → 次日图谱预览";
   const ordinaryQuantMissingEvidence = [
     Number(runtime.missing_count ?? 0) ? `待补因子数量=${String(runtime.missing_count)}` : "",
     factorTestProductionValidation.provider_backed_small_pool_validation_done === true ? "" : "真实小股票池研究证据待确认",
@@ -336,6 +343,38 @@ export default function FactorQuantHub() {
       证据: ordinaryQuantModelSourceLabel,
       下一步: "DeepSeek governed executor 完成前只看 skipped/pending 状态",
       边界: "模型解释不覆盖价格、因子、持仓、操作区或 strategy action"
+    }
+  ];
+  const ordinaryQuantHandoffRows = [
+    {
+      交接段: "按钮确认",
+      用户看到: empty ? "先回下一票雷达输入代码并确认生成" : "已从本地量化缓存读取确认后的推演结果",
+      写入位置: "确认按钮创建 POST task 后才可写入本地 cache / ledger / packet",
+      边界: "输入股票代码、页面打开、React render 和 GET cache 都不自动外联"
+    },
+    {
+      交接段: "Factor cache",
+      用户看到: ordinaryQuantCacheSourceLabel,
+      写入位置: "小数据结果回放在 Factor cache；本页只读展示支持/压制",
+      边界: "查看本地缓存不创建 task、不调用 Tushare 或 DeepSeek"
+    },
+    {
+      交接段: "call_ledger",
+      用户看到: ordinaryQuantLedgerSourceLabel,
+      写入位置: "外联证据只看 task/worker 留下的 call_ledger 或 cache envelope ledger",
+      边界: "ledger 只展示状态、接口、行数和时间；token/key 不进前端、日志、packet 或 cache"
+    },
+    {
+      交接段: "packet",
+      用户看到: ordinaryQuantPacketSourceLabel,
+      写入位置: "packet 回放用于连接支持/压制、次日图谱预览和模型状态",
+      边界: "packet 是研究回放，不覆盖价格、持仓、operation_zones 或 strategy action"
+    },
+    {
+      交接段: "次日图谱",
+      用户看到: `桥接状态：${String(bridge.status ?? bridge.bridge_status ?? "等待本地缓存")}`,
+      写入位置: "Next Session preview 只读取本地 bridge cache",
+      边界: "预览是条件路径复核，不是买入指令、不真实交易、不下单"
     }
   ];
   const ordinaryDeepSeekGovernedExecutorRows = [
@@ -406,6 +445,9 @@ export default function FactorQuantHub() {
             { label: "查看顺序", value: ordinaryQuantReviewOrder },
             { label: "结果组成", value: ordinaryQuantResultComposition },
             { label: "数据来源状态", value: ordinaryQuantSourceState },
+            { label: "交接清单", value: ordinaryQuantHandoffLocation, tone: "good" },
+            { label: "ledger", value: ordinaryQuantLedgerSourceLabel, tone: ordinaryQuantLedgerSourceLabel.includes("等待") ? "warn" : "good" },
+            { label: "packet", value: ordinaryQuantPacketSourceLabel, tone: ordinaryQuantPacketSourceLabel.includes("等待") ? "warn" : "good" },
             { label: "P5 DeepSeek", value: ordinaryDeepSeekGovernedExecutorState, tone: deepseek.called === true ? "warn" : "good" },
             { label: "补证方式", value: ordinaryQuantEvidenceTaskState, tone: ordinaryQuantEvidenceTaskState.includes("等待") || ordinaryQuantEvidenceTaskState.includes("待补") || ordinaryQuantEvidenceTaskState.includes("未知") ? "warn" : "good" },
             { label: "缺少证据", value: ordinaryQuantMissingEvidence, tone: ordinaryQuantMissingEvidence.includes("待补") || ordinaryQuantMissingEvidence.includes("待确认") ? "warn" : "good" },
@@ -416,6 +458,11 @@ export default function FactorQuantHub() {
             { label: "仅供研究", value: "量化推演不是买卖指令；不真实交易、不下单、不改交易策略或操作区", tone: "good" }
           ]}
         />
+        <div aria-label="stock quant ordinary cache ledger packet handoff">
+          <h3>cache / ledger / packet 交接清单</h3>
+          <p className="risk-note">确认按钮之后的轻量结果按 cache、ledger、packet、次日图谱预览回放；普通页只看交接状态，完整审计留在下方。</p>
+          <DataLineageTable rows={ordinaryQuantHandoffRows} />
+        </div>
         <div aria-label="stock quant ordinary explainable result replay">
           <h3>三段可解释结果</h3>
           <p className="risk-note">普通结果先按支持/压制、次日图谱预览、模型解释状态阅读；每段只回放本地 cache，不把解释变成交易动作。</p>
