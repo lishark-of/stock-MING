@@ -1263,6 +1263,54 @@ export default function CandidateRadar() {
       边界: "只从 cache / ledger / packet 回放 #factor/#next；不创建第二个 task、不改 strategy action"
     }
   ];
+  const ordinaryP1ToP3StageRailState = [
+    quantProjectionSymbolReady ? "input_ready" : searchSymbol.trim() ? "input_blocked" : "input_waiting",
+    quantProjectionSubmitError ? "confirm_failed" : quantProjectionSubmitting ? "confirm_submitting" : quantProjectionCanSubmit ? "confirm_ready" : "confirm_waiting",
+    taskReceipt?.ok || quantProjectionPersistedTaskId ? "task_accepted" : "task_waiting",
+    quantProjectionSmallDataReady ? "p2_ready" : "p2_waiting",
+    quantProjectionInterpretationReady ? "p3_ready" : "p3_waiting"
+  ].join(" ");
+  const ordinaryP1ToP3StageRailSteps = [
+    {
+      label: "输入静默",
+      state: quantProjectionSymbolReady ? ("done" as const) : searchSymbol.trim() ? ("blocked" as const) : ("waiting" as const),
+      detail: quantProjectionInputValidation
+    },
+    {
+      label: "确认按钮",
+      state: quantProjectionSubmitError
+        ? ("blocked" as const)
+        : quantProjectionSubmitting
+          ? ("active" as const)
+          : taskReceipt?.ok || quantProjectionPersistedTaskId
+            ? ("done" as const)
+            : quantProjectionCanSubmit
+              ? ("active" as const)
+              : ("waiting" as const),
+      detail: quantProjectionCanSubmit ? "POST task ready" : "等待本地校验"
+    },
+    {
+      label: "任务接收",
+      state: quantProjectionSubmitError
+        ? ("blocked" as const)
+        : quantProjectionSubmitting
+          ? ("active" as const)
+          : taskReceipt?.ok || quantProjectionPersistedTaskId
+            ? ("done" as const)
+            : ("waiting" as const),
+      detail: taskReceipt?.ok || quantProjectionPersistedTaskId ? "task id 可见" : "等待确认"
+    },
+    {
+      label: "P2 三面",
+      state: quantProjectionSmallDataReady ? ("done" as const) : (taskReceipt?.ok || quantProjectionPersistedTaskId) ? ("active" as const) : ("waiting" as const),
+      detail: quantProjectionSmallDataReady ? "cache/ledger/packet" : "等待回放"
+    },
+    {
+      label: "P3 速读",
+      state: quantProjectionInterpretationReady ? ("done" as const) : quantProjectionSmallDataReady ? ("active" as const) : ("waiting" as const),
+      detail: quantProjectionInterpretationReady ? "可解释结果" : "等待本地结果"
+    }
+  ];
   const quantProjectionConfirmReplayStageRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_confirm_replay_stage_rows).map((row) => ({
     速读项: displayText(row["速读项"] ?? row.stage_key),
     当前状态: displayText(row["当前状态"] ?? row.status),
@@ -1575,6 +1623,15 @@ export default function CandidateRadar() {
           <h3>P0 前后端联通闸门</h3>
           <p className="risk-note">普通用户先确认本地 FastAPI、bootstrap runtime-mode 和候选 cache 都能只读回放；P0 未通过时不要进入 P1 确认按钮。</p>
           <DataLineageTable rows={candidateRadarP0AutoLinkRows} />
+        </div>
+        <div aria-label="candidate radar ordinary p1 to p3 stage rail">
+          <h3>P1 到 P3 阶段速览</h3>
+          <p className="risk-note">这条状态轨只读本地输入、task receipt 和 cache 回放：输入保持静默，只有确认按钮创建 Tushare-first POST task，P2/P3 只回放本地结果。</p>
+          <StateClarityRail
+            label="candidate radar ordinary p1 to p3 stage rail"
+            state={ordinaryP1ToP3StageRailState}
+            steps={ordinaryP1ToP3StageRailSteps}
+          />
         </div>
         <div aria-label="candidate radar ordinary p1 confirm path">
           <h3>P1 普通确认路径</h3>

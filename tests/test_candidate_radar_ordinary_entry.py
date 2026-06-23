@@ -55,10 +55,23 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("ordinaryP1ConfirmPathLabel", self.page)
         self.assertIn("ordinaryP1ConfirmPathBoundary", self.page)
         self.assertIn("ordinaryP1ConfirmPathRows", self.page)
+        self.assertIn("ordinaryP1ToP3StageRailState", self.page)
+        self.assertIn("ordinaryP1ToP3StageRailSteps", self.page)
         self.assertIn("P1 主路径：点击确认创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task", self.page)
         self.assertIn("P1 主路径：先输入股票代码；输入只做本地校验，确认按钮才创建 Tushare-first task", self.page)
         self.assertIn("P1 主路径只允许确认按钮创建 Tushare-first task", self.page)
         self.assertIn("搜索输入、页面打开、React render、GET cache 和结果链接都不外联", self.page)
+        self.assertIn('aria-label="candidate radar ordinary p1 to p3 stage rail"', self.page)
+        self.assertIn("P1 到 P3 阶段速览", self.page)
+        self.assertIn("这条状态轨只读本地输入、task receipt 和 cache 回放", self.page)
+        self.assertIn('label: "输入静默"', self.page)
+        self.assertIn('label: "确认按钮"', self.page)
+        self.assertIn('label: "任务接收"', self.page)
+        self.assertIn('label: "P2 三面"', self.page)
+        self.assertIn('label: "P3 速读"', self.page)
+        self.assertIn('"POST task ready"', self.page)
+        self.assertIn('"cache/ledger/packet"', self.page)
+        self.assertIn('"可解释结果"', self.page)
         self.assertIn('aria-label="candidate radar ordinary p1 confirm path"', self.page)
         self.assertIn("P1 普通确认路径", self.page)
         self.assertIn("普通用户先看这条 P1 路径", self.page)
@@ -143,6 +156,23 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertNotIn("轻量实时后台任务", summary_slice)
         self.assertIn('{ label: "DeepSeek", value: ordinaryDeepSeekSourceLabel }', summary_slice)
         self.assertNotIn('DeepSeek", value: bootstrapLiveLight.deepseek_on_open === true ? "轻量实时后台任务"', summary_slice)
+
+    def test_candidate_radar_p1_to_p3_stage_rail_is_read_only_before_tables(self):
+        summary_start = self.page.index('title="普通用户雷达摘要"')
+        summary_end = self.page.index('title="下一票候选池"', summary_start)
+        summary = self.page[summary_start:summary_end]
+        rail_start = summary.index('aria-label="candidate radar ordinary p1 to p3 stage rail"')
+        p1_table_start = summary.index('aria-label="candidate radar ordinary p1 confirm path"')
+        rail = summary[rail_start:p1_table_start]
+
+        self.assertLess(rail_start, p1_table_start)
+        self.assertIn("<StateClarityRail", rail)
+        self.assertIn('label="candidate radar ordinary p1 to p3 stage rail"', rail)
+        self.assertIn("state={ordinaryP1ToP3StageRailState}", rail)
+        self.assertIn("steps={ordinaryP1ToP3StageRailSteps}", rail)
+        self.assertNotIn("onClick=", rail)
+        self.assertNotIn("postCandidateRadarQuantProjection", rail)
+        self.assertNotIn("launchQuantProjection", rail)
 
     def test_three_ordinary_entrances_show_summaries_before_developer_audit(self):
         pages = {
