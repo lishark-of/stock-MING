@@ -311,6 +311,10 @@ export default function FactorQuantHub() {
   ].join(" / ");
   const ordinaryQuantResultBoundary =
     "结果只用于研究复核；支持/压制、次日图谱和模型解释都不能直接变成买卖指令";
+  const ordinaryDeepSeekGovernedExecutorState =
+    deepseek.called === true
+      ? "已有本地模型解释缓存；仍只解释不改数值或动作"
+      : "等待 governed executor；不阻塞 Tushare-first、支持/压制和次日图谱";
   const ordinaryQuantResultReplayRows = [
     {
       结果段: "支持/压制",
@@ -332,6 +336,37 @@ export default function FactorQuantHub() {
       证据: ordinaryQuantModelSourceLabel,
       下一步: "DeepSeek governed executor 完成前只看 skipped/pending 状态",
       边界: "模型解释不覆盖价格、因子、持仓、操作区或 strategy action"
+    }
+  ];
+  const ordinaryDeepSeekGovernedExecutorRows = [
+    {
+      治理段: "基础结果先行",
+      当前状态: empty ? "等待本地量化缓存" : "Tushare-first / Factor cache / Next Session preview 可先读",
+      用户看到: "支持/压制和次日图谱先显示；DeepSeek 不作为数据源",
+      边界: "DeepSeek 不阻塞 Tushare-first、支持/压制和次日图谱"
+    },
+    {
+      治理段: "真实调用门槛",
+      当前状态:
+        deepseekProductionActivationReceipt.provider_benchmark_done === true &&
+        deepseekRetryRepairDryRun.bounded_retry_repair_ready === true &&
+        deepseekJsonStability.response_format_enforced === true
+          ? "关键门槛已有本地通过记录"
+          : "真实调用只能在 governed executor 完成后进入受控按钮任务",
+      用户看到: `结构化输出 ${String(deepseekJsonStability.status ?? "missing")} / 修复预检 ${String(deepseekRetryRepairDryRun.status ?? "missing")} / 样本验收 ${String(deepseekProviderBenchmarkScopeTicket.status ?? "missing")}`,
+      边界: "结构化输出、重试修复、样本验收和成本证据未齐前不自动调用"
+    },
+    {
+      治理段: "普通页降噪",
+      当前状态: "prompt/output 和模型调用明细留在高级审计",
+      用户看到: "普通页不展示 prompt/output，只显示是否 skipped/pending/ready",
+      边界: "不把本地预检、票据或矩阵当成生产证据"
+    },
+    {
+      治理段: "输出约束",
+      当前状态: ordinaryQuantDeepSeekSourceLabel,
+      用户看到: "模型解释只辅助阅读，不覆盖价格、factor、持仓、operation_zones 或 strategy action",
+      边界: "不真实交易、不下单、不生成买入指令"
     }
   ];
   const ordinaryQuantRuntimeModeLabel = `运行模式：${runtimeModeLabel(ordinaryQuantRuntimeMode)}`;
@@ -371,6 +406,7 @@ export default function FactorQuantHub() {
             { label: "查看顺序", value: ordinaryQuantReviewOrder },
             { label: "结果组成", value: ordinaryQuantResultComposition },
             { label: "数据来源状态", value: ordinaryQuantSourceState },
+            { label: "P5 DeepSeek", value: ordinaryDeepSeekGovernedExecutorState, tone: deepseek.called === true ? "warn" : "good" },
             { label: "补证方式", value: ordinaryQuantEvidenceTaskState, tone: ordinaryQuantEvidenceTaskState.includes("等待") || ordinaryQuantEvidenceTaskState.includes("待补") || ordinaryQuantEvidenceTaskState.includes("未知") ? "warn" : "good" },
             { label: "缺少证据", value: ordinaryQuantMissingEvidence, tone: ordinaryQuantMissingEvidence.includes("待补") || ordinaryQuantMissingEvidence.includes("待确认") ? "warn" : "good" },
             { label: "阻断/降级", value: ordinaryQuantBlockedState, tone: ordinaryQuantBlockedState.includes("未标记") ? "good" : "warn" },
@@ -384,6 +420,11 @@ export default function FactorQuantHub() {
           <h3>三段可解释结果</h3>
           <p className="risk-note">普通结果先按支持/压制、次日图谱预览、模型解释状态阅读；每段只回放本地 cache，不把解释变成交易动作。</p>
           <DataLineageTable rows={ordinaryQuantResultReplayRows} />
+        </div>
+        <div aria-label="stock quant ordinary deepseek governance">
+          <h3>DeepSeek 单独治理状态</h3>
+          <p className="risk-note">DeepSeek 解释单独补证；不阻塞 Tushare-first、支持/压制和次日图谱；普通页不展示 prompt/output。</p>
+          <DataLineageTable rows={ordinaryDeepSeekGovernedExecutorRows} />
         </div>
         <div className="actions" aria-label="stock quant projection primary next action">
           <a href={ordinaryQuantPrimaryActionHref} aria-label="open stock quant primary next action">{ordinaryQuantPrimaryActionLabel}</a>
