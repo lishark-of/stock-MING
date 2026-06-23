@@ -235,8 +235,18 @@ export default function DesktopShellPreflight() {
       label: "打开策略",
       value: p0ConnectionReady ? "就绪后打开首页" : "先看诊断",
       tone: p0ConnectionReady ? ("good" as const) : ("warn" as const)
+    },
+    {
+      label: "普通下一步",
+      value: p0ConnectionReady ? "去下一票雷达" : "先修复联通",
+      tone: p0ConnectionReady ? ("good" as const) : ("warn" as const)
     }
   ];
+  const p0OrdinaryPrimaryActionHref = p0ConnectionReady ? "#candidates" : "#desktop";
+  const p0OrdinaryPrimaryActionLabel = p0ConnectionReady ? "去下一票雷达确认代码" : "留在一键启动预检排障";
+  const p0OrdinaryPrimaryActionBoundary = p0ConnectionReady
+    ? "只切换到下一票雷达；输入代码不外联，点击确认才创建 Tushare-first POST task。"
+    : "只查看本页恢复步骤和日志指引；React render 不启动 FastAPI/Vite、不创建 task、不调用 provider/model。";
   const devLaunchPlan = rows(cache.dev_launch_plan);
   const desktopLauncherRows = rows(cache.desktop_launcher_rows);
   const productionLaunchPlan = rows(cache.production_launch_plan);
@@ -271,6 +281,11 @@ export default function DesktopShellPreflight() {
         <p>当前联通：{p0ConnectionReady ? "ready" : "check"}；需要处理：{p0BlockerCount === 0 ? "无" : `${p0BlockerCount} 项，按失败诊断处理`}。</p>
         <p>P0 本地联通收据：{String(p0LocalConnectionReceipt.status ?? "p0_local_connection_receipt_loading")}；本页只回读本地状态，不主动探测当前运行时。</p>
         <p>{String(p0LocalConnectionReceipt.ordinary_label ?? "本地一键入口会先确认 FastAPI、bootstrap status 和 React/Vite 都就绪，再打开页面。")}</p>
+        <div className="actions" aria-label="p0 ordinary primary action">
+          <a href={p0OrdinaryPrimaryActionHref} aria-label="open p0 ordinary primary action">{p0OrdinaryPrimaryActionLabel}</a>
+          <a href="#health" aria-label="open health status readback after p0 preflight">查看系统健康</a>
+        </div>
+        <p className="risk-note">{p0OrdinaryPrimaryActionBoundary}</p>
         <div aria-label="p0 ordinary launcher mode choices">
           <h3>启动模式</h3>
           <p className="risk-note">普通双击用于日常打开；只检查和联通验收不弹窗用于安全诊断，不从页面启动服务或创建 task。</p>
