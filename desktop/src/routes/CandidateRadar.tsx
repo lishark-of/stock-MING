@@ -1548,6 +1548,11 @@ export default function CandidateRadar() {
           <p className="risk-note">普通用户再看这张完整性表：cache、call_ledger、packet 是否齐备；它优先读取服务端 ordinary_writeback_integrity_rows，只做本地回放。</p>
           <DataLineageTable rows={quantProjectionWritebackIntegrityRows} />
         </div>
+        <div aria-label="candidate radar ordinary p3 explainable result quick read">
+          <h3>P3 可解释结果速读</h3>
+          <p className="risk-note">普通用户确认后直接看这张 P3 表：可读结论、回放来源和待补证据都来自本地 cache / ledger / packet；不会从速读表创建 task 或调用模型。</p>
+          <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
+        </div>
         <div className="actions" aria-label="candidate radar primary next action">
           {Number(counts.candidate_count ?? 0) ? (
             <a href="#candidate-pool" aria-label="open local candidate pool from radar summary">{ordinaryPrimaryActionLabel}</a>
