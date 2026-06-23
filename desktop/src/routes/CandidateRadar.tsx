@@ -583,13 +583,23 @@ export default function CandidateRadar() {
     !loading &&
     !error &&
     bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet";
-  const quantProjectionCanSubmit = quantProjectionSymbolReady && quantProjectionP0Ready;
+  const quantProjectionPersistedTaskId = String(searchQuantProjectionReceipt.latest_task_id ?? searchQuantProjectionReceipt.task_id ?? cache.task_id ?? "");
+  const quantProjectionPersistedTaskStep = String(searchQuantProjectionReceipt.latest_task_current_step ?? searchQuantProjectionReceipt.status ?? "");
+  const quantProjectionTaskReceiptPayload = (taskReceipt?.data?.task?.payload_safe as Record<string, unknown> | undefined) ?? {};
+  const quantProjectionAcceptedTaskSymbol = String(quantProjectionTaskReceiptPayload.symbol ?? searchQuantProjectionReceipt.symbol ?? "");
+  const quantProjectionTaskAlreadyAcceptedForInput =
+    quantProjectionSymbolReady &&
+    Boolean(taskReceipt?.ok || quantProjectionPersistedTaskId) &&
+    quantProjectionAcceptedTaskSymbol === quantProjectionSymbolValidation.normalized;
+  const quantProjectionCanSubmit = quantProjectionSymbolReady && quantProjectionP0Ready && !quantProjectionTaskAlreadyAcceptedForInput;
   const quantProjectionSubmitDisabled = !quantProjectionCanSubmit || quantProjectionSubmitting;
   const quantProjectionCanLaunch = !quantProjectionSubmitDisabled;
   const quantProjectionDisabledReason = quantProjectionSubmitting
     ? "任务提交中：正在创建 Tushare-first POST task；请等待本地任务编号回写，避免重复提交。"
     : !quantProjectionP0Ready
     ? "按钮不可用原因：P0 前后端联通未通过；先让 FastAPI、bootstrap status 和 candidate cache 变绿。"
+    : quantProjectionTaskAlreadyAcceptedForInput
+    ? "按钮不可用原因：当前标的已有本地 task id；先看 TaskStatusPanel，成功后刷新 cache 回放。"
     : quantProjectionCanSubmit
     ? `按钮已启用：确认后创建 Tushare-first 按钮门控 POST task；DeepSeek 保持 skipped；已确认 ${quantProjectionSymbolValidation.normalized}`
     : searchSymbol.trim()
@@ -1000,8 +1010,6 @@ export default function CandidateRadar() {
     : searchQuantProjectionReceipt.status
       ? "等待 Tushare-first 回放；普通页只看回放状态"
       : "输入代码并确认后创建 Tushare-first 任务";
-  const quantProjectionPersistedTaskId = String(searchQuantProjectionReceipt.latest_task_id ?? searchQuantProjectionReceipt.task_id ?? cache.task_id ?? "");
-  const quantProjectionPersistedTaskStep = String(searchQuantProjectionReceipt.latest_task_current_step ?? searchQuantProjectionReceipt.status ?? "");
   const quantProjectionDisplayTaskId = quantProjectionPersistedTaskId || taskId;
   const quantProjectionLastResult = [
     `当前标的：${quantProjectionDisplaySymbol || "--"}`,
