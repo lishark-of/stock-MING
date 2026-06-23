@@ -25,6 +25,7 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "主下一步边界"',
             'label: "P1 主路径"',
             'label: "P1 主路径边界"',
+            'label: "P2 三面"',
             'label: "候选分组"',
             'label: "扫描范围"',
             'label: "候选来源"',
@@ -617,10 +618,18 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("P1 普通确认路径", summary_slice)
         self.assertIn('aria-label="candidate radar ordinary p1 confirm path"', summary_slice)
         self.assertIn("普通用户先看这条 P1 路径", summary_slice)
+        self.assertIn('aria-label="candidate radar ordinary p2 writeback surfaces"', summary_slice)
+        self.assertIn("P2 小数据三面回放", summary_slice)
+        self.assertIn("普通用户确认后看这张表：cache、call_ledger、packet 三面是否可回放", summary_slice)
+        self.assertIn("它只读取本地 cache，不创建 task、不补调 Tushare/DeepSeek", summary_slice)
+        self.assertIn("rows={quantProjectionWritebackSurfaceRows}", summary_slice)
+        self.assertIn('label: "P2 三面"', summary_slice)
         self.assertIn('aria-live="polite"', summary_slice)
         self.assertIn('aria-label="candidate radar primary next action"', summary_slice)
         self.assertIn('aria-label="candidate radar next user actions"', summary_slice)
         self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p1 confirm path"'), summary_slice.index('aria-label="candidate radar primary next action"'))
+        self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p1 confirm path"'), summary_slice.index('aria-label="candidate radar ordinary p2 writeback surfaces"'))
+        self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p2 writeback surfaces"'), summary_slice.index('aria-label="candidate radar primary next action"'))
         self.assertLess(summary_slice.index('aria-label="candidate radar primary next action"'), summary_slice.index('aria-label="candidate radar next user actions"'))
         self.assertLess(summary_slice.index('aria-label="candidate radar next user actions"'), summary_slice.index("{quantProjectionSummaryGuidance}"))
         self.assertNotIn("launchQuantProjectionAcceptanceDryRun", summary_slice)

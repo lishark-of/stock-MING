@@ -1507,6 +1507,7 @@ export default function CandidateRadar() {
             { label: "P1 回放顺序", value: quantProjectionReplayOrder, tone: taskReceipt?.ok || quantProjectionProviderLedgerReady ? "good" : "warn" },
             { label: "P1 确认后等待", value: quantProjectionPostConfirmWaitLabel, tone: taskReceipt?.ok || quantProjectionPersistedTaskId || quantProjectionProviderLedgerReady ? "good" : "warn" },
             { label: "P2 小数据回放", value: quantProjectionSmallDataStageLabel, tone: quantProjectionSmallDataReady ? "good" : "warn" },
+            { label: "P2 三面", value: quantProjectionSmallDataWritebackSurfaces, tone: quantProjectionSmallDataReady ? "good" : "warn" },
             { label: "P2 写入边界", value: quantProjectionSmallDataReadbackContract, tone: "good" },
             { label: "任务边界", value: ordinaryTaskBoundary },
             { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" }
@@ -1516,6 +1517,11 @@ export default function CandidateRadar() {
           <h3>P1 普通确认路径</h3>
           <p className="risk-note">普通用户先看这条 P1 路径：输入只做本地校验，确认按钮才创建 Tushare-first 后台任务，随后只读回放 cache / ledger / packet。</p>
           <DataLineageTable rows={ordinaryP1ConfirmPathRows} />
+        </div>
+        <div aria-label="candidate radar ordinary p2 writeback surfaces">
+          <h3>P2 小数据三面回放</h3>
+          <p className="risk-note">普通用户确认后看这张表：cache、call_ledger、packet 三面是否可回放；它只读取本地 cache，不创建 task、不补调 Tushare/DeepSeek。</p>
+          <DataLineageTable rows={quantProjectionWritebackSurfaceRows} />
         </div>
         <div className="actions" aria-label="candidate radar primary next action">
           {Number(counts.candidate_count ?? 0) ? (
