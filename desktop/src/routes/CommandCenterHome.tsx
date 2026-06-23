@@ -261,6 +261,49 @@ export default function CommandCenterHome() {
   const workerRuntimeState = workerRuntime.runtime as Record<string, unknown> | undefined;
   const positionSummary = position.position_summary as Record<string, unknown> | undefined;
   const candidateCounts = candidates.counts as Record<string, unknown> | undefined;
+  const candidateQuantInterpretation = (candidates.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateQuantQuickRows = (candidateQuantInterpretation.ordinary_result_quick_read_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const dailyCommandExplainableResultLabel = String(
+    candidateQuantInterpretation.ordinary_result_summary ?? "等待搜票确认后的可解释结果"
+  );
+  const dailyCommandExplainableResultNext = String(
+    candidateQuantInterpretation.ordinary_result_next_step ?? "先进入下一票雷达输入代码并点击确认"
+  );
+  const dailyCommandExplainableResultBoundary = String(
+    candidateQuantInterpretation.ordinary_result_boundary ??
+      "可解释结果只从本地 cache / ledger / packet 回放；不会从首页创建 task、调用模型或生成交易动作。"
+  );
+  const dailyCommandExplainableResultRows = candidateQuantQuickRows.length
+    ? candidateQuantQuickRows.map((row) => ({
+        速读项: String(row["结论"] ?? row.quick_read_item ?? "结果速读"),
+        当前状态: String(row["当前状态"] ?? "等待本地结果"),
+        用户下一步: String(row["用户下一步"] ?? dailyCommandExplainableResultNext),
+        证据: String(row["证据"] ?? row.readback_source ?? "CandidateRadar cache"),
+        边界: String(row["边界"] ?? dailyCommandExplainableResultBoundary)
+      }))
+    : [
+        {
+          速读项: "现在能读什么",
+          当前状态: dailyCommandExplainableResultLabel,
+          用户下一步: dailyCommandExplainableResultNext,
+          证据: "CandidateRadar search_quant_projection_interpretation_summary",
+          边界: dailyCommandExplainableResultBoundary
+        },
+        {
+          速读项: "结果从哪里回放",
+          当前状态: "等待 CandidateRadar cache / ledger / packet 写入",
+          用户下一步: "完成确认任务后回放股票量化推演和次日图谱",
+          证据: "ordinary_result_quick_read_rows pending",
+          边界: "首页只读展示 P3 结果速读；不补调 Tushare、DeepSeek 或 GitHub。"
+        },
+        {
+          速读项: "还缺什么",
+          当前状态: "缺口只作为待补证据",
+          用户下一步: "先完成 Tushare-first 和基础图谱；DeepSeek governed executor 单独补",
+          证据: "local_evidence_gap_summary",
+          边界: "不把缺口、候选或解释结果当买卖指令。"
+        }
+      ];
   const riskCounts = risk.counts as Record<string, unknown> | undefined;
   const liveLight = (bootstrapStatus.live_light as Record<string, unknown> | undefined) ?? {};
   const bootstrapProviderLinkageRows = (bootstrapStatus.provider_linkage_rows as Array<Record<string, unknown>> | undefined) ?? [];
@@ -566,6 +609,9 @@ export default function CommandCenterHome() {
             { label: "今日查看顺序", value: dailyCommandReviewOrder, tone: error ? "warn" : "good" },
             { label: "今日结果组成", value: dailyCommandResultComposition },
             { label: "今日结果位置", value: dailyCommandResultLocation, tone: "good" },
+            { label: "P3 可读结论", value: dailyCommandExplainableResultLabel, tone: candidateQuantInterpretation.interpretation_ready === true ? "good" : "warn" },
+            { label: "P3 下一步", value: dailyCommandExplainableResultNext },
+            { label: "P3 边界", value: dailyCommandExplainableResultBoundary, tone: "good" },
             { label: "cache", value: dailyCommandCacheSourceLabel },
             { label: "Tushare", value: dailyCommandTushareSourceLabel },
             { label: "DeepSeek", value: dailyCommandDeepSeekSourceLabel },
@@ -591,6 +637,11 @@ export default function CommandCenterHome() {
           <h3>P0 到 P1 快速行动</h3>
           <p className="risk-note">优先读取 desktop preflight 的 p0_ordinary_quick_action_rows：联通通过后进入下一票雷达，输入代码，再由确认按钮触发 Tushare-first 任务。</p>
           <DataLineageTable rows={p0OrdinaryQuickActionRows} />
+        </div>
+        <div aria-label="daily command p3 explainable result quick read">
+          <h3>P3 可解释结果速读</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows：普通入口只看可读结论、回放来源和待补证据；不会从首页创建 task、调用 DeepSeek 或展开 raw packet。</p>
+          <DataLineageTable rows={dailyCommandExplainableResultRows} />
         </div>
         <div aria-label="daily command p0 startup recovery steps">
           <h3>一键启动恢复步骤</h3>
