@@ -940,10 +940,30 @@ def build_contract() -> dict[str, Any]:
             and set(task_rows["run_candidate_radar_quick_scan"].get("scan_modes") or []) == candidate_service.SUPPORTED_LOCAL_SCAN_MODES
             and task_rows["run_candidate_radar_quant_projection"].get("route")
             == "POST /api/candidate-radar/quant-projection"
-            and task_rows["run_candidate_radar_quant_projection"].get("local_receipt_only") is True
+            and task_rows["run_candidate_radar_quant_projection"].get("current_backend")
+            == "button_gated_search_quant_projection_chain"
+            and task_rows["run_candidate_radar_quant_projection"].get("external_call_policy")
+            == "button_confirmed_tushare_first_chain_deepseek_skipped_or_blocked"
+            and task_rows["run_candidate_radar_quant_projection"].get("possible_external_sources") == ["tushare"]
+            and task_rows["run_candidate_radar_quant_projection"].get("future_external_sources") == ["deepseek"]
+            and task_rows["run_candidate_radar_quant_projection"].get("local_receipt_only") is False
+            and task_rows["run_candidate_radar_quant_projection"].get("local_receipt_first") is True
+            and task_rows["run_candidate_radar_quant_projection"].get("symbol_validation_required") is True
+            and task_rows["run_candidate_radar_quant_projection"].get("user_approval_required") is True
+            and task_rows["run_candidate_radar_quant_projection"].get("confirmed_tushare_first_chain_supported") is True
+            and task_rows["run_candidate_radar_quant_projection"].get("tushare_first_requires_user_approval") is True
+            and task_rows["run_candidate_radar_quant_projection"].get("provider_model_route_requires_execution_request") is True
+            and task_rows["run_candidate_radar_quant_projection"].get("tushare_called_only_from_post_task") is True
+            and task_rows["run_candidate_radar_quant_projection"].get("deepseek_skipped_by_default") is True
+            and task_rows["run_candidate_radar_quant_projection"].get("deepseek_governed_executor_pending") is True
+            and task_rows["run_candidate_radar_quant_projection"].get("cache_ledger_packet_writeback_supported") is True
             and task_rows["run_candidate_radar_quant_projection"].get("provider_model_pending") is True
-            and task_rows["run_candidate_radar_quant_projection"].get("provider_execution_implemented") is False
+            and task_rows["run_candidate_radar_quant_projection"].get("tushare_called") is False
+            and task_rows["run_candidate_radar_quant_projection"].get("deepseek_called") is False
+            and task_rows["run_candidate_radar_quant_projection"].get("provider_execution_implemented") is True
             and task_rows["run_candidate_radar_quant_projection"].get("model_execution_implemented") is False
+            and task_rows["run_candidate_radar_quant_projection"].get("cache_get_external_calls") is False
+            and task_rows["run_candidate_radar_quant_projection"].get("page_render_external_calls") is False
             and task_rows["run_candidate_radar_quant_projection"].get("production_quant_projection_complete") is False
             and task_rows["run_candidate_radar_quant_projection_acceptance_dry_run"].get("route")
             == "POST /api/candidate-radar/quant-projection-acceptance-dry-run"
