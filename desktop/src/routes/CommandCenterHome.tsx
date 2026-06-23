@@ -538,6 +538,15 @@ export default function CommandCenterHome() {
     : `自动尝试本地 FastAPI：${API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ")}`;
   const dailyCommandFrontendBackendAutoLinkBoundary =
     "前端 API client 只在本地 FastAPI 候选地址内自动联通；失败显示离线提示，不启动服务、不创建 task、不调用 provider/model、不读取 token/key";
+  const dailyCommandP0LocalReadinessReady =
+    health.status === "ok" &&
+    bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet" &&
+    desktopPreflight.packet_key === "command_center_3_desktop_shell_preflight_cache";
+  const dailyCommandP0LocalReadinessLabel = dailyCommandP0LocalReadinessReady
+    ? `P0 ready：${dailyCommandFrontendBackendSelectedApiBase} 已联通，当前 React 页面已加载；可进入下一票雷达`
+    : "P0 check：先让 health、bootstrap status、desktop preflight cache 变绿；未 ready 不进入 P1";
+  const dailyCommandP0LocalReadinessBoundary =
+    "P0 ready 只证明本地前后端联通；不代表 Tushare 已调用、DeepSeek 可用、release ready 或 14 LTG 完成。";
   const dailyCommandFrontendBackendAutoLinkRows = [
     {
       联通项: "前端 API client",
@@ -559,6 +568,13 @@ export default function CommandCenterHome() {
       证据: "frontend_backend_auto_link_scope=local_fastapi_only",
       下一步: error ? "打开一键启动预检，按 FastAPI / bootstrap / desktop preflight / React 四段恢复" : "联通正常时进入下一票雷达",
       边界: "离线提示只帮助恢复 P0；不会绕过确认按钮触发 Tushare，也不会调用 DeepSeek"
+    },
+    {
+      联通项: "P0 可继续闸门",
+      当前状态: dailyCommandP0LocalReadinessLabel,
+      证据: "health ok + bootstrap runtime-mode packet + desktop preflight one-click packet + current React page",
+      下一步: dailyCommandP0LocalReadinessReady ? "进入下一票雷达；输入保持静默，确认按钮才触发 Tushare-first" : "回到一键启动预检；不要进入 P1 投研入口",
+      边界: dailyCommandP0LocalReadinessBoundary
     }
   ];
   const dailyCommandUsableShortestPathRows = [
@@ -779,6 +795,7 @@ export default function CommandCenterHome() {
             { label: "只读自检", value: dailyCommandP0CheckOnlyNext, tone: p0LauncherCheckOnlyRows.length ? "good" : "warn" },
             { label: "自动联通", value: dailyCommandFrontendBackendAutoLinkLabel, tone: health.status === "ok" ? "good" : "warn" },
             { label: "自动联通边界", value: dailyCommandFrontendBackendAutoLinkBoundary, tone: "good" },
+            { label: "P0 可继续", value: dailyCommandP0LocalReadinessLabel, tone: dailyCommandP0LocalReadinessReady ? "good" : "warn" },
             { label: "联通后行动", value: dailyCommandP0QuickAction || "等待 P0 quick action rows", tone: dailyCommandP0QuickAction ? "good" : "warn" },
             { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
             { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
