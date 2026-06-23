@@ -12,6 +12,11 @@ class BackendOfflineNoticeGuidanceTests(unittest.TestCase):
         self.assertIn("本地后端未连接", notice)
         self.assertIn('const COMMAND_CENTER_3_LAUNCHER_PATH = "scripts/start_command_center_3.command"', notice)
         self.assertIn('const COMMAND_CENTER_3_DESKTOP_SHORTCUT = "stock-MING Command Center 3.command"', notice)
+        self.assertIn("COMMAND_CENTER_3_CHECK_ONLY_COMMAND", notice)
+        self.assertIn(
+            "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command",
+            notice,
+        )
         self.assertIn("下一步：请双击桌面快捷方式", notice)
         self.assertIn("{COMMAND_CENTER_3_DESKTOP_SHORTCUT}", notice)
         self.assertIn("{COMMAND_CENTER_3_LAUNCHER_PATH}", notice)
@@ -25,6 +30,8 @@ class BackendOfflineNoticeGuidanceTests(unittest.TestCase):
         self.assertIn("点击“确认并生成 3.0 量化推演”创建 Tushare-first 按钮门控任务", notice)
         self.assertIn("刚运行启动器后仍离线", notice)
         self.assertIn("旧的 React/Vite dev server 复用了不同后端地址", notice)
+        self.assertIn("只想先自检入口配置时", notice)
+        self.assertIn("不会启动 FastAPI/Vite、不会打开浏览器、不会创建 task", notice)
         self.assertIn('aria-label="backend offline local recovery links"', notice)
         self.assertIn('href="#desktop"', notice)
         self.assertIn('href="#health"', notice)
@@ -60,6 +67,14 @@ class BackendOfflineNoticeGuidanceTests(unittest.TestCase):
         self.assertIn("default_localhost_api_base: safeApiBaseDisplay(DEFAULT_LOCALHOST_API_BASE)", client)
         self.assertIn("frontend_backend_auto_link_candidate_count: attemptedApiBases.length", client)
         self.assertIn("frontend_backend_auto_link_attempted: true", client)
+        self.assertIn("frontend_backend_auto_link_success: false", client)
+        self.assertIn("frontend_backend_auto_link_next_action", client)
+        self.assertIn("frontend_backend_check_only_command", client)
+        self.assertIn("frontend_backend_check_only_creates_task: false", client)
+        self.assertIn(
+            "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command",
+            client,
+        )
         self.assertIn('frontend_backend_auto_link_scope: "local_fastapi_only"', client)
         self.assertIn("page_render_external_calls: false", client)
         self.assertIn("provider_or_model_calls: false", client)

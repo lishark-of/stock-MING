@@ -199,7 +199,13 @@ function failedRequestEnvelope<T>(
         default_localhost_api_base: safeApiBaseDisplay(DEFAULT_LOCALHOST_API_BASE),
         frontend_backend_auto_link_candidate_count: attemptedApiBases.length,
         frontend_backend_auto_link_attempted: true,
+        frontend_backend_auto_link_success: false,
         frontend_backend_auto_link_scope: "local_fastapi_only",
+        frontend_backend_auto_link_next_action:
+          "双击 stock-MING Command Center 3.command，或运行 scripts/start_command_center_3.command 后刷新页面。",
+        frontend_backend_check_only_command:
+          "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command",
+        frontend_backend_check_only_creates_task: false,
         call_status: callStatus,
         error_message_safe: safeMessage,
         external: false,
