@@ -1734,6 +1734,11 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(launcher["shortcut_installer_exists"])
         self.assertTrue(launcher["shortcut_installer_executable"])
         self.assertTrue(launcher["desktop_shortcut_installer_creates_symlink"])
+        self.assertTrue(launcher["desktop_shortcut_installer_blocks_regular_file_overwrite"])
+        self.assertTrue(launcher["desktop_shortcut_installer_verifies_symlink_target"])
+        self.assertTrue(launcher["desktop_shortcut_installer_prints_double_click_checklist"])
+        self.assertIn("不会覆盖同名普通文件", launcher["desktop_shortcut_installer_safe_ordinary_label"])
+        self.assertIn("双击后才检查 FastAPI、bootstrap status 和 React/Vite", launcher["desktop_shortcut_installer_safe_ordinary_label"])
         self.assertFalse(launcher["desktop_shortcut_installer_starts_services"])
         self.assertFalse(launcher["desktop_shortcut_installer_reads_credentials"])
         self.assertTrue(launcher["uses_project_venv_first"])
@@ -1756,6 +1761,21 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertFalse(launcher["contains_secret"])
         self.assertTrue(launcher["does_not_execute_trades"])
         self.assertTrue(launcher["does_not_modify_strategy_action"])
+        self.assertTrue(
+            launcher_rows[
+                "shortcut_installer_marker:existing non-symlink target will not be overwritten"
+            ]["passed"]
+        )
+        self.assertTrue(
+            launcher_rows[
+                "shortcut_installer_marker:Install verification: shortcut symlink points to the local launcher."
+            ]["passed"]
+        )
+        self.assertTrue(
+            launcher_rows[
+                "shortcut_installer_marker:Double-click checklist: launcher checks FastAPI /health, bootstrap status, and React/Vite before opening the page."
+            ]["passed"]
+        )
         self.assertTrue(all(row["passed"] for row in launcher_rows.values()))
         self.assertEqual(launcher["call_ledger"][0]["api"], "local_command_center_3_launcher_contract")
         self.assertIn("local_command_center_3_launcher_contract", {row["api"] for row in desktop["call_ledger"]})

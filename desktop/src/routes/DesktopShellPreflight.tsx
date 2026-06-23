@@ -101,6 +101,26 @@ export default function DesktopShellPreflight() {
           边界: "只读前端入口，不调用 Tushare/DeepSeek/GitHub、不执行真实交易"
         }
       ];
+  const p0ShortcutInstallerRows = [
+    {
+      检查项: "不会覆盖同名文件",
+      当前状态: desktopLauncherContract.desktop_shortcut_installer_blocks_regular_file_overwrite === true ? "ready" : "check",
+      用户看法: "桌面已有同名普通文件时安装器会停止，并提示换名或移走文件",
+      边界: "只安装本地 symlink，不启动 FastAPI/Vite、不创建 task"
+    },
+    {
+      检查项: "安装后自检",
+      当前状态: desktopLauncherContract.desktop_shortcut_installer_verifies_symlink_target === true ? "ready" : "check",
+      用户看法: "安装后确认快捷方式指向 scripts/start_command_center_3.command",
+      边界: "验证本地路径，不读取 token/key、不调用 provider/model"
+    },
+    {
+      检查项: "双击前说明",
+      当前状态: desktopLauncherContract.desktop_shortcut_installer_prints_double_click_checklist === true ? "ready" : "check",
+      用户看法: "双击后启动器会先检查 FastAPI、Bootstrap status、React/Vite 三段 ready",
+      边界: "安装器本身不启用 live_light、不执行真实交易"
+    }
+  ];
   const devLaunchPlan = rows(cache.dev_launch_plan);
   const desktopLauncherRows = rows(cache.desktop_launcher_rows);
   const productionLaunchPlan = rows(cache.production_launch_plan);
@@ -132,6 +152,11 @@ export default function DesktopShellPreflight() {
         <p>frontend_backend_connection_ready / blocker_count: {String(oneClickStartupSummary.frontend_backend_connection_ready ?? false)} / {String(oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count ?? 0)}</p>
         <p>P0 本地联通收据：{String(p0LocalConnectionReceipt.status ?? "p0_local_connection_receipt_loading")}；实时探针：{String(p0LocalConnectionReceipt.current_runtime_probe_executed_by_get_cache ?? false)}</p>
         <p>{String(p0LocalConnectionReceipt.ordinary_label ?? "本地一键入口会先确认 FastAPI、bootstrap status 和 React/Vite 都就绪，再打开页面。")}</p>
+        <div aria-label="p0 ordinary shortcut installer safety checklist">
+          <h3>桌面快捷入口安装状态</h3>
+          <p className="risk-note">{String(desktopLauncherContract.desktop_shortcut_installer_safe_ordinary_label ?? "安全安装：不会覆盖同名普通文件；安装后验证 symlink 指向本地启动器；双击后才检查 FastAPI、bootstrap status 和 React/Vite。")}</p>
+          <DataLineageTable rows={p0ShortcutInstallerRows} />
+        </div>
         <div aria-label="p0 ordinary frontend backend connection checklist">
           <h3>前后端联通状态</h3>
           <p className="risk-note">普通用户先看 FastAPI、Bootstrap status、React/Vite 三段是否 ready；工程行表仍在开发 / 审计详情。</p>

@@ -546,6 +546,11 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "STOCK_MING_DESKTOP_DIR",
         "STOCK_MING_DESKTOP_SHORTCUT_NAME",
         "creates only a local symlink",
+        "existing non-symlink target will not be overwritten",
+        "desktop target already exists and is not a symlink",
+        "Install verification: shortcut symlink points to the local launcher.",
+        "Double-click checklist: launcher checks FastAPI /health, bootstrap status, and React/Vite before opening the page.",
+        "shortcut install does not start FastAPI/Vite, create tasks, enable live_light, or execute trading",
         "no Tushare, DeepSeek, GitHub, or trading call",
     )
     marker_rows = [
@@ -598,6 +603,12 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "desktop_shortcut_target_name": "stock-MING Command Center 3.command",
         "desktop_shortcut_install_command": "scripts/install_command_center_3_desktop_shortcut.sh",
         "desktop_shortcut_installer_creates_symlink": "ln -sfn" in installer_source,
+        "desktop_shortcut_installer_blocks_regular_file_overwrite": "existing non-symlink target will not be overwritten" in installer_source
+        and "desktop target already exists and is not a symlink" in installer_source,
+        "desktop_shortcut_installer_verifies_symlink_target": "Install verification: shortcut symlink points to the local launcher." in installer_source
+        and "readlink \"$TARGET_PATH\"" in installer_source,
+        "desktop_shortcut_installer_prints_double_click_checklist": "Double-click checklist: launcher checks FastAPI /health, bootstrap status, and React/Vite before opening the page." in installer_source,
+        "desktop_shortcut_installer_safe_ordinary_label": "安全安装：不会覆盖同名普通文件；安装后验证 symlink 指向本地启动器；双击后才检查 FastAPI、bootstrap status 和 React/Vite。",
         "desktop_shortcut_installer_starts_services": False,
         "desktop_shortcut_installer_reads_credentials": False,
         "api_base": api_base,
