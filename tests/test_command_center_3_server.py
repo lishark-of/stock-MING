@@ -1577,6 +1577,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         p0_ordinary_rows = desktop["p0_ordinary_connection_rows"]
         p0_post_startup_rows = desktop["p0_post_startup_readback_rows"]
         p0_to_p1_rows = desktop["p0_to_p1_ordinary_handoff_rows"]
+        p0_quick_action_rows = desktop["p0_ordinary_quick_action_rows"]
         self.assertEqual(one_click["schema_version"], "command_center_3_one_click_startup_summary.v1")
         self.assertEqual(one_click["priority"], "P0")
         self.assertEqual(one_click["status"], "one_click_frontend_backend_ready")
@@ -1786,11 +1787,36 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(handoff_row["loads_token_or_key"])
             self.assertTrue(handoff_row["does_not_execute_trades"])
             self.assertTrue(handoff_row["does_not_modify_strategy_action"])
+        self.assertEqual(
+            [row["快速行动"] for row in p0_quick_action_rows],
+            ["1. 本地联通变绿", "2. 打开下一票雷达", "3. 确认并生成", "4. 回放本地结果"],
+        )
+        self.assertEqual(desktop["counts"]["p0_ordinary_quick_action_row_count"], 4)
+        self.assertIn("下一票雷达", desktop["runtime"]["p0_ordinary_quick_action_next"])
+        self.assertTrue(desktop["policy"]["p0_ordinary_quick_action_rows_are_cache_only"])
+        self.assertTrue(desktop["policy"]["p0_ordinary_quick_action_rows_do_not_create_task"])
+        self.assertTrue(desktop["policy"]["p0_ordinary_quick_action_rows_do_not_call_provider_model"])
+        self.assertIn("Tushare-first POST task", p0_quick_action_rows[2]["用户下一步"])
+        self.assertIn("cache / ledger / packet", p0_quick_action_rows[3]["当前状态"])
+        for quick_row in p0_quick_action_rows:
+            self.assertTrue(quick_row["ordinary_user_visible"])
+            self.assertTrue(quick_row["cache_only_readback"])
+            self.assertFalse(quick_row["creates_task_from_readback"])
+            self.assertFalse(quick_row["provider_model_called_from_readback"])
+            self.assertFalse(quick_row["external_calls_triggered"])
+            self.assertFalse(quick_row["tushare_called"])
+            self.assertFalse(quick_row["deepseek_called"])
+            self.assertFalse(quick_row["github_called"])
+            self.assertFalse(quick_row["loads_token_or_key"])
+            self.assertFalse(quick_row["contains_secret"])
+            self.assertTrue(quick_row["does_not_execute_trades"])
+            self.assertTrue(quick_row["does_not_modify_strategy_action"])
         self.assertIn("local_one_click_startup_summary", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_frontend_backend_connection_receipt", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_ordinary_connection_rows", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_post_startup_readback_rows", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_to_p1_ordinary_handoff_rows", {row["api"] for row in desktop["call_ledger"]})
+        self.assertIn("local_p0_ordinary_quick_action_rows", {row["api"] for row in desktop["call_ledger"]})
         launcher = desktop["desktop_launcher_contract"]
         launcher_rows = {row["criterion"]: row for row in desktop["desktop_launcher_rows"]}
         self.assertEqual(launcher["schema_version"], "command_center_3_local_launcher_contract.v1")

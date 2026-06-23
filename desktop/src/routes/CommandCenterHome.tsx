@@ -217,6 +217,7 @@ export default function CommandCenterHome() {
   const desktopRuntime = desktopPreflight.runtime as Record<string, unknown> | undefined;
   const desktopCounts = desktopPreflight.counts as Record<string, unknown> | undefined;
   const oneClickStartupSummary = (desktopPreflight.one_click_startup_summary as Record<string, unknown> | undefined) ?? {};
+  const p0OrdinaryQuickActionRows = (desktopPreflight.p0_ordinary_quick_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const desktopLauncherContract = (desktopPreflight.desktop_launcher_contract as Record<string, unknown> | undefined) ?? {};
   const recoveryCounts = recovery.counts as Record<string, unknown> | undefined;
   const taskCatalogPolicy = taskCatalog.policy as Record<string, unknown> | undefined;
@@ -276,8 +277,13 @@ export default function CommandCenterHome() {
   ];
   const empty = !loading && !error && !Object.keys(health).length && !Object.keys(packets).length;
   const dailyCommandNeedsStartupRecovery = Boolean(error) || (!loading && String(health.status ?? "") !== "ok");
+  const dailyCommandP0QuickAction = String(
+    desktopRuntime?.p0_ordinary_quick_action_next ?? p0OrdinaryQuickActionRows[0]?.["用户下一步"] ?? ""
+  );
   const dailyCommandNextClick = dailyCommandNeedsStartupRecovery
     ? "先查看一键启动预检，恢复本地 FastAPI / React 联通"
+    : dailyCommandP0QuickAction
+    ? dailyCommandP0QuickAction
     : Number(candidateCounts?.candidate_count ?? 0)
     ? "先看下一票雷达；需要单票推演时输入代码并生成 3.0 量化推演"
     : "先确认数据健康和最近可用缓存，再运行候选雷达快扫";
@@ -523,6 +529,7 @@ export default function CommandCenterHome() {
             { label: "恢复回读", value: dailyCommandStartupReadbackLabel, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
             { label: "回读顺序", value: dailyCommandStartupReadbackOrder, tone: "good" },
             { label: "回读边界", value: dailyCommandStartupReadbackBoundary, tone: "good" },
+            { label: "联通后行动", value: dailyCommandP0QuickAction || "等待 P0 quick action rows", tone: dailyCommandP0QuickAction ? "good" : "warn" },
             { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
             { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
             { label: "今日查看顺序", value: dailyCommandReviewOrder, tone: error ? "warn" : "good" },
@@ -548,6 +555,11 @@ export default function CommandCenterHome() {
           <h3>本地联通三段回读</h3>
           <p className="risk-note">先看 FastAPI、bootstrap runtime-mode packet、React/Vite 前端三段是否变绿；这张表只读本地 GET 结果，不启动服务。</p>
           <DataLineageTable rows={dailyCommandStartupReadbackRows} />
+        </div>
+        <div aria-label="daily command p0 quick action handoff">
+          <h3>P0 到 P1 快速行动</h3>
+          <p className="risk-note">优先读取 desktop preflight 的 p0_ordinary_quick_action_rows：联通通过后进入下一票雷达，输入代码，再由确认按钮触发 Tushare-first 任务。</p>
+          <DataLineageTable rows={p0OrdinaryQuickActionRows} />
         </div>
         <p className="risk-note">本地联通状态只读来自 FastAPI health 和 desktop preflight cache；不会启动服务、不会写配置、不会调用 provider/model。</p>
         <p className="risk-note">启动诊断来自 desktop preflight cache：FastAPI /health、bootstrap status 和 React/Vite 前端 HTML 分段检查；首页只展示，不执行。</p>

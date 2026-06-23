@@ -1237,6 +1237,79 @@ def _p0_to_p1_ordinary_handoff_rows(one_click_startup_summary: dict[str, Any]) -
     ]
 
 
+def _p0_ordinary_quick_action_rows(
+    one_click_startup_summary: dict[str, Any],
+    p0_to_p1_ordinary_handoff_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    connection_ready = one_click_startup_summary.get("frontend_backend_connection_ready") is True
+
+    def row(
+        quick_action: str,
+        user_state: str,
+        user_next_step: str,
+        entry: str,
+        boundary: str,
+        handoff_step_index: int,
+    ) -> dict[str, Any]:
+        handoff_step = p0_to_p1_ordinary_handoff_rows[handoff_step_index]
+        return {
+            "快速行动": quick_action,
+            "当前状态": user_state,
+            "用户下一步": user_next_step,
+            "入口": entry,
+            "证据": handoff_step["步骤"],
+            "边界": boundary,
+            "source_handoff_step": handoff_step["步骤"],
+            "ordinary_user_visible": True,
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "provider_model_called_from_readback": False,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "loads_token_or_key": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    return [
+        row(
+            "1. 本地联通变绿",
+            "ready：可以继续投研" if connection_ready else "check：先恢复本地联通",
+            "进入下一票雷达" if connection_ready else "回一键启动预检看 FastAPI / bootstrap / React 哪段失败",
+            "今日作战台摘要",
+            "只读读取 GET /health、GET /api/bootstrap/status 和 GET /api/desktop/preflight-cache；不启动服务。",
+            0,
+        ),
+        row(
+            "2. 打开下一票雷达",
+            "只读导航",
+            "输入股票代码，先做本地格式校验",
+            "下一票雷达",
+            "页面切换和输入不会创建 task，也不会调用 Tushare、DeepSeek 或 GitHub。",
+            1,
+        ),
+        row(
+            "3. 确认并生成",
+            "等待用户点击按钮",
+            "点击确认按钮后才进入 Tushare-first POST task",
+            "搜票量化推演卡片",
+            "只有确认按钮可创建 P1 task；DeepSeek governed executor 完成前保持 skipped。",
+            2,
+        ),
+        row(
+            "4. 回放本地结果",
+            "等待 cache / ledger / packet 回放",
+            "看股票量化推演和次日图谱；缺证据继续显示 pending",
+            "量化推演 / 次日图谱",
+            "GET cache 和 React render 只回放本地结果；不交易、不改 strategy action。",
+            3,
+        ),
+    ]
+
+
 def _production_launch_plan(api_base: str) -> list[dict[str, Any]]:
     return [
         {
@@ -4740,6 +4813,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     p0_ordinary_connection_rows = _p0_ordinary_connection_rows(one_click_startup_summary)
     p0_post_startup_readback_rows = _p0_post_startup_readback_rows(one_click_startup_summary)
     p0_to_p1_ordinary_handoff_rows = _p0_to_p1_ordinary_handoff_rows(one_click_startup_summary)
+    p0_ordinary_quick_action_rows = _p0_ordinary_quick_action_rows(
+        one_click_startup_summary,
+        p0_to_p1_ordinary_handoff_rows,
+    )
     p0_ordinary_connection_ready_count = sum(1 for row in p0_ordinary_connection_rows if row["当前状态"] == "ready")
     production_runtime_contract = _production_runtime_contract(api_base_info, tauri_config)
     tauri_build_artifact = _tauri_build_artifact_summary()
@@ -4822,6 +4899,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "p0_ordinary_connection_rows": p0_ordinary_connection_rows,
         "p0_post_startup_readback_rows": p0_post_startup_readback_rows,
         "p0_to_p1_ordinary_handoff_rows": p0_to_p1_ordinary_handoff_rows,
+        "p0_ordinary_quick_action_rows": p0_ordinary_quick_action_rows,
         "desktop_launcher_contract": desktop_launcher_contract,
         "desktop_launcher_rows": desktop_launcher_contract["rows"],
         "dev_launch_plan": _dev_launch_plan(api_base),
@@ -4861,6 +4939,10 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_ordinary_connection_ready_count": p0_ordinary_connection_ready_count,
             "p0_post_startup_readback_row_count": len(p0_post_startup_readback_rows),
             "p0_to_p1_ordinary_handoff_row_count": len(p0_to_p1_ordinary_handoff_rows),
+            "p0_ordinary_quick_action_row_count": len(p0_ordinary_quick_action_rows),
+            "p0_ordinary_quick_action_visible_count": sum(
+                1 for row in p0_ordinary_quick_action_rows if row["ordinary_user_visible"]
+            ),
             "packaged_runtime_qa_matrix_count": packaged_runtime_qa_contract["qa_matrix_count"],
             "packaged_runtime_pending_qa_count": packaged_runtime_qa_contract["pending_qa_count"],
             "tauri_release_manifest_row_count": tauri_release_manifest_contract["row_count"],
@@ -4894,6 +4976,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
                 1 for row in p0_post_startup_readback_rows if row["当前状态"] == "ready"
             ),
             "p0_to_p1_next_user_action": p0_to_p1_ordinary_handoff_rows[0]["下一步"],
+            "p0_ordinary_quick_action_next": p0_ordinary_quick_action_rows[0]["用户下一步"],
             "p0_current_runtime_live_connection_verified": p0_local_connection_receipt[
                 "current_runtime_live_connection_verified"
             ],
@@ -4966,6 +5049,9 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_to_p1_ordinary_handoff_rows_are_cache_only": True,
             "p0_to_p1_ordinary_handoff_rows_do_not_create_task": True,
             "p0_to_p1_ordinary_handoff_rows_do_not_call_provider_model": True,
+            "p0_ordinary_quick_action_rows_are_cache_only": True,
+            "p0_ordinary_quick_action_rows_do_not_create_task": True,
+            "p0_ordinary_quick_action_rows_do_not_call_provider_model": True,
             "desktop_shortcut_installer_contract_is_local": True,
             "desktop_shortcut_installer_does_not_run_from_get_cache": True,
             "desktop_shortcut_installer_does_not_start_services": True,
@@ -5034,6 +5120,19 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
                 "row_count": len(p0_to_p1_ordinary_handoff_rows),
                 "local_fetched_at": _now_iso(),
                 "call_status": "local_p0_to_p1_handoff_rows_read",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            },
+            {
+                "api": "local_p0_ordinary_quick_action_rows",
+                "source": "p0_to_p1_ordinary_handoff_rows",
+                "row_count": len(p0_ordinary_quick_action_rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_p0_quick_action_rows_read",
                 "external": False,
                 "tushare_called": False,
                 "deepseek_called": False,
