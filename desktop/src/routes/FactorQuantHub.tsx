@@ -417,6 +417,15 @@ export default function FactorQuantHub() {
       边界: "DeepSeek 不阻塞 Tushare-first、支持/压制和次日图谱"
     },
     {
+      治理段: "P5 governed executor 准入",
+      当前状态:
+        deepseekValidation.model_call_status && deepseekValidation.model_call_status !== "not_called"
+          ? "已有受控模型状态记录；仍需检查 model ledger 和脱敏验收"
+          : "当前只允许本地 prompt preview / sanitizer / cache ledger；真实模型调用仍待 governed executor",
+      用户看到: `validation=${String(deepseekValidation.validation_mode ?? "local_sanitizer_only")} / model_call=${String(deepseekValidation.model_call_status ?? "not_called")}`,
+      边界: "P5 不阻塞 Tushare-first、Factor cache 或 Next Session；DeepSeek 不写价格、因子、持仓、operation_zones 或 strategy action"
+    },
+    {
       治理段: "真实调用门槛",
       当前状态:
         deepseekProductionActivationReceipt.provider_benchmark_done === true &&
