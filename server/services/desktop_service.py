@@ -536,7 +536,12 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "STOCK_MING_ALLOW_SYSTEM_PYTHON",
         "desktop/node_modules",
         ".stock_ming_3/logs",
-        "open \"$VITE_URL\"",
+        "open \"$APP_URL\"",
+        "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY",
+        "Check-only mode: resolved launcher configuration without starting FastAPI",
+        "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN",
+        "Browser open:",
+        "Skip-open mode: FastAPI, bootstrap status, and React/Vite are ready",
         "no Tushare, DeepSeek, GitHub, or trading call",
     )
     required_installer_markers = (
@@ -618,7 +623,18 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "requires_node_modules": "desktop/node_modules" in source,
         "starts_fastapi_when_user_runs": "scripts/dev_server.sh" in source,
         "starts_vite_when_user_runs": "npm run dev" in source,
-        "opens_local_browser_when_user_runs": 'open "$VITE_URL"' in source,
+        "opens_local_browser_when_user_runs": 'open "$APP_URL"' in source,
+        "check_only_mode_supported": "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY" in source
+        and "Check-only mode: resolved launcher configuration without starting FastAPI" in source,
+        "check_only_mode_starts_services": False,
+        "check_only_mode_probes_urls": False,
+        "check_only_mode_opens_browser": False,
+        "skip_open_mode_supported": "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN" in source
+        and "Skip-open mode: FastAPI, bootstrap status, and React/Vite are ready" in source,
+        "skip_open_waits_for_frontend_backend_ready": "wait_for_command_center_health" in source
+        and "wait_for_bootstrap_status" in source
+        and "wait_for_vite_command_center" in source,
+        "skip_open_mode_opens_browser": False,
         "writes_ignored_local_logs_when_user_runs": ".stock_ming_3/logs" in source,
         "cache_get_starts_launcher": False,
         "cache_get_installs_shortcut": False,
@@ -716,7 +732,7 @@ def _one_click_startup_summary(
     open_is_gated = (
         'if [ "$FASTAPI_READY" != "1" ] || [ "$API_STATUS_READY" != "1" ] || [ "$VITE_READY" != "1" ]; then'
         in launcher_source
-        and 'open "$VITE_URL"' in launcher_source
+        and 'open "$APP_URL"' in launcher_source
     )
     frontend_api_client_local = "http://127.0.0.1:8710" in client_source and bool(api_base_info.get("is_localhost"))
     offline_notice_ready = (
@@ -870,6 +886,13 @@ def _one_click_startup_summary(
         "starts_fastapi_when_user_runs": desktop_launcher_contract.get("starts_fastapi_when_user_runs") is True,
         "starts_vite_when_user_runs": desktop_launcher_contract.get("starts_vite_when_user_runs") is True,
         "opens_local_browser_when_user_runs": desktop_launcher_contract.get("opens_local_browser_when_user_runs") is True,
+        "check_only_mode_supported": desktop_launcher_contract.get("check_only_mode_supported") is True,
+        "check_only_mode_starts_services": False,
+        "check_only_mode_probes_urls": False,
+        "check_only_mode_opens_browser": False,
+        "skip_open_mode_supported": desktop_launcher_contract.get("skip_open_mode_supported") is True,
+        "skip_open_waits_for_frontend_backend_ready": desktop_launcher_contract.get("skip_open_waits_for_frontend_backend_ready") is True,
+        "skip_open_mode_opens_browser": False,
         "get_preflight_cache_starts_services": False,
         "react_render_starts_services": False,
         "search_typing_starts_services": False,
