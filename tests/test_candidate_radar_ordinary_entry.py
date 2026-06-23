@@ -147,6 +147,24 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
                 self.assertLess(text.index('label: "任务边界"'), text.index(config["audit"]))
                 self.assertIn(config["boundary"], text)
                 self.assertIn("不在 React 渲染中直连 Tushare 或 DeepSeek", text)
+                if name == "daily":
+                    self.assertIn("dailyCommandUsableShortestPathRows", text)
+                    self.assertIn('aria-label="daily command usable shortest path"', text)
+                    self.assertIn("使用者可用化最短路径", text)
+                    self.assertIn("当前执行目标是 Command Center 3.0 使用者可用化最短路径，不是 14 LTG strict closeout 完成声明", text)
+                    self.assertIn('阶段: "P0 一键启动和本地联通"', text)
+                    self.assertIn('阶段: "P1 确认按钮触发 Tushare-first"', text)
+                    self.assertIn('阶段: "P2 小数据写入 cache / ledger / packet"', text)
+                    self.assertIn('阶段: "P3 候选、量化推演、次日图谱"', text)
+                    self.assertIn('阶段: "P4 工程审计噪音下沉"', text)
+                    self.assertIn('阶段: "P5 DeepSeek governed executor 单独补"', text)
+                    self.assertIn("页面打开、React render 和 GET cache 只读；不启动服务、不外联、不读取 token/key", text)
+                    self.assertIn("只有确认按钮创建 POST task / worker，DeepSeek skipped", text)
+                    self.assertIn("governed executor 完成前不真实调用 DeepSeek", text)
+                    self.assertLess(
+                        text.index('aria-label="daily command usable shortest path"'),
+                        text.index(config["audit"]),
+                    )
 
     def test_search_quant_projection_keeps_task_boundary_visible(self):
         self.assertIn("normalizeAshareSymbolInput", self.page)

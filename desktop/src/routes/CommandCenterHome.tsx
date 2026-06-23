@@ -545,6 +545,50 @@ export default function CommandCenterHome() {
       边界: "离线提示只帮助恢复 P0；不会绕过确认按钮触发 Tushare，也不会调用 DeepSeek"
     }
   ];
+  const dailyCommandUsableShortestPathRows = [
+    {
+      阶段: "P0 一键启动和本地联通",
+      当前状态: dailyCommandConnectionState,
+      用户下一步: dailyCommandNeedsStartupRecovery ? "先打开一键启动预检，按四段回读恢复本地联通" : "联通已通过，进入下一票雷达输入股票代码",
+      证据: "GET /health + bootstrap status + desktop preflight cache",
+      边界: "页面打开、React render 和 GET cache 只读；不启动服务、不外联、不读取 token/key"
+    },
+    {
+      阶段: "P1 确认按钮触发 Tushare-first",
+      当前状态: "等待用户在下一票雷达输入代码并点击确认",
+      用户下一步: "输入 6 位 A 股代码，点击“确认并生成 3.0 量化推演”",
+      证据: "CandidateRadar 搜票确认 POST task contract",
+      边界: "搜索输入只做本地校验；只有确认按钮创建 POST task / worker，DeepSeek skipped"
+    },
+    {
+      阶段: "P2 小数据写入 cache / ledger / packet",
+      当前状态: dailyCommandSmallDataWritebackState,
+      用户下一步: "看 task id 和 TaskStatusPanel，成功后刷新本地 cache / ledger / packet 回放",
+      证据: "ordinary_writeback_surface_summary_rows + call_ledger + packet",
+      边界: "GET cache 只读回放；不补调 Tushare、DeepSeek，不展示 token/key/raw log"
+    },
+    {
+      阶段: "P3 候选、量化推演、次日图谱",
+      当前状态: dailyCommandExplainableResultLabel,
+      用户下一步: dailyCommandExplainableResultNext,
+      证据: "ordinary_result_quick_read_rows + result handoff index",
+      边界: "结果只整理本地证据；候选雷达不是买入指令，不交易、不下单、不改 strategy action"
+    },
+    {
+      阶段: "P4 工程审计噪音下沉",
+      当前状态: "普通入口先显示摘要、路径和结果位置",
+      用户下一步: "只有排障、验收或补证时再展开开发详情",
+      证据: "developer-audit-details 默认折叠",
+      边界: "不把 raw packet、receipt、matrix、sanitizer 或 mock 当 production evidence"
+    },
+    {
+      阶段: "P5 DeepSeek governed executor 单独补",
+      当前状态: dailyCommandDeepSeekGovernanceState,
+      用户下一步: "先使用 Tushare-first、小数据写入和基础图谱；DeepSeek 作为单独补证",
+      证据: "ordinary_model_governance_rows + governed executor checklist",
+      边界: "governed executor 完成前不真实调用 DeepSeek；之后也不能覆盖价格、持仓、factor、operation_zones 或 strategy action"
+    }
+  ];
   const dailyCommandConnectivityPriority = dailyCommandNeedsStartupRecovery
     ? "先恢复本地联通；缓存和投研入口等 health/preflight 变绿后再看"
     : "本地联通可用；按最近缓存、数据健康、下一票雷达、股票量化推演复核";
@@ -747,6 +791,11 @@ export default function CommandCenterHome() {
             { label: "仅供研究", value: dailyCommandResearchOnlyLabel, tone: "good" }
           ]}
         />
+        <div aria-label="daily command usable shortest path">
+          <h3>使用者可用化最短路径</h3>
+          <p className="risk-note">当前执行目标是 Command Center 3.0 使用者可用化最短路径，不是 14 LTG strict closeout 完成声明；DeepSeek governed executor 单独补，不阻塞 Tushare-first 和基础图谱。</p>
+          <DataLineageTable rows={dailyCommandUsableShortestPathRows} />
+        </div>
         <div aria-label="daily command local connection readback">
           <h3>本地联通四段回读</h3>
           <p className="risk-note">先看 FastAPI、bootstrap runtime-mode packet、desktop preflight cache、React/Vite 前端四段是否变绿；这张表只读本地 GET 结果，不启动服务。</p>
