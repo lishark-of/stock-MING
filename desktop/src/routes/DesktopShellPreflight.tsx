@@ -268,7 +268,7 @@ export default function DesktopShellPreflight() {
     },
     {
       启动方式: "只检查",
-      用户动作: "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command",
+      用户动作: "scripts/check_command_center_3.command",
       看到什么: "只读显示 health、bootstrap、frontend 和 open route",
       适合场景: "先确认入口配置，不启动服务、不打开浏览器",
       边界: "不探测 URL、不写日志、不创建 task、不调用 provider/model"
@@ -395,7 +395,7 @@ export default function DesktopShellPreflight() {
           <h3>本地 API 自动联通</h3>
           <p className="risk-note">前端只尝试本机 FastAPI 候选地址；失败时提示一键启动器或 check-only 诊断，本页不启动服务、不创建 task。</p>
           <p>候选地址：{Array.isArray(frontendBackendAutoLinkContract.candidate_display_urls) ? frontendBackendAutoLinkContract.candidate_display_urls.join(" / ") : String(apiBaseInfo.api_base_candidate_display_urls ?? "http://127.0.0.1:8710 / http://localhost:8710")}</p>
-          <p>离线下一步：{String(frontendBackendAutoLinkContract.offline_next_action ?? "双击 stock-MING Command Center 3.command；或运行 COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command 做安全诊断。")}</p>
+          <p>离线下一步：{String(frontendBackendAutoLinkContract.offline_next_action ?? "双击 stock-MING Command Center 3.command；或运行 scripts/check_command_center_3.command 做安全诊断。")}</p>
           <DataLineageTable rows={frontendBackendAutoLinkRows} />
         </div>
         <div aria-label="p0 ordinary frontend backend connection checklist">

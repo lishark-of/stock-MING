@@ -6,9 +6,9 @@ import {
 } from "../api/client";
 
 const COMMAND_CENTER_3_LAUNCHER_PATH = "scripts/start_command_center_3.command";
+const COMMAND_CENTER_3_CHECK_ONLY_LAUNCHER_PATH = "scripts/check_command_center_3.command";
 const COMMAND_CENTER_3_DESKTOP_SHORTCUT = "stock-MING Command Center 3.command";
-const COMMAND_CENTER_3_CHECK_ONLY_COMMAND =
-  "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command";
+const COMMAND_CENTER_3_CHECK_ONLY_COMMAND = COMMAND_CENTER_3_CHECK_ONLY_LAUNCHER_PATH;
 
 export default function BackendOfflineNotice({
   error,
@@ -70,7 +70,7 @@ export default function BackendOfflineNotice({
         <summary>联通排障详情</summary>
         <p>前端已自动尝试本机 FastAPI 地址：{attemptedApiBases}；配置地址显示为 {CONFIGURED_API_BASE_DISPLAY_URL}。</p>
         <p>启动器会等待 FastAPI、bootstrap status、desktop preflight cache 和 React/Vite 页面都 ready 后才打开入口。</p>
-        <p>只想先自检入口配置时，运行 {COMMAND_CENTER_3_CHECK_ONLY_COMMAND}；它不会启动 FastAPI/Vite、不会打开浏览器、不会创建 task。</p>
+        <p>只想先自检入口配置时，运行 {COMMAND_CENTER_3_CHECK_ONLY_COMMAND}；它会进入 check-only 安全自检，不会启动 FastAPI/Vite、不会打开浏览器、不会创建 task。</p>
         <p>如果刚运行启动器后仍离线，可能是旧的 React/Vite dev server 复用了不同后端地址；请关闭旧 dev server 后重新运行启动器，并查看 .stock_ming_3/logs/command_center_3_vite.log。</p>
         <p>连接地址：{apiBase}</p>
       </details>
