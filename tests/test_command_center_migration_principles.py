@@ -434,7 +434,8 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertIn("审查信号/能力覆盖", text)
         self.assertIn("信号/能力覆盖", text)
         self.assertIn("coverage review", text)
-        self.assertIn("coverage 阻断", text)
+        self.assertIn("替代阻断", text)
+        self.assertIn("缺失证据", text)
         self.assertIn("local_retained_coverage_review_ready", text)
         self.assertIn("retained_coverage_complete", text)
         self.assertIn(
@@ -488,13 +489,16 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         )
 
         self.assertIn("普通用户雷达摘要", text)
-        self.assertIn("工程审计明细默认收起；完整 call ledger、release gate 和配置状态", text)
+        self.assertIn("工程审计明细", text)
+        self.assertIn("默认收起", text)
+        self.assertIn("完整 call ledger、release gate 和配置状态", text)
         self.assertIn('href="#audit"', text)
         self.assertIn('href="#settings"', text)
         self.assertIn("Provider、worker、receipt、browser QA、retained coverage 和 production blocker 明细默认收起", text)
-        self.assertLess(text.index("普通用户雷达摘要"), text.index("工程审计明细默认收起"))
+        audit_hint_index = text.index("工程审计明细")
+        self.assertLess(text.index("普通用户雷达摘要"), audit_hint_index)
         self.assertLess(
-            text.index("工程审计明细默认收起"),
+            audit_hint_index,
             text.index('<details className="developer-audit-details">'),
         )
         self.assertLess(text.index("普通用户雷达摘要"), text.index("开发 / 审计指标"))
@@ -534,20 +538,23 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertNotIn("确认后立即启动后台投研 task", text)
         self.assertNotIn("后台先拉 Tushare 单票小全量数据", text)
         self.assertNotIn("后端会先跑 Tushare trade_cal / daily / daily_basic / moneyflow", text)
-        self.assertIn("disabled={!quantProjectionCanSubmit}", text)
+        self.assertIn("const quantProjectionSubmitDisabled = !quantProjectionCanSubmit || quantProjectionSubmitting;", text)
+        self.assertIn("disabled={quantProjectionSubmitDisabled}", text)
         self.assertIn("quantProjectionSubmitAriaLabel", text)
         self.assertIn("quantProjectionSubmitButtonLabel", text)
         self.assertIn("title={quantProjectionSubmitButtonLabel}", text)
         self.assertIn("aria-label={quantProjectionSubmitAriaLabel}", text)
-        self.assertLess(text.index("quantProjectionDisabledReason"), text.index("生成 3.0 量化推演</button>"))
-        self.assertLess(text.index("title={quantProjectionSubmitButtonLabel}"), text.index("生成 3.0 量化推演</button>"))
+        submit_button_text = '>{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>'
+        self.assertIn(submit_button_text, text)
+        search_projection_section = text.split('<PacketCard title="搜票量化推演"', 1)[1]
+        self.assertLess(search_projection_section.index("title={quantProjectionSubmitButtonLabel}"), search_projection_section.index(submit_button_text))
         self.assertLess(
-            text.index("生成 3.0 量化推演</button>"),
-            text.index('<p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>'),
+            search_projection_section.index(submit_button_text),
+            search_projection_section.index('<p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>'),
         )
         self.assertLess(
-            text.index('<p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>'),
-            text.index("{quantProjectionSubmitHint}"),
+            search_projection_section.index('<p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>'),
+            search_projection_section.index("{quantProjectionSubmitHint}"),
         )
 
     def test_stock_quant_projection_demotes_engineering_audit_from_ordinary_first_view(self):

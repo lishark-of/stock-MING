@@ -11,7 +11,7 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
 
     def test_next_session_has_three_step_ordinary_result_replay_before_audit(self):
         summary_start = self.page.index('title="普通用户次日图谱摘要"')
-        audit_start = self.page.index('<details className="developer-audit-details">')
+        audit_start = self.page.index('<details id="next-session-audit"')
         ordinary_slice = self.page[summary_start:audit_start]
         source_before_audit = self.page[:audit_start]
 
@@ -93,6 +93,16 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("GET cache、React render 和普通链接都不调用 DeepSeek", source_before_audit)
         self.assertIn('href="#candidates"', ordinary_slice)
         self.assertIn('href="#factor"', ordinary_slice)
+        self.assertIn('aria-label="next session ordinary audit shortcuts"', ordinary_slice)
+        self.assertIn("<summary>高级诊断入口</summary>", ordinary_slice)
+        self.assertIn("工程审计明细继续默认收起", ordinary_slice)
+        self.assertIn('href="#next-session-audit"', ordinary_slice)
+        self.assertIn("QA、promotion、cache ledger 和原始 packet 下沉", ordinary_slice)
+        self.assertIn('id="next-session-audit"', self.page)
+        self.assertIn('aria-label="next session developer audit details"', self.page)
+        self.assertLess(self.page.index('aria-label="next session ordinary audit shortcuts"'), audit_start)
+        self.assertLess(audit_start, self.page.index("开发 / 审计指标", audit_start))
+        self.assertLess(audit_start, self.page.index("GET cache envelope call_ledger", audit_start))
         self.assertLess(ordinary_slice.index("P3 结果交接速读"), ordinary_slice.index("三段结果回放"))
         self.assertLess(ordinary_slice.index("P3 结果交接速读"), ordinary_slice.index("图谱复核清单"))
         self.assertLess(ordinary_slice.index("三段结果回放"), ordinary_slice.index("图谱复核清单"))

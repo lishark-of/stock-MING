@@ -456,6 +456,10 @@ export default function NextSessionMap() {
       <p className="risk-note">{nextSessionReplayPath}；这些回放入口只做本地页面切换，不创建任务、不刷新 Tushare/DeepSeek。</p>
       <p className="risk-note">摘要里的查看缓存只读取本地 GET cache；生成任务只创建按钮门控 POST task，不调用 Tushare 或 DeepSeek，不写交易动作。</p>
       <p className="risk-note">普通用户先按“图表路径 -&gt; 参考线 -&gt; 操作区 -&gt; 缺少证据”复核；operation_zones 只是条件区间，不是买卖或下单指令。</p>
+      <details className="ordinary-audit-shortcuts" aria-label="next session ordinary audit shortcuts">
+        <summary>高级诊断入口</summary>
+        <p className="risk-note">工程审计明细继续默认收起；QA、promotion、cache ledger 和原始 packet 下沉到 <a href="#next-session-audit">开发审计</a>。</p>
+      </details>
     </PacketCard>
 
     <PacketCard title="次日操作图谱" subtitle="缓存查看不触发外部刷新" status={String(packet.status ?? "cache")}>
@@ -486,7 +490,7 @@ export default function NextSessionMap() {
       <div className="next-session-chart-review" role="region" aria-label={nextSessionChartReviewRegionLabel} title={nextSessionChartReviewRegionLabel}>
         <NextSessionChart payload={chartPayload} />
       </div>
-      <details className="developer-audit-details">
+      <details id="next-session-audit" className="developer-audit-details" aria-label="next session developer audit details">
         <summary>开发 / 审计指标</summary>
         <p className="risk-note">普通用户先看上方次日图谱摘要和图表；QA、coverage、promotion、cache ledger 和原始 packet 默认收起。</p>
         <p className="risk-note">审计索引：图表合同、交互审计、交互阻断、信号/能力覆盖、替代激活收据、替代阻断、缺失证据、local_activation_receipt_ready、production_blocker_count、missing_evidence_count、cache envelope ledger、cache warnings。</p>
