@@ -11,6 +11,11 @@ function rows(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
 }
 
+function listText(value: unknown, fallback: string[]): string {
+  const items = Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : fallback;
+  return items.join(" / ");
+}
+
 export default function ModelStrategy() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
@@ -55,6 +60,14 @@ export default function ModelStrategy() {
   const warningRows = cacheWarnings.map((warning, index) => ({ index: index + 1, warning }));
   const governedExecutorStandaloneBoundary =
     "DeepSeek 补证是单独 P5 executor；不阻塞 P1 Tushare-first、P2 小数据写入或 P3 基础图谱，也不从本页触发真实模型调用。";
+  const governedExecutorAllowedOutputFields = listText(
+    governedExecutor.ordinary_allowed_output_fields,
+    ["summary", "support_notes", "suppress_notes", "conflict_notes", "missing_data_notes", "discipline_notes"]
+  );
+  const governedExecutorForbiddenOutputTargets = listText(
+    governedExecutor.ordinary_forbidden_output_targets,
+    ["price", "holding", "factor", "operation_zones", "strategy_action", "trade_order"]
+  );
   const governedExecutorOrdinaryChecklistRows = [
     {
       治理项: "执行门控",
@@ -73,6 +86,26 @@ export default function ModelStrategy() {
       当前状态: governedExecutor.does_not_block_tushare_first_or_basic_maps === true ? "Tushare-first / Factor light / Next Session 可先走" : "待确认非阻塞边界",
       用户下一步: "继续确认按钮链路和本地 cache 回放",
       边界: "DeepSeek pending 不阻塞 P1/P2/P3；本页 GET cache 不调用模型"
+    }
+  ];
+  const governedExecutorOutputContractRows = [
+    {
+      准入项: "允许输出字段",
+      当前状态: governedExecutorAllowedOutputFields,
+      用户下一步: "只读安全解释摘要；不看 raw prompt / raw output。",
+      边界: "字段白名单以外内容必须丢弃或继续等待治理。"
+    },
+    {
+      准入项: "禁止覆盖目标",
+      当前状态: governedExecutorForbiddenOutputTargets,
+      用户下一步: "价格、持仓、因子、operation_zones 和 action 仍以本地数据链为准。",
+      边界: "DeepSeek 不写数值源、不改操作区、不生成交易动作。"
+    },
+    {
+      准入项: "只读准入契约",
+      当前状态: governedExecutor.ordinary_output_contract_is_cache_only === false ? "异常：需要审计" : "cache-only / no task / no model call",
+      用户下一步: "继续 P1/P2/P3；P5 单独补 governed executor。",
+      边界: "本表来自 GET cache，不创建 POST task，不调用 DeepSeek。"
     }
   ];
   const governedExecutorNonblockingRows = [
@@ -199,6 +232,11 @@ export default function ModelStrategy() {
             <h3>P5 普通用户速读</h3>
             <p className="risk-note">先看现在能做什么、DeepSeek 还等什么、不会改哪些数据；这张表不展开执行路由、raw policy 或模型输出。</p>
             <DataLineageTable rows={governedExecutorOrdinaryQuickReadRows} />
+          </div>
+          <div aria-label="deepseek governed executor output contract">
+            <h3>P5 安全输出白名单</h3>
+            <p className="risk-note">{String(governedExecutor.ordinary_output_contract_label ?? "仅允许安全解释字段；禁止覆盖价格、持仓、factor、operation_zones、strategy action 或交易动作。")}</p>
+            <DataLineageTable rows={governedExecutorOutputContractRows} />
           </div>
           <div aria-label="deepseek governed executor ordinary checklist">
             <h3>P5 治理清单</h3>

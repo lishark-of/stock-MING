@@ -10,6 +10,22 @@ from config import DEEPSEEK_MODEL_CONFIG_KEYS, DEEPSEEK_MODEL_DEFAULTS, get_conf
 PACKET_KEY = "command_center_3_deepseek_model_strategy_cache"
 SCHEMA_VERSION = "deepseek_model_strategy_cache.v1"
 MODEL_PURPOSES = ("default", "explain", "projection", "factor_explain", "fast", "healthcheck", "feeder")
+SAFE_EXPLANATION_FIELDS = (
+    "summary",
+    "support_notes",
+    "suppress_notes",
+    "conflict_notes",
+    "missing_data_notes",
+    "discipline_notes",
+)
+FORBIDDEN_OUTPUT_TARGETS = (
+    "price",
+    "holding",
+    "factor",
+    "operation_zones",
+    "strategy_action",
+    "trade_order",
+)
 
 
 def _now_iso() -> str:
@@ -93,6 +109,13 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
         "ordinary_nonblocking_boundary": "DeepSeek 状态只解释已有证据，不作为数据源、不替代价格/持仓/因子/operation_zones，也不生成买卖动作。",
         "ordinary_safe_to_ignore_for_basic_maps": True,
         "ordinary_blocking_state": "pending_model_ledger_not_blocking_tushare_or_basic_maps",
+        "ordinary_allowed_output_fields": list(SAFE_EXPLANATION_FIELDS),
+        "ordinary_forbidden_output_targets": list(FORBIDDEN_OUTPUT_TARGETS),
+        "ordinary_output_contract_label": "仅允许安全解释字段；禁止覆盖价格、持仓、factor、operation_zones、strategy action 或交易动作。",
+        "ordinary_output_contract_is_cache_only": True,
+        "ordinary_output_contract_creates_task": False,
+        "ordinary_output_contract_calls_model": False,
+        "ordinary_output_contract_is_production_evidence": False,
     }
 
     packet = {

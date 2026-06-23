@@ -557,6 +557,31 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.addCleanup(setattr, trade_review_service, "TRADE_REVIEW_LOG_PATH", original_path)
         return log_path
 
+    def test_model_strategy_cache_exposes_p5_output_contract_without_external_sources(self):
+        model_strategy = model_strategy_service.read_deepseek_model_strategy_cache()
+        governed_executor = model_strategy["governed_executor"]
+
+        self.assertEqual(
+            governed_executor["ordinary_allowed_output_fields"],
+            ["summary", "support_notes", "suppress_notes", "conflict_notes", "missing_data_notes", "discipline_notes"],
+        )
+        self.assertEqual(
+            governed_executor["ordinary_forbidden_output_targets"],
+            ["price", "holding", "factor", "operation_zones", "strategy_action", "trade_order"],
+        )
+        self.assertTrue(governed_executor["ordinary_output_contract_is_cache_only"])
+        self.assertFalse(governed_executor["ordinary_output_contract_creates_task"])
+        self.assertFalse(governed_executor["ordinary_output_contract_calls_model"])
+        self.assertFalse(governed_executor["ordinary_output_contract_is_production_evidence"])
+        self.assertFalse(model_strategy["external_calls_triggered"])
+        self.assertFalse(model_strategy["deepseek_called"])
+        self.assertFalse(model_strategy["tushare_called"])
+        self.assertTrue(model_strategy["does_not_modify_strategy_action"])
+        strategy_dump = json.dumps(model_strategy, ensure_ascii=False).lower()
+        self.assertNotIn("deepseek_api_key", strategy_dump)
+        self.assertNotIn("tushare_token", strategy_dump)
+        self.assertNotIn("bearer ", strategy_dump)
+
     def test_cache_builders_do_not_call_external_sources(self):
         self._with_meta_store()
         self._with_release_gate_receipt_path()
@@ -33726,6 +33751,14 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(model_strategy["data"]["policy"]["does_not_read_api_keys"])
         self.assertTrue(model_strategy["data"]["policy"]["model_names_are_configurable"])
         self.assertFalse(model_strategy["data"]["policy"]["callsite_hardcoding_allowed"])
+        self.assertEqual(
+            model_strategy["data"]["governed_executor"]["ordinary_allowed_output_fields"],
+            ["summary", "support_notes", "suppress_notes", "conflict_notes", "missing_data_notes", "discipline_notes"],
+        )
+        self.assertIn("trade_order", model_strategy["data"]["governed_executor"]["ordinary_forbidden_output_targets"])
+        self.assertTrue(model_strategy["data"]["governed_executor"]["ordinary_output_contract_is_cache_only"])
+        self.assertFalse(model_strategy["data"]["governed_executor"]["ordinary_output_contract_creates_task"])
+        self.assertFalse(model_strategy["data"]["governed_executor"]["ordinary_output_contract_calls_model"])
         self.assertEqual(model_strategy["data"]["call_ledger"][0]["api"], "local_deepseek_model_strategy_cache")
         self.assertEqual(model_strategy["call_ledger"][0]["api"], "local_deepseek_model_strategy_cache")
         self.assertFalse(model_strategy["call_ledger"][0]["external"])
