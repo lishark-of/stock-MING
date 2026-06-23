@@ -15578,16 +15578,28 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         {
             "destination": "next_session_map",
             "入口": "次日图谱",
+            "P3状态": "p3_handoff_ready_tushare_ledger" if provider_ready else ordinary_readback_status,
             "当前状态": (
-                "次日图谱入口可复核；若 Factor/Next/ECharts 未刷新则显示待补证据。"
+                "次日图谱入口可复核：Tushare-first 账本已回放；若 Factor/Next/ECharts 未刷新则显示待补证据。"
                 if provider_ready
                 else post_confirm_result_state
             ),
             "下一步": (
-                "打开次日图谱复核本地 operation_zones 来源。"
+                "打开次日图谱复核本地 operation_zones 来源；若 Next Session cache 仍旧，先回看 Tushare ledger 和缺口。"
                 if provider_ready
                 else post_confirm_result_next
             ),
+            "可解释结果": (
+                "来源=Tushare-first ledger；图谱=本地 Next Session cache/ECharts；缺口=Factor/Next/ECharts local cache replay。"
+                if provider_ready
+                else "来源=本地阻断或任务状态；图谱=等待 Tushare-first ledger；缺口=服务端 Tushare 凭据或 provider ledger。"
+            ),
+            "缺口处理": (
+                "只报告待补证据；不从 #next 链接创建 task 或补调 provider/model。"
+                if provider_ready
+                else "显示阻断原因和下一步；不从 GET cache 或 React render 重试外联。"
+            ),
+            "operation_zones边界": "只读本地 operation_zones 来源；不覆盖 strategy action、不下单。",
             "证据": f"provider_call_source={provider_call_source}; provider_ready={provider_ready}",
             "边界": "href #next 只切换到本地次日图谱入口；不生成交易动作、不覆盖 strategy action。",
             "readback_source": "search_quant_projection_small_data_writeback_summary",
