@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getAuditCache, getBootstrapStatus, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageCatalog, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, postBootstrapLiveStartup, type TaskCreationEnvelope, type TaskStatusIndex } from "../api/client";
+import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, CONFIGURED_API_BASE_DISPLAY_URL, getAuditCache, getBootstrapStatus, getCandidateRadarCache, getChokepointCache, getDataHealthCache, getDesktopPreflightCache, getDisciplineLoopCache, getFactorQuantCache, getHealth, getLegacyBridgeCache, getMarketContextCache, getMigrationStatus, getModelStrategyCache, getNextSessionCache, getPackets, getPositionCache, getRecoveryCenterCache, getRiskGuardrailsCache, getSerenityCache, getStorageCatalog, getStorageOverview, getTaskCatalog, getTasks, getWorkerRuntimeCache, postBootstrapLiveStartup, type TaskCreationEnvelope, type TaskStatusIndex } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -477,6 +477,34 @@ export default function CommandCenterHome() {
     : health.status === "ok"
       ? "本地前后端已联通"
       : "正在确认本地连接";
+  const dailyCommandFrontendBackendAutoLinkLabel = health.status === "ok"
+    ? `已联通本地后端：${API_BASE_DISPLAY_URL}`
+    : `自动尝试本地 FastAPI：${API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ")}`;
+  const dailyCommandFrontendBackendAutoLinkBoundary =
+    "前端 API client 只在本地 FastAPI 候选地址内自动联通；失败显示离线提示，不启动服务、不创建 task、不调用 provider/model、不读取 token/key";
+  const dailyCommandFrontendBackendAutoLinkRows = [
+    {
+      联通项: "前端 API client",
+      当前状态: health.status === "ok" ? "GET /health 已从本地后端回读" : "等待本地后端可达",
+      证据: `configured=${CONFIGURED_API_BASE_DISPLAY_URL}; selected=${API_BASE_DISPLAY_URL}; candidates=${API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ")}`,
+      下一步: health.status === "ok" ? "继续看 bootstrap runtime-mode packet" : "使用一键启动入口恢复本地 FastAPI / React 联通",
+      边界: dailyCommandFrontendBackendAutoLinkBoundary
+    },
+    {
+      联通项: "后端身份",
+      当前状态: health.status === "ok" ? String(health.service ?? "Command Center 3.0 health ok") : "等待 Command Center 3.0 health JSON",
+      证据: "GET /health external_calls_on_startup=false",
+      下一步: health.status === "ok" ? "继续确认本地 runtime-mode packet" : "查看桌面壳预检里的 FastAPI 诊断",
+      边界: "health 回读只验证本地服务身份；不刷新 provider/model、不写 cache/config"
+    },
+    {
+      联通项: "失败回退",
+      当前状态: error ? "显示本地后端离线提示" : "无前端联通错误",
+      证据: "frontend_backend_auto_link_scope=local_fastapi_only",
+      下一步: error ? "打开一键启动预检，按 FastAPI / bootstrap / React 三段恢复" : "联通正常时进入下一票雷达",
+      边界: "离线提示只帮助恢复 P0；不会绕过确认按钮触发 Tushare，也不会调用 DeepSeek"
+    }
+  ];
   const dailyCommandConnectivityPriority = dailyCommandNeedsStartupRecovery
     ? "先恢复本地联通；缓存和投研入口等 health/preflight 变绿后再看"
     : "本地联通可用；按最近缓存、数据健康、下一票雷达、股票量化推演复核";
@@ -640,6 +668,8 @@ export default function CommandCenterHome() {
             { label: "恢复回读", value: dailyCommandStartupReadbackLabel, tone: dailyCommandNeedsStartupRecovery ? "warn" : "good" },
             { label: "回读顺序", value: dailyCommandStartupReadbackOrder, tone: "good" },
             { label: "回读边界", value: dailyCommandStartupReadbackBoundary, tone: "good" },
+            { label: "自动联通", value: dailyCommandFrontendBackendAutoLinkLabel, tone: health.status === "ok" ? "good" : "warn" },
+            { label: "自动联通边界", value: dailyCommandFrontendBackendAutoLinkBoundary, tone: "good" },
             { label: "联通后行动", value: dailyCommandP0QuickAction || "等待 P0 quick action rows", tone: dailyCommandP0QuickAction ? "good" : "warn" },
             { label: "股票量化推演", value: "搜票后点生成 3.0 量化推演" },
             { label: "下一票雷达", value: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待缓存", tone: Number(candidateCounts?.candidate_count ?? 0) ? "good" : "warn" },
@@ -671,6 +701,11 @@ export default function CommandCenterHome() {
           <h3>本地联通三段回读</h3>
           <p className="risk-note">先看 FastAPI、bootstrap runtime-mode packet、React/Vite 前端三段是否变绿；这张表只读本地 GET 结果，不启动服务。</p>
           <DataLineageTable rows={dailyCommandStartupReadbackRows} />
+        </div>
+        <div aria-label="daily command p0 frontend backend auto link readback">
+          <h3>P0 前后端自动联通回读</h3>
+          <p className="risk-note">前端 API client 会在本地 FastAPI 候选地址内自动联通并回读 health；失败时只显示离线恢复，不启动服务、不创建 task。</p>
+          <DataLineageTable rows={dailyCommandFrontendBackendAutoLinkRows} />
         </div>
         <div aria-label="daily command p0 quick action handoff">
           <h3>P0 到 P1 快速行动</h3>
