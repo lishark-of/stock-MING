@@ -15498,6 +15498,88 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
             "candidate_is_not_buy_instruction": True,
         },
     ]
+    ordinary_result_action_rows = [
+        {
+            "action_key": "read_interpretable_conclusion",
+            "行动": "1. 读可读结论",
+            "当前状态": ordinary_result_summary,
+            "用户下一步": ordinary_result_next_step,
+            "入口": "搜票量化推演卡片",
+            "证据": "ordinary_result_summary",
+            "边界": ordinary_result_boundary,
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "action_key": "replay_quant_projection",
+            "行动": "2. 回放量化推演",
+            "当前状态": "可回放本地推演摘要" if small_data_ready else ordinary_result_status,
+            "用户下一步": "打开股票量化推演，只读查看本地结果" if small_data_ready else "先完成确认按钮链路",
+            "入口": "股票量化推演",
+            "证据": "cache / ledger / packet",
+            "边界": "只读切换到本地量化推演入口；不刷新外部数据、不生成买卖动作。",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "action_key": "replay_next_session_map",
+            "行动": "3. 打开次日图谱",
+            "当前状态": "本地图谱可回放" if factor_next_ready else "等待本地 cache 刷新",
+            "用户下一步": (
+                "打开次日图谱复核本地 operation_zones 来源"
+                if factor_next_ready
+                else "等待 Factor/Next/ECharts 本地 cache 刷新后再打开"
+            ),
+            "入口": "次日图谱",
+            "证据": "Next Session cache / ECharts payload",
+            "边界": "只读复核图谱来源；不覆盖 operation_zones，不修改 strategy action。",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "action_key": "keep_research_only_boundary",
+            "行动": "4. 保持研究边界",
+            "当前状态": "仅供研究",
+            "用户下一步": "把缺口当待补证据，不当买入或卖出指令",
+            "入口": "候选雷达普通入口",
+            "证据": "local_safety_policy",
+            "边界": "DeepSeek 未参与；真实交易隔离；token/key 不进入前端、日志、packet 或 cache。",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+    ]
     return {
         "schema_version": QUANT_PROJECTION_INTERPRETATION_SCHEMA_VERSION,
         "status": status,
@@ -15515,6 +15597,12 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "ordinary_result_readback_rows_create_task": False,
         "ordinary_result_readback_rows_use_model_output": False,
         "ordinary_result_readback_rows_are_not_trade_signals": True,
+        "ordinary_result_action_rows": ordinary_result_action_rows,
+        "ordinary_result_action_row_count": len(ordinary_result_action_rows),
+        "ordinary_result_action_rows_are_cache_only": True,
+        "ordinary_result_action_rows_create_task": False,
+        "ordinary_result_action_rows_use_model_output": False,
+        "ordinary_result_action_rows_are_not_trade_signals": True,
         "symbol": small_data.get("symbol") or quant_receipt.get("symbol") or "",
         "interpretation_ready": small_data_ready,
         "provider_api_success_count": provider_success_count,
@@ -15553,11 +15641,16 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     counts["search_quant_projection_interpretation_missing_evidence_count"] = summary.get(
         "missing_evidence_count", 0
     )
+    counts["search_quant_projection_interpretation_action_row_count"] = summary.get(
+        "ordinary_result_action_row_count", 0
+    )
     view["counts"] = counts
     policy = dict(_as_dict(view.get("policy")))
     policy["search_quant_projection_interpretation_is_cache_replay"] = True
     policy["search_quant_projection_interpretation_does_not_call_model"] = True
     policy["search_quant_projection_interpretation_is_not_trade_signal"] = True
+    policy["search_quant_projection_interpretation_action_rows_create_task"] = False
+    policy["search_quant_projection_interpretation_action_rows_are_cache_only"] = True
     view["policy"] = policy
     return view
 

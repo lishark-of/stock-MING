@@ -292,6 +292,14 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(interpretation["ordinary_result_readback_rows_create_task"])
         self.assertFalse(interpretation["ordinary_result_readback_rows_use_model_output"])
         self.assertTrue(interpretation["ordinary_result_readback_rows_are_not_trade_signals"])
+        self.assertEqual(interpretation["ordinary_result_action_row_count"], 4)
+        self.assertTrue(interpretation["ordinary_result_action_rows_are_cache_only"])
+        self.assertFalse(interpretation["ordinary_result_action_rows_create_task"])
+        self.assertFalse(interpretation["ordinary_result_action_rows_use_model_output"])
+        self.assertTrue(interpretation["ordinary_result_action_rows_are_not_trade_signals"])
+        self.assertEqual(packet["counts"]["search_quant_projection_interpretation_action_row_count"], 4)
+        self.assertFalse(packet["policy"]["search_quant_projection_interpretation_action_rows_create_task"])
+        self.assertTrue(packet["policy"]["search_quant_projection_interpretation_action_rows_are_cache_only"])
         result_rows = {row["surface"]: row for row in interpretation["ordinary_result_readback_rows"]}
         self.assertEqual(
             set(result_rows),
@@ -311,6 +319,30 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             self.assertTrue(result_row["does_not_execute_trades"])
             self.assertTrue(result_row["does_not_modify_strategy_action"])
             self.assertTrue(result_row["candidate_is_not_buy_instruction"])
+        action_rows = {row["action_key"]: row for row in interpretation["ordinary_result_action_rows"]}
+        self.assertEqual(
+            set(action_rows),
+            {
+                "read_interpretable_conclusion",
+                "replay_quant_projection",
+                "replay_next_session_map",
+                "keep_research_only_boundary",
+            },
+        )
+        self.assertIn("读可读结论", action_rows["read_interpretable_conclusion"]["行动"])
+        self.assertIn("回放量化推演", action_rows["replay_quant_projection"]["行动"])
+        self.assertIn("等待本地 cache 刷新", action_rows["replay_next_session_map"]["当前状态"])
+        self.assertIn("不当买入或卖出指令", action_rows["keep_research_only_boundary"]["用户下一步"])
+        for action_row in action_rows.values():
+            self.assertTrue(action_row["cache_only_readback"])
+            self.assertFalse(action_row["creates_task_from_readback"])
+            self.assertFalse(action_row["external_calls_triggered"])
+            self.assertFalse(action_row["uses_deepseek_output"])
+            self.assertFalse(action_row["model_output_used"])
+            self.assertFalse(action_row["contains_secret"])
+            self.assertTrue(action_row["does_not_execute_trades"])
+            self.assertTrue(action_row["does_not_modify_strategy_action"])
+            self.assertTrue(action_row["candidate_is_not_buy_instruction"])
         self.assertTrue(interpretation["interpretation_ready"])
         self.assertEqual(interpretation["provider_api_success_count"], 4)
         self.assertEqual(interpretation["next_session_map_state"], "pending_local_cache_refresh")
@@ -512,6 +544,11 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(interpretation["ordinary_result_readback_rows_create_task"])
         self.assertFalse(interpretation["ordinary_result_readback_rows_use_model_output"])
         self.assertTrue(interpretation["ordinary_result_readback_rows_are_not_trade_signals"])
+        self.assertEqual(interpretation["ordinary_result_action_row_count"], 4)
+        self.assertTrue(interpretation["ordinary_result_action_rows_are_cache_only"])
+        self.assertFalse(interpretation["ordinary_result_action_rows_create_task"])
+        self.assertFalse(interpretation["ordinary_result_action_rows_use_model_output"])
+        self.assertTrue(interpretation["ordinary_result_action_rows_are_not_trade_signals"])
         result_rows = {row["surface"]: row for row in interpretation["ordinary_result_readback_rows"]}
         self.assertEqual(
             set(result_rows),
@@ -528,8 +565,19 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             self.assertFalse(result_row["model_output_used"])
             self.assertFalse(result_row["contains_secret"])
             self.assertTrue(result_row["does_not_execute_trades"])
-            self.assertTrue(result_row["does_not_modify_strategy_action"])
-            self.assertTrue(result_row["candidate_is_not_buy_instruction"])
+        action_rows = {row["action_key"]: row for row in interpretation["ordinary_result_action_rows"]}
+        self.assertIn("先完成确认按钮链路", action_rows["replay_quant_projection"]["用户下一步"])
+        self.assertIn("token/key 不进入前端", action_rows["keep_research_only_boundary"]["边界"])
+        for action_row in action_rows.values():
+            self.assertTrue(action_row["cache_only_readback"])
+            self.assertFalse(action_row["creates_task_from_readback"])
+            self.assertFalse(action_row["external_calls_triggered"])
+            self.assertFalse(action_row["uses_deepseek_output"])
+            self.assertFalse(action_row["model_output_used"])
+            self.assertFalse(action_row["contains_secret"])
+            self.assertTrue(action_row["does_not_execute_trades"])
+            self.assertTrue(action_row["does_not_modify_strategy_action"])
+            self.assertTrue(action_row["candidate_is_not_buy_instruction"])
         self.assertFalse(interpretation["interpretation_ready"])
         self.assertIn("Tushare-first provider ledger", interpretation["missing_evidence"])
         self.assertFalse(interpretation["uses_deepseek_output"])

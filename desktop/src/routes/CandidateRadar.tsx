@@ -799,6 +799,13 @@ export default function CandidateRadar() {
           边界: "DeepSeek 未参与；候选雷达不是买入指令；真实交易路径隔离"
         }
       ];
+  const quantProjectionOrdinaryResultActionRows = rows(searchQuantProjectionInterpretation.ordinary_result_action_rows).map((row) => ({
+    行动: displayText(row["行动"] ?? row.action_key),
+    当前状态: displayText(row["当前状态"] ?? row.status),
+    用户下一步: displayText(row["用户下一步"] ?? row.next_action, quantProjectionOrdinaryResultNext),
+    入口: displayText(row["入口"] ?? row.entry),
+    边界: displayText(row["边界"] ?? row.boundary, quantProjectionOrdinaryResultBoundary)
+  }));
   const quantProjectionSourceState = [
     `本地缓存：${quantProjectionCacheSourceLabel}`,
     `Tushare 数据：${quantProjectionProviderSourceLabel}`,
@@ -1178,6 +1185,11 @@ export default function CandidateRadar() {
             <h3>解释结果清单</h3>
             <p className="risk-note">普通入口只回放数据来源、量化推演、次日图谱和安全边界；原始 receipt、prompt 或审计字段仍下沉在详情中。</p>
             <DataLineageTable rows={quantProjectionOrdinaryResultRows} />
+          </div>
+          <div aria-label="quant projection ordinary explainable result actions">
+            <h3>可解释结果行动</h3>
+            <p className="risk-note">优先读取服务端 ordinary_result_action_rows：读可读结论、回放量化推演、打开次日图谱，并保持仅供研究边界。</p>
+            <DataLineageTable rows={quantProjectionOrdinaryResultActionRows} />
           </div>
           <div className="actions" aria-label="quant projection replay destinations">
             <a href="#factor" aria-label="replay generated stock quant projection">回放股票量化推演</a>
