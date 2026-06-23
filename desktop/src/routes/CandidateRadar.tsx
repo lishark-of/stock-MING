@@ -922,6 +922,11 @@ export default function CandidateRadar() {
             <p className="risk-note">普通入口只回放数据来源、量化推演、次日图谱和安全边界；原始 receipt、prompt 或审计字段仍下沉在详情中。</p>
             <DataLineageTable rows={quantProjectionOrdinaryResultRows} />
           </div>
+          <div className="actions" aria-label="quant projection replay destinations">
+            <a href="#factor" aria-label="replay generated stock quant projection">回放股票量化推演</a>
+            <a href="#next" aria-label="replay generated next session map">回放次日图谱</a>
+            <a href="#candidate-pool" aria-label="return to candidate pool after quant projection">回到候选池</a>
+          </div>
           <div aria-label="quant projection task cache packet readback">
             <h3>任务回放清单</h3>
             <p className="risk-note">任务编号和安全步骤优先从本地 cache / packet 回放；TaskStatusPanel 只轮询本地 FastAPI 任务状态。</p>
@@ -975,11 +980,6 @@ export default function CandidateRadar() {
               </div>
             ) : null}
           </details>
-          <div className="actions" aria-label="quant projection replay destinations">
-            <a href="#factor" aria-label="replay generated stock quant projection">回放股票量化推演</a>
-            <a href="#next" aria-label="replay generated next session map">回放次日图谱</a>
-            <a href="#candidate-pool" aria-label="return to candidate pool after quant projection">回到候选池</a>
-          </div>
           {quantProjectionTaskVisible ? (
             <div aria-label="quant projection tushare-first task status">
               <TaskLaunchReceipt receipt={taskReceipt} />
