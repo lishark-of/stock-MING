@@ -194,6 +194,7 @@ print_post_startup_readback_checklist() {
   else
     echo "  3. React/Vite 前端：${VITE_URL} 已返回 Command Center 3.0 HTML；页面会打开普通首页 ${APP_URL}，先看今日作战台的一键启动预检。"
   fi
+  echo "  4. 联通后下一步：打开 ${VITE_URL%/}/#candidates，输入股票代码；只有确认按钮会创建 Tushare-first POST task，DeepSeek 仍保持 governed/pending。"
   echo "边界：启动后复核只读本地 GET 结果；不创建 task、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
 }
 
