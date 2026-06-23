@@ -780,6 +780,42 @@ export default function CandidateRadar() {
       : "回放顺序：确认生成后先看任务编号，再刷新本地缓存，最后查看量化推演和次日图谱";
   const quantProjectionReplayBoundary =
     "回放链接只切换本地页面或锚点；不重新创建 task、不调用 Tushare/DeepSeek、不写 cache";
+  const quantProjectionReplayDestinationState = quantProjectionSubmitError
+    ? "结果入口暂停：确认任务未创建；先恢复本地后端连接，再重新点击确认"
+    : quantProjectionFactorNextReady || quantProjectionProviderLedgerReady
+      ? "结果入口可回放：读取本地 cache / ledger / packet，不额外刷新外部数据或模型"
+      : taskReceipt?.ok || quantProjectionPersistedTaskId
+        ? "结果入口等待缓存：先看 TaskStatusPanel，任务完成并刷新 cache 后再回放"
+        : "结果入口待确认：当前只是本地导航；不会创建 task 或刷新 provider/model";
+  const quantProjectionReplayDestinationNextStep = quantProjectionSubmitError
+    ? "检查一键启动和本地后端连接，再重新点击确认按钮"
+    : quantProjectionFactorNextReady || quantProjectionProviderLedgerReady
+      ? "先回放股票量化推演，再打开次日图谱复核图谱"
+      : taskReceipt?.ok || quantProjectionPersistedTaskId
+        ? "等待后台任务完成，刷新本地缓存后再使用两个入口"
+        : "输入有效代码并点击确认；不要从链接期待自动补数";
+  const quantProjectionReplayDestinationRows = [
+    {
+      入口: "股票量化推演",
+      当前状态: quantProjectionReplayDestinationState,
+      下一步: quantProjectionReplayDestinationNextStep,
+      边界: "href #factor 只切换到本地量化推演入口；不发 POST task、不调 Tushare/DeepSeek"
+    },
+    {
+      入口: "次日图谱",
+      当前状态: quantProjectionFactorNextReady
+        ? "次日图谱缓存可回放；只展示本地 Next Session / ECharts payload"
+        : quantProjectionReplayDestinationState,
+      下一步: quantProjectionFactorNextReady ? "打开次日图谱复核本地 operation_zones 来源" : quantProjectionReplayDestinationNextStep,
+      边界: "href #next 只切换到本地次日图谱入口；不生成交易动作、不覆盖 strategy action"
+    },
+    {
+      入口: "候选池",
+      当前状态: "可随时返回候选池复核来源、分组和缺口",
+      下一步: "把推演结果当研究线索，不当买入指令",
+      边界: "Radar candidate 不是交易指令；真实交易路径继续隔离"
+    }
+  ];
   const quantProjectionConfirmHandoffRows = [
     {
       步骤: "输入校验",
@@ -972,6 +1008,10 @@ export default function CandidateRadar() {
             <a href="#factor" aria-label="replay generated stock quant projection">回放股票量化推演</a>
             <a href="#next" aria-label="replay generated next session map">回放次日图谱</a>
             <a href="#candidate-pool" aria-label="return to candidate pool after quant projection">回到候选池</a>
+          </div>
+          <div aria-label="quant projection replay destination readiness">
+            <p className="risk-note">{quantProjectionReplayDestinationState}</p>
+            <DataLineageTable rows={quantProjectionReplayDestinationRows} />
           </div>
           <div aria-label="quant projection task cache packet readback">
             <h3>任务回放清单</h3>
