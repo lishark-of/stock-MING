@@ -788,6 +788,38 @@ export default function CandidateRadar() {
     来源: displayText(row.readback_source, "cache / ledger / packet"),
     边界: displayText(row.boundary, quantProjectionOrdinaryResultBoundary)
   }));
+  const quantProjectionOrdinaryResultQuickReadRows = rows(searchQuantProjectionInterpretation.ordinary_result_quick_read_rows).map((row) => ({
+    结论: displayText(row["结论"] ?? row.quick_read_item),
+    当前状态: displayText(row["当前状态"] ?? row.ordinary_label ?? row.status),
+    用户下一步: displayText(row["用户下一步"] ?? row.next_action, quantProjectionOrdinaryResultNext),
+    证据: displayText(row["证据"] ?? row.evidence, quantProjectionOrdinaryResultEvidence),
+    边界: displayText(row["边界"] ?? row.boundary, quantProjectionOrdinaryResultBoundary)
+  }));
+  const quantProjectionOrdinaryResultQuickRows = quantProjectionOrdinaryResultQuickReadRows.length
+    ? quantProjectionOrdinaryResultQuickReadRows
+    : [
+        {
+          结论: "现在能读什么",
+          当前状态: quantProjectionOrdinaryResultSummary,
+          用户下一步: quantProjectionOrdinaryResultNext,
+          证据: quantProjectionOrdinaryResultEvidence,
+          边界: quantProjectionOrdinaryResultBoundary
+        },
+        {
+          结论: "结果从哪里回放",
+          当前状态: quantProjectionInterpretationReplay,
+          用户下一步: "只读查看本地 cache / ledger / packet",
+          证据: "cache / call_ledger / packet",
+          边界: "GET cache 不创建 task，不刷新 provider/model"
+        },
+        {
+          结论: "还缺什么",
+          当前状态: "Tushare-first 账本、Factor/Next/ECharts 本地回放或 DeepSeek governed executor 仍按证据状态显示",
+          用户下一步: quantProjectionInterpretationNext,
+          证据: "local_evidence_gap_summary",
+          边界: "缺口不是买卖指令；DeepSeek governed executor 单独补"
+        }
+      ];
   const quantProjectionOrdinaryResultRows = quantProjectionOrdinaryResultReadbackRows.length
     ? quantProjectionOrdinaryResultReadbackRows
     : [
@@ -1318,6 +1350,11 @@ export default function CandidateRadar() {
           <div aria-label="quant projection ordinary explainable result readback">
             <h3>解释结果清单</h3>
             <p className="risk-note">普通入口只回放数据来源、量化推演、次日图谱和安全边界；原始 receipt、prompt 或审计字段仍下沉在详情中。</p>
+            <div aria-label="quant projection ordinary explainable result quick read">
+              <h3>P3 结果速读</h3>
+              <p className="risk-note">优先读取服务端 ordinary_result_quick_read_rows：先看可读结论、回放来源和待补证据；不会从结果速读创建 task 或调用模型。</p>
+              <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
+            </div>
             <DataLineageTable rows={quantProjectionOrdinaryResultRows} />
           </div>
           <div aria-label="quant projection ordinary explainable result actions">

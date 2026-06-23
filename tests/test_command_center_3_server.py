@@ -38691,6 +38691,37 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(
             all(row["readback_external_calls_triggered"] is False for row in small_data["ordinary_provider_api_rows"])
         )
+        interpretation = packet["search_quant_projection_interpretation_summary"]
+        self.assertTrue(interpretation["interpretation_ready"])
+        self.assertTrue(interpretation["ordinary_result_quick_read_rows_are_cache_only"])
+        self.assertFalse(interpretation["ordinary_result_quick_read_rows_create_task"])
+        self.assertFalse(interpretation["ordinary_result_quick_read_rows_use_model_output"])
+        self.assertTrue(interpretation["ordinary_result_quick_read_rows_are_not_trade_signals"])
+        self.assertEqual(interpretation["ordinary_result_quick_read_row_count"], 3)
+        self.assertEqual(packet["counts"]["search_quant_projection_interpretation_quick_read_row_count"], 3)
+        self.assertTrue(packet["policy"]["search_quant_projection_interpretation_quick_read_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_interpretation_quick_read_rows_create_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_interpretation_quick_read_rows_use_model_output"])
+        self.assertTrue(packet["policy"]["search_quant_projection_interpretation_quick_read_rows_are_not_trade_signals"])
+        quick_read = {
+            row["quick_read_item"]: row for row in interpretation["ordinary_result_quick_read_rows"]
+        }
+        self.assertEqual(set(quick_read), {"conclusion", "replay_scope", "remaining_gap"})
+        self.assertIn("Tushare-first 账本已回放", quick_read["conclusion"]["当前状态"])
+        self.assertEqual(quick_read["replay_scope"]["证据"], "cache / call_ledger / packet")
+        self.assertIn("DeepSeek governed executor 单独补", quick_read["remaining_gap"]["边界"])
+        self.assertFalse(
+            any(row["creates_task_from_readback"] for row in interpretation["ordinary_result_quick_read_rows"])
+        )
+        self.assertFalse(
+            any(row["external_calls_triggered"] for row in interpretation["ordinary_result_quick_read_rows"])
+        )
+        self.assertFalse(any(row["uses_deepseek_output"] for row in interpretation["ordinary_result_quick_read_rows"]))
+        self.assertFalse(any(row["contains_secret"] for row in interpretation["ordinary_result_quick_read_rows"]))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in interpretation["ordinary_result_quick_read_rows"]))
+        self.assertTrue(
+            all(row["does_not_modify_strategy_action"] for row in interpretation["ordinary_result_quick_read_rows"])
+        )
         self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))

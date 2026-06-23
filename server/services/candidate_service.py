@@ -15849,6 +15849,7 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         f"证据：Tushare 接口 {provider_success_count}/{provider_call_count}；"
         f"DeepSeek 未参与；图谱{'已回放' if factor_next_ready else '待本地刷新'}。"
     )
+    missing_evidence_label = " / ".join(missing_evidence) if missing_evidence else "基础图谱已有本地回放"
     if small_data_ready:
         data_source_status = "tushare_first_ledger_ready"
         data_source_label = f"Tushare-first 账本已回放 {provider_success_count}/{provider_call_count} 个接口"
@@ -15861,6 +15862,65 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
     else:
         data_source_status = "waiting_symbol_confirm"
         data_source_label = "等待输入股票代码并点击确认"
+    ordinary_result_quick_read_rows = [
+        {
+            "quick_read_item": "conclusion",
+            "结论": "现在能读什么",
+            "当前状态": ordinary_result_summary,
+            "用户下一步": ordinary_result_next_step,
+            "证据": ordinary_result_evidence,
+            "边界": ordinary_result_boundary,
+            "readback_source": "search_quant_projection_interpretation_summary",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "quick_read_item": "replay_scope",
+            "结论": "结果从哪里回放",
+            "当前状态": data_source_label,
+            "用户下一步": result_replay_label,
+            "证据": "cache / call_ledger / packet",
+            "边界": "普通入口只读本地结果；不会从结论速读创建 task 或刷新 provider/model。",
+            "readback_source": "cache / call_ledger / packet",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "quick_read_item": "remaining_gap",
+            "结论": "还缺什么",
+            "当前状态": f"待补证据：{missing_evidence_label}",
+            "用户下一步": next_action,
+            "证据": f"missing_evidence_count={len(missing_evidence)}",
+            "边界": "缺口只是待补证据；DeepSeek governed executor 单独补，候选雷达不是买卖指令。",
+            "readback_source": "local_evidence_gap_summary",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+    ]
     ordinary_result_readback_rows = [
         {
             "surface": "data_source",
@@ -16016,6 +16076,12 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "ordinary_result_next_step": ordinary_result_next_step,
         "ordinary_result_boundary": ordinary_result_boundary,
         "ordinary_result_evidence": ordinary_result_evidence,
+        "ordinary_result_quick_read_rows": ordinary_result_quick_read_rows,
+        "ordinary_result_quick_read_row_count": len(ordinary_result_quick_read_rows),
+        "ordinary_result_quick_read_rows_are_cache_only": True,
+        "ordinary_result_quick_read_rows_create_task": False,
+        "ordinary_result_quick_read_rows_use_model_output": False,
+        "ordinary_result_quick_read_rows_are_not_trade_signals": True,
         "ordinary_result_readback_rows": ordinary_result_readback_rows,
         "ordinary_result_readback_row_count": len(ordinary_result_readback_rows),
         "ordinary_result_readback_rows_are_cache_only": True,
@@ -16069,6 +16135,9 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     counts["search_quant_projection_interpretation_action_row_count"] = summary.get(
         "ordinary_result_action_row_count", 0
     )
+    counts["search_quant_projection_interpretation_quick_read_row_count"] = summary.get(
+        "ordinary_result_quick_read_row_count", 0
+    )
     view["counts"] = counts
     policy = dict(_as_dict(view.get("policy")))
     policy["search_quant_projection_interpretation_is_cache_replay"] = True
@@ -16076,6 +16145,10 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     policy["search_quant_projection_interpretation_is_not_trade_signal"] = True
     policy["search_quant_projection_interpretation_action_rows_create_task"] = False
     policy["search_quant_projection_interpretation_action_rows_are_cache_only"] = True
+    policy["search_quant_projection_interpretation_quick_read_rows_create_task"] = False
+    policy["search_quant_projection_interpretation_quick_read_rows_are_cache_only"] = True
+    policy["search_quant_projection_interpretation_quick_read_rows_use_model_output"] = False
+    policy["search_quant_projection_interpretation_quick_read_rows_are_not_trade_signals"] = True
     view["policy"] = policy
     return view
 
