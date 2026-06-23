@@ -209,6 +209,40 @@ export default function NextSessionMap() {
       boundary: nextSessionOperationZoneBoundary
     }
   ];
+  const ordinaryInterpretationActionRows = [
+    {
+      行动: "1. 确认图谱状态",
+      当前状态: chartSummary.has_drawable_data === true ? "可绘制图谱已从本地 cache 回放" : "暂无可绘制图谱",
+      用户下一步: chartSummary.has_drawable_data === true ? "继续看图表路径和参考线" : "先查看缓存状态或点击生成任务",
+      证据: nextSessionLastResultLabel,
+      边界: "只读 chart_summary；不创建 task、不调用 Tushare/DeepSeek/GitHub。"
+    },
+    {
+      行动: "2. 读路径和参考线",
+      当前状态: chartSummary.has_drawable_data === true
+        ? `情景路径 ${String(chartSummary.scenario_series_count ?? 0)} 条 / 参考线 ${String(chartSummary.reference_line_count ?? 0)} 条`
+        : "等待 scenario_series / reference_lines cache",
+      用户下一步: "用路径方向和最新收盘锚点解释压力/支撑，不生成买卖动作",
+      证据: latestCloseAnchor.price ? `latest close=${String(latestCloseAnchor.price)}` : nextSessionLastCache,
+      边界: "只解释本地路径和参考线；不重算价格、不写 strategy action。"
+    },
+    {
+      行动: "3. 读操作区",
+      当前状态: chartSummary.has_drawable_data === true
+        ? `operation_zones ${String(chartSummary.operation_zone_count ?? 0)} 个`
+        : "等待 operation_zones cache",
+      用户下一步: "把操作区当条件区间和复核提示，回到风险/证据源确认",
+      证据: nextSessionOperationZoneBoundary,
+      边界: "不改 operation_zones、不下单、不把区域当交易指令。"
+    },
+    {
+      行动: "4. 读缺口并回流",
+      当前状态: nextSessionMissingEvidence,
+      用户下一步: "缺口回到下一票雷达或股票量化推演补证；不要把空图谱解释成无风险",
+      证据: "replacement / browser QA / retained signal / real close evidence",
+      边界: "缺口只提示后续按钮门控补证；GET cache 和 React render 不补调 provider/model。"
+    }
+  ];
   const ordinaryChartReviewRows = [
     {
       复核项: "图表路径",
@@ -291,6 +325,11 @@ export default function NextSessionMap() {
       />
       <h3>三段结果回放</h3>
       <DataLineageTable rows={ordinaryResultReplayRows} />
+      <div aria-label="next session ordinary interpretation actions">
+        <h3>解释性行动清单</h3>
+        <p className="risk-note">先确认图谱是否可绘制，再读路径/参考线、操作区和缺口；这些行动只解释本地 cache，不生成交易动作。</p>
+        <DataLineageTable rows={ordinaryInterpretationActionRows} />
+      </div>
       <div aria-label="next session ordinary chart review checklist">
         <h3>图谱复核清单</h3>
         <p className="risk-note">按图表路径、参考线、操作区、缺少证据复核；这些行只读取本地 chart cache，不触发刷新或交易动作。</p>
