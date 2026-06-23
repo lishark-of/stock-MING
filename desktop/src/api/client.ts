@@ -74,6 +74,7 @@ export type StorageQueryParams = {
 };
 
 const DEFAULT_LOCAL_API_BASE = "http://127.0.0.1:8710";
+const DEFAULT_LOCALHOST_API_BASE = "http://localhost:8710";
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? DEFAULT_LOCAL_API_BASE;
 export const API_BASE_URL = API_BASE;
 export const DEFAULT_LOCAL_API_BASE_URL = DEFAULT_LOCAL_API_BASE;
@@ -113,6 +114,9 @@ function localApiBaseCandidates(): string[] {
   }
   if (!candidates.some((candidate) => sameApiBase(candidate, DEFAULT_LOCAL_API_BASE))) {
     candidates.push(DEFAULT_LOCAL_API_BASE);
+  }
+  if (!candidates.some((candidate) => sameApiBase(candidate, DEFAULT_LOCALHOST_API_BASE))) {
+    candidates.push(DEFAULT_LOCALHOST_API_BASE);
   }
   return candidates;
 }
@@ -161,6 +165,8 @@ function failedRequestEnvelope<T>(
         configured_api_base: CONFIGURED_API_BASE_DISPLAY_URL,
         attempted_api_bases: attemptedApiBases,
         default_local_api_base: safeApiBaseDisplay(DEFAULT_LOCAL_API_BASE),
+        default_localhost_api_base: safeApiBaseDisplay(DEFAULT_LOCALHOST_API_BASE),
+        frontend_backend_auto_link_candidate_count: attemptedApiBases.length,
         frontend_backend_auto_link_attempted: true,
         frontend_backend_auto_link_scope: "local_fastapi_only",
         call_status: callStatus,
