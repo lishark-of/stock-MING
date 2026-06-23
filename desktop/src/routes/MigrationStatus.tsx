@@ -347,6 +347,7 @@ export default function MigrationStatus() {
   const linkageReviewRows = postLinkageReviewRows.length ? postLinkageReviewRows : latestLinkageReviewRows;
   const principles = Array.isArray(packet.principles) ? packet.principles : [];
   const packetAcceptanceRunwayRows = (packet.ltg_acceptance_runway_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const usablePathCurrentCheckpointRows = (packet.usable_path_current_checkpoint_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const usablePathStrictCloseoutHandoffRows = (packet.usable_path_strict_closeout_handoff_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const ltgNextAcceptanceActionRows = (packet.ltg_next_acceptance_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const ltgNextAcceptanceReceiptRows = ltgNextAcceptanceActionRows.map((row) => ({
@@ -636,6 +637,7 @@ export default function MigrationStatus() {
           { label: "review blockers", value: Number(linkageReviewReceipt.blocking_row_count ?? 0), tone: Number(linkageReviewReceipt.blocking_row_count ?? 0) ? "warn" : "good" },
           { label: "cache envelope ledger", value: cacheCallLedger.length },
           { label: "cache warnings", value: cacheWarnings.length },
+          { label: "P0-P5 checkpoint rows", value: usablePathCurrentCheckpointRows.length, tone: usablePathCurrentCheckpointRows.length ? "good" : "warn" },
           { label: "planning baseline", value: baselinePolicy?.use_as_planning_baseline === true, tone: baselinePolicy?.use_as_planning_baseline === true ? "good" : "warn" },
           { label: "cache only", value: policy?.cache_only === true, tone: policy?.cache_only === true ? "good" : "warn" },
           { label: "external calls", value: policy?.external_calls_triggered === true ? "存在" : "无", tone: policy?.external_calls_triggered === true ? "bad" : "good" },
@@ -645,6 +647,11 @@ export default function MigrationStatus() {
       />
       <h3>固定进度表</h3>
       <DataLineageTable rows={progress} />
+      <div aria-label="usable path current checkpoint quick read">
+        <h3>P0-P5 当前可用化 checkpoint 速读</h3>
+        <p className="risk-note">这张表只说明普通用户当前能先做什么和下一步去哪；它只读本地状态，不创建 task、不调用外部服务，也不能关闭 14 LTG。</p>
+        <DataLineageTable rows={usablePathCurrentCheckpointRows} />
+      </div>
       <h3>14 个长期目标完成度</h3>
       <p className="risk-note">严格关闭数保持 {String(longTermGoalSummary.strict_closeout ?? "0/14")}；scaffold / preflight / mock / matrix / sanitizer / dry-run / local receipt 不能作为生产完成证据。</p>
       <MetricGrid

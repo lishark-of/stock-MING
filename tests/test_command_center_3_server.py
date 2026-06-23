@@ -606,6 +606,35 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertEqual(len(migration["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["ltg_acceptance_runway_rows"]), 14)
         self.assertEqual(len(migration["ltg_next_acceptance_action_rows"]), 14)
+        self.assertEqual(migration["usable_path_current_checkpoint_row_count"], 6)
+        self.assertEqual(len(migration["usable_path_current_checkpoint_rows"]), 6)
+        current_checkpoint_rows = {
+            row["phase"]: row for row in migration["usable_path_current_checkpoint_rows"]
+        }
+        self.assertEqual(set(current_checkpoint_rows), {"P0", "P1", "P2", "P3", "P4", "P5"})
+        self.assertIn("一键启动", current_checkpoint_rows["P0"]["usable_checkpoint"])
+        self.assertIn("确认按钮", current_checkpoint_rows["P1"]["ordinary_user_meaning"])
+        self.assertIn("button-gated", current_checkpoint_rows["P1"]["current_evidence_scope"])
+        self.assertIn("DeepSeek is not a data source", current_checkpoint_rows["P5"]["current_evidence_scope"])
+        self.assertFalse(
+            any(row["can_close_ltg_from_current_checkpoint"] for row in current_checkpoint_rows.values())
+        )
+        self.assertTrue(all(row["cache_only_readback"] for row in current_checkpoint_rows.values()))
+        self.assertFalse(any(row["creates_task_from_get"] for row in current_checkpoint_rows.values()))
+        self.assertFalse(any(row["creates_task_from_render"] for row in current_checkpoint_rows.values()))
+        self.assertFalse(any(row["external_calls_triggered"] for row in current_checkpoint_rows.values()))
+        self.assertFalse(any(row["tushare_called"] for row in current_checkpoint_rows.values()))
+        self.assertFalse(any(row["deepseek_called"] for row in current_checkpoint_rows.values()))
+        self.assertFalse(any(row["github_called"] for row in current_checkpoint_rows.values()))
+        self.assertFalse(any(row["contains_secret"] for row in current_checkpoint_rows.values()))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in current_checkpoint_rows.values()))
+        self.assertTrue(all(row["does_not_modify_strategy_action"] for row in current_checkpoint_rows.values()))
+        self.assertTrue(
+            all(
+                row["evidence_boundary"] == "p0_p5_usable_path_checkpoint_is_not_14_ltg_completion"
+                for row in current_checkpoint_rows.values()
+            )
+        )
         self.assertEqual(migration["usable_path_strict_closeout_handoff_row_count"], 7)
         self.assertEqual(len(migration["usable_path_strict_closeout_handoff_rows"]), 7)
         handoff_rows = {row["phase"]: row for row in migration["usable_path_strict_closeout_handoff_rows"]}
@@ -32710,6 +32739,8 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertEqual(len(migration["data"]["long_term_goal_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_acceptance_runway_rows"]), 14)
         self.assertEqual(len(migration["data"]["ltg_next_acceptance_action_rows"]), 14)
+        self.assertEqual(migration["data"]["usable_path_current_checkpoint_row_count"], 6)
+        self.assertEqual(len(migration["data"]["usable_path_current_checkpoint_rows"]), 6)
         self.assertEqual(migration["data"]["usable_path_strict_closeout_handoff_row_count"], 7)
         self.assertEqual(len(migration["data"]["usable_path_strict_closeout_handoff_rows"]), 7)
         self.assertEqual(len(migration["data"]["ltg_stage_scope_observed_rows"]), 14)

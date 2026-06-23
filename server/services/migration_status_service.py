@@ -1160,6 +1160,72 @@ def _build_usable_path_strict_closeout_handoff_rows(
     return handoff_rows
 
 
+def _build_usable_path_current_checkpoint_rows(
+    handoff_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    current_checkpoint_scope = {
+        "P0": {
+            "ordinary_user_meaning": "本地客户端先能一键启动，并看到前后端健康状态。",
+            "current_next_action": "把启动、健康检查和页面入口收敛到普通用户路径。",
+            "current_evidence_scope": "local startup/readiness only; no provider, model, GitHub, or trading call",
+        },
+        "P1": {
+            "ordinary_user_meaning": "输入股票代码后，由确认按钮触发 Tushare-first 数据链。",
+            "current_next_action": "保留 button-gated POST task 合同，再接入最小 Tushare-first workflow。",
+            "current_evidence_scope": "button-gated execution request only until real provider evidence is explicitly run",
+        },
+        "P2": {
+            "ordinary_user_meaning": "小数据能落到 cache、ledger、packet，刷新后仍可解释来源。",
+            "current_next_action": "先打通最小 cache/ledger/packet 写入与读回，不升级为生产存储证明。",
+            "current_evidence_scope": "small local persistence and readback only; not durable production storage closeout",
+        },
+        "P3": {
+            "ordinary_user_meaning": "候选雷达、量化推演、次日图谱先能显示可解释结果。",
+            "current_next_action": "把基础图谱和结果说明前置到普通入口，审计细节下沉。",
+            "current_evidence_scope": "explainable display/readback only; no buy instruction and no strategy action mutation",
+        },
+        "P4": {
+            "ordinary_user_meaning": "普通用户页面减少工程审计噪音，保留需要时可追溯的证据入口。",
+            "current_next_action": "区分普通入口和工程审计入口，保持审计证据只读可查。",
+            "current_evidence_scope": "UX placement and cache-visible evidence only; not legacy retirement proof",
+        },
+        "P5": {
+            "ordinary_user_meaning": "DeepSeek governed executor 单独补，不阻塞 Tushare 和基础图谱。",
+            "current_next_action": "先保持 DeepSeek 真实调用关闭，等 model ledger、脱敏、限频、缓存完成后再接。",
+            "current_evidence_scope": "governance placeholder only; DeepSeek is not a data source and is not called",
+        },
+    }
+    rows: list[dict[str, Any]] = []
+    for handoff_row in handoff_rows:
+        phase = str(handoff_row.get("phase") or "")
+        if phase not in current_checkpoint_scope:
+            continue
+        rows.append(
+            {
+                "phase": phase,
+                "usable_checkpoint": handoff_row.get("usable_checkpoint"),
+                "ordinary_user_meaning": current_checkpoint_scope[phase]["ordinary_user_meaning"],
+                "current_next_action": current_checkpoint_scope[phase]["current_next_action"],
+                "current_evidence_scope": current_checkpoint_scope[phase]["current_evidence_scope"],
+                "strict_closeout": handoff_row.get("strict_closeout"),
+                "strict_closeout_remaining_count": handoff_row.get("strict_closeout_remaining_count"),
+                "can_close_ltg_from_current_checkpoint": False,
+                "cache_only_readback": True,
+                "creates_task_from_get": False,
+                "creates_task_from_render": False,
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+                "evidence_boundary": "p0_p5_usable_path_checkpoint_is_not_14_ltg_completion",
+            }
+        )
+    return rows
+
+
 def _build_ltg_acceptance_runway_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     runway_rows: list[dict[str, Any]] = []
     for row in rows:
@@ -8273,6 +8339,9 @@ def build_migration_status() -> dict[str, Any]:
     usable_path_strict_closeout_handoff_rows = _build_usable_path_strict_closeout_handoff_rows(
         long_term_goal_summary
     )
+    usable_path_current_checkpoint_rows = _build_usable_path_current_checkpoint_rows(
+        usable_path_strict_closeout_handoff_rows
+    )
     tushare_deepseek_linkage_rows = _build_tushare_deepseek_linkage_rows()
     tushare_deepseek_mode_layer_rows = _build_tushare_deepseek_mode_layer_rows()
     tushare_deepseek_linkage_review = _build_tushare_deepseek_linkage_review(
@@ -8299,6 +8368,8 @@ def build_migration_status() -> dict[str, Any]:
         "long_term_goal_rows": long_term_goal_rows,
         "ltg_acceptance_runway_rows": ltg_acceptance_runway_rows,
         "ltg_next_acceptance_action_rows": ltg_next_acceptance_action_rows,
+        "usable_path_current_checkpoint_rows": usable_path_current_checkpoint_rows,
+        "usable_path_current_checkpoint_row_count": len(usable_path_current_checkpoint_rows),
         "usable_path_strict_closeout_handoff_rows": usable_path_strict_closeout_handoff_rows,
         "usable_path_strict_closeout_handoff_row_count": len(usable_path_strict_closeout_handoff_rows),
         "ltg_stage_scope_observed_rows": ltg_stage_scope_observed_rows,
@@ -8339,6 +8410,7 @@ def build_migration_status() -> dict[str, Any]:
                 + len(long_term_goal_rows)
                 + len(ltg_acceptance_runway_rows)
                 + len(ltg_next_acceptance_action_rows)
+                + len(usable_path_current_checkpoint_rows)
                 + len(usable_path_strict_closeout_handoff_rows)
                 + len(ltg_stage_scope_observed_rows)
                 + len(tushare_deepseek_linkage_rows)
@@ -8357,6 +8429,7 @@ def build_migration_status() -> dict[str, Any]:
                     legacy_audit_latest_observation.get("direct_user_evidence_recorded") is True
                 ),
                 "ltg_stage_scope_observed_row_count": len(ltg_stage_scope_observed_rows),
+                "usable_path_current_checkpoint_row_count": len(usable_path_current_checkpoint_rows),
                 "usable_path_strict_closeout_handoff_row_count": len(
                     usable_path_strict_closeout_handoff_rows
                 ),
