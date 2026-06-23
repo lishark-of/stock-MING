@@ -810,7 +810,9 @@ def build_contract() -> dict[str, Any]:
         _row(
             "frontend_displays_plan_and_does_not_compute_universe",
             "export function postTask" in api_client
-            and "fetch(`${API_BASE}${path}`" in api_client
+            and "fetch(`${apiBase}${path}`" in api_client
+            and "const API_BASE_CANDIDATES = localApiBaseCandidates();" in api_client
+            and "return request<TaskCreationData>(path" in api_client
             and 'from "../api/client"' in factor_page
             and "getFactorQuantCache" in factor_page
             and "postTask" in factor_page
