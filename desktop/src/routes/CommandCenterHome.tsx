@@ -261,6 +261,46 @@ export default function CommandCenterHome() {
   const workerRuntimeState = workerRuntime.runtime as Record<string, unknown> | undefined;
   const positionSummary = position.position_summary as Record<string, unknown> | undefined;
   const candidateCounts = candidates.counts as Record<string, unknown> | undefined;
+  const candidateQuantSmallDataWriteback = (candidates.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateQuantWritebackSurfaceRows = (candidateQuantSmallDataWriteback.ordinary_writeback_surface_summary_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const dailyCommandSmallDataWritebackState = String(
+    candidateQuantSmallDataWriteback.ordinary_readback_stage_label ??
+      candidateQuantSmallDataWriteback.summary_label ??
+      "等待确认按钮后的 cache / ledger / packet 回放"
+  );
+  const dailyCommandSmallDataWritebackBoundary =
+    "P2 小数据只从 CandidateRadar cache / call_ledger / packet 回放；首页 GET cache 不创建 task、不补调 Tushare/DeepSeek、不展示 token/key 或 raw log。";
+  const dailyCommandSmallDataWritebackRows = candidateQuantWritebackSurfaceRows.length
+    ? candidateQuantWritebackSurfaceRows.map((row) => ({
+        写入面: String(row["写入面"] ?? row.surface ?? "writeback"),
+        当前状态: String(row["当前状态"] ?? row.status ?? dailyCommandSmallDataWritebackState),
+        回放来源: String(row["回放来源"] ?? row.readback_source ?? "GET /api/candidate-radar/cache"),
+        下一步: String(row["下一步"] ?? row.next_action ?? "确认任务完成后刷新本地 cache 回放"),
+        边界: String(row["边界"] ?? row.boundary ?? dailyCommandSmallDataWritebackBoundary)
+      }))
+    : [
+        {
+          写入面: "cache",
+          当前状态: dailyCommandSmallDataWritebackState,
+          回放来源: "search_quant_projection_small_data_writeback_summary",
+          下一步: "先去下一票雷达输入代码并点击确认",
+          边界: dailyCommandSmallDataWritebackBoundary
+        },
+        {
+          写入面: "call_ledger",
+          当前状态: "等待 POST task 写入或回放 Tushare-first ledger",
+          回放来源: "ordinary_writeback_surface_summary_rows pending",
+          下一步: "任务完成后只读查看 ledger 状态；接口明细留在雷达高级状态",
+          边界: "call_ledger 只由按钮门控后台任务产生；首页不补调 provider/model。"
+        },
+        {
+          写入面: "packet",
+          当前状态: "等待 candidate radar packet 写入 task id、安全步骤和结果位置",
+          回放来源: "command_center_3_candidate_radar_cache",
+          下一步: "刷新 cache 后回放股票量化推演和次日图谱",
+          边界: "packet 不含凭据、不生成交易动作、不覆盖 strategy action。"
+        }
+      ];
   const candidateQuantInterpretation = (candidates.search_quant_projection_interpretation_summary as Record<string, unknown> | undefined) ?? {};
   const candidateQuantQuickRows = (candidateQuantInterpretation.ordinary_result_quick_read_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const dailyCommandExplainableResultLabel = String(
@@ -676,6 +716,8 @@ export default function CommandCenterHome() {
             { label: "今日查看顺序", value: dailyCommandReviewOrder, tone: error ? "warn" : "good" },
             { label: "今日结果组成", value: dailyCommandResultComposition },
             { label: "今日结果位置", value: dailyCommandResultLocation, tone: "good" },
+            { label: "P2 小数据", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
+            { label: "P2 边界", value: dailyCommandSmallDataWritebackBoundary, tone: "good" },
             { label: "P3 可读结论", value: dailyCommandExplainableResultLabel, tone: candidateQuantInterpretation.interpretation_ready === true ? "good" : "warn" },
             { label: "P3 下一步", value: dailyCommandExplainableResultNext },
             { label: "P3 边界", value: dailyCommandExplainableResultBoundary, tone: "good" },
@@ -711,6 +753,11 @@ export default function CommandCenterHome() {
           <h3>P0 到 P1 快速行动</h3>
           <p className="risk-note">优先读取 desktop preflight 的 p0_ordinary_quick_action_rows：联通通过后进入下一票雷达，输入代码，再由确认按钮触发 Tushare-first 任务。</p>
           <DataLineageTable rows={p0OrdinaryQuickActionRows} />
+        </div>
+        <div aria-label="daily command p2 small data writeback quick read">
+          <h3>P2 小数据写入速读</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_writeback_surface_summary_rows：普通入口只看 cache、call_ledger、packet 三个写入面是否可回放；不会从首页创建 task。</p>
+          <DataLineageTable rows={dailyCommandSmallDataWritebackRows} />
         </div>
         <div aria-label="daily command p3 explainable result quick read">
           <h3>P3 可解释结果速读</h3>
