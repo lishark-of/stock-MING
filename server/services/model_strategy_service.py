@@ -63,6 +63,32 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
     fast_purposes = [row["purpose"] for row in rows if row["purpose"] in {"fast", "healthcheck", "feeder"}]
     explain_purposes = [row["purpose"] for row in rows if row["purpose"] in {"default", "explain", "projection", "factor_explain"}]
     loaded_at = _now_iso()
+    governed_executor = {
+        "schema_version": "deepseek_governed_executor_status.v1",
+        "status": "governed_executor_pending_model_ledger",
+        "execution_route": "POST /api/factor-quant/deepseek-explain",
+        "scope_ticket_route": "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket",
+        "model_call_default": "off",
+        "real_call_requires": [
+            "explicit_post_task",
+            "model_ledger",
+            "sanitizer",
+            "redaction_review",
+            "cost_accounting",
+            "output_acceptance",
+        ],
+        "does_not_block_tushare_first_or_basic_maps": True,
+        "cache_get_external_calls": False,
+        "react_render_external_calls": False,
+        "deepseek_called": False,
+        "contains_secret": False,
+        "does_not_override_prices": True,
+        "does_not_override_holdings": True,
+        "does_not_override_factors": True,
+        "does_not_override_operation_zones": True,
+        "does_not_modify_strategy_action": True,
+        "ordinary_status_label": "DeepSeek 等 governed executor；Tushare-first 和基础图谱可先走。",
+    }
 
     packet = {
         "packet_key": PACKET_KEY,
@@ -73,6 +99,7 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
         "read_only": True,
         "loaded_at": loaded_at,
         "summary": "DeepSeek 模型策略只读展示；模型名来自 DEEPSEEK_*_MODEL 配置或集中默认值，不在调用点硬编码。",
+        "governed_executor": governed_executor,
         "model_rows": rows,
         "purpose_groups": {
             "explain_grade": explain_purposes,
@@ -93,6 +120,8 @@ def read_deepseek_model_strategy_cache() -> dict[str, Any]:
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
             "post_task_required_for_model_call": True,
+            "governed_executor_required_for_real_deepseek": True,
+            "deepseek_does_not_block_tushare_or_basic_maps": True,
             "model_names_are_configurable": True,
             "callsite_hardcoding_allowed": False,
             "contains_secret": False,

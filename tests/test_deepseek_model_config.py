@@ -2287,6 +2287,28 @@ class DeepSeekModelConfigTests(unittest.TestCase):
         self.assertEqual(fallback_ref["model"], "custom-default")
         self.assertIn("DEEPSEEK_DEFAULT_MODEL", fallback_ref["config_keys"])
 
+    def test_model_strategy_cache_exposes_governed_executor_without_model_call(self):
+        packet = model_strategy_service.read_deepseek_model_strategy_cache()
+        governed = packet["governed_executor"]
+
+        self.assertEqual(governed["schema_version"], "deepseek_governed_executor_status.v1")
+        self.assertEqual(governed["status"], "governed_executor_pending_model_ledger")
+        self.assertEqual(governed["execution_route"], "POST /api/factor-quant/deepseek-explain")
+        self.assertEqual(governed["scope_ticket_route"], "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")
+        self.assertEqual(governed["model_call_default"], "off")
+        self.assertIn("model_ledger", governed["real_call_requires"])
+        self.assertIn("sanitizer", governed["real_call_requires"])
+        self.assertIn("redaction_review", governed["real_call_requires"])
+        self.assertIn("cost_accounting", governed["real_call_requires"])
+        self.assertTrue(governed["does_not_block_tushare_first_or_basic_maps"])
+        self.assertFalse(governed["cache_get_external_calls"])
+        self.assertFalse(governed["react_render_external_calls"])
+        self.assertFalse(governed["deepseek_called"])
+        self.assertFalse(governed["contains_secret"])
+        self.assertTrue(governed["does_not_modify_strategy_action"])
+        self.assertTrue(packet["policy"]["governed_executor_required_for_real_deepseek"])
+        self.assertTrue(packet["policy"]["deepseek_does_not_block_tushare_or_basic_maps"])
+
     def test_projection_merges_default_to_configured_model(self):
         os.environ["DEEPSEEK_EXPLAIN_MODEL"] = "custom-projection-model"
 

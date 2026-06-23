@@ -26,6 +26,7 @@ export default function ModelStrategy() {
   const counts = (cache.counts as Record<string, unknown> | undefined) ?? {};
   const policy = (cache.policy as Record<string, unknown> | undefined) ?? {};
   const groups = (cache.purpose_groups as Record<string, unknown> | undefined) ?? {};
+  const governedExecutor = (cache.governed_executor as Record<string, unknown> | undefined) ?? {};
   const modelRows = rows(cache.model_rows);
   const modelSafetyRows = [
     {
@@ -67,6 +68,8 @@ export default function ModelStrategy() {
           { label: "safe defaults", value: counts.safe_default_count as number | undefined },
           { label: "cache only", value: cache.cache_only, tone: cache.cache_only === false ? "bad" : "good" },
           { label: "DeepSeek call", value: cache.deepseek_called === true ? "已调用" : "未调用", tone: cache.deepseek_called === true ? "bad" : "good" },
+          { label: "governed executor", value: String(governedExecutor.status ?? "pending"), tone: governedExecutor.deepseek_called === true ? "bad" : "warn" },
+          { label: "Tushare/basic maps", value: governedExecutor.does_not_block_tushare_first_or_basic_maps === true ? "不阻塞" : "待确认", tone: governedExecutor.does_not_block_tushare_first_or_basic_maps === true ? "good" : "warn" },
           { label: "external calls", value: cache.external_calls_triggered === true ? "存在" : "无", tone: cache.external_calls_triggered === true ? "bad" : "good" },
           { label: "contains secret", value: cache.contains_secret === true ? "是" : "否", tone: cache.contains_secret === true ? "bad" : "good" },
           { label: "cache envelope ledger", value: cacheCallLedger.length },
@@ -75,6 +78,13 @@ export default function ModelStrategy() {
       />
 
       <div className="grid">
+        <PacketCard title="普通用户 DeepSeek 状态" subtitle="P5 governed executor；真实模型调用单独补，不阻塞 Tushare-first 和基础图谱" status={String(governedExecutor.status ?? "pending")}>
+          <p>{String(governedExecutor.ordinary_status_label ?? "DeepSeek 等 governed executor；Tushare-first 和基础图谱可先走。")}</p>
+          <p>真实调用入口：{String(governedExecutor.execution_route ?? "POST /api/factor-quant/deepseek-explain")}；scope ticket：{String(governedExecutor.scope_ticket_route ?? "POST /api/factor-quant/deepseek-provider-benchmark-scope-ticket")}。</p>
+          <p>必须先有 model_ledger、sanitizer、redaction review、cost accounting 和 output acceptance；本页 GET cache 与 React render 都不调用模型。</p>
+          <p>DeepSeek 只解释已有证据，不覆盖价格、持仓、因子、operation zones 或 strategy action。</p>
+        </PacketCard>
+
         <PacketCard title="模型策略边界" subtitle="GET /api/model-strategy/cache 只读；不触发模型调用" status="cache_only">
           <p>{String(cache.summary ?? "DeepSeek 模型策略只读展示。")}</p>
           <p>模型名通过 DEEPSEEK_EXPLAIN_MODEL、DEEPSEEK_FAST_MODEL、DEEPSEEK_DEFAULT_MODEL 配置，调用点不得硬编码模型名。</p>
