@@ -822,6 +822,39 @@ export default function CandidateRadar() {
     : quantProjectionPersistedTaskId
       ? `最近任务：${quantProjectionPersistedTaskId} / cache 回放 / ${quantProjectionPersistedTaskStep || "等待状态"}`
       : "最近任务：暂无；点击确认按钮后显示本地任务编号";
+  const quantProjectionAcceptedTask = taskReceipt?.data?.task;
+  const quantProjectionAcceptedPayload = (quantProjectionAcceptedTask?.payload_safe as Record<string, unknown> | undefined) ?? {};
+  const quantProjectionAcceptedTaskId = String(taskReceipt?.data?.task_id ?? quantProjectionAcceptedTask?.task_id ?? quantProjectionPersistedTaskId ?? "");
+  const quantProjectionAcceptedTaskStep = String(quantProjectionAcceptedTask?.current_step ?? quantProjectionPersistedTaskStep ?? "");
+  const quantProjectionAcceptedTaskStatus = String(quantProjectionAcceptedTask?.status ?? (quantProjectionAcceptedTaskId ? "cache_replay" : "waiting_confirm"));
+  const quantProjectionConfirmedTaskReceiptRows = [
+    {
+      回执项: "task_id",
+      当前状态: quantProjectionAcceptedTaskId || "等待点击确认按钮",
+      用户看法: quantProjectionAcceptedTaskId ? "本次确认已有本地任务编号；先看任务状态，再刷新本地缓存回放结果" : "输入代码不会创建任务；点击确认后才会出现 task id",
+      边界: "task id 来自按钮门控 POST 或 cache packet 回放；GET cache 不创建任务"
+    },
+    {
+      回执项: "Tushare-first 链路",
+      当前状态: quantProjectionAcceptedTaskId
+        ? `include_tushare=${String(quantProjectionAcceptedPayload.include_tushare ?? true)} / include_deepseek=${String(quantProjectionAcceptedPayload.include_deepseek ?? false)}`
+        : "等待确认；DeepSeek 默认 skipped",
+      用户看法: "确认按钮提交 Tushare-first 后台链；服务端凭据缺失时只写本地阻断",
+      边界: "只有 POST task / worker 可调用 Tushare；React render、搜索输入、GET cache 不外联"
+    },
+    {
+      回执项: "安全步骤",
+      当前状态: quantProjectionAcceptedTaskStep || "等待本地任务安全步骤",
+      用户看法: `任务状态=${quantProjectionAcceptedTaskStatus}；完成后回放 cache / ledger / packet`,
+      边界: "只展示 safe current_step；不展示 token/key、raw log 或 provider error"
+    },
+    {
+      回执项: "结果去向",
+      当前状态: "股票量化推演 / 次日图谱 / 候选池只读回放",
+      用户看法: "先看 TaskStatusPanel；成功后刷新 cache，再打开两个回放入口",
+      边界: "DeepSeek 等 governed executor；不真实交易、不改 strategy action"
+    }
+  ];
   const quantProjectionTaskCacheReadbackRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_task_readback_rows).length
     ? rows(searchQuantProjectionSmallDataWriteback.ordinary_task_readback_rows)
     : [
@@ -1071,6 +1104,11 @@ export default function CandidateRadar() {
           <div aria-label="quant projection ordinary confirmation handoff">
             <p className="risk-note">确认后链路回放：输入只校验；点击确认才创建 Tushare-first 后台任务；结果只从本地 cache / ledger / packet 回放。</p>
             <DataLineageTable rows={quantProjectionConfirmHandoffRows} />
+          </div>
+          <div aria-label="quant projection confirmed task receipt readback">
+            <h3>确认任务接收回执</h3>
+            <p className="risk-note">点击确认后先看这张回执：它只回放本地 POST task 是否接收、Tushare-first / DeepSeek skipped 参数和安全步骤，不补调数据源或模型。</p>
+            <DataLineageTable rows={quantProjectionConfirmedTaskReceiptRows} />
           </div>
           <div aria-label="quant projection ordinary small data writeback targets">
             <h3>小数据写入位置</h3>
