@@ -1020,6 +1020,34 @@ export default function CandidateRadar() {
       边界: "只切换 #factor/#next 锚点，不重新创建 task、不改 strategy action"
     }
   ];
+  const quantProjectionOrdinaryConfirmOutcomeRows = [
+    {
+      速读项: "确认任务",
+      当前状态: quantProjectionConfirmChainState,
+      用户下一步: quantProjectionSubmitError
+        ? "先恢复本地 FastAPI 连接，再重新点击确认按钮"
+        : taskReceipt?.ok || quantProjectionPersistedTaskId
+          ? "看任务编号和本地任务状态"
+          : "输入有效股票代码后点击确认并生成",
+      边界: "只解释确认按钮是否创建本地 POST task；不会从摘要补调 provider/model"
+    },
+    {
+      速读项: "任务编号",
+      当前状态: quantProjectionAcceptedTaskId || quantProjectionPersistedTaskId || "等待确认按钮",
+      用户下一步: (taskId || quantProjectionAcceptedTaskId || quantProjectionPersistedTaskId)
+        ? "TaskStatusPanel 只轮询本地 FastAPI，完成后刷新 cache"
+        : "点击确认后等待本地 task id",
+      边界: "task id 来自按钮门控 POST 或 cache packet；GET cache 不创建 task"
+    },
+    {
+      速读项: "结果回放",
+      当前状态: quantProjectionSmallDataStageLabel,
+      用户下一步: quantProjectionSmallDataReady
+        ? "打开股票量化推演和次日图谱只读回放"
+        : "任务完成后刷新本地 cache，再看 cache / ledger / packet",
+      边界: "结果只从 cache / ledger / packet 回放；不交易、不改 strategy action"
+    }
+  ];
   const quantProjectionTushareFirstChainRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_tushare_first_chain_rows);
   const quantProjectionConfirmHandoffRows = quantProjectionTushareFirstChainRows.length ? quantProjectionTushareFirstChainRows : [
     {
@@ -1167,6 +1195,11 @@ export default function CandidateRadar() {
         </div>
         <p className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
         {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
+        <div aria-label="quant projection ordinary confirm outcome quick read">
+          <h3>P1 确认结果速读</h3>
+          <p className="risk-note">点击确认后先看这里：任务是否接收、task id 是否可见、cache / ledger / packet 是否可回放；这张速读表不创建第二个任务。</p>
+          <DataLineageTable rows={quantProjectionOrdinaryConfirmOutcomeRows} />
+        </div>
         <p className="risk-note">{ordinaryRadarResultLocation}</p>
         <p className="risk-note">候选池按 Top / Watch / Excluded 分组帮助复核优先级；分组结果不是买卖建议，也不会修改 strategy action。</p>
         <p className="risk-note">摘要按钮只读取本地 cache 或创建按钮门控 POST task；输入代码不会创建任务，也不会在 React 渲染中直连 Tushare、DeepSeek 或 GitHub。</p>
