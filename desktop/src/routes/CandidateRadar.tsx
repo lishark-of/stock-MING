@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getBootstrapStatus, getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionPromotionReview, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuantProjectionProviderModelAcceptance, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
+import { API_BASE_CANDIDATE_DISPLAY_URLS, API_BASE_DISPLAY_URL, getBootstrapStatus, getCandidateRadarCache, postCandidateRadarBrowserQaReview, postCandidateRadarDeepScanLocalReview, postCandidateRadarDeepScanPlan, postCandidateRadarDeepScanWorker, postCandidateRadarFullPoolLocalScan, postCandidateRadarFullPoolPlan, postCandidateRadarFullPoolWorkerScan, postCandidateRadarLegacyRetirementReview, postCandidateRadarProductionPromotionDryRun, postCandidateRadarProductionPromotionReview, postCandidateRadarProductionReplacementReview, postCandidateRadarProviderParityDryRun, postCandidateRadarQuantProjection, postCandidateRadarQuantProjectionAcceptanceDryRun, postCandidateRadarQuantProjectionExecutionRequest, postCandidateRadarQuantProjectionProviderModelAcceptance, postCandidateRadarQuickScan, postCandidateRadarWorkerExecutionRequest, type TaskCreationEnvelope } from "../api/client";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -554,6 +554,29 @@ export default function CandidateRadar() {
     : "按本地缓存顺序展示；评分理由不足会作为缺口显示";
   const ordinaryTaskBoundary =
     "雷达摘要只读展示候选缓存；manual/live_light 补证必须走 POST task / worker，不在 React 渲染中直连 Tushare 或 DeepSeek";
+  const candidateRadarP0AutoLinkRows = [
+    {
+      联通项: "前端 API 自动联通",
+      当前状态: error ? "本地 FastAPI 未联通；先停在 P0 恢复" : cache.status ? "GET candidate radar cache 已回读" : loading ? "正在读取本地 cache" : "等待本地 cache",
+      证据: `candidates=${API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ") || API_BASE_DISPLAY_URL}`,
+      下一步: error ? "打开一键启动预检或系统健康页，按四段 ready 恢复" : "继续确认 bootstrap runtime-mode packet",
+      边界: "前端只尝试本机 FastAPI 候选地址；失败只显示离线保护，不启动服务、不创建 task"
+    },
+    {
+      联通项: "bootstrap runtime-mode",
+      当前状态: bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet" ? "runtime-mode packet 已回读" : "等待 bootstrap status",
+      证据: "GET /api/bootstrap/status",
+      下一步: bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet" ? "进入 P1 输入股票代码" : "先让 bootstrap status 变绿",
+      边界: "bootstrap GET 只读展示模式；不调用 provider/model、不写 cache/config"
+    },
+    {
+      联通项: "进入 P1 闸门",
+      当前状态: error ? "blocked：未联通时不要点击确认" : "ready/check：输入保持静默，确认按钮才创建 task",
+      证据: `frontend_call_ledger=${cacheEnvelopeLedger.some((row) => row.frontend_backend_auto_link_attempted === true)}`,
+      下一步: error ? "先恢复 P0，再回到下一票雷达" : "输入代码后点击确认并生成 3.0 量化推演",
+      边界: "P0 只证明本地前后端联通；不代表 Tushare、DeepSeek、release 或 14 LTG 完成"
+    }
+  ];
   const quantProjectionSymbolValidation = normalizeAshareSymbolInput(searchSymbol);
   const quantProjectionCanSubmit = quantProjectionSymbolValidation.valid;
   const quantProjectionSubmitDisabled = !quantProjectionCanSubmit || quantProjectionSubmitting;
@@ -1533,6 +1556,11 @@ export default function CandidateRadar() {
             { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" }
           ]}
         />
+        <div aria-label="candidate radar ordinary p0 frontend backend readiness">
+          <h3>P0 前后端联通闸门</h3>
+          <p className="risk-note">普通用户先确认本地 FastAPI、bootstrap runtime-mode 和候选 cache 都能只读回放；P0 未通过时不要进入 P1 确认按钮。</p>
+          <DataLineageTable rows={candidateRadarP0AutoLinkRows} />
+        </div>
         <div aria-label="candidate radar ordinary p1 confirm path">
           <h3>P1 普通确认路径</h3>
           <p className="risk-note">普通用户先看这条 P1 路径：输入只做本地校验，确认按钮才创建 Tushare-first 后台任务，随后只读回放 cache / ledger / packet。</p>
