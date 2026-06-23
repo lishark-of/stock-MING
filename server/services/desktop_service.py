@@ -556,7 +556,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "React/Vite URL 必须是本机地址",
         "打开页面 URL 必须是本机地址",
         "不打印 query/hash/username/password",
-        "URL safety: displayed launcher URLs are sanitized and non-local API/frontend/open URLs are blocked before any probe.",
+        "URL safety: displayed launcher URLs are sanitized; simple local open routes like #home may be shown, while query/userinfo and non-local API/frontend/open URLs are blocked before any probe.",
         "STOCK_MING_FASTAPI_RELOAD=0",
         "no Tushare, DeepSeek, GitHub, or trading call",
     )
@@ -1391,6 +1391,22 @@ def _p0_post_startup_readback_rows(one_click_startup_summary: dict[str, Any]) ->
 
 def _p0_to_p1_ordinary_handoff_rows(one_click_startup_summary: dict[str, Any]) -> list[dict[str, Any]]:
     connection_ready = one_click_startup_summary.get("frontend_backend_connection_ready") is True
+
+    def boundary_fields() -> dict[str, Any]:
+        return {
+            "P0交接证据": "四段 ready 后只切换到 #candidates；输入股票代码保持静默；确认按钮才创建 Tushare-first POST task。",
+            "成功信号": "FastAPI health + bootstrap status + desktop preflight cache + React/Vite HTML",
+            "frontend_backend_auto_link_scope": "local_fastapi_only",
+            "page_open_creates_task": False,
+            "react_render_creates_task": False,
+            "get_cache_creates_task": False,
+            "search_input_external_calls": False,
+            "confirm_button_required_for_tushare_task": True,
+            "live_light_or_deepseek_enabled_by_p0": False,
+            "strict_closeout_evidence": False,
+            "release_ready_evidence": False,
+        }
+
     return [
         {
             "步骤": "1. 确认本地联通",
@@ -1400,6 +1416,7 @@ def _p0_to_p1_ordinary_handoff_rows(one_click_startup_summary: dict[str, Any]) -
             "边界": "只读 GET health / preflight cache；不启动服务、不创建 task。",
             "ordinary_user_visible": True,
             "cache_only_readback": True,
+            **boundary_fields(),
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -1416,6 +1433,7 @@ def _p0_to_p1_ordinary_handoff_rows(one_click_startup_summary: dict[str, Any]) -
             "边界": "页面切换和输入不会调用 Tushare、DeepSeek 或 GitHub。",
             "ordinary_user_visible": True,
             "cache_only_readback": True,
+            **boundary_fields(),
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -1432,6 +1450,7 @@ def _p0_to_p1_ordinary_handoff_rows(one_click_startup_summary: dict[str, Any]) -
             "边界": "只有确认按钮可创建 Tushare-first POST task / worker；DeepSeek skipped。",
             "ordinary_user_visible": True,
             "cache_only_readback": True,
+            **boundary_fields(),
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -1448,6 +1467,7 @@ def _p0_to_p1_ordinary_handoff_rows(one_click_startup_summary: dict[str, Any]) -
             "边界": "GET cache / React render 不补调外部数据源，不交易、不改 strategy action。",
             "ordinary_user_visible": True,
             "cache_only_readback": True,
+            **boundary_fields(),
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -1646,12 +1666,21 @@ def _p0_ordinary_quick_action_rows(
             "用户下一步": user_next_step,
             "入口": entry,
             "证据": handoff_step["步骤"],
+            "P0交接证据": "四段 ready 后只切换到 #candidates；输入股票代码保持静默；确认按钮才创建 Tushare-first POST task。",
+            "成功信号": "FastAPI health + bootstrap status + desktop preflight cache + React/Vite HTML",
             "边界": boundary,
             "source_handoff_step": handoff_step["步骤"],
+            "frontend_backend_auto_link_scope": "local_fastapi_only",
             "ordinary_user_visible": True,
             "cache_only_readback": True,
+            "page_open_creates_task": False,
+            "react_render_creates_task": False,
+            "get_cache_creates_task": False,
+            "search_input_external_calls": False,
             "creates_task_from_readback": False,
+            "confirm_button_required_for_tushare_task": True,
             "provider_model_called_from_readback": False,
+            "live_light_or_deepseek_enabled_by_p0": False,
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -1660,6 +1689,8 @@ def _p0_ordinary_quick_action_rows(
             "contains_secret": False,
             "does_not_execute_trades": True,
             "does_not_modify_strategy_action": True,
+            "strict_closeout_evidence": False,
+            "release_ready_evidence": False,
         }
 
     return [

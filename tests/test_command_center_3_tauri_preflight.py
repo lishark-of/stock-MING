@@ -4,6 +4,8 @@ import subprocess
 import tempfile
 import unittest
 
+from server.services import desktop_service
+
 
 SCRIPT = Path("scripts/check_tauri_env.sh")
 LAUNCHER = Path("scripts/start_command_center_3.command")
@@ -446,6 +448,40 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
             home.index('title="今日作战台摘要"') : home.index("<summary>开发 / 审计详情</summary>")
         ]
         self.assertNotIn("postBootstrapLiveStartup", home_summary)
+
+    def test_p0_quick_action_handoff_requires_confirm_button(self):
+        packet = desktop_service.read_desktop_shell_preflight_cache()
+        handoff_rows = packet["p0_to_p1_ordinary_handoff_rows"]
+        quick_rows = packet["p0_ordinary_quick_action_rows"]
+
+        self.assertEqual(len(handoff_rows), 4)
+        self.assertEqual(len(quick_rows), 4)
+        self.assertTrue(packet["policy"]["p0_to_p1_ordinary_handoff_rows_are_cache_only"])
+        self.assertTrue(packet["policy"]["p0_ordinary_quick_action_rows_are_cache_only"])
+        self.assertTrue(packet["policy"]["p0_to_p1_ordinary_handoff_rows_do_not_create_task"])
+        self.assertTrue(packet["policy"]["p0_ordinary_quick_action_rows_do_not_create_task"])
+
+        for row in handoff_rows + quick_rows:
+            self.assertEqual(row["frontend_backend_auto_link_scope"], "local_fastapi_only")
+            self.assertIn("四段 ready 后只切换到 #candidates", row["P0交接证据"])
+            self.assertIn("输入股票代码保持静默", row["P0交接证据"])
+            self.assertIn("确认按钮才创建 Tushare-first POST task", row["P0交接证据"])
+            self.assertIn("FastAPI health + bootstrap status", row["成功信号"])
+            self.assertFalse(row["page_open_creates_task"])
+            self.assertFalse(row["react_render_creates_task"])
+            self.assertFalse(row["get_cache_creates_task"])
+            self.assertFalse(row["search_input_external_calls"])
+            self.assertTrue(row["confirm_button_required_for_tushare_task"])
+            self.assertFalse(row["live_light_or_deepseek_enabled_by_p0"])
+            self.assertFalse(row["external_calls_triggered"])
+            self.assertFalse(row["tushare_called"])
+            self.assertFalse(row["deepseek_called"])
+            self.assertFalse(row["github_called"])
+            self.assertFalse(row["loads_token_or_key"])
+            self.assertFalse(row["strict_closeout_evidence"])
+            self.assertFalse(row["release_ready_evidence"])
+            self.assertTrue(row["does_not_execute_trades"])
+            self.assertTrue(row["does_not_modify_strategy_action"])
 
 
 if __name__ == "__main__":
