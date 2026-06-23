@@ -38354,6 +38354,55 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(all(row["tushare_called"] is True for row in provider_ledger))
         self.assertFalse(any(row["deepseek_called"] is True for row in provider_ledger))
         self.assertFalse(any(row["github_called"] is True for row in provider_ledger))
+        small_data = packet["search_quant_projection_small_data_writeback_summary"]
+        self.assertEqual(
+            small_data["status"],
+            "small_data_writeback_ready_tushare_ledger_replayed",
+        )
+        self.assertEqual(small_data["provider_call_source"], "post_task_call_ledger")
+        self.assertEqual(
+            small_data["ordinary_readback_stage_label"],
+            "已回放 Tushare POST task ledger；当前页面只读 cache / ledger / packet。",
+        )
+        self.assertIn(
+            "provider 证据只由 POST task call_ledger 证明",
+            small_data["ordinary_readback_provenance_summary"],
+        )
+        self.assertTrue(small_data["ordinary_readback_rows_are_cache_only"])
+        self.assertTrue(small_data["ordinary_provider_api_rows_are_cache_only"])
+        self.assertFalse(small_data["cache_get_external_calls"])
+        self.assertFalse(small_data["react_render_external_calls"])
+        self.assertTrue(small_data["provider_call_observed_only_from_post_task"])
+        self.assertTrue(small_data["ordinary_readback_provider_task_external_call_observed"])
+        self.assertEqual(small_data["ordinary_readback_provider_task_call_source"], "post_task_call_ledger")
+        self.assertEqual(small_data["ordinary_provider_api_row_count"], 4)
+        self.assertTrue(
+            all(row["readback_external_calls_triggered"] is False for row in small_data["ordinary_readback_rows"])
+        )
+        self.assertTrue(
+            all(
+                row["provider_task_call_source"] == "post_task_call_ledger"
+                for row in small_data["ordinary_readback_rows"]
+            )
+        )
+        self.assertTrue(
+            all(row["provider_task_external_call_observed"] is True for row in small_data["ordinary_readback_rows"])
+        )
+        self.assertTrue(
+            all(
+                row["provider_task_call_source"] == "post_task_call_ledger"
+                for row in small_data["ordinary_provider_api_rows"]
+            )
+        )
+        self.assertTrue(
+            all(
+                row["provider_task_ledger_replayed"] is True
+                for row in small_data["ordinary_provider_api_rows"]
+            )
+        )
+        self.assertTrue(
+            all(row["readback_external_calls_triggered"] is False for row in small_data["ordinary_provider_api_rows"])
+        )
         self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))

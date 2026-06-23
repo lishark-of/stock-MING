@@ -590,6 +590,9 @@ export default function CandidateRadar() {
       : searchQuantProjectionReceipt.status
         ? `cache / ledger / packet 等待 Tushare-first 回放；本地记录=${String(searchQuantProjectionReceipt.status)}`
         : "cache / ledger / packet 等待确认按钮创建 task");
+  const quantProjectionSmallDataStageLabel =
+    String(searchQuantProjectionSmallDataWriteback.ordinary_readback_stage_label ?? "") ||
+    quantProjectionSmallDataReplayState;
   const quantProjectionSmallDataWritebackSurfaces = Array.isArray(searchQuantProjectionSmallDataWriteback.writeback_surfaces)
     ? String(searchQuantProjectionSmallDataWriteback.ordinary_readback_surfaces_label ?? searchQuantProjectionSmallDataWriteback.writeback_surfaces.join(" / "))
     : "等待写入 cache / call_ledger / packet";
@@ -597,6 +600,9 @@ export default function CandidateRadar() {
     String(searchQuantProjectionSmallDataWriteback.ordinary_readback_boundary ?? "") ||
     String(searchQuantProjectionSmallDataWriteback.readback_contract ?? "") ||
     "小数据回放只读取本地 cache / ledger / packet；GET cache 和 React render 不补调 provider/model，不生成交易动作。";
+  const quantProjectionSmallDataProvenance =
+    String(searchQuantProjectionSmallDataWriteback.ordinary_readback_provenance_summary ?? "") ||
+    "当前读回来自 GET cache 的本地 packet；provider 证据只由 POST task call_ledger 证明，React render 不补调 provider/model。";
   const quantProjectionSmallDataNextStep =
     String(searchQuantProjectionSmallDataWriteback.ordinary_readback_next_step ?? "") ||
     String(searchQuantProjectionSmallDataWriteback.next_action ?? "") ||
@@ -908,6 +914,7 @@ export default function CandidateRadar() {
             items={[
               { label: "确认状态", value: quantProjectionConfirmChainState, tone: taskReceipt?.ok || quantProjectionCanSubmit ? "good" : "warn" },
               { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn" },
+              { label: "小数据回放", value: quantProjectionSmallDataStageLabel, tone: quantProjectionSmallDataReady ? "good" : "warn" },
               { label: "可读结论", value: quantProjectionOrdinaryResultSummary, tone: quantProjectionInterpretationReady ? "good" : "warn" },
               { label: "下一步", value: quantProjectionOrdinaryResultNext },
               { label: "安全边界", value: "不交易、不改 strategy action；DeepSeek 等 governed executor", tone: "good" }
@@ -930,6 +937,7 @@ export default function CandidateRadar() {
           <div aria-label="quant projection task cache packet readback">
             <h3>任务回放清单</h3>
             <p className="risk-note">任务编号和安全步骤优先从本地 cache / packet 回放；TaskStatusPanel 只轮询本地 FastAPI 任务状态。</p>
+            <p className="risk-note">{quantProjectionSmallDataProvenance}</p>
             <DataLineageTable rows={quantProjectionTaskCacheReadbackRows} />
           </div>
           <details className="developer-audit-details" aria-label="quant projection advanced status readback">

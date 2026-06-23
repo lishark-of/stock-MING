@@ -14732,6 +14732,7 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "个接口可回放，DeepSeek 未参与。"
         )
         ordinary_readback_next_step = "先看本地量化推演和次日图谱回放；Factor/Next/ECharts 缺口只作为待补证据。"
+        ordinary_readback_stage_label = "已回放 Tushare POST task ledger；当前页面只读 cache / ledger / packet。"
     elif credential_missing_count:
         status = "small_data_writeback_blocked_missing_credentials"
         summary_label = "cache / ledger / packet 已写入本地阻断：缺少服务端 Tushare 凭据；未调用 provider。"
@@ -14739,6 +14740,7 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         ordinary_readback_status = "blocked_missing_credentials"
         ordinary_readback_summary = "小数据已写入本地阻断：缺少服务端 Tushare 凭据，没有 provider 账本可回放。"
         ordinary_readback_next_step = "配置服务端凭据后重新点击确认；GET cache 和 React render 仍保持只读。"
+        ordinary_readback_stage_label = "缺服务端 Tushare 凭据；本地阻断已写入，页面不会补调 provider。"
     elif provider_ledger_visible:
         status = "small_data_writeback_partial_provider_ledger"
         summary_label = (
@@ -14751,6 +14753,7 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             f"小数据已回放部分 Tushare 账本：{provider_api_success_count}/{provider_api_call_count} 个接口；仍需补齐。"
         )
         ordinary_readback_next_step = "补齐 Tushare light ledger 后再看本地量化推演和次日图谱回放。"
+        ordinary_readback_stage_label = "部分 Tushare POST task ledger 已回放；等待补齐接口账本。"
     elif execution_request:
         status = (
             "small_data_writeback_waiting_provider_ledger"
@@ -14762,6 +14765,7 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         ordinary_readback_status = "waiting_tushare_first_ledger"
         ordinary_readback_summary = "小数据已写入本地申请；等待 Tushare-first provider ledger 回放。"
         ordinary_readback_next_step = "执行请求 ready 后再运行按钮门控 provider task；DeepSeek 仍保持 skipped。"
+        ordinary_readback_stage_label = "执行申请已写入；等待按钮门控 provider task 回写 ledger。"
     elif quant_receipt:
         status = "small_data_writeback_local_receipt_ready_provider_pending"
         summary_label = "cache / ledger / packet 已写入本地搜票记录；等待确认链路补齐 Tushare-first ledger。"
@@ -14769,6 +14773,7 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         ordinary_readback_status = "local_receipt_ready_provider_pending"
         ordinary_readback_summary = "小数据已写入本地搜票记录；等待确认链路补齐 Tushare-first ledger。"
         ordinary_readback_next_step = "点击确认按钮创建后台任务；仅输入代码不会创建 task 或外联。"
+        ordinary_readback_stage_label = "本地搜票记录已写入；等待确认按钮创建 Tushare-first task。"
     else:
         status = "small_data_writeback_waiting_confirm"
         summary_label = "cache / ledger / packet 等待输入代码并点击确认。"
@@ -14776,12 +14781,21 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         ordinary_readback_status = "waiting_symbol_confirm"
         ordinary_readback_summary = "小数据等待输入代码并点击确认。"
         ordinary_readback_next_step = "先输入 6 位 A 股代码，再点击确认并生成 3.0 量化推演。"
+        ordinary_readback_stage_label = "等待输入代码并点击确认；输入本身不创建 task。"
+    ordinary_readback_provenance_summary = (
+        "当前读回来自 GET cache 的本地 packet；provider 证据只由 POST task call_ledger 证明，"
+        "React render 不补调 provider/model。"
+    )
     ordinary_readback_rows = [
         {
             "surface": "cache",
             "status": "written" if cache_packet_written else "waiting_confirm",
             "ordinary_label": "本地缓存已写入" if cache_packet_written else "等待确认按钮写入本地缓存",
             "evidence": summary_label,
+            "readback_source": "GET /api/candidate-radar/cache",
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -14804,6 +14818,11 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
                 f"provider_api_success={provider_api_success_count}; "
                 f"provider_api_call_count={provider_api_call_count}; source={provider_call_source}"
             ),
+            "readback_source": "GET /api/candidate-radar/cache",
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "provider_task_tushare_ledger_ready": provider_ready,
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -14817,6 +14836,10 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "status": "written" if cache_packet_written else "waiting_confirm",
             "ordinary_label": f"packet={PACKET_KEY}" if cache_packet_written else "等待写入 candidate radar packet",
             "evidence": f"schema={QUANT_PROJECTION_SMALL_DATA_WRITEBACK_SCHEMA_VERSION}; row_count=3",
+            "readback_source": "GET /api/candidate-radar/cache",
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
             "external_calls_triggered": False,
             "tushare_called": False,
             "deepseek_called": False,
@@ -14925,6 +14948,9 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
                 "row_count": int(ledger_row.get("row_count") or 0) if ledger_row else 0,
                 "data_date": str(ledger_row.get("data_date") or "") if ledger_row else "",
                 "call_status": call_status,
+                "provider_task_call_source": provider_call_source,
+                "provider_task_ledger_replayed": bool(ledger_row),
+                "readback_external_calls_triggered": False,
                 "readback_source": "cache / call_ledger / packet",
                 "boundary": "GET cache 只读回放；不补调 provider/model",
                 "external_calls_triggered": False,
@@ -14944,6 +14970,8 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_readback_status": ordinary_readback_status,
         "ordinary_readback_summary": ordinary_readback_summary,
         "ordinary_readback_next_step": ordinary_readback_next_step,
+        "ordinary_readback_stage_label": ordinary_readback_stage_label,
+        "ordinary_readback_provenance_summary": ordinary_readback_provenance_summary,
         "ordinary_readback_rows": ordinary_readback_rows,
         "ordinary_readback_row_count": len(ordinary_readback_rows),
         "ordinary_readback_rows_are_cache_only": True,
@@ -14962,6 +14990,8 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "writeback_surfaces": writeback_surfaces,
         "provider_call_source": provider_call_source,
         "provider_call_observed_only_from_post_task": provider_external_call_observed,
+        "ordinary_readback_provider_task_call_source": provider_call_source,
+        "ordinary_readback_provider_task_external_call_observed": provider_external_call_observed,
         "readback_contract": "GET cache replays stored packet only; React render does not call provider/model.",
         "symbol": (
             provider_receipt.get("symbol")
