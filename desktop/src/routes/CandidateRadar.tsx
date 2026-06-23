@@ -518,7 +518,8 @@ export default function CandidateRadar() {
     "雷达摘要只读展示候选缓存；manual/live_light 补证必须走 POST task / worker，不在 React 渲染中直连 Tushare 或 DeepSeek";
   const quantProjectionSymbolValidation = normalizeAshareSymbolInput(searchSymbol);
   const quantProjectionCanSubmit = quantProjectionSymbolValidation.valid;
-  const quantProjectionCanLaunch = quantProjectionCanSubmit && !quantProjectionSubmitting;
+  const quantProjectionSubmitDisabled = !quantProjectionCanSubmit || quantProjectionSubmitting;
+  const quantProjectionCanLaunch = !quantProjectionSubmitDisabled;
   const quantProjectionDisabledReason = quantProjectionSubmitting
     ? "任务提交中：正在创建 Tushare-first POST task；请等待本地任务编号回写，避免重复提交。"
     : quantProjectionCanSubmit
@@ -954,7 +955,7 @@ export default function CandidateRadar() {
             title={quantProjectionInputBoundaryLabel}
           />
           <button
-            disabled={!quantProjectionCanLaunch}
+            disabled={quantProjectionSubmitDisabled}
             onClick={launchQuantProjection}
             title={quantProjectionSubmitButtonLabel}
             aria-label={quantProjectionSubmitAriaLabel}
@@ -1005,7 +1006,7 @@ export default function CandidateRadar() {
               title={quantProjectionInputBoundaryLabel}
             />
             <button
-              disabled={!quantProjectionCanLaunch}
+              disabled={quantProjectionSubmitDisabled}
               onClick={launchQuantProjection}
               title={quantProjectionSubmitButtonLabel}
               aria-label={quantProjectionSubmitAriaLabel}
