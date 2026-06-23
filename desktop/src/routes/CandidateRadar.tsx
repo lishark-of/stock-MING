@@ -45,6 +45,9 @@ function quantProjectionSubmitFailureMessage(error?: string | null) {
   if (error?.includes("backend_offline_or_unreachable")) {
     return "本地 FastAPI 后端未连接；请先用一键启动器恢复连接。";
   }
+  if (error?.includes("frontend_submit_exception")) {
+    return "确认按钮请求未完成；请确认本地后端连接后重试。";
+  }
   if (error?.startsWith("HTTP ")) {
     return "本地任务接口返回失败；请稍后重试或查看系统健康页。";
   }
@@ -139,6 +142,8 @@ export default function CandidateRadar() {
       } else {
         setQuantProjectionSubmitError(quantProjectionSubmitFailureMessage(res.error));
       }
+    }).catch(() => {
+      setQuantProjectionSubmitError(quantProjectionSubmitFailureMessage("frontend_submit_exception"));
     }).finally(() => setQuantProjectionSubmitting(false));
   };
   const launchQuantProjectionAcceptanceDryRun = () =>
