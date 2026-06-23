@@ -1132,6 +1132,36 @@ export default function CandidateRadar() {
       边界: "结果只从 cache / ledger / packet 回放；不交易、不改 strategy action"
     }
   ];
+  const quantProjectionReadbackIndexRows = [
+    {
+      索引: "确认回执",
+      行数: Number(counts.search_quant_projection_confirmed_task_receipt_row_count ?? 0),
+      当前状态: Number(counts.search_quant_projection_confirmed_task_receipt_row_count ?? 0) ? "可回放确认任务接收回执" : "等待确认任务写入回执",
+      只读策略: String(policy.search_quant_projection_confirmed_task_receipt_rows_are_cache_only ?? true),
+      边界: "确认回执只从 cache / packet 回放；不创建第二个 task、不补调 Tushare/DeepSeek"
+    },
+    {
+      索引: "任务回放",
+      行数: Number(counts.search_quant_projection_task_readback_row_count ?? 0),
+      当前状态: Number(counts.search_quant_projection_task_readback_row_count ?? 0) ? "可回放 task id / safe current_step" : "等待本地 task id 写入 cache",
+      只读策略: String(policy.search_quant_projection_task_readback_rows_are_cache_only ?? true),
+      边界: "TaskStatusPanel 只轮询本地 FastAPI；GET cache 不创建 task"
+    },
+    {
+      索引: "Provider API",
+      行数: Number(counts.search_quant_projection_provider_api_row_count ?? 0),
+      当前状态: Number(counts.search_quant_projection_provider_api_row_count ?? 0) ? "可回放 Tushare light API 状态" : "等待 Tushare-first ledger 或本地阻断",
+      只读策略: String(policy.search_quant_projection_provider_api_rows_are_cache_only ?? true),
+      边界: "provider API 行只读回放 ledger 状态；React render 不调用 provider/model"
+    },
+    {
+      索引: "P3 结果速读",
+      行数: Number(counts.search_quant_projection_interpretation_quick_read_row_count ?? 0),
+      当前状态: Number(counts.search_quant_projection_interpretation_quick_read_row_count ?? 0) ? "可回放可读结论 / 来源 / 缺口" : "等待小数据写入后生成结果速读",
+      只读策略: String(policy.search_quant_projection_interpretation_quick_read_rows_are_cache_only ?? true),
+      边界: "结果速读不创建 task、不调用模型、不生成交易动作"
+    }
+  ];
   const quantProjectionTushareFirstChainRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_tushare_first_chain_rows);
   const quantProjectionConfirmHandoffRows = quantProjectionTushareFirstChainRows.length ? quantProjectionTushareFirstChainRows : [
     {
@@ -1407,6 +1437,11 @@ export default function CandidateRadar() {
           <div aria-label="quant projection ordinary explainable result readback">
             <h3>解释结果清单</h3>
             <p className="risk-note">普通入口只回放数据来源、量化推演、次日图谱和安全边界；原始 receipt、prompt 或审计字段仍下沉在详情中。</p>
+            <div aria-label="quant projection ordinary readback index">
+              <h3>P2/P3 回放索引</h3>
+              <p className="risk-note">直接读取 packet 顶层 counts / policy：确认回执、任务回放、provider API 和 P3 结果速读都只做本地回放，不创建 task。</p>
+              <DataLineageTable rows={quantProjectionReadbackIndexRows} />
+            </div>
             <div aria-label="quant projection ordinary explainable result quick read">
               <h3>P3 结果速读</h3>
               <p className="risk-note">优先读取服务端 ordinary_result_quick_read_rows：先看可读结论、回放来源和待补证据；不会从结果速读创建 task 或调用模型。</p>
