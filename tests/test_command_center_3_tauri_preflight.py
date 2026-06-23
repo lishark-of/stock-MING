@@ -1,5 +1,7 @@
 from pathlib import Path
+import os
 import subprocess
+import tempfile
 import unittest
 
 
@@ -136,6 +138,63 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertNotIn("TUSHARE_TOKEN", source)
         self.assertNotIn("DEEPSEEK_API_KEY", source)
         self.assertNotIn("GITHUB_TOKEN", source)
+
+    def test_command_center_3_shortcut_installer_is_safe_and_verifiable(self):
+        source = Path("scripts/install_command_center_3_desktop_shortcut.sh").read_text(encoding="utf-8")
+
+        self.assertIn("Install safety: existing non-symlink target will not be overwritten.", source)
+        self.assertIn("desktop target already exists and is not a symlink", source)
+        self.assertIn("STOCK_MING_DESKTOP_SHORTCUT_NAME", source)
+        self.assertIn("Boundary: installer stopped before changing files", source)
+        self.assertIn("Install verification: shortcut symlink points to the local launcher.", source)
+        self.assertIn("Double-click checklist: launcher checks FastAPI /health, bootstrap status, and React/Vite before opening the page.", source)
+        self.assertIn("shortcut install does not start FastAPI/Vite, create tasks, enable live_light, or execute trading", source)
+        self.assertNotIn("npm run dev", source)
+        self.assertNotIn("scripts/dev_server.sh", source)
+        self.assertNotIn("open \"$VITE_URL\"", source)
+        self.assertNotIn("TUSHARE_TOKEN", source)
+        self.assertNotIn("DEEPSEEK_API_KEY", source)
+
+    def test_command_center_3_shortcut_installer_runs_in_temp_desktop_only(self):
+        launcher = Path("scripts/start_command_center_3.command").resolve()
+        with tempfile.TemporaryDirectory() as temp_desktop:
+            env = {**os.environ, "STOCK_MING_DESKTOP_DIR": temp_desktop}
+            result = subprocess.run(
+                ["bash", "scripts/install_command_center_3_desktop_shortcut.sh"],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=10,
+            )
+            target = Path(temp_desktop) / "stock-MING Command Center 3.command"
+
+            self.assertTrue(target.is_symlink())
+            self.assertEqual(Path(os.readlink(target)), launcher)
+            self.assertIn("Command Center 3.0 desktop shortcut installed.", result.stdout)
+            self.assertIn("Install verification: shortcut symlink points to the local launcher.", result.stdout)
+            self.assertIn("Double-click checklist: launcher checks FastAPI /health, bootstrap status, and React/Vite before opening the page.", result.stdout)
+            self.assertIn("Boundary: shortcut install does not start FastAPI/Vite", result.stdout)
+
+    def test_command_center_3_shortcut_installer_does_not_overwrite_regular_file(self):
+        with tempfile.TemporaryDirectory() as temp_desktop:
+            target = Path(temp_desktop) / "stock-MING Command Center 3.command"
+            target.write_text("keep me", encoding="utf-8")
+            env = {**os.environ, "STOCK_MING_DESKTOP_DIR": temp_desktop}
+            result = subprocess.run(
+                ["bash", "scripts/install_command_center_3_desktop_shortcut.sh"],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=10,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(target.is_symlink())
+            self.assertEqual(target.read_text(encoding="utf-8"), "keep me")
+            self.assertIn("desktop target already exists and is not a symlink", result.stdout)
+            self.assertIn("Boundary: installer stopped before changing files", result.stdout)
 
     def test_p0_startup_diagnostics_are_consistent_across_launcher_and_ordinary_pages(self):
         sources = {
