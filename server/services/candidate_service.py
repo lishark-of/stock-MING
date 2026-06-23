@@ -15780,6 +15780,15 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         provider_receipt.get("provider_api_call_count") or small_data.get("provider_api_call_count") or 0
     )
     small_data_ready = small_data.get("small_data_writeback_ready") is True
+    deepseek_requested = (
+        provider_receipt.get("include_deepseek") is True
+        or provider_receipt.get("include_deepseek_requested") is True
+    )
+    deepseek_skipped = provider_receipt.get("deepseek_skipped_by_request") is True
+    deepseek_model_ledger_ready = (
+        provider_receipt.get("deepseek_model_ledger_evidence_done") is True
+        or provider_receipt.get("model_ledger_evidence_done") is True
+    )
     factor_next_ready = bool(
         provider_receipt.get("factor_refresh_executed") is True
         or provider_receipt.get("next_session_refresh_executed") is True
@@ -15792,6 +15801,18 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         missing_evidence.append("Factor/Next/ECharts local cache replay")
     if provider_receipt.get("deepseek_skipped_by_request") is not True:
         missing_evidence.append("DeepSeek governed executor/model ledger")
+    if deepseek_model_ledger_ready:
+        deepseek_governed_executor_status = "model_ledger_ready_governed_output_replay"
+        deepseek_governed_executor_label = "DeepSeek model_ledger 可回放；仍只解释来源和缺口，不改数据或 action。"
+    elif deepseek_requested:
+        deepseek_governed_executor_status = "requested_waiting_governed_executor_model_ledger"
+        deepseek_governed_executor_label = "DeepSeek 已请求；等待 governed executor 写入 model_ledger 后才可回放。"
+    elif deepseek_skipped:
+        deepseek_governed_executor_status = "skipped_by_tushare_first_request_waiting_governed_executor"
+        deepseek_governed_executor_label = "当前 Tushare-first 链路 DeepSeek skipped；P5 单独补 governed executor。"
+    else:
+        deepseek_governed_executor_status = "governed_executor_pending_not_requested"
+        deepseek_governed_executor_label = "DeepSeek 未请求；等待 P5 governed executor。"
     if small_data_ready:
         status = (
             "interpretation_ready_tushare_ledger_with_local_map"
@@ -15913,6 +15934,69 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
             "creates_task_from_readback": False,
             "external_calls_triggered": False,
             "uses_tushare_ledger": small_data_ready,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+    ]
+    ordinary_model_governance_rows = [
+        {
+            "governance_item": "executor_gate",
+            "治理项": "执行门控",
+            "当前状态": deepseek_governed_executor_label,
+            "用户下一步": "先完成 Tushare-first 和本地图谱回放；DeepSeek 只在 governed executor 完成后单独补。",
+            "证据": (
+                f"deepseek_requested={deepseek_requested}; "
+                f"deepseek_skipped={deepseek_skipped}; "
+                f"model_ledger_ready={deepseek_model_ledger_ready}"
+            ),
+            "边界": "GET cache 和 React render 不调用 DeepSeek；DeepSeek 不作为数据源。",
+            "readback_source": "search_quant_projection_interpretation_summary",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "deepseek_called": False,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "governance_item": "output_scope",
+            "治理项": "输出范围",
+            "当前状态": "只允许解释数据来源、证据缺口和下一步。",
+            "用户下一步": "即使后续补 model_ledger，也只能展示安全摘要，不覆盖价格、持仓、因子、operation_zones 或 strategy action。",
+            "证据": "allowed_fields=source/gap/next_step/safety_summary",
+            "边界": "DeepSeek 输出不覆盖价格、持仓、factor、operation_zones、strategy action。",
+            "readback_source": "local_model_governance_policy",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "deepseek_called": False,
+            "uses_deepseek_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "governance_item": "non_blocking_base_research",
+            "治理项": "不阻塞基础图谱",
+            "当前状态": "Tushare-first、P2 小数据和 P3 结果速读继续按 cache / ledger / packet 回放。",
+            "用户下一步": "先使用基础图谱；DeepSeek governed executor 作为单独补证，不阻塞 Tushare 和结果入口。",
+            "证据": f"tushare_ledger_ready={small_data_ready}; factor_next_ready={factor_next_ready}",
+            "边界": "DeepSeek pending/skipped 不阻断 Tushare ledger、cache packet 或本地结果回放。",
+            "readback_source": "cache / call_ledger / packet",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "external_calls_triggered": False,
+            "deepseek_called": False,
             "uses_deepseek_output": False,
             "model_output_used": False,
             "contains_secret": False,
@@ -16082,6 +16166,12 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "ordinary_result_quick_read_rows_create_task": False,
         "ordinary_result_quick_read_rows_use_model_output": False,
         "ordinary_result_quick_read_rows_are_not_trade_signals": True,
+        "ordinary_model_governance_rows": ordinary_model_governance_rows,
+        "ordinary_model_governance_row_count": len(ordinary_model_governance_rows),
+        "ordinary_model_governance_rows_are_cache_only": True,
+        "ordinary_model_governance_rows_create_task": False,
+        "ordinary_model_governance_rows_call_model": False,
+        "ordinary_model_governance_rows_are_not_trade_signals": True,
         "ordinary_result_readback_rows": ordinary_result_readback_rows,
         "ordinary_result_readback_row_count": len(ordinary_result_readback_rows),
         "ordinary_result_readback_rows_are_cache_only": True,
@@ -16104,7 +16194,9 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "missing_evidence_count": len(missing_evidence),
         "uses_tushare_ledger": small_data_ready,
         "uses_deepseek_output": False,
-        "deepseek_skipped_by_request": provider_receipt.get("deepseek_skipped_by_request") is True,
+        "deepseek_governed_executor_status": deepseek_governed_executor_status,
+        "deepseek_model_ledger_ready": deepseek_model_ledger_ready,
+        "deepseek_skipped_by_request": deepseek_skipped,
         "model_output_used": False,
         "cache_get_external_calls": False,
         "react_render_external_calls": False,
@@ -16138,6 +16230,9 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     counts["search_quant_projection_interpretation_quick_read_row_count"] = summary.get(
         "ordinary_result_quick_read_row_count", 0
     )
+    counts["search_quant_projection_model_governance_row_count"] = summary.get(
+        "ordinary_model_governance_row_count", 0
+    )
     view["counts"] = counts
     policy = dict(_as_dict(view.get("policy")))
     policy["search_quant_projection_interpretation_is_cache_replay"] = True
@@ -16149,6 +16244,10 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     policy["search_quant_projection_interpretation_quick_read_rows_are_cache_only"] = True
     policy["search_quant_projection_interpretation_quick_read_rows_use_model_output"] = False
     policy["search_quant_projection_interpretation_quick_read_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_model_governance_rows_are_cache_only"] = True
+    policy["search_quant_projection_model_governance_rows_create_task"] = False
+    policy["search_quant_projection_model_governance_rows_call_model"] = False
+    policy["search_quant_projection_model_governance_rows_are_not_trade_signals"] = True
     view["policy"] = policy
     return view
 

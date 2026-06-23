@@ -38722,6 +38722,39 @@ class CommandCenter3FastAPITests(unittest.TestCase):
         self.assertTrue(
             all(row["does_not_modify_strategy_action"] for row in interpretation["ordinary_result_quick_read_rows"])
         )
+        self.assertEqual(
+            interpretation["deepseek_governed_executor_status"],
+            "skipped_by_tushare_first_request_waiting_governed_executor",
+        )
+        self.assertFalse(interpretation["deepseek_model_ledger_ready"])
+        self.assertTrue(interpretation["ordinary_model_governance_rows_are_cache_only"])
+        self.assertFalse(interpretation["ordinary_model_governance_rows_create_task"])
+        self.assertFalse(interpretation["ordinary_model_governance_rows_call_model"])
+        self.assertTrue(interpretation["ordinary_model_governance_rows_are_not_trade_signals"])
+        self.assertEqual(interpretation["ordinary_model_governance_row_count"], 3)
+        self.assertEqual(packet["counts"]["search_quant_projection_model_governance_row_count"], 3)
+        self.assertTrue(packet["policy"]["search_quant_projection_model_governance_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_model_governance_rows_create_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_model_governance_rows_call_model"])
+        self.assertTrue(packet["policy"]["search_quant_projection_model_governance_rows_are_not_trade_signals"])
+        governance_rows = {
+            row["governance_item"]: row for row in interpretation["ordinary_model_governance_rows"]
+        }
+        self.assertEqual(set(governance_rows), {"executor_gate", "output_scope", "non_blocking_base_research"})
+        self.assertIn("DeepSeek skipped", governance_rows["executor_gate"]["当前状态"])
+        self.assertIn("不作为数据源", governance_rows["executor_gate"]["边界"])
+        self.assertIn("不覆盖价格", governance_rows["output_scope"]["边界"])
+        self.assertIn("不阻断 Tushare", governance_rows["non_blocking_base_research"]["边界"])
+        self.assertFalse(any(row["creates_task_from_readback"] for row in interpretation["ordinary_model_governance_rows"]))
+        self.assertFalse(any(row["external_calls_triggered"] for row in interpretation["ordinary_model_governance_rows"]))
+        self.assertFalse(any(row["deepseek_called"] for row in interpretation["ordinary_model_governance_rows"]))
+        self.assertFalse(any(row["uses_deepseek_output"] for row in interpretation["ordinary_model_governance_rows"]))
+        self.assertFalse(any(row["model_output_used"] for row in interpretation["ordinary_model_governance_rows"]))
+        self.assertFalse(any(row["contains_secret"] for row in interpretation["ordinary_model_governance_rows"]))
+        self.assertTrue(all(row["does_not_execute_trades"] for row in interpretation["ordinary_model_governance_rows"]))
+        self.assertTrue(
+            all(row["does_not_modify_strategy_action"] for row in interpretation["ordinary_model_governance_rows"])
+        )
         self.assertNotIn("SHOULD_DROP", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_TUSHARE_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))
         self.assertNotIn("REAL_DEEPSEEK_SECRET_VALUE", json.dumps(cache, ensure_ascii=False))

@@ -820,6 +820,38 @@ export default function CandidateRadar() {
           边界: "缺口不是买卖指令；DeepSeek governed executor 单独补"
         }
       ];
+  const quantProjectionModelGovernanceRows = rows(searchQuantProjectionInterpretation.ordinary_model_governance_rows).map((row) => ({
+    治理项: displayText(row["治理项"] ?? row.governance_item),
+    当前状态: displayText(row["当前状态"] ?? row.status),
+    用户下一步: displayText(row["用户下一步"] ?? row.next_action, quantProjectionInterpretationNext),
+    证据: displayText(row["证据"] ?? row.evidence, "search_quant_projection_interpretation_summary"),
+    边界: displayText(row["边界"] ?? row.boundary, "DeepSeek governed executor 单独补；不作为数据源或交易动作")
+  }));
+  const quantProjectionDeepSeekGovernanceRows = quantProjectionModelGovernanceRows.length
+    ? quantProjectionModelGovernanceRows
+    : [
+        {
+          治理项: "执行门控",
+          当前状态: quantProjectionModelSourceLabel,
+          用户下一步: "先使用 Tushare-first 和本地图谱；DeepSeek 等 governed executor 单独补",
+          证据: "local_model_governance_policy",
+          边界: "GET cache 和 React render 不调用 DeepSeek"
+        },
+        {
+          治理项: "输出范围",
+          当前状态: "只解释来源、缺口和下一步",
+          用户下一步: "不覆盖价格、持仓、因子、operation_zones 或 strategy action",
+          证据: "allowed_fields=source/gap/next_step/safety_summary",
+          边界: "DeepSeek 不作为数据源，不生成交易动作"
+        },
+        {
+          治理项: "不阻塞基础图谱",
+          当前状态: "Tushare-first 和 P3 结果速读继续只读回放",
+          用户下一步: "DeepSeek 作为后续独立补证",
+          证据: "cache / call_ledger / packet",
+          边界: "pending/skipped 不阻断基础结果入口"
+        }
+      ];
   const quantProjectionOrdinaryResultRows = quantProjectionOrdinaryResultReadbackRows.length
     ? quantProjectionOrdinaryResultReadbackRows
     : [
@@ -1354,6 +1386,11 @@ export default function CandidateRadar() {
               <h3>P3 结果速读</h3>
               <p className="risk-note">优先读取服务端 ordinary_result_quick_read_rows：先看可读结论、回放来源和待补证据；不会从结果速读创建 task 或调用模型。</p>
               <DataLineageTable rows={quantProjectionOrdinaryResultQuickRows} />
+            </div>
+            <div aria-label="quant projection ordinary deepseek governance status">
+              <h3>P5 DeepSeek 治理状态</h3>
+              <p className="risk-note">优先读取服务端 ordinary_model_governance_rows：只看执行门控、输出范围和是否阻塞基础图谱；不会从治理状态创建 task 或调用模型。</p>
+              <DataLineageTable rows={quantProjectionDeepSeekGovernanceRows} />
             </div>
             <DataLineageTable rows={quantProjectionOrdinaryResultRows} />
           </div>
