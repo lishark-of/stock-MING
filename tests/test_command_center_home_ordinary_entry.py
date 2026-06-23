@@ -136,6 +136,8 @@ class CommandCenterHomeOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("?.api_base ?? API_BASE_DISPLAY_URL", source)
         self.assertIn("desktopPreflight.p0_launcher_check_only_rows", source)
         self.assertIn("desktopRuntime?.p0_launcher_check_only_next", source)
+        self.assertIn("scripts/check_command_center_3.command", source)
+        self.assertNotIn("COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command", source)
         self.assertIn("desktopPreflight.p0_ordinary_quick_action_rows", source)
         self.assertIn("desktopRuntime?.p0_ordinary_quick_action_next", source)
         self.assertIn("DataLineageTable rows={p0LauncherCheckOnlyRows}", source)

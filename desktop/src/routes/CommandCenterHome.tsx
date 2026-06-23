@@ -433,7 +433,7 @@ export default function CommandCenterHome() {
     desktopRuntime?.p0_ordinary_quick_action_next ?? p0OrdinaryQuickActionRows[0]?.["用户下一步"] ?? ""
   );
   const dailyCommandP0CheckOnlyNext = String(
-    desktopRuntime?.p0_launcher_check_only_next ?? p0LauncherCheckOnlyRows[0]?.["用户动作"] ?? "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command"
+    desktopRuntime?.p0_launcher_check_only_next ?? p0LauncherCheckOnlyRows[0]?.["用户动作"] ?? "scripts/check_command_center_3.command"
   );
   const dailyCommandNextClick = dailyCommandNeedsStartupRecovery
     ? "先查看一键启动预检，恢复本地 FastAPI / React 联通"
