@@ -10,6 +10,7 @@ VITE_LOG="${LOG_DIR}/command_center_3_vite.log"
 API_BASE="${VITE_API_BASE_URL:-http://127.0.0.1:8710}"
 VITE_URL="${COMMAND_CENTER_3_VITE_URL:-http://127.0.0.1:5173}"
 APP_URL="${COMMAND_CENTER_3_APP_URL:-${VITE_URL%/}/#home}"
+LAUNCHER_CHECK_ONLY="${COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY:-0}"
 
 resolve_python() {
   if [ -n "${STOCK_MING_PYTHON:-}" ]; then
@@ -224,6 +225,7 @@ echo "FastAPI: ${API_BASE}"
 echo "React/Vite: ${VITE_URL}"
 echo "Open route: ${APP_URL}"
 echo "Logs: ${LOG_DIR}"
+echo "Check only: ${LAUNCHER_CHECK_ONLY}"
 echo "P0: local one-click launcher starts/checks FastAPI and React/Vite before opening the page."
 echo "Mode: server config controls runtime mode; cache_only remains the safe default unless explicitly configured."
 echo "Link check: launcher verifies ${API_BASE%/}/health and ${API_BASE%/}/api/bootstrap/status before opening the page."
@@ -234,6 +236,13 @@ echo "Open target: ordinary Command Center home route (#home), so startup does n
 echo "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution."
 echo "Safety: this launcher does not set live_light defaults and makes no Tushare, DeepSeek, GitHub, or trading call."
 echo "Acceptance: runtime_mode_config_current_acceptance_* markers are status/checkpoint drift guards, not launcher config or live_light enablement."
+
+if [ "$LAUNCHER_CHECK_ONLY" = "1" ]; then
+  echo "Check-only mode: resolved launcher configuration without starting FastAPI, starting React/Vite, probing URLs, writing logs, opening a browser, creating tasks, calling providers/models, or touching trading paths."
+  echo "Check-only endpoints: health=${API_BASE%/}/health; bootstrap=${API_BASE%/}/api/bootstrap/status; frontend=${VITE_URL}; open_route=${APP_URL}"
+  echo "Check-only next action: unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher to start or reuse local FastAPI/Vite, wait for all three readiness checks, then open ${APP_URL}."
+  exit 0
+fi
 
 if command_center_health_ready "${API_BASE%/}/health"; then
   echo "FastAPI already running."

@@ -109,6 +109,11 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("/src/main.tsx", source)
         self.assertIn("Health check: /health must return stock-MING Command Center 3.0 JSON", source)
         self.assertIn("Vite must serve stock-MING Command Center 3.0 index HTML", source)
+        self.assertIn("COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY", source)
+        self.assertIn("Check only: ${LAUNCHER_CHECK_ONLY}", source)
+        self.assertIn("Check-only mode: resolved launcher configuration without starting FastAPI", source)
+        self.assertIn("probing URLs, writing logs, opening a browser, creating tasks", source)
+        self.assertIn("unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher", source)
         self.assertIn('wait_for_command_center_health "FastAPI" "${API_BASE%/}/health" 40', source)
         self.assertIn('wait_for_bootstrap_status "${API_BASE%/}/api/bootstrap/status" 40', source)
         self.assertIn('wait_for_vite_command_center "$VITE_URL" 40', source)
@@ -144,6 +149,35 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertNotIn("TUSHARE_TOKEN", source)
         self.assertNotIn("DEEPSEEK_API_KEY", source)
         self.assertNotIn("GITHUB_TOKEN", source)
+
+    def test_command_center_3_launcher_check_only_does_not_start_or_open(self):
+        env = {**os.environ, "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY": "1"}
+        result = subprocess.run(
+            ["bash", str(LAUNCHER)],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=10,
+        )
+        output = result.stdout
+
+        self.assertIn("Command Center 3.0 local launcher", output)
+        self.assertIn("Check only: 1", output)
+        self.assertIn("Check-only mode: resolved launcher configuration without starting FastAPI", output)
+        self.assertIn("starting React/Vite", output)
+        self.assertIn("probing URLs", output)
+        self.assertIn("opening a browser", output)
+        self.assertIn("creating tasks", output)
+        self.assertIn("calling providers/models", output)
+        self.assertIn("health=http://127.0.0.1:8710/health", output)
+        self.assertIn("bootstrap=http://127.0.0.1:8710/api/bootstrap/status", output)
+        self.assertIn("frontend=http://127.0.0.1:5173", output)
+        self.assertIn("open_route=http://127.0.0.1:5173/#home", output)
+        self.assertIn("unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher", output)
+        self.assertNotIn("Starting FastAPI...", output)
+        self.assertNotIn("Starting React/Vite...", output)
+        self.assertNotIn("Command Center 3.0 入口已启动", output)
 
     def test_command_center_3_shortcut_installer_is_safe_and_verifiable(self):
         source = Path("scripts/install_command_center_3_desktop_shortcut.sh").read_text(encoding="utf-8")
