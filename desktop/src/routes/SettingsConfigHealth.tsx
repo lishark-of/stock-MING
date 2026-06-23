@@ -289,15 +289,21 @@ export default function SettingsConfigHealth() {
         emptyDetail="请先确认 FastAPI 服务已启动；本页不会自动触发外部刷新。"
       />
 
-      <div className="actions">
+      <div className="actions" aria-label="settings config ordinary cache actions">
         <button onClick={refreshCache}>查看配置健康缓存</button>
-        <button onClick={createBootstrapTask} disabled={bootstrapActionLoading}>
-          {bootstrapActionLoading ? "创建中" : "启动 live_light 本地任务"}
-        </button>
-        <button onClick={createAcceptanceDryRun} disabled={acceptanceDryRunLoading}>
-          {acceptanceDryRunLoading ? "生成中" : "生成 provider/model 验收 dry-run"}
-        </button>
       </div>
+      <details className="developer-audit-details" aria-label="settings config advanced task launchers">
+        <summary>高级配置任务</summary>
+        <p className="risk-note">普通用户先看配置健康缓存；live_light skeleton 和 provider/model dry-run 只作为显式按钮门控任务，不在页面打开或 React render 中自动运行。</p>
+        <div className="actions">
+          <button onClick={createBootstrapTask} disabled={bootstrapActionLoading}>
+            {bootstrapActionLoading ? "创建中" : "启动 live_light 本地任务"}
+          </button>
+          <button onClick={createAcceptanceDryRun} disabled={acceptanceDryRunLoading}>
+            {acceptanceDryRunLoading ? "生成中" : "生成 provider/model 验收 dry-run"}
+          </button>
+        </div>
+      </details>
 
       <MetricGrid
         items={[

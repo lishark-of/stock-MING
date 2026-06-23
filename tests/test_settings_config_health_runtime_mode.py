@@ -49,6 +49,29 @@ class SettingsConfigHealthRuntimeModeTests(unittest.TestCase):
         self.assertNotIn("postBootstrapProviderModelExecutionRequest", source)
         self.assertNotIn("/api/bootstrap/provider-model-execution-request", source)
 
+    def test_advanced_task_launchers_are_demoted_from_ordinary_cache_actions(self):
+        source = (ROOT / "src" / "routes" / "SettingsConfigHealth.tsx").read_text(encoding="utf-8")
+
+        self.assertIn('aria-label="settings config ordinary cache actions"', source)
+        self.assertIn('aria-label="settings config advanced task launchers"', source)
+        self.assertIn("<summary>高级配置任务</summary>", source)
+        self.assertIn("普通用户先看配置健康缓存", source)
+        self.assertIn("live_light skeleton 和 provider/model dry-run 只作为显式按钮门控任务", source)
+        self.assertIn("不在页面打开或 React render 中自动运行", source)
+
+        ordinary_actions_start = source.index('aria-label="settings config ordinary cache actions"')
+        ordinary_actions_end = source.index("</div>", ordinary_actions_start)
+        ordinary_actions_slice = source[ordinary_actions_start:ordinary_actions_end]
+        advanced_start = source.index('aria-label="settings config advanced task launchers"')
+        advanced_slice = source[advanced_start:source.index("<MetricGrid", advanced_start)]
+
+        self.assertIn("查看配置健康缓存", ordinary_actions_slice)
+        self.assertNotIn("启动 live_light 本地任务", ordinary_actions_slice)
+        self.assertNotIn("生成 provider/model 验收 dry-run", ordinary_actions_slice)
+        self.assertIn("启动 live_light 本地任务", advanced_slice)
+        self.assertIn("生成 provider/model 验收 dry-run", advanced_slice)
+        self.assertLess(source.index('aria-label="settings config ordinary cache actions"'), advanced_start)
+
 
 if __name__ == "__main__":
     unittest.main()
