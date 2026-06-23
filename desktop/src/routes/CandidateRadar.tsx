@@ -1235,6 +1235,36 @@ export default function CandidateRadar() {
       边界: "不交易、不改 strategy action"
     }
   ];
+  const quantProjectionP1ConfirmGateRows = [
+    {
+      门控项: "1. 输入代码",
+      当前状态: quantProjectionInputValidation,
+      用户下一步: quantProjectionCanSubmit ? "代码已通过本地校验，可以看确认按钮" : "修正为 6 位 A 股代码或带 .SZ/.SH/.BJ 后缀",
+      允许动作: "本地校验",
+      边界: "输入框不创建 task、不调用 Tushare/DeepSeek/GitHub"
+    },
+    {
+      门控项: "2. 确认按钮",
+      当前状态: quantProjectionDisabledReason,
+      用户下一步: quantProjectionCanLaunch ? "点击一次确认并生成 3.0 量化推演" : "等待按钮启用，或先恢复本地 FastAPI 连接",
+      允许动作: "按钮门控 POST /api/candidate-radar/quant-projection",
+      边界: "只有确认按钮可创建 Tushare-first task；DeepSeek skipped，不交易"
+    },
+    {
+      门控项: "3. 任务接收",
+      当前状态: quantProjectionConfirmChainState,
+      用户下一步: taskReceipt?.ok || quantProjectionPersistedTaskId ? "看 task id 和 TaskStatusPanel" : "确认后等待本地 task id；失败先回 P0 联通恢复",
+      允许动作: "TaskStatusPanel 本地轮询",
+      边界: "轮询本地 FastAPI 任务状态；不补调 provider/model，不写交易动作"
+    },
+    {
+      门控项: "4. 回放结果",
+      当前状态: quantProjectionReplayDestinationState,
+      用户下一步: quantProjectionReplayDestinationNextStep,
+      允许动作: "刷新 GET cache 后只读回放",
+      边界: "cache / ledger / packet 回放不创建第二个 task，不覆盖 strategy action"
+    }
+  ];
   const quantProjectionOrdinaryEndToEndRows = [
     {
       步骤: "1. 打开 3.0",
@@ -1429,6 +1459,11 @@ export default function CandidateRadar() {
             steps={quantProjectionOrdinaryTaskRailSteps}
           />
           <p className="risk-note">普通确认状态：等待输入 / 任务接收 / 任务轮询 / cache 回放；这条状态轨只读本地 task receipt 和 cache，不补调 Tushare、DeepSeek 或 GitHub。</p>
+          <div aria-label="quant projection p1 confirm gate checklist">
+            <h3>P1 确认门控清单</h3>
+            <p className="risk-note">先看代码是否通过本地校验，再点击一次确认按钮；提交后看 task id 和 TaskStatusPanel，失败先回 P0 联通恢复。这张表只读页面状态，不创建 task。</p>
+            <DataLineageTable rows={quantProjectionP1ConfirmGateRows} />
+          </div>
           <MetricGrid
             items={[
               { label: "确认状态", value: quantProjectionConfirmChainState, tone: taskReceipt?.ok || (quantProjectionCanLaunch && !quantProjectionSubmitError) ? "good" : "warn" },
