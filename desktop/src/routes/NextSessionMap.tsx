@@ -206,6 +206,38 @@ export default function NextSessionMap() {
       boundary: nextSessionOperationZoneBoundary
     }
   ];
+  const ordinaryChartReviewRows = [
+    {
+      复核项: "图表路径",
+      看什么: chartSummary.has_drawable_data === true
+        ? `情景路径 ${String(chartSummary.scenario_series_count ?? 0)} 条；先看基准、乐观和压力路径的方向`
+        : "暂无可绘制路径；先看缓存状态或点击生成任务",
+      证据: nextSessionLastCache,
+      边界: "只读 scenario_series；不重算价格、不调用 provider/model"
+    },
+    {
+      复核项: "参考线",
+      看什么: chartSummary.has_drawable_data === true
+        ? `参考线 ${String(chartSummary.reference_line_count ?? 0)} 条；用于定位压力、支撑和最新收盘锚点`
+        : "等待 reference_lines 写入本地 cache",
+      证据: latestCloseAnchor.price ? `latest close=${String(latestCloseAnchor.price)}` : "等待 latest close anchor",
+      边界: "参考线只作研究复核，不生成买卖动作"
+    },
+    {
+      复核项: "操作区",
+      看什么: chartSummary.has_drawable_data === true
+        ? `操作区 ${String(chartSummary.operation_zone_count ?? 0)} 个；只看条件区间、触发条件和风险提示`
+        : "等待 operation_zones cache",
+      证据: nextSessionOperationZoneBoundary,
+      边界: "不改 operation_zones、不下单、不写 strategy action"
+    },
+    {
+      复核项: "缺少证据",
+      看什么: nextSessionMissingEvidence,
+      证据: "replacement / browser QA / retained signal / real close evidence",
+      边界: "缺口只提示后续补证，不把空结果解释成无风险"
+    }
+  ];
   const scenarioRows = rowsFromArray(chartPayload?.scenario_series).map((row) => ({
     scenario_key: row.scenario_key ?? row.scenario_name,
     scenario_name: row.scenario_name,
@@ -256,6 +288,11 @@ export default function NextSessionMap() {
       />
       <h3>三段结果回放</h3>
       <DataLineageTable rows={ordinaryResultReplayRows} />
+      <div aria-label="next session ordinary chart review checklist">
+        <h3>图谱复核清单</h3>
+        <p className="risk-note">按图表路径、参考线、操作区、缺少证据复核；这些行只读取本地 chart cache，不触发刷新或交易动作。</p>
+        <DataLineageTable rows={ordinaryChartReviewRows} />
+      </div>
       <div className="actions" aria-label="next session replay handoff actions">
         <a href="#candidates" aria-label="return to candidate radar confirmed symbol entry">回到下一票雷达</a>
         <a href="#factor" aria-label="open stock quant projection replay">查看股票量化推演</a>
