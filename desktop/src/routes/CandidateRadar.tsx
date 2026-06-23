@@ -1338,7 +1338,11 @@ export default function CandidateRadar() {
         <p className="risk-note">摘要按钮只读取本地 cache 或创建按钮门控 POST task；输入代码不会创建任务，也不会在 React 渲染中直连 Tushare、DeepSeek 或 GitHub。</p>
         <p className="risk-note">生成任务完成后，去 <a href="#factor">股票量化推演</a> 查看本地缓存结果；该链接只切换页面，不额外刷新外部数据或模型。</p>
         <p className="risk-note">{quantProjectionResultLocation}</p>
-        <p className="risk-note">工程审计明细默认收起；完整 call ledger、release gate 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
+        <p className="risk-note">普通用户无需先打开工程审计；默认先看候选、确认结果和本地回放。</p>
+        <details className="developer-audit-details" aria-label="candidate radar ordinary audit shortcuts">
+          <summary>高级诊断入口</summary>
+          <p className="risk-note">工程审计明细继续默认收起；完整 call ledger、release gate 和配置状态下沉在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。</p>
+        </details>
       </PacketCard>
 
       <div className="grid radar-result-cluster" data-radar-state={radarMotionState}>

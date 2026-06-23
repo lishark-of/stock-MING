@@ -85,19 +85,32 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('href="#candidate-pool"', self.page)
         self.assertIn('id="candidate-pool"', self.page)
         self.assertIn("候选不是买入指令；不真实交易、不下单、不改交易策略", self.page)
+        summary_start = self.page.index('title="普通用户雷达摘要"')
         self.assertIn("普通用户先看上方雷达摘要、候选池和搜票量化推演", self.page)
+        self.assertIn("普通用户无需先打开工程审计；默认先看候选、确认结果和本地回放。", self.page)
+        self.assertIn('aria-label="candidate radar ordinary audit shortcuts"', self.page)
+        self.assertIn("<summary>高级诊断入口</summary>", self.page)
+        self.assertIn("工程审计明细继续默认收起", self.page)
+        self.assertIn("完整 call ledger、release gate 和配置状态下沉", self.page)
         self.assertIn('<a href="#audit">调用审计</a>', self.page)
         self.assertIn('<a href="#settings">配置健康</a>', self.page)
         self.assertIn('id="settings" className="developer-audit-details"', self.page)
         self.assertIn('aria-label="candidate radar settings audit details"', self.page)
         self.assertIn('id="audit" className="developer-audit-details"', self.page)
         self.assertIn('aria-label="candidate radar developer audit details"', self.page)
+        ordinary_audit_shortcuts_index = self.page.index('aria-label="candidate radar ordinary audit shortcuts"')
         self.assertLess(self.page.index('title="搜票量化推演"'), self.page.index('id="settings" className="developer-audit-details"'))
         self.assertLess(self.page.index('title="搜票量化推演"'), self.page.index('id="audit" className="developer-audit-details"'))
+        self.assertLess(summary_start, ordinary_audit_shortcuts_index)
+        self.assertLess(ordinary_audit_shortcuts_index, self.page.index('id="settings" className="developer-audit-details"'))
+        self.assertLess(ordinary_audit_shortcuts_index, self.page.index('id="audit" className="developer-audit-details"'))
+        self.assertNotIn(
+            '工程审计明细默认收起；完整 call ledger、release gate 和配置状态在 <a href="#audit">调用审计</a> / <a href="#settings">配置健康</a>。',
+            self.page,
+        )
         deepseek_label_start = self.page.index("const ordinaryDeepSeekSourceLabel")
         deepseek_label_end = self.page.index("const ordinaryProviderGapLabel", deepseek_label_start)
         deepseek_label_slice = self.page[deepseek_label_start:deepseek_label_end]
-        summary_start = self.page.index('title="普通用户雷达摘要"')
         summary_end = self.page.index('title="下一票候选池"', summary_start)
         summary_slice = self.page[summary_start:summary_end]
         self.assertIn("待 governed executor；不作为数据源或动作", deepseek_label_slice)
