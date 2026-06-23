@@ -223,26 +223,26 @@ export default function CommandCenterHome() {
     步骤: row.title ? `${String(row.step ?? "")}. ${String(row.title)}` : String(row.step ?? "恢复步骤"),
     何时使用: String(row.when ?? "本地联通异常或页面未打开"),
     用户动作: String(row.action ?? "回到一键启动预检查看失败段"),
-    检查项: String(row.checks ?? "FastAPI / bootstrap status / React/Vite"),
+    检查项: String(row.checks ?? "FastAPI / bootstrap status / desktop preflight cache / React/Vite"),
     边界: "只读展示 p0_recovery_steps；首页不启动 FastAPI/Vite、不创建 task、不调用 provider/model"
   })) : [
     {
       步骤: "1. 打开本地一键入口",
       何时使用: "页面未打开、健康页显示 check，或本地后端离线",
       用户动作: "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。",
-      检查项: "启动器会依次等待 FastAPI /health、/api/bootstrap/status 和 React/Vite HTML。",
+      检查项: "启动器会依次等待 FastAPI /health、/api/bootstrap/status、/api/desktop/preflight-cache 和 React/Vite HTML。",
       边界: "只读展示 fallback recovery steps；首页不启动 FastAPI/Vite、不创建 task、不调用 provider/model"
     },
     {
       步骤: "2. 按启动器诊断定位失败段",
       何时使用: "启动器没有自动打开页面",
-      用户动作: "先看 FastAPI、bootstrap status、React/Vite 哪一段没有 ready。",
+      用户动作: "先看 FastAPI、bootstrap status、desktop preflight cache、React/Vite 哪一段没有 ready。",
       检查项: "对应检查 8710/5173 端口占用和本地 fastapi/vite 日志。",
       边界: "只读展示 fallback recovery steps；首页不启动 FastAPI/Vite、不创建 task、不调用 provider/model"
     },
     {
       步骤: "3. 刷新健康页确认联通",
-      何时使用: "启动器显示三个检查都 ready 后",
+      何时使用: "启动器显示四个检查都 ready 后",
       用户动作: "回到系统健康页，确认 P0 front/back、P0 receipt 和 one-click launcher 都为 ready。",
       检查项: "本页只读 GET /health 与 GET /api/desktop/preflight-cache。",
       边界: "只读展示 fallback recovery steps；首页不启动 FastAPI/Vite、不创建 task、不调用 provider/model"
@@ -541,7 +541,7 @@ export default function CommandCenterHome() {
       联通项: "失败回退",
       当前状态: error ? "显示本地后端离线提示" : "无前端联通错误",
       证据: "frontend_backend_auto_link_scope=local_fastapi_only",
-      下一步: error ? "打开一键启动预检，按 FastAPI / bootstrap / React 三段恢复" : "联通正常时进入下一票雷达",
+      下一步: error ? "打开一键启动预检，按 FastAPI / bootstrap / desktop preflight / React 四段恢复" : "联通正常时进入下一票雷达",
       边界: "离线提示只帮助恢复 P0；不会绕过确认按钮触发 Tushare，也不会调用 DeepSeek"
     }
   ];
@@ -560,22 +560,22 @@ export default function CommandCenterHome() {
     "首页不启动服务；一键启动只由本机快捷入口执行，状态来自 health/preflight cache";
   const dailyCommandStartupSuccessCondition = String(
     oneClickStartupSummary.success_condition ??
-      "FastAPI /health 必须返回 Command Center 3.0 健康 JSON，/api/bootstrap/status 必须返回 runtime-mode packet，React/Vite 必须返回 Command Center 3.0 前端 HTML 后才打开页面。"
+      "FastAPI /health 必须返回 Command Center 3.0 健康 JSON，/api/bootstrap/status 必须返回 runtime-mode packet，/api/desktop/preflight-cache 必须返回一键启动 packet，React/Vite 必须返回 Command Center 3.0 前端 HTML 后才打开页面。"
   );
   const dailyCommandStartupFailureAction = String(
     oneClickStartupSummary.blocked_next_action ??
-      "先看启动器的可操作诊断：FastAPI、bootstrap status、React/Vite 哪段失败；再检查 8710/5173 是否被占用，或进入桌面壳预检。"
+      "先看启动器的可操作诊断：FastAPI、bootstrap status、desktop preflight cache、React/Vite 哪段失败；再检查 8710/5173 是否被占用，或进入桌面壳预检。"
   );
   const dailyCommandStartupDiagnosticSurfaces = Array.isArray(oneClickStartupSummary.diagnostic_surfaces)
     ? oneClickStartupSummary.diagnostic_surfaces.join(" / ")
-    : "FastAPI /health Command Center 3.0 JSON / bootstrap status runtime-mode packet / React/Vite Command Center 3.0 HTML / 8710/5173 port occupancy guidance";
+    : "FastAPI /health Command Center 3.0 JSON / bootstrap status runtime-mode packet / desktop preflight cache one-click packet / React/Vite Command Center 3.0 HTML / 8710/5173 port occupancy guidance";
   const dailyCommandStartupReadbackLabel = error
-    ? "重启后刷新本页；FastAPI、bootstrap、React/Vite 变绿才继续投研"
+    ? "重启后刷新本页；FastAPI、bootstrap、desktop preflight cache、React/Vite 变绿才继续投研"
     : health.status === "ok"
       ? "联通已由 GET /health 回读；可继续看缓存和投研入口"
       : "正在等待 GET /health 和 desktop preflight cache 回读";
   const dailyCommandStartupReadbackOrder =
-    "恢复回读顺序：FastAPI /health -> bootstrap status -> React/Vite 前端 -> 今日作战台摘要";
+    "恢复回读顺序：FastAPI /health -> bootstrap status -> desktop preflight cache -> React/Vite 前端 -> 今日作战台摘要";
   const dailyCommandStartupReadbackBoundary =
     "恢复回读只读取 GET /health、GET /api/bootstrap/status、GET /api/desktop/preflight-cache；不启动服务、不创建 task、不外联";
   const dailyCommandStartupReadbackRows = [
@@ -592,14 +592,22 @@ export default function CommandCenterHome() {
       当前状态: bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet" ? "runtime-mode packet 可读" : "等待 runtime-mode packet",
       证据: "GET /api/bootstrap/status",
       通过条件: "返回 cache_only/manual/live_light/live_full 运行模式口径",
-      下一步: bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet" ? "继续确认 React/Vite 前端" : "查看一键启动预检里的 bootstrap status 诊断",
+      下一步: bootstrapStatus.packet_key === "command_center_3_bootstrap_runtime_mode_packet" ? "继续确认 desktop preflight cache" : "查看一键启动预检里的 bootstrap status 诊断",
       边界: "只读运行模式，不写配置、不创建 live_light task"
     },
     {
-      回读项: "React/Vite 前端",
+      回读项: "Desktop preflight cache",
       当前状态: desktopLauncherContract.launcher_executable === true ? "一键启动入口可用" : "等待桌面壳预检",
       证据: "GET /api/desktop/preflight-cache",
-      通过条件: "本地启动器可检查 FastAPI、bootstrap status 和 Command Center 3.0 前端 HTML",
+      通过条件: "返回 command_center_3_desktop_shell_preflight_cache 一键启动 packet",
+      下一步: dailyCommandNeedsStartupRecovery ? "先打开一键启动预检" : "继续确认 React/Vite 前端",
+      边界: "首页只展示预检 packet，不启动 FastAPI/Vite/浏览器"
+    },
+    {
+      回读项: "React/Vite 前端",
+      当前状态: desktopLauncherContract.launcher_executable === true ? "一键启动入口可验证前端" : "等待桌面壳预检",
+      证据: "desktop preflight cache launcher_readback",
+      通过条件: "本地启动器可检查 Command Center 3.0 前端 HTML",
       下一步: dailyCommandNeedsStartupRecovery ? "先打开一键启动预检" : "继续进入下一票雷达和股票量化推演",
       边界: "首页只展示预检结果，不启动 FastAPI/Vite/浏览器"
     }
@@ -740,8 +748,8 @@ export default function CommandCenterHome() {
           ]}
         />
         <div aria-label="daily command local connection readback">
-          <h3>本地联通三段回读</h3>
-          <p className="risk-note">先看 FastAPI、bootstrap runtime-mode packet、React/Vite 前端三段是否变绿；这张表只读本地 GET 结果，不启动服务。</p>
+          <h3>本地联通四段回读</h3>
+          <p className="risk-note">先看 FastAPI、bootstrap runtime-mode packet、desktop preflight cache、React/Vite 前端四段是否变绿；这张表只读本地 GET 结果，不启动服务。</p>
           <DataLineageTable rows={dailyCommandStartupReadbackRows} />
         </div>
         <div aria-label="daily command p0 frontend backend auto link readback">
@@ -775,7 +783,7 @@ export default function CommandCenterHome() {
           <DataLineageTable rows={dailyCommandP0RecoveryRows} />
         </div>
         <p className="risk-note">本地联通状态只读来自 FastAPI health 和 desktop preflight cache；不会启动服务、不会写配置、不会调用 provider/model。</p>
-        <p className="risk-note">启动诊断来自 desktop preflight cache：FastAPI /health、bootstrap status 和 React/Vite 前端 HTML 分段检查；首页只展示，不执行。</p>
+        <p className="risk-note">启动诊断来自 desktop preflight cache：FastAPI /health、bootstrap status、desktop preflight cache 和 React/Vite 前端 HTML 分段检查；首页只展示，不执行。</p>
         <p className="risk-note">恢复回读只看本地 GET health/bootstrap/preflight 结果；如果没有变绿，继续回一键启动预检，不进入投研入口。</p>
         <p className="risk-note">主下一步会在联通异常时优先打开桌面壳预检；这个链接只读本地 health/preflight cache，不启动服务。</p>
         <div className="actions" aria-label="daily command primary next action">

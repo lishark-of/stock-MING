@@ -25,7 +25,7 @@ export default function BackendOfflineNotice({
     : apiBase;
   const ordinaryRecoverySteps = [
     `双击桌面快捷方式 ${COMMAND_CENTER_3_DESKTOP_SHORTCUT}，或运行 ${COMMAND_CENTER_3_LAUNCHER_PATH}。`,
-    "等启动器显示 FastAPI / bootstrap status / React/Vite 三段 ready 后，再刷新本页。",
+    "等启动器显示 FastAPI / bootstrap status / desktop preflight cache / React/Vite 四段 ready 后，再刷新本页。",
     "恢复联通后去下一票雷达输入代码，只有点击确认按钮才创建 Tushare-first 任务。"
   ];
 
@@ -55,7 +55,7 @@ export default function BackendOfflineNotice({
       <details className="developer-audit-details">
         <summary>联通排障详情</summary>
         <p>前端已自动尝试本机 FastAPI 地址：{attemptedApiBases}；配置地址显示为 {CONFIGURED_API_BASE_DISPLAY_URL}。</p>
-        <p>启动器会等待 FastAPI 和页面都 ready 后才打开入口。</p>
+        <p>启动器会等待 FastAPI、bootstrap status、desktop preflight cache 和 React/Vite 页面都 ready 后才打开入口。</p>
         <p>如果刚运行启动器后仍离线，可能是旧的 React/Vite dev server 复用了不同后端地址；请关闭旧 dev server 后重新运行启动器，并查看 .stock_ming_3/logs/command_center_3_vite.log。</p>
         <p>连接地址：{apiBase}</p>
       </details>
