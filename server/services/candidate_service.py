@@ -14826,6 +14826,45 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "does_not_modify_strategy_action": True,
         },
     ]
+    provider_ledger_by_api = {str(row.get("api") or ""): row for row in provider_ledger}
+    ordinary_provider_api_rows: list[dict[str, Any]] = []
+    for api in QUANT_PROJECTION_ACCEPTANCE_ALLOWED_APIS:
+        ledger_row = provider_ledger_by_api.get(api)
+        if ledger_row:
+            call_status = str(ledger_row.get("call_status") or "recorded")
+            ordinary_label = (
+                f"Tushare {api} ledger 可回放"
+                if call_status == "success"
+                else f"Tushare {api} ledger 已记录：{call_status}"
+            )
+            replay_status = "post_task_ledger_replayed"
+        elif credential_missing_count:
+            call_status = "blocked_missing_credentials"
+            ordinary_label = f"Tushare {api} 未调用；服务端凭据缺失，本地阻断已写入"
+            replay_status = "local_block_replayed"
+        else:
+            call_status = "waiting_tushare_first_ledger"
+            ordinary_label = f"Tushare {api} 等待确认按钮后的 provider ledger"
+            replay_status = "waiting_confirmed_task"
+        ordinary_provider_api_rows.append(
+            {
+                "api": api,
+                "replay_status": replay_status,
+                "ordinary_label": ordinary_label,
+                "row_count": int(ledger_row.get("row_count") or 0) if ledger_row else 0,
+                "data_date": str(ledger_row.get("data_date") or "") if ledger_row else "",
+                "call_status": call_status,
+                "readback_source": "cache / call_ledger / packet",
+                "boundary": "GET cache 只读回放；不补调 provider/model",
+                "external_calls_triggered": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "contains_secret": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        )
     return {
         "schema_version": QUANT_PROJECTION_SMALL_DATA_WRITEBACK_SCHEMA_VERSION,
         "status": status,
@@ -14838,6 +14877,10 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_readback_row_count": len(ordinary_readback_rows),
         "ordinary_readback_rows_are_cache_only": True,
         "ordinary_readback_rows_create_task": False,
+        "ordinary_provider_api_rows": ordinary_provider_api_rows,
+        "ordinary_provider_api_row_count": len(ordinary_provider_api_rows),
+        "ordinary_provider_api_rows_are_cache_only": True,
+        "ordinary_provider_api_rows_create_task": False,
         "ordinary_readback_boundary": "小数据回放只读取本地 cache / ledger / packet；GET cache 和 React render 不补调 provider/model，不生成交易动作。",
         "ordinary_readback_surfaces_label": "cache / call_ledger / packet",
         "packet_key": PACKET_KEY,

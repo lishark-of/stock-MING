@@ -581,6 +581,7 @@ export default function CandidateRadar() {
   const quantProjectionSmallDataReady =
     searchQuantProjectionSmallDataWriteback.small_data_writeback_ready === true || quantProjectionProviderLedgerReady;
   const quantProjectionSmallDataRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_readback_rows);
+  const quantProjectionProviderApiRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_provider_api_rows);
   const quantProjectionSmallDataReplayState =
     String(searchQuantProjectionSmallDataWriteback.ordinary_readback_summary ?? "") ||
     String(searchQuantProjectionSmallDataWriteback.summary_label ?? "") ||
@@ -895,6 +896,13 @@ export default function CandidateRadar() {
           </div>
           {quantProjectionSmallDataRows.length ? (
             <DataLineageTable rows={quantProjectionSmallDataRows} />
+          ) : null}
+          {quantProjectionProviderApiRows.length ? (
+            <div aria-label="quant projection tushare light api replay">
+              <h3>Tushare light 接口回放</h3>
+              <p className="risk-note">这里逐项回放 trade_cal / daily / daily_basic / moneyflow 的本地 ledger 状态；表格只读，不补调数据源或模型。</p>
+              <DataLineageTable rows={quantProjectionProviderApiRows} />
+            </div>
           ) : null}
           <div className="actions" aria-label="quant projection replay destinations">
             <a href="#factor" aria-label="replay generated stock quant projection">回放股票量化推演</a>
