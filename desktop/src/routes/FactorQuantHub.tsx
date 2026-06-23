@@ -566,11 +566,15 @@ export default function FactorQuantHub() {
           <p className="risk-note">按支持、压制、冲突、缺失四类复核；普通页只读本地 score cache，不重新排序、不补调 provider/model。</p>
           <DataLineageTable rows={ordinaryFactorReviewRows} />
         </div>
-        <div aria-label="stock quant ordinary deepseek governance">
-          <h3>DeepSeek 单独治理状态</h3>
-          <p className="risk-note">DeepSeek 解释单独补证；不阻塞 Tushare-first、支持/压制和次日图谱；普通页不展示 prompt/output。</p>
-          <DataLineageTable rows={ordinaryDeepSeekGovernedExecutorRows} />
-        </div>
+        <details className="developer-audit-details" aria-label="stock quant ordinary p5 governance details">
+          <summary>P5 DeepSeek 单独补证状态</summary>
+          <p className="risk-note">普通主线先复核 P3 支持/压制、次日图谱预览和缺失证据；DeepSeek governed executor 状态默认收起，只作为高级补证参考。</p>
+          <div aria-label="stock quant ordinary deepseek governance">
+            <h3>DeepSeek 单独治理状态</h3>
+            <p className="risk-note">DeepSeek 解释单独补证；不阻塞 Tushare-first、支持/压制和次日图谱；普通页不展示 prompt/output。</p>
+            <DataLineageTable rows={ordinaryDeepSeekGovernedExecutorRows} />
+          </div>
+        </details>
         <div className="actions" aria-label="stock quant projection primary next action">
           <a href={ordinaryQuantPrimaryActionHref} aria-label="open stock quant primary next action">{ordinaryQuantPrimaryActionLabel}</a>
         </div>
