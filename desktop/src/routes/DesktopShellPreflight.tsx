@@ -81,6 +81,23 @@ export default function DesktopShellPreflight() {
           { label: "next click", value: oneClickStartupSummary.desktop_shortcut_target_name as string | undefined },
           { label: "front/back link", value: oneClickStartupSummary.frontend_backend_connection_ready === true ? "ready" : "check", tone: oneClickStartupSummary.frontend_backend_connection_ready === true ? "good" : "warn" },
           { label: "link blockers", value: oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count, tone: Number(oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "API localhost", value: apiBaseInfo.is_localhost === true ? "yes" : "check", tone: apiBaseInfo.is_localhost === true ? "good" : "warn" },
+          { label: "3.0 launcher", value: desktopLauncherContract.status as string | undefined, tone: desktopLauncherContract.status === "local_one_click_launcher_ready" ? "good" : "warn" }
+        ]}
+      />
+
+      <p className="risk-note">工程联通明细、Tauri/package QA、lineage 和 raw payload 已下沉到下方开发 / 审计详情；普通用户先按上面的下一步和联通状态处理。</p>
+
+      <details className="developer-audit-details">
+        <summary>开发 / 审计详情</summary>
+
+      <MetricGrid
+        items={[
+          { label: "P0 startup", value: oneClickStartupSummary.status as string | undefined, tone: oneClickStartupSummary.frontend_backend_connection_ready === true ? "good" : "warn" },
+          { label: "P0 receipt", value: p0LocalConnectionReceipt.status as string | undefined, tone: p0LocalConnectionReceipt.connection_contract_ready === true ? "good" : "warn" },
+          { label: "next click", value: oneClickStartupSummary.desktop_shortcut_target_name as string | undefined },
+          { label: "front/back link", value: oneClickStartupSummary.frontend_backend_connection_ready === true ? "ready" : "check", tone: oneClickStartupSummary.frontend_backend_connection_ready === true ? "good" : "warn" },
+          { label: "link blockers", value: oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count, tone: Number(oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count ?? 0) > 0 ? "warn" : "good" },
           { label: "mode", value: cache.mode as string | undefined },
           { label: "API base", value: String(cache.api_base ?? "--") },
           { label: "API localhost", value: apiBaseInfo.is_localhost === true ? "yes" : "check", tone: apiBaseInfo.is_localhost === true ? "good" : "warn" },
@@ -312,6 +329,7 @@ export default function DesktopShellPreflight() {
         <JsonDetails title="tauri release manifest raw" data={tauriReleaseManifestContract} />
         <JsonDetails title="tauri production package readiness receipt raw" data={productionPackageReadinessReceipt} />
       </PacketCard>
+      </details>
     </>
   );
 }
