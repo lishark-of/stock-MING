@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getDesktopPreflightCache } from "../api/client";
+import BackendOfflineNotice from "../components/BackendOfflineNotice";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -14,12 +15,14 @@ export default function DesktopShellPreflight() {
   const [cache, setCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<string>>([]);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     void getDesktopPreflightCache().then((res) => {
       setCache(res.data);
       setCacheEnvelopeLedger(res.call_ledger ?? []);
       setCacheEnvelopeWarnings(res.warnings ?? []);
+      setError(res.error ?? "");
     });
   }, []);
 
@@ -67,6 +70,7 @@ export default function DesktopShellPreflight() {
         <h1>桌面壳预检</h1>
         <StatusBadge label={String(cache.status ?? "cache_missing")} tone={cache.status === "ready" ? "good" : "warn"} />
       </div>
+      <BackendOfflineNotice error={error} warnings={cacheWarnings} />
 
       <PacketCard title="P0 一键启动联通摘要" subtitle="普通用户先看这里：本地前端/后端是否可以一键联通" status={String(oneClickStartupSummary.status ?? "one_click_startup_summary_missing")}>
         <p>下一步：{String(oneClickStartupSummary.what_user_should_click_next ?? "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。")}</p>

@@ -300,6 +300,7 @@ export default function NextSessionMap() {
       <details className="developer-audit-details">
         <summary>开发 / 审计指标</summary>
         <p className="risk-note">普通用户先看上方次日图谱摘要和图表；QA、coverage、promotion、cache ledger 和原始 packet 默认收起。</p>
+        <p className="risk-note">审计索引：图表合同、交互审计、交互阻断、信号/能力覆盖、替代激活收据、替代阻断、缺失证据、local_activation_receipt_ready、production_blocker_count、missing_evidence_count、cache envelope ledger、cache warnings。</p>
         <div className="actions">
           <button onClick={reviewBrowserQa}>审查本地 QA</button>
           <button onClick={reviewStreamlitParity}>审查信号/能力覆盖</button>
@@ -307,7 +308,7 @@ export default function NextSessionMap() {
         </div>
       <h3>ECharts 图表摘要</h3>
       <DataLineageTable rows={[chartSummary]} />
-      <h3>ECharts 交互成熟度审计</h3>
+      <h3>ECharts 交互成熟度审计 / 交互审计 / 交互阻断</h3>
       <DataLineageTable rows={[interactionReadinessAudit]} />
       <DataLineageTable rows={interactionReadinessRows} />
       <h3>ECharts 生产替代激活收据</h3>
@@ -354,7 +355,7 @@ export default function NextSessionMap() {
       <p>direct_evidence_stage_keys: {Array.isArray(productionStageScope.direct_evidence_stage_keys) ? productionStageScope.direct_evidence_stage_keys.join(" / ") : ""}</p>
       <DataLineageTable rows={[productionStageScope]} />
       <DataLineageTable rows={productionStageScopeRows} />
-      <h3>ECharts 图表数据合同</h3>
+      <h3>ECharts 图表数据合同 / 图表合同</h3>
       <DataLineageTable rows={chartContractRows} />
       <h3>缓存边界</h3>
       <DataLineageTable rows={cacheBoundaryRows} />

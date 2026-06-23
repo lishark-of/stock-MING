@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getDesktopPreflightCache, getHealth, getMigrationStatus } from "../api/client";
+import BackendOfflineNotice from "../components/BackendOfflineNotice";
 import DataLineageTable from "../components/DataLineageTable";
 import JsonDetails from "../components/JsonDetails";
 import MetricGrid from "../components/MetricGrid";
@@ -10,22 +11,26 @@ export default function HealthStatus() {
   const [health, setHealth] = useState<Record<string, unknown>>({});
   const [healthEnvelopeLedger, setHealthEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [healthEnvelopeWarnings, setHealthEnvelopeWarnings] = useState<Array<string>>([]);
+  const [healthError, setHealthError] = useState("");
   const [migration, setMigration] = useState<Record<string, unknown>>({});
   const [desktopPreflight, setDesktopPreflight] = useState<Record<string, unknown>>({});
   const [desktopPreflightEnvelopeLedger, setDesktopPreflightEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [desktopPreflightEnvelopeWarnings, setDesktopPreflightEnvelopeWarnings] = useState<Array<string>>([]);
+  const [desktopPreflightError, setDesktopPreflightError] = useState("");
 
   useEffect(() => {
     void getHealth().then((res) => {
       setHealth(res.data);
       setHealthEnvelopeLedger(res.call_ledger ?? []);
       setHealthEnvelopeWarnings(res.warnings ?? []);
+      setHealthError(res.error ?? "");
     });
     void getMigrationStatus().then((res) => setMigration(res.data));
     void getDesktopPreflightCache().then((res) => {
       setDesktopPreflight(res.data);
       setDesktopPreflightEnvelopeLedger(res.call_ledger ?? []);
       setDesktopPreflightEnvelopeWarnings(res.warnings ?? []);
+      setDesktopPreflightError(res.error ?? "");
     });
   }, []);
 
@@ -60,6 +65,10 @@ export default function HealthStatus() {
         <h1>系统健康</h1>
         <StatusBadge label={String(health.status ?? "loading")} tone={health.status === "ok" ? "good" : "warn"} />
       </div>
+      <BackendOfflineNotice
+        error={healthError || desktopPreflightError}
+        warnings={[...healthWarnings, ...desktopPreflightWarnings]}
+      />
 
       <PacketCard title="P0 前后端联通摘要" subtitle="普通用户先确认本地 FastAPI / React 是否已联通" status={String(oneClickStartupSummary.status ?? "preflight_cache_loading")}>
         <p>联通状态：{p0ConnectionReady ? "已具备本地一键联通条件" : "需要检查本地一键入口"}</p>
