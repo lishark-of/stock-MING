@@ -384,7 +384,10 @@ export default function NextSessionMap() {
           { label: "操作区边界", value: nextSessionOperationZoneBoundary, tone: "good" },
           { label: "结果回放", value: ordinaryResultReplayStatus, tone: chartSummary.has_drawable_data === true ? "good" : "warn" },
           { label: "任务边界", value: nextSessionTaskBoundary, tone: "good" },
-          { label: "仅供研究", value: nextSessionResearchOnlyLabel }
+          { label: "仅供研究", value: nextSessionResearchOnlyLabel },
+          { label: "P3 可读结论", value: nextSessionLastResultLabel, tone: chartSummary.has_drawable_data === true ? "good" : "warn" },
+          { label: "P3 下一步", value: nextSessionChartReviewOrder },
+          { label: "P3 边界", value: nextSessionResearchOnlyLabel, tone: "good" }
         ]}
       />
       <StateClarityRail
