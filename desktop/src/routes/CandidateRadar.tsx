@@ -1039,6 +1039,15 @@ export default function CandidateRadar() {
     : taskReceipt?.ok
       ? "任务已接收：先等 TaskStatusPanel 完成，再刷新本地缓存查看量化推演和次日图谱"
       : "回放顺序：确认生成后先看任务编号，再刷新本地缓存，最后查看量化推演和次日图谱";
+  const quantProjectionConfirmReplayStage = quantProjectionSubmitError
+    ? "P1 blocked：确认任务未创建；先恢复本地 FastAPI 连接"
+    : quantProjectionSmallDataReady
+      ? "P2 ready：cache / ledger / packet 已进入本地回放"
+      : taskReceipt?.ok || quantProjectionPersistedTaskId
+        ? "P1 accepted：任务已接收；等待 TaskStatusPanel success 后刷新 cache"
+        : quantProjectionCanSubmit
+          ? "P1 ready：点击确认后创建 Tushare-first POST task"
+          : "等待有效股票代码；输入不会创建 task";
   const quantProjectionPostConfirmWaitLabel =
     "确认后等待顺序：先看 task id，再看 TaskStatusPanel，等待 success 后刷新 cache，最后回放 #factor/#next";
   const quantProjectionReplayBoundary =
@@ -1114,6 +1123,16 @@ export default function CandidateRadar() {
     }
   ];
   const quantProjectionOrdinaryConfirmOutcomeRows = [
+    {
+      速读项: "P1/P2 当前阶段",
+      当前状态: quantProjectionConfirmReplayStage,
+      用户下一步: taskReceipt?.ok || quantProjectionPersistedTaskId
+        ? "等 TaskStatusPanel success 后刷新本地 cache"
+        : quantProjectionCanSubmit
+          ? "点击确认并生成 3.0 量化推演"
+          : "先输入有效股票代码",
+      边界: "阶段只由本地 task receipt / cache 推导；不创建 task、不补调 provider/model"
+    },
     {
       速读项: "确认任务",
       当前状态: quantProjectionConfirmChainState,
@@ -1399,6 +1418,7 @@ export default function CandidateRadar() {
           <MetricGrid
             items={[
               { label: "确认状态", value: quantProjectionConfirmChainState, tone: taskReceipt?.ok || (quantProjectionCanLaunch && !quantProjectionSubmitError) ? "good" : "warn" },
+              { label: "P1/P2 当前阶段", value: quantProjectionConfirmReplayStage, tone: quantProjectionSmallDataReady || taskReceipt?.ok || quantProjectionPersistedTaskId ? "good" : "warn" },
               { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn" },
               { label: "小数据回放", value: quantProjectionSmallDataStageLabel, tone: quantProjectionSmallDataReady ? "good" : "warn" },
               { label: "可读结论", value: quantProjectionOrdinaryResultSummary, tone: quantProjectionInterpretationReady ? "good" : "warn" },
