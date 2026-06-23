@@ -9,6 +9,7 @@ FASTAPI_LOG="${LOG_DIR}/command_center_3_fastapi.log"
 VITE_LOG="${LOG_DIR}/command_center_3_vite.log"
 API_BASE="${VITE_API_BASE_URL:-http://127.0.0.1:8710}"
 VITE_URL="${COMMAND_CENTER_3_VITE_URL:-http://127.0.0.1:5173}"
+APP_URL="${COMMAND_CENTER_3_APP_URL:-${VITE_URL%/}/#home}"
 
 resolve_python() {
   if [ -n "${STOCK_MING_PYTHON:-}" ]; then
@@ -186,7 +187,7 @@ print_post_startup_readback_checklist() {
   echo "启动后复核清单："
   echo "  1. FastAPI health：${API_BASE%/}/health 已返回 Command Center 3.0 JSON，且 external_calls_on_startup=false。"
   echo "  2. Bootstrap status：${API_BASE%/}/api/bootstrap/status 已返回 runtime-mode packet，只读显示 cache_only/manual/live_light/live_full。"
-  echo "  3. React/Vite 前端：${VITE_URL} 已返回 Command Center 3.0 HTML；页面打开后先看今日作战台的一键启动预检。"
+  echo "  3. React/Vite 前端：${VITE_URL} 已返回 Command Center 3.0 HTML；页面会打开普通首页 ${APP_URL}，先看今日作战台的一键启动预检。"
   echo "边界：启动后复核只读本地 GET 结果；不创建 task、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
 }
 
@@ -221,6 +222,7 @@ echo "Project: ${PROJECT_ROOT}"
 echo "Python: ${PYTHON_BIN}"
 echo "FastAPI: ${API_BASE}"
 echo "React/Vite: ${VITE_URL}"
+echo "Open route: ${APP_URL}"
 echo "Logs: ${LOG_DIR}"
 echo "P0: local one-click launcher starts/checks FastAPI and React/Vite before opening the page."
 echo "Mode: server config controls runtime mode; cache_only remains the safe default unless explicitly configured."
@@ -228,6 +230,7 @@ echo "Link check: launcher verifies ${API_BASE%/}/health and ${API_BASE%/}/api/b
 echo "Health check: /health must return stock-MING Command Center 3.0 JSON with external_calls_on_startup=false."
 echo "Bootstrap check: /api/bootstrap/status must return command_center_3_bootstrap_runtime_mode_packet JSON before the page opens."
 echo "Frontend check: Vite must serve stock-MING Command Center 3.0 index HTML before the page opens."
+echo "Open target: ordinary Command Center home route (#home), so startup does not land on developer/audit details from localStorage."
 echo "Boundary: one-click startup only links local frontend/backend; it does not enable live_light/provider/model execution."
 echo "Safety: this launcher does not set live_light defaults and makes no Tushare, DeepSeek, GitHub, or trading call."
 echo "Acceptance: runtime_mode_config_current_acceptance_* markers are status/checkpoint drift guards, not launcher config or live_light enablement."
@@ -279,9 +282,9 @@ if [ "$FASTAPI_READY" != "1" ] || [ "$API_STATUS_READY" != "1" ] || [ "$VITE_REA
 fi
 
 if command -v open >/dev/null 2>&1; then
-  open "$VITE_URL"
+  open "$APP_URL"
 else
-  echo "请在浏览器打开：${VITE_URL}"
+  echo "请在浏览器打开：${APP_URL}"
 fi
 
 print_post_startup_readback_checklist
