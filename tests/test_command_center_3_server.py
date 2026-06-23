@@ -1631,6 +1631,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(one_click["frontend_api_client_uses_local_fastapi"])
         self.assertTrue(one_click["backend_offline_notice_available"])
         self.assertTrue(one_click["starts_fastapi_when_user_runs"])
+        self.assertTrue(one_click["one_click_fastapi_reload_disabled"])
         self.assertTrue(one_click["starts_vite_when_user_runs"])
         self.assertTrue(one_click["opens_local_browser_when_user_runs"])
         self.assertTrue(one_click["check_only_mode_supported"])
@@ -1752,6 +1753,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(launcher["allows_system_python_only_when_explicit"])
         self.assertTrue(launcher["requires_node_modules"])
         self.assertTrue(launcher["starts_fastapi_when_user_runs"])
+        self.assertTrue(launcher["one_click_fastapi_reload_disabled"])
         self.assertTrue(launcher["starts_vite_when_user_runs"])
         self.assertTrue(launcher["opens_local_browser_when_user_runs"])
         self.assertTrue(launcher["check_only_mode_supported"])
@@ -15565,8 +15567,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
 
         self.assertTrue(path.exists())
         self.assertIn('PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"', script)
+        self.assertIn('STOCK_MING_FASTAPI_RELOAD="${STOCK_MING_FASTAPI_RELOAD:-1}"', script)
         self.assertIn('if [[ ! -x "$PYTHON_BIN" ]]', script)
-        self.assertIn('"$PYTHON_BIN" -m uvicorn server.main:app --reload --port 8710', script)
+        self.assertIn('"$PYTHON_BIN" -m uvicorn server.main:app --reload --host 127.0.0.1 --port 8710', script)
+        self.assertIn('"$PYTHON_BIN" -m uvicorn server.main:app --host 127.0.0.1 --port 8710', script)
+        launcher = Path("scripts/start_command_center_3.command").read_text(encoding="utf-8")
+        self.assertIn('STOCK_MING_FASTAPI_RELOAD=0 PYTHON_BIN="$PYTHON_BIN" nohup "${PROJECT_ROOT}/scripts/dev_server.sh"', launcher)
 
     def test_worker_script_prefers_project_python(self):
         path = Path("scripts/run_worker.sh")

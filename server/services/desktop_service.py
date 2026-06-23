@@ -542,6 +542,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN",
         "Browser open:",
         "Skip-open mode: FastAPI, bootstrap status, and React/Vite are ready",
+        "STOCK_MING_FASTAPI_RELOAD=0",
         "no Tushare, DeepSeek, GitHub, or trading call",
     )
     required_installer_markers = (
@@ -622,6 +623,7 @@ def _desktop_launcher_contract(api_base: str) -> dict[str, Any]:
         "allows_system_python_only_when_explicit": "STOCK_MING_ALLOW_SYSTEM_PYTHON" in source,
         "requires_node_modules": "desktop/node_modules" in source,
         "starts_fastapi_when_user_runs": "scripts/dev_server.sh" in source,
+        "one_click_fastapi_reload_disabled": "STOCK_MING_FASTAPI_RELOAD=0" in source,
         "starts_vite_when_user_runs": "npm run dev" in source,
         "opens_local_browser_when_user_runs": 'open "$APP_URL"' in source,
         "check_only_mode_supported": "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY" in source
@@ -884,6 +886,7 @@ def _one_click_startup_summary(
         "frontend_api_client_uses_local_fastapi": frontend_api_client_local,
         "backend_offline_notice_available": offline_notice_ready,
         "starts_fastapi_when_user_runs": desktop_launcher_contract.get("starts_fastapi_when_user_runs") is True,
+        "one_click_fastapi_reload_disabled": desktop_launcher_contract.get("one_click_fastapi_reload_disabled") is True,
         "starts_vite_when_user_runs": desktop_launcher_contract.get("starts_vite_when_user_runs") is True,
         "opens_local_browser_when_user_runs": desktop_launcher_contract.get("opens_local_browser_when_user_runs") is True,
         "check_only_mode_supported": desktop_launcher_contract.get("check_only_mode_supported") is True,

@@ -257,7 +257,7 @@ else
     echo "FastAPI port has a response, but it is not Command Center 3.0 health JSON."
   fi
   echo "Starting FastAPI..."
-  PYTHON_BIN="$PYTHON_BIN" nohup "${PROJECT_ROOT}/scripts/dev_server.sh" >"$FASTAPI_LOG" 2>&1 &
+  STOCK_MING_FASTAPI_RELOAD=0 PYTHON_BIN="$PYTHON_BIN" nohup "${PROJECT_ROOT}/scripts/dev_server.sh" >"$FASTAPI_LOG" 2>&1 &
 fi
 
 if vite_command_center_ready "$VITE_URL"; then
