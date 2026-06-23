@@ -878,6 +878,15 @@ export default function CandidateRadar() {
     证据: displayText(row["证据"] ?? row.evidence),
     边界: displayText(row["边界"] ?? row.boundary, "不创建 task、不调用模型、不覆盖 action")
   }));
+  const quantProjectionDeepSeekReadinessRows = rows(searchQuantProjectionInterpretation.ordinary_deepseek_governed_executor_readiness_rows).map((row) => ({
+    检查项: displayText(row["检查项"] ?? row.readiness_key),
+    当前状态: displayText(row["当前状态"] ?? row.status),
+    可执行状态: displayText(row["可执行状态"] ?? row.readiness_state),
+    允许动作: displayText(row["允许动作"] ?? row.allowed_action, "未来单独按钮门控 POST task；当前只读回放"),
+    用户下一步: displayText(row["用户下一步"] ?? row.next_action, "先使用 Tushare-first 和本地图谱"),
+    证据: displayText(row["证据"] ?? row.evidence),
+    边界: displayText(row["边界"] ?? row.boundary, "不创建 task、不调用模型、不覆盖 action")
+  }));
   const quantProjectionDeepSeekGovernanceRows = quantProjectionModelGovernanceRows.length
     ? quantProjectionModelGovernanceRows
     : [
@@ -1584,6 +1593,13 @@ export default function CandidateRadar() {
             <details className="developer-audit-details" aria-label="quant projection ordinary deepseek governance status">
               <summary>P5 DeepSeek 治理状态</summary>
               <p className="risk-note">优先读取服务端 ordinary_model_governance_rows：只看执行门控、输出范围和是否阻塞基础图谱；不会从治理状态创建 task 或调用模型。</p>
+              {quantProjectionDeepSeekReadinessRows.length ? (
+                <div aria-label="quant projection ordinary deepseek governed executor readiness">
+                  <h3>P5 governed executor readiness</h3>
+                  <p className="risk-note">优先读取服务端 ordinary_deepseek_governed_executor_readiness_rows：说明何时才允许单独补 DeepSeek、当前为什么不能调、以及后续只能写安全摘要；这张表只读回放，不创建 task、不调用模型。</p>
+                  <DataLineageTable rows={quantProjectionDeepSeekReadinessRows} />
+                </div>
+              ) : null}
               <DataLineageTable rows={quantProjectionDeepSeekGovernanceRows} />
               {quantProjectionDeepSeekChecklistRows.length ? (
                 <div aria-label="quant projection ordinary deepseek governed executor checklist">

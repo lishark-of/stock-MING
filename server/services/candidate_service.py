@@ -16402,6 +16402,135 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
             "candidate_is_not_buy_instruction": True,
         },
     ]
+    ordinary_deepseek_governed_executor_readiness_rows = [
+        {
+            "readiness_key": "explicit_p5_task_gate",
+            "检查项": "显式 P5 任务门控",
+            "当前状态": (
+                "blocked：当前 Tushare-first 链路保持 DeepSeek skipped；没有单独 P5 governed executor task。"
+                if not deepseek_model_ledger_ready
+                else "ready_to_replay：已有 model_ledger，可只读回放安全摘要。"
+            ),
+            "可执行状态": "ready_to_replay" if deepseek_model_ledger_ready else "not_ready_no_p5_task",
+            "允许动作": "未来单独按钮门控 POST task；当前 GET cache / React render 只读回放",
+            "用户下一步": "先使用 Tushare-first 和本地图谱；DeepSeek 单独补证不能混进 P1/P2/P3。",
+            "证据": (
+                f"deepseek_requested={deepseek_requested}; "
+                f"deepseek_skipped={deepseek_skipped}; "
+                f"model_ledger_ready={deepseek_model_ledger_ready}"
+            ),
+            "边界": "没有显式 P5 task、model_ledger 和 sanitizer 前，绝不真实调用 DeepSeek。",
+            "readback_source": "search_quant_projection_interpretation_summary",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "calls_model_from_readback": False,
+            "external_calls_triggered": False,
+            "deepseek_called": False,
+            "uses_model_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_modify_prices": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "readiness_key": "model_ledger_writeback",
+            "检查项": "model_ledger 写回",
+            "当前状态": (
+                "ready：model_ledger 已存在，仍只能作为解释摘要回放。"
+                if deepseek_model_ledger_ready
+                else "waiting：暂无 model_ledger，普通页不得展示模型输出。"
+            ),
+            "可执行状态": "ready_to_replay" if deepseek_model_ledger_ready else "blocked_until_model_ledger",
+            "允许动作": "只读回放 model_ledger 摘要；不回放 raw prompt/output",
+            "用户下一步": "P5 补证必须先写入 model_ledger，再由 cache 只读展示。",
+            "证据": f"model_ledger_ready={deepseek_model_ledger_ready}",
+            "边界": "model_ledger 不得包含 token/key、raw prompt、raw output 或未脱敏 provider error。",
+            "readback_source": "model_ledger_policy",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "calls_model_from_readback": False,
+            "external_calls_triggered": False,
+            "deepseek_called": False,
+            "uses_model_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_modify_prices": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "readiness_key": "sanitized_allowed_fields",
+            "检查项": "白名单摘要字段",
+            "当前状态": "only_safe_summary_allowed：只允许 source / gap / next_step / safety_summary。",
+            "可执行状态": "contract_ready_model_call_pending",
+            "允许动作": "展示脱敏后的解释摘要字段",
+            "用户下一步": "后续 governed executor 只能补解释摘要，不补价格/持仓/factor/operation_zones/action。",
+            "证据": "allowed_fields=source,gap,next_step,safety_summary",
+            "边界": "DeepSeek 不作为数据源；不覆盖价格、持仓、factor、operation_zones、strategy action。",
+            "readback_source": "local_model_governance_policy",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "calls_model_from_readback": False,
+            "external_calls_triggered": False,
+            "deepseek_called": False,
+            "uses_model_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_modify_prices": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "readiness_key": "nonblocking_fallback",
+            "检查项": "不阻塞基础结果",
+            "当前状态": "DeepSeek pending/skipped 时，Tushare-first、P2 小数据和 P3 结果速读继续可用。",
+            "可执行状态": "fallback_ready",
+            "允许动作": "显示 pending/skipped 和本地 Tushare-first 证据",
+            "用户下一步": "DeepSeek 失败、超时或 parse failed 时继续看基础图谱，不触发自动重试。",
+            "证据": f"tushare_ledger_ready={small_data_ready}; factor_next_ready={factor_next_ready}",
+            "边界": "模型失败不得阻塞 UI、不得自动重试外联、不得写交易动作。",
+            "readback_source": "cache / call_ledger / packet",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "calls_model_from_readback": False,
+            "external_calls_triggered": False,
+            "deepseek_called": False,
+            "uses_model_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_modify_prices": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "readiness_key": "promotion_boundary",
+            "检查项": "promotion 边界",
+            "当前状态": "P5 governed executor readiness 不是生产 DeepSeek 验收完成。",
+            "可执行状态": "local_contract_only",
+            "允许动作": "作为后续 P5 task contract / evidence 的本地清单",
+            "用户下一步": "完成 model_ledger、sanitizer、浏览器非阻塞证据和回滚证据后再谈生产验收。",
+            "证据": "local_readiness_contract_not_production_evidence",
+            "边界": "不把 sanitizer、mock、matrix 或本地 readiness 当 production evidence。",
+            "readback_source": "local_model_governance_policy",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "calls_model_from_readback": False,
+            "external_calls_triggered": False,
+            "deepseek_called": False,
+            "uses_model_output": False,
+            "model_output_used": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "does_not_modify_prices": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+    ]
     ordinary_result_readback_rows = [
         {
             "surface": "data_source",
@@ -16582,6 +16711,15 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "ordinary_deepseek_governed_executor_checklist_rows_call_model": False,
         "ordinary_deepseek_governed_executor_checklist_rows_use_model_output": False,
         "ordinary_deepseek_governed_executor_checklist_rows_are_not_trade_signals": True,
+        "ordinary_deepseek_governed_executor_readiness_rows": ordinary_deepseek_governed_executor_readiness_rows,
+        "ordinary_deepseek_governed_executor_readiness_row_count": len(
+            ordinary_deepseek_governed_executor_readiness_rows
+        ),
+        "ordinary_deepseek_governed_executor_readiness_rows_are_cache_only": True,
+        "ordinary_deepseek_governed_executor_readiness_rows_create_task": False,
+        "ordinary_deepseek_governed_executor_readiness_rows_call_model": False,
+        "ordinary_deepseek_governed_executor_readiness_rows_use_model_output": False,
+        "ordinary_deepseek_governed_executor_readiness_rows_are_not_trade_signals": True,
         "ordinary_result_readback_rows": ordinary_result_readback_rows,
         "ordinary_result_readback_row_count": len(ordinary_result_readback_rows),
         "ordinary_result_readback_rows_are_cache_only": True,
@@ -16649,6 +16787,9 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     counts["search_quant_projection_deepseek_governed_executor_checklist_row_count"] = summary.get(
         "ordinary_deepseek_governed_executor_checklist_row_count", 0
     )
+    counts["search_quant_projection_deepseek_governed_executor_readiness_row_count"] = summary.get(
+        "ordinary_deepseek_governed_executor_readiness_row_count", 0
+    )
     view["counts"] = counts
     policy = dict(_as_dict(view.get("policy")))
     policy["search_quant_projection_interpretation_is_cache_replay"] = True
@@ -16673,6 +16814,11 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     policy["search_quant_projection_deepseek_governed_executor_checklist_rows_call_model"] = False
     policy["search_quant_projection_deepseek_governed_executor_checklist_rows_use_model_output"] = False
     policy["search_quant_projection_deepseek_governed_executor_checklist_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_deepseek_governed_executor_readiness_rows_are_cache_only"] = True
+    policy["search_quant_projection_deepseek_governed_executor_readiness_rows_create_task"] = False
+    policy["search_quant_projection_deepseek_governed_executor_readiness_rows_call_model"] = False
+    policy["search_quant_projection_deepseek_governed_executor_readiness_rows_use_model_output"] = False
+    policy["search_quant_projection_deepseek_governed_executor_readiness_rows_are_not_trade_signals"] = True
     view["policy"] = policy
     return view
 

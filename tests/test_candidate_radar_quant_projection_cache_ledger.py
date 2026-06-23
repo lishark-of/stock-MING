@@ -414,6 +414,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(interpretation["ordinary_deepseek_governed_executor_checklist_rows_are_not_trade_signals"])
         self.assertEqual(packet["counts"]["search_quant_projection_interpretation_handoff_row_count"], 4)
         self.assertEqual(packet["counts"]["search_quant_projection_deepseek_governed_executor_checklist_row_count"], 4)
+        self.assertEqual(packet["counts"]["search_quant_projection_deepseek_governed_executor_readiness_row_count"], 5)
         self.assertTrue(packet["policy"]["search_quant_projection_interpretation_handoff_rows_are_cache_only"])
         self.assertFalse(packet["policy"]["search_quant_projection_interpretation_handoff_rows_create_task"])
         self.assertFalse(packet["policy"]["search_quant_projection_interpretation_handoff_rows_use_model_output"])
@@ -423,6 +424,11 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(packet["policy"]["search_quant_projection_deepseek_governed_executor_checklist_rows_call_model"])
         self.assertFalse(packet["policy"]["search_quant_projection_deepseek_governed_executor_checklist_rows_use_model_output"])
         self.assertTrue(packet["policy"]["search_quant_projection_deepseek_governed_executor_checklist_rows_are_not_trade_signals"])
+        self.assertTrue(packet["policy"]["search_quant_projection_deepseek_governed_executor_readiness_rows_are_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_deepseek_governed_executor_readiness_rows_create_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_deepseek_governed_executor_readiness_rows_call_model"])
+        self.assertFalse(packet["policy"]["search_quant_projection_deepseek_governed_executor_readiness_rows_use_model_output"])
+        self.assertTrue(packet["policy"]["search_quant_projection_deepseek_governed_executor_readiness_rows_are_not_trade_signals"])
         self.assertEqual(interpretation["ordinary_result_action_row_count"], 4)
         self.assertTrue(interpretation["ordinary_result_action_rows_are_cache_only"])
         self.assertFalse(interpretation["ordinary_result_action_rows_create_task"])
@@ -512,6 +518,45 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
             self.assertTrue(checklist_row["does_not_execute_trades"])
             self.assertTrue(checklist_row["does_not_modify_strategy_action"])
             self.assertTrue(checklist_row["candidate_is_not_buy_instruction"])
+        self.assertEqual(interpretation["ordinary_deepseek_governed_executor_readiness_row_count"], 5)
+        self.assertTrue(interpretation["ordinary_deepseek_governed_executor_readiness_rows_are_cache_only"])
+        self.assertFalse(interpretation["ordinary_deepseek_governed_executor_readiness_rows_create_task"])
+        self.assertFalse(interpretation["ordinary_deepseek_governed_executor_readiness_rows_call_model"])
+        self.assertFalse(interpretation["ordinary_deepseek_governed_executor_readiness_rows_use_model_output"])
+        self.assertTrue(interpretation["ordinary_deepseek_governed_executor_readiness_rows_are_not_trade_signals"])
+        readiness_rows = {
+            row["readiness_key"]: row
+            for row in interpretation["ordinary_deepseek_governed_executor_readiness_rows"]
+        }
+        self.assertEqual(
+            set(readiness_rows),
+            {
+                "explicit_p5_task_gate",
+                "model_ledger_writeback",
+                "sanitized_allowed_fields",
+                "nonblocking_fallback",
+                "promotion_boundary",
+            },
+        )
+        self.assertEqual(readiness_rows["explicit_p5_task_gate"]["可执行状态"], "not_ready_no_p5_task")
+        self.assertIn("绝不真实调用 DeepSeek", readiness_rows["explicit_p5_task_gate"]["边界"])
+        self.assertIn("普通页不得展示模型输出", readiness_rows["model_ledger_writeback"]["当前状态"])
+        self.assertIn("source,gap,next_step,safety_summary", readiness_rows["sanitized_allowed_fields"]["证据"])
+        self.assertIn("不得自动重试外联", readiness_rows["nonblocking_fallback"]["边界"])
+        self.assertIn("不是生产 DeepSeek 验收完成", readiness_rows["promotion_boundary"]["当前状态"])
+        for readiness_row in readiness_rows.values():
+            self.assertTrue(readiness_row["cache_only_readback"])
+            self.assertFalse(readiness_row["creates_task_from_readback"])
+            self.assertFalse(readiness_row["calls_model_from_readback"])
+            self.assertFalse(readiness_row["external_calls_triggered"])
+            self.assertFalse(readiness_row["deepseek_called"])
+            self.assertFalse(readiness_row["uses_model_output"])
+            self.assertFalse(readiness_row["model_output_used"])
+            self.assertFalse(readiness_row["contains_secret"])
+            self.assertTrue(readiness_row["does_not_execute_trades"])
+            self.assertTrue(readiness_row["does_not_modify_strategy_action"])
+            self.assertTrue(readiness_row["does_not_modify_prices"])
+            self.assertTrue(readiness_row["candidate_is_not_buy_instruction"])
         self.assertTrue(interpretation["interpretation_ready"])
         self.assertEqual(interpretation["provider_api_success_count"], 4)
         self.assertEqual(interpretation["next_session_map_state"], "pending_local_cache_refresh")
