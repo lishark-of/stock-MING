@@ -217,6 +217,37 @@ export default function CommandCenterHome() {
   const desktopRuntime = desktopPreflight.runtime as Record<string, unknown> | undefined;
   const desktopCounts = desktopPreflight.counts as Record<string, unknown> | undefined;
   const oneClickStartupSummary = (desktopPreflight.one_click_startup_summary as Record<string, unknown> | undefined) ?? {};
+  const p0RecoveryStepSourceRows = (desktopPreflight.p0_recovery_steps as Array<Record<string, unknown>> | undefined) ??
+    ((oneClickStartupSummary.ordinary_recovery_steps as Array<Record<string, unknown>> | undefined) ?? []);
+  const dailyCommandP0RecoveryRows = p0RecoveryStepSourceRows.length ? p0RecoveryStepSourceRows.map((row) => ({
+    步骤: row.title ? `${String(row.step ?? "")}. ${String(row.title)}` : String(row.step ?? "恢复步骤"),
+    何时使用: String(row.when ?? "本地联通异常或页面未打开"),
+    用户动作: String(row.action ?? "回到一键启动预检查看失败段"),
+    检查项: String(row.checks ?? "FastAPI / bootstrap status / React/Vite"),
+    边界: "只读展示 p0_recovery_steps；首页不启动 FastAPI/Vite、不创建 task、不调用 provider/model"
+  })) : [
+    {
+      步骤: "1. 打开本地一键入口",
+      何时使用: "页面未打开、健康页显示 check，或本地后端离线",
+      用户动作: "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。",
+      检查项: "启动器会依次等待 FastAPI /health、/api/bootstrap/status 和 React/Vite HTML。",
+      边界: "只读展示 fallback recovery steps；首页不启动 FastAPI/Vite、不创建 task、不调用 provider/model"
+    },
+    {
+      步骤: "2. 按启动器诊断定位失败段",
+      何时使用: "启动器没有自动打开页面",
+      用户动作: "先看 FastAPI、bootstrap status、React/Vite 哪一段没有 ready。",
+      检查项: "对应检查 8710/5173 端口占用和本地 fastapi/vite 日志。",
+      边界: "只读展示 fallback recovery steps；首页不启动 FastAPI/Vite、不创建 task、不调用 provider/model"
+    },
+    {
+      步骤: "3. 刷新健康页确认联通",
+      何时使用: "启动器显示三个检查都 ready 后",
+      用户动作: "回到系统健康页，确认 P0 front/back、P0 receipt 和 one-click launcher 都为 ready。",
+      检查项: "本页只读 GET /health 与 GET /api/desktop/preflight-cache。",
+      边界: "只读展示 fallback recovery steps；首页不启动 FastAPI/Vite、不创建 task、不调用 provider/model"
+    }
+  ];
   const p0OrdinaryQuickActionRows = (desktopPreflight.p0_ordinary_quick_action_rows as Array<Record<string, unknown>> | undefined) ?? [];
   const desktopLauncherContract = (desktopPreflight.desktop_launcher_contract as Record<string, unknown> | undefined) ?? {};
   const recoveryCounts = recovery.counts as Record<string, unknown> | undefined;
@@ -560,6 +591,11 @@ export default function CommandCenterHome() {
           <h3>P0 到 P1 快速行动</h3>
           <p className="risk-note">优先读取 desktop preflight 的 p0_ordinary_quick_action_rows：联通通过后进入下一票雷达，输入代码，再由确认按钮触发 Tushare-first 任务。</p>
           <DataLineageTable rows={p0OrdinaryQuickActionRows} />
+        </div>
+        <div aria-label="daily command p0 startup recovery steps">
+          <h3>一键启动恢复步骤</h3>
+          <p className="risk-note">优先读取 desktop preflight 的 p0_recovery_steps：页面没打开或联通异常时，先按三步恢复；这张表只读展示，不补跑启动器。</p>
+          <DataLineageTable rows={dailyCommandP0RecoveryRows} />
         </div>
         <p className="risk-note">本地联通状态只读来自 FastAPI health 和 desktop preflight cache；不会启动服务、不会写配置、不会调用 provider/model。</p>
         <p className="risk-note">启动诊断来自 desktop preflight cache：FastAPI /health、bootstrap status 和 React/Vite 前端 HTML 分段检查；首页只展示，不执行。</p>

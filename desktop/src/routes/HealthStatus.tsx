@@ -178,7 +178,11 @@ export default function HealthStatus() {
           <p className="risk-note">健康页只告诉普通用户下一步去哪；真正的 Tushare-first 工作仍要到下一票雷达点击确认按钮。</p>
           <DataLineageTable rows={p0ToP1OrdinaryHandoffRows} />
         </div>
-        <DataLineageTable rows={p0RecoverySteps} />
+        <div aria-label="health p0 startup recovery steps">
+          <h3>一键启动恢复步骤</h3>
+          <p className="risk-note">这张表来自 desktop preflight 的 p0_recovery_steps；健康页只读展示恢复动作，不补跑启动器、不创建 task。</p>
+          <DataLineageTable rows={p0RecoverySteps} />
+        </div>
         <details className="developer-audit-details">
           <summary>P0 联通明细</summary>
           <DataLineageTable rows={oneClickConnectionRows} />

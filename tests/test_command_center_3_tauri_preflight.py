@@ -293,6 +293,7 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         launcher = LAUNCHER.read_text(encoding="utf-8")
         page = DESKTOP_PREFLIGHT_PAGE.read_text(encoding="utf-8")
         health = HEALTH_PAGE.read_text(encoding="utf-8")
+        home = HOME_PAGE.read_text(encoding="utf-8")
 
         self.assertIn("启动后复核清单", launcher)
         self.assertIn("启动后复核清单", page)
@@ -343,9 +344,22 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("p0_to_p1_ordinary_handoff_rows", health)
         self.assertIn('aria-label="health p0 post startup readback checklist"', health)
         self.assertIn('aria-label="health p0 to p1 ordinary handoff"', health)
+        self.assertIn('aria-label="health p0 startup recovery steps"', health)
+        self.assertIn("这张表来自 desktop preflight 的 p0_recovery_steps", health)
         self.assertIn("系统健康页只回读本地 GET 结果，不补跑启动器、不创建 task", health)
         self.assertIn("真正的 Tushare-first 工作仍要到下一票雷达点击确认按钮", health)
+        self.assertIn("健康页只读展示恢复动作，不补跑启动器、不创建 task", health)
+        self.assertIn("dailyCommandP0RecoveryRows", home)
+        self.assertIn("p0_recovery_steps", home)
+        self.assertIn('aria-label="daily command p0 startup recovery steps"', home)
+        self.assertIn("一键启动恢复步骤", home)
+        self.assertIn("页面没打开或联通异常时，先按三步恢复", home)
+        self.assertIn("这张表只读展示，不补跑启动器", home)
+        self.assertIn("首页不启动 FastAPI/Vite、不创建 task、不调用 provider/model", home)
         self.assertLess(health.index("启动后复核清单"), health.index("联通后搜票路径"))
+        self.assertLess(health.index("联通后搜票路径"), health.index("一键启动恢复步骤"))
+        self.assertLess(home.index("P0 到 P1 快速行动"), home.index("一键启动恢复步骤"))
+        self.assertLess(home.index("一键启动恢复步骤"), home.index("<summary>开发 / 审计详情</summary>"))
         self.assertLess(page.index("前后端联通状态"), page.index("<summary>开发 / 审计详情</summary>"))
         self.assertLess(page.index("一键启动就绪"), page.index("<summary>开发 / 审计详情</summary>"))
         self.assertLess(page.index("启动后复核清单"), page.index("<summary>开发 / 审计详情</summary>"))
@@ -355,6 +369,10 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertLess(page.index("启动后复核清单"), page.index("开发 / 审计详情：P0 联通明细"))
         self.assertNotIn("postBootstrapLiveStartup", page)
         self.assertNotIn("postBootstrapLiveStartup", health)
+        home_summary = home[
+            home.index('title="今日作战台摘要"') : home.index("<summary>开发 / 审计详情</summary>")
+        ]
+        self.assertNotIn("postBootstrapLiveStartup", home_summary)
 
 
 if __name__ == "__main__":
