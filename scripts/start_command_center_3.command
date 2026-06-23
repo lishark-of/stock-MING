@@ -11,6 +11,7 @@ API_BASE="${VITE_API_BASE_URL:-http://127.0.0.1:8710}"
 VITE_URL="${COMMAND_CENTER_3_VITE_URL:-http://127.0.0.1:5173}"
 APP_URL="${COMMAND_CENTER_3_APP_URL:-${VITE_URL%/}/#home}"
 LAUNCHER_CHECK_ONLY="${COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY:-0}"
+LAUNCHER_SKIP_OPEN="${COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN:-0}"
 
 resolve_python() {
   if [ -n "${STOCK_MING_PYTHON:-}" ]; then
@@ -188,7 +189,11 @@ print_post_startup_readback_checklist() {
   echo "启动后复核清单："
   echo "  1. FastAPI health：${API_BASE%/}/health 已返回 Command Center 3.0 JSON，且 external_calls_on_startup=false。"
   echo "  2. Bootstrap status：${API_BASE%/}/api/bootstrap/status 已返回 runtime-mode packet，只读显示 cache_only/manual/live_light/live_full。"
-  echo "  3. React/Vite 前端：${VITE_URL} 已返回 Command Center 3.0 HTML；页面会打开普通首页 ${APP_URL}，先看今日作战台的一键启动预检。"
+  if [ "${LAUNCHER_SKIP_OPEN:-0}" = "1" ]; then
+    echo "  3. React/Vite 前端：${VITE_URL} 已返回 Command Center 3.0 HTML；skip-open 已启用，请手动打开普通首页 ${APP_URL}。"
+  else
+    echo "  3. React/Vite 前端：${VITE_URL} 已返回 Command Center 3.0 HTML；页面会打开普通首页 ${APP_URL}，先看今日作战台的一键启动预检。"
+  fi
   echo "边界：启动后复核只读本地 GET 结果；不创建 task、不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
 }
 
@@ -226,6 +231,7 @@ echo "React/Vite: ${VITE_URL}"
 echo "Open route: ${APP_URL}"
 echo "Logs: ${LOG_DIR}"
 echo "Check only: ${LAUNCHER_CHECK_ONLY}"
+echo "Browser open: $([ "$LAUNCHER_SKIP_OPEN" = "1" ] && printf "skipped" || printf "enabled")"
 echo "P0: local one-click launcher starts/checks FastAPI and React/Vite before opening the page."
 echo "Mode: server config controls runtime mode; cache_only remains the safe default unless explicitly configured."
 echo "Link check: launcher verifies ${API_BASE%/}/health and ${API_BASE%/}/api/bootstrap/status before opening the page."
@@ -290,7 +296,10 @@ if [ "$FASTAPI_READY" != "1" ] || [ "$API_STATUS_READY" != "1" ] || [ "$VITE_REA
   exit 1
 fi
 
-if command -v open >/dev/null 2>&1; then
+if [ "$LAUNCHER_SKIP_OPEN" = "1" ]; then
+  echo "Skip-open mode: FastAPI, bootstrap status, and React/Vite are ready; browser was not opened automatically."
+  echo "请在浏览器打开：${APP_URL}"
+elif command -v open >/dev/null 2>&1; then
   open "$APP_URL"
 else
   echo "请在浏览器打开：${APP_URL}"

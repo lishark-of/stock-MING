@@ -114,6 +114,12 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertIn("Check-only mode: resolved launcher configuration without starting FastAPI", source)
         self.assertIn("probing URLs, writing logs, opening a browser, creating tasks", source)
         self.assertIn("unset COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY and rerun this launcher", source)
+        self.assertIn("COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN", source)
+        self.assertIn("Browser open:", source)
+        self.assertIn('if [ "$LAUNCHER_SKIP_OPEN" = "1" ]; then', source)
+        self.assertIn("skip-open 已启用，请手动打开普通首页 ${APP_URL}", source)
+        self.assertIn("Skip-open mode: FastAPI, bootstrap status, and React/Vite are ready", source)
+        self.assertIn("browser was not opened automatically", source)
         self.assertIn('wait_for_command_center_health "FastAPI" "${API_BASE%/}/health" 40', source)
         self.assertIn('wait_for_bootstrap_status "${API_BASE%/}/api/bootstrap/status" 40', source)
         self.assertIn('wait_for_vite_command_center "$VITE_URL" 40', source)
@@ -151,7 +157,11 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
         self.assertNotIn("GITHUB_TOKEN", source)
 
     def test_command_center_3_launcher_check_only_does_not_start_or_open(self):
-        env = {**os.environ, "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY": "1"}
+        env = {
+            **os.environ,
+            "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY": "1",
+            "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN": "1",
+        }
         result = subprocess.run(
             ["bash", str(LAUNCHER)],
             check=True,
@@ -164,6 +174,7 @@ class CommandCenter3TauriPreflightTests(unittest.TestCase):
 
         self.assertIn("Command Center 3.0 local launcher", output)
         self.assertIn("Check only: 1", output)
+        self.assertIn("Browser open: skipped", output)
         self.assertIn("Check-only mode: resolved launcher configuration without starting FastAPI", output)
         self.assertIn("starting React/Vite", output)
         self.assertIn("probing URLs", output)
