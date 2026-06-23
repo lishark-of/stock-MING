@@ -175,6 +175,37 @@ export default function NextSessionMap() {
   const nextSessionReplayDestinationBoundary =
     "回放入口只切换本地页面锚点；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones";
   const nextSessionOperationZoneBoundary = "operation_zones 只表示条件区间和复核提示；不是买卖指令，不写交易动作，不改 strategy action";
+  const ordinaryResultReplayStatus = chartSummary.has_drawable_data === true
+    ? "ready_cache_replay"
+    : "waiting_for_cache_or_manual_task";
+  const ordinaryResultReplayRows = [
+    {
+      step: "1",
+      surface: "下一票雷达",
+      readable_result: chartSummary.has_drawable_data === true ? "可从已确认标的继续复核" : "先回到雷达输入代码并点击确认",
+      evidence: "候选池和搜票确认按钮在 #candidates；本页不扫描、不搜票。",
+      next_step: "需要新标的时回到下一票雷达确认代码。",
+      boundary: "输入和页面打开不外联；只有确认按钮可创建 Tushare-first 后台 task。"
+    },
+    {
+      step: "2",
+      surface: "股票量化推演",
+      readable_result: chartSummary.uses_real_daily_close === true ? "上游 Tushare daily close 已在本地缓存参与图谱" : "等待上游 Tushare ledger 或本地阻断回放",
+      evidence: nextSessionTushareSourceLabel,
+      next_step: "先看支持/压制摘要，再回到次日图谱复核路径和操作区。",
+      boundary: "本页只读 cache，不补调 Tushare 或 DeepSeek；DeepSeek governed executor 单独补。"
+    },
+    {
+      step: "3",
+      surface: "次日图谱",
+      readable_result: chartSummary.has_drawable_data === true
+        ? `情景=${String(chartSummary.scenario_series_count ?? 0)} / 参考线=${String(chartSummary.reference_line_count ?? 0)} / 操作区=${String(chartSummary.operation_zone_count ?? 0)}`
+        : "暂无可绘制图谱；可手动生成本地任务。",
+      evidence: nextSessionLastCache,
+      next_step: nextSessionChartReviewOrder,
+      boundary: nextSessionOperationZoneBoundary
+    }
+  ];
   const scenarioRows = rowsFromArray(chartPayload?.scenario_series).map((row) => ({
     scenario_key: row.scenario_key ?? row.scenario_name,
     scenario_name: row.scenario_name,
@@ -218,10 +249,13 @@ export default function NextSessionMap() {
           { label: "回放路径", value: nextSessionReplayPath, tone: "good" },
           { label: "回放入口边界", value: nextSessionReplayDestinationBoundary, tone: "good" },
           { label: "操作区边界", value: nextSessionOperationZoneBoundary, tone: "good" },
+          { label: "结果回放", value: ordinaryResultReplayStatus, tone: chartSummary.has_drawable_data === true ? "good" : "warn" },
           { label: "任务边界", value: nextSessionTaskBoundary, tone: "good" },
           { label: "仅供研究", value: nextSessionResearchOnlyLabel }
         ]}
       />
+      <h3>三段结果回放</h3>
+      <DataLineageTable rows={ordinaryResultReplayRows} />
       <div className="actions" aria-label="next session replay handoff actions">
         <a href="#candidates" aria-label="return to candidate radar confirmed symbol entry">回到下一票雷达</a>
         <a href="#factor" aria-label="open stock quant projection replay">查看股票量化推演</a>
@@ -245,42 +279,16 @@ export default function NextSessionMap() {
         items={[
           { label: "状态", value: String(packet.status ?? "cache") },
           { label: "cache source", value: String(packet.cache_source ?? "--") },
-          { label: "本地快照", value: Boolean(packet.source_snapshot_available), tone: packet.source_snapshot_available ? "good" : "warn" },
-          { label: "旧 projection", value: Boolean(legacy?.available), tone: legacy?.available ? "warn" : "neutral" },
           { label: "精确图谱", value: chartSummary.is_exact_next_session_packet === true, tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn" },
           { label: "真实 close", value: chartSummary.uses_real_daily_close === true, tone: chartSummary.uses_real_daily_close === true ? "good" : "warn" },
           { label: "可绘制", value: chartSummary.has_drawable_data === true, tone: chartSummary.has_drawable_data === true ? "good" : "warn" },
-          { label: "图表合同", value: String(chartContract?.schema_version ?? "missing"), tone: chartContract ? "good" : "warn" },
           { label: "情景路径", value: chartSummary.scenario_series_count as number | undefined },
           { label: "参考线", value: chartSummary.reference_line_count as number | undefined },
           { label: "操作区", value: chartSummary.operation_zone_count as number | undefined },
           { label: "历史点", value: chartSummary.historical_point_count as number | undefined },
-          { label: "成熟度", value: String(chartMaturity.status ?? chartSummary.maturity_status ?? "partial"), tone: chartMaturity.status === "ready" ? "good" : "warn" },
-          { label: "交互审计", value: String(interactionReadinessAudit.status ?? chartSummary.interaction_readiness_status ?? "missing"), tone: interactionReadinessAudit.status === "interaction_blocked" ? "bad" : "warn" },
-          { label: "交互阻断", value: Number(interactionReadinessAudit.blocking_count ?? chartSummary.interaction_blocking_count ?? 0), tone: Number(interactionReadinessAudit.blocking_count ?? chartSummary.interaction_blocking_count ?? 0) ? "bad" : "good" },
-          { label: "信号/能力覆盖", value: interactionReadinessAudit.streamlit_parity_complete === true ? "完成" : "待验收", tone: interactionReadinessAudit.streamlit_parity_complete === true ? "good" : "warn" },
-          { label: "替代激活收据", value: String(replacementActivation.status ?? "missing"), tone: replacementActivation.local_activation_receipt_ready === true ? "good" : "warn" },
-          { label: "替代阻断", value: Number(replacementActivation.production_blocker_count ?? 0), tone: Number(replacementActivation.production_blocker_count ?? 0) > 0 ? "warn" : "good" },
-          { label: "缺失证据", value: Number(replacementActivation.missing_evidence_count ?? 0), tone: Number(replacementActivation.missing_evidence_count ?? 0) > 0 ? "warn" : "good" },
-          { label: "QA runbook", value: String(browserQaRunbook.status ?? "missing"), tone: browserQaRunbook.local_runbook_ready === true ? "good" : "warn" },
-          { label: "QA evidence", value: String(browserQaEvidence.status ?? "missing"), tone: browserQaEvidence.next_browser_qa_evidence_ready === true ? "good" : "warn" },
-          { label: "QA review", value: String(browserQaReview.status ?? "missing"), tone: browserQaReview.local_browser_qa_review_ready === true ? "good" : "warn" },
-          { label: "QA 阻断", value: Number(browserQaReview.blocking_review_count ?? 0), tone: Number(browserQaReview.blocking_review_count ?? 0) > 0 ? "warn" : "good" },
-          { label: "coverage review", value: String(streamlitParityReview.status ?? "missing"), tone: streamlitParityReview.local_streamlit_parity_review_ready === true ? "good" : "warn" },
-          { label: "coverage 阻断", value: Number(streamlitParityReview.blocking_review_count ?? 0), tone: Number(streamlitParityReview.blocking_review_count ?? 0) > 0 ? "warn" : "good" },
-          { label: "durable evidence", value: String(durableEvidenceRecipe.status ?? "missing"), tone: durableEvidenceRecipe.local_recipe_ready === true ? "good" : "warn" },
-          { label: "durable 阻断", value: Number(durableEvidenceRecipe.durable_evidence_blocker_count ?? 0), tone: Number(durableEvidenceRecipe.durable_evidence_blocker_count ?? 0) > 0 ? "warn" : "good" },
-          { label: "promotion review", value: String(productionPromotionReview.status ?? "missing"), tone: productionPromotionReview.local_production_promotion_review_ready === true ? "good" : "warn" },
-          { label: "promotion 阻断", value: Number(productionPromotionReview.production_blocker_count ?? 0), tone: Number(productionPromotionReview.production_blocker_count ?? 0) > 0 ? "warn" : "good" },
-          { label: "阶段清单", value: String(productionStageScope.status ?? "missing"), tone: productionStageScope.local_manifest_ready === true ? "good" : "warn" },
-          { label: "阶段 direct evidence", value: Number(productionStageScope.direct_evidence_stage_count ?? 0), tone: Number(productionStageScope.direct_evidence_stage_count ?? 0) > 0 ? "good" : "warn" },
-          { label: "阶段 pending", value: Number(productionStageScope.pending_stage_count ?? 0), tone: Number(productionStageScope.pending_stage_count ?? 0) > 0 ? "warn" : "good" },
-          { label: "路径锚定", value: `${String(chartMaturity.scenario_anchored_count ?? chartSummary.scenario_anchored_count ?? 0)}/${String(chartMaturity.scenario_anchor_count ?? 0)}` },
           { label: "最新 close", value: String(latestCloseAnchor.price ?? "--") },
           { label: "持仓冲突", value: positionConflict.has_conflict === true ? "有" : "无", tone: positionConflict.has_conflict === true ? "bad" : "good" },
           { label: "DeepSeek", value: String(chartPayload?.deepseek_status ?? chartSummary.deepseek_status ?? "not_called"), tone: chartPayload?.deepseek_status === "success" ? "good" : "neutral" },
-          { label: "cache envelope ledger", value: cacheCallLedger.length },
-          { label: "cache warnings", value: cacheWarnings.length },
           { label: "修改 action", value: packet.does_not_modify_action === false ? "会" : "不会", tone: packet.does_not_modify_action === false ? "bad" : "good" },
           { label: "修改 operation_zones", value: packet.does_not_modify_operation_zones === false ? "会" : "不会", tone: packet.does_not_modify_operation_zones === false ? "bad" : "good" }
         ]}
