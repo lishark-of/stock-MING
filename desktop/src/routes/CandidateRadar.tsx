@@ -910,13 +910,14 @@ export default function CandidateRadar() {
     : searchQuantProjectionReceipt.status
       ? "等待 Tushare-first 回放；普通页只看回放状态"
       : "输入代码并确认后创建 Tushare-first 任务";
+  const quantProjectionPersistedTaskId = String(searchQuantProjectionReceipt.latest_task_id ?? searchQuantProjectionReceipt.task_id ?? cache.task_id ?? "");
+  const quantProjectionPersistedTaskStep = String(searchQuantProjectionReceipt.latest_task_current_step ?? searchQuantProjectionReceipt.status ?? "");
+  const quantProjectionDisplayTaskId = quantProjectionPersistedTaskId || taskId;
   const quantProjectionLastResult = [
     `当前标的：${quantProjectionDisplaySymbol || "--"}`,
     `本地记录：${String(searchQuantProjectionReceipt.status ?? "暂无")}`,
-    `后台状态：${String((searchQuantProjectionReceipt.task_id ?? taskId) || "未创建任务")}`
+    `后台状态：${quantProjectionDisplayTaskId || "未创建任务"}`
   ].join(" / ");
-  const quantProjectionPersistedTaskId = String(searchQuantProjectionReceipt.latest_task_id ?? searchQuantProjectionReceipt.task_id ?? cache.task_id ?? "");
-  const quantProjectionPersistedTaskStep = String(searchQuantProjectionReceipt.latest_task_current_step ?? searchQuantProjectionReceipt.status ?? "");
   const quantProjectionTaskReadbackState = quantProjectionPersistedTaskId
     ? `任务回放：${quantProjectionPersistedTaskId} / ${String(searchQuantProjectionReceipt.latest_task_status ?? "cache")} / ${quantProjectionPersistedTaskStep || "等待状态"}`
     : "任务回放：暂无；确认任务完成后写入本地 cache / packet";
@@ -1414,7 +1415,7 @@ export default function CandidateRadar() {
           </div>
           <div aria-label="quant projection post confirm user actions">
             <h3>确认后看什么</h3>
-            <p className="risk-note">点击确认后先看任务编号和 TaskStatusPanel，再刷新本地 cache，最后回放量化推演和次日图谱；这些行动不会创建第二个 provider/model 任务。</p>
+            <p className="risk-note">点击确认后先看任务编号和 TaskStatusPanel，再刷新本地 cache，最后回放量化推演和次日图谱；这些行动不会创建第二个外部补证任务。</p>
             <DataLineageTable rows={quantProjectionPostConfirmActionRows} />
           </div>
           <div aria-label="quant projection ordinary small data writeback targets">
