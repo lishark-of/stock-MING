@@ -1552,6 +1552,7 @@ export default function CandidateRadar() {
           </PacketCard>
         </div>
 
+        <div id="factor" aria-label="quant projection factor replay anchor">
         <PacketCard title="搜票量化推演" subtitle="输入代码并确认后创建 Tushare-first 按钮门控 POST task / worker；DeepSeek governed executor 单独补" status={String(searchQuantProjectionReceipt.status ?? "local_receipt")}>
           <div className="actions">
             <input
@@ -1653,7 +1654,7 @@ export default function CandidateRadar() {
             <DataLineageTable rows={quantProjectionSmallDataWritebackRows} />
           </div>
           </details>
-          <div aria-label="quant projection ordinary explainable result readback">
+          <div id="next" aria-label="quant projection ordinary explainable result readback">
             <h3>解释结果清单</h3>
             <p className="risk-note">普通入口只回放数据来源、量化推演、次日图谱和安全边界；原始 receipt、prompt 或审计字段仍下沉在详情中。</p>
             <div aria-label="quant projection ordinary readback index">
@@ -1786,6 +1787,7 @@ export default function CandidateRadar() {
             <DataLineageTable rows={searchQuantProjectionRows} />
           </details>
         </PacketCard>
+        </div>
 
         <PacketCard title="快速雷达扫描" subtitle="手动刷新本地快扫、自选池或输入股票池；不自动外联" status={String(scanCoverage.coverage_status ?? "cache")}>
           <div className="actions">
