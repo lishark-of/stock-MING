@@ -76,6 +76,31 @@ export default function DesktopShellPreflight() {
           边界: "只读前端入口，不调用 Tushare/DeepSeek/GitHub、不执行真实交易"
         }
       ];
+  const p0OrdinaryConnectionRows = rows(cache.p0_ordinary_connection_rows).length
+    ? rows(cache.p0_ordinary_connection_rows)
+    : [
+        {
+          环节: "FastAPI",
+          当前状态: oneClickStartupSummary.frontend_backend_connection_ready === true ? "ready" : "check",
+          用户下一步: "如果未 ready，先看启动器 FastAPI 诊断和 command_center_3_fastapi.log",
+          通过条件: "本地 /health 返回 Command Center 3.0 JSON",
+          边界: "预检页只读 GET cache，不启动 FastAPI、不创建 task"
+        },
+        {
+          环节: "Bootstrap status",
+          当前状态: oneClickStartupSummary.frontend_backend_connection_ready === true ? "ready" : "check",
+          用户下一步: "如果未 ready，回启动器确认 bootstrap status 段是否返回 runtime-mode packet",
+          通过条件: "本地 /api/bootstrap/status 返回 runtime-mode packet",
+          边界: "只读运行模式，不写配置、不启用 live_light"
+        },
+        {
+          环节: "React/Vite",
+          当前状态: oneClickStartupSummary.frontend_backend_connection_ready === true ? "ready" : "check",
+          用户下一步: "如果未 ready，检查 5173 是否被占用并查看 command_center_3_vite.log",
+          通过条件: "本地 Vite 返回 Command Center 3.0 前端 HTML",
+          边界: "只读前端入口，不调用 Tushare/DeepSeek/GitHub、不执行真实交易"
+        }
+      ];
   const devLaunchPlan = rows(cache.dev_launch_plan);
   const desktopLauncherRows = rows(cache.desktop_launcher_rows);
   const productionLaunchPlan = rows(cache.production_launch_plan);
@@ -107,6 +132,11 @@ export default function DesktopShellPreflight() {
         <p>frontend_backend_connection_ready / blocker_count: {String(oneClickStartupSummary.frontend_backend_connection_ready ?? false)} / {String(oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count ?? 0)}</p>
         <p>P0 本地联通收据：{String(p0LocalConnectionReceipt.status ?? "p0_local_connection_receipt_loading")}；实时探针：{String(p0LocalConnectionReceipt.current_runtime_probe_executed_by_get_cache ?? false)}</p>
         <p>{String(p0LocalConnectionReceipt.ordinary_label ?? "本地一键入口会先确认 FastAPI、bootstrap status 和 React/Vite 都就绪，再打开页面。")}</p>
+        <div aria-label="p0 ordinary frontend backend connection checklist">
+          <h3>前后端联通状态</h3>
+          <p className="risk-note">普通用户先看 FastAPI、Bootstrap status、React/Vite 三段是否 ready；工程行表仍在开发 / 审计详情。</p>
+          <DataLineageTable rows={p0OrdinaryConnectionRows} />
+        </div>
         <DataLineageTable rows={p0RecoverySteps} />
         <div aria-label="p0 post startup readback checklist">
           <h3>启动后复核清单</h3>
@@ -115,18 +145,6 @@ export default function DesktopShellPreflight() {
         </div>
         <p>普通用户摘要不展开联通行表；工程联通明细在下方开发 / 审计详情。</p>
       </PacketCard>
-
-      <MetricGrid
-        items={[
-          { label: "P0 startup", value: oneClickStartupSummary.status as string | undefined, tone: oneClickStartupSummary.frontend_backend_connection_ready === true ? "good" : "warn" },
-          { label: "P0 receipt", value: p0LocalConnectionReceipt.status as string | undefined, tone: p0LocalConnectionReceipt.connection_contract_ready === true ? "good" : "warn" },
-          { label: "next click", value: oneClickStartupSummary.desktop_shortcut_target_name as string | undefined },
-          { label: "front/back link", value: oneClickStartupSummary.frontend_backend_connection_ready === true ? "ready" : "check", tone: oneClickStartupSummary.frontend_backend_connection_ready === true ? "good" : "warn" },
-          { label: "link blockers", value: oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count, tone: Number(oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count ?? 0) > 0 ? "warn" : "good" },
-          { label: "API localhost", value: apiBaseInfo.is_localhost === true ? "yes" : "check", tone: apiBaseInfo.is_localhost === true ? "good" : "warn" },
-          { label: "3.0 launcher", value: desktopLauncherContract.status as string | undefined, tone: desktopLauncherContract.status === "local_one_click_launcher_ready" ? "good" : "warn" }
-        ]}
-      />
 
       <p className="risk-note">工程联通明细、Tauri/package QA、lineage 和 raw payload 已下沉到下方开发 / 审计详情；普通用户先按上面的下一步和联通状态处理。</p>
 
