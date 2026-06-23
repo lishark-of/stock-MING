@@ -177,7 +177,7 @@ export default function NextSessionMap() {
   const nextSessionReplayPath =
     "回放路径：下一票雷达确认代码 -> 股票量化推演支持/压制 -> 次日图谱路径/参考线/操作区";
   const nextSessionReplayDestinationBoundary =
-    "回放入口只切换本地页面锚点；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones";
+    "回放入口只切换本地模块路由（#candidates/#factor）；不创建 task、不调用 Tushare/DeepSeek、不写 cache、不改 operation_zones";
   const nextSessionOperationZoneBoundary = "operation_zones 只表示条件区间和复核提示；不是买卖指令，不写交易动作，不改 strategy action";
   const packetOrdinaryResultReplayRows = rowsFromArray(packet.ordinary_result_replay_rows);
   const packetOrdinaryChartReviewRows = rowsFromArray(packet.ordinary_chart_review_rows);
@@ -446,14 +446,14 @@ export default function NextSessionMap() {
         <DataLineageTable rows={ordinaryChartReviewRows} />
       </div>
       <div className="actions" aria-label="next session replay handoff actions">
-        <a href="#candidates" aria-label="return to candidate radar confirmed symbol entry">回到下一票雷达</a>
-        <a href="#factor" aria-label="open stock quant projection replay">查看股票量化推演</a>
+        <a href="#candidates" title="切换到下一票雷达模块；换标的仍需确认按钮" aria-label="return to candidate radar confirmed symbol entry">回到下一票雷达</a>
+        <a href="#factor" title="切换到股票量化推演模块；只读 Factor cache 回放" aria-label="open stock quant projection replay">查看股票量化推演</a>
       </div>
       <div className="actions">
         <button onClick={refreshCache} title={nextSessionCacheButtonLabel} aria-label={nextSessionCacheButtonLabel}>查看缓存</button>
         <button onClick={launchTask} title={nextSessionGenerateButtonLabel} aria-label={nextSessionGenerateButtonLabel}>生成任务</button>
       </div>
-      <p className="risk-note">{nextSessionReplayPath}；这些回放入口只做本地页面切换，不创建任务、不刷新 Tushare/DeepSeek。</p>
+      <p className="risk-note">{nextSessionReplayPath}；这些回放入口只做本地模块路由切换，不创建任务、不刷新 Tushare/DeepSeek。</p>
       <p className="risk-note">摘要里的查看缓存只读取本地 GET cache；生成任务只创建按钮门控 POST task，不调用 Tushare 或 DeepSeek，不写交易动作。</p>
       <p className="risk-note">普通用户先按“图表路径 -&gt; 参考线 -&gt; 操作区 -&gt; 缺少证据”复核；operation_zones 只是条件区间，不是买卖或下单指令。</p>
       <details className="ordinary-audit-shortcuts" aria-label="next session ordinary audit shortcuts">
