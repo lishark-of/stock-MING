@@ -14849,6 +14849,72 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "does_not_modify_strategy_action": True,
         },
     ]
+    ordinary_writeback_target_rows = [
+        {
+            "target": "cache",
+            "写入位置": "cache",
+            "当前状态": "已写入本地 cache" if cache_packet_written else "等待确认按钮写入",
+            "用户看法": "刷新页面只读回放本地缓存；不会自动补数" if cache_packet_written else "输入或搜索不会写 cache；点击确认后等待后台写入",
+            "证据": f"packet={PACKET_KEY}; source=GET /api/candidate-radar/cache",
+            "边界": "GET cache 只读回放；React render 不补调 provider/model",
+            "readback_source": "GET /api/candidate-radar/cache",
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "target": "call_ledger",
+            "写入位置": "call_ledger",
+            "当前状态": (
+                f"Tushare ledger 已写入：{provider_api_success_count}/{provider_api_call_count} 个接口"
+                if provider_ready
+                else "缺凭据本地阻断已写入"
+                if credential_missing_count
+                else "等待按钮门控 provider ledger"
+            ),
+            "用户看法": "只看 ledger 是否存在或阻断原因；接口级明细下沉到高级状态",
+            "证据": f"provider_call_source={provider_call_source}; provider_ready={provider_ready}",
+            "边界": "call_ledger 只由 POST task / worker 产生；GET cache 和 React render 不调用 Tushare",
+            "readback_source": "search_quant_provider_model_acceptance_receipt.provider_call_ledger",
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "provider_task_tushare_ledger_ready": provider_ready,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "target": "packet",
+            "写入位置": "packet",
+            "当前状态": f"{PACKET_KEY} 已写入" if cache_packet_written else "等待写入 candidate radar packet",
+            "用户看法": "packet 回放 task id、安全步骤、结果位置和下一步",
+            "证据": f"schema={QUANT_PROJECTION_SMALL_DATA_WRITEBACK_SCHEMA_VERSION}; surfaces=cache/call_ledger/packet",
+            "边界": "packet 不包含凭据、不生成交易动作、不覆盖 strategy action",
+            "readback_source": "command_center_3_candidate_radar_cache",
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+    ]
     latest_task_id = _safe_text(
         quant_receipt.get("latest_task_id")
         or quant_receipt.get("task_id")
@@ -15063,6 +15129,10 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_readback_row_count": len(ordinary_readback_rows),
         "ordinary_readback_rows_are_cache_only": True,
         "ordinary_readback_rows_create_task": False,
+        "ordinary_writeback_target_rows": ordinary_writeback_target_rows,
+        "ordinary_writeback_target_row_count": len(ordinary_writeback_target_rows),
+        "ordinary_writeback_target_rows_are_cache_only": True,
+        "ordinary_writeback_target_rows_create_task": False,
         "ordinary_task_readback_rows": ordinary_task_readback_rows,
         "ordinary_task_readback_row_count": len(ordinary_task_readback_rows),
         "ordinary_task_readback_rows_are_cache_only": True,

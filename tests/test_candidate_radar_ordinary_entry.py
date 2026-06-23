@@ -243,7 +243,12 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("不交易、不改 strategy action", self.page)
         self.assertIn("quantProjectionSmallDataWritebackStatus", self.page)
         self.assertIn("quantProjectionSmallDataWritebackRows", self.page)
+        self.assertIn("quantProjectionSmallDataTargetRows", self.page)
         self.assertIn("ordinary_writeback_target_rows", self.page)
+        self.assertLess(
+            self.page.index("quantProjectionSmallDataTargetRows.length"),
+            self.page.index("quantProjectionSmallDataOrdinaryReadbackRows.length"),
+        )
         self.assertIn('aria-label="quant projection ordinary small data writeback targets"', self.page)
         self.assertIn("小数据写入位置", self.page)
         self.assertIn("小数据写入位置可回放：cache、call_ledger、packet 已有本地读回；普通入口只显示位置和状态。", self.page)

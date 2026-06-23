@@ -651,6 +651,7 @@ export default function CandidateRadar() {
   const quantProjectionSmallDataReady =
     searchQuantProjectionSmallDataWriteback.small_data_writeback_ready === true || quantProjectionProviderLedgerReady;
   const quantProjectionSmallDataRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_readback_rows);
+  const quantProjectionSmallDataTargetRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_target_rows);
   const quantProjectionProviderApiRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_provider_api_rows);
   const quantProjectionSmallDataReplayState =
     String(searchQuantProjectionSmallDataWriteback.ordinary_readback_summary ?? "") ||
@@ -691,10 +692,10 @@ export default function CandidateRadar() {
       ? "GET cache 只读回放；React render 不补调 provider/model"
       : "等待本地 packet 确认只读边界"
   }));
-  const quantProjectionSmallDataWritebackRows = quantProjectionSmallDataOrdinaryReadbackRows.length
-    ? quantProjectionSmallDataOrdinaryReadbackRows
-    : rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_target_rows).length
-      ? rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_target_rows)
+  const quantProjectionSmallDataWritebackRows = quantProjectionSmallDataTargetRows.length
+    ? quantProjectionSmallDataTargetRows
+    : quantProjectionSmallDataOrdinaryReadbackRows.length
+      ? quantProjectionSmallDataOrdinaryReadbackRows
     : [
         {
           写入位置: "cache",

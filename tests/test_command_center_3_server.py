@@ -38414,6 +38414,22 @@ class CommandCenter3FastAPITests(unittest.TestCase):
             small_data["ordinary_readback_provenance_summary"],
         )
         self.assertTrue(small_data["ordinary_readback_rows_are_cache_only"])
+        self.assertTrue(small_data["ordinary_writeback_target_rows_are_cache_only"])
+        self.assertFalse(small_data["ordinary_writeback_target_rows_create_task"])
+        self.assertEqual(small_data["ordinary_writeback_target_row_count"], 3)
+        writeback_targets = {row["target"]: row for row in small_data["ordinary_writeback_target_rows"]}
+        self.assertEqual(set(writeback_targets), {"cache", "call_ledger", "packet"})
+        self.assertEqual(writeback_targets["cache"]["readback_source"], "GET /api/candidate-radar/cache")
+        self.assertEqual(
+            writeback_targets["call_ledger"]["provider_task_call_source"],
+            "post_task_call_ledger",
+        )
+        self.assertTrue(writeback_targets["call_ledger"]["provider_task_tushare_ledger_ready"])
+        self.assertIn("command_center_3_candidate_radar_cache", writeback_targets["packet"]["当前状态"])
+        self.assertFalse(
+            any(row["readback_external_calls_triggered"] for row in small_data["ordinary_writeback_target_rows"])
+        )
+        self.assertFalse(any(row["contains_secret"] for row in small_data["ordinary_writeback_target_rows"]))
         self.assertTrue(small_data["ordinary_provider_api_rows_are_cache_only"])
         self.assertFalse(small_data["cache_get_external_calls"])
         self.assertFalse(small_data["react_render_external_calls"])
