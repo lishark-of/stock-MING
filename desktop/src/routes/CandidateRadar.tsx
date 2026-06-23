@@ -54,6 +54,7 @@ export default function CandidateRadar() {
   const [bootstrapEnvelopeWarnings, setBootstrapEnvelopeWarnings] = useState<Array<string>>([]);
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
+  const [quantProjectionSubmitting, setQuantProjectionSubmitting] = useState(false);
   const [customPoolText, setCustomPoolText] = useState("");
   const [searchSymbol, setSearchSymbol] = useState("");
   const [loading, setLoading] = useState(true);
@@ -84,7 +85,9 @@ export default function CandidateRadar() {
       setTaskReceipt(res);
       if (res.ok) setTaskId(res.data.task_id);
     });
-  const launchQuantProjection = () =>
+  const launchQuantProjection = () => {
+    if (!quantProjectionCanSubmit || quantProjectionSubmitting) return;
+    setQuantProjectionSubmitting(true);
     void postCandidateRadarQuantProjection({
       scan_mode: "search_quant_projection",
       symbol: normalizeAshareSymbolInput(searchSymbol).normalized,
@@ -98,7 +101,8 @@ export default function CandidateRadar() {
         setTaskId(res.data.task_id);
         refreshCache();
       }
-    });
+    }).finally(() => setQuantProjectionSubmitting(false));
+  };
   const launchQuantProjectionAcceptanceDryRun = () =>
     void postCandidateRadarQuantProjectionAcceptanceDryRun({
       scan_mode: "search_quant_projection",
@@ -499,13 +503,18 @@ export default function CandidateRadar() {
     "雷达摘要只读展示候选缓存；manual/live_light 补证必须走 POST task / worker，不在 React 渲染中直连 Tushare 或 DeepSeek";
   const quantProjectionSymbolValidation = normalizeAshareSymbolInput(searchSymbol);
   const quantProjectionCanSubmit = quantProjectionSymbolValidation.valid;
-  const quantProjectionDisabledReason = quantProjectionCanSubmit
+  const quantProjectionCanLaunch = quantProjectionCanSubmit && !quantProjectionSubmitting;
+  const quantProjectionDisabledReason = quantProjectionSubmitting
+    ? "任务提交中：正在创建 Tushare-first POST task；请等待本地任务编号回写，避免重复提交。"
+    : quantProjectionCanSubmit
     ? `按钮已启用：确认后创建 Tushare-first 按钮门控 POST task；DeepSeek 保持 skipped；已确认 ${quantProjectionSymbolValidation.normalized}`
     : searchSymbol.trim()
       ? `按钮不可用原因：${quantProjectionSymbolValidation.reason}；请输入 6 位 A 股代码或 002008.SZ 这类后缀`
       : "按钮不可用原因：先输入股票代码；输入本身不会创建 task";
   const quantProjectionInputBoundaryLabel = "输入股票代码只做本地校验；不会创建任务，也不会调用 Tushare 或 DeepSeek";
-  const quantProjectionSubmitButtonLabel = quantProjectionCanSubmit
+  const quantProjectionSubmitButtonLabel = quantProjectionSubmitting
+    ? "正在提交 Tushare-first 后台任务；请等待本地 task id"
+    : quantProjectionCanSubmit
     ? `点击确认才创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task；DeepSeek skipped，成功后通过 GET cache 回放`
     : quantProjectionDisabledReason;
   const quantProjectionSubmitAriaLabel = quantProjectionCanSubmit
@@ -530,7 +539,9 @@ export default function CandidateRadar() {
   const quantProjectionSubmitHint = quantProjectionDisplaySymbol
     ? "点击确认后提交 Tushare-first 后台链；服务端凭据缺失时只写本地阻断，DeepSeek 默认 skipped，需 governed executor 完成后再单独补。"
     : "先输入股票代码；仅输入不会创建 task，也不会调用 Tushare 或 DeepSeek。";
-  const quantProjectionConfirmChainState = taskReceipt?.ok
+  const quantProjectionConfirmChainState = quantProjectionSubmitting
+    ? "确认任务正在提交：按钮已暂时禁用；等待本地 FastAPI 返回 task id，避免重复创建后台链"
+    : taskReceipt?.ok
     ? "确认任务已接收：先看 TaskStatusPanel，再通过 GET cache 回放 Tushare ledger、量化推演和次日图谱"
     : quantProjectionCanSubmit
       ? "点击确认会提交 Tushare-first 后台链；凭据可用才写 provider ledger，凭据缺失只写本地阻断；DeepSeek skipped"
@@ -900,11 +911,11 @@ export default function CandidateRadar() {
               title={quantProjectionInputBoundaryLabel}
             />
             <button
-              disabled={!quantProjectionCanSubmit}
+              disabled={!quantProjectionCanLaunch}
               onClick={launchQuantProjection}
               title={quantProjectionSubmitButtonLabel}
               aria-label={quantProjectionSubmitAriaLabel}
-            >确认并生成 3.0 量化推演</button>
+            >{quantProjectionSubmitting ? "提交中..." : "确认并生成 3.0 量化推演"}</button>
             <a href="#factor" aria-label="open generated quant projection result">查看量化推演结果</a>
           </div>
           <p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>
@@ -912,7 +923,7 @@ export default function CandidateRadar() {
           <p className="risk-note" aria-live="polite">{quantProjectionTushareFirstState}</p>
           <MetricGrid
             items={[
-              { label: "确认状态", value: quantProjectionConfirmChainState, tone: taskReceipt?.ok || quantProjectionCanSubmit ? "good" : "warn" },
+              { label: "确认状态", value: quantProjectionConfirmChainState, tone: taskReceipt?.ok || quantProjectionCanLaunch ? "good" : "warn" },
               { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn" },
               { label: "小数据回放", value: quantProjectionSmallDataStageLabel, tone: quantProjectionSmallDataReady ? "good" : "warn" },
               { label: "可读结论", value: quantProjectionOrdinaryResultSummary, tone: quantProjectionInterpretationReady ? "good" : "warn" },
