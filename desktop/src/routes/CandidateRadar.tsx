@@ -1174,6 +1174,37 @@ export default function CandidateRadar() {
       边界: "只切换 #factor/#next 锚点，不重新创建 task、不改 strategy action"
     }
   ];
+  const ordinaryP1ConfirmPathLabel = quantProjectionCanSubmit
+    ? `P1 主路径：点击确认创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task`
+    : "P1 主路径：先输入股票代码；输入只做本地校验，确认按钮才创建 Tushare-first task";
+  const ordinaryP1ConfirmPathBoundary =
+    "P1 主路径只允许确认按钮创建 Tushare-first task；搜索输入、页面打开、React render、GET cache 和结果链接都不外联。";
+  const ordinaryP1ConfirmPathRows = [
+    {
+      阶段: "1. 输入股票代码",
+      当前状态: quantProjectionInputValidation,
+      用户下一步: quantProjectionCanSubmit ? "确认按钮已可用，点击一次即可创建后台链" : "输入 6 位 A 股代码或带 .SZ/.SH/.BJ 后缀",
+      边界: "输入只做本地校验；不创建 task、不调用 Tushare/DeepSeek/GitHub"
+    },
+    {
+      阶段: "2. 点击确认按钮",
+      当前状态: quantProjectionDisabledReason,
+      用户下一步: quantProjectionCanLaunch ? "点击确认并生成 3.0 量化推演" : "等待有效代码和本地后端联通",
+      边界: "只有确认按钮会 POST /api/candidate-radar/quant-projection；DeepSeek skipped，不交易"
+    },
+    {
+      阶段: "3. 看任务接收",
+      当前状态: quantProjectionConfirmChainState,
+      用户下一步: taskReceipt?.ok || quantProjectionPersistedTaskId ? "看 task id 和 TaskStatusPanel" : "确认后等待本地 task id；失败先回 P0 联通恢复",
+      边界: "TaskStatusPanel 只轮询本地 FastAPI；不补调 provider/model、不写交易动作"
+    },
+    {
+      阶段: "4. 回放本地结果",
+      当前状态: quantProjectionReplayDestinationState,
+      用户下一步: quantProjectionReplayDestinationNextStep,
+      边界: "只从 cache / ledger / packet 回放 #factor/#next；不创建第二个 task、不改 strategy action"
+    }
+  ];
   const quantProjectionConfirmReplayStageRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_confirm_replay_stage_rows).map((row) => ({
     速读项: displayText(row["速读项"] ?? row.stage_key),
     当前状态: displayText(row["当前状态"] ?? row.status),
@@ -1453,6 +1484,8 @@ export default function CandidateRadar() {
             { label: "下一步", value: ordinaryNextClick },
             { label: "主下一步", value: ordinaryPrimaryActionLabel },
             { label: "主下一步边界", value: ordinaryPrimaryActionBoundary, tone: "good" },
+            { label: "P1 主路径", value: ordinaryP1ConfirmPathLabel, tone: quantProjectionCanSubmit ? "good" : "warn" },
+            { label: "P1 主路径边界", value: ordinaryP1ConfirmPathBoundary, tone: "good" },
             { label: "候选分组", value: ordinaryCandidateGroupLabel },
             { label: "候选解读", value: ordinaryCandidateReviewOrder },
             { label: "分组边界", value: ordinaryCandidateGroupBoundary, tone: "good" },
@@ -1479,6 +1512,11 @@ export default function CandidateRadar() {
             { label: "仅供研究", value: "候选不是买入指令；不真实交易、不下单、不改交易策略", tone: "good" }
           ]}
         />
+        <div aria-label="candidate radar ordinary p1 confirm path">
+          <h3>P1 普通确认路径</h3>
+          <p className="risk-note">普通用户先看这条 P1 路径：输入只做本地校验，确认按钮才创建 Tushare-first 后台任务，随后只读回放 cache / ledger / packet。</p>
+          <DataLineageTable rows={ordinaryP1ConfirmPathRows} />
+        </div>
         <div className="actions" aria-label="candidate radar primary next action">
           {Number(counts.candidate_count ?? 0) ? (
             <a href="#candidate-pool" aria-label="open local candidate pool from radar summary">{ordinaryPrimaryActionLabel}</a>

@@ -23,6 +23,8 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
             'label: "下一步"',
             'label: "主下一步"',
             'label: "主下一步边界"',
+            'label: "P1 主路径"',
+            'label: "P1 主路径边界"',
             'label: "候选分组"',
             'label: "扫描范围"',
             'label: "候选来源"',
@@ -49,6 +51,21 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn('    : "先点击运行本地快扫";', self.page)
         self.assertIn("ordinaryPrimaryActionLabel", self.page)
         self.assertIn("ordinaryPrimaryActionBoundary", self.page)
+        self.assertIn("ordinaryP1ConfirmPathLabel", self.page)
+        self.assertIn("ordinaryP1ConfirmPathBoundary", self.page)
+        self.assertIn("ordinaryP1ConfirmPathRows", self.page)
+        self.assertIn("P1 主路径：点击确认创建 ${quantProjectionSymbolValidation.normalized} 的 Tushare-first POST task", self.page)
+        self.assertIn("P1 主路径：先输入股票代码；输入只做本地校验，确认按钮才创建 Tushare-first task", self.page)
+        self.assertIn("P1 主路径只允许确认按钮创建 Tushare-first task", self.page)
+        self.assertIn("搜索输入、页面打开、React render、GET cache 和结果链接都不外联", self.page)
+        self.assertIn('aria-label="candidate radar ordinary p1 confirm path"', self.page)
+        self.assertIn("P1 普通确认路径", self.page)
+        self.assertIn("普通用户先看这条 P1 路径", self.page)
+        self.assertIn('阶段: "1. 输入股票代码"', self.page)
+        self.assertIn('阶段: "2. 点击确认按钮"', self.page)
+        self.assertIn('阶段: "3. 看任务接收"', self.page)
+        self.assertIn('阶段: "4. 回放本地结果"', self.page)
+        self.assertIn("只有确认按钮会 POST /api/candidate-radar/quant-projection", self.page)
         self.assertIn("查看本地候选池", self.page)
         self.assertIn("主下一步只跳转本地候选池，不创建 task、不刷新外部数据或模型", self.page)
         self.assertIn("主下一步只创建按钮门控本地快扫 POST task，不直连 Tushare/DeepSeek", self.page)
@@ -596,9 +613,14 @@ class CandidateRadarOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("{quantProjectionSummaryGuidance}", summary_slice)
         self.assertIn("quantProjectionOrdinaryConfirmOutcomeRows", summary_slice)
         self.assertIn("P1 确认结果速读", summary_slice)
+        self.assertIn("ordinaryP1ConfirmPathRows", summary_slice)
+        self.assertIn("P1 普通确认路径", summary_slice)
+        self.assertIn('aria-label="candidate radar ordinary p1 confirm path"', summary_slice)
+        self.assertIn("普通用户先看这条 P1 路径", summary_slice)
         self.assertIn('aria-live="polite"', summary_slice)
         self.assertIn('aria-label="candidate radar primary next action"', summary_slice)
         self.assertIn('aria-label="candidate radar next user actions"', summary_slice)
+        self.assertLess(summary_slice.index('aria-label="candidate radar ordinary p1 confirm path"'), summary_slice.index('aria-label="candidate radar primary next action"'))
         self.assertLess(summary_slice.index('aria-label="candidate radar primary next action"'), summary_slice.index('aria-label="candidate radar next user actions"'))
         self.assertLess(summary_slice.index('aria-label="candidate radar next user actions"'), summary_slice.index("{quantProjectionSummaryGuidance}"))
         self.assertNotIn("launchQuantProjectionAcceptanceDryRun", summary_slice)
