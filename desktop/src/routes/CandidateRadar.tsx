@@ -727,6 +727,16 @@ export default function CandidateRadar() {
           边界: "packet 不包含凭据、不生成交易动作、不覆盖 strategy action"
         }
       ];
+  const quantProjectionWritebackSurfaceSummaryRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_writeback_surface_summary_rows).map((row) => ({
+    写入面: displayText(row["写入面"] ?? row.surface),
+    当前状态: displayText(row["当前状态"] ?? row.status),
+    回放来源: displayText(row["回放来源"] ?? row.readback_source, "GET /api/candidate-radar/cache"),
+    下一步: displayText(row["下一步"] ?? row.next_action, quantProjectionSmallDataNextStep),
+    边界: displayText(row["边界"] ?? row.boundary, quantProjectionSmallDataReadbackContract)
+  }));
+  const quantProjectionWritebackSurfaceRows = quantProjectionWritebackSurfaceSummaryRows.length
+    ? quantProjectionWritebackSurfaceSummaryRows
+    : quantProjectionSmallDataWritebackRows;
   const quantProjectionProviderCallSource =
     String(searchQuantProjectionSmallDataWriteback.provider_call_source ?? "") ||
     "pending_no_provider_call";
@@ -1291,6 +1301,11 @@ export default function CandidateRadar() {
           <div aria-label="quant projection ordinary small data writeback targets">
             <h3>小数据写入位置</h3>
             <p className="risk-note">{quantProjectionSmallDataWritebackStatus}</p>
+            <div aria-label="quant projection ordinary writeback surface summary">
+              <h3>P2 写入面速读</h3>
+              <p className="risk-note">优先读取服务端 ordinary_writeback_surface_summary_rows：普通入口只看 cache、call_ledger、packet 三个写入面是否可回放；GET cache 不创建 task。</p>
+              <DataLineageTable rows={quantProjectionWritebackSurfaceRows} />
+            </div>
             {quantProjectionSmallDataActionRows.length ? (
               <div aria-label="quant projection ordinary small data writeback actions">
                 <h3>小数据行动清单</h3>

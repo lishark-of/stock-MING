@@ -14915,6 +14915,97 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "does_not_modify_strategy_action": True,
         },
     ]
+    if provider_ready:
+        call_ledger_surface_status = (
+            f"POST task ledger 已写入：Tushare {provider_api_success_count}/{provider_api_call_count} 个接口"
+        )
+        call_ledger_surface_next = "回放股票量化推演和次日图谱；缺口只作为待补证据。"
+    elif credential_missing_count:
+        call_ledger_surface_status = "本地阻断 ledger 已写入：缺少服务端 Tushare 凭据"
+        call_ledger_surface_next = "配置服务端凭据后重新点击确认；页面不会补调 provider。"
+    elif provider_ledger_visible:
+        call_ledger_surface_status = (
+            f"部分 provider ledger 可回放：Tushare {provider_api_success_count}/{provider_api_call_count} 个接口"
+        )
+        call_ledger_surface_next = "补齐 Tushare light ledger 后再回放本地结果。"
+    elif execution_request_ready:
+        call_ledger_surface_status = "执行申请已 ready；等待按钮门控 provider task 写入 ledger"
+        call_ledger_surface_next = "运行显式 Tushare-first provider task；DeepSeek 仍保持 skipped。"
+    else:
+        call_ledger_surface_status = "等待确认按钮后的 POST task / worker 写入 ledger"
+        call_ledger_surface_next = "先输入代码并点击确认；输入和 GET cache 不创建 provider task。"
+    ordinary_writeback_surface_summary_rows = [
+        {
+            "surface": "cache",
+            "写入面": "cache",
+            "普通速读": "页面刷新后只读回放本地缓存。",
+            "当前状态": "本地 cache 已写入" if cache_packet_written else "等待确认按钮写入本地 cache",
+            "回放来源": "GET /api/candidate-radar/cache",
+            "下一步": ordinary_readback_next_step,
+            "边界": "GET cache 只读本地 packet；React render 不补调 provider/model。",
+            "readback_source": "GET /api/candidate-radar/cache",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "surface": "call_ledger",
+            "写入面": "call_ledger",
+            "普通速读": "只确认 Tushare ledger 是否由确认任务写入。",
+            "当前状态": call_ledger_surface_status,
+            "回放来源": "search_quant_provider_model_acceptance_receipt.provider_call_ledger",
+            "下一步": call_ledger_surface_next,
+            "边界": "call_ledger 只允许 POST task / worker 产生；GET cache 和 React render 不调 Tushare/DeepSeek。",
+            "readback_source": "search_quant_provider_model_acceptance_receipt.provider_call_ledger",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "provider_task_tushare_ledger_ready": provider_ready,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+        {
+            "surface": "packet",
+            "写入面": "packet",
+            "普通速读": "回放 task id、安全步骤、结果入口和下一步。",
+            "当前状态": f"packet={PACKET_KEY} 已写入" if cache_packet_written else "等待写入 candidate radar packet",
+            "回放来源": "command_center_3_candidate_radar_cache",
+            "下一步": next_action,
+            "边界": "packet 不包含凭据、不生成交易动作、不覆盖 strategy action。",
+            "readback_source": "command_center_3_candidate_radar_cache",
+            "cache_only_readback": True,
+            "creates_task_from_readback": False,
+            "readback_external_calls_triggered": False,
+            "provider_task_call_source": provider_call_source,
+            "provider_task_external_call_observed": provider_external_call_observed,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+            "candidate_is_not_buy_instruction": True,
+        },
+    ]
     latest_task_id = _safe_text(
         quant_receipt.get("latest_task_id")
         or quant_receipt.get("task_id")
@@ -15544,6 +15635,11 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_writeback_target_row_count": len(ordinary_writeback_target_rows),
         "ordinary_writeback_target_rows_are_cache_only": True,
         "ordinary_writeback_target_rows_create_task": False,
+        "ordinary_writeback_surface_summary_rows": ordinary_writeback_surface_summary_rows,
+        "ordinary_writeback_surface_summary_row_count": len(ordinary_writeback_surface_summary_rows),
+        "ordinary_writeback_surface_summary_rows_are_cache_only": True,
+        "ordinary_writeback_surface_summary_rows_create_task": False,
+        "ordinary_writeback_surface_summary_rows_are_not_trade_signals": True,
         "ordinary_writeback_action_rows": ordinary_writeback_action_rows,
         "ordinary_writeback_action_row_count": len(ordinary_writeback_action_rows),
         "ordinary_writeback_action_rows_are_cache_only": True,
@@ -15645,6 +15741,9 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     counts["search_quant_projection_small_data_writeback_action_row_count"] = summary.get(
         "ordinary_writeback_action_row_count", 0
     )
+    counts["search_quant_projection_writeback_surface_summary_row_count"] = summary.get(
+        "ordinary_writeback_surface_summary_row_count", 0
+    )
     view["counts"] = counts
     policy = dict(_as_dict(view.get("policy")))
     policy["search_quant_projection_small_data_writeback_is_cache_replay"] = True
@@ -15663,6 +15762,9 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
     policy["search_quant_projection_small_data_writeback_action_rows_are_cache_only"] = True
     policy["search_quant_projection_small_data_writeback_action_rows_create_task"] = False
     policy["search_quant_projection_small_data_writeback_action_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_writeback_surface_summary_rows_are_cache_only"] = True
+    policy["search_quant_projection_writeback_surface_summary_rows_create_task"] = False
+    policy["search_quant_projection_writeback_surface_summary_rows_are_not_trade_signals"] = True
     view["policy"] = policy
     return view
 
