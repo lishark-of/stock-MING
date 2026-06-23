@@ -515,6 +515,16 @@ export default function CandidateRadar() {
     "先看 Top / Watch / Excluded 分组，再看候选来源、评分说明和缺少证据；不要从 provider 审计表开始";
   const ordinaryCandidateGroupBoundary =
     "Top 是优先复核，Watch 是观察，Excluded 是排除或等待；三者都不是买入、卖出或加仓指令";
+  const ordinaryCandidateReviewRows = rows(cache.candidate_rows).map((row, index) => ({
+    序号: displayText(row.rank, String(index + 1)),
+    标的: displayText(row.ticker),
+    名称: displayText(row.name),
+    分数: displayText(row.score),
+    复核状态: displayText(row.action_state ?? row.status_label ?? row.tone, "等待复核"),
+    证据摘要: displayText(row.evidence_chain_summary, "暂无摘要；查看原始候选详情"),
+    来源: displayText(row.source, "本地候选缓存"),
+    边界: "按本地缓存顺序复核；不重排、不重算分数、不生成交易动作"
+  }));
   const ordinaryScanScopeLabel = [
     `模式：${String(cache.scan_mode ?? "cache_only")}`,
     `范围：${String(scanExecutionSummary.scan_family ?? localPoolAudit.input_source ?? "本地缓存")}`
@@ -1919,8 +1929,13 @@ export default function CandidateRadar() {
         </div>
       </details>
 
-      <PacketCard title="候选列表" subtitle="只读展示本地候选结果；按缓存顺序展示，不自动扫描或重排" status="cache">
-        <DataLineageTable rows={rows(cache.candidate_rows)} />
+      <PacketCard title="候选复核清单" subtitle="普通入口只显示标的、分数、状态、证据摘要和边界；原始 candidate_rows 下沉到详情" status="cache">
+        <DataLineageTable rows={ordinaryCandidateReviewRows} />
+        <details className="developer-audit-details">
+          <summary>原始 candidate_rows 审计</summary>
+          <p>原始候选字段只用于排查 lineage、data_gaps、trigger/invalidation 和旧雷达兼容；普通复核清单不重算、不排序、不生成交易动作。</p>
+          <DataLineageTable rows={rows(cache.candidate_rows)} />
+        </details>
       </PacketCard>
 
       <div className="grid">
