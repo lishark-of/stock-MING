@@ -589,6 +589,48 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(packet["policy"]["search_quant_projection_deepseek_governed_executor_readiness_rows_call_model"])
         self.assertFalse(packet["policy"]["search_quant_projection_deepseek_governed_executor_readiness_rows_use_model_output"])
         self.assertTrue(packet["policy"]["search_quant_projection_deepseek_governed_executor_readiness_rows_are_not_trade_signals"])
+        result_checkpoint = interpretation["ordinary_result_checkpoint_contract"]
+        self.assertEqual(
+            result_checkpoint["schema_version"],
+            "candidate_radar_search_quant_projection_result_checkpoint.v1",
+        )
+        self.assertEqual(result_checkpoint["status"], "ready_pending_local_map")
+        self.assertEqual(result_checkpoint["readback_route"], "GET /api/candidate-radar/cache")
+        self.assertEqual(result_checkpoint["source_packet_key"], "command_center_3_candidate_radar_cache")
+        self.assertIn(response["data"]["task_id"], result_checkpoint["source_task_id"])
+        self.assertTrue(result_checkpoint["ordinary_result_readable"])
+        self.assertTrue(result_checkpoint["provider_data_source_verified"])
+        self.assertFalse(result_checkpoint["blocker_explanation_visible"])
+        self.assertEqual(result_checkpoint["data_source_state"], "tushare_first_ledger_ready")
+        self.assertEqual(result_checkpoint["evidence_source"], "Tushare-first ledger")
+        self.assertEqual(result_checkpoint["next_session_map_state"], "pending_local_cache_refresh")
+        self.assertEqual(result_checkpoint["missing_evidence"], ["Factor/Next/ECharts local cache replay"])
+        self.assertEqual(result_checkpoint["missing_evidence_count"], 1)
+        self.assertEqual(result_checkpoint["safe_explanation_fields"], ["source", "gap", "next_step", "safety_summary"])
+        self.assertEqual(
+            result_checkpoint["deepseek_state"],
+            "skipped_by_tushare_first_request_waiting_governed_executor",
+        )
+        self.assertTrue(result_checkpoint["uses_tushare_ledger"])
+        self.assertFalse(result_checkpoint["uses_deepseek_output"])
+        self.assertFalse(result_checkpoint["uses_model_output"])
+        self.assertTrue(result_checkpoint["cache_only_readback"])
+        self.assertFalse(result_checkpoint["creates_task_from_readback"])
+        self.assertFalse(result_checkpoint["calls_model_from_readback"])
+        self.assertFalse(result_checkpoint["readback_external_calls_triggered"])
+        self.assertTrue(result_checkpoint["does_not_execute_trades"])
+        self.assertTrue(result_checkpoint["does_not_modify_strategy_action"])
+        self.assertFalse(result_checkpoint["production_quant_projection_complete"])
+        self.assertTrue(interpretation["ordinary_result_checkpoint_is_cache_only"])
+        self.assertFalse(interpretation["ordinary_result_checkpoint_creates_task"])
+        self.assertFalse(interpretation["ordinary_result_checkpoint_calls_model"])
+        self.assertTrue(interpretation["ordinary_result_checkpoint_is_not_trade_signal"])
+        self.assertEqual(packet["counts"]["search_quant_projection_result_checkpoint_missing_evidence_count"], 1)
+        self.assertTrue(packet["counts"]["search_quant_projection_result_checkpoint_readable"])
+        self.assertTrue(packet["policy"]["search_quant_projection_result_checkpoint_is_cache_only"])
+        self.assertFalse(packet["policy"]["search_quant_projection_result_checkpoint_creates_task"])
+        self.assertFalse(packet["policy"]["search_quant_projection_result_checkpoint_calls_model"])
+        self.assertTrue(packet["policy"]["search_quant_projection_result_checkpoint_is_not_trade_signal"])
         self.assertEqual(interpretation["ordinary_result_action_row_count"], 4)
         self.assertTrue(interpretation["ordinary_result_action_rows_are_cache_only"])
         self.assertFalse(interpretation["ordinary_result_action_rows_create_task"])
@@ -1025,6 +1067,31 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(interpretation["ordinary_result_action_rows_create_task"])
         self.assertFalse(interpretation["ordinary_result_action_rows_use_model_output"])
         self.assertTrue(interpretation["ordinary_result_action_rows_are_not_trade_signals"])
+        result_checkpoint = interpretation["ordinary_result_checkpoint_contract"]
+        self.assertEqual(
+            result_checkpoint["schema_version"],
+            "candidate_radar_search_quant_projection_result_checkpoint.v1",
+        )
+        self.assertEqual(result_checkpoint["status"], "blocked_missing_credentials")
+        self.assertTrue(result_checkpoint["ordinary_result_readable"])
+        self.assertFalse(result_checkpoint["provider_data_source_verified"])
+        self.assertTrue(result_checkpoint["blocker_explanation_visible"])
+        self.assertEqual(result_checkpoint["data_source_state"], "blocked_missing_credentials")
+        self.assertEqual(result_checkpoint["evidence_source"], "local_blocker_or_task_status")
+        self.assertIn("Tushare-first provider ledger", result_checkpoint["missing_evidence"])
+        self.assertIn("Factor/Next/ECharts local cache replay", result_checkpoint["missing_evidence"])
+        self.assertGreaterEqual(result_checkpoint["missing_evidence_count"], 2)
+        self.assertFalse(result_checkpoint["uses_tushare_ledger"])
+        self.assertFalse(result_checkpoint["uses_deepseek_output"])
+        self.assertTrue(result_checkpoint["cache_only_readback"])
+        self.assertFalse(result_checkpoint["creates_task_from_readback"])
+        self.assertFalse(result_checkpoint["calls_model_from_readback"])
+        self.assertFalse(result_checkpoint["readback_external_calls_triggered"])
+        self.assertFalse(result_checkpoint["production_quant_projection_complete"])
+        self.assertTrue(interpretation["ordinary_result_checkpoint_is_cache_only"])
+        self.assertFalse(interpretation["ordinary_result_checkpoint_creates_task"])
+        self.assertFalse(interpretation["ordinary_result_checkpoint_calls_model"])
+        self.assertTrue(interpretation["ordinary_result_checkpoint_is_not_trade_signal"])
         result_rows = {row["surface"]: row for row in interpretation["ordinary_result_readback_rows"]}
         self.assertEqual(
             set(result_rows),

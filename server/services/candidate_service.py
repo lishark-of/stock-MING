@@ -58,6 +58,9 @@ QUANT_PROJECTION_WRITEBACK_CHECKPOINT_SCHEMA_VERSION = (
 QUANT_PROJECTION_INTERPRETATION_SCHEMA_VERSION = (
     "candidate_radar_search_quant_projection_interpretation.v1"
 )
+QUANT_PROJECTION_RESULT_CHECKPOINT_SCHEMA_VERSION = (
+    "candidate_radar_search_quant_projection_result_checkpoint.v1"
+)
 QUANT_PROJECTION_CONFIRM_CHAIN_SCHEMA_VERSION = (
     "candidate_radar_search_quant_projection_confirm_chain.v1"
 )
@@ -17002,6 +17005,35 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
             "candidate_is_not_buy_instruction": True,
         },
     ]
+    ordinary_result_checkpoint_contract = {
+        "schema_version": QUANT_PROJECTION_RESULT_CHECKPOINT_SCHEMA_VERSION,
+        "status": ordinary_result_status,
+        "readback_route": "GET /api/candidate-radar/cache",
+        "source_packet_key": PACKET_KEY,
+        "source_task_id": latest_task_id or "",
+        "ordinary_result_readable": bool(small_data_ready or quant_receipt or small_data),
+        "provider_data_source_verified": small_data_ready,
+        "blocker_explanation_visible": ordinary_result_status == "blocked_missing_credentials",
+        "data_source_state": data_source_status,
+        "evidence_source": "Tushare-first ledger" if small_data_ready else "local_blocker_or_task_status",
+        "next_session_map_state": "local_map_ready" if factor_next_ready else "pending_local_cache_refresh",
+        "missing_evidence": missing_evidence,
+        "missing_evidence_count": len(missing_evidence),
+        "safe_explanation_fields": ["source", "gap", "next_step", "safety_summary"],
+        "deepseek_state": deepseek_governed_executor_status,
+        "uses_tushare_ledger": small_data_ready,
+        "uses_deepseek_output": False,
+        "uses_model_output": False,
+        "cache_only_readback": True,
+        "creates_task_from_readback": False,
+        "calls_model_from_readback": False,
+        "readback_external_calls_triggered": False,
+        "does_not_execute_trades": True,
+        "does_not_modify_strategy_action": True,
+        "does_not_modify_prices": True,
+        "candidate_is_not_buy_instruction": True,
+        "production_quant_projection_complete": False,
+    }
     return {
         "schema_version": QUANT_PROJECTION_INTERPRETATION_SCHEMA_VERSION,
         "status": status,
@@ -17059,6 +17091,11 @@ def _search_quant_projection_interpretation_summary(packet: Mapping[str, Any]) -
         "ordinary_result_action_rows_create_task": False,
         "ordinary_result_action_rows_use_model_output": False,
         "ordinary_result_action_rows_are_not_trade_signals": True,
+        "ordinary_result_checkpoint_contract": ordinary_result_checkpoint_contract,
+        "ordinary_result_checkpoint_is_cache_only": True,
+        "ordinary_result_checkpoint_creates_task": False,
+        "ordinary_result_checkpoint_calls_model": False,
+        "ordinary_result_checkpoint_is_not_trade_signal": True,
         "symbol": small_data.get("symbol") or quant_receipt.get("symbol") or "",
         "interpretation_ready": small_data_ready,
         "provider_api_success_count": provider_success_count,
@@ -17117,6 +17154,14 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     counts["search_quant_projection_deepseek_governed_executor_readiness_row_count"] = summary.get(
         "ordinary_deepseek_governed_executor_readiness_row_count", 0
     )
+    result_checkpoint = _as_dict(summary.get("ordinary_result_checkpoint_contract"))
+    counts["search_quant_projection_result_checkpoint_missing_evidence_count"] = result_checkpoint.get(
+        "missing_evidence_count",
+        0,
+    )
+    counts["search_quant_projection_result_checkpoint_readable"] = (
+        result_checkpoint.get("ordinary_result_readable") is True
+    )
     view["counts"] = counts
     policy = dict(_as_dict(view.get("policy")))
     policy["search_quant_projection_interpretation_is_cache_replay"] = True
@@ -17146,6 +17191,10 @@ def _attach_search_quant_projection_interpretation_summary(packet: Mapping[str, 
     policy["search_quant_projection_deepseek_governed_executor_readiness_rows_call_model"] = False
     policy["search_quant_projection_deepseek_governed_executor_readiness_rows_use_model_output"] = False
     policy["search_quant_projection_deepseek_governed_executor_readiness_rows_are_not_trade_signals"] = True
+    policy["search_quant_projection_result_checkpoint_is_cache_only"] = True
+    policy["search_quant_projection_result_checkpoint_creates_task"] = False
+    policy["search_quant_projection_result_checkpoint_calls_model"] = False
+    policy["search_quant_projection_result_checkpoint_is_not_trade_signal"] = True
     view["policy"] = policy
     return view
 
