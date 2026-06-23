@@ -354,11 +354,14 @@ export default function NextSessionMap() {
     { boundary: "uses_real_daily_close", value: String(chartPayload?.uses_real_daily_close === true), note: "未验证真实 close 时必须展示风险提示。" }
   ];
   const empty = !loading && !error && (packet.status === "cache_missing" || !Object.keys(packet).length);
+  const nextSessionOrdinaryReplayBoundaryBlocked =
+    packet.does_not_modify_action === false || packet.does_not_modify_operation_zones === false;
   const nextSessionOrdinaryReplayRailState = [
     chartSummary.has_drawable_data === true ? "chart_cache_visible" : "chart_cache_waiting",
     chartSummary.is_exact_next_session_packet === true ? "exact_packet_visible" : "legacy_projection_or_missing",
     Number(chartSummary.operation_zone_count ?? 0) > 0 ? "operation_zones_visible" : "operation_zones_waiting",
-    chartPayload?.deepseek_status === "success" ? "deepseek_cache_visible" : "deepseek_governed_pending"
+    nextSessionMissingEvidence === "当前摘要未标记缺口" ? "evidence_gap_clear" : "evidence_gap_visible",
+    nextSessionOrdinaryReplayBoundaryBlocked ? "research_boundary_blocked" : "research_boundary_ready"
   ].join(" ");
   const nextSessionOrdinaryReplayRailSteps = [
     {
@@ -377,9 +380,11 @@ export default function NextSessionMap() {
       detail: nextSessionOperationZoneBoundary
     },
     {
-      label: "DeepSeek 状态",
-      state: chartPayload?.deepseek_status === "success" ? ("done" as const) : chartSummary.has_drawable_data === true ? ("active" as const) : ("waiting" as const),
-      detail: nextSessionDeepSeekSourceLabel
+      label: "缺口边界",
+      state: nextSessionOrdinaryReplayBoundaryBlocked
+        ? ("blocked" as const)
+        : nextSessionMissingEvidence === "当前摘要未标记缺口" ? ("done" as const) : ("active" as const),
+      detail: `${nextSessionMissingEvidence}；${nextSessionResearchOnlyLabel}`
     }
   ];
 
@@ -421,7 +426,7 @@ export default function NextSessionMap() {
         state={nextSessionOrdinaryReplayRailState}
         steps={nextSessionOrdinaryReplayRailSteps}
       />
-      <p className="risk-note">普通图谱状态：雷达/量化回放 / 图表路径 / 操作区 / DeepSeek 状态；这条状态轨只读本地 next-session cache，不创建 task、不补调 Tushare 或 DeepSeek。</p>
+      <p className="risk-note">普通图谱状态：雷达/量化回放 / 图表路径 / 操作区 / 缺口边界；这条状态轨只读本地 next-session cache，不创建 task、不补调 Tushare 或 DeepSeek，DeepSeek governed executor 继续收起为 P5 单独补证。</p>
       <div aria-label="next session p3 result handoff quick read">
         <h3>P3 结果交接速读</h3>
         <p className="risk-note">先看来源、结论、缺口和操作区边界；这张表只做本地结果交接，不展开 QA、promotion 或 raw packet 审计。</p>
