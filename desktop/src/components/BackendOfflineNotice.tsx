@@ -24,9 +24,9 @@ export default function BackendOfflineNotice({
     ? API_BASE_CANDIDATE_DISPLAY_URLS.join(" / ")
     : apiBase;
   const ordinaryRecoverySteps = [
-    `双击桌面快捷方式 ${COMMAND_CENTER_3_DESKTOP_SHORTCUT}，或运行 ${COMMAND_CENTER_3_LAUNCHER_PATH}。`,
-    "等启动器显示 FastAPI / bootstrap status / desktop preflight cache / React/Vite 四段 ready 后，再刷新本页。",
-    "恢复联通后去下一票雷达输入代码，只有点击确认按钮才创建 Tushare-first 任务。"
+    `下一步：请双击桌面快捷方式 ${COMMAND_CENTER_3_DESKTOP_SHORTCUT}，或运行 ${COMMAND_CENTER_3_LAUNCHER_PATH}。`,
+    "启动器会等待 FastAPI 和页面都 ready 后才打开入口；等启动器显示 FastAPI / bootstrap status / desktop preflight cache / React/Vite 四段 ready 后，再刷新本页。",
+    "恢复联通后：先看系统健康是否变绿，再去下一票雷达输入代码；点击“确认并生成 3.0 量化推演”创建 Tushare-first 按钮门控任务。只有点击确认按钮才创建 Tushare-first 任务。"
   ];
 
   return (
