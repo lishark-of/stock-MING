@@ -121,6 +121,29 @@ export default function DesktopShellPreflight() {
       边界: "安装器本身不启用 live_light、不执行真实交易"
     }
   ];
+  const p0LauncherModeRows = [
+    {
+      启动方式: "普通双击",
+      用户动作: "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command",
+      看到什么: "三段 ready 后自动打开普通首页 #home",
+      适合场景: "日常打开 Command Center 3.0",
+      边界: "只启动或复用本地 FastAPI/Vite；不启用 live_light/provider/model"
+    },
+    {
+      启动方式: "只检查",
+      用户动作: "COMMAND_CENTER_3_LAUNCHER_CHECK_ONLY=1 scripts/start_command_center_3.command",
+      看到什么: "只读显示 health、bootstrap、frontend 和 open route",
+      适合场景: "先确认入口配置，不启动服务、不打开浏览器",
+      边界: "不探测 URL、不写日志、不创建 task、不调用 provider/model"
+    },
+    {
+      启动方式: "联通验收不弹窗",
+      用户动作: "COMMAND_CENTER_3_LAUNCHER_SKIP_OPEN=1 scripts/start_command_center_3.command",
+      看到什么: "等待 FastAPI、Bootstrap status、React/Vite ready 后打印手动打开地址",
+      适合场景: "验证前后端联通，但不自动弹浏览器窗口",
+      边界: "只连本地前后端；不调用 Tushare/DeepSeek/GitHub、不执行真实交易"
+    }
+  ];
   const devLaunchPlan = rows(cache.dev_launch_plan);
   const desktopLauncherRows = rows(cache.desktop_launcher_rows);
   const productionLaunchPlan = rows(cache.production_launch_plan);
@@ -152,6 +175,11 @@ export default function DesktopShellPreflight() {
         <p>frontend_backend_connection_ready / blocker_count: {String(oneClickStartupSummary.frontend_backend_connection_ready ?? false)} / {String(oneClickStartupSummary.blocker_count ?? counts.one_click_connection_blocker_count ?? 0)}</p>
         <p>P0 本地联通收据：{String(p0LocalConnectionReceipt.status ?? "p0_local_connection_receipt_loading")}；实时探针：{String(p0LocalConnectionReceipt.current_runtime_probe_executed_by_get_cache ?? false)}</p>
         <p>{String(p0LocalConnectionReceipt.ordinary_label ?? "本地一键入口会先确认 FastAPI、bootstrap status 和 React/Vite 都就绪，再打开页面。")}</p>
+        <div aria-label="p0 ordinary launcher mode choices">
+          <h3>启动模式</h3>
+          <p className="risk-note">普通双击用于日常打开；只检查和联通验收不弹窗用于安全诊断，不从页面启动服务或创建 task。</p>
+          <DataLineageTable rows={p0LauncherModeRows} />
+        </div>
         <div aria-label="p0 ordinary shortcut installer safety checklist">
           <h3>桌面快捷入口安装状态</h3>
           <p className="risk-note">{String(desktopLauncherContract.desktop_shortcut_installer_safe_ordinary_label ?? "安全安装：不会覆盖同名普通文件；安装后验证 symlink 指向本地启动器；双击后才检查 FastAPI、bootstrap status 和 React/Vite。")}</p>
