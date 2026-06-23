@@ -580,6 +580,7 @@ export default function CandidateRadar() {
     : "等待确认按钮创建 Tushare-first task；GET cache 只显示 pending";
   const quantProjectionSmallDataReady =
     searchQuantProjectionSmallDataWriteback.small_data_writeback_ready === true || quantProjectionProviderLedgerReady;
+  const quantProjectionSmallDataRows = rows(searchQuantProjectionSmallDataWriteback.ordinary_readback_rows);
   const quantProjectionSmallDataReplayState =
     String(searchQuantProjectionSmallDataWriteback.ordinary_readback_summary ?? "") ||
     String(searchQuantProjectionSmallDataWriteback.summary_label ?? "") ||
@@ -858,6 +859,9 @@ export default function CandidateRadar() {
               { label: "仅供研究", value: "推演解释只整理已有证据；不覆盖价格、持仓、因子、操作区或交易策略", tone: "good" }
             ]}
           />
+          {quantProjectionSmallDataRows.length ? (
+            <DataLineageTable rows={quantProjectionSmallDataRows} />
+          ) : null}
           <div className="actions" aria-label="quant projection replay destinations">
             <a href="#factor" aria-label="replay generated stock quant projection">回放股票量化推演</a>
             <a href="#next" aria-label="replay generated next session map">回放次日图谱</a>

@@ -14776,6 +14776,56 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         ordinary_readback_status = "waiting_symbol_confirm"
         ordinary_readback_summary = "小数据等待输入代码并点击确认。"
         ordinary_readback_next_step = "先输入 6 位 A 股代码，再点击确认并生成 3.0 量化推演。"
+    ordinary_readback_rows = [
+        {
+            "surface": "cache",
+            "status": "written" if cache_packet_written else "waiting_confirm",
+            "ordinary_label": "本地缓存已写入" if cache_packet_written else "等待确认按钮写入本地缓存",
+            "evidence": summary_label,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "surface": "call_ledger",
+            "status": provider_call_source,
+            "ordinary_label": (
+                "Tushare provider ledger 已写入"
+                if provider_ready
+                else "本地阻断 ledger 已写入"
+                if credential_missing_count
+                else "等待按钮门控 provider ledger"
+            ),
+            "evidence": (
+                f"provider_api_success={provider_api_success_count}; "
+                f"provider_api_call_count={provider_api_call_count}; source={provider_call_source}"
+            ),
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+        {
+            "surface": "packet",
+            "status": "written" if cache_packet_written else "waiting_confirm",
+            "ordinary_label": f"packet={PACKET_KEY}" if cache_packet_written else "等待写入 candidate radar packet",
+            "evidence": f"schema={QUANT_PROJECTION_SMALL_DATA_WRITEBACK_SCHEMA_VERSION}; row_count=3",
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "contains_secret": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        },
+    ]
     return {
         "schema_version": QUANT_PROJECTION_SMALL_DATA_WRITEBACK_SCHEMA_VERSION,
         "status": status,
@@ -14784,6 +14834,10 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
         "ordinary_readback_status": ordinary_readback_status,
         "ordinary_readback_summary": ordinary_readback_summary,
         "ordinary_readback_next_step": ordinary_readback_next_step,
+        "ordinary_readback_rows": ordinary_readback_rows,
+        "ordinary_readback_row_count": len(ordinary_readback_rows),
+        "ordinary_readback_rows_are_cache_only": True,
+        "ordinary_readback_rows_create_task": False,
         "ordinary_readback_boundary": "小数据回放只读取本地 cache / ledger / packet；GET cache 和 React render 不补调 provider/model，不生成交易动作。",
         "ordinary_readback_surfaces_label": "cache / call_ledger / packet",
         "packet_key": PACKET_KEY,
