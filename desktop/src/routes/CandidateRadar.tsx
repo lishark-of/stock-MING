@@ -18,6 +18,16 @@ function objectRow(value: unknown): Array<Record<string, unknown>> {
   return value && typeof value === "object" && !Array.isArray(value) ? [value as Record<string, unknown>] : [];
 }
 
+function quantProjectionSubmitFailureMessage(error?: string | null) {
+  if (error?.includes("backend_offline_or_unreachable")) {
+    return "本地 FastAPI 后端未连接；请先用一键启动器恢复连接。";
+  }
+  if (error?.startsWith("HTTP ")) {
+    return "本地任务接口返回失败；请稍后重试或查看系统健康页。";
+  }
+  return "任务未创建；请检查本地后端连接后重试。";
+}
+
 function normalizeAshareSymbolInput(raw: string) {
   const input = raw.trim().toUpperCase().replace(/\s+/g, "");
   if (!input) {
@@ -55,6 +65,7 @@ export default function CandidateRadar() {
   const [taskId, setTaskId] = useState("");
   const [taskReceipt, setTaskReceipt] = useState<TaskCreationEnvelope | null>(null);
   const [quantProjectionSubmitting, setQuantProjectionSubmitting] = useState(false);
+  const [quantProjectionSubmitError, setQuantProjectionSubmitError] = useState("");
   const [customPoolText, setCustomPoolText] = useState("");
   const [searchSymbol, setSearchSymbol] = useState("");
   const [loading, setLoading] = useState(true);
@@ -88,6 +99,7 @@ export default function CandidateRadar() {
   const launchQuantProjection = () => {
     if (!quantProjectionCanSubmit || quantProjectionSubmitting) return;
     setQuantProjectionSubmitting(true);
+    setQuantProjectionSubmitError("");
     void postCandidateRadarQuantProjection({
       scan_mode: "search_quant_projection",
       symbol: normalizeAshareSymbolInput(searchSymbol).normalized,
@@ -98,8 +110,11 @@ export default function CandidateRadar() {
     }).then((res) => {
       setTaskReceipt(res);
       if (res.ok) {
+        setQuantProjectionSubmitError("");
         setTaskId(res.data.task_id);
         refreshCache();
+      } else {
+        setQuantProjectionSubmitError(quantProjectionSubmitFailureMessage(res.error));
       }
     }).finally(() => setQuantProjectionSubmitting(false));
   };
@@ -520,6 +535,9 @@ export default function CandidateRadar() {
   const quantProjectionSubmitAriaLabel = quantProjectionCanSubmit
     ? quantProjectionSubmitButtonLabel
     : quantProjectionDisabledReason;
+  const quantProjectionSubmitErrorLabel = quantProjectionSubmitError
+    ? `确认任务创建失败：${quantProjectionSubmitError}；未创建可回放 task，请检查本地后端连接后重试。`
+    : "";
   const quantProjectionDisplaySymbol = quantProjectionSymbolValidation.normalized || String(searchQuantProjectionReceipt.symbol ?? "");
   const quantProjectionInputValidation = searchQuantProjectionReceipt.symbol_valid === false
     ? `代码格式阻断：${String(searchQuantProjectionReceipt.symbol_status ?? "invalid_symbol")}`
@@ -539,7 +557,9 @@ export default function CandidateRadar() {
   const quantProjectionSubmitHint = quantProjectionDisplaySymbol
     ? "点击确认后提交 Tushare-first 后台链；服务端凭据缺失时只写本地阻断，DeepSeek 默认 skipped，需 governed executor 完成后再单独补。"
     : "先输入股票代码；仅输入不会创建 task，也不会调用 Tushare 或 DeepSeek。";
-  const quantProjectionConfirmChainState = quantProjectionSubmitting
+  const quantProjectionConfirmChainState = quantProjectionSubmitError
+    ? "确认任务创建失败：未生成 task id；请检查本地后端连接后重试，页面不会补调 provider/model"
+    : quantProjectionSubmitting
     ? "确认任务正在提交：按钮已暂时禁用；等待本地 FastAPI 返回 task id，避免重复创建后台链"
     : taskReceipt?.ok
     ? "确认任务已接收：先看 TaskStatusPanel，再通过 GET cache 回放 Tushare ledger、量化推演和次日图谱"
@@ -858,7 +878,10 @@ export default function CandidateRadar() {
           {Number(counts.candidate_count ?? 0) ? <button onClick={launchQuickScan}>运行本地快扫</button> : null}
           <input
             value={searchSymbol}
-            onChange={(event) => setSearchSymbol(event.target.value)}
+            onChange={(event) => {
+              setSearchSymbol(event.target.value);
+              setQuantProjectionSubmitError("");
+            }}
             placeholder="002008.SZ 或 002008"
             aria-label="radar summary quant projection symbol"
             title={quantProjectionInputBoundaryLabel}
@@ -872,6 +895,7 @@ export default function CandidateRadar() {
           <a href="#factor" aria-label="open stock quant projection result">查看量化推演结果</a>
         </div>
         <p className="risk-note" aria-live="polite">{quantProjectionSummaryGuidance}</p>
+        {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
         <p className="risk-note">{ordinaryRadarResultLocation}</p>
         <p className="risk-note">候选池按 Top / Watch / Excluded 分组帮助复核优先级；分组结果不是买卖建议，也不会修改 strategy action。</p>
         <p className="risk-note">摘要按钮只读取本地 cache 或创建按钮门控 POST task；输入代码不会创建任务，也不会在 React 渲染中直连 Tushare、DeepSeek 或 GitHub。</p>
@@ -905,7 +929,10 @@ export default function CandidateRadar() {
           <div className="actions">
             <input
               value={searchSymbol}
-              onChange={(event) => setSearchSymbol(event.target.value)}
+              onChange={(event) => {
+                setSearchSymbol(event.target.value);
+                setQuantProjectionSubmitError("");
+              }}
               placeholder="002008.SZ 或 002008"
               aria-label="search quant projection symbol"
               title={quantProjectionInputBoundaryLabel}
@@ -919,11 +946,12 @@ export default function CandidateRadar() {
             <a href="#factor" aria-label="open generated quant projection result">查看量化推演结果</a>
           </div>
           <p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>
+          {quantProjectionSubmitErrorLabel ? <p className="risk-note" aria-live="polite">{quantProjectionSubmitErrorLabel}</p> : null}
           <p className="risk-note" aria-live="polite">{quantProjectionSubmitHint}</p>
           <p className="risk-note" aria-live="polite">{quantProjectionTushareFirstState}</p>
           <MetricGrid
             items={[
-              { label: "确认状态", value: quantProjectionConfirmChainState, tone: taskReceipt?.ok || quantProjectionCanLaunch ? "good" : "warn" },
+              { label: "确认状态", value: quantProjectionConfirmChainState, tone: taskReceipt?.ok || (quantProjectionCanLaunch && !quantProjectionSubmitError) ? "good" : "warn" },
               { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn" },
               { label: "小数据回放", value: quantProjectionSmallDataStageLabel, tone: quantProjectionSmallDataReady ? "good" : "warn" },
               { label: "可读结论", value: quantProjectionOrdinaryResultSummary, tone: quantProjectionInterpretationReady ? "good" : "warn" },
@@ -958,7 +986,7 @@ export default function CandidateRadar() {
                 { label: "下一步", value: quantProjectionNextClick },
                 { label: "输入标的", value: quantProjectionDisplaySymbol || "等待输入" },
                 { label: "确认代码", value: quantProjectionConfirmedSymbol },
-                { label: "确认链路", value: quantProjectionConfirmChainState, tone: taskReceipt?.ok || quantProjectionCanSubmit ? "good" : "warn" },
+                { label: "确认链路", value: quantProjectionConfirmChainState, tone: taskReceipt?.ok || (quantProjectionCanSubmit && !quantProjectionSubmitError) ? "good" : "warn" },
                 { label: "输入校验", value: quantProjectionInputValidation, tone: quantProjectionInputValidation.includes("阻断") ? "warn" : "good" },
                 { label: "Tushare-first", value: quantProjectionTushareFirstState, tone: searchQuantProjectionExecutionRequest.acceptance_scope_hash ? "good" : "warn" },
                 { label: "Tushare ledger", value: quantProjectionProviderModelReplayState, tone: quantProjectionProviderLedgerReady ? "good" : "warn" },
