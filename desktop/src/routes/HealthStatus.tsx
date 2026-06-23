@@ -51,13 +51,36 @@ export default function HealthStatus() {
   const p0LocalConnectionReceipt = (desktopPreflight.p0_local_connection_receipt as Record<string, unknown> | undefined) ?? {};
   const desktopLauncherContract = (desktopPreflight.desktop_launcher_contract as Record<string, unknown> | undefined) ?? {};
   const oneClickConnectionRows = (desktopPreflight.one_click_connection_rows as Array<Record<string, unknown>> | undefined) ?? [];
+  const p0ConnectionReady = oneClickStartupSummary.frontend_backend_connection_ready === true;
   const p0RecoverySteps = (desktopPreflight.p0_recovery_steps as Array<Record<string, unknown>> | undefined) ?? [
     { step: "1", title: "打开本地一键入口", action: "双击 stock-MING Command Center 3.command；或运行 scripts/start_command_center_3.command。" },
     { step: "2", title: "按启动器诊断定位失败段", action: "先看 FastAPI、bootstrap status、React/Vite 哪一段没有 ready。" },
     { step: "3", title: "刷新健康页确认联通", action: "确认 P0 front/back、P0 receipt 和 one-click launcher 都为 ready。" }
   ];
+  const p0OrdinaryConnectionRows = (desktopPreflight.p0_ordinary_connection_rows as Array<Record<string, unknown>> | undefined) ?? [
+    {
+      环节: "FastAPI",
+      当前状态: p0ConnectionReady ? "ready" : "check",
+      用户下一步: "如果未 ready，先看启动器 FastAPI 诊断和 command_center_3_fastapi.log。",
+      通过条件: "本地 /health 返回 Command Center 3.0 JSON，且 external_calls_on_startup=false。",
+      边界: "只读健康检查；GET preflight 不启动 FastAPI、不创建 task。"
+    },
+    {
+      环节: "Bootstrap status",
+      当前状态: p0ConnectionReady ? "ready" : "check",
+      用户下一步: "如果未 ready，回启动器确认 bootstrap status 段是否返回 runtime-mode packet。",
+      通过条件: "本地 /api/bootstrap/status 返回 command_center_3_bootstrap_runtime_mode_packet。",
+      边界: "只读运行模式；不写配置、不启用 live_light。"
+    },
+    {
+      环节: "React/Vite",
+      当前状态: p0ConnectionReady ? "ready" : "check",
+      用户下一步: "如果未 ready，检查 5173 是否被占用并查看 command_center_3_vite.log。",
+      通过条件: "本地 Vite 返回 Command Center 3.0 前端 HTML。",
+      边界: "只读前端入口；不调用 Tushare/DeepSeek/GitHub、不执行真实交易。"
+    }
+  ];
   const desktopPreflightWarnings = desktopPreflightEnvelopeWarnings.length ? desktopPreflightEnvelopeWarnings : ((desktopPreflight.warnings as Array<string> | undefined) ?? []);
-  const p0ConnectionReady = oneClickStartupSummary.frontend_backend_connection_ready === true;
 
   return (
     <>
@@ -80,6 +103,11 @@ export default function HealthStatus() {
         <p>P0 本地联通收据：{String(p0LocalConnectionReceipt.ordinary_label ?? "本地一键入口会先确认 FastAPI、bootstrap status 和 React/Vite 都就绪，再打开页面。")}</p>
         <p>当前 GET 是否做实时探针：{String(p0LocalConnectionReceipt.current_runtime_probe_executed_by_get_cache ?? false)}；实时联通是否已由本页验证：{String(p0LocalConnectionReceipt.current_runtime_live_connection_verified ?? false)}</p>
         <p>只读边界：本卡只读取 GET /health 与 GET /api/desktop/preflight-cache；不会启动 FastAPI/Vite、不会创建 task、不会调用 Tushare/DeepSeek/GitHub 或交易路径。</p>
+        <div aria-label="health ordinary frontend backend connection rows">
+          <h3>三段联通状态</h3>
+          <p className="risk-note">这张表来自本地 preflight packet，只解释启动器的三段检查；不会从页面补跑探针或启动服务。</p>
+          <DataLineageTable rows={p0OrdinaryConnectionRows} />
+        </div>
         <DataLineageTable rows={p0RecoverySteps} />
         <details className="developer-audit-details">
           <summary>P0 联通明细</summary>

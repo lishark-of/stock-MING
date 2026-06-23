@@ -1059,6 +1059,60 @@ def _p0_local_connection_receipt(
     }
 
 
+def _p0_ordinary_connection_rows(one_click_startup_summary: dict[str, Any]) -> list[dict[str, Any]]:
+    def row(
+        segment: str,
+        ready: bool,
+        user_next_action: str,
+        success_condition: str,
+        failed_next_action: str,
+        boundary: str,
+    ) -> dict[str, Any]:
+        return {
+            "环节": segment,
+            "当前状态": "ready" if ready else "check",
+            "用户下一步": user_next_action,
+            "通过条件": success_condition,
+            "失败下一步": failed_next_action,
+            "边界": boundary,
+            "ordinary_user_visible": True,
+            "external_calls_triggered": False,
+            "tushare_called": False,
+            "deepseek_called": False,
+            "github_called": False,
+            "loads_token_or_key": False,
+            "does_not_execute_trades": True,
+            "does_not_modify_strategy_action": True,
+        }
+
+    return [
+        row(
+            "FastAPI",
+            one_click_startup_summary.get("fastapi_health_identity_validated_before_open") is True,
+            "如果未 ready，先看启动器 FastAPI 诊断和 command_center_3_fastapi.log。",
+            "本地 /health 返回 Command Center 3.0 JSON，且 external_calls_on_startup=false。",
+            "检查 8710 是否被占用；必要时重新运行 scripts/start_command_center_3.command。",
+            "只读健康检查；GET preflight 不启动 FastAPI、不创建 task。",
+        ),
+        row(
+            "Bootstrap status",
+            one_click_startup_summary.get("fastapi_bootstrap_status_json_validated_before_open") is True,
+            "如果未 ready，回启动器确认 bootstrap status 段是否返回 runtime-mode packet。",
+            "本地 /api/bootstrap/status 返回 command_center_3_bootstrap_runtime_mode_packet。",
+            "查看 FastAPI 日志，确认后端是 Command Center 3.0 且 runtime-mode cache 可读。",
+            "只读运行模式；不写配置、不启用 live_light。",
+        ),
+        row(
+            "React/Vite",
+            one_click_startup_summary.get("vite_frontend_identity_validated_before_open") is True,
+            "如果未 ready，检查 5173 是否被占用并查看 command_center_3_vite.log。",
+            "本地 Vite 返回 Command Center 3.0 前端 HTML。",
+            "关闭旧 dev server 后重新运行一键启动器，或用 skip-open 模式做联通验收。",
+            "只读前端入口；不调用 Tushare/DeepSeek/GitHub、不执行真实交易。",
+        ),
+    ]
+
+
 def _production_launch_plan(api_base: str) -> list[dict[str, Any]]:
     return [
         {
@@ -4559,6 +4613,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
     desktop_launcher_contract = _desktop_launcher_contract(api_base)
     one_click_startup_summary = _one_click_startup_summary(api_base_info, desktop_launcher_contract)
     p0_local_connection_receipt = _p0_local_connection_receipt(one_click_startup_summary, desktop_launcher_contract)
+    p0_ordinary_connection_rows = _p0_ordinary_connection_rows(one_click_startup_summary)
+    p0_ordinary_connection_ready_count = sum(1 for row in p0_ordinary_connection_rows if row["当前状态"] == "ready")
     production_runtime_contract = _production_runtime_contract(api_base_info, tauri_config)
     tauri_build_artifact = _tauri_build_artifact_summary()
     backend_offline_ux_contract = _backend_offline_ux_contract(api_base_info)
@@ -4637,6 +4693,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         "p0_recovery_steps": one_click_startup_summary["ordinary_recovery_steps"],
         "p0_local_connection_receipt": p0_local_connection_receipt,
         "p0_local_connection_rows": p0_local_connection_receipt["rows"],
+        "p0_ordinary_connection_rows": p0_ordinary_connection_rows,
         "desktop_launcher_contract": desktop_launcher_contract,
         "desktop_launcher_rows": desktop_launcher_contract["rows"],
         "dev_launch_plan": _dev_launch_plan(api_base),
@@ -4672,6 +4729,8 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_local_connection_row_count": p0_local_connection_receipt["row_count"],
             "p0_local_connection_blocker_count": p0_local_connection_receipt["blocker_count"],
             "p0_local_connection_ready": 1 if p0_local_connection_receipt["connection_contract_ready"] else 0,
+            "p0_ordinary_connection_row_count": len(p0_ordinary_connection_rows),
+            "p0_ordinary_connection_ready_count": p0_ordinary_connection_ready_count,
             "packaged_runtime_qa_matrix_count": packaged_runtime_qa_contract["qa_matrix_count"],
             "packaged_runtime_pending_qa_count": packaged_runtime_qa_contract["pending_qa_count"],
             "tauri_release_manifest_row_count": tauri_release_manifest_contract["row_count"],
@@ -4700,6 +4759,7 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "one_click_startup_blocker_count": one_click_startup_summary["blocker_count"],
             "p0_local_connection_status": p0_local_connection_receipt["status"],
             "p0_local_connection_ready": p0_local_connection_receipt["connection_contract_ready"],
+            "p0_ordinary_connection_ready_count": p0_ordinary_connection_ready_count,
             "p0_current_runtime_live_connection_verified": p0_local_connection_receipt[
                 "current_runtime_live_connection_verified"
             ],
@@ -4763,6 +4823,9 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
             "p0_local_connection_receipt_does_not_probe_runtime_from_get_cache": True,
             "p0_local_connection_receipt_is_not_production_package": True,
             "p0_local_connection_receipt_does_not_enable_provider_model": True,
+            "p0_ordinary_connection_rows_are_cache_only": True,
+            "p0_ordinary_connection_rows_do_not_probe_runtime": True,
+            "p0_ordinary_connection_rows_do_not_create_task": True,
             "desktop_shortcut_installer_contract_is_local": True,
             "desktop_shortcut_installer_does_not_run_from_get_cache": True,
             "desktop_shortcut_installer_does_not_start_services": True,
@@ -4796,6 +4859,21 @@ def read_desktop_shell_preflight_cache() -> dict[str, Any]:
         + tauri_release_manifest_contract["call_ledger"]
         + one_click_startup_summary["call_ledger"]
         + p0_local_connection_receipt["call_ledger"]
+        + [
+            {
+                "api": "local_p0_ordinary_connection_rows",
+                "source": "one_click_startup_summary",
+                "row_count": len(p0_ordinary_connection_rows),
+                "local_fetched_at": _now_iso(),
+                "call_status": "local_ordinary_connection_rows_read",
+                "external": False,
+                "tushare_called": False,
+                "deepseek_called": False,
+                "github_called": False,
+                "does_not_execute_trades": True,
+                "does_not_modify_strategy_action": True,
+            }
+        ]
         + desktop_launcher_contract["call_ledger"]
         + production_package_readiness_receipt["call_ledger"],
         "external_calls_triggered": False,

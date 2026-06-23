@@ -1574,6 +1574,7 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         one_click_rows = {row["criterion"]: row for row in desktop["one_click_connection_rows"]}
         p0_receipt = desktop["p0_local_connection_receipt"]
         p0_rows = {row["criterion"]: row for row in desktop["p0_local_connection_rows"]}
+        p0_ordinary_rows = desktop["p0_ordinary_connection_rows"]
         self.assertEqual(one_click["schema_version"], "command_center_3_one_click_startup_summary.v1")
         self.assertEqual(one_click["priority"], "P0")
         self.assertEqual(one_click["status"], "one_click_frontend_backend_ready")
@@ -1721,8 +1722,32 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(all(row["passed"] for row in p0_rows.values()))
         self.assertFalse(p0_rows["get_cache_and_react_render_remain_read_only"]["external_calls_triggered"])
         self.assertTrue(p0_rows["provider_model_and_trade_boundary_preserved"]["does_not_execute_trades"])
+        self.assertEqual(
+            [row["环节"] for row in p0_ordinary_rows],
+            ["FastAPI", "Bootstrap status", "React/Vite"],
+        )
+        self.assertEqual([row["当前状态"] for row in p0_ordinary_rows], ["ready", "ready", "ready"])
+        self.assertEqual(desktop["counts"]["p0_ordinary_connection_row_count"], 3)
+        self.assertEqual(desktop["counts"]["p0_ordinary_connection_ready_count"], 3)
+        self.assertEqual(desktop["runtime"]["p0_ordinary_connection_ready_count"], 3)
+        self.assertTrue(desktop["policy"]["p0_ordinary_connection_rows_are_cache_only"])
+        self.assertTrue(desktop["policy"]["p0_ordinary_connection_rows_do_not_probe_runtime"])
+        self.assertTrue(desktop["policy"]["p0_ordinary_connection_rows_do_not_create_task"])
+        for ordinary_row in p0_ordinary_rows:
+            self.assertTrue(ordinary_row["ordinary_user_visible"])
+            self.assertFalse(ordinary_row["external_calls_triggered"])
+            self.assertFalse(ordinary_row["tushare_called"])
+            self.assertFalse(ordinary_row["deepseek_called"])
+            self.assertFalse(ordinary_row["github_called"])
+            self.assertFalse(ordinary_row["loads_token_or_key"])
+            self.assertTrue(ordinary_row["does_not_execute_trades"])
+            self.assertTrue(ordinary_row["does_not_modify_strategy_action"])
+        self.assertIn("只读健康检查", p0_ordinary_rows[0]["边界"])
+        self.assertIn("不写配置、不启用 live_light", p0_ordinary_rows[1]["边界"])
+        self.assertIn("不调用 Tushare/DeepSeek/GitHub", p0_ordinary_rows[2]["边界"])
         self.assertIn("local_one_click_startup_summary", {row["api"] for row in desktop["call_ledger"]})
         self.assertIn("local_p0_frontend_backend_connection_receipt", {row["api"] for row in desktop["call_ledger"]})
+        self.assertIn("local_p0_ordinary_connection_rows", {row["api"] for row in desktop["call_ledger"]})
         launcher = desktop["desktop_launcher_contract"]
         launcher_rows = {row["criterion"]: row for row in desktop["desktop_launcher_rows"]}
         self.assertEqual(launcher["schema_version"], "command_center_3_local_launcher_contract.v1")
