@@ -95,7 +95,15 @@ export default function DesktopShellPreflight() {
           边界: "GET preflight 和 React render 不启动服务、不创建 task。"
         },
         {
-          速读项: "3. 失败先看哪里",
+          速读项: "3. P0 stability dwell",
+          当前状态: p0ConnectionReady ? "ready：短暂复读后仍 ready" : "check：等待四段 ready 后再复读",
+          用户下一步: "启动器完成短暂 dwell 并看到 P0_STABILITY_READY=1 后才打开或交接页面；若 stability failed，按失败段重新恢复。",
+          证据: "P0_STABILITY_READY=1 + health/bootstrap/preflight/Vite dwell reread",
+          入口: "scripts/start_command_center_3.command",
+          边界: "stability dwell 只复读本地 health、bootstrap status、desktop preflight cache 和 React/Vite；不创建 task、不调用 provider/model。"
+        },
+        {
+          速读项: "4. 失败先看哪里",
           当前状态: p0ConnectionReady ? "无失败段；四段联通均为 ready" : "按 FastAPI / bootstrap status / desktop preflight cache / React/Vite 失败段排障",
           用户下一步: String(oneClickStartupSummary.blocked_next_action ?? "按启动器诊断定位失败段。"),
           证据: "p0_failure_diagnostic_rows + .stock_ming_3/logs + 8710/5173",
@@ -103,7 +111,7 @@ export default function DesktopShellPreflight() {
           边界: "失败定位不读取 token/key，不调用 Tushare/DeepSeek/GitHub，不执行真实交易。"
         },
         {
-          速读项: "4. 现在下一步",
+          速读项: "5. 现在下一步",
           当前状态: p0ConnectionReady ? "ready：进入 P1 搜票确认" : "check：继续 P0 恢复",
           用户下一步: p0ConnectionReady ? "输入股票代码；确认按钮才创建 Tushare-first POST task。" : "先恢复 P0 四段联通。",
           证据: "p0_current_next_action_rows",
@@ -111,7 +119,7 @@ export default function DesktopShellPreflight() {
           边界: "输入股票代码保持静默；确认按钮之前不调用 provider/model。"
         },
         {
-          速读项: "5. 本轮边界",
+          速读项: "6. 本轮边界",
           当前状态: "只读预检回放",
           用户下一步: "把 P0 当作本地联通 checkpoint；不要当 release ready 或 14 LTG strict closeout。",
           证据: "p0_startup_30s_quick_read_rows",
@@ -471,7 +479,7 @@ export default function DesktopShellPreflight() {
         </div>
         <div aria-label="p0 startup 30s quick read">
           <h3>启动后 30 秒速读</h3>
-          <p className="risk-note">普通用户打开后先看这张表：页面是否应该打开、四段联通是否 ready、失败先看哪段，以及 P0 ready 后如何进入 P1 确认按钮。</p>
+          <p className="risk-note">普通用户打开后先看这张表：页面是否应该打开、四段联通和 P0 stability dwell 是否 ready、失败先看哪段，以及 P0 ready 后如何进入 P1 确认按钮。</p>
           <DataLineageTable rows={p0Startup30sQuickReadRows} />
         </div>
         <div aria-label="p0 ordinary ready gate">

@@ -2095,7 +2095,15 @@ def _p0_startup_30s_quick_read_rows(
             "#desktop",
         ),
         row(
-            "3. 失败先看哪里",
+            "3. P0 stability dwell",
+            "ready：短暂复读后仍 ready" if connection_ready else "check：等待四段 ready 后再复读",
+            "启动器完成短暂 dwell 并看到 P0_STABILITY_READY=1 后才打开或交接页面；若 stability failed，按失败段重新恢复。",
+            "P0_STABILITY_READY=1 + health/bootstrap/preflight/Vite dwell reread",
+            "stability dwell 只复读本地 health、bootstrap status、desktop preflight cache 和 React/Vite；不创建 task、不调用 provider/model。",
+            "scripts/start_command_center_3.command",
+        ),
+        row(
+            "4. 失败先看哪里",
             failed_segment_label,
             str(one_click_startup_summary.get("blocked_next_action") or "按启动器诊断定位失败段。"),
             "p0_failure_diagnostic_rows + .stock_ming_3/logs + 8710/5173",
@@ -2103,7 +2111,7 @@ def _p0_startup_30s_quick_read_rows(
             ".stock_ming_3/logs",
         ),
         row(
-            "4. 现在下一步",
+            "5. 现在下一步",
             "ready：进入 P1 搜票确认" if connection_ready else "check：继续 P0 恢复",
             next_action,
             "p0_current_next_action_rows",
@@ -2111,7 +2119,7 @@ def _p0_startup_30s_quick_read_rows(
             "#candidates" if connection_ready else "#desktop",
         ),
         row(
-            "5. 本轮边界",
+            "6. 本轮边界",
             "只读预检回放",
             "把 P0 当作本地联通 checkpoint；不要当 release ready 或 14 LTG strict closeout。",
             "p0_startup_30s_quick_read_rows",

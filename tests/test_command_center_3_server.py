@@ -2374,10 +2374,17 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
             self.assertFalse(current_action_row["release_ready_evidence"])
         self.assertEqual(
             [row["速读项"] for row in p0_startup_30s_quick_read_rows],
-            ["1. 页面是否应该打开", "2. 四段联通", "3. 失败先看哪里", "4. 现在下一步", "5. 本轮边界"],
+            [
+                "1. 页面是否应该打开",
+                "2. 四段联通",
+                "3. P0 stability dwell",
+                "4. 失败先看哪里",
+                "5. 现在下一步",
+                "6. 本轮边界",
+            ],
         )
-        self.assertEqual(desktop["counts"]["p0_startup_30s_quick_read_row_count"], 5)
-        self.assertEqual(desktop["counts"]["p0_startup_30s_quick_read_visible_count"], 5)
+        self.assertEqual(desktop["counts"]["p0_startup_30s_quick_read_row_count"], 6)
+        self.assertEqual(desktop["counts"]["p0_startup_30s_quick_read_visible_count"], 6)
         self.assertIn("页面没有打开", desktop["runtime"]["p0_startup_30s_quick_read_next"])
         self.assertIn("scripts/start_command_center_3.command", desktop["runtime"]["p0_startup_30s_quick_read_entry"])
         self.assertTrue(desktop["policy"]["p0_startup_30s_quick_read_rows_are_cache_only"])
@@ -2388,9 +2395,12 @@ class CommandCenter3ServerServiceTests(unittest.TestCase):
         self.assertTrue(desktop["policy"]["p0_startup_30s_quick_read_rows_are_not_strict_closeout"])
         self.assertTrue(desktop["policy"]["p0_startup_30s_quick_read_rows_are_not_release_ready"])
         self.assertIn("4/4 ready", p0_startup_30s_quick_read_rows[1]["当前状态"])
-        self.assertIn("p0_current_next_action_rows", p0_startup_30s_quick_read_rows[3]["证据"])
-        self.assertIn("Tushare-first POST task", p0_startup_30s_quick_read_rows[3]["边界"])
-        self.assertIn("不启用 live_light", p0_startup_30s_quick_read_rows[4]["边界"])
+        self.assertIn("P0_STABILITY_READY=1", p0_startup_30s_quick_read_rows[2]["证据"])
+        self.assertIn("dwell", p0_startup_30s_quick_read_rows[2]["边界"])
+        self.assertIn("不创建 task、不调用 provider/model", p0_startup_30s_quick_read_rows[2]["边界"])
+        self.assertIn("p0_current_next_action_rows", p0_startup_30s_quick_read_rows[4]["证据"])
+        self.assertIn("Tushare-first POST task", p0_startup_30s_quick_read_rows[4]["边界"])
+        self.assertIn("不启用 live_light", p0_startup_30s_quick_read_rows[5]["边界"])
         for quick_read_row in p0_startup_30s_quick_read_rows:
             self.assertTrue(quick_read_row["ordinary_user_visible"])
             self.assertTrue(quick_read_row["cache_only_readback"])
