@@ -47,6 +47,22 @@ class NextSessionMapOrdinaryEntryTests(unittest.TestCase):
         self.assertIn("nextSessionOrdinaryReplayBoundaryBlocked", source_before_audit)
         self.assertIn("evidence_gap_clear", source_before_audit)
         self.assertIn("research_boundary_ready", source_before_audit)
+        metric_start = ordinary_slice.index("<MetricGrid")
+        metric_end = ordinary_slice.index("<StateClarityRail", metric_start)
+        summary_metric_slice = ordinary_slice[metric_start:metric_end]
+        self.assertIn('label: "本地缓存"', summary_metric_slice)
+        self.assertIn('label: "数据链"', summary_metric_slice)
+        self.assertIn('label: "解释状态"', summary_metric_slice)
+        self.assertIn('label: "待补证据"', summary_metric_slice)
+        self.assertIn('label: "降级提示"', summary_metric_slice)
+        for engineering_label in (
+            'label: "cache"',
+            'label: "Tushare"',
+            'label: "DeepSeek"',
+            'label: "pending"',
+            'label: "degraded"',
+        ):
+            self.assertNotIn(engineering_label, summary_metric_slice)
         self.assertIn('label: "缺口边界"', source_before_audit)
         self.assertIn('label: "上游确认链"', source_before_audit)
         rail_start = ordinary_slice.index('label="next session ordinary replay status"')

@@ -515,11 +515,11 @@ export default function NextSessionMap() {
       <MetricGrid
         items={[
           { label: "主下一步", value: nextSessionNextClick },
-          { label: "cache", value: nextSessionCacheSourceLabel },
-          { label: "Tushare", value: nextSessionTushareSourceLabel },
-          { label: "DeepSeek", value: nextSessionDeepSeekSourceLabel },
-          { label: "pending", value: nextSessionPendingSourceLabel, tone: Number(productionStageScope.pending_stage_count ?? 0) > 0 ? "warn" : "good" },
-          { label: "degraded", value: nextSessionDegradedSourceLabel, tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn" },
+          { label: "本地缓存", value: nextSessionCacheSourceLabel },
+          { label: "数据链", value: nextSessionTushareSourceLabel },
+          { label: "解释状态", value: nextSessionDeepSeekSourceLabel },
+          { label: "待补证据", value: nextSessionPendingSourceLabel, tone: Number(productionStageScope.pending_stage_count ?? 0) > 0 ? "warn" : "good" },
+          { label: "降级提示", value: nextSessionDegradedSourceLabel, tone: chartSummary.is_exact_next_session_packet === true ? "good" : "warn" },
           { label: "缺少证据", value: nextSessionMissingEvidence, tone: nextSessionMissingEvidence === "当前摘要未标记缺口" ? "good" : "warn" },
           { label: "最近结果", value: nextSessionLastResultLabel },
           { label: "查看顺序", value: nextSessionChartReviewOrder },
