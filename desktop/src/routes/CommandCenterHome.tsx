@@ -856,6 +856,29 @@ export default function CommandCenterHome() {
     "结果位置：今日作战台看总览，下一票雷达看候选，股票量化推演看单票结果，次日图谱看路径；入口都只读跳转";
   const dailyCommandMissingDataBoundary =
     "缺数据先看 pending / 缺少证据；不能把空缓存当成无风险，也不能当成生产验收完成";
+  const dailyCommandP3ReplayActionRows = [
+    {
+      结果入口: "下一票雷达",
+      当前状态: Number(candidateCounts?.candidate_count ?? 0) ? `候选=${String(candidateCounts?.candidate_count)}` : "等待候选缓存",
+      用户下一步: "复核候选、确认任务状态和结果回放位置；换标的仍需点击确认按钮",
+      入口: "#candidates",
+      边界: "只读跳转到雷达模块；不会从首页创建 task，搜索输入仍保持静默"
+    },
+    {
+      结果入口: "股票量化推演",
+      当前状态: String(factor.status ?? factor.mode ?? "等待量化缓存"),
+      用户下一步: "复核支持/压制、数据来源和缺少证据，再回到次日图谱看路径",
+      入口: "#factor",
+      边界: "只读跳转到量化推演模块；不会补调 Tushare、DeepSeek 或写 strategy action"
+    },
+    {
+      结果入口: "次日图谱",
+      当前状态: String(next.status ?? "等待次日图谱缓存"),
+      用户下一步: "按路径、参考线、operation_zones 和缺少证据顺序复核",
+      入口: "#next",
+      边界: "只读跳转到次日图谱模块；不创建生成任务、不调用 Tushare/DeepSeek、不下单"
+    }
+  ];
 
   const launchLiveBootstrap = () => {
     const mode = String(bootstrapStatus.mode ?? "cache_only");
@@ -938,6 +961,7 @@ export default function CommandCenterHome() {
             { label: "今日查看顺序", value: dailyCommandReviewOrder, tone: error ? "warn" : "good" },
             { label: "今日结果组成", value: dailyCommandResultComposition },
             { label: "今日结果位置", value: dailyCommandResultLocation, tone: "good" },
+            { label: "次日图谱", value: String(next.status ?? "等待缓存"), tone: next.status === "ready" ? "good" : "warn" },
             { label: "P2 小数据", value: dailyCommandSmallDataWritebackState, tone: candidateQuantSmallDataWriteback.small_data_writeback_ready === true ? "good" : "warn" },
             { label: "P2 边界", value: dailyCommandSmallDataWritebackBoundary, tone: "good" },
             { label: "P3 可读结论", value: dailyCommandExplainableResultLabel, tone: candidateQuantInterpretation.interpretation_ready === true ? "good" : "warn" },
@@ -1024,6 +1048,11 @@ export default function CommandCenterHome() {
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_result_quick_read_rows：普通入口只看可读结论、来源组成、回放来源和待补证据；不会从首页创建 task、调用 DeepSeek 或展开 raw packet。</p>
           <DataLineageTable rows={dailyCommandExplainableResultRows} />
         </div>
+        <div aria-label="daily command p3 replay handoff">
+          <h3>P3 结果回放入口</h3>
+          <p className="risk-note">普通用户按下一票雷达、股票量化推演、次日图谱三步回放；这些入口只切换本地模块，不创建任务、不刷新 provider/model。</p>
+          <DataLineageTable rows={dailyCommandP3ReplayActionRows} />
+        </div>
         <div aria-label="daily command p5 deepseek governance quick read">
           <h3>P5 DeepSeek 单独治理</h3>
           <p className="risk-note">优先读取 CandidateRadar 的 ordinary_model_governance_rows：DeepSeek 只作为 governed executor 单独补证；pending/skipped 不阻塞 Tushare-first、小数据写入或基础图谱。</p>
@@ -1044,6 +1073,7 @@ export default function CommandCenterHome() {
         <div className="actions" aria-label="daily command next user actions">
           <a href="#candidates" title="切换到下一票雷达模块；输入代码后仍需确认按钮" aria-label="open candidate radar from daily command">查看下一票雷达</a>
           <a href="#factor" title="切换到股票量化推演模块；只回放缓存结果，不创建 task" aria-label="open stock quant projection from daily command">查看股票量化推演</a>
+          <a href="#next" title="切换到次日图谱模块；只回放本地次日图谱缓存，不创建 task" aria-label="open next session map from daily command">查看次日图谱</a>
           <a href="#dataHealth" title="切换到数据健康模块；只读 cache，不刷新外部数据源" aria-label="open data health from daily command">查看数据健康</a>
           <a href="#desktop" title="切换到桌面壳预检模块；只读恢复指引，不启动服务" aria-label="open one click startup preflight from daily command">查看一键启动预检</a>
         </div>
