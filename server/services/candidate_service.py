@@ -15560,14 +15560,28 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
     )
     p0_confirm_gate_evidence = _as_dict(quant_request_params.get("p0_confirm_gate_evidence"))
     p0_confirm_gate_ready = _quant_projection_p0_confirm_gate_ready(p0_confirm_gate_evidence)
+    p0_confirm_gate_has_evidence = bool(p0_confirm_gate_evidence.get("schema_version"))
+    p0_confirm_gate_missing_not_blocking_replay = bool(provider_ready and not p0_confirm_gate_has_evidence)
     p0_local_link_ready = p0_confirm_gate_evidence.get("p0_local_link_ready") is True
     p0_connection_evidence_ready = p0_confirm_gate_evidence.get("p0_connection_evidence_ready") is True
-    p0_confirm_gate_status = "p0_gate_ready" if p0_confirm_gate_ready else "p0_gate_missing_or_blocked"
-    p0_confirm_gate_label = (
-        "P0 gate ready：FastAPI cache GET、bootstrap runtime-mode、desktop preflight、P0 stability/local link、candidate cache 均已满足。"
-        if p0_confirm_gate_ready
-        else "P0 gate 未完整回放：等待 FastAPI cache GET、bootstrap runtime-mode、desktop preflight、P0 stability 或本机联通证据，以及 candidate cache ready。"
-    )
+    if p0_confirm_gate_ready:
+        p0_confirm_gate_status = "p0_gate_ready"
+        p0_confirm_gate_label = (
+            "P0 gate ready：FastAPI cache GET、bootstrap runtime-mode、desktop preflight、"
+            "P0 stability/local link、candidate cache 均已满足。"
+        )
+    elif p0_confirm_gate_missing_not_blocking_replay:
+        p0_confirm_gate_status = "p0_gate_legacy_missing_not_blocking_replay"
+        p0_confirm_gate_label = (
+            "旧确认任务缺少新版 P0 gate 字段；但 Tushare-first POST task ledger 已回放，"
+            "当前 cache / ledger / packet 结果可读。重新点击确认会写入新版 P0 gate。"
+        )
+    else:
+        p0_confirm_gate_status = "p0_gate_missing_or_blocked"
+        p0_confirm_gate_label = (
+            "P0 gate 未完整回放：等待 FastAPI cache GET、bootstrap runtime-mode、desktop preflight、"
+            "P0 stability 或本机联通证据，以及 candidate cache ready。"
+        )
     confirmed_include_tushare = (
         quant_request_params.get("include_tushare") is True
         or dry_run.get("include_tushare") is True
@@ -15935,6 +15949,7 @@ def _search_quant_projection_small_data_writeback_summary(packet: Mapping[str, A
             "p0_local_link_is_ui_gate_only_not_release_evidence": (
                 p0_confirm_gate_evidence.get("p0_local_link_is_ui_gate_only_not_release_evidence") is True
             ),
+            "p0_gate_replay_not_blocking": p0_confirm_gate_missing_not_blocking_replay,
             "candidate_cache_ready": p0_confirm_gate_evidence.get("candidate_cache_ready") is True,
             "candidate_cache_status": _safe_text(
                 p0_confirm_gate_evidence.get("candidate_cache_status") or "missing",

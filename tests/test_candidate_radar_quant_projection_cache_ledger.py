@@ -83,6 +83,61 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         gate["p0_connection_evidence_ready"] = True
         self.assertTrue(candidate_service._quant_projection_p0_confirm_gate_ready(gate))
 
+    def test_legacy_provider_ledger_without_p0_gate_does_not_show_p2_as_blocked(self):
+        packet = {
+            "search_quant_projection_receipt": {
+                "schema_version": "candidate_radar_search_quant_projection_receipt.v1",
+                "status": "quant_projection_local_receipt_ready_provider_model_pending",
+                "latest_task_id": "legacy-task-success",
+                "latest_task_status": "success",
+                "latest_task_current_step": "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped",
+                "call_ledger": [
+                    {
+                        "api": "local_candidate_radar_quant_projection",
+                        "request_params_safe": {
+                            "include_tushare": True,
+                            "include_deepseek": False,
+                        },
+                    }
+                ],
+            },
+            "search_quant_provider_model_acceptance_receipt": {
+                "schema_version": "candidate_radar_search_quant_provider_model_acceptance.v1",
+                "status": "search_quant_provider_model_acceptance_ready_tushare_light_deepseek_skipped",
+                "include_tushare": True,
+                "include_deepseek": False,
+                "tushare_call_ledger_evidence_done": True,
+                "deepseek_skipped_by_request": True,
+                "provider_api_call_count": 4,
+                "provider_api_success_count": 4,
+                "provider_call_ledger": [
+                    {
+                        "api": api,
+                        "call_status": "success",
+                        "external": True,
+                        "external_calls_triggered": True,
+                        "tushare_called": True,
+                        "deepseek_called": False,
+                        "github_called": False,
+                    }
+                    for api in ["trade_cal", "daily", "daily_basic", "moneyflow"]
+                ],
+            },
+        }
+
+        summary = candidate_service._search_quant_projection_small_data_writeback_summary(packet)
+
+        self.assertEqual(summary["status"], "small_data_writeback_ready_tushare_ledger_replayed")
+        receipt_rows = {row["receipt_item"]: row for row in summary["ordinary_confirmed_task_receipt_rows"]}
+        self.assertEqual(
+            receipt_rows["p0_confirm_gate"]["status"],
+            "p0_gate_legacy_missing_not_blocking_replay",
+        )
+        self.assertFalse(receipt_rows["p0_confirm_gate"]["p0_ready"])
+        self.assertTrue(receipt_rows["p0_confirm_gate"]["p0_gate_replay_not_blocking"])
+        self.assertIn("旧确认任务缺少新版 P0 gate 字段", receipt_rows["p0_confirm_gate"]["ordinary_label"])
+        self.assertIn("重新点击确认会写入新版 P0 gate", receipt_rows["p0_confirm_gate"]["ordinary_label"])
+
     def test_confirm_tushare_first_accepts_local_fastapi_link_without_stability_receipt(self):
         self._with_meta_store()
         self._with_env(TUSHARE_TOKEN="REAL_TUSHARE_SECRET_VALUE")
