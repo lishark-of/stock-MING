@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { EChartsOption } from "echarts";
-import { getBootstrapStatus, getFactorQuantCache, postTask, type TaskCreationEnvelope } from "../api/client";
+import { getBootstrapStatus, getCandidateRadarCache, getFactorQuantCache, postTask, type TaskCreationEnvelope } from "../api/client";
 import ChartSafetyStrip from "../components/ChartSafetyStrip";
 import DataLineageTable from "../components/DataLineageTable";
 import EChartPanel from "../components/EChartPanel";
@@ -40,6 +40,7 @@ function runtimeModeLabel(value: unknown): string {
 
 export default function FactorQuantHub() {
   const [packet, setPacket] = useState<Record<string, any>>({});
+  const [candidateRadarCache, setCandidateRadarCache] = useState<Record<string, unknown>>({});
   const [cacheEnvelopeLedger, setCacheEnvelopeLedger] = useState<Array<Record<string, unknown>>>([]);
   const [cacheEnvelopeWarnings, setCacheEnvelopeWarnings] = useState<Array<unknown>>([]);
   const [bootstrapStatus, setBootstrapStatus] = useState<Record<string, unknown>>({});
@@ -65,6 +66,10 @@ export default function FactorQuantHub() {
     void getBootstrapStatus().then((res) => {
       setBootstrapStatus(res.data);
     });
+  const refreshCandidateRadarCache = () =>
+    void getCandidateRadarCache().then((res) => {
+      if (res.ok !== false) setCandidateRadarCache(res.data ?? {});
+    });
   const launchTask = (path: string, payload: Record<string, unknown> = {}) =>
     void postTask(path, payload).then((res) => {
       setTaskReceipt(res);
@@ -74,9 +79,12 @@ export default function FactorQuantHub() {
   useEffect(() => {
     refreshCache();
     refreshBootstrapStatus();
+    refreshCandidateRadarCache();
   }, []);
 
   const score = packet.score ?? {};
+  const candidateRadarSmallDataWriteback = (candidateRadarCache.search_quant_projection_small_data_writeback_summary as Record<string, unknown> | undefined) ?? {};
+  const candidateRadarOneScreenRows = toRows(candidateRadarSmallDataWriteback.ordinary_one_screen_action_rows);
   const runtime = packet.runtime ?? {};
   const governance = packet.governance ?? {};
   const bridge = packet.next_session_bridge ?? {};
@@ -384,6 +392,47 @@ export default function FactorQuantHub() {
       detail: ordinaryDeepSeekGovernedExecutorState
     }
   ];
+  const ordinaryQuantUpstreamOneScreenRows = candidateRadarOneScreenRows.length
+    ? candidateRadarOneScreenRows.map((row) => ({
+        行动: String(row["行动"] ?? row.action_key ?? "行动"),
+        当前状态: String(row["当前状态"] ?? row.status ?? "等待上游回放"),
+        用户下一步: String(row["用户下一步"] ?? row.next_action ?? ordinaryQuantP3NextStep),
+        入口: String(row["入口"] ?? row.entry ?? "下一票雷达"),
+        边界: String(row["边界"] ?? row.boundary ?? "量化页只读回放 CandidateRadar packet；不会从结果页创建 task 或调用模型。")
+      }))
+    : [
+        {
+          行动: "1. 确认",
+          当前状态: empty ? "等待下一票雷达确认代码" : ordinaryQuantRadarHandoffState,
+          用户下一步: empty ? "回下一票雷达输入代码并点击确认按钮" : ordinaryQuantReviewOrder,
+          入口: "#candidates",
+          边界: "本页不接收代码输入；换标的必须回下一票雷达确认按钮，页面链接只做本地切换。"
+        },
+        {
+          行动: "2. 任务",
+          当前状态: "等待 CandidateRadar task id / TaskStatusPanel 回放",
+          用户下一步: "确认任务完成后刷新本地 cache，再回到量化推演页读结果",
+          入口: "下一票雷达确认按钮 / TaskStatusPanel",
+          边界: "只有下一票雷达确认按钮可创建 Tushare-first POST task；本页不提交上游 task。"
+        },
+        {
+          行动: "3. 写回",
+          当前状态: `${ordinaryQuantLedgerSourceLabel} / ${ordinaryQuantPacketSourceLabel}`,
+          用户下一步: "按 cache、call_ledger、packet 三面确认结果来源",
+          入口: "Factor cache / call_ledger / packet",
+          边界: "写回只读本地 cache / ledger / packet；不补调 provider/model、不展示 token/key。"
+        },
+        {
+          行动: "4. 结果",
+          当前状态: ordinaryQuantP3ReadableConclusion,
+          用户下一步: ordinaryQuantP3NextStep,
+          入口: "支持/压制 / 次日图谱预览 / DeepSeek 状态",
+          边界: ordinaryQuantP3Boundary
+        }
+      ];
+  const ordinaryQuantUpstreamOneScreenLabel = ordinaryQuantUpstreamOneScreenRows
+    .map((row) => `${row.行动}: ${row.当前状态}`)
+    .join(" / ");
   const ordinaryQuantResultReplayRows = [
     {
       结果段: "支持/压制",
@@ -541,6 +590,7 @@ export default function FactorQuantHub() {
             { label: "degraded", value: ordinaryQuantDegradedSourceLabel, tone: ordinaryQuantDegradedSourceLabel.includes("未标记") ? "good" : "warn" },
             { label: "last_successful_cache/result", value: ordinaryQuantLastCache },
             { label: "雷达搜票回放", value: ordinaryQuantRadarHandoffState, tone: empty ? "warn" : "good" },
+            { label: "上游确认链", value: ordinaryQuantUpstreamOneScreenLabel, tone: candidateRadarOneScreenRows.length ? "good" : "warn" },
             { label: "回放位置", value: ordinaryQuantReplayLocation, tone: "good" },
             { label: "结果位置", value: ordinaryQuantResultLocation, tone: "good" },
             { label: "回放入口边界", value: ordinaryQuantRouteHandoffBoundary, tone: "good" },
@@ -571,6 +621,11 @@ export default function FactorQuantHub() {
           steps={ordinaryQuantResultRailSteps}
         />
         <p className="risk-note">普通结果状态：雷达确认 / Factor cache / 次日图谱 / DeepSeek 状态；这条状态轨只读本地 cache，不创建 task、不补调 Tushare 或 DeepSeek。</p>
+        <div aria-label="stock quant ordinary upstream one screen actions">
+          <h3>上游确认一屏行动</h3>
+          <p className="risk-note">优先读取 CandidateRadar 的 ordinary_one_screen_action_rows：确认、任务、写回、结果合成量化页上游速读；本页只读回放，不创建 task、不调用模型。</p>
+          <DataLineageTable rows={ordinaryQuantUpstreamOneScreenRows} />
+        </div>
         <div aria-label="stock quant ordinary cache ledger packet handoff">
           <h3>cache / ledger / packet 交接清单</h3>
           <p className="risk-note">确认按钮之后的轻量结果按 cache、ledger、packet、次日图谱预览回放；普通页只看交接状态，完整审计留在下方。</p>
