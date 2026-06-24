@@ -2777,6 +2777,22 @@ class CommandCenter3FrontendScaffoldTests(unittest.TestCase):
         self.assertIn('task.status === "success" && onSuccess', panel)
         self.assertIn("任务成功后已通知页面刷新本地回放", panel)
         self.assertIn("这不会创建新 task、不调用 Tushare、DeepSeek 或 GitHub、不执行真实交易", panel)
+        self.assertIn("p2WritebackQuickRows", panel)
+        self.assertIn('aria-label="task status p2 writeback quick read"', panel)
+        self.assertIn("P2 写回速读：普通用户先看 cache、call_ledger、packet 三面是否有本地回放信号", panel)
+        self.assertIn("这张表只读任务状态，不创建新 task", panel)
+        self.assertIn('写回面: "cache"', panel)
+        self.assertIn('写回面: "call_ledger"', panel)
+        self.assertIn('写回面: "packet"', panel)
+        self.assertIn("页面可刷新 GET cache 回放结果", panel)
+        self.assertIn("已回放 ${callLedger.length} 条本地审计记录", panel)
+        self.assertIn("task.output_packet_key", panel)
+        self.assertIn("不展示凭据值、raw log 或交易动作", panel)
+        self.assertIn("不代表生产验收或 14 LTG closeout", panel)
+        self.assertLess(
+            panel.index('aria-label="task status p2 writeback quick read"'),
+            panel.index('aria-label="task status audit details"'),
+        )
         self.assertIn('aria-label="task status audit details"', panel)
         self.assertIn("<summary>任务审计详情</summary>", panel)
         self.assertIn("普通用户先看状态轨、当前步骤、本地回放提示和取消按钮", panel)

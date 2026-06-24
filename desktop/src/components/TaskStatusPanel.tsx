@@ -137,6 +137,29 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
     task.status === "success" && onSuccess
       ? "任务成功后已通知页面刷新本地回放；这不会创建新 task、不调用 Tushare、DeepSeek 或 GitHub、不执行真实交易。"
       : "";
+  const p2WritebackQuickRows = [
+    {
+      写回面: "cache",
+      当前状态: task.status === "success" ? "任务已完成；页面可刷新 GET cache 回放结果" : "等待任务 success 后回放",
+      用户下一步: task.status === "success" ? "查看当前页面刷新后的本地结果" : "继续看任务状态轨",
+      证据: task.storage_source ?? "memory_or_sqlite_fallback",
+      边界: "TaskStatusPanel 只轮询本地 FastAPI 任务状态；不会补调 provider/model。"
+    },
+    {
+      写回面: "call_ledger",
+      当前状态: callLedger.length ? `已回放 ${callLedger.length} 条本地审计记录` : "等待任务写入本地审计记录",
+      用户下一步: callLedger.length ? "普通用户只看数量和边界；明细在审计详情中展开" : "任务完成后再看审计记录数量",
+      证据: "task.call_ledger",
+      边界: "审计记录默认收起；不展示凭据值、raw log 或交易动作。"
+    },
+    {
+      写回面: "packet",
+      当前状态: task.output_packet_key ? `目标 packet：${task.output_packet_key}` : "等待任务声明输出 packet",
+      用户下一步: task.status === "success" ? "刷新本地 cache 后打开对应结果入口" : "等待任务完成后再回放 packet",
+      证据: "task.output_packet_key",
+      边界: "packet 只作为本地回放目标；不代表生产验收或 14 LTG closeout。"
+    }
+  ];
 
   return (
     <div className={`task-panel task-panel--${task.status} motion-surface`} data-task-state={task.status} data-motion-scope="task_phase_clarity" data-motion-purpose="state_change_confirmation">
@@ -162,6 +185,10 @@ export default function TaskStatusPanel({ taskId, onSuccess }: Props) {
       <p>开始时间：{task.started_at ?? "--"}</p>
       <p>结束时间：{task.finished_at ?? "--"}</p>
       {successRefreshMessage ? <p className="panelSuccessRefresh">{successRefreshMessage}</p> : null}
+      <div aria-label="task status p2 writeback quick read">
+        <p className="risk-note">P2 写回速读：普通用户先看 cache、call_ledger、packet 三面是否有本地回放信号；这张表只读任务状态，不创建新 task。</p>
+        <DataLineageTable rows={p2WritebackQuickRows} />
+      </div>
       <TaskBoundarySummary task={task} />
       <button
         disabled={!cancellable}
