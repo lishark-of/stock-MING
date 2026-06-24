@@ -410,6 +410,20 @@ export default function CommandCenterHome() {
       candidateQuantInterpretation.ordinary_result_status ??
       (dailyCommandP3OneGlanceReadable ? "readable_cache_replay" : "waiting_confirm")
   );
+  const dailyCommandP3OneGlanceSourceTask = String(
+    candidateQuantResultCheckpoint.source_task_id ??
+      candidateQuantInterpretation.source_task_id ??
+      "等待确认任务"
+  );
+  const dailyCommandP3OneGlanceResultEntrances = candidateQuantHandoffRows.length
+    ? candidateQuantHandoffRows
+        .map((row) => {
+          const entry = String(row["入口"] ?? row.handoff_key ?? "结果入口");
+          const state = String(row["当前状态"] ?? row.status ?? "等待回放");
+          return `${entry}: ${state}`;
+        })
+        .join(" / ")
+    : "下一票雷达 / 股票量化推演 / 次日图谱";
   const dailyCommandP3OneGlanceSource = String(
     candidateQuantResultCheckpoint.evidence_source ?? "CandidateRadar cache / ledger / packet"
   );
@@ -1275,6 +1289,8 @@ export default function CommandCenterHome() {
             { label: "可读结论", value: dailyCommandExplainableResultLabel, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
             { label: "数据来源", value: dailyCommandP3OneGlanceSource, tone: dailyCommandP3OneGlanceProviderVerified ? "good" : "warn" },
             { label: "结果证据", value: dailyCommandP3OneGlanceEvidence, tone: dailyCommandP3OneGlanceReadable ? "good" : "warn" },
+            { label: "来源任务", value: dailyCommandP3OneGlanceSourceTask, tone: dailyCommandP3OneGlanceSourceTask === "等待确认任务" ? "warn" : "good" },
+            { label: "结果入口", value: dailyCommandP3OneGlanceResultEntrances, tone: candidateQuantHandoffRows.length ? "good" : "warn" },
             { label: "待补缺口", value: dailyCommandP3OneGlanceMissingEvidence || "暂无额外缺口", tone: dailyCommandP3OneGlanceMissingEvidence ? "warn" : "good" },
             { label: "下一步", value: dailyCommandExplainableResultNext },
             { label: "模型状态", value: dailyCommandP3OneGlanceModelState, tone: dailyCommandP3OneGlanceModelState.includes("检测到模型输出") ? "warn" : "good" },
