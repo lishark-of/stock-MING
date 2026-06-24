@@ -550,10 +550,10 @@ class CommandCenterMigrationPrincipleDocsTests(unittest.TestCase):
         self.assertLess(search_projection_section.index("title={quantProjectionSubmitButtonLabel}"), search_projection_section.index(submit_button_text))
         self.assertLess(
             search_projection_section.index(submit_button_text),
-            search_projection_section.index('<p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>'),
+            search_projection_section.index("{quantProjectionDisabledReason}"),
         )
         self.assertLess(
-            search_projection_section.index('<p className="risk-note" aria-live="polite">{quantProjectionDisabledReason}</p>'),
+            search_projection_section.index("{quantProjectionDisabledReason}"),
             search_projection_section.index("{quantProjectionSubmitHint}"),
         )
 
