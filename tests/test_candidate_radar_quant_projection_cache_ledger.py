@@ -313,6 +313,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertTrue(writeback_checkpoint["does_not_execute_trades"])
         self.assertTrue(writeback_checkpoint["does_not_modify_strategy_action"])
         self.assertFalse(writeback_checkpoint["production_quant_projection_complete"])
+        self.assertEqual(packet["search_quant_projection_writeback_checkpoint"], writeback_checkpoint)
         self.assertTrue(small_data["ordinary_writeback_checkpoint_is_cache_only"])
         self.assertFalse(small_data["ordinary_writeback_checkpoint_creates_task"])
         self.assertTrue(small_data["ordinary_writeback_checkpoint_is_not_trade_signal"])
@@ -1168,6 +1169,7 @@ class CandidateRadarQuantProjectionCacheLedgerTests(unittest.TestCase):
         self.assertFalse(writeback_checkpoint["readback_external_calls_triggered"])
         self.assertFalse(writeback_checkpoint["deepseek_called_from_readback"])
         self.assertFalse(writeback_checkpoint["production_quant_projection_complete"])
+        self.assertEqual(packet["search_quant_projection_writeback_checkpoint"], writeback_checkpoint)
         readback_rows = {row["surface"]: row for row in small_data["ordinary_readback_rows"]}
         self.assertEqual(readback_rows["cache"]["status"], "written")
         self.assertEqual(readback_rows["call_ledger"]["status"], "not_called_missing_credentials_local_block")

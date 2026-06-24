@@ -16813,6 +16813,7 @@ def _attach_search_quant_projection_small_data_writeback_summary(packet: Mapping
         "ordinary_writeback_recovery_row_count", 0
     )
     writeback_checkpoint = _as_dict(summary.get("ordinary_writeback_checkpoint_contract"))
+    view["search_quant_projection_writeback_checkpoint"] = writeback_checkpoint
     counts["search_quant_projection_writeback_checkpoint_surface_count"] = writeback_checkpoint.get("surface_count", 0)
     counts["search_quant_projection_writeback_checkpoint_readable_surface_count"] = writeback_checkpoint.get(
         "readable_surface_count",
